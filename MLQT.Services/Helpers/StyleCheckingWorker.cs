@@ -90,6 +90,11 @@ public class StyleCheckingWorker
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
 
+            // Create callback for inherited icon checking (uses graph to resolve base classes)
+            var baseClassHasIcon = _settings.ClassHasIcon
+                ? StyleChecking.CreateBaseClassHasIconCallback(_currentGraph)
+                : null;
+
             // Process models in parallel with bounded concurrency
             var parallelOptions = new ParallelOptions
             {
@@ -107,7 +112,8 @@ public class StyleCheckingWorker
                     if (node != null && !node.Definition.StyleRulesChecked)
                     {
                         var violations = StyleChecking.RunStyleChecking(node.Definition, _settings, modelId, knownModelIds, _spellChecker, knownModelNames,
-                            isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId));
+                            isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId),
+                            baseClassHasIcon: baseClassHasIcon);
 
                         if (violations.Count > 0)
                             OnViolationFound?.Invoke(this, violations);

@@ -2,6 +2,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Visitors;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -31,7 +32,8 @@ public static class StyleChecking
         IReadOnlySet<string>? knownModelIds = null,
         SpellChecker? spellChecker = null,
         IReadOnlySet<string>? knownModelNames = null,
-        bool isExcludedFromFormatting = false)
+        bool isExcludedFromFormatting = false,
+        Func<string, string, bool>? baseClassHasIcon = null)
     {
         List<LogMessage> violations = new();
         _currentModel.StyleRulesChecked = true;
@@ -102,7 +104,9 @@ public static class StyleChecking
         }
         if (settings.ClassHasDocumentationInfo || settings.ClassHasDocumentationRevisions || settings.ClassHasIcon)
         {
-            var visitor = new CheckClassAnnotations(settings.ClassHasDocumentationInfo, settings.ClassHasDocumentationRevisions, settings.ClassHasIcon, basePackage);
+            var visitor = new CheckClassAnnotations(
+                settings.ClassHasDocumentationInfo, settings.ClassHasDocumentationRevisions,
+                settings.ClassHasIcon, basePackage, baseClassHasIcon);
             visitor.VisitStored_definition(parsedCode);
             violations.AddRange(visitor.RuleViolations);
         }
@@ -134,4 +138,80 @@ public static class StyleChecking
         return violations;
     }
 
+    /// <summary>
+    /// Creates a callback that checks whether a base class (or any of its ancestors)
+    /// has an Icon annotation, using the graph to resolve model names.
+    /// Returns null if the graph is null (no inheritance checking possible).
+    /// </summary>
+    public static Func<string, string, bool>? CreateBaseClassHasIconCallback(DirectedGraph? graph)
+    {
+        if (graph == null) return null;
+
+        return (baseClassName, currentModelFullId) =>
+            HasIconInInheritanceChain(graph, baseClassName, currentModelFullId, new HashSet<string>());
+    }
+
+    /// <summary>
+    /// Recursively checks whether a base class or any of its ancestors has an Icon annotation.
+    /// </summary>
+    private static bool HasIconInInheritanceChain(
+        DirectedGraph graph, string baseClassName, string currentModelFullId, HashSet<string> visited)
+    {
+        var resolvedId = ResolveModelName(graph, baseClassName, currentModelFullId);
+        if (resolvedId == null || !visited.Add(resolvedId))
+            return false;
+
+        var node = graph.GetNode<ModelNode>(resolvedId);
+        if (node == null)
+            return false;
+
+        // Parse the model and extract icon + extends information
+        var parsedCode = node.Definition.EnsureParsed();
+        if (parsedCode == null)
+            return false;
+
+        var result = IconExtractor.ExtractIconWithInheritance(parsedCode);
+        if (result == null)
+            return false;
+
+        // This model directly has an Icon annotation
+        if (result.Icon != null)
+            return true;
+
+        // Recursively check this model's base classes
+        foreach (var ancestorName in result.ExtendsClasses)
+        {
+            if (HasIconInInheritanceChain(graph, ancestorName, resolvedId, visited))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves a raw class name (possibly relative) to a fully qualified model ID
+    /// by walking up the package hierarchy of the current model.
+    /// </summary>
+    private static string? ResolveModelName(DirectedGraph graph, string rawName, string currentModelFullId)
+    {
+        // Try the raw name as-is (already fully qualified)
+        if (graph.GetNode<ModelNode>(rawName) != null)
+            return rawName;
+
+        // Walk up the package hierarchy of the current model
+        var lastDot = currentModelFullId.LastIndexOf('.');
+        var pkg = lastDot > 0 ? currentModelFullId[..lastDot] : null;
+
+        while (!string.IsNullOrEmpty(pkg))
+        {
+            var qualifiedName = $"{pkg}.{rawName}";
+            if (graph.GetNode<ModelNode>(qualifiedName) != null)
+                return qualifiedName;
+
+            var dotIdx = pkg.LastIndexOf('.');
+            pkg = dotIdx > 0 ? pkg[..dotIdx] : null;
+        }
+
+        return null;
+    }
 }
