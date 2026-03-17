@@ -175,15 +175,32 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
     /// <summary>
     /// Resolves a revision identifier to its canonical form (revision number).
+    /// PREV is handled specially by querying the log for the second-most-recent revision,
+    /// since SvnRevision.Previous only works in working copy context and fails against URIs.
     /// </summary>
     public string? ResolveRevision(string repositoryPath, string revision)
     {
         try
         {
             using var client = new SvnClient();
+            var uri = GetRepositoryUri(repositoryPath);
+
+            // PREV requires special handling — query the log for the 2nd most recent revision
+            if (revision.Equals("PREV", StringComparison.OrdinalIgnoreCase))
+            {
+                var logArgs = new SvnLogArgs { Limit = 2 };
+                var revisions = new List<long>();
+                client.Log(uri.Uri, logArgs, (sender, e) => { revisions.Add(e.Revision); });
+
+                if (revisions.Count < 2)
+                {
+                    return null;
+                }
+
+                return revisions[1].ToString();
+            }
 
             var svnRevision = ParseRevision(revision);
-            var uri = GetRepositoryUri(repositoryPath);
 
             // Get info at the specified revision to resolve it
             SvnInfoEventArgs? info = null;
