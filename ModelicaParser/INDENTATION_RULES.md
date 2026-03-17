@@ -1,21 +1,31 @@
 # Modelica Code Formatter - Indentation Rules
 
-This document describes the indentation rules implemented in `ModelicaSyntaxVisitor.cs` for formatting Modelica source code.
+This document describes the indentation rules implemented in `ModelicaRenderer.cs` for formatting Modelica source code.
 
 ## Core Concepts
 
 ### Base Indentation Unit
-- **INDENT_SPACES = 2**: All indentation increments are 2 spaces
+- **IndentSpaces = 2**: All indentation increments are 2 spaces
 
 ### Indentation Mechanisms
 1. **`Indent()` / `Dedent()`**: Modify the `_indentLevel` counter, affecting all subsequent lines
-2. **`EmitLine()`**: Prepends `_indentLevel * INDENT_SPACES` to the current line before adding to output
-3. **`AddIndentToCurrentLine()`**: Adds `INDENT_SPACES` (2 spaces) directly to the current line buffer (for continuation indents)
+2. **`EmitLine()`**: Prepends `_indentLevel * IndentSpaces` to the current line before adding to output
+3. **`AddIndentToCurrentLine()`**: Adds `IndentSpaces` (2 spaces) directly to the current line buffer (for continuation indents)
+4. **`AddIndentAtLineStart(lineNumber)`**: Adds `IndentSpaces` (2 spaces) to an already-emitted line by index (for public/protected post-processing)
 
 ### State Tracking
 - **`_indentLevel`**: Current nesting level (incremented/decremented by `Indent()`/`Dedent()`)
 - **`_parentUsingMultiLine`**: Indicates if parent visitor has set up multi-line formatting with `Indent()`
 - **`_equationContinuationIndent`**: Additional indentation for wrapped equations/statements
+- **`_bracketDepth`**: Depth of nested brackets/parentheses/braces (prevents equation wrapping inside nested structures)
+- **`_suppressNextIndentation`**: Flag to suppress indentation on the next emitted line (used after multi-line strings)
+- **`_noPostIndentLines`**: HashSet of line indices exempt from public/protected post-processing indent
+- **`_inAnnotation`**: Flag for annotation context (affects multi-line decision)
+- **`_inGraphicsAnnotationLevel`**: Nesting depth within graphics annotations (0 = not in graphics, 1 = Icon/Diagram, 2+ = nested elements)
+- **`_inClassAnnotationIcon`**: Flag for Icon at class annotation level
+- **`_inDocumentationAnnotation`**: Flag that disables line wrapping inside Documentation annotations
+- **`_classAnnotation`**: Flag for class-level annotation context
+- **`_inDeclaration`**: Flag affecting wrapping decisions for modifications
 
 ## Indentation Rules by Context
 
@@ -34,11 +44,30 @@ end MyModel;
 - Result: Body content at 2 spaces
 
 #### Composition Elements
-- **Imports, extends, components**: Indented within class body (level 1 = 2 spaces)
+- **Imports, extends, components**: Indented within class body
+- **Public/Protected sections**: Use a post-processing pattern — content is rendered first, then `AddIndentAtLineStart()` is applied to each emitted line. Lines marked in `_noPostIndentLines` (e.g. multi-line string content) are exempt
 - **Equation sections**: `equation` keyword at class level, content indented
 - **Algorithm sections**: `algorithm` keyword at class level, content indented
 
-### 2. Extends Clauses and Inheritance
+### 2. Enumeration Types
+
+```modelica
+type Color = enumeration(
+  red,
+  green,
+  blue
+);
+```
+
+**Rules:**
+- When the enumeration has literals, multi-line format is always used
+- Opening `(`: followed by `EmitLine()`
+- `_indentLevel++` before visiting the enum list
+- Each literal separated by `,` followed by `EmitLine()`
+- `_indentLevel--` after visiting the list, then `EmitLine()` before closing `)`
+- Single-element enumerations also use multi-line format
+
+### 3. Extends Clauses and Inheritance
 
 #### Simple Extends (No Arguments)
 ```modelica
@@ -65,11 +94,13 @@ end MyModel;
 **Rules (`VisitClass_or_inheritence_modification`):**
 - **Multi-line mode triggered when**:
   - More than 5 arguments, OR
-  - Nesting depth ≥ 2 AND ≥ 2 arguments, OR
-  - In annotation context with ≥ 2 arguments, OR
+  - Nesting depth ≥ 2 AND ≥ 2 arguments (unless exactly 2 args at graphics level 2), OR
+  - In annotation context with ≥ 2 arguments (unless at graphics level 2), OR
   - In class annotation with ≥ 1 argument, OR
-  - Parent is multi-line AND ≥ 2 arguments, OR
-  - More than 2 arguments (non-graphics, non-declaration context)
+  - Parent is multi-line AND ≥ 2 arguments (unless exactly 2 args at graphics level 2), OR
+  - At graphics level ≤ 1 AND not in declaration AND > 2 arguments, OR
+  - Would exceed max line length
+  - **Overridden to false** if Icon has single-line graphics or annotation has single-line Icon
 
 - **When multi-line**:
   1. Opening `(` followed by `EmitLine()`
@@ -114,9 +145,8 @@ end MyModel;
 - `EmitLine()` to move to new line
 - `AddIndentToCurrentLine()` adds 2 spaces for continuation
 - **Expected**: 6 spaces (4 base + 2 continuation)
-- **Current issue**: Only produces 4 spaces (continuation indent not working correctly)
 
-### 3. Equation and Algorithm Sections
+### 4. Equation and Algorithm Sections
 
 #### Equation Section
 ```modelica
@@ -150,7 +180,8 @@ equation
 ```
 
 **Rules (`VisitEquation`):**
-- If LHS > 20 chars AND total line > max length:
+- If LHS > 20 chars AND estimated total line length > max line length:
+  - Estimated total = LHS length + 3 (for ` = `) + RHS text length
   - Add space after LHS
   - `EmitLine()` to move to new line
   - `Indent()` for continuation
@@ -160,9 +191,22 @@ equation
   - `Dedent()` when done
 - **Result**: RHS at 4 spaces (2 base + 2 continuation)
 
-### 4. Control Flow Structures
+#### Arithmetic Expression Wrapping
+```modelica
+equation
+  long_variable_name = expression1 +
+    expression2 +
+    expression3;
+```
 
-#### If-Then-Else (Equations)
+**Rules:**
+- Triggered when estimated line length > `_maxLineLength - 3` AND `_bracketDepth == 0` AND in equation/statement context
+- `_equationContinuationIndent` is set to 1 when processing equations or simple statements
+- On wrap: `EmitLine()`, then `Indent()` × `_equationContinuationIndent`, `AddIndentToCurrentLine()`, write operator, visit next term, `Dedent()` × `_equationContinuationIndent`
+
+### 5. Control Flow Structures
+
+#### If-Then-Else (Equations and Statements)
 ```modelica
 if condition then
   x = y;
@@ -173,19 +217,19 @@ else
 end if;
 ```
 
-**Rules (`VisitIf_equation`):**
+**Rules (`VisitIf_equation` / `VisitIf_statement`):**
 - `if`/`elseif`/`else` at current level
 - `Indent()` after `then`/`else`, `Dedent()` before next clause
 - Body content indented by 2 spaces relative to `if`
 
-#### For Loop (Equations)
+#### For Loop (Equations and Statements)
 ```modelica
 for i in 1:10 loop
   x[i] = i * 2;
 end for;
 ```
 
-**Rules (`VisitFor_equation`):**
+**Rules (`VisitFor_equation` / `VisitFor_statement`):**
 - `for` keyword at current level
 - `Indent()` after `loop`, `Dedent()` before `end for`
 - Loop body indented by 2 spaces
@@ -202,7 +246,7 @@ end while;
 - `Indent()` after `loop`, `Dedent()` before `end while`
 - Loop body indented by 2 spaces
 
-#### When Clause (Equations)
+#### When Clause (Equations and Statements)
 ```modelica
 when condition then
   x = y;
@@ -211,12 +255,12 @@ elsewhen condition2 then
 end when;
 ```
 
-**Rules (`VisitWhen_equation`):**
+**Rules (`VisitWhen_equation` / `VisitWhen_statement`):**
 - `when`/`elsewhen` at current level
 - `Indent()` after `then`, `Dedent()` before next clause
 - Body content indented by 2 spaces
 
-### 5. Component Declarations
+### 6. Component Declarations
 
 #### Simple Declaration
 ```modelica
@@ -240,16 +284,17 @@ end MyModel;
 ```
 
 **Rules (`VisitClass_modification`):**
-- Similar to extends clause rules
+- Similar multi-line decision logic to `VisitClass_or_inheritence_modification` but without the `wouldExceedLineLength` condition
 - Multi-line format for complex modifications
 - Arguments indented when multi-line mode active
 
-### 6. Annotations
+### 7. Annotations
 
 #### Class Annotation
 ```modelica
 model MyModel
   Real x;
+
   annotation(
     Icon(
       graphics={
@@ -261,9 +306,34 @@ end MyModel;
 ```
 
 **Rules:**
+- An empty line (`EmitEmptyLine()`) is inserted before the class annotation
+- `_classAnnotation = true` is set when entering, reset when exiting
 - Class annotations use multi-line format with ≥ 1 argument
+- `Indent()` before visiting the annotation, `Dedent()` after
 - `Icon` and `Graphics` nested structures get additional indentation
 - Each level of nesting adds 2 spaces
+
+#### External Clause Annotation
+```modelica
+  external "C"
+    annotation(Library="mylib");
+```
+
+**Rules:**
+- When an `external` clause has an annotation: `EmitLine()`, then `Indent()` before visiting the annotation
+- `Dedent()` after the semicolon is written
+- `_withAnnotation` flag tracks whether the external annotation was processed
+
+#### Extends Annotation
+```modelica
+  extends BaseModel(param1=value)
+    annotation(Inline=true);
+```
+
+**Rules:**
+- When extends has an annotation: `EmitLine()`, then `Indent()` before visiting
+- `Dedent()` after
+- If current line has content, `AddIndentToCurrentLine()` is applied
 
 #### Graphics Elements
 ```modelica
@@ -277,11 +347,15 @@ annotation(
 ```
 
 **Rules:**
-- Simple 2-argument graphics elements (like `Line` with 2 points) stay on one line
+- Simple 2-argument graphics elements at level 2 stay on one line
 - Complex graphics use multi-line format
-- Graphics annotation level tracking via `_inGraphicsAnnotationLevel`
+- Graphics annotation level tracking via `_inGraphicsAnnotationLevel`:
+  - Level 0: Not in graphics
+  - Level 1: Inside Icon or Diagram (array level)
+  - Level 2+: Inside graphic element function calls and nested structures
+  - Level incremented when entering function arguments or array arguments, decremented when exiting
 
-### 7. Function Arguments and Modifications
+### 8. Function Arguments and Modifications
 
 #### Argument Lists
 ```modelica
@@ -309,7 +383,18 @@ result = myFunction(
 - Same wrapping logic as regular arguments
 - Continuation indent when wrapping for line length
 
-### 8. Array Expressions
+### 9. Connect Statements
+
+```modelica
+equation
+  connect(port_a, port_b);
+```
+
+**Rules (`VisitConnect_clause`):**
+- Written inline with comma and space between the two component references
+- No special wrapping logic — always on one line
+
+### 10. Array Expressions
 
 #### Array Constructor
 ```modelica
@@ -324,8 +409,9 @@ matrix = {
 - Multi-line format for complex arrays
 - Each row indented consistently
 - Nested arrays get additional indentation
+- `_bracketDepth` tracking prevents equation-level wrapping inside array literals
 
-### 9. Multi-Line Strings
+### 11. Multi-Line Strings
 
 #### Documentation Strings
 ```modelica
@@ -335,26 +421,31 @@ multiple lines";
 ```
 
 **Rules (`WriteMultiLineString`):**
-- First line: Keep on same line as declaration
-- Second line: Emit first line WITH indentation, second line WITHOUT indentation
-- Middle lines: Emit WITHOUT indentation
-- Last line: Emit previous line WITHOUT indentation, suppress indentation for current line
+- First line: Written to current line (inherits normal indentation)
+- Line 0→1 transition: `EmitLine()` with normal indentation (line 0 contains code structure)
+- Line 1+ transitions: `EmitLine(ignoreIndentation: true)` — string content lines are NOT indented
+- Last line: `_suppressNextIndentation = true` so whatever follows the string (closing quote, paren, etc.) is not indented
+- Lines emitted with `ignoreIndentation: true` are added to `_noPostIndentLines` to prevent public/protected post-processing from adding extra indentation
+- Code editor rendering wraps each line in `<STRING>` tags; non-editor rendering preserves content as-is
 
 ## Special Cases and Edge Conditions
 
 ### 1. Line Length Management
 - **Maximum line length**: Configurable via `_maxLineLength` (default 100)
 - **Wrapping threshold**: Line length check uses plain text (excluding markup)
-- **Line length exclusions**: Documentation annotations don't trigger wrapping
+- **Line length exclusions**: Documentation annotations don't trigger wrapping (`_inDocumentationAnnotation` flag)
+- **Empty lines**: `EmitLine()` does not add indentation to empty/whitespace-only lines
 
 ### 2. Graphics Annotations
-- **2-argument graphics elements**: Stay on one line (e.g., `Line(points={{...}}, color={...})`)
+- **2-argument graphics elements**: Stay on one line at level 2 (e.g., `Line(points={{...}}, color={...})`)
 - **Icon with single-line graphics**: Entire Icon stays on one line
 - **Graphics annotation level**: Tracked to apply different rules at different nesting depths
 
 ### 3. Documentation Annotations
 - **No wrapping**: Lines in Documentation annotations are not wrapped
 - **Preserved formatting**: Multi-line documentation strings preserve original formatting
+- **`_inDocumentationAnnotation`** flag is set when visiting a `Documentation` element modification and restored when exiting
+- Checked in `IsLineTooLong()` and in multiple wrapping decision points throughout the renderer
 
 ### 4. Declaration Context
 - **`_inDeclaration` flag**: Affects wrapping decisions for modifications
@@ -376,162 +467,19 @@ multiple lines";
 
 **Rationale:** When parent calls `Indent()`, child arguments automatically get correct indentation from `EmitLine()`. Adding `AddIndentToCurrentLine()` would double-indent.
 
-## Known Issues and Limitations
-
-### 1. Constraining Clause Indentation
-**Issue:** `constrainedby` clause only gets 4 spaces instead of expected 6 spaces (4 base + 2 continuation)
-
-**Expected:**
-```modelica
-extends Base(
-  redeclare package Medium = Water
-    constrainedby PartialMedium  // Should be 6 spaces
-);
-```
-
-**Actual:**
-```modelica
-extends Base(
-  redeclare package Medium = Water
-  constrainedby PartialMedium  // Only 4 spaces
-);
-```
-
-**Root cause:** `AddIndentToCurrentLine()` in `VisitConstraining_clause` not producing expected output. The continuation indent is being lost when the line is eventually emitted, possibly due to indent level changes between when the line is buffered and when it's emitted.
-
-### 2. Complexity of Multi-Line Logic
-**Issue:** The decision logic for when to use multi-line formatting is complex and distributed across multiple conditions.
-
-**Example from `VisitClass_or_inheritence_modification`:**
-```csharp
-bool useMultiLineParens = !isIconWithSingleLineGraphics && !isAnnotationWithSingleLineIcon && (
-    numArguments > 5 ||
-    (maxNestingDepth >= 2 && numArguments >= 2 && ...) ||
-    (_inAnnotation && numArguments >= 2 && ...) ||
-    (isInClassAnnotation && numArguments >= 1) ||
-    (_inGraphicsAnnotationLevel <= 1 && !_inDeclaration && numArguments > 2) ||
-    (_parentUsingMultiLine && numArguments >= 2 && ...));
-```
-
-**Potential simplification:** Consider extracting multi-line decision logic into separate methods with clear names.
-
-## Recommendations for Simplification
-
-### 1. Consolidate Wrapping Logic
-**Current:** `VisitArgument_or_inheritence_list`, `VisitArgument_list`, and `VisitNamed_arguments` have similar but slightly different wrapping logic.
-
-**Suggestion:** Extract common wrapping logic into a shared helper method:
-```csharp
-private void WrapArgumentIfNeeded(
-    bool shouldWrap,
-    bool needsWrapForLength,
-    Action visitArgument)
-{
-    if (shouldWrap)
-    {
-        bool needsExtraIndent = needsWrapForLength && !_parentUsingMultiLine;
-        if (needsExtraIndent)
-            Indent();
-
-        EmitLine();
-        if (needsExtraIndent)
-            AddIndentToCurrentLine();
-
-        visitArgument();
-
-        if (needsExtraIndent)
-            Dedent();
-    }
-    else
-    {
-        Space();
-        visitArgument();
-    }
-}
-```
-
-### 2. Clarify Multi-Line Conditions
-**Current:** Boolean logic for `useMultiLineParens` is complex and hard to understand.
-
-**Suggestion:** Break into named intermediate variables:
-```csharp
-bool hasManyArguments = numArguments > 5;
-bool hasDeeplyNestedStructure = maxNestingDepth >= 2 && numArguments >= 2;
-bool isComplexAnnotation = _inAnnotation && numArguments >= 2 && _inGraphicsAnnotationLevel != 2;
-bool isClassAnnotation = isInClassAnnotation && numArguments >= 1;
-bool hasModerateComplexity = !_inDeclaration && numArguments > 2;
-bool parentRequiresMultiLine = _parentUsingMultiLine && numArguments >= 2;
-
-bool useMultiLineParens = !isIconWithSingleLineGraphics &&
-                         !isAnnotationWithSingleLineIcon &&
-                         (hasManyArguments || hasDeeplyNestedStructure ||
-                          isComplexAnnotation || isClassAnnotation ||
-                          hasModerateComplexity || parentRequiresMultiLine);
-```
-
-### 3. Document Indent Level Invariants
-**Suggestion:** Add assertions or comments documenting expected indent levels at key points:
-```csharp
-// At this point, indent level should be N because parent called Indent() M times
-Debug.Assert(_indentLevel == expectedLevel, $"Indent level mismatch: expected {expectedLevel}, got {_indentLevel}");
-```
-
-### 4. Unify Continuation Indent Strategy
-**Current:** Sometimes use `Indent()/Dedent()` pairs, sometimes use `AddIndentToCurrentLine()`.
-
-**Consideration:** Should continuation indent always use one mechanism?
-- **`Indent()/Dedent()`**: Affects all lines until `Dedent()` is called
-- **`AddIndentToCurrentLine()`**: Affects only the current line buffer
-
-**Recommendation:** Use `Indent()/Dedent()` for multi-line blocks, `AddIndentToCurrentLine()` only for single-line continuations. This makes it clearer when indentation affects multiple lines vs. one line.
-
-### 5. Separate Graphics Annotation Rules
-**Current:** Graphics annotation rules are mixed with general argument formatting rules.
-
-**Suggestion:** Extract graphics-specific formatting into separate methods:
-```csharp
-private bool ShouldUseMultiLineForGraphics(int numArguments, int nestingDepth)
-{
-    // Graphics-specific multi-line logic
-}
-
-private bool ShouldUseMultiLineForGeneral(int numArguments, int nestingDepth)
-{
-    // General multi-line logic
-}
-```
-
 ## Test Coverage
 
-### Passing Tests (349/356 = 98.0%)
-- Class definitions and long class specifiers
-- Extends clauses with arguments (fixed in recent changes)
-- Equation and algorithm sections
-- If/for/while/when control structures
-- Component declarations and modifications
-- Most annotation formatting
-- Array expressions
-- Function arguments and named arguments
-
-### Failing Tests (7/356)
-- **DebugConstrainedBy**: `constrainedby` clause indentation
-- **EquilibriumDrumBoiler_FormatsCorrectly**: Complex extends with `constrainedby`
-- **ReplaceableModelConstrainingClause_FormatsCorrectly**: Replaceable with `constrainedby`
-- **ReplaceableModelConstrainingClauseModifier_FormatsCorrectly**: Replaceable with modifier and `constrainedby`
-- **ReplaceableModelConstrainingClauseDescription_FormatsCorrectly**: Replaceable with description and `constrainedby`
-- **ReplaceableModelConstrainingClauseDescriptionAnnotation_FormatsCorrectly**: Replaceable with description, annotation, and `constrainedby`
-- **ReplaceableModelAll_FormatsCorrectly**: Replaceable with all features including `constrainedby`
-
-All failing tests relate to the same underlying issue: `constrainedby` clause indentation.
+### Current Status
+- **485 tests, all passing (100%)**
 
 ## Summary
 
-The indentation system is generally well-structured and handles most Modelica constructs correctly. The main areas for improvement are:
+The indentation system handles all Modelica constructs using a combination of:
 
-1. **Fix `constrainedby` indentation**: This is the only failing category
-2. **Simplify multi-line decision logic**: Make it easier to understand when multi-line format is used
-3. **Consolidate wrapping logic**: Reduce duplication between similar visitors
-4. **Document invariants**: Make expected indent levels explicit at key points
-5. **Consider separating concerns**: Graphics annotations vs. general formatting
+1. **`Indent()`/`Dedent()` pairs** for standard block indentation (class bodies, sections, control flow)
+2. **`AddIndentAtLineStart()` post-processing** for public/protected section content
+3. **`AddIndentToCurrentLine()` continuation indents** for single-line wrapping
+4. **`_noPostIndentLines` exemptions** to prevent double-indenting multi-line string content
+5. **`_suppressNextIndentation`** for edge cases where content follows a multi-line string on the same logical line
 
-The system uses a clear parent-child communication pattern via `_parentUsingMultiLine`, which prevents double-indentation when parent has already called `Indent()`. This is a good design that should be preserved.
+The system uses a clear parent-child communication pattern via `_parentUsingMultiLine`, which prevents double-indentation when parent has already called `Indent()`.
