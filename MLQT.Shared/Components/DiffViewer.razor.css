@@ -1,0 +1,264 @@
+.diff-viewer {
+    display: flex;
+    flex-direction: column;
+    background-color: #ffffff;
+    border: 1px solid #e1e4e8;
+    border-radius: 4px;
+    overflow: hidden;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.diff-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    background-color: #f6f8fa;
+    border-bottom: 1px solid #e1e4e8;
+    flex-shrink: 0;
+}
+
+.diff-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: #6a737d;
+}
+
+/* Side by side view */
+.diff-side-by-side {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.diff-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.diff-pane-left {
+    border-right: 1px solid #e1e4e8;
+}
+
+.diff-pane-header {
+    padding: 4px 8px;
+    background-color: #f6f8fa;
+    border-bottom: 1px solid #e1e4e8;
+    font-weight: 600;
+    font-size: 0.7rem;
+    color: #586069;
+    flex-shrink: 0;
+}
+
+.diff-pane-content {
+    flex: 1;
+    overflow: auto;
+    padding: 2px;
+}
+
+/* Unified view */
+.diff-unified {
+    flex: 1;
+    overflow: auto;
+    padding: 2px;
+    min-width: 0;
+}
+
+/* Line styles */
+.diff-line {
+    display: flex;
+    white-space: pre;
+    min-height: 1.3rem;
+    width: fit-content;
+    min-width: 100%;
+}
+
+.diff-line-prefix {
+    width: 16px;
+    text-align: center;
+    color: #6a737d;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.diff-line-number {
+    min-width: 21px;
+    padding-right: 8px;
+    text-align: right;
+    color: #6a737d;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.diff-line-content {
+    flex: 1;
+    padding-left: 4px;
+}
+
+/* Line type styling */
+.diff-line-added {
+    background-color: #e6ffec;
+}
+
+.diff-line-added .diff-line-content {
+    background-color: #ccffd8;
+}
+
+.diff-line-removed {
+    background-color: #ffebe9;
+}
+
+.diff-line-removed .diff-line-content {
+    background-color: #ffc0c0;
+}
+
+.diff-line-separator {
+    background-color: #f6f8fa;
+    color: #6a737d;
+    font-style: italic;
+}
+
+.diff-line-separator .diff-line-content {
+    text-align: center;
+}
+
+.diff-line-empty {
+    background-color: #f6f8fa;
+}
+
+/* Syntax highlighting classes - inherit from CodeViewer */
+::deep .code-keyword {
+    color: #0000ff;
+    font-weight: 600;
+}
+
+::deep .code-type {
+    color: #267f99;
+}
+
+::deep .code-ident {
+    color: #001080;
+}
+
+::deep .code-name {
+    color: #001080;
+}
+
+::deep .code-operator {
+    color: #000000;
+}
+
+::deep .code-number {
+    color: #098658;
+}
+
+::deep .code-string {
+    color: #a31515;
+}
+
+::deep .code-comment {
+    color: #559983;
+    font-style: italic;
+}
+
+::deep .code-function {
+    color: #795E26;
+}
+
+/* ── Dark mode overrides ─────────────────────────────────────────── */
+.diff-viewer-dark {
+    background-color: #32333d;
+    border-color: #4a4b55;
+    color: #d4d4d4;
+}
+
+.diff-viewer-dark .diff-toolbar {
+    background-color: #2d2d35;
+    border-bottom-color: #4a4b55;
+}
+
+.diff-viewer-dark .diff-empty {
+    color: #999999;
+}
+
+.diff-viewer-dark .diff-pane-left {
+    border-right-color: #4a4b55;
+}
+
+.diff-viewer-dark .diff-pane-header {
+    background-color: #2d2d35;
+    border-bottom-color: #4a4b55;
+    color: #999999;
+}
+
+.diff-viewer-dark .diff-line-prefix,
+.diff-viewer-dark .diff-line-number {
+    color: #999999;
+}
+
+.diff-viewer-dark .diff-line-added {
+    background-color: #1a3320;
+}
+
+.diff-viewer-dark .diff-line-added .diff-line-content {
+    background-color: #1e4028;
+}
+
+.diff-viewer-dark .diff-line-removed {
+    background-color: #3a1a1a;
+}
+
+.diff-viewer-dark .diff-line-removed .diff-line-content {
+    background-color: #4a2020;
+}
+
+.diff-viewer-dark .diff-line-separator {
+    background-color: #2a2a35;
+    color: #888888;
+}
+
+.diff-viewer-dark .diff-line-empty {
+    background-color: #2a2a35;
+}
+
+.diff-viewer-dark ::deep .code-keyword {
+    color: #569cd6;
+}
+
+.diff-viewer-dark ::deep .code-type {
+    color: #4ec9b0;
+}
+
+.diff-viewer-dark ::deep .code-ident {
+    color: #9cdcfe;
+}
+
+.diff-viewer-dark ::deep .code-name {
+    color: #9cdcfe;
+}
+
+.diff-viewer-dark ::deep .code-operator {
+    color: #d4d4d4;
+}
+
+.diff-viewer-dark ::deep .code-number {
+    color: #b5cea8;
+}
+
+.diff-viewer-dark ::deep .code-string {
+    color: #ce9178;
+}
+
+.diff-viewer-dark ::deep .code-comment {
+    color: #6a9955;
+}
+
+.diff-viewer-dark ::deep .code-function {
+    color: #4ec9b0;
+}

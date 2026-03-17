@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggered by pushing a tag like v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Strip 'v' prefix from tag
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore MLQT.slnx
+          dotnet restore MLQT/MLQT.csproj -r win-x64
+
+      - name: Run tests
+        run: |
+          dotnet test ModelicaParser.Tests -c Release --no-restore
+          dotnet test ModelicaGraph.Tests -c Release --no-restore
+          dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
+          dotnet test MLQT.Services.Tests -c Release --no-restore
+
+      - name: Publish MLQT (self-contained)
+        run: >
+          dotnet publish MLQT/MLQT.csproj
+          -c Release
+          -f net10.0-windows10.0.19041.0
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
+          -o publish/MLQT
+
+      - name: Create zip archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/MLQT/* -DestinationPath "MLQT-${{ steps.version.outputs.version }}-win-x64.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: MLQT-${{ steps.version.outputs.version }}-win-x64
+          path: MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+          generate_release_notes: true
+          draft: true

@@ -1,0 +1,58 @@
+@inject AppState NavState
+@inject ILibraryDataService LibraryDataService
+
+@implements IDisposable
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+    <MudTextField @bind-Value="_currentModelName" Label="Current class:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
+    @if (!string.IsNullOrEmpty(_currentModelFileName))
+    {
+        <MudTooltip Text="@_currentModelFileName" Placement="Placement.Left">
+            <MudIcon Icon="@Icons.Material.Outlined.Article" Color="Color.Primary" Size="Size.Large" Class="mt-2"/>
+        </MudTooltip>
+    }
+</MudStack>
+
+@code {
+    private string _currentModelName = "";
+    private string _currentModelFileName = "";
+
+    protected override void OnInitialized()
+    {
+        NavState.OnChangeModel += OnModelSelected;
+        NavState.OnSelectedModelsChanged += OnSelectedModelsChanged;
+    }
+
+    private async void OnModelSelected()
+    {
+        _currentModelName = NavState.ModelID;
+        var modelNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>(NavState.ModelID);
+        if (modelNode?.ContainingFileId != null)
+        {
+            var fileNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(modelNode.ContainingFileId);
+            _currentModelFileName = fileNode?.FilePath ?? string.Empty;
+        }
+        else
+            _currentModelFileName = string.Empty;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnSelectedModelsChanged()
+    {
+        _currentModelName = string.Join(", ", NavState.SelectedModelIDs);
+        _currentModelFileName = string.Empty;
+        var modelNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>(NavState.ModelID);
+        if (modelNode?.ContainingFileId != null)
+        {
+            var fileNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(modelNode.ContainingFileId);
+            _currentModelFileName = fileNode?.FilePath ?? string.Empty;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        NavState.OnChangeModel -= OnModelSelected;
+        NavState.OnSelectedModelsChanged -= OnSelectedModelsChanged;
+    }
+}

@@ -1,0 +1,120 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+
+<div id="@_containerId" style="width: 100%; height: @Height;"></div>
+
+@code {
+    [Parameter] 
+    public IEnumerable<DiagramNode> Nodes { get; set; } = [];
+
+    [Parameter] 
+    public IEnumerable<DiagramEdge> Edges { get; set; } = [];
+
+    [Parameter] 
+    public string Height { get; set; } = "400px";
+
+    [Parameter] 
+    public string Layout { get; set; } = "cose";
+
+    [Parameter] 
+    public EventCallback<string> OnNodeClicked { get; set; }
+
+    [Parameter] 
+    public EventCallback OnBackgroundClicked { get; set; }
+
+    private readonly string _containerId = $"cytoscape-{Guid.NewGuid():N}";
+    private DotNetObjectReference<CytoscapeGraph>? _dotNetRef;
+    private bool _initialized = false;
+    private bool _pendingInit = false;
+
+    // Track previous node/edge references to detect data changes
+    private IEnumerable<DiagramNode> _previousNodes = [];
+    private IEnumerable<DiagramEdge> _previousEdges = [];
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_initialized)
+        {
+            _pendingInit = true;
+            return;
+        }
+
+        bool dataChanged = !ReferenceEquals(Nodes, _previousNodes) || !ReferenceEquals(Edges, _previousEdges);
+        _previousNodes = Nodes;
+        _previousEdges = Edges;
+
+        if (dataChanged)
+            await UpdateAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingInit && Nodes.Any())
+        {
+            _pendingInit = false;
+            _previousNodes = Nodes;
+            _previousEdges = Edges;
+            await InitAsync();
+        }
+    }
+
+    private object[] BuildElements() =>
+        Nodes.Select(n => (object)new
+        {
+            group = "nodes",
+            data = new { id = n.Id, label = n.Label, color = n.Color, borderColor = n.BorderColor, fullName = n.FullName }
+        })
+        .Concat(Edges.Select(e => (object)new
+        {
+            group = "edges",
+            data = new { id = $"edge-{e.FromId}-{e.ToId}", source = e.FromId, target = e.ToId }
+        }))
+        .ToArray();
+
+    private async Task InitAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("cytoscapeGraph.init", _containerId, BuildElements(), _dotNetRef, Layout);
+        _initialized = true;
+    }
+
+    private async Task UpdateAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("cytoscapeGraph.update", _containerId, BuildElements());
+    }
+
+    public async Task RelayoutAsync(string layoutName) =>
+        await JSRuntime.InvokeVoidAsync("cytoscapeGraph.relayout", _containerId, layoutName);
+
+    public async Task HighlightNodeAsync(string nodeId) =>
+        await JSRuntime.InvokeVoidAsync("cytoscapeGraph.highlight", _containerId, nodeId);
+
+    public async Task ClearHighlightAsync() =>
+        await JSRuntime.InvokeVoidAsync("cytoscapeGraph.clearHighlight", _containerId);
+
+    [JSInvokable]
+    public async Task OnNodeClickedFromJs(string nodeId) =>
+        await OnNodeClicked.InvokeAsync(nodeId);
+
+    [JSInvokable]
+    public async Task OnBackgroundClickedFromJs() =>
+        await OnBackgroundClicked.InvokeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_initialized)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("cytoscapeGraph.destroy", _containerId);
+            }
+            catch (JSDisconnectedException) { }
+            _initialized = false;
+        }
+        _dotNetRef?.Dispose();
+    }
+}

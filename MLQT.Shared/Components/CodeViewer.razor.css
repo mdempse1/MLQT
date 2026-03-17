@@ -1,0 +1,56 @@
+/* Light theme (most styles overwritten dynamically based on user settings) */
+.code-viewer {
+    background-color: #ffffff; 
+    color: #000000; 
+    border: 1px solid #e1e4e8;
+    border-radius: 4px;
+    overflow: auto;
+    width: 100%;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.code-viewer-content {
+    padding: 2px;
+}
+
+.code-line {
+    white-space: pre;
+    min-height: 1.3rem;
+}
+
+::deep .code-keyword {
+    color: #0000ff; 
+    font-weight: 600;
+}
+
+::deep .code-type {
+    color: #267f99; 
+}
+
+::deep .code-ident {
+    color: #001080; 
+}
+
+::deep .code-name {
+    color: #001080; 
+}
+
+::deep .code-operator {
+    color: #000000; 
+}
+
+::deep .code-number {
+    color: #098658; 
+}
+
+::deep .code-string {
+    color: #a31515; 
+}
+
+::deep .code-comment {
+    color: #559983; 
+    font-style: italic;
+}
+

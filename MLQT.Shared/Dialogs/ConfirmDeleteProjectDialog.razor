@@ -1,0 +1,26 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Project</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body1">
+            Are you sure you want to delete the project '@ProjectName'?
+            The repositories will not be deleted from disk.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" OnClick="Confirm">Delete</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string ProjectName { get; set; } = "";
+
+    private void Confirm() => MudDialog?.Close(DialogResult.Ok(true));
+    private void Cancel() => MudDialog?.Cancel();
+}

@@ -1,0 +1,16 @@
+<Solution>
+    <Project Path="DymolaInterface.Tests/DymolaInterface.Tests.csproj" />
+    <Project Path="DymolaInterface/DymolaInterface.csproj" />
+    <Project Path="MLQT.Shared/MLQT.Shared.csproj" />
+    <Project Path="MLQT/MLQT.csproj" />
+    <Project Path="ModelicaParser.Tests/ModelicaParser.Tests.csproj" />
+    <Project Path="ModelicaParser/ModelicaParser.csproj" />
+    <Project Path="ModelicaGraph.Tests/ModelicaGraph.Tests.csproj" />
+    <Project Path="ModelicaGraph/ModelicaGraph.csproj" />
+    <Project Path="MLQT.Services/MLQT.Services.csproj" />
+    <Project Path="MLQT.Services.Tests/MLQT.Services.Tests.csproj" />
+    <Project Path="OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj" />
+    <Project Path="OpenModelicaInterface/OpenModelicaInterface.csproj" />
+    <Project Path="RevisionControl.Tests/RevisionControl.Tests.csproj" />
+    <Project Path="RevisionControl/RevisionControl.csproj" />
+</Solution>

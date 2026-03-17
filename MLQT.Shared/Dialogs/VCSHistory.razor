@@ -1,0 +1,693 @@
+@using MLQT.Services.Interfaces
+@using RevisionControl
+@using System.Runtime.CompilerServices
+
+@inject IRepositoryService RepositoryService
+@inject IFileMonitoringService FileMonitoringService
+@inject AppState NavState
+@inject IDialogService DialogService
+
+<MudDialog Style="min-width: 800px;">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            @if (_repository != null)
+            {
+                <span>VCS History - @_repository.Name (@_repository.VcsType)</span>
+            }
+            else
+            {
+                <span>VCS History</span>
+            }
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_repository == null)
+        {
+            <MudAlert Severity="Severity.Warning">Repository not found.</MudAlert>
+        }
+        else if (_repository.VcsType == RepositoryVcsType.Local)
+        {
+            <MudAlert Severity="Severity.Info">This is a local directory without version control.</MudAlert>
+        }
+        else
+        {
+            <MudStack Spacing="2">
+                <!-- Date Range Filter -->
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudDatePicker Label="From" @bind-Date="_fromDate" Clearable="true" Margin="Margin.Dense" IconSize="Size.Small" />
+                    <MudDatePicker Label="To" @bind-Date="_toDate" Clearable="true"  Margin="Margin.Dense" IconSize="Size.Small"  />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyDateFilter" Size="Size.Small" >Apply</MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="ResetDateFilter" Size="Size.Small">Reset</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="LoadMore" Size="Size.Small"
+                               Disabled="@(_isLoading || _logEntries.Count >= _currentOptions.MaxEntries)">
+                        @if (_isLoading)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Load Next 50
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="LoadAll" Disabled="@_isLoading" Size="Size.Small">
+                        Load Last 500
+                    </MudButton>
+                </MudStack>
+
+                <!-- Log Table -->
+                <MudTable T="VcsLogEntry" Items="@_logEntries" Dense="true" Hover="true"
+                          FixedHeader="true" Height="400px"
+                          SelectedItem="_selectedEntry" SelectedItemChanged="OnSelectedEntryChanged"
+                          RowClassFunc="GetRowClass"
+                          OnRowClick="OnRowClick">
+                    <HeaderContent>
+                        @if (_graphWidth > 0)
+                        {
+                            <MudTh Style="@($"width: {_graphWidth}px; padding: 0; min-width: {_graphWidth}px;")"></MudTh>
+                        }
+                        <MudTh Style="width: 70px;">Revision</MudTh>
+                        <MudTh Style="width: 100px;">Branch</MudTh>
+                        <MudTh Style="width: 140px;">Author</MudTh>
+                        <MudTh Style="width: 150px;">Date</MudTh>
+                        <MudTh>Message</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        @{
+                            var isCurrentRevision = IsCurrentRevision(context);
+                        }
+                        @if (_graphWidth > 0)
+                        {
+                            <MudTd Style="padding: 0; line-height: 0; vertical-align: middle;">
+                                <svg width="@_graphWidth" height="@GraphRowHeight" style="display:block; overflow:visible;">
+                                    @((MarkupString)(_graphRowByRevision.TryGetValue(context.Revision, out var gr) ? gr.SvgPaths : ""))
+                                </svg>
+                            </MudTd>
+                        }
+                        <MudTd DataLabel="Revision" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 70px;" : "min-width: 70px;")" Class="body1-table-right">
+                            <MudTooltip Text="@GetRevisionTooltip(context)">
+                                @context.ShortRevision
+                            </MudTooltip>
+                        </MudTd>
+                        <MudTd DataLabel="Branch" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 100px;max-width: 100px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;" : "min-width: 100px;max-width: 100px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;")" Class="body1-table">
+                            <MudTooltip Text="@(context.Branch ?? "")">
+                                @(context.Branch ?? "-")
+                            </MudTooltip>
+                        </MudTd>
+                        <MudTd DataLabel="Author" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 140px;max-width: 140px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;" : "min-width: 140px;max-width: 140px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;")" Class="body1-table">
+                            <MudTooltip Text="@context.AuthorEmail" Disabled="@string.IsNullOrEmpty(context.AuthorEmail)">
+                                @context.Author
+                            </MudTooltip>
+                        </MudTd>
+                        <MudTd DataLabel="Date" Style="@(isCurrentRevision ? "font-weight: bold;min-width: 150px;" : "min-width: 150px;")" Class="body1-table">
+                            @context.Date.ToString("dd-MMM-yyyy HH:mm")
+                        </MudTd>
+                        <MudTd DataLabel="Message" Style="@(isCurrentRevision ? "font-weight: bold; max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" : "max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;")" Class="body1-table">
+                            <MudTooltip Text="@(context.Message == context.MessageShort ? context.MessageShort : context.Message)">
+                                @context.MessageShort
+                            </MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No log entries found.</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudStack>
+            <!-- Changed Files Popover -->
+            <MudPopover Open="@_showChangedFiles" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.BottomRight" Class="pa-4" Style="max-height: 400px; overflow-y: auto;">
+                <MudStack Spacing="2">
+                    <MudStack Row="true">
+                        <MudText Typo="Typo.subtitle2">@_changedFilesRevision changed Files (@_changedFiles.Count)</MudText>
+                        <MudSpacer />
+                        @if (!_confirmingCheckout && !_isCheckingOut)
+                        {
+                            <MudTooltip Text="Checkout this revision">
+                                <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" OnClick="CheckoutRevision" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Close this window">
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="CloseChangedFilesPopover" />
+                        </MudTooltip>
+                    </MudStack>
+                    <MudDivider />
+                    @if (_confirmingCheckout)
+                    {
+                        <MudStack Spacing="2">
+                            <MudAlert Severity="Severity.Warning" Dense="true">
+                                Checkout revision <strong>@_selectedEntry?.ShortRevision</strong>?
+                                Any uncommitted changes will be lost.
+                            </MudAlert>
+                            <MudStack Row="true" Spacing="2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" OnClick="ConfirmCheckoutAsync">Checkout</MudButton>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelCheckout">Cancel</MudButton>
+                            </MudStack>
+                        </MudStack>
+                    }
+                    else if (_isCheckingOut)
+                    {
+                        <MudStack Spacing="1" AlignItems="AlignItems.Center" Row="true">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Typo="Typo.body1">Checking out revision @_selectedEntry?.ShortRevision…</MudText>
+                        </MudStack>
+                    }
+                    else if (_checkoutResultMessage != null)
+                    {
+                        <MudAlert Severity="@(_checkoutResultSuccess ? Severity.Success : Severity.Error)" Dense="true">
+                            @_checkoutResultMessage
+                        </MudAlert>
+                    }
+                    else if (_isLoadingChangedFiles)
+                    {
+                        <MudProgressLinear Indeterminate="true" />
+                    }
+                    else if (_changedFiles.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No changed files found.</MudText>
+                    }
+                    else
+                    {
+                        <MudList T="VcsChangedFile" Dense="true">
+                            @foreach (var file in _changedFiles)
+                            {
+                                <MudListItem T="VcsChangedFile" Dense="true" OnClick="@(() => ShowFileDiffAsync(file))">
+                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                        @switch (file.ChangeType)
+                                        {
+                                            case VcsChangeType.Added:
+                                                <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" Color="Color.Success" />
+                                                break;
+                                            case VcsChangeType.Deleted:
+                                                <MudIcon Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Error" />
+                                                break;
+                                            case VcsChangeType.Modified:
+                                                <MudIcon Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Warning" />
+                                                break;
+                                            case VcsChangeType.Renamed:
+                                                <MudIcon Icon="@Icons.Material.Filled.DriveFileRenameOutline" Size="Size.Small" Color="Color.Info" />
+                                                break;
+                                            case VcsChangeType.Copied:
+                                                <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" Color="Color.Info" />
+                                                break;
+                                        }
+                                        <MudText Typo="Typo.body1">
+                                            @file.Path
+                                            @if (!string.IsNullOrEmpty(file.OldPath))
+                                            {
+                                                <span style="color: var(--mud-palette-text-secondary);"> (from @file.OldPath)</span>
+                                            }
+                                        </MudText>
+                                    </MudStack>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                </MudStack>
+            </MudPopover>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .current-revision-row {
+        background-color: #cccccc !important;
+    }
+    .current-revision-row:hover {
+        background-color: var(--mud-palette-primary-hover) !important;
+    }
+    .popover-source-row {
+        background-color: var(--mud-palette-primary-hover) !important;
+        box-shadow: inset 3px 0 0 var(--mud-palette-primary);
+    }
+    .popover-source-row:hover {
+        background-color: var(--mud-palette-primary-hover) !important;
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string? RepositoryID { get; set; } = null;
+
+    private Repository? _repository;
+    private List<VcsLogEntry> _logEntries = new();
+    private VcsLogOptions _currentOptions = VcsLogOptions.DefaultPastWeek();
+    private bool _isLoading;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private VcsLogEntry? _selectedEntry;
+    private bool _showChangedFiles;
+    private bool _isLoadingChangedFiles;
+    private List<VcsChangedFile> _changedFiles = new();
+    private string? _changedFilesRevision;
+    private bool _confirmingCheckout;
+    private bool _isCheckingOut;
+    private string? _checkoutResultMessage;
+    private bool _checkoutResultSuccess;
+
+    // ── Commit graph ──────────────────────────────────────────────────────────
+
+    private const int GraphLaneWidth = 14;
+    private const int GraphRowHeight = 36;
+    private const int GraphDotRadius = 4;
+
+    private static readonly string[] GraphColors =
+    [
+        "var(--mud-palette-primary)",
+        "#F44336", "#4CAF50", "#FF9800", "#9C27B0",
+        "#00BCD4", "#795548", "#E91E63", "#607D8B", "#FFEB3B"
+    ];
+
+    private class CommitGraphRow
+    {
+        public string Revision { get; init; } = "";
+        public string SvgPaths { get; init; } = "";
+    }
+
+    private List<CommitGraphRow> _graphRows = [];
+    private Dictionary<string, CommitGraphRow> _graphRowByRevision = [];
+    private int _graphWidth;
+
+    private void BuildCommitGraph()
+    {
+        _graphRows.Clear();
+        _graphRowByRevision.Clear();
+        _graphWidth = 0;
+
+        if (_repository?.VcsType != RepositoryVcsType.Git || _logEntries.Count == 0)
+            return;
+
+        var activeLanes = new List<string?>();
+        int maxLanes = 0;
+
+        var rowInfos = new List<(int commitLane, List<string?> lanesBefore, List<string?> lanesAfter)>();
+
+        foreach (var entry in _logEntries)
+        {
+            var lanesBefore = activeLanes.ToList();
+
+            // Find or assign a lane for this commit
+            int commitLane = activeLanes.IndexOf(entry.Revision);
+            if (commitLane < 0)
+            {
+                int empty = activeLanes.IndexOf(null);
+                if (empty >= 0)
+                {
+                    commitLane = empty;
+                    activeLanes[empty] = entry.Revision;
+                }
+                else
+                {
+                    commitLane = activeLanes.Count;
+                    activeLanes.Add(entry.Revision);
+                }
+            }
+
+            // Null out any duplicate slots pointing to this commit
+            for (int i = 0; i < activeLanes.Count; i++)
+                if (i != commitLane && activeLanes[i] == entry.Revision)
+                    activeLanes[i] = null;
+
+            // Advance activeLanes past this commit
+            var parents = entry.ParentRevisions;
+            if (parents.Count == 0)
+            {
+                activeLanes[commitLane] = null;
+            }
+            else
+            {
+                var fp = parents[0];
+                int fpExisting = -1;
+                for (int i = 0; i < activeLanes.Count; i++)
+                    if (i != commitLane && activeLanes[i] == fp) { fpExisting = i; break; }
+
+                activeLanes[commitLane] = fpExisting >= 0 ? null : fp;
+
+                for (int p = 1; p < parents.Count; p++)
+                {
+                    var parent = parents[p];
+                    if (activeLanes.Contains(parent)) continue;
+                    int empty = activeLanes.IndexOf(null);
+                    if (empty >= 0)
+                        activeLanes[empty] = parent;
+                    else
+                        activeLanes.Add(parent);
+                }
+            }
+
+            while (activeLanes.Count > 0 && activeLanes[^1] == null)
+                activeLanes.RemoveAt(activeLanes.Count - 1);
+
+            var lanesAfter = activeLanes.ToList();
+            int rowMax = Math.Max(Math.Max(lanesBefore.Count, lanesAfter.Count), commitLane + 1);
+            maxLanes = Math.Max(maxLanes, rowMax);
+
+            rowInfos.Add((commitLane, lanesBefore, lanesAfter));
+        }
+
+        _graphWidth = Math.Max(1, maxLanes) * GraphLaneWidth;
+
+        for (int i = 0; i < _logEntries.Count; i++)
+        {
+            var entry = _logEntries[i];
+            var (commitLane, lanesBefore, lanesAfter) = rowInfos[i];
+            var svgPaths = BuildRowSvgPaths(entry.Revision, commitLane, lanesBefore, lanesAfter,
+                IsCurrentRevision(entry), entry.ParentRevisions);
+            var row = new CommitGraphRow { Revision = entry.Revision, SvgPaths = svgPaths };
+            _graphRows.Add(row);
+            _graphRowByRevision[entry.Revision] = row;
+        }
+    }
+
+    private static string BuildRowSvgPaths(string revision, int commitLane,
+        List<string?> lanesBefore, List<string?> lanesAfter, bool isCurrent, List<string> parents)
+    {
+        const int H = GraphRowHeight;
+        const int W = GraphLaneWidth;
+        const int midY = H / 2;
+
+        int cx(int lane) => lane * W + W / 2;
+        string laneColor(int lane) => GraphColors[lane % GraphColors.Length];
+
+        var sb = new System.Text.StringBuilder();
+
+        // Pass-throughs and convergence lines
+        for (int i = 0; i < lanesBefore.Count; i++)
+        {
+            if (lanesBefore[i] == null || i == commitLane) continue;
+
+            if (lanesBefore[i] == revision)
+            {
+                // Extra lane converging to commitLane: top-half bezier
+                var x1 = cx(i); var x2 = cx(commitLane);
+                sb.Append($"<path d='M {x1} 0 Q {x1} {midY} {x2} {midY}' stroke='{laneColor(i)}' fill='none' stroke-width='1.5'/>");
+            }
+            else
+            {
+                var after = i < lanesAfter.Count ? lanesAfter[i] : null;
+                if (after == lanesBefore[i])
+                {
+                    var x = cx(i);
+                    sb.Append($"<path d='M {x} 0 L {x} {H}' stroke='{laneColor(i)}' fill='none' stroke-width='1.5'/>");
+                }
+            }
+        }
+
+        // Commit lane: incoming top-half line
+        if (commitLane < lanesBefore.Count && lanesBefore[commitLane] == revision)
+        {
+            var x = cx(commitLane);
+            sb.Append($"<path d='M {x} 0 L {x} {midY}' stroke='{laneColor(commitLane)}' fill='none' stroke-width='1.5'/>");
+        }
+
+        // Outgoing lines from dot to parents
+        if (parents.Count > 0)
+        {
+            var fp = parents[0];
+            var fpInAfter = commitLane < lanesAfter.Count ? lanesAfter[commitLane] : null;
+            if (fpInAfter == fp)
+            {
+                var x = cx(commitLane);
+                sb.Append($"<path d='M {x} {midY} L {x} {H}' stroke='{laneColor(commitLane)}' fill='none' stroke-width='1.5'/>");
+            }
+            else
+            {
+                int fpLane = lanesAfter.IndexOf(fp);
+                if (fpLane >= 0)
+                {
+                    var x1 = cx(commitLane); var x2 = cx(fpLane);
+                    sb.Append($"<path d='M {x1} {midY} Q {x2} {midY} {x2} {H}' stroke='{laneColor(fpLane)}' fill='none' stroke-width='1.5'/>");
+                }
+            }
+
+            for (int p = 1; p < parents.Count; p++)
+            {
+                int pLane = lanesAfter.IndexOf(parents[p]);
+                if (pLane < 0) continue;
+                var x1 = cx(commitLane); var x2 = cx(pLane);
+                sb.Append($"<path d='M {x1} {midY} Q {x2} {midY} {x2} {H}' stroke='{laneColor(pLane)}' fill='none' stroke-width='1.5'/>");
+            }
+        }
+
+        // Commit dot
+        var dotX = cx(commitLane);
+        var dotR = isCurrent ? GraphDotRadius + 1 : GraphDotRadius;
+        var strokeW = isCurrent ? 2 : 1;
+        sb.Append($"<circle cx='{dotX}' cy='{midY}' r='{dotR}' fill='{laneColor(commitLane)}' stroke='white' stroke-width='{strokeW}'/>");
+
+        return sb.ToString();
+    }
+
+    private async Task ShowFileDiffAsync(VcsChangedFile file)
+    {
+        if (_selectedEntry == null || _repository == null)
+            return;
+
+        // Hide the popover so it doesn't overlay the diff dialog
+        _showChangedFiles = false;
+        StateHasChanged();
+
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Large };
+        var parameters = new DialogParameters<RevisionDiffDialog>
+        {
+            { x => x.RepositoryId, _repository.Id },
+            { x => x.FilePath, file.Path },
+            { x => x.Revision, _selectedEntry.Revision },
+            { x => x.ShortRevision, _selectedEntry.ShortRevision },
+            { x => x.ChangeType, file.ChangeType }
+        };
+
+        var dialogRef = await DialogService.ShowAsync<RevisionDiffDialog>("Revision Diff", parameters, options);
+        await dialogRef.Result;
+
+        // Restore the popover after the diff dialog closes
+        _showChangedFiles = true;
+        StateHasChanged();
+    }
+
+    private void Close() => MudDialog.Close();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        if (RepositoryID != null)
+        {
+            _repository = RepositoryService.GetRepository(RepositoryID);
+        }
+
+        if (_repository != null && _repository.VcsType != RepositoryVcsType.Local)
+        {
+            // Initialize date picker with default values
+            _fromDate = _currentOptions.Since?.DateTime;
+            _toDate = _currentOptions.Until?.DateTime;
+
+            await LoadLogEntriesAsync();
+        }
+    }
+
+    private async Task LoadLogEntriesAsync()
+    {
+        if (_repository == null || _isLoading)
+            return;
+
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Run log fetching and graph building on background thread to avoid blocking UI
+            var repository = _repository;
+            await Task.Run(() =>
+            {
+                _logEntries = RepositoryService.GetLogEntries(repository.Id, _currentOptions);
+                _selectedEntry = _logEntries.FirstOrDefault(e => IsCurrentRevision(e));
+                BuildCommitGraph();
+            });
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool IsCurrentRevision(VcsLogEntry entry)
+    {
+        if (_repository?.CurrentRevision == null)
+            return false;
+
+        // For Git, compare full SHA or prefix
+        // For SVN, compare revision numbers
+        if (int.TryParse(entry.Revision, out int thisRevision)) {
+            if (int.TryParse(_repository.CurrentRevision, out int currentRevision)) {
+                //Both revision numbers are integers so this is SVN
+                return thisRevision == currentRevision;
+            }
+        }
+        //Must be Git as at least 1 revision isn't an integer
+        return entry.Revision == _repository.CurrentRevision ||
+                _repository.CurrentRevision.StartsWith(entry.Revision) ||
+                entry.Revision.StartsWith(_repository.CurrentRevision);
+    }
+
+    private string GetRevisionTooltip(VcsLogEntry entry)
+    {
+        var tooltip = entry.Revision;
+        if (IsCurrentRevision(entry))
+        {
+            tooltip += " (current)";
+        }
+        return tooltip;
+    }
+
+    private string GetRowClass(VcsLogEntry entry, int index)
+    {
+        var classes = new System.Text.StringBuilder();
+        if (IsCurrentRevision(entry))
+            classes.Append("current-revision-row ");
+        if (_showChangedFiles && entry == _selectedEntry)
+            classes.Append("popover-source-row ");
+        return classes.ToString().TrimEnd();
+    }
+
+    private void OnSelectedEntryChanged(VcsLogEntry? entry)
+    {
+        _selectedEntry = entry;
+        // Future: Enable/disable action buttons based on selection
+    }
+
+    private async Task OnRowClick(TableRowClickEventArgs<VcsLogEntry> args)
+    {
+        if (args.Item == null || _repository == null)
+            return;
+
+        _selectedEntry = args.Item;
+        await LoadChangedFilesAsync(args.Item.Revision, args.Item.ShortRevision);
+    }
+
+    private async Task LoadChangedFilesAsync(string revision, string shortRevision)
+    {
+        if (_repository == null)
+            return;
+
+        _confirmingCheckout = false;
+        _checkoutResultMessage = null;
+        _isLoadingChangedFiles = true;
+        _showChangedFiles = true;
+        StateHasChanged();
+
+        try
+        {
+            _changedFiles = await Task.Run(() =>
+                RepositoryService.GetChangedFiles(_repository.Id, revision));
+            _changedFilesRevision = shortRevision;
+        }
+        finally
+        {
+            _isLoadingChangedFiles = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseChangedFilesPopover()
+    {
+        _showChangedFiles = false;
+        _confirmingCheckout = false;
+        _checkoutResultMessage = null;
+    }
+
+    private async Task ApplyDateFilter()
+    {
+        _currentOptions.Since = _fromDate.HasValue
+            ? new DateTimeOffset(_fromDate.Value)
+            : null;
+        _currentOptions.Until = _toDate.HasValue
+            ? new DateTimeOffset(_toDate.Value.AddDays(1).AddSeconds(-1)) // End of day
+            : null;
+
+        await LoadLogEntriesAsync();
+    }
+
+    private async Task ResetDateFilter()
+    {
+        _currentOptions = VcsLogOptions.DefaultPastWeek();
+        _fromDate = _currentOptions.Since?.DateTime;
+        _toDate = null;
+
+        await LoadLogEntriesAsync();
+    }
+
+    private async Task LoadMore()
+    {
+        _currentOptions.MaxEntries += 50;
+        _currentOptions.Since = null; // Remove date filter
+        await LoadLogEntriesAsync();
+    }
+
+    private async Task LoadAll()
+    {
+        _currentOptions.MaxEntries = 500;
+        _currentOptions.Since = null; // Remove date filter
+        _fromDate = null;
+
+        await LoadLogEntriesAsync();
+    }
+
+    private void CheckoutRevision()
+    {
+        _confirmingCheckout = true;
+        _checkoutResultMessage = null;
+    }
+
+    private void CancelCheckout()
+    {
+        _confirmingCheckout = false;
+    }
+
+    private async Task ConfirmCheckoutAsync()
+    {
+        if (_selectedEntry == null || _repository == null)
+            return;
+
+        _confirmingCheckout = false;
+        _isCheckingOut = true;
+        StateHasChanged();
+
+        try
+        {
+            // Pause file monitoring before checkout to prevent the large number of file-change
+            // events from locking up the UI. The analysis handler will restart monitoring.
+            FileMonitoringService.StopMonitoring(_repository.Id);
+
+            var result = await RepositoryService.CheckoutRevisionAsync(_repository.Id, _selectedEntry.Revision);
+            _checkoutResultSuccess = result.Success;
+            _checkoutResultMessage = result.Success
+                ? $"Checked out revision {_selectedEntry.ShortRevision}."
+                : result.ErrorMessage ?? "Checkout failed.";
+
+            if (result.Success)
+            {
+                // Reload _repository info and library data from the newly checked-out files
+                _repository = RepositoryService.GetRepository(_repository.Id);
+                await RepositoryService.RefreshRepositoryAsync(_repository!.Id);
+                await LoadLogEntriesAsync();
+
+                // Trigger background analysis (formatting + dependencies + style + resources).
+                // Handler will restart monitoring once formatting is complete.
+                NavState.VcsFilesChanged(_repository.Id);
+            }
+            else
+            {
+                // Checkout failed — restart monitor so future edits are still tracked
+                if (!string.IsNullOrEmpty(_repository.VcsRootPath))
+                    FileMonitoringService.StartMonitoring(_repository.Id, _repository.VcsRootPath);
+            }
+        }
+        finally
+        {
+            _isCheckingOut = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,172 @@
+@using MLQT.Services.Interfaces
+@using RevisionControl
+@using System.IO
+
+@inject IRepositoryService RepositoryService
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudIcon Icon="@Icons.Material.Filled.Difference" Size="Size.Small" />
+            <MudText Typo="Typo.h6">Diff: @Path.GetFileName(FilePath) @@ @ShortRevision</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_errorMessage != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true">@_errorMessage</MudAlert>
+        }
+        else if (_originalContent == _modifiedContent)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                File is identical between revision @ShortRevision and the working copy.
+            </MudAlert>
+        }
+        else
+        {
+            <DiffViewer OriginalContent="@(_originalContent ?? string.Empty)"
+                        ModifiedContent="@(_modifiedContent ?? string.Empty)"
+                        FileName="@FilePath"
+                        OriginalLabel="@($"Revision {ShortRevision}")"
+                        ModifiedLabel="Working Copy"
+                        ViewMode="DiffViewMode.Unified"
+                        ShowViewModeSelectorButtons="true"
+                        Height="60vh" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog?.Close())">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    [Parameter]
+    public string FilePath { get; set; } = "";
+
+    [Parameter]
+    public string Revision { get; set; } = "";
+
+    [Parameter]
+    public string ShortRevision { get; set; } = "";
+
+    [Parameter]
+    public VcsChangeType ChangeType { get; set; }
+
+    private string? _originalContent;
+    private string? _modifiedContent;
+    private string? _errorMessage;
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var repository = RepositoryService.GetRepository(RepositoryId);
+            if (repository == null)
+            {
+                _errorMessage = "Repository not found.";
+                return;
+            }
+
+            // For SVN, changed file paths from the log are repo-root-relative (e.g., "trunk/Models/Foo.mo")
+            // but GetFileContentAtRevision and the working copy need paths relative to the WC root.
+            // Try the path as-is first; if the working copy file isn't found, strip known SVN prefixes.
+            var filePath = FilePath;
+            var fullPath = Path.Combine(repository.LocalPath, filePath);
+
+            if (repository.VcsType == RepositoryVcsType.SVN && !File.Exists(fullPath))
+            {
+                var stripped = StripSvnBranchPrefix(filePath);
+                if (stripped != filePath)
+                {
+                    var strippedFullPath = Path.Combine(repository.LocalPath, stripped);
+                    if (File.Exists(strippedFullPath))
+                    {
+                        filePath = stripped;
+                        fullPath = strippedFullPath;
+                    }
+                }
+            }
+
+            var revisionContent = await Task.Run(() =>
+                RepositoryService.GetFileContentAtRevision(RepositoryId, filePath, Revision));
+
+            string? workingCopyContent = null;
+            if (File.Exists(fullPath))
+            {
+                workingCopyContent = await File.ReadAllTextAsync(fullPath);
+            }
+
+            switch (ChangeType)
+            {
+                case VcsChangeType.Added:
+                    _originalContent = string.Empty;
+                    _modifiedContent = revisionContent ?? string.Empty;
+                    break;
+                case VcsChangeType.Deleted:
+                    _originalContent = revisionContent ?? string.Empty;
+                    _modifiedContent = string.Empty;
+                    break;
+                default:
+                    _originalContent = revisionContent ?? string.Empty;
+                    _modifiedContent = workingCopyContent ?? string.Empty;
+                    break;
+            }
+
+            if (revisionContent == null && workingCopyContent == null)
+            {
+                _errorMessage = $"Could not load file content. Revision content not found for '{filePath}' at {ShortRevision}, and working copy not found at '{fullPath}'.";
+            }
+            else if (revisionContent == null && ChangeType != VcsChangeType.Added)
+            {
+                _errorMessage = $"Could not load revision content for '{filePath}' at {ShortRevision}.";
+            }
+            else if (workingCopyContent == null && ChangeType != VcsChangeType.Deleted)
+            {
+                _errorMessage = $"Working copy not found at '{fullPath}'.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load diff: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Strips standard SVN branch prefixes (trunk/, branches/X/, tags/X/) from a repo-root-relative path.
+    /// </summary>
+    private static string StripSvnBranchPrefix(string path)
+    {
+        if (path.StartsWith("trunk/", StringComparison.OrdinalIgnoreCase))
+            return path[6..];
+
+        string[] prefixes = ["branches/", "tags/", "tickets/", "releases/"];
+        foreach (var prefix in prefixes)
+        {
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                // Strip "branches/branchName/" — find the second slash
+                var rest = path[prefix.Length..];
+                var slashIndex = rest.IndexOf('/');
+                if (slashIndex >= 0)
+                    return rest[(slashIndex + 1)..];
+            }
+        }
+
+        return path;
+    }
+}

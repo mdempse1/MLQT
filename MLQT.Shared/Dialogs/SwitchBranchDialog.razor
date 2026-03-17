@@ -1,0 +1,130 @@
+@using MLQT.Services.Interfaces
+@using MLQT.Shared.Components
+
+@inject IRepositoryService RepositoryService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Switch Branch</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3" Style="min-width: 400px;">
+            @if (_hasChanges)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    You have uncommitted changes. These may be affected by switching branches.
+                </MudAlert>
+            }
+
+            <MudText Typo="Typo.body1">Select a branch to switch to:</MudText>
+
+            <BranchSelector RepositoryId="@RepositoryId"
+                            @bind-SelectedBranch="_selectedBranch"
+                            ExcludeCurrentBranch="true"
+                            IncludeRemoteBranches="true"
+                            MinHeight="300px"
+                            MaxHeight="400px" />
+
+            @if (_isSwitching && !string.IsNullOrEmpty(_statusMessage))
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body1">@_statusMessage</MudText>
+                    </MudStack>
+                </MudAlert>
+            }
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="SwitchBranch" Disabled="@(string.IsNullOrEmpty(_selectedBranch) || _isSwitching)">
+            @if (_isSwitching)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Switch
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    private string? _selectedBranch;
+    private bool _isSwitching = false;
+    private bool _hasChanges = false;
+    private string? _errorMessage;
+    private string? _statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckForChanges();
+    }
+
+    private async Task CheckForChanges()
+    {
+        try
+        {
+            await Task.Run(() =>
+            {
+                var changes = RepositoryService.GetWorkingCopyChanges(RepositoryId);
+                _hasChanges = changes.Count > 0;
+            });
+        }
+        catch
+        {
+            // Ignore errors checking for changes
+        }
+    }
+
+    private async Task SwitchBranch()
+    {
+        if (string.IsNullOrEmpty(_selectedBranch))
+            return;
+
+        _isSwitching = true;
+        _errorMessage = null;
+        _statusMessage = "Switching branch...";
+        StateHasChanged();
+
+        try
+        {
+            var result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
+
+            if (!result.Success)
+            {
+                _errorMessage = result.ErrorMessage ?? "Failed to switch branch.";
+                return;
+            }
+
+            // Branch switched — close. LibraryBrowser fires VcsFilesChanged which runs
+            // the formatting + analysis pipeline in MainLayout.
+            MudDialog?.Close(DialogResult.Ok(_selectedBranch));
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSwitching = false;
+            _statusMessage = null;
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+}

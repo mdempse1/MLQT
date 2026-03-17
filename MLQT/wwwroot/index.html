@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>MLQT</title>
+    <base href="/" />
+    <link rel="stylesheet" href="_content/MLQT.Shared/app.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="MLQT.styles.css" />
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+</head>
+
+<body>
+
+    <div class="status-bar-safe-area"></div>
+
+    <div id="app">Loading...</div>
+
+    <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/dagre.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-dagre.js"></script>
+    <script src="_content/MLQT.Shared/lib/klayjs.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-klay.js"></script>
+    <script src="_content/MLQT.Shared/lib/weaver.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-spread.js"></script>
+    <script src="_content/MLQT.Shared/lib/layout-base.js"></script>
+    <script src="_content/MLQT.Shared/lib/cose-base.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-fcose.js"></script>
+    <script src="_content/MLQT.Shared/cytoscapeGraph.js"></script>
+    <script src="_content/MLQT.Shared/diffViewer.js"></script>
+
+    <script type="text/javascript">
+        window.getDimensions = function() {
+            return {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                };
+        };
+    </script>
+</body>
+
+</html>

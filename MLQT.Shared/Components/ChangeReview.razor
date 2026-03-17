@@ -1,0 +1,466 @@
+@using System.Threading.Tasks
+@using System.ComponentModel.DataAnnotations.Schema
+
+@using RevisionControl
+
+@inject IRepositoryService RepositoryService
+@inject ILibraryDataService LibraryDataService
+
+@if (!IsLoading && ChangedFiles.Count > 0)
+{
+<MudGrid Spacing="1">
+    <!-- Left side: File tree -->
+    <MudItem xs="4">
+        <MudPaper Outlined="true" Class="pa-2" Style="height: 350px; display: flex; flex-direction: column;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                <MudText Typo="Typo.subtitle2">Changed Files (@ChangedFiles.Count)</MudText>
+                <MudSpacer />
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                    <MudTooltip Text="Select All">
+                        <MudIconButton OnClick="SelectAllFiles" Icon="@Icons.Material.Filled.DoneAll" Size="Size.Small" Color="Color.Primary"/>
+                    </MudTooltip>
+                    <MudTooltip Text="Deselect All">
+                        <MudIconButton OnClick="DeselectAllFiles" Icon="@Icons.Material.Filled.CheckBoxOutlineBlank" Size="Size.Small" Color="Color.Primary" />
+                    </MudTooltip>
+                </MudButtonGroup>
+            </MudStack>
+            <div style="flex: 1; overflow-y: auto;">
+                <MudTreeView T="FileTreeNode"
+                                Items="@_treeItems"
+                                ServerData="@LoadServerData"
+                                Dense="true"
+                                Hover="true"
+                                ExpandOnClick="true"
+                                SelectedValueChanged="OnTreeNodeSelected">
+                    <ItemTemplate Context="node">
+                        <MudTreeViewItem T="FileTreeNode"
+                                            Value="@node.Value"
+                                            Items="@node.Children"
+                                            Expanded="@node.Expanded"
+                                            ExpandedChanged="@((bool expanded) => OnExpandNode(node, expanded))"
+                                            CanExpand="@node.Expandable">
+                            <BodyContent>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Style="width: 100%;" Spacing="0">
+                                    @if (node.Value!.IsFile)
+                                    {
+                                        <span @onclick:stopPropagation="true">
+                                            <MudCheckBox T="bool"
+                                                            Value="@_selectedFiles.Contains(node.Value.FullPath)"
+                                                            ValueChanged="@((bool val) => OnFileSelectionChanged(node.Value.FullPath, val))"
+                                                            Dense="true"
+                                                            Size="Size.Small"
+                                                            Color="Color.Primary" />
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span @onclick:stopPropagation="true">
+                                            <MudCheckBox T="bool?"
+                                                            Value="@GetFolderCheckState(node.Value!)"
+                                                            ValueChanged="@((bool? val) => OnFolderSelectionChanged(node.Value!, val ?? false))"
+                                                            Dense="true"
+                                                            Size="Size.Small"
+                                                            Color="Color.Primary"
+                                                            TriState="true" />
+                                        </span>
+                                    }
+                                    <MudIcon Icon="@(node.Value.IsFile ? VcsStatusHelper.GetStatusIcon(node.Value.Status ?? VcsFileStatus.Modified) : Icons.Material.Filled.Folder)"
+                                                Size="Size.Small"
+                                                Color="@(node.Value.IsFile ? VcsStatusHelper.GetStatusColor(node.Value.Status ?? VcsFileStatus.Modified) : Color.Warning)"
+                                                Class="mr-1" />
+                                    <MudTooltip Text="@node.Value.FullPath">
+                                        <MudText Typo="Typo.body1">
+                                            @node.Value.Name
+                                        </MudText>
+                                    </MudTooltip>
+                                    @if (node.Value.IsFile && node.Value.Status.HasValue)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="@VcsStatusHelper.GetStatusColor(node.Value.Status.Value)"
+                                                    Variant="Variant.Text" Style="height: 18px; font-size: 0.65rem; margin-left: 4px;">
+                                            @VcsStatusHelper.GetStatusText(node.Value.Status.Value)
+                                        </MudChip>
+                                    }
+                                </MudStack>
+                            </BodyContent>
+                        </MudTreeViewItem>
+                    </ItemTemplate>
+                </MudTreeView>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Right side: Diff view -->
+    <MudItem xs="8">
+        <MudPaper Outlined="true" Style="height: 350px; display: flex; flex-direction: column;">
+            @if (string.IsNullOrEmpty(_selectedFilePath))
+            {
+                <MudText Typo="Typo.body1" Class="mt-2 ml-2">Select a file to view changes</MudText>
+            }
+            else if (_isLoadingDiff)
+            {
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%;">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body1" Class="ma-2"><strong>Path:</strong> @_selectedFilePath</MudText>
+                <div style="flex: 1; overflow: hidden;">
+                    <DiffViewer OriginalContent="@_originalContent"
+                                ModifiedContent="@_modifiedContent"
+                                FileName="@_selectedFilePath"
+                                Height="100%"
+                                ContextLines="3"
+                                ViewMode="@_diffViewMode"
+                                ViewModeChanged="@((mode) => _diffViewMode = mode)" />
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+}
+
+@code {
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    [Parameter]
+    public int SelectedFilesCount { get; set; }= new();
+    [Parameter]
+    public EventCallback<int> SelectedFilesCountChanged { get; set; }
+    private HashSet<string> _selectedFiles = new();
+    
+    [Parameter]
+    public List<VcsWorkingCopyFile> ChangedFiles { get; set; }= new();
+    [Parameter]
+    public EventCallback<List<VcsWorkingCopyFile>> ChangedFilesChanged { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage {get;set;}
+    [Parameter]
+    public EventCallback<string?> ErrorMessageChanged { get; set; }
+
+    [Parameter]
+    public bool IsLoading {get;set;} = true;
+    [Parameter]
+    public EventCallback<bool> IsLoadingChanged { get; set; }
+
+    private Repository? _repository;
+
+    // Tree structure for MudTreeView
+    private List<TreeItemData<FileTreeNode>> _treeItems = new();
+
+    // Diff view state
+    private string? _selectedFilePath;
+    private string? _originalContent;
+    private string? _modifiedContent;
+    private bool _isLoadingDiff = false;
+    private DiffViewMode _diffViewMode = DiffViewMode.Unified;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(RepositoryId))
+        {
+            _repository = RepositoryService.GetRepository(RepositoryId);
+            await LoadChanges();
+        }
+    }
+
+    public async Task LoadChanges()
+    {
+        IsLoading = true;
+        await IsLoadingChanged.InvokeAsync(IsLoading);
+        ErrorMessage = null;
+        await ErrorMessageChanged.InvokeAsync(ErrorMessage);
+        StateHasChanged();
+
+        try
+        {
+            // Use local variables to avoid race condition with parameter binding
+            List<VcsWorkingCopyFile> loadedFiles = new();
+            HashSet<string> selectedFiles = new();
+
+            List<TreeItemData<FileTreeNode>> treeItems = new();
+
+            await Task.Run(() =>
+            {
+                loadedFiles = RepositoryService.GetWorkingCopyChanges(RepositoryId);
+                // Normalize to backslash so paths match the tree node FullPath values,
+                // regardless of whether the VCS returned forward-slash (git) or backslash (SVN) paths.
+                selectedFiles = new HashSet<string>(loadedFiles.Select(f => f.Path.Replace('/', '\\')));
+                treeItems = BuildFileTree(loadedFiles);
+            });
+
+            // Update both parameters and notify parent together
+            ChangedFiles = loadedFiles;
+            _selectedFiles = selectedFiles;
+            _treeItems = treeItems;
+            SelectedFilesCount = _selectedFiles.Count;
+            await Task.WhenAll(
+                ChangedFilesChanged.InvokeAsync(ChangedFiles),
+                SelectedFilesCountChanged.InvokeAsync(_selectedFiles.Count)
+            );
+
+            _selectedFilePath = null;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            await ErrorMessageChanged.InvokeAsync(ErrorMessage);
+        }
+        finally
+        {
+            IsLoading = false;
+            await IsLoadingChanged.InvokeAsync(IsLoading);
+            StateHasChanged();
+        }
+    }
+
+    private static List<TreeItemData<FileTreeNode>> BuildFileTree(List<VcsWorkingCopyFile> changedFiles)
+    {
+        var roots = new List<FileTreeNode>();
+        var nodeMap = new Dictionary<string, FileTreeNode>();
+
+        foreach (var file in changedFiles.OrderBy(f => f.Path))
+        {
+            // Normalize separators: Git uses '/', SVN on Windows uses '\'.
+            var normalizedPath = file.Path.Replace('/', '\\');
+            var parts = normalizedPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            var currentPath = "";
+            FileTreeNode? parent = null;
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var part = parts[i];
+                var isFile = i == parts.Length - 1;
+                currentPath = string.IsNullOrEmpty(currentPath) ? part : $"{currentPath}\\{part}";
+
+                if (!nodeMap.TryGetValue(currentPath, out var node))
+                {
+                    node = new FileTreeNode
+                    {
+                        Name = part,
+                        FullPath = currentPath,
+                        IsFile = isFile,
+                        Status = isFile ? file.Status : null
+                    };
+                    nodeMap[currentPath] = node;
+
+                    if (parent != null)
+                    {
+                        parent.Children.Add(node);
+                    }
+                    else
+                    {
+                        roots.Add(node);
+                    }
+                }
+
+                parent = node;
+            }
+        }
+
+        // Sort children: folders first, then files, alphabetically
+        SortTreeNodes(roots);
+
+        // Convert to TreeItemData
+        return ConvertToTreeItemData(roots);
+    }
+
+    private static void SortTreeNodes(List<FileTreeNode> nodes)
+    {
+        nodes.Sort((a, b) =>
+        {
+            if (a.IsFile != b.IsFile)
+                return a.IsFile ? 1 : -1;
+            return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+        });
+
+        foreach (var node in nodes)
+        {
+            if (node.Children.Count > 0)
+                SortTreeNodes(node.Children);
+        }
+    }
+
+    private static List<TreeItemData<FileTreeNode>> ConvertToTreeItemData(List<FileTreeNode> nodes, int depth = 0)
+    {
+        return nodes.Select(node =>
+        {
+            // Auto-expand the top 2 directory levels; deeper directories start collapsed.
+            // Children are only pre-populated for depth < 2; deeper nodes use ServerData
+            // lazy loading so the dialog renders quickly even with thousands of files.
+            var hasChildren = !node.IsFile && node.Children.Count > 0;
+            var expanded = hasChildren && depth < 2;
+            return new TreeItemData<FileTreeNode>
+            {
+                Value = node,
+                Expanded = expanded,
+                Expandable = hasChildren,
+                Children = hasChildren && depth < 2
+                    ? ConvertToTreeItemData(node.Children, depth + 1)
+                    : null
+            };
+        }).ToList();
+    }
+
+    private Task<IReadOnlyCollection<TreeItemData<FileTreeNode>>> LoadServerData(FileTreeNode? parentNode)
+    {
+        if (parentNode == null)
+            return Task.FromResult<IReadOnlyCollection<TreeItemData<FileTreeNode>>>(_treeItems);
+
+        var children = parentNode.Children.Select(node =>
+        {
+            var hasChildren = !node.IsFile && node.Children.Count > 0;
+            return new TreeItemData<FileTreeNode>
+            {
+                Value = node,
+                Expanded = false,
+                Expandable = hasChildren,
+                Children = null  // Always lazy-load deeper nodes
+            };
+        }).ToList();
+
+        return Task.FromResult<IReadOnlyCollection<TreeItemData<FileTreeNode>>>(children);
+    }
+
+    private Task OnExpandNode(ITreeItemData<FileTreeNode> node, bool expanded)
+    {
+        node.Expanded = expanded;
+        return Task.CompletedTask;
+    }
+
+    private List<string> GetAllChildFiles(FileTreeNode node)
+    {
+        var files = new List<string>();
+        if (node.IsFile)
+        {
+            files.Add(node.FullPath);
+        }
+        else
+        {
+            foreach (var child in node.Children)
+            {
+                files.AddRange(GetAllChildFiles(child));
+            }
+        }
+        return files;
+    }
+
+    private bool? GetFolderCheckState(FileTreeNode folder)
+    {
+        var childFiles = GetAllChildFiles(folder);
+        var selectedCount = childFiles.Count(f => _selectedFiles.Contains(f));
+        if (selectedCount == childFiles.Count && childFiles.Count > 0) return true;
+        if (selectedCount > 0) return null;
+        return false;
+    }
+
+    private async Task OnFolderSelectionChanged(FileTreeNode folder, bool selected)
+    {
+        var childFiles = GetAllChildFiles(folder);
+        foreach (var file in childFiles)
+        {
+            if (selected)
+                _selectedFiles.Add(file);
+            else
+                _selectedFiles.Remove(file);
+        }
+        SelectedFilesCount = _selectedFiles.Count;
+        await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
+    }
+
+    private async Task OnTreeNodeSelected(FileTreeNode? node)
+    {
+        if (node != null && node.IsFile)
+        {
+            await SelectFile(node.FullPath);
+        }
+    }
+
+    private async Task SelectFile(string path)
+    {
+        if (_selectedFilePath == path)
+            return;
+
+        _selectedFilePath = path;
+        _isLoadingDiff = true;
+        _originalContent = null;
+        _modifiedContent = null;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (_repository == null)
+                    return;
+
+                // Get original content from HEAD (may be null for new files)
+                // Use raw content — do NOT pass through ModelicaRenderer, as that would
+                // normalize formatting and hide the actual differences being committed.
+                _originalContent = RepositoryService.GetFileContentAtRevision(RepositoryId, path, "HEAD");
+
+                // Get modified content from working copy.
+                // path is relative to VcsRootPath, which may be a parent of LocalPath.
+                var fullPath = Path.Combine(_repository.VcsRootPath, path);
+                if (File.Exists(fullPath))
+                {
+                    _modifiedContent = File.ReadAllText(fullPath);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Failed to load diff: {ex.Message}";
+            await ErrorMessageChanged.InvokeAsync(ErrorMessage);
+        }
+        finally
+        {
+            _isLoadingDiff = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnFileSelectionChanged(string path, bool selected)
+    {
+        if (selected)
+        {
+            _selectedFiles.Add(path);
+        }
+        else
+        {
+            _selectedFiles.Remove(path);
+        }
+        SelectedFilesCount = _selectedFiles.Count;
+        await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
+    }
+
+    private async Task SelectAllFiles()
+    {
+        _selectedFiles = new HashSet<string>(ChangedFiles.Select(f => f.Path.Replace('/', '\\')));
+        SelectedFilesCount = _selectedFiles.Count;
+        await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
+    }
+
+    private async Task DeselectAllFiles()
+    {
+        _selectedFiles.Clear();
+        SelectedFilesCount = _selectedFiles.Count;
+        await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
+    }
+
+    private class FileTreeNode
+    {
+        public string Name { get; set; } = "";
+        public string FullPath { get; set; } = "";
+        public bool IsFile { get; set; }
+        public VcsFileStatus? Status { get; set; }
+        public List<FileTreeNode> Children { get; set; } = new();
+    }
+
+    public List<string> GetSelectedFiles()
+    {
+        return _selectedFiles.ToList();
+    }
+}

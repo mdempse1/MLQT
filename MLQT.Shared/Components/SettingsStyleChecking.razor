@@ -1,0 +1,427 @@
+@using System.Threading.Tasks
+@using ModelicaParser.StyleRules
+@using ModelicaGraph
+
+@inject ISettingsService SettingsService
+@inject IJSRuntime JSRuntime
+@inject AppState NavState
+@inject ICustomDictionaryService CustomDictionaryService
+@inject IDictionaryManagerService DictionaryManagerService
+@inject IFilePickerService FilePickerService
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="0">
+    <MudText Typo="Typo.body1" Class="mt-4">These are the default rules that will be applied to any new repository.
+        They are overridden by the repository specific settings - see <strong>Manage Repositories</strong></MudText>
+    <MudText Typo="Typo.subtitle2" Class="mt-4">Style guidelines</MudText>
+    <MudSwitch @bind-Value="_settings.StyleChecking.ClassHasDescription" Color="Color.Primary" Size="Size.Small"
+        Label="Every class must have a description" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ClassHasDocumentationInfo" Color="Color.Primary" Size="Size.Small"
+        Label="Every class must have documentation info" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ClassHasDocumentationRevisions" Color="Color.Primary" Size="Size.Small"
+        Label="Every class must have a documentation revisions" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ClassHasIcon" Color="Color.Primary" Size="Size.Small"
+        Label="Every class must have an icon" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ParameterHasDescription" Color="Color.Primary" Size="Size.Small"
+        Label="Every public parameter must have a description" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ConstantHasDescription" Color="Color.Primary" Size="Size.Small"
+        Label="Every public constant must have a description" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.FollowNamingConvention" Color="Color.Primary" Size="Size.Small"
+        Label="Check that the naming convention is followed" />
+
+    @if (_settings.StyleChecking.FollowNamingConvention)
+    {
+        <MudExpansionPanels Class="mt-1 ml-4 mb-2" Dense="true" Elevation="1">
+            <MudExpansionPanel Dense="true">
+                <TitleContent>
+                    <MudText Typo="Typo.body1">Naming Convention: @_settings.StyleChecking.NamingConvention.PresetName</MudText>
+                </TitleContent>
+                <ChildContent>
+                    <MudSelect T="string" Label="Preset" Value="@_settings.StyleChecking.NamingConvention.PresetName"
+                        ValueChanged="OnPresetChanged" Dense="true" Margin="Margin.Dense"
+                        Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
+                        @foreach (var preset in NamingConventionPresets.All)
+                        {
+                            <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
+                        }
+                        <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
+                    </MudSelect>
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
+                    <NamingStyleSelect Label="model" Value="_settings.StyleChecking.NamingConvention.ModelNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ModelNaming = v)" />
+                    <NamingStyleSelect Label="function" Value="_settings.StyleChecking.NamingConvention.FunctionNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.FunctionNaming = v)" />
+                    <NamingStyleSelect Label="block" Value="_settings.StyleChecking.NamingConvention.BlockNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.BlockNaming = v)" />
+                    <NamingStyleSelect Label="connector" Value="_settings.StyleChecking.NamingConvention.ConnectorNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ConnectorNaming = v)" />
+                    <NamingStyleSelect Label="record" Value="_settings.StyleChecking.NamingConvention.RecordNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.RecordNaming = v)" />
+                    <NamingStyleSelect Label="type" Value="_settings.StyleChecking.NamingConvention.TypeNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.TypeNaming = v)" />
+                    <NamingStyleSelect Label="package" Value="_settings.StyleChecking.NamingConvention.PackageNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PackageNaming = v)" />
+                    <NamingStyleSelect Label="class" Value="_settings.StyleChecking.NamingConvention.ClassNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ClassNaming = v)" />
+                    <NamingStyleSelect Label="operator" Value="_settings.StyleChecking.NamingConvention.OperatorNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.OperatorNaming = v)" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
+                    <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.PublicVariableNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicVariableNaming = v)" />
+                    <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.PublicParameterNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicParameterNaming = v)" />
+                    <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.PublicConstantNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicConstantNaming = v)" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
+                    <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.ProtectedVariableNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedVariableNaming = v)" />
+                    <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.ProtectedParameterNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedParameterNaming = v)" />
+                    <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.ProtectedConstantNaming"
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedConstantNaming = v)" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
+                    <MudSwitch @bind-Value="_settings.StyleChecking.NamingConvention.AllowUnderscoreSuffixes"
+                        Color="Color.Primary" Size="Size.Small"
+                        Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Exception Names</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-1">Names that bypass convention checks (e.g., product names like NASCAR)</MudText>
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                        <MudTextField @bind-Value="_newExceptionName" Placeholder="Add exception name" Variant="Variant.Outlined"
+                            Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                            OnClick="AddExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newExceptionName)" />
+                    </MudStack>
+                    <MudChipSet T="string" Class="mt-1">
+                        @foreach (var name in _settings.StyleChecking.NamingConvention.ExceptionNames)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExceptionName(name)">@name</MudChip>
+                        }
+                    </MudChipSet>
+                </ChildContent>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+
+    <MudSwitch @bind-Value="_settings.StyleChecking.DontMixEquationAndAlgorithm" Color="Color.Primary" Size="Size.Small"
+        Label="A class may only have either an equation or algorithm section, not both" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.DontMixConnections" Color="Color.Primary" Size="Size.Small"
+        Label="Do not mix connections and equations in the same class" />
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4">Formatting rules</MudText>
+    <MudSwitch @bind-Value="_settings.StyleChecking.ApplyFormattingRules" Color="Color.Primary" Size="Size.Small"
+        Label="Apply formatting rules.  If off then just used as part of style guidelines" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.OneOfEachSection" Color="Color.Primary" Size="Size.Small"
+        Label="A class may only have 1 public, 1 protected, 1 equation or algorithm section" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ImportStatementsFirst" Color="Color.Primary" Size="Size.Small"
+        Label="Composition must be imports first; then extends at the top of the public/protected sections" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+        Label="Composition must have components before classes" />
+
+    <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Value="@_settings.StyleChecking.InitialEQAlgoFirst" Color="Color.Primary" Size="Size.Small"
+        Label="If there is an initial equation/algorithm section it should appear before the equation/algorithm section"/>
+    <MudSwitch T="bool" ValueChanged="OnInitialEqLast" Value="@_settings.StyleChecking.InitialEQAlgoLast" Color="Color.Primary" Size="Size.Small"
+        Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4">Spell checking</MudText>
+    <MudSwitch @bind-Value="_settings.StyleChecking.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
+        Label="Spell check every description string" />
+    <MudSwitch @bind-Value="_settings.StyleChecking.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
+        Label="Spell check all documentation" />
+
+    <MudStack Row="true" AlignItems="AlignItems.End" Class="mt-2" Style="gap:8px;">
+        <MudSelect T="string" Label="Select Language Dictionaries" MultiSelection="true" Dense="true" Margin="Margin.Dense"
+            SelectedValues="_settings.StyleChecking.SpellCheckLanguages"
+            SelectedValuesChanged="OnLanguagesChanged" Typo="Typo.body1"
+            Variant="Variant.Outlined" Style="max-width:400px;">
+            @foreach (var dict in _availableDictionaries)
+            {
+                <MudSelectItem T="string" Value="@dict.LanguageCode">
+                    @dict.DisplayName @(dict.IsBundled ? "" : "(imported)")
+                </MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+            OnClick="ImportLanguageDictionary" Style="height:40px;">Import Language</MudButton>
+    </MudStack>
+
+    <MudExpansionPanels Class="mt-2 pa-0 ml-0 mr-0" Dense="true" Gutters="false" Elevation="2">
+        <MudExpansionPanel Text="" Dense="true" Class="ma-0 pa-0">
+            <TitleContent>
+                <MudText Typo="Typo.subtitle2" Class="mt-4">Custom Dictionary (@CustomDictionaryService.CustomWords.Count words)</MudText>
+            </TitleContent>
+            <ChildContent>
+                <MudStack Row="true" Class="mb-2" Spacing="1" Style="width: fit-content;" AlignItems="AlignItems.Center">
+                    <MudTextField @bind-Value="_newWord" Placeholder="Add a word" Variant="Variant.Outlined"
+                        Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true"
+                        OnKeyDown="OnAddWordKeyDown" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                        OnClick="AddCustomWord" Disabled="@string.IsNullOrWhiteSpace(_newWord)" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                        OnClick="MergeDictionary">Import</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                        OnClick="ExportDictionary">Export</MudButton>
+                </MudStack>
+                <MudTextField T="string" Value="_wordFilter" ValueChanged="OnWordFilterChanged" Placeholder="Filter words"
+                    Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body1"
+                    Immediate="true" Class="mb-2" Style="width: 200px;" />
+                <MudChipSet T="string" Class="mt-1">
+                    @foreach (var word in _filteredWords)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveCustomWord(word)">@word</MudChip>
+                    }
+                </MudChipSet>
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+</MudPaper>
+
+
+@code {
+    private AppSettings _settings = new();
+    private string _newWord = "";
+    private string _newExceptionName = "";
+    private string _wordFilter = "";
+    private List<string> _filteredWords = new();
+    private List<DictionaryInfo> _availableDictionaries = new();
+
+    protected override void OnInitialized()
+    {
+        NavState.OnSaveSettings += SaveSettings;
+        CustomDictionaryService.OnDictionaryChanged += OnDictionaryChanged;
+        DictionaryManagerService.OnDictionariesChanged += OnDictionariesChanged;
+        RefreshAvailableDictionaries();
+        base.OnInitialized();
+    }
+
+    protected void OnDispose()
+    {
+        NavState.OnSaveSettings -= SaveSettings;
+        CustomDictionaryService.OnDictionaryChanged -= OnDictionaryChanged;
+        DictionaryManagerService.OnDictionariesChanged -= OnDictionariesChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+        await CustomDictionaryService.LoadAsync();
+        FilterWords();
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            // Load each settings category
+            _settings.StyleChecking = await SettingsService.GetAsync("StyleChecking", new ModelicaGraph.StyleCheckingSettings());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+        }
+    }
+
+    private async void SaveSettings()
+    {
+        try
+        {
+            await SettingsService.SetAsync("StyleChecking", _settings.StyleChecking);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private void OnInitialEqFirst(bool value)
+    {
+        _settings.StyleChecking.InitialEQAlgoFirst = value;
+        if (value)
+            _settings.StyleChecking.InitialEQAlgoLast = false;
+        StateHasChanged();
+    }
+
+
+    private void OnInitialEqLast(bool value)
+    {
+        _settings.StyleChecking.InitialEQAlgoLast = value;
+        if (value)
+            _settings.StyleChecking.InitialEQAlgoFirst = false;
+        StateHasChanged();
+    }
+
+    private void OnWordFilterChanged(string value)
+    {
+        _wordFilter = value;
+        FilterWords();
+    }
+
+    private void FilterWords()
+    {
+        var words = CustomDictionaryService.CustomWords;
+        if (string.IsNullOrWhiteSpace(_wordFilter))
+        {
+            _filteredWords = words.ToList();
+        }
+        else
+        {
+            _filteredWords = words
+                .Where(w => w.Contains(_wordFilter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private async Task AddCustomWord()
+    {
+        if (string.IsNullOrWhiteSpace(_newWord))
+            return;
+
+        await CustomDictionaryService.AddWordAsync(_newWord.Trim());
+        _newWord = "";
+        FilterWords();
+    }
+
+    private async Task OnAddWordKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AddCustomWord();
+    }
+
+    private async Task RemoveCustomWord(string word)
+    {
+        await CustomDictionaryService.RemoveWordAsync(word);
+        FilterWords();
+    }
+
+    private async Task ImportDictionary()
+    {
+        var result = await FilePickerService.PickModelicaFileAsync(".txt");
+        if (result?.FilePath != null)
+        {
+            await CustomDictionaryService.ImportAsync(result.FilePath);
+            FilterWords();
+            Snackbar.Add($"Imported {CustomDictionaryService.CustomWords.Count} words", MudBlazor.Severity.Success);
+        }
+    }
+
+    private async Task ExportDictionary()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        var exportPath = Path.Combine(appData, "custom_dictionary.txt");
+        await CustomDictionaryService.ExportAsync(exportPath);
+        Snackbar.Add($"Dictionary exported to {exportPath}", MudBlazor.Severity.Success);
+    }
+
+    private async Task MergeDictionary()
+    {
+        var result = await FilePickerService.PickModelicaFileAsync(".txt");
+        if (result?.FilePath != null)
+        {
+            await CustomDictionaryService.MergeAsync(result.FilePath);
+            FilterWords();
+            Snackbar.Add($"Merged. Dictionary now has {CustomDictionaryService.CustomWords.Count} words", MudBlazor.Severity.Success);
+        }
+    }
+
+    private async void OnDictionaryChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            FilterWords();
+            StateHasChanged();
+        });
+    }
+
+    private async void OnDictionariesChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            RefreshAvailableDictionaries();
+            StateHasChanged();
+        });
+    }
+
+    private void RefreshAvailableDictionaries()
+    {
+        _availableDictionaries = DictionaryManagerService.GetAvailableDictionaries().ToList();
+    }
+
+    private void OnLanguagesChanged(IEnumerable<string> selected)
+    {
+        _settings.StyleChecking.SpellCheckLanguages = selected.ToList();
+    }
+
+    private void OnPresetChanged(string presetName)
+    {
+        var preset = NamingConventionPresets.All.FirstOrDefault(p => p.Name == presetName);
+        if (preset.Factory != null)
+        {
+            _settings.StyleChecking.NamingConvention = preset.Factory();
+        }
+        else
+        {
+            _settings.StyleChecking.NamingConvention.PresetName = "Custom";
+        }
+        StateHasChanged();
+    }
+
+    private void OnNamingStyleChanged(Action applyChange)
+    {
+        applyChange();
+        _settings.StyleChecking.NamingConvention.PresetName = "Custom";
+        StateHasChanged();
+    }
+
+    private void AddExceptionName()
+    {
+        var name = _newExceptionName.Trim();
+        if (!string.IsNullOrEmpty(name) && !_settings.StyleChecking.NamingConvention.ExceptionNames.Contains(name))
+        {
+            _settings.StyleChecking.NamingConvention.ExceptionNames.Add(name);
+            _newExceptionName = "";
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveExceptionName(string name)
+    {
+        _settings.StyleChecking.NamingConvention.ExceptionNames.Remove(name);
+        StateHasChanged();
+    }
+
+    private async Task ImportLanguageDictionary()
+    {
+        var result = await FilePickerService.PickModelicaFileAsync(".aff");
+        if (result?.FilePath == null)
+            return;
+
+        var affPath = result.FilePath;
+        var dicPath = Path.ChangeExtension(affPath, ".dic");
+
+        if (!File.Exists(dicPath))
+        {
+            Snackbar.Add($"Missing matching .dic file: {Path.GetFileName(dicPath)}", MudBlazor.Severity.Error);
+            return;
+        }
+
+        var langCode = await DictionaryManagerService.ImportDictionaryAsync(affPath, dicPath);
+        if (langCode != null)
+        {
+            if (!_settings.StyleChecking.SpellCheckLanguages.Contains(langCode))
+                _settings.StyleChecking.SpellCheckLanguages.Add(langCode);
+
+            Snackbar.Add($"Imported dictionary: {langCode}", MudBlazor.Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Failed to import dictionary", MudBlazor.Severity.Error);
+        }
+    }
+}

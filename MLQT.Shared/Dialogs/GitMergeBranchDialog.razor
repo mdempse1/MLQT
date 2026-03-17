@@ -1,0 +1,508 @@
+@using MLQT.Services
+@using MLQT.Services.Interfaces
+@using RevisionControl
+@using RevisionControl.Interfaces
+@using System.IO
+@using MLQT.Shared.Components
+
+@inject IRepositoryService RepositoryService
+@inject IFileMonitoringService FileMonitoringService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject AppState NavState
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Merge Branch</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width: 500px; max-width: 700px;">
+
+            @* ── Branch selector (visible while selecting or checking) ── *@
+            @if (_phase is MergePhase.CheckingState or MergePhase.DirtyWorkingCopy or MergePhase.ReadyToMerge)
+            {
+                <MudText Typo="Typo.body1">
+                    Select a branch to merge into <strong>@_currentBranch</strong>:
+                </MudText>
+
+                <BranchSelector @ref="_branchSelector"
+                                RepositoryId="@RepositoryId"
+                                @bind-SelectedBranch="_selectedBranch"
+                                ExcludeCurrentBranch="true"
+                                IncludeRemoteBranches="true"
+                                MinHeight="200px"
+                                MaxHeight="280px" />
+            }
+
+            @* ── Checking state ── *@
+            @if (_phase == MergePhase.CheckingState)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+
+            @* ── Dirty working copy ── *@
+            @if (_phase == MergePhase.DirtyWorkingCopy)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    The working copy has uncommitted changes. Commit or revert them before merging.
+                    @if (_repository?.RelativeLibraryPath != null)
+                    {
+                        <text> Note: "Revert All" will discard all changes in <strong>@_repository.VcsRootPath</strong>, including files outside the Modelica directory.</text>
+                    }
+                </MudAlert>
+
+                <MudPaper Outlined="true" Style="max-height: 180px; overflow-y: auto;">
+                    <MudList T="VcsWorkingCopyFile" Dense="true">
+                        @foreach (var f in _dirtyFiles)
+                        {
+                            <MudListItem T="VcsWorkingCopyFile" Dense="true"
+                                         Icon="@StatusIcon(f.Status)"
+                                         IconColor="@StatusColor(f.Status)">
+                                <MudText Typo="Typo.body2">@f.Path</MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+            }
+
+            @* ── Merging progress ── *@
+            @if (_phase == MergePhase.Merging)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body1">Merging from @_selectedBranch...</MudText>
+                    </MudStack>
+                </MudAlert>
+            }
+
+            @* ── Conflict resolution ── *@
+            @if (_phase == MergePhase.ConflictResolution)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    @_conflictStates.Count(kv => kv.Value == ConflictFileState.Resolved) of @_conflictStates.Count conflict(s) resolved.
+                    Resolve all conflicts before committing.
+                </MudAlert>
+
+                <MudPaper Outlined="true" Style="max-height: 340px; overflow-y: auto;">
+                    <MudList T="string" Dense="true">
+                        @foreach (var (filePath, state) in _conflictStates)
+                        {
+                            var fp = filePath;
+                            var relPath = GetRelativePath(fp);
+
+                            <MudListItem T="string" Dense="true">
+                                <MudStack Spacing="0">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        @if (state == ConflictFileState.Resolved)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle"
+                                                     Color="Color.Success" Size="Size.Small" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Warning"
+                                                     Color="Color.Warning" Size="Size.Small" />
+                                        }
+                                        <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                   Style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; justify-content:flex-start; text-transform:none; font-size:0.775rem; min-width:0; padding:0 4px;"
+                                                   OnClick="@(() => ShowDiff(fp))">
+                                            @relPath
+                                        </MudButton>
+                                    </MudStack>
+
+                                    @if (state == ConflictFileState.Unresolved)
+                                    {
+                                        <MudStack Row="true" Spacing="1" Class="ml-5">
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       Color="Color.Primary"
+                                                       Disabled="_isWorking"
+                                                       OnClick="@(() => ResolveFile(fp, ConflictResolutionChoice.AcceptIncoming))">
+                                                Accept Incoming
+                                            </MudButton>
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       Disabled="_isWorking"
+                                                       OnClick="@(() => ResolveFile(fp, ConflictResolutionChoice.KeepMine))">
+                                                Keep Mine
+                                            </MudButton>
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       Color="Color.Secondary"
+                                                       Disabled="_isWorking"
+                                                       OnClick="@(() => SetEditingExternally(fp))">
+                                                Edit Externally
+                                            </MudButton>
+                                        </MudStack>
+                                    }
+                                    else if (state == ConflictFileState.EditingExternally)
+                                    {
+                                        <MudStack Spacing="1" Class="ml-5">
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary" Style="word-break:break-all;">
+                                                @fp
+                                            </MudText>
+                                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                       Color="Color.Success"
+                                                       Disabled="_isWorking"
+                                                       OnClick="@(() => ResolveFile(fp, ConflictResolutionChoice.MarkResolved))">
+                                                Mark as Resolved
+                                            </MudButton>
+                                        </MudStack>
+                                    }
+                                </MudStack>
+                            </MudListItem>
+
+                            @if (filePath != _conflictStates.Keys.Last())
+                            {
+                                <MudDivider />
+                            }
+                        }
+                    </MudList>
+                </MudPaper>
+            }
+
+            @* ── Push prompt ── *@
+            @if (_phase == MergePhase.PushPrompt)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">
+                    Merge complete. Push changes to remote?
+                </MudAlert>
+                @if (_pushResult?.Success == false && !string.IsNullOrEmpty(_pushResult.ErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">Push failed: @_pushResult.ErrorMessage</MudAlert>
+                }
+            }
+
+            @* ── Error message ── *@
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        @if (_phase != MergePhase.PushPrompt)
+        {
+            <MudButton OnClick="Cancel" Disabled="_phase == MergePhase.Merging || _isWorking">
+                Cancel
+            </MudButton>
+        }
+
+        @if (_phase == MergePhase.DirtyWorkingCopy)
+        {
+            <MudButton Color="Color.Default" Variant="Variant.Outlined"
+                       Disabled="_isWorking"
+                       OnClick="CommitFirst">
+                @if (_isWorking) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                Commit Changes
+            </MudButton>
+            <MudButton Color="Color.Warning" Variant="Variant.Filled"
+                       Disabled="_isWorking"
+                       OnClick="RevertAll">
+                @if (_isWorking) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                Revert All
+            </MudButton>
+        }
+
+        @if (_phase == MergePhase.ReadyToMerge)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="string.IsNullOrEmpty(_selectedBranch)"
+                       OnClick="StartMerge">
+                Merge
+            </MudButton>
+        }
+
+        @if (_phase == MergePhase.ConflictResolution)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="_isWorking || !AllResolved"
+                       OnClick="CommitMerge">
+                Commit Merge
+            </MudButton>
+        }
+
+        @if (_phase == MergePhase.PushPrompt)
+        {
+            <MudButton Color="Color.Default" Variant="Variant.Outlined"
+                       Disabled="_isWorking"
+                       OnClick="SkipPush">
+                Skip
+            </MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       Disabled="_isWorking"
+                       OnClick="PushToRemote">
+                @if (_isWorking) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                Push
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    private enum MergePhase
+    {
+        CheckingState,
+        DirtyWorkingCopy,
+        ReadyToMerge,
+        Merging,
+        ConflictResolution,
+        PushPrompt
+    }
+
+    private enum ConflictFileState { Unresolved, EditingExternally, Resolved }
+
+    private BranchSelector? _branchSelector;
+    private string? _selectedBranch;
+    private string? _currentBranch;
+    private MergePhase _phase = MergePhase.CheckingState;
+    private List<VcsWorkingCopyFile> _dirtyFiles = [];
+    private Dictionary<string, ConflictFileState> _conflictStates = [];
+    private VcsMergeResult? _mergeResult;
+    private VcsOperationResult? _pushResult;
+    private string? _errorMessage;
+    private bool _isWorking = false;
+
+    private bool AllResolved => _conflictStates.Count > 0 && _conflictStates.Values.All(s => s == ConflictFileState.Resolved);
+
+    private Repository? _repository;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _repository = RepositoryService.GetRepository(RepositoryId);
+        _currentBranch = _repository?.CurrentBranch ?? "unknown";
+        await CheckWorkingCopyState();
+    }
+
+    private async Task CheckWorkingCopyState()
+    {
+        _phase = MergePhase.CheckingState;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var changes = await Task.Run(() => RepositoryService.GetWorkingCopyChanges(RepositoryId));
+
+        _dirtyFiles = changes.Where(f => f.Status is
+            VcsFileStatus.Modified or VcsFileStatus.Added or
+            VcsFileStatus.Deleted or VcsFileStatus.Untracked or
+            VcsFileStatus.Conflicted).ToList();
+
+        _phase = _dirtyFiles.Count > 0 ? MergePhase.DirtyWorkingCopy : MergePhase.ReadyToMerge;
+        StateHasChanged();
+    }
+
+    private async Task CommitFirst()
+    {
+        var parameters = new DialogParameters<CommitChangesDialog>
+        {
+            { x => x.RepositoryId, RepositoryId }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
+        await dialogRef.Result;
+
+        // Re-check: user may have committed some or all changes
+        await CheckWorkingCopyState();
+    }
+
+    private async Task RevertAll()
+    {
+        _isWorking = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
+
+        _isWorking = false;
+
+        if (result.Success)
+        {
+            await StartMerge();
+        }
+        else
+        {
+            _errorMessage = result.ErrorMessage ?? "Revert failed.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartMerge()
+    {
+        if (string.IsNullOrEmpty(_selectedBranch))
+            return;
+
+        _phase = MergePhase.Merging;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var repository = RepositoryService.GetRepository(RepositoryId);
+        if (repository != null)
+            FileMonitoringService.StopMonitoring(RepositoryId);
+
+        try
+        {
+            _mergeResult = await RepositoryService.MergeBranchAsync(RepositoryId, _selectedBranch);
+
+            if (!_mergeResult.Success && !_mergeResult.HasConflicts)
+            {
+                _errorMessage = _mergeResult.ErrorMessage ?? "Merge failed.";
+                _phase = MergePhase.ReadyToMerge;
+                return;
+            }
+
+            if (!_mergeResult.HasChanges)
+            {
+                Snackbar.Add("No changes to merge — already up to date.", Severity.Info);
+                MudDialog?.Close(DialogResult.Ok(_mergeResult));
+                return;
+            }
+
+            if (_mergeResult.HasConflicts)
+            {
+                _conflictStates = _mergeResult.ConflictedFiles
+                    .ToDictionary(f => f, _ => ConflictFileState.Unresolved);
+                _phase = MergePhase.ConflictResolution;
+                return;
+            }
+
+            // Clean merge — LibGit2Sharp auto-created the merge commit
+            NavState.VcsFilesChanged(RepositoryId);
+            _phase = MergePhase.PushPrompt;
+        }
+        finally
+        {
+            if (_phase != MergePhase.ConflictResolution)
+            {
+                if (repository != null)
+                    FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResolveFile(string filePath, ConflictResolutionChoice choice)
+    {
+        _isWorking = true;
+        StateHasChanged();
+
+        var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
+
+        if (result.Success)
+        {
+            _conflictStates[filePath] = ConflictFileState.Resolved;
+        }
+        else
+        {
+            _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
+        }
+
+        _isWorking = false;
+        StateHasChanged();
+    }
+
+    private void SetEditingExternally(string filePath)
+    {
+        _conflictStates[filePath] = ConflictFileState.EditingExternally;
+        StateHasChanged();
+    }
+
+    private async Task CommitMerge()
+    {
+        var repository = RepositoryService.GetRepository(RepositoryId);
+        if (repository != null)
+            FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
+
+        var parameters = new DialogParameters<CommitChangesDialog>
+        {
+            { x => x.RepositoryId, RepositoryId },
+            { x => x.InitialCommitMessage, BuildMergeCommitMessage() }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+        var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Merged Changes", parameters, options);
+        await dialogRef.Result;
+
+        // Trigger formatting + analysis pipeline after commit
+        NavState.VcsFilesChanged(RepositoryId);
+        _phase = MergePhase.PushPrompt;
+        StateHasChanged();
+    }
+
+    private async Task PushToRemote()
+    {
+        _isWorking = true;
+        StateHasChanged();
+
+        _pushResult = await RepositoryService.PushAsync(RepositoryId);
+
+        _isWorking = false;
+
+        if (_pushResult.Success)
+            MudDialog?.Close(DialogResult.Ok(_mergeResult));
+        else
+            StateHasChanged(); // show error — user can retry or skip
+    }
+
+    private void SkipPush()
+    {
+        MudDialog?.Close(DialogResult.Ok(_mergeResult));
+    }
+
+    private async Task ShowDiff(string filePath)
+    {
+        var parameters = new DialogParameters<ConflictDiffDialog>
+        {
+            { x => x.RepositoryId, RepositoryId },
+            { x => x.FilePath, filePath }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true, MaxWidth = MaxWidth.Large };
+        await DialogService.ShowAsync<ConflictDiffDialog>("Conflict Diff", parameters, options);
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+
+    private string BuildMergeCommitMessage()
+    {
+        var branch = _mergeResult?.SourceBranch ?? _selectedBranch ?? "unknown";
+        var target = _currentBranch ?? "working copy";
+        return $"Merge '{branch}' into {target}";
+    }
+
+    private string GetRelativePath(string filePath)
+    {
+        var repository = RepositoryService.GetRepository(RepositoryId);
+        if (repository?.LocalPath != null)
+        {
+            try { return Path.GetRelativePath(repository.LocalPath, filePath); }
+            catch { }
+        }
+        return filePath;
+    }
+
+    private static string StatusIcon(VcsFileStatus status) => status switch
+    {
+        VcsFileStatus.Modified   => Icons.Material.Filled.Edit,
+        VcsFileStatus.Added      => Icons.Material.Filled.Add,
+        VcsFileStatus.Deleted    => Icons.Material.Filled.Delete,
+        VcsFileStatus.Untracked  => Icons.Material.Filled.HelpOutline,
+        VcsFileStatus.Conflicted => Icons.Material.Filled.Warning,
+        _                        => Icons.Material.Filled.Circle
+    };
+
+    private static Color StatusColor(VcsFileStatus status) => status switch
+    {
+        VcsFileStatus.Modified   => Color.Warning,
+        VcsFileStatus.Added      => Color.Success,
+        VcsFileStatus.Deleted    => Color.Error,
+        VcsFileStatus.Untracked  => Color.Default,
+        VcsFileStatus.Conflicted => Color.Error,
+        _                        => Color.Default
+    };
+}

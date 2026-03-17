@@ -1,0 +1,23 @@
+@using ModelicaParser.StyleRules
+
+<MudSelect T="NamingStyle" Label="@Label" Value="@Value" ValueChanged="OnValueChanged"
+    Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
+    Style="max-width:250px;" Typo="Typo.body1">
+    <MudSelectItem T="NamingStyle" Value="NamingStyle.Any">Any (no check)</MudSelectItem>
+    <MudSelectItem T="NamingStyle" Value="NamingStyle.PascalCase">PascalCase</MudSelectItem>
+    <MudSelectItem T="NamingStyle" Value="NamingStyle.CamelCase">camelCase</MudSelectItem>
+    <MudSelectItem T="NamingStyle" Value="NamingStyle.SnakeCase">snake_case</MudSelectItem>
+    <MudSelectItem T="NamingStyle" Value="NamingStyle.UpperCase">UPPER_CASE</MudSelectItem>
+</MudSelect>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public NamingStyle Value { get; set; }
+    [Parameter] public EventCallback<NamingStyle> ValueChanged { get; set; }
+
+    private async Task OnValueChanged(NamingStyle newValue)
+    {
+        Value = newValue;
+        await ValueChanged.InvokeAsync(newValue);
+    }
+}

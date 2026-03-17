@@ -1,0 +1,757 @@
+@*
+    DiffViewer Component
+    Displays differences between two versions of a file with syntax highlighting for Modelica files
+*@
+@inject IJSRuntime JS
+@inject AppState NavState
+@inject ISettingsService SettingsService
+@implements IAsyncDisposable
+
+<div class="diff-viewer @(_isDarkMode ? "diff-viewer-dark" : "")" style="@GetContainerStyle()">
+    <div class="diff-toolbar">
+        @if (ShowViewModeSelectorButtons) 
+        {
+            <MudButtonGroup OverrideStyles="false" Size="Size.Small">
+                <MudButton Variant="@(ViewMode == DiffViewMode.Unified ? Variant.Filled : Variant.Outlined)"
+                        Size="Size.Small" Color="Color.Primary" OnClick="@(() => SetViewMode(DiffViewMode.Unified))">
+                    Unified
+                </MudButton>
+                <MudButton Variant="@(ViewMode == DiffViewMode.SideBySide ? Variant.Filled : Variant.Outlined)"
+                        Size="Size.Small" Color="Color.Primary" OnClick="@(() => SetViewMode(DiffViewMode.SideBySide))">
+                    Side by Side
+                </MudButton>
+                <MudButton Variant="@(ViewMode == DiffViewMode.SideBySideFull ? Variant.Filled : Variant.Outlined)"
+                        Size="Size.Small" Color="Color.Primary" OnClick="@(() => SetViewMode(DiffViewMode.SideBySideFull))">
+                    Full Files
+                </MudButton>
+            </MudButtonGroup>
+            <MudSpacer />
+        }
+        <MudText Typo="Typo.body1" Class="ml-2">
+            @GetDiffSummary()
+        </MudText>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="diff-empty" style="padding: 16px;">
+            <MudAlert Severity="Severity.Warning" Dense="true">@_errorMessage</MudAlert>
+        </div>
+    }
+    else if (string.IsNullOrEmpty(OriginalContent) && string.IsNullOrEmpty(ModifiedContent))
+    {
+        <div class="diff-empty">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">No content to display</MudText>
+        </div>
+    }
+    else if (ViewMode == DiffViewMode.Unified)
+    {
+        <div class="diff-unified">
+            @foreach (var line in _unifiedLines)
+            {
+                <div class="diff-line @GetLineClass(line.Type)">
+                    <span class="diff-line-prefix">@line.Prefix</span>
+                    <span class="diff-line-number">@line.LineNumber</span>
+                    <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="diff-side-by-side">
+            <div class="diff-pane diff-pane-left">
+                <div class="diff-pane-header">@OriginalLabel</div>
+                <div class="diff-pane-content" @ref="_leftPaneRef">
+                    @foreach (var line in _leftLines)
+                    {
+                        <div class="diff-line @GetLineClass(line.Type)">
+                            <span class="diff-line-number">@line.LineNumber</span>
+                            <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="diff-pane diff-pane-right">
+                <div class="diff-pane-header">@ModifiedLabel</div>
+                <div class="diff-pane-content" @ref="_rightPaneRef">
+                    @foreach (var line in _rightLines)
+                    {
+                        <div class="diff-line @GetLineClass(line.Type)">
+                            <span class="diff-line-number">@line.LineNumber</span>
+                            <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Original (base) content of the file
+    /// </summary>
+    [Parameter]
+    public string? OriginalContent { get; set; }
+
+    /// <summary>
+    /// Modified (working copy) content of the file
+    /// </summary>
+    [Parameter]
+    public string? ModifiedContent { get; set; }
+
+    /// <summary>
+    /// File name for determining syntax highlighting
+    /// </summary>
+    [Parameter]
+    public string? FileName { get; set; }
+
+    /// <summary>
+    /// Optional height constraint
+    /// </summary>
+    [Parameter]
+    public string? Height { get; set; }
+
+    /// <summary>
+    /// Number of context lines to show around changes in diff mode
+    /// </summary>
+    [Parameter]
+    public int ContextLines { get; set; } = 3;
+
+    /// <summary>
+    /// Current view mode
+    /// </summary>
+    [Parameter]
+    public DiffViewMode ViewMode { get; set; } = DiffViewMode.Unified;
+
+    [Parameter]
+    public EventCallback<DiffViewMode> ViewModeChanged { get; set; }
+
+    /// <summary>
+    /// Show the view mode selector buttons
+    /// </summary>
+    [Parameter]
+    public bool ShowViewModeSelectorButtons { get; set; } = true;
+
+    /// <summary>
+    /// Label for the left (original) pane in side-by-side mode
+    /// </summary>
+    [Parameter]
+    public string OriginalLabel { get; set; } = "Original";
+
+    /// <summary>
+    /// Label for the right (modified) pane in side-by-side mode
+    /// </summary>
+    [Parameter]
+    public string ModifiedLabel { get; set; } = "Modified";
+
+    /// <summary>
+    /// Maximum number of cells in the LCS table before falling back.
+    /// 50 million cells ≈ 200 MB, allowing files up to ~7,000 lines each.
+    /// </summary>
+    private const long MaxLcsCells = 50_000_000;
+
+    private List<DiffLine> _unifiedLines = new();
+    private List<DiffLine> _leftLines = new();
+    private List<DiffLine> _rightLines = new();
+    private int _addedCount = 0;
+    private int _removedCount = 0;
+    private bool _isModelicaFile = false;
+    private int _maxLineNumberDigits = 3;
+    private string? _errorMessage;
+
+    private ElementReference _leftPaneRef;
+    private ElementReference _rightPaneRef;
+    private bool _scrollSyncActive = false;
+    private bool _isDarkMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uiSettings = await SettingsService.GetAsync("UI", new UISettings());
+        _isDarkMode = uiSettings.Theme == Theme.Dark;
+        NavState.OnThemeChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(UISettings uiSettings)
+    {
+        _isDarkMode = uiSettings.Theme == Theme.Dark;
+        InvokeAsync(StateHasChanged);
+    }
+
+    protected override void OnParametersSet()
+    {
+        _isModelicaFile = !string.IsNullOrEmpty(FileName) &&
+            (FileName.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) ||
+             FileName.EndsWith(".mos", StringComparison.OrdinalIgnoreCase));
+
+        ComputeDiff();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ViewMode == DiffViewMode.SideBySide || ViewMode == DiffViewMode.SideBySideFull)
+        {
+            await JS.InvokeVoidAsync("diffViewer.initSyncScroll", _leftPaneRef, _rightPaneRef);
+            _scrollSyncActive = true;
+        }
+        else if (_scrollSyncActive)
+        {
+            await JS.InvokeVoidAsync("diffViewer.dispose");
+            _scrollSyncActive = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        NavState.OnThemeChanged -= OnThemeChanged;
+        if (_scrollSyncActive)
+            await JS.InvokeVoidAsync("diffViewer.dispose");
+    }
+
+    public void SetViewMode(DiffViewMode mode)
+    {
+        ViewMode = mode;
+        ViewModeChanged.InvokeAsync(mode);
+        ComputeDiff();
+    }
+
+    private string GetContainerStyle()
+    {
+        return !string.IsNullOrEmpty(Height) ? $"height: {Height};" : "";
+    }
+
+    private string GetDiffSummary()
+    {
+        if (_addedCount == 0 && _removedCount == 0)
+            return "No changes";
+
+        var parts = new List<string>();
+        if (_addedCount > 0)
+            parts.Add($"+{_addedCount}");
+        if (_removedCount > 0)
+            parts.Add($"-{_removedCount}");
+        return string.Join(" / ", parts) + " lines";
+    }
+
+    private void ComputeDiff()
+    {
+        _unifiedLines.Clear();
+        _leftLines.Clear();
+        _rightLines.Clear();
+        _addedCount = 0;
+        _removedCount = 0;
+        _errorMessage = null;
+
+        var originalLines = (OriginalContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var modifiedLines = (ModifiedContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+
+        int width = Math.Max(3, Math.Max(originalLines.Length, modifiedLines.Length));
+        _maxLineNumberDigits = width.ToString().Length;
+
+        // Check if the file is too large for the O(m*n) LCS algorithm
+        long lcsCells = (long)(originalLines.Length + 1) * (modifiedLines.Length + 1);
+        if (lcsCells > MaxLcsCells)
+        {
+            var maxLines = Math.Max(originalLines.Length, modifiedLines.Length);
+            _errorMessage = $"File is too large for detailed diff comparison ({maxLines:N0} lines). " +
+                "Try viewing a smaller section of the file, or compare using an external diff tool.";
+            return;
+        }
+
+        try
+        {
+            // Compute LCS-based diff
+            var diffResult = ComputeLcsDiff(originalLines, modifiedLines);
+
+            if (ViewMode == DiffViewMode.SideBySideFull)
+            {
+                ComputeFullSideBySide(originalLines, modifiedLines, diffResult);
+            }
+            else if (ViewMode == DiffViewMode.SideBySide)
+            {
+                ComputeSideBySideWithContext(originalLines, modifiedLines, diffResult);
+            }
+            else
+            {
+                ComputeUnifiedWithContext(originalLines, modifiedLines, diffResult);
+            }
+        }
+        catch (OutOfMemoryException)
+        {
+            _unifiedLines.Clear();
+            _leftLines.Clear();
+            _rightLines.Clear();
+            _errorMessage = $"Not enough memory to compute diff for this file " +
+                $"({originalLines.Length:N0} / {modifiedLines.Length:N0} lines). " +
+                "Try viewing a smaller section, or compare using an external diff tool.";
+        }
+    }
+
+    private List<DiffOp> ComputeLcsDiff(string[] original, string[] modified)
+    {
+        // Simple LCS-based diff algorithm
+        int m = original.Length;
+        int n = modified.Length;
+
+        // Build LCS table
+        int[,] lcs = new int[m + 1, n + 1];
+        for (int i = 1; i <= m; i++)
+        {
+            for (int j = 1; j <= n; j++)
+            {
+                if (original[i - 1] == modified[j - 1])
+                    lcs[i, j] = lcs[i - 1, j - 1] + 1;
+                else
+                    lcs[i, j] = Math.Max(lcs[i - 1, j], lcs[i, j - 1]);
+            }
+        }
+
+        // Backtrack to find diff operations
+        var ops = new List<DiffOp>();
+        int x = m, y = n;
+        while (x > 0 || y > 0)
+        {
+            if (x > 0 && y > 0 && original[x - 1] == modified[y - 1])
+            {
+                ops.Add(new DiffOp { Type = DiffOpType.Equal, OriginalIndex = x - 1, ModifiedIndex = y - 1 });
+                x--; y--;
+            }
+            else if (y > 0 && (x == 0 || lcs[x, y - 1] >= lcs[x - 1, y]))
+            {
+                ops.Add(new DiffOp { Type = DiffOpType.Insert, ModifiedIndex = y - 1 });
+                y--;
+            }
+            else
+            {
+                ops.Add(new DiffOp { Type = DiffOpType.Delete, OriginalIndex = x - 1 });
+                x--;
+            }
+        }
+
+        ops.Reverse();
+        return ops;
+    }
+
+    private void ComputeFullSideBySide(string[] original, string[] modified, List<DiffOp> ops)
+    {
+        int leftLineNum = 1, rightLineNum = 1;
+        int opIndex = 0;
+
+        while (opIndex < ops.Count)
+        {
+            var op = ops[opIndex];
+
+            if (op.Type == DiffOpType.Equal)
+            {
+                _leftLines.Add(new DiffLine { LineNumber = leftLineNum.ToString(), Content = original[op.OriginalIndex], Type = DiffLineType.Unchanged });
+                _rightLines.Add(new DiffLine { LineNumber = rightLineNum.ToString(), Content = modified[op.ModifiedIndex], Type = DiffLineType.Unchanged });
+                leftLineNum++;
+                rightLineNum++;
+                opIndex++;
+            }
+            else if (op.Type == DiffOpType.Delete)
+            {
+                _leftLines.Add(new DiffLine { LineNumber = leftLineNum.ToString(), Content = original[op.OriginalIndex], Type = DiffLineType.Removed });
+                _rightLines.Add(new DiffLine { LineNumber = "", Content = "", Type = DiffLineType.Empty });
+                leftLineNum++;
+                _removedCount++;
+                opIndex++;
+            }
+            else // Insert
+            {
+                _leftLines.Add(new DiffLine { LineNumber = "", Content = "", Type = DiffLineType.Empty });
+                _rightLines.Add(new DiffLine { LineNumber = rightLineNum.ToString(), Content = modified[op.ModifiedIndex], Type = DiffLineType.Added });
+                rightLineNum++;
+                _addedCount++;
+                opIndex++;
+            }
+        }
+    }
+
+    private void ComputeSideBySideWithContext(string[] original, string[] modified, List<DiffOp> ops)
+    {
+        // Mark which lines are changed or near changes
+        var changedOriginal = new HashSet<int>();
+        var changedModified = new HashSet<int>();
+
+        foreach (var op in ops)
+        {
+            if (op.Type == DiffOpType.Delete)
+            {
+                for (int i = Math.Max(0, op.OriginalIndex - ContextLines); i <= Math.Min(original.Length - 1, op.OriginalIndex + ContextLines); i++)
+                    changedOriginal.Add(i);
+            }
+            else if (op.Type == DiffOpType.Insert)
+            {
+                for (int i = Math.Max(0, op.ModifiedIndex - ContextLines); i <= Math.Min(modified.Length - 1, op.ModifiedIndex + ContextLines); i++)
+                    changedModified.Add(i);
+            }
+            else
+            {
+                // Mark context around unchanged lines that are near changes
+                if (changedOriginal.Contains(op.OriginalIndex - 1) || changedModified.Contains(op.ModifiedIndex - 1))
+                {
+                    changedOriginal.Add(op.OriginalIndex);
+                    changedModified.Add(op.ModifiedIndex);
+                }
+            }
+        }
+
+        // Re-traverse to include context for equal lines
+        for (int i = 0; i < ops.Count; i++)
+        {
+            var op = ops[i];
+            if (op.Type == DiffOpType.Equal)
+            {
+                // Check if within context of a change
+                bool nearChange = false;
+                for (int j = Math.Max(0, i - ContextLines); j <= Math.Min(ops.Count - 1, i + ContextLines); j++)
+                {
+                    if (ops[j].Type != DiffOpType.Equal)
+                    {
+                        nearChange = true;
+                        break;
+                    }
+                }
+                if (nearChange)
+                {
+                    changedOriginal.Add(op.OriginalIndex);
+                    changedModified.Add(op.ModifiedIndex);
+                }
+            }
+        }
+
+        // Build the side-by-side view with separators
+        int leftLineNum = 1, rightLineNum = 1;
+        bool inHunk = false;
+
+        foreach (var op in ops)
+        {
+            if (op.Type == DiffOpType.Equal)
+            {
+                if (changedOriginal.Contains(op.OriginalIndex))
+                {
+                    if (!inHunk)
+                    {
+                        AddSeparator();
+                        inHunk = true;
+                    }
+                    _leftLines.Add(new DiffLine { LineNumber = leftLineNum.ToString(), Content = original[op.OriginalIndex], Type = DiffLineType.Unchanged });
+                    _rightLines.Add(new DiffLine { LineNumber = rightLineNum.ToString(), Content = modified[op.ModifiedIndex], Type = DiffLineType.Unchanged });
+                }
+                else
+                {
+                    inHunk = false;
+                }
+                leftLineNum++;
+                rightLineNum++;
+            }
+            else if (op.Type == DiffOpType.Delete)
+            {
+                if (!inHunk)
+                {
+                    AddSeparator();
+                    inHunk = true;
+                }
+                _leftLines.Add(new DiffLine { LineNumber = leftLineNum.ToString(), Content = original[op.OriginalIndex], Type = DiffLineType.Removed });
+                _rightLines.Add(new DiffLine { LineNumber = "", Content = "", Type = DiffLineType.Empty });
+                leftLineNum++;
+                _removedCount++;
+            }
+            else // Insert
+            {
+                if (!inHunk)
+                {
+                    AddSeparator();
+                    inHunk = true;
+                }
+                _leftLines.Add(new DiffLine { LineNumber = "", Content = "", Type = DiffLineType.Empty });
+                _rightLines.Add(new DiffLine { LineNumber = rightLineNum.ToString(), Content = modified[op.ModifiedIndex], Type = DiffLineType.Added });
+                rightLineNum++;
+                _addedCount++;
+            }
+        }
+    }
+
+    private void AddSeparator()
+    {
+        if (_leftLines.Count > 0)
+        {
+            _leftLines.Add(new DiffLine { LineNumber = "", Content = "...", Type = DiffLineType.Separator });
+            _rightLines.Add(new DiffLine { LineNumber = "", Content = "...", Type = DiffLineType.Separator });
+        }
+    }
+
+    private void ComputeUnifiedWithContext(string[] original, string[] modified, List<DiffOp> ops)
+    {
+        // Build unified diff with context
+        int leftLineNum = 1, rightLineNum = 1;
+        bool inHunk = false;
+
+        for (int i = 0; i < ops.Count; i++)
+        {
+            var op = ops[i];
+
+            // Check if within context of a change
+            bool nearChange = false;
+            for (int j = Math.Max(0, i - ContextLines); j <= Math.Min(ops.Count - 1, i + ContextLines); j++)
+            {
+                if (ops[j].Type != DiffOpType.Equal)
+                {
+                    nearChange = true;
+                    break;
+                }
+            }
+
+            if (op.Type == DiffOpType.Equal)
+            {
+                if (nearChange)
+                {
+                    if (!inHunk && _unifiedLines.Count > 0)
+                    {
+                        _unifiedLines.Add(new DiffLine { LineNumber = "", Content = "...", Type = DiffLineType.Separator, Prefix = " " });
+                    }
+                    inHunk = true;
+                    _unifiedLines.Add(new DiffLine
+                    {
+                        LineNumber = $"{leftLineNum}/{rightLineNum}",
+                        Content = original[op.OriginalIndex],
+                        Type = DiffLineType.Unchanged,
+                        Prefix = " "
+                    });
+                }
+                else
+                {
+                    inHunk = false;
+                }
+                leftLineNum++;
+                rightLineNum++;
+            }
+            else if (op.Type == DiffOpType.Delete)
+            {
+                if (!inHunk && _unifiedLines.Count > 0)
+                {
+                    _unifiedLines.Add(new DiffLine { LineNumber = "", Content = "...", Type = DiffLineType.Separator, Prefix = " " });
+                }
+                inHunk = true;
+                _unifiedLines.Add(new DiffLine
+                {
+                    LineNumber = leftLineNum.ToString(),
+                    Content = original[op.OriginalIndex],
+                    Type = DiffLineType.Removed,
+                    Prefix = "-"
+                });
+                leftLineNum++;
+                _removedCount++;
+            }
+            else // Insert
+            {
+                if (!inHunk && _unifiedLines.Count > 0)
+                {
+                    _unifiedLines.Add(new DiffLine { LineNumber = "", Content = "...", Type = DiffLineType.Separator, Prefix = " " });
+                }
+                inHunk = true;
+                _unifiedLines.Add(new DiffLine
+                {
+                    LineNumber = rightLineNum.ToString(),
+                    Content = modified[op.ModifiedIndex],
+                    Type = DiffLineType.Added,
+                    Prefix = "+"
+                });
+                rightLineNum++;
+                _addedCount++;
+            }
+        }
+    }
+
+    private string GetLineClass(DiffLineType type)
+    {
+        return type switch
+        {
+            DiffLineType.Added => "diff-line-added",
+            DiffLineType.Removed => "diff-line-removed",
+            DiffLineType.Separator => "diff-line-separator",
+            DiffLineType.Empty => "diff-line-empty",
+            _ => ""
+        };
+    }
+
+    private string ParseContent(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return "&nbsp;";
+
+        // Count leading spaces before any encoding/highlighting
+        int leadingSpaces = 0;
+        while (leadingSpaces < content.Length && content[leadingSpaces] == ' ')
+        {
+            leadingSpaces++;
+        }
+
+        // Apply Modelica syntax highlighting (includes HTML encoding) or plain encoding
+        if (_isModelicaFile)
+        {
+            content = ApplyModelicaSyntaxHighlighting(content);
+        }
+        else if (!content.Contains("<span"))
+        {
+            content = System.Web.HttpUtility.HtmlEncode(content);
+        }
+
+        // Preserve leading spaces as non-breaking spaces
+        if (leadingSpaces > 0)
+        {
+            // After encoding/highlighting, the leading spaces may have been encoded or
+            // wrapped in spans. Strip the original leading spaces worth of characters
+            // from the processed content and prepend non-breaking spaces.
+            var processedWithoutLeading = content.TrimStart('\u00A0', ' ');
+            content = new string('\u00A0', leadingSpaces) + processedWithoutLeading;
+        }
+
+        return content;
+    }
+
+    private static readonly string[] _modelicaKeywords = new[]
+    {
+        "algorithm", "and", "annotation", "block", "break", "class", "connect",
+        "connector", "constant", "constrainedby", "der", "discrete", "each",
+        "else", "elseif", "elsewhen", "encapsulated", "end", "enumeration",
+        "equation", "expandable", "extends", "external", "false", "final",
+        "flow", "for", "function", "if", "import", "impure", "in", "initial",
+        "inner", "input", "loop", "model", "not", "operator", "or", "outer",
+        "output", "package", "parameter", "partial", "protected", "public",
+        "pure", "record", "redeclare", "replaceable", "return", "stream",
+        "then", "true", "type", "when", "while", "within"
+    };
+
+    private static readonly System.Text.RegularExpressions.Regex _modelicaKeywordRegex =
+        new(@"\b(" + string.Join("|", _modelicaKeywords) + @")\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex _modelicaNumberRegex =
+        new(@"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private string ApplyModelicaSyntaxHighlighting(string line)
+    {
+        // Check if line contains pre-rendered markup tags (from ModelicaRenderer)
+        if (line.Contains("<KEYWORD>"))
+        {
+            return System.Text.RegularExpressions.Regex.Replace(
+                line,
+                @"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
+                match =>
+                {
+                    var tagType = match.Groups[1].Value.ToLower();
+                    var content = match.Groups[2].Value;
+                    content = System.Web.HttpUtility.HtmlEncode(content);
+                    return $"<span class=\"code-{tagType}\">{content}</span>";
+                }
+            );
+        }
+
+        // Raw Modelica text — tokenize into comments, strings, and code segments,
+        // then HTML-encode and highlight each appropriately.
+        return HighlightRawModelica(line);
+    }
+
+    /// <summary>
+    /// Tokenizes a raw Modelica line into string literals, line comments, and code segments,
+    /// then applies HTML encoding and syntax highlighting to each token.
+    /// </summary>
+    private static string HighlightRawModelica(string line)
+    {
+        var sb = new System.Text.StringBuilder();
+        int i = 0;
+        int codeStart = 0;
+
+        while (i < line.Length)
+        {
+            // Check for line comment
+            if (i + 1 < line.Length && line[i] == '/' && line[i + 1] == '/')
+            {
+                // Flush preceding code segment
+                if (i > codeStart)
+                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
+
+                var comment = line.Substring(i);
+                sb.Append($"<span class=\"code-comment\">{System.Web.HttpUtility.HtmlEncode(comment)}</span>");
+                return sb.ToString(); // Comment runs to end of line
+            }
+
+            // Check for string literal
+            if (line[i] == '"')
+            {
+                // Flush preceding code segment
+                if (i > codeStart)
+                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
+
+                int stringEnd = i + 1;
+                while (stringEnd < line.Length)
+                {
+                    if (line[stringEnd] == '\\') { stringEnd += 2; continue; }
+                    if (line[stringEnd] == '"') { stringEnd++; break; }
+                    stringEnd++;
+                }
+                var str = line.Substring(i, stringEnd - i);
+                sb.Append($"<span class=\"code-string\">{System.Web.HttpUtility.HtmlEncode(str)}</span>");
+                i = stringEnd;
+                codeStart = i;
+                continue;
+            }
+
+            i++;
+        }
+
+        // Flush remaining code segment
+        if (codeStart < line.Length)
+            sb.Append(HighlightCodeSegment(line.Substring(codeStart)));
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// HTML-encodes a code segment and highlights keywords and numbers.
+    /// </summary>
+    private static string HighlightCodeSegment(string segment)
+    {
+        var encoded = System.Web.HttpUtility.HtmlEncode(segment);
+        encoded = _modelicaKeywordRegex.Replace(encoded,
+            m => $"<span class=\"code-keyword\">{m.Value}</span>");
+        encoded = _modelicaNumberRegex.Replace(encoded,
+            m => $"<span class=\"code-number\">{m.Value}</span>");
+        return encoded;
+    }
+
+    private class DiffLine
+    {
+        public string LineNumber { get; set; } = "";
+        public string Content { get; set; } = "";
+        public DiffLineType Type { get; set; }
+        public string Prefix { get; set; } = "";
+    }
+
+    private enum DiffLineType
+    {
+        Unchanged,
+        Added,
+        Removed,
+        Separator,
+        Empty
+    }
+
+    private class DiffOp
+    {
+        public DiffOpType Type { get; set; }
+        public int OriginalIndex { get; set; }
+        public int ModifiedIndex { get; set; }
+    }
+
+    private enum DiffOpType
+    {
+        Equal,
+        Insert,
+        Delete
+    }
+}

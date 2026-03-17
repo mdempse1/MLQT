@@ -1,0 +1,154 @@
+Summary
+  Generated on: 16/03/2026 - 09:22:44
+  Coverage date: 16/03/2026 - 09:22:17
+  Parser: Cobertura
+  Assemblies: 6
+  Classes: 122
+  Files: 117
+  Line coverage: 47.9%
+  Covered lines: 11119
+  Uncovered lines: 12086
+  Coverable lines: 23205
+  Total lines: 36374
+  Branch coverage: 35.3% (2958 of 8365)
+  Covered branches: 2958
+  Total branches: 8365
+  Method coverage: 46.7% (1131 of 2419)
+  Full method coverage: 31.2% (756 of 2419)
+  Covered methods: 1131
+  Fully covered methods: 756
+  Total methods: 2419
+
+DymolaInterface                                                                                                                                                  0%
+  DymolaInterface.DymolaInterface                                                                                                                                0%
+  DymolaInterface.DymolaInterfaceFactory                                                                                                                         0%
+  DymolaInterface.DymolaSettings                                                                                                                                 0%
+  DymolaInterface.Examples.Examples                                                                                                                              0%
+
+MLQT.Services                                                                                                                                                   82%
+  MLQT.Services.CodeReviewService                                                                                                                               83%
+  MLQT.Services.CustomDictionaryService                                                                                                                       95.2%
+  MLQT.Services.DataTypes.AddRepositoryResult                                                                                                                  100%
+  MLQT.Services.DataTypes.DiscoveredLibraryInfo                                                                                                                100%
+  MLQT.Services.DataTypes.ExternalResourceReference                                                                                                            100%
+  MLQT.Services.DataTypes.FileChangeInfo                                                                                                                       100%
+  MLQT.Services.DataTypes.FilePickerResult                                                                                                                     100%
+  MLQT.Services.DataTypes.ImpactAnalysisResult                                                                                                                 100%
+  MLQT.Services.DataTypes.ImpactDetail                                                                                                                         100%
+  MLQT.Services.DataTypes.LoadedLibrary                                                                                                                        100%
+  MLQT.Services.DataTypes.ModelCheckProgress                                                                                                                   100%
+  MLQT.Services.DataTypes.ModelCheckResult                                                                                                                     100%
+  MLQT.Services.DataTypes.NetworkEdge                                                                                                                          100%
+  MLQT.Services.DataTypes.NetworkNode                                                                                                                          100%
+  MLQT.Services.DataTypes.PendingChangesSummary                                                                                                                100%
+  MLQT.Services.DataTypes.ProjectProfile                                                                                                                       100%
+  MLQT.Services.DataTypes.Repository                                                                                                                           100%
+  MLQT.Services.DataTypes.RepositorySettingsCollection                                                                                                         100%
+  MLQT.Services.DataTypes.RepositorySettingsEntry                                                                                                              100%
+  MLQT.Services.DataTypes.ResourceTreeNode                                                                                                                    83.3%
+  MLQT.Services.DataTypes.ResourceWarning                                                                                                                      100%
+  MLQT.Services.DictionaryManagerService                                                                                                                        82%
+  MLQT.Services.DymolaCheckingService                                                                                                                         31.7%
+  MLQT.Services.ExternalResourceService                                                                                                                       93.7%
+  MLQT.Services.FileMonitoringService                                                                                                                         80.9%
+  MLQT.Services.Helpers.FileMonitoringServiceHelpers                                                                                                           100%
+  MLQT.Services.Helpers.ModelicaPackageSaver                                                                                                                  87.5%
+  MLQT.Services.Helpers.ResourceTreeHelper                                                                                                                     100%
+  MLQT.Services.Helpers.SaveResult                                                                                                                             100%
+  MLQT.Services.Helpers.StyleCheckingWorker                                                                                                                   88.7%
+  MLQT.Services.ImpactAnalysisService                                                                                                                         94.9%
+  MLQT.Services.Interfaces.DictionaryInfo                                                                                                                      100%
+  MLQT.Services.LibraryDataService                                                                                                                            80.9%
+  MLQT.Services.LoggingService                                                                                                                                 100%
+  MLQT.Services.OpenModelicaCheckingService                                                                                                                   31.6%
+  MLQT.Services.RepositoryService                                                                                                                             86.7%
+  MLQT.Services.StyleCheckingService                                                                                                                            94%
+
+ModelicaGraph                                                                                                                                                 26.2%
+  ModelicaGraph.DataTypes.FileNode                                                                                                                            61.5%
+  ModelicaGraph.DataTypes.GraphNode                                                                                                                           44.4%
+  ModelicaGraph.DataTypes.LibraryInfo                                                                                                                            0%
+  ModelicaGraph.DataTypes.ModelDefinition                                                                                                                     79.1%
+  ModelicaGraph.DataTypes.ModelNode                                                                                                                           82.2%
+  ModelicaGraph.DataTypes.ResourceDirectoryNode                                                                                                               73.3%
+  ModelicaGraph.DataTypes.ResourceEdge                                                                                                                          75%
+  ModelicaGraph.DataTypes.ResourceFileNode                                                                                                                    78.5%
+  ModelicaGraph.DirectedGraph                                                                                                                                 58.9%
+  ModelicaGraph.GraphBuilder                                                                                                                                  20.7%
+  ModelicaGraph.LoadSelectorModificationAnalyzer                                                                                                                 0%
+  ModelicaGraph.ModelAnalyzer                                                                                                                                  4.5%
+  ModelicaGraph.NamingConventionPresets                                                                                                                          0%
+  ModelicaGraph.NamingConventionSettings                                                                                                                      21.6%
+  ModelicaGraph.StyleChecking                                                                                                                                 42.1%
+  ModelicaGraph.StyleCheckingSettings                                                                                                                          100%
+
+ModelicaParser                                                                                                                                                46.5%
+  modelicaBaseListener                                                                                                                                           0%
+  modelicaBaseVisitor<T>                                                                                                                                      96.8%
+  modelicaLexer                                                                                                                                               97.6%
+  modelicaParser                                                                                                                                              66.7%
+  ModelicaParser.DataTypes.ExternalResourceInfo                                                                                                                  0%
+  ModelicaParser.DataTypes.LogMessage                                                                                                                          100%
+  ModelicaParser.DataTypes.ModelInfo                                                                                                                          94.4%
+  ModelicaParser.DataTypes.ParserError                                                                                                                           0%
+  ModelicaParser.Helpers.ModelicaParserHelper                                                                                                                 75.5%
+  ModelicaParser.Helpers.ModelicaRendererHelper                                                                                                                  0%
+  ModelicaParser.Icons.BitmapPrimitive                                                                                                                           0%
+  ModelicaParser.Icons.EllipsePrimitive                                                                                                                          0%
+  ModelicaParser.Icons.GraphicsPrimitive                                                                                                                         0%
+  ModelicaParser.Icons.IconData                                                                                                                                  0%
+  ModelicaParser.Icons.IconSvgRenderer                                                                                                                         6.4%
+  ModelicaParser.Icons.LinePrimitive                                                                                                                             0%
+  ModelicaParser.Icons.PolygonPrimitive                                                                                                                          0%
+  ModelicaParser.Icons.RectanglePrimitive                                                                                                                        0%
+  ModelicaParser.Icons.TextPrimitive                                                                                                                             0%
+  ModelicaParser.ModelicaErrorListener                                                                                                                         5.5%
+  ModelicaParser.SpellChecking.DictionarySource                                                                                                                100%
+  ModelicaParser.SpellChecking.SpellChecker                                                                                                                     58%
+  ModelicaParser.SpellChecking.TextExtractor                                                                                                                  50.9%
+  ModelicaParser.StyleRules.CheckClassDescriptionStrings                                                                                                      36.3%
+  ModelicaParser.StyleRules.CheckModelReferences                                                                                                                 0%
+  ModelicaParser.StyleRules.ExtendsClausesAtTop                                                                                                                  0%
+  ModelicaParser.StyleRules.FollowNamingConvention                                                                                                               0%
+  ModelicaParser.StyleRules.ImportStatementsFirst                                                                                                                0%
+  ModelicaParser.StyleRules.InitialEquationFirst                                                                                                                 0%
+  ModelicaParser.StyleRules.MixConnectionsAndEquations                                                                                                           0%
+  ModelicaParser.StyleRules.NamingConventionConfig                                                                                                               0%
+  ModelicaParser.StyleRules.NamingValidator                                                                                                                      0%
+  ModelicaParser.StyleRules.OneOfEachSection                                                                                                                     0%
+  ModelicaParser.StyleRules.PublicParametersAndConstantsHaveDescription                                                                                          0%
+  ModelicaParser.StyleRules.SectionTracker                                                                                                                       0%
+  ModelicaParser.StyleRules.SpellCheckDescriptions                                                                                                              71%
+  ModelicaParser.StyleRules.SpellCheckDocumentation                                                                                                              0%
+  ModelicaParser.StyleRules.Tracker                                                                                                                              0%
+  ModelicaParser.StyleRules.VisitorWithModelNameTracking                                                                                                      56.5%
+  ModelicaParser.Visitors.ExternalResourceExtractor                                                                                                              0%
+  ModelicaParser.Visitors.IconExtractionResult                                                                                                                 100%
+  ModelicaParser.Visitors.IconExtractor                                                                                                                        7.7%
+  ModelicaParser.Visitors.ModelExtractorVisitor                                                                                                               88.9%
+  ModelicaParser.Visitors.ModelicaRenderer                                                                                                                    24.3%
+  System.Text.RegularExpressions.Generated                                                                                                                       0%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__HtmlTagRegex_1                   0%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__MultiWhitespaceRegex_2           0%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__NonNewlineWhitespaceRegex_3      0%
+
+OpenModelicaInterface                                                                                                                                            0%
+  OpenModelicaInterface.Examples                                                                                                                                 0%
+  OpenModelicaInterface.OpenModelicaInterface                                                                                                                    0%
+  OpenModelicaInterface.OpenModelicaInterfaceFactory                                                                                                             0%
+  OpenModelicaInterface.OpenModelicaSettings                                                                                                                     0%
+  OpenModelicaInterface.SimulationResult                                                                                                                         0%
+
+RevisionControl                                                                                                                                               30.2%
+  RevisionControl.GitRevisionControlSystem                                                                                                                    45.9%
+  RevisionControl.RevisionControlLogger                                                                                                                         80%
+  RevisionControl.SvnRevisionControlSystem                                                                                                                    13.1%
+  RevisionControl.VcsBranchInfo                                                                                                                                100%
+  RevisionControl.VcsChangedFile                                                                                                                              66.6%
+  RevisionControl.VcsCommitResult                                                                                                                               80%
+  RevisionControl.VcsLogEntry                                                                                                                                  100%
+  RevisionControl.VcsLogOptions                                                                                                                               36.3%
+  RevisionControl.VcsMergeResult                                                                                                                                80%
+  RevisionControl.VcsOperationResult                                                                                                                           100%
+  RevisionControl.VcsUpdateResult                                                                                                                              100%
+  RevisionControl.VcsWorkingCopyFile                                                                                                                           100%

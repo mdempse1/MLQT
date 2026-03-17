@@ -1,0 +1,366 @@
+@implements IAsyncDisposable
+
+@inject IFilePickerService FilePickerService
+@inject IJSRuntime JSRuntime
+@inject AppState NavState
+@inject ILibraryDataService LibraryDataService
+@inject IImpactAnalysisService ImpactAnalysisService
+
+<MudPaper Elevation="1" Height="calc(100vh - 140px)" Class="pa-2" Style="overflow-y: auto;">
+    @if (NavState.IsDeferredMode && !NavState.HasDependencyAnalysisRun)
+    {
+        <MudStack Row="false" AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 100%;">
+            <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Default" />
+            <MudText Typo="Typo.subtitle1">Dependency analysis has not been run yet</MudText>
+            <MudText Typo="Typo.body1">
+                Dependency analysis was deferred because the repository exceeds the model count threshold.
+                Run the analysis to enable impact analysis.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                       OnClick="RunDependencyAnalysisAsync" Disabled="_isRunningAnalysis">
+                @if (_isRunningAnalysis)
+                {
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                    <MudText>Running...</MudText>
+                }
+                else
+                {
+                    <MudText>Run Dependency Analysis Now</MudText>
+                }
+            </MudButton>
+        </MudStack>
+    }
+    else if (NavState.SelectedModelIDs.Count == 0)
+    {
+        <MudText Typo="Typo.subtitle1">Select one or more models to view their dependencies</MudText>
+        <MudText Typo="Typo.body1">
+            Use checkboxes in the model tree to select multiple models for impact analysis
+        </MudText>
+    }
+    else
+    {
+        <MudStack Row="false">
+            <MudText Typo="Typo.subtitle1">Dependency Network</MudText>
+
+            @if (NavState.SelectedModelIDs.Count == 0)
+            {
+                <MudText Typo="Typo.body1">No models are selected</MudText>
+            }
+            else if (_impactedModelsCount == 0)
+            {
+                <MudText Typo="Typo.body1">No models will be affected by changes to the selected model(s)</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body1"><strong>@_impactedModelsCount</strong> model(s) will be affected by changes to the selected model(s)</MudText>
+                @* Legend and controls *@
+                <MudStack Row="true" Class="mt-3" Spacing="4" AlignItems="AlignItems.Center">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <div style="width: 0.625rem; height: 0.625rem; background-color: var(--mud-palette-success); border-radius: 50%;"></div>
+                        <MudText Typo="Typo.caption">Selected Class</MudText>
+                    </MudStack>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <div style="width: 0.625rem; height: 0.625rem; background-color: var(--mud-palette-warning); border-radius: 50%;"></div>
+                        <MudText Typo="Typo.caption">Impacted Class</MudText>
+                    </MudStack>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <div style="width: 0.625rem; height: 0.625rem; background-color: var(--mud-palette-error); border-radius: 50%;"></div>
+                        <MudText Typo="Typo.caption">Both</MudText>
+                    </MudStack>
+                    <MudSpacer />
+                    <MudSelect T="string" Value="_selectedLayout" ValueChanged="OnLayoutChanged" Typo="Typo.caption"
+                               Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" 
+                               Style="width: 175px;" Label="Layout">
+                        <MudSelectItem Value="@("dagre-tb")">Hierarchy (Top→Bottom)</MudSelectItem>
+                        <MudSelectItem Value="@("dagre-lr")">Hierarchy (Left→Right)</MudSelectItem>
+                        <MudSelectItem Value="@("breadthfirst")">Tree</MudSelectItem>
+                        <MudSelectItem Value="@("klay")">KLay</MudSelectItem>
+                        <MudSelectItem Value="@("concentric")">Concentric</MudSelectItem>
+                        <MudSelectItem Value="@("fcose")">fCoSE (Force-Directed)</MudSelectItem>
+                        <MudSelectItem Value="@("spread")">Spread</MudSelectItem>
+                        <MudSelectItem Value="@("cose")">CoSE</MudSelectItem>
+                        <MudSelectItem Value="@("circle")">Circle</MudSelectItem>
+                    </MudSelect>
+                    @if (_highlightedNodeId != null)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" OnClick="ClearHighlight">Clear Selection</MudButton>
+                    }
+                </MudStack>
+
+                @* Network Graph Visualization using Cytoscape.js *@
+                <MudPaper Elevation="3" Class="pa-2" Style="background-color: var(--mud-palette-background); position: relative;">
+                    <CytoscapeGraph @ref="_cytoscapeGraph"
+                                    Nodes="_graphNodes"
+                                    Edges="_graphEdges"
+                                    Height="400px"
+                                    Layout="@_selectedLayout"
+                                    OnNodeClicked="OnNodeClicked"
+                                    OnBackgroundClicked="ClearHighlight" />
+
+                    @* Tooltip for selected node *@
+                    @if (!string.IsNullOrEmpty(_highlightedNodeId))
+                    {
+                        var highlightedNode = _networkNodes.FirstOrDefault(n => n.Id == _highlightedNodeId);
+                        if (highlightedNode != null)
+                        {
+                            <div style="position: absolute; top: 10px; left: 10px; background: var(--mud-palette-background-gray); padding: 8px 12px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); min-width: 150px; z-index: 10; pointer-events: none;">
+                                <div style="font-weight: bold; font-size: 0.625rem; margin-bottom: 4px;">@highlightedNode.FullName</div>
+                                <div style="font-size: 0.625rem; color: #666;">
+                                    @if (highlightedNode.IsSelected)
+                                    {
+                                        <span style="color: var(--mud-palette-success);">Selected model</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--mud-palette-warning);">Impacted model</span>
+                                    }
+                                    @if (_connectedNodeIds.Count > 0)
+                                    {
+                                        <span> &bull; @_connectedNodeIds.Count connection(s)</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </MudPaper>
+
+                @* List of impacted models *@
+                <MudTable T="ImpactDetail"
+                          Items="@_impactDetails.OrderBy(i => i.ModelId)"
+                          Dense="true" Hover="true" Striped="true"
+                          Height="270px" FixedHeader="true"
+                          OnRowClick="OnImpactTableRowClicked"
+                          RowClassFunc="@GetImpactRowClass"
+                          Filter="new Func<ImpactDetail,bool>(FilterFunc1)">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">List of impacted models</MudText>
+                        <MudSpacer />
+                        <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
+                            AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
+                            Typo="Typo.body1"></MudTextField>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh Style="width:45%;">Model</MudTh>
+                        <MudTh Style="width:10%;">Type</MudTh>
+                        <MudTh Style="width:45%;">Impacted By</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Model" Style="width:45%; color: var(--mud-palette-primary);" Class="compact-table">@MakeShortName(context.ModelId)</MudTd>
+                        <MudTd DataLabel="Type" Style="width:10%;" Class="compact-table">@context.ClassType</MudTd>
+                        <MudTd DataLabel="Impacted By" Style="width:45%;" Class="compact-table">@string.Join(", ", MakeShortNames(context.ImpactedBy).Take(3))@(context.ImpactedBy.Count > 3 ? $" (+{context.ImpactedBy.Count - 3} more)" : "")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudStack>
+    }
+</MudPaper>
+
+@code {
+    // Analysis result from service
+    private ImpactAnalysisResult? _analysisResult;
+    private List<NetworkNode> _networkNodes = new();
+    private List<NetworkEdge> _networkEdges = new();
+    private List<ImpactDetail> _impactDetails = new();
+    private int _impactedModelsCount = 0;
+    private string _searchString = "";
+
+    // Graph component data (generic, not domain-specific)
+    private CytoscapeGraph? _cytoscapeGraph;
+    private List<DiagramNode> _graphNodes = new();
+    private List<DiagramEdge> _graphEdges = new();
+    private string _selectedLayout = "cose";
+
+    // Deferred analysis state
+    private bool _isRunningAnalysis = false;
+
+    // Highlighting state
+    private string? _highlightedNodeId = null;
+    private HashSet<string> _connectedNodeIds = new();
+
+    protected override void OnInitialized()
+    {
+        // Enable multi-select mode when Dependencies page is shown
+        NavState.ChangeSelectionMode(SelectionMode.MultiSelection);
+        NavState.OnSelectedModelsChanged += OnSelectedModelsChanged;
+        NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
+        NavState.SetSelectedModels(new List<string>() { NavState.ModelID });
+
+        base.OnInitialized();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && NavState.SelectedModelIDs.Count > 0)
+        {
+            AnalyzeDependencies();
+            StateHasChanged();
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Disable multi-select mode when leaving Dependencies page
+        NavState.ChangeSelectionMode(SelectionMode.SingleSelection);
+        NavState.OnSelectedModelsChanged -= OnSelectedModelsChanged;
+        NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
+        // CytoscapeGraph component manages its own JS disposal via IAsyncDisposable
+    }
+
+    private async void OnDeferredAnalysisCompleted()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RunDependencyAnalysisAsync()
+    {
+        _isRunningAnalysis = true;
+        StateHasChanged();
+        try
+        {
+            await NavState.RunDeferredDependenciesAsync();
+        }
+        finally
+        {
+            _isRunningAnalysis = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async void OnSelectedModelsChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            _highlightedNodeId = null;
+            _connectedNodeIds.Clear();
+            AnalyzeDependencies();
+            StateHasChanged();
+        });
+    }
+
+    private void AnalyzeDependencies()
+    {
+        _networkNodes.Clear();
+        _networkEdges.Clear();
+        _impactDetails.Clear();
+        _graphNodes.Clear();
+        _graphEdges.Clear();
+        _searchString = string.Empty;
+
+        if (NavState.SelectedModelIDs.Count == 0)
+        {
+            _impactedModelsCount = 0;
+            return;
+        }
+
+        // Use the service to perform the analysis
+        _analysisResult = ImpactAnalysisService.AnalyzeImpact(
+            LibraryDataService.CombinedGraph,
+            NavState.SelectedModelIDs);
+
+        // Copy results for rendering and tooltip logic
+        _networkNodes = _analysisResult.Nodes;
+        _networkEdges = _analysisResult.Edges;
+        _impactDetails = _analysisResult.ImpactDetails;
+        _impactedModelsCount = _analysisResult.ImpactedModelsCount;
+
+        // Map to generic graph types for CytoscapeGraph component
+        _graphNodes = _networkNodes.Select(n => new DiagramNode
+        {
+            Id = n.Id,
+            Label = n.ShortName,
+            FullName = n.FullName,
+            Color = n.Color,
+            BorderColor = n.BorderColor
+        }).ToList();
+
+        _graphEdges = _networkEdges.Select(e => new DiagramEdge
+        {
+            FromId = e.FromId,
+            ToId = e.ToId
+        }).ToList();
+    }
+
+    private async Task OnNodeClicked(string nodeId)
+    {
+        if (_highlightedNodeId == nodeId)
+        {
+            await ClearHighlight();
+            _searchString = string.Empty;
+        }
+        else
+        {
+            _highlightedNodeId = nodeId;
+            _connectedNodeIds = ImpactAnalysisService.GetConnectedNodes(_networkEdges, nodeId);
+            if (_cytoscapeGraph != null)
+                await _cytoscapeGraph.HighlightNodeAsync(nodeId);
+            _searchString = nodeId;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearHighlight()
+    {
+        _highlightedNodeId = null;
+        _connectedNodeIds.Clear();
+        if (_cytoscapeGraph != null)
+            await _cytoscapeGraph.ClearHighlightAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnLayoutChanged(string layoutName)
+    {
+        _selectedLayout = layoutName;
+        if (_cytoscapeGraph != null)
+            await _cytoscapeGraph.RelayoutAsync(layoutName);
+    }
+
+    private async Task OnImpactRowClicked(string modelId)
+    {
+        await OnNodeClicked(modelId);
+    }
+
+    private async Task OnImpactTableRowClicked(TableRowClickEventArgs<ImpactDetail> args)
+    {
+        if (args.Item != null)
+            await OnImpactRowClicked(args.Item.ModelId);
+    }
+
+    private string GetImpactRowClass(ImpactDetail impact, int index) =>
+        impact.ModelId == _highlightedNodeId ? "impact-row-selected" : string.Empty;
+
+    private string MakeShortName(string name)
+    {
+        var idx = name.IndexOf(".") + 1;
+        return name.Length <= 40 || name.IndexOf(".") == -1 || name.Count(c => c == '.') <= 1 ?
+                name :
+                name.Substring(0, name.IndexOf(".", idx)) + "..." + name.Substring(name.LastIndexOf("."));
+    }
+
+    private List<string> MakeShortNames(List<string> names)
+    {
+        List<string> shortNames = new();
+        foreach (var name in names)
+        {
+            shortNames.Add(MakeShortName(name));
+        }
+        return shortNames;
+    }
+
+    private bool FilterFunc1(ImpactDetail element) => FilterFunc(element, _searchString);
+
+    private bool FilterFunc(ImpactDetail element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+ 
+        var stringsLowerCase = searchString.ToLower().Split(' ');
+        if (stringsLowerCase.Any(element.ModelId.ToLower().Contains))
+            return true;
+        if (stringsLowerCase.Any(string.Join(" ", element.ImpactedBy).ToLower().Contains))
+            return true;
+
+        return false;
+    }
+}

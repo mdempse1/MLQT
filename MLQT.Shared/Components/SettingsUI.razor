@@ -1,0 +1,321 @@
+@using System.Threading.Tasks
+
+@inject ISettingsService SettingsService
+@inject IJSRuntime JSRuntime
+@inject AppState NavState
+
+<MudPaper Elevation="0">
+    <!-- UI Themes -->
+    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4 mb-2">UI Theme</MudText>
+    <MudButtonGroup Variant="Variant.Outlined" Class="mb-4">
+        <MudButton
+            OnClick="@(() => ApplyPresetUITheme("Light"))"
+            Size="Size.Small"
+            StartIcon="@(_settings.UI.Theme==Theme.Light ? Icons.Material.Filled.Check : string.Empty)" >
+            Light
+        </MudButton>
+        <MudButton
+            OnClick="@(() => ApplyPresetUITheme("Dark"))"
+            Size="Size.Small"
+            StartIcon="@(_settings.UI.Theme==Theme.Dark ? Icons.Material.Filled.Check : string.Empty)" >
+            Dark
+        </MudButton>
+        <MudButton
+            OnClick="@(() => ApplyPresetUITheme("Custom"))"
+            Size="Size.Small"
+            StartIcon="@(_settings.UI.Theme==Theme.Custom ? Icons.Material.Filled.Check : string.Empty)" >
+            Custom
+        </MudButton>
+    </MudButtonGroup>
+
+    @if (_customUIStyles)
+    {
+        <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4 mb-2">Custom UI Theme</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Black" Value="@_settings.UI.CustomBlack" ValueChanged="OnBlackChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="White" Value="@_settings.UI.CustomWhite" ValueChanged="OnWhiteChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Primary" Value="@_settings.UI.CustomPrimary" ValueChanged="OnPrimaryChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Primary Contrast Text" Value="@_settings.UI.CustomPrimaryContrastText" ValueChanged="OnPrimaryContrastTextChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Secondary" Value="@_settings.UI.CustomSecondary" ValueChanged="OnSecondaryChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Secondary Contrast Text" Value="@_settings.UI.CustomSecondaryContrastText" ValueChanged="OnSecondaryContrastTextChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Tertiary" Value="@_settings.UI.CustomTertiary" ValueChanged="OnTertiaryChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Tertiary Contrast Text" Value="@_settings.UI.CustomTertiaryContrastText" ValueChanged="OnTertiaryContrastTextChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Info" Value="@_settings.UI.CustomInfo" ValueChanged="OnInfoChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Info Contrast Text" Value="@_settings.UI.CustomInfoContrastText" ValueChanged="OnInfoContrastTextChanged" />
+            </MudItem>
+        </MudGrid>
+    }
+
+    <!-- Startup Analysis -->
+    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4 mb-2">Startup Analysis</MudText>
+    <MudNumericField T="int" @bind-Value="_settings.UI.DeferAnalysisThreshold"
+                     Label="Defer analysis threshold (model count)"
+                     HelperText="When a project has more models than this threshold, formatting, dependency analysis, style checking, and external resource analysis are deferred on startup."
+                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                     Min="100" Max="100000" Step="100"
+                     Typo="Typo.body1" Class="mb-4" Style="max-width: 400px;" />
+
+    <!-- Syntax Highlighting Themes -->
+    <MudText Typo="Typo.subtitle1"  Class="ml-2 mt-4 mb-2">Syntax Highlighting</MudText>
+    <MudButtonGroup Variant="Variant.Outlined" Class="mb-4">
+        <MudButton 
+            OnClick="@(() => ApplyPresetSyntaxTheme("VSCode"))" 
+            Size="Size.Small" 
+            StartIcon="@(_settings.SyntaxHighlighting.ThemeName=="VSCode" ? Icons.Material.Filled.Check : string.Empty)">
+            VS Code
+        </MudButton>   
+        <MudButton 
+            OnClick="@(() => ApplyPresetSyntaxTheme("Dymola"))" 
+            Size="Size.Small"
+            StartIcon="@(_settings.SyntaxHighlighting.ThemeName=="Dymola" ? Icons.Material.Filled.Check : string.Empty)">
+            Dymola
+        </MudButton>
+        <MudButton 
+            OnClick="@(() => ApplyPresetSyntaxTheme("OpenModelica"))" 
+            Size="Size.Small"
+            StartIcon="@(_settings.SyntaxHighlighting.ThemeName=="OpenModelica" ? Icons.Material.Filled.Check : string.Empty)">
+            OpenModelica
+        </MudButton>
+        <MudButton 
+            OnClick="@(() => SetCustomSyntaxTheme())" 
+            Size="Size.Small"
+            StartIcon="@(_settings.SyntaxHighlighting.ThemeName=="Custom" ? Icons.Material.Filled.Check : string.Empty)">
+            Custom
+        </MudButton>
+    </MudButtonGroup>
+
+    @if (_customSyntaxStyles) 
+    {
+        <!-- Editor Background -->
+        <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4 mb-2">Custom Syntax Highlighting Theme</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Background Color" Value="@_settings.SyntaxHighlighting.BackgroundColor" ValueChanged="OnBackgroundChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Text Color" Value="@_settings.SyntaxHighlighting.TextColor" ValueChanged="OnTextChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Border Color" Value="@_settings.SyntaxHighlighting.BorderColor" ValueChanged="OnBorderChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Line Number Color" Value="@_settings.SyntaxHighlighting.LineNumberColor" ValueChanged="OnLineNumberChanged" />
+            </MudItem>
+        </MudGrid>
+
+        <!-- Syntax Element Colors -->
+        <MudText Typo="Typo.subtitle2" Class="mt-2 mb-2">Syntax Element Colors</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Keywords (model, end, etc.)" Value="@_settings.SyntaxHighlighting.KeywordColor" ValueChanged="OnKeywordChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Types" Value="@_settings.SyntaxHighlighting.TypeColor" ValueChanged="OnTypesChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Identifiers" Value="@_settings.SyntaxHighlighting.IdentColor" ValueChanged="OnIdentifiersChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Names" Value="@_settings.SyntaxHighlighting.NameColor" ValueChanged="OnNamesTextChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Functions" Value="@_settings.SyntaxHighlighting.FunctionColor" ValueChanged="OnFunctionsChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Operators" Value="@_settings.SyntaxHighlighting.OperatorColor" ValueChanged="OnOperatorsChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Numbers" Value="@_settings.SyntaxHighlighting.NumberColor" ValueChanged="OnNumbersChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Strings" Value="@_settings.SyntaxHighlighting.StringColor" ValueChanged="OnStringsChanged" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <ColorPicker Label="Comments" Value="@_settings.SyntaxHighlighting.CommentColor" ValueChanged="OnCommentsChanged" />
+            </MudItem>
+        </MudGrid>
+    }
+
+    <!-- Preview -->
+    <div class="code-preview" style="@GetPreviewStyle()">
+        <div style="padding: 1rem; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: var(--mud-typography-body1-size);">
+            <div><span style="color: @_settings.SyntaxHighlighting.KeywordColor; font-weight: 600;">model</span> <span style="color: @_settings.SyntaxHighlighting.NameColor;">Example</span></div>
+            <div>&nbsp;&nbsp;<span style="color: @_settings.SyntaxHighlighting.CommentColor; font-style: italic;">// This is a comment</span></div>
+            <div>&nbsp;&nbsp;<span style="color: @_settings.SyntaxHighlighting.KeywordColor; font-weight: 600;">parameter</span> <span style="color: @_settings.SyntaxHighlighting.TypeColor;">Real</span> <span style="color: @_settings.SyntaxHighlighting.IdentColor;">x</span> <span style="color: @_settings.SyntaxHighlighting.OperatorColor;">=</span> <span style="color: @_settings.SyntaxHighlighting.NumberColor;">3.14</span>;</div>
+            <div>&nbsp;&nbsp;<span style="color: @_settings.SyntaxHighlighting.TypeColor;">String</span> <span style="color: @_settings.SyntaxHighlighting.IdentColor;">name</span> <span style="color: @_settings.SyntaxHighlighting.OperatorColor;">=</span> <span style="color: @_settings.SyntaxHighlighting.StringColor;">"Modelica"</span>;</div>
+            <div><span style="color: @_settings.SyntaxHighlighting.KeywordColor; font-weight: 600;">end</span> <span style="color: @_settings.SyntaxHighlighting.NameColor;">Example</span>;</div>
+        </div>
+    </div>
+</MudPaper>
+
+@code {
+    private AppSettings _settings = new();
+    private bool _customUIStyles { get; set; } = false;
+    private bool _customSyntaxStyles { get; set; } = false;
+
+    protected override void OnInitialized()
+    {
+        NavState.OnSaveSettings += SaveSettings;
+        base.OnInitialized();
+    }
+
+    protected void OnDispose()
+    {
+        NavState.OnSaveSettings -= SaveSettings;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            _settings.UI = await SettingsService.GetAsync("UI", new UISettings());
+            _settings.SyntaxHighlighting = await SettingsService.GetAsync("SyntaxHighlighting", new SyntaxHighlightingSettings());
+            _customUIStyles = _settings.UI.Theme == Theme.Custom;
+            _customSyntaxStyles = _settings.SyntaxHighlighting.ThemeName == "Custom";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+        }
+    }
+
+    private async void SaveSettings()
+    {
+        try
+        {
+            await SettingsService.SetAsync("UI", _settings.UI);
+            await SettingsService.SetAsync("SyntaxHighlighting", _settings.SyntaxHighlighting);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private async Task ApplyPresetUITheme(string themeName)
+    {
+        switch (themeName)
+        {
+            case "Light":
+                _customUIStyles = false;
+                _settings.UI.Theme = Theme.Light;
+                // Reset custom colors to defaults to match the light palette
+                _settings.UI.CustomBlack = "#272c34";
+                _settings.UI.CustomWhite = "#ffffff";
+                _settings.UI.CustomPrimary = "#6a70b1";
+                _settings.UI.CustomPrimaryContrastText = "#ffffff";
+                _settings.UI.CustomSecondary = "#666666";
+                _settings.UI.CustomSecondaryContrastText = "#ffffff";
+                _settings.UI.CustomTertiary = "#a18ac1";
+                _settings.UI.CustomTertiaryContrastText = "#ffffff";
+                _settings.UI.CustomInfo = "#cccccc";
+                _settings.UI.CustomInfoContrastText = "#ffffff";
+                break;
+            case "Dark":
+                _customUIStyles = false;
+                _settings.UI.Theme = Theme.Dark;
+                break;
+            case "Custom":
+                _customUIStyles = true;
+                _settings.UI.Theme = Theme.Custom;
+                break;
+            default:
+                _customUIStyles = false;
+                _settings.UI.Theme = Theme.Light;
+                break;
+        }
+
+        NavState.ThemeChanged(_settings.UI);
+        await ApplyPresetSyntaxTheme(_settings.SyntaxHighlighting.ThemeName);
+        await SettingsService.SetAsync("UI", _settings.UI);
+    }
+
+    // Individual color change handlers — method references are stable across Blazor renders,
+    // preventing unnecessary ColorPicker re-renders that could disrupt user input.
+    private void OnBlackChanged(string v) { _settings.UI.CustomBlack = v; ApplyCustomTheme(); }
+    private void OnWhiteChanged(string v) { _settings.UI.CustomWhite = v; ApplyCustomTheme(); }
+    private void OnPrimaryChanged(string v) { _settings.UI.CustomPrimary = v; ApplyCustomTheme(); }
+    private void OnPrimaryContrastTextChanged(string v) { _settings.UI.CustomPrimaryContrastText = v; ApplyCustomTheme(); }
+    private void OnSecondaryChanged(string v) { _settings.UI.CustomSecondary = v; ApplyCustomTheme(); }
+    private void OnSecondaryContrastTextChanged(string v) { _settings.UI.CustomSecondaryContrastText = v; ApplyCustomTheme(); }
+    private void OnTertiaryChanged(string v) { _settings.UI.CustomTertiary = v; ApplyCustomTheme(); }
+    private void OnTertiaryContrastTextChanged(string v) { _settings.UI.CustomTertiaryContrastText = v; ApplyCustomTheme(); }
+    private void OnInfoChanged(string v) { _settings.UI.CustomInfo = v; ApplyCustomTheme(); }
+    private void OnInfoContrastTextChanged(string v) { _settings.UI.CustomInfoContrastText = v; ApplyCustomTheme(); }
+
+    private void ApplyCustomTheme()
+    {
+        NavState.ThemeChanged(_settings.UI);
+    }
+
+    private async Task ApplyPresetSyntaxTheme(string themeName)
+    {
+        var darkMode = _settings.UI.Theme == Theme.Dark;
+        _settings.SyntaxHighlighting = themeName switch
+        {
+            "Dymola" => SyntaxHighlightingSettings.GetDymolaTheme(darkMode),
+            "OpenModelica" => SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode),
+            "VSCode" => (darkMode ? SyntaxHighlightingSettings.GetDarkTheme() : SyntaxHighlightingSettings.GetLightTheme()),
+            _ => _settings.SyntaxHighlighting
+        };
+        _settings.SyntaxHighlighting.ThemeName = themeName;
+        _customSyntaxStyles = false;
+        StateHasChanged();
+    }
+
+    private string GetPreviewStyle()
+    {
+        return $"background-color: {_settings.SyntaxHighlighting.BackgroundColor}; " +
+               $"color: {_settings.SyntaxHighlighting.TextColor}; " +
+               $"border: 1px solid {_settings.SyntaxHighlighting.BorderColor}; " +
+               $"border-radius: 4px; " +
+               $"overflow: auto; " +
+               $"font-family: var(--mud-typography-default-family);";
+    }
+
+    private async Task SetCustomSyntaxTheme() {
+        _customSyntaxStyles = true;
+        _settings.SyntaxHighlighting.ThemeName = "Custom";
+    }
+
+    // Individual color change handlers — method references are stable across Blazor renders,
+    // preventing unnecessary ColorPicker re-renders that could disrupt user input.
+    private void OnBackgroundChanged(string v) { _settings.SyntaxHighlighting.BackgroundColor = v; }
+    private void OnTextChanged(string v) { _settings.SyntaxHighlighting.TextColor = v; }
+    private void OnBorderChanged(string v) { _settings.SyntaxHighlighting.BorderColor = v; }
+    private void OnLineNumberChanged(string v) { _settings.SyntaxHighlighting.LineNumberColor = v; }
+    private void OnKeywordChanged(string v) { _settings.SyntaxHighlighting.KeywordColor = v; }
+    private void OnTypesChanged(string v) { _settings.SyntaxHighlighting.TypeColor = v; }
+    private void OnIdentifiersChanged(string v) { _settings.SyntaxHighlighting.IdentColor = v; }
+    private void OnNamesTextChanged(string v) { _settings.SyntaxHighlighting.NameColor = v; }
+    private void OnFunctionsChanged(string v) { _settings.SyntaxHighlighting.FunctionColor = v; }
+    private void OnOperatorsChanged(string v) { _settings.SyntaxHighlighting.OperatorColor = v; }
+    private void OnNumbersChanged(string v) { _settings.SyntaxHighlighting.NumberColor = v; }
+    private void OnStringsChanged(string v) { _settings.SyntaxHighlighting.StringColor = v; }
+    private void OnCommentsChanged(string v) { _settings.SyntaxHighlighting.CommentColor = v; }
+}

@@ -1,0 +1,99 @@
+@*
+    CodeViewer Component
+    Displays syntax-highlighted Modelica code using markup tags from ModelicaSyntaxVisitor
+*@
+
+<div class="code-viewer" style="@(!string.IsNullOrEmpty(Height) ? $"height: {Height};" : string.Empty)">
+    <div class="code-viewer-content">
+        @if (_htmlLines != null && _htmlLines.Count > 0)
+        {
+            @foreach (var htmlLine in _htmlLines)
+            {
+                <div class="code-line">
+                    @((MarkupString)htmlLine)
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Lines of code with markup tags (from ModelicaSyntaxVisitor with renderForCodeEditor=true)
+    /// </summary>
+    [Parameter]
+    public List<string> Lines { get; set; } = new();
+
+    /// <summary>
+    /// Maximum height of the code viewer in pixels (optional)
+    /// </summary>
+    [Parameter]
+    public string Height { get; set; } = string.Empty;
+
+    private List<string> _htmlLines = new();
+    private List<string>? _lastLines;
+
+    private static readonly System.Text.RegularExpressions.Regex _tagRegex =
+        new(@"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    protected override void OnParametersSet()
+    {
+        // Only re-process if the Lines reference actually changed
+        if (Lines != _lastLines)
+        {
+            _lastLines = Lines;
+            _htmlLines = ConvertLinesToHtml(Lines);
+        }
+    }
+
+    /// <summary>
+    /// Pre-converts all markup lines to HTML in one pass.
+    /// </summary>
+    private static List<string> ConvertLinesToHtml(List<string>? lines)
+    {
+        if (lines == null || lines.Count == 0)
+            return new List<string>();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int width = Math.Max(3, lines.Count.ToString().Length);
+        var result = new List<string>(lines.Count);
+
+        for (int lineNumber = 1; lineNumber <= lines.Count; lineNumber++)
+        {
+            var line = lines[lineNumber - 1];
+            var lineNumberText = lineNumber.ToString().PadLeft(width);
+
+            if (string.IsNullOrEmpty(line))
+            {
+                result.Add($"<span class=\"code-linenumber\">{lineNumberText}</span>&nbsp;");
+                continue;
+            }
+
+            var html = $"<LINENUMBER>{lineNumberText}</LINENUMBER>  " + line;
+
+            // Preserve leading spaces by converting them to non-breaking spaces
+            int leadingSpaces = 0;
+            while (leadingSpaces < html.Length && html[leadingSpaces] == ' ')
+                leadingSpaces++;
+
+            if (leadingSpaces > 0)
+                html = new string('\u00A0', leadingSpaces) + html.Substring(leadingSpaces);
+
+            // Replace markup tags with HTML spans using compiled regex
+            html = _tagRegex.Replace(html, match =>
+            {
+                var tagType = match.Groups[1].Value.ToLower();
+                var content = System.Web.HttpUtility.HtmlEncode(match.Groups[2].Value);
+                return $"<span class=\"code-{tagType}\">{content}</span>";
+            });
+
+            result.Add(html);
+        }
+
+        MLQT.Services.LoggingService.Debug("CodeViewer",
+            $"ConvertLinesToHtml: {lines.Count} lines in {sw.ElapsedMilliseconds}ms");
+
+        return result;
+    }
+}

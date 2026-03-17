@@ -1,0 +1,287 @@
+@using RevisionControl
+
+@inject IRepositoryService RepositoryService
+
+<MudPaper Outlined="true" Class="pa-2" Style="@($"min-height: {MinHeight}; max-height: {MaxHeight}; overflow-y: auto;")">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        <MudText Typo="Typo.body1">Loading branches...</MudText>
+    }
+    else if (_treeItems.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">No branches found.</MudAlert>
+    }
+    else
+    {
+        <MudTreeView T="BranchTreeNode"
+                     Items="@_treeItems"
+                     Dense="true"
+                     Hover="true"
+                     ExpandOnClick="true"
+                     SelectedValueChanged="OnBranchSelected">
+            <ItemTemplate Context="node">
+                <MudTreeViewItem T="BranchTreeNode"
+                                 Value="@node.Value"
+                                 Items="@node.Children"
+                                 Expanded="@node.Expanded"
+                                 ExpandedChanged="@((bool expanded) => node.Expanded = expanded)"
+                                 CanExpand="@(node.Value!.IsFolder && node.Children?.Any() == true)">
+                    <BodyContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Style="width: 100%;" Spacing="1">
+                            @if (node.Value!.IsFolder)
+                            {
+                                <MudIcon Icon="@GetFolderIcon(node.Value.DisplayName)"
+                                         Size="Size.Small"
+                                         Color="Color.Default" />
+                                <MudText Typo="Typo.body1">@node.Value.DisplayName</MudText>
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@(SelectedBranch == node.Value.FullPath ? Icons.Material.Filled.RadioButtonChecked : Icons.Material.Filled.RadioButtonUnchecked)"
+                                         Size="Size.Small"
+                                         Color="@(SelectedBranch == node.Value.FullPath ? Color.Primary : (node.Value.IsCurrent ? Color.Primary : Color.Default))" />
+                                <MudIcon Icon="@(node.Value.IsRemote ? Icons.Material.Filled.Cloud : Icons.Material.Filled.AccountTree)"
+                                         Size="Size.Small"
+                                         Color="@(node.Value.IsCurrent ? Color.Primary : Color.Default)" />
+                                <MudText Typo="Typo.body1"
+                                         Style="@(node.Value.IsCurrent ? "font-weight: bold;" : "")">
+                                    @node.Value.DisplayName
+                                </MudText>
+                                @if (node.Value.IsCurrent)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">Current</MudChip>
+                                }
+                                @if (node.Value.IsRemote)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Remote</MudChip>
+                                }
+                            }
+                        </MudStack>
+                    </BodyContent>
+                </MudTreeViewItem>
+            </ItemTemplate>
+        </MudTreeView>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    [Parameter]
+    public string? SelectedBranch { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> SelectedBranchChanged { get; set; }
+
+    [Parameter]
+    public bool ExcludeCurrentBranch { get; set; } = true;
+
+    [Parameter]
+    public bool IncludeRemoteBranches { get; set; } = true;
+
+    [Parameter]
+    public string MinHeight { get; set; } = "200px";
+
+    [Parameter]
+    public string MaxHeight { get; set; } = "400px";
+
+    /// <summary>
+    /// Gets the current branch name of the repository.
+    /// </summary>
+    public string? CurrentBranch => _currentBranch;
+
+    private List<VcsBranchInfo> _branches = new();
+    private List<TreeItemData<BranchTreeNode>> _treeItems = new();
+    private string? _currentBranch;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBranches();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload if repository changed
+        if (_lastRepositoryId != RepositoryId)
+        {
+            _lastRepositoryId = RepositoryId;
+            await LoadBranches();
+        }
+    }
+
+    private string? _lastRepositoryId;
+
+    public async Task LoadBranches()
+    {
+        if (string.IsNullOrEmpty(RepositoryId))
+        {
+            _treeItems = new();
+            _isLoading = false;
+            return;
+        }
+
+        _isLoading = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                _branches = RepositoryService.GetBranches(RepositoryId, includeRemote: IncludeRemoteBranches);
+                var repository = RepositoryService.GetRepository(RepositoryId);
+                _currentBranch = repository?.CurrentBranch;
+
+                // Build tree structure from branches on background thread
+                BuildBranchTree();
+            });
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildBranchTree()
+    {
+        var rootNodes = new Dictionary<string, BranchTreeNode>();
+        var treeNodes = new List<BranchTreeNode>();
+
+        foreach (var branch in _branches)
+        {
+            // Parse branch path to determine hierarchy
+            // SVN typical patterns: trunk, branches/*, tags/*
+            // Git patterns: main, master, feature/*, release/*, etc.
+            var parts = branch.Name.Split('/', '\\');
+
+            if (parts.Length == 1)
+            {
+                // Top-level branch (e.g., trunk, main, master)
+                treeNodes.Add(new BranchTreeNode
+                {
+                    DisplayName = branch.Name,
+                    FullPath = branch.Name,
+                    IsFolder = false,
+                    IsCurrent = branch.IsCurrent,
+                    IsRemote = branch.IsRemote
+                });
+            }
+            else
+            {
+                // Hierarchical branch (e.g., branches/feature-x, tags/v1.0)
+                var category = parts[0]; // branches, tags, etc.
+
+                // Get or create the category folder
+                if (!rootNodes.TryGetValue(category, out var categoryNode))
+                {
+                    categoryNode = new BranchTreeNode
+                    {
+                        DisplayName = category,
+                        FullPath = category,
+                        IsFolder = true,
+                        IsCurrent = false,
+                        IsRemote = false
+                    };
+                    rootNodes[category] = categoryNode;
+                    treeNodes.Add(categoryNode);
+                }
+
+                // Add the branch as a child
+                var branchDisplayName = string.Join("/", parts.Skip(1));
+                categoryNode.Children.Add(new BranchTreeNode
+                {
+                    DisplayName = branchDisplayName,
+                    FullPath = branch.Name,
+                    IsFolder = false,
+                    IsCurrent = branch.IsCurrent,
+                    IsRemote = branch.IsRemote
+                });
+            }
+        }
+
+        // Sort: folders first (with specific order for SVN), then by name
+        var folderOrder = new Dictionary<string, int>
+        {
+            { "trunk", 0 },
+            { "branches", 1 },
+            { "tags", 2 }
+        };
+
+        treeNodes = treeNodes
+            .OrderBy(n => n.IsFolder ? 0 : 1)
+            .ThenBy(n => folderOrder.GetValueOrDefault(n.DisplayName.ToLower(), 99))
+            .ThenByDescending(n => n.IsCurrent)
+            .ThenBy(n => n.DisplayName)
+            .ToList();
+
+        // Sort children within each folder
+        foreach (var node in treeNodes.Where(n => n.IsFolder))
+        {
+            node.Children = node.Children
+                .OrderByDescending(c => c.IsCurrent)
+                .ThenBy(c => c.IsRemote)
+                .ThenBy(c => c.DisplayName)
+                .ToList();
+        }
+
+        // Convert to TreeItemData
+        _treeItems = treeNodes.Select(node => new TreeItemData<BranchTreeNode>
+        {
+            Value = node,
+            Expanded = node.IsFolder && (node.Children.Any(c => c.IsCurrent) || node.Children.Count <= 5),
+            Children = node.Children.Count > 0
+                ? node.Children.Select(child => new TreeItemData<BranchTreeNode>
+                {
+                    Value = child,
+                    Expanded = false,
+                    Children = null
+                }).ToList()
+                : null
+        }).ToList();
+    }
+
+    private async Task OnBranchSelected(BranchTreeNode? node)
+    {
+        if (node != null && !node.IsFolder)
+        {
+            // If ExcludeCurrentBranch is true, don't allow selecting the current branch
+            if (ExcludeCurrentBranch && node.IsCurrent)
+            {
+                return;
+            }
+
+            var branch = node.FullPath;
+            await SelectedBranchChanged.InvokeAsync(branch);
+        }
+    }
+
+    private string GetFolderIcon(string folderName)
+    {
+        return folderName.ToLower() switch
+        {
+            "trunk" => Icons.Material.Filled.Home,
+            "branches" => Icons.Material.Filled.AccountTree,
+            "tags" => Icons.Material.Filled.LocalOffer,
+            _ => Icons.Material.Filled.Folder
+        };
+    }
+
+    public class BranchTreeNode
+    {
+        public string DisplayName { get; set; } = "";
+        public string FullPath { get; set; } = "";
+        public bool IsFolder { get; set; }
+        public bool IsCurrent { get; set; }
+        public bool IsRemote { get; set; }
+        public List<BranchTreeNode> Children { get; set; } = new();
+    }
+}

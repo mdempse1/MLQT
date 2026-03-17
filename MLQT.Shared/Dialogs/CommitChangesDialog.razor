@@ -1,0 +1,272 @@
+@using MLQT.Services.Interfaces
+@using ModelicaParser
+@using RevisionControl
+@using MLQT.Shared.Components
+
+@inject IRepositoryService RepositoryService
+@inject ILibraryDataService LibraryDataService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Commit Changes to @_repository?.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3" Style="min-height: 500px;">
+            @if (_repository?.RelativeLibraryPath != null)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Repository: <strong>@_repository.VcsRootPath</strong>
+                </MudAlert>
+            }
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.body1">Loading changes...</MudText>
+            }
+            else if (_changedFiles.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No uncommitted changes found.</MudAlert>
+            }
+
+            <ChangeReview RepositoryId="@RepositoryId"
+                    @ref="_changeReviewComponent"
+                    @bind-SelectedFilesCount="@_selectedFilesCount"
+                    @bind-ErrorMessage="@_errorMessage"
+                    @bind-ChangedFiles="@_changedFiles"
+                    @bind-IsLoading="@_isLoading" />
+
+            @if (!_isLoading && _changedFiles.Count > 0)
+            {
+                @if (_repository?.StyleSettings?.CommitRequiresIssueNumber == true)
+                {
+                    <MudTextField @bind-Value="@_commitIssueId"
+                                DebounceInterval="500"
+                                Label="Issue ID"
+                                Placeholder="Issue ID"
+                                Variant="Variant.Outlined"
+                                Lines="1"
+                                Required="true"
+                                Typo="Typo.body1"
+                                RequiredError="An issue ID  is required"
+                                HelperText="An issue ID is required" />
+                }
+                <MudTextField @bind-Value="@_commitMessage"
+                              DebounceInterval="500"
+                              Label="Commit Message"
+                              Placeholder="Describe your changes..."
+                              Variant="Variant.Outlined"
+                              Lines="5"
+                              Required="true"
+                              Typo="Typo.body1"
+                              RequiredError="Commit message is required"
+                              HelperText="A commit message is required" />
+            }
+
+            @if (_isCommitting && !string.IsNullOrEmpty(_statusMessage))
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.body1">@_statusMessage</MudText>
+                    </MudStack>
+                </MudAlert>
+            }
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+
+            @if (_commitSucceeded)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">Commit successful.</MudAlert>
+            }
+
+            @if (_skippedFiles.Count > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    <MudText Typo="Typo.body1" Class="mb-1">
+                        <strong>The following files could not be included in this commit</strong> because they are new files
+                        inside a directory that was added via merge. They must be committed separately:
+                    </MudText>
+                    <MudList T="string" Dense="true">
+                        @foreach (var file in _skippedFiles)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                                @file
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        @if (_commitSucceeded)
+        {
+            <MudButton OnClick="Cancel" Size="Size.Small" Variant="Variant.Outlined">Done</MudButton>
+            @if (_skippedFiles.Count > 0)
+            {
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small"
+                           OnClick="CommitSkippedFiles">
+                    Commit Skipped Files
+                </MudButton>
+            }
+        }
+        else
+        {
+            <MudButton OnClick="Cancel" Size="Size.Small" Variant="Variant.Outlined">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small"
+                       OnClick="CommitChanges" Disabled="@(!CanCommit || _isCommitting)">
+                @if (_isCommitting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Commit (@_selectedFilesCount files)
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    [Parameter]
+    public string InitialCommitMessage { get; set; } = "";
+
+    private Repository? _repository;
+    private bool _isCommitting = false;
+    private bool _commitSucceeded = false;
+    private List<string> _skippedFiles = new();
+    private string? _statusMessage;
+    private string _commitMessage = "";
+    private string _commitIssueId = "";
+    private bool CanCommit => _selectedFilesCount > 0 &&
+                              !string.IsNullOrWhiteSpace(_commitMessage) &&
+                              (_repository?.StyleSettings?.CommitRequiresIssueNumber != true || !string.IsNullOrEmpty(_commitIssueId));
+                              
+    private int _selectedFilesCount = 0;
+    public List<VcsWorkingCopyFile> _changedFiles = new ();
+    private string? _errorMessage;
+    public bool _isLoading = true;
+    private ChangeReview? _changeReviewComponent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _repository = RepositoryService.GetRepository(RepositoryId) ?? new Repository { Name = "Unknown", LocalPath = "" };
+        _commitMessage = InitialCommitMessage;
+    }
+
+    private async Task CommitChanges()
+    {
+        if (!CanCommit)
+            return;
+
+        _isCommitting = true;
+        _errorMessage = null;
+        _statusMessage = "Committing...";
+        StateHasChanged();
+
+        var progress = new Progress<string>(msg =>
+        {
+            InvokeAsync(() =>
+            {
+                _statusMessage = msg;
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            var selectedFiles = _changeReviewComponent!.GetSelectedFiles();
+            var message = BuildCommitMessage();
+
+            var result = await RepositoryService.CommitAsync(RepositoryId, message, selectedFiles, progress);
+
+            if (result.Success)
+            {
+                if (result.SkippedFiles.Count > 0)
+                {
+                    _commitSucceeded = true;
+                    _skippedFiles = result.SkippedFiles;
+                    return;
+                }
+                MudDialog?.Close(DialogResult.Ok(result.NewRevision));
+                return;
+            }
+
+            if (result.IsOutOfDate)
+            {
+                _statusMessage = "Working copy is out of date — updating...";
+                StateHasChanged();
+
+                var updateResult = await RepositoryService.UpdateRepositoryAsync(RepositoryId);
+                if (!updateResult.Success)
+                {
+                    _errorMessage = $"Update failed: {updateResult.ErrorMessage}";
+                    return;
+                }
+
+                _statusMessage = "Retrying commit...";
+                StateHasChanged();
+
+                if (_changeReviewComponent != null)
+                    await _changeReviewComponent.LoadChanges();
+
+                result = await RepositoryService.CommitAsync(RepositoryId, message, _changeReviewComponent?.GetSelectedFiles(), progress);
+
+                if (result.Success)
+                {
+                    if (result.SkippedFiles.Count > 0)
+                    {
+                        _commitSucceeded = true;
+                        _skippedFiles = result.SkippedFiles;
+                        return;
+                    }
+                    MudDialog?.Close(DialogResult.Ok(result.NewRevision));
+                    return;
+                }
+            }
+
+            _errorMessage = result.ErrorMessage ?? "Commit failed.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isCommitting = false;
+            _statusMessage = null;
+        }
+    }
+
+    private string BuildCommitMessage()
+    {
+        if (_repository!.StyleSettings?.CommitRequiresIssueNumber == true)
+        {
+            return _repository.StyleSettings!.IssueNumberAtEnd
+                ? _commitMessage + "\n" + _commitIssueId
+                : _commitIssueId + "\n" + _commitMessage;
+        }
+        return _commitMessage;
+    }
+
+    private async Task CommitSkippedFiles()
+    {
+        _commitSucceeded = false;
+        _skippedFiles = new();
+        _errorMessage = null;
+        if (_changeReviewComponent != null)
+            await _changeReviewComponent.LoadChanges();
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+}

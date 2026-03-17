@@ -1,0 +1,80 @@
+@inject ISettingsService SettingsService
+@inject IRepositoryService RepositoryService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Select Project</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-2">
+            Select which project to load:
+        </MudText>
+        <MudRadioGroup T="string" @bind-Value="_selectedProject">
+            <MudStack Row="false" Spacing="0">
+                @foreach (var project in _projects)
+                {
+                    <MudRadio Dense="true" T="string" Value="@project.Id" Size="Size.Small" Color="Color.Primary">
+                        @($"{project.Name} ({project.Repositories.Count} repositories)")
+                    </MudRadio>
+                }
+            </MudStack>
+        </MudRadioGroup>
+        @if (_showNewProjectControls)
+        {
+            <MudTextField @bind-Value="_selectedProject" Label="Create a new project"
+                Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body1"
+                Immediate="true" Style="max-width: 400px;" />
+            <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
+                OnClick="ConfirmProjectName" Disabled="@(string.IsNullOrWhiteSpace(_selectedProject))" />
+            <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
+                OnClick="()=>{_showNewProjectControls=false; _selectedProject=string.Empty;}" />
+        }
+        </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="()=>{_showNewProjectControls=true; _selectedProject=string.Empty;}">
+            New Project
+        </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small"
+            OnClick="Select" Disabled="@(string.IsNullOrEmpty(_selectedProject))">
+            Load Project
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    private List<ProjectProfile> _projects = new();
+    private string? _selectedProject;
+    private bool _showNewProjectControls = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read projects directly from settings since RepositoryService hasn't loaded yet
+        var settings = await SettingsService.GetAsync("Repositories", new RepositorySettingsCollection());
+        _projects = settings.Projects;
+        _selectedProject = _projects.FirstOrDefault(p => p.Id == settings.ActiveProjectId)!.Id
+                           ?? _projects.FirstOrDefault()!.Id;
+    }
+
+    private void Select()
+    {
+        MudDialog?.Close(DialogResult.Ok(_selectedProject));
+    }
+
+    private void ConfirmProjectName()
+    {
+        _showNewProjectControls = false;
+
+        if (string.IsNullOrWhiteSpace(_selectedProject))
+            return;
+
+        // Add a placeholder project so it appears in the radio list.
+        // Use the name as the ID — MainLayout detects this isn't a real project ID
+        // and calls CreateProject with it.
+        var newProject = new ProjectProfile { Id = _selectedProject.Trim(), Name = _selectedProject.Trim() };
+        _projects.Add(newProject);
+        _selectedProject = newProject.Id;
+    }
+}

@@ -1,0 +1,70 @@
+Summary
+  Generated on: 16/03/2026 - 09:37:39
+  Coverage date: 16/03/2026 - 09:37:08
+  Parser: Cobertura
+  Assemblies: 1
+  Classes: 48
+  Files: 43
+  Line coverage: 95.3%
+  Covered lines: 12920
+  Uncovered lines: 637
+  Coverable lines: 13557
+  Total lines: 19995
+  Branch coverage: 86.7% (4170 of 4807)
+  Covered branches: 4170
+  Total branches: 4807
+  Method coverage: 97.5% (1558 of 1597)
+  Full method coverage: 87.1% (1392 of 1597)
+  Covered methods: 1558
+  Fully covered methods: 1392
+  Total methods: 1597
+
+ModelicaParser                                                                                                                                                95.3%
+  modelicaBaseListener                                                                                                                                         100%
+  modelicaBaseVisitor<T>                                                                                                                                       100%
+  modelicaLexer                                                                                                                                               97.6%
+  modelicaParser                                                                                                                                              95.3%
+  ModelicaParser.DataTypes.ExternalResourceInfo                                                                                                                100%
+  ModelicaParser.DataTypes.LogMessage                                                                                                                          100%
+  ModelicaParser.DataTypes.ModelInfo                                                                                                                           100%
+  ModelicaParser.DataTypes.ParserError                                                                                                                         100%
+  ModelicaParser.Helpers.ModelicaParserHelper                                                                                                                  100%
+  ModelicaParser.Helpers.ModelicaRendererHelper                                                                                                               98.3%
+  ModelicaParser.Icons.BitmapPrimitive                                                                                                                         100%
+  ModelicaParser.Icons.EllipsePrimitive                                                                                                                        100%
+  ModelicaParser.Icons.GraphicsPrimitive                                                                                                                       100%
+  ModelicaParser.Icons.IconData                                                                                                                                100%
+  ModelicaParser.Icons.IconSvgRenderer                                                                                                                        98.3%
+  ModelicaParser.Icons.LinePrimitive                                                                                                                           100%
+  ModelicaParser.Icons.PolygonPrimitive                                                                                                                        100%
+  ModelicaParser.Icons.RectanglePrimitive                                                                                                                      100%
+  ModelicaParser.Icons.TextPrimitive                                                                                                                           100%
+  ModelicaParser.ModelicaErrorListener                                                                                                                         100%
+  ModelicaParser.SpellChecking.DictionarySource                                                                                                                  0%
+  ModelicaParser.SpellChecking.SpellChecker                                                                                                                     88%
+  ModelicaParser.SpellChecking.TextExtractor                                                                                                                    99%
+  ModelicaParser.StyleRules.CheckClassDescriptionStrings                                                                                                       100%
+  ModelicaParser.StyleRules.CheckModelReferences                                                                                                                 0%
+  ModelicaParser.StyleRules.ExtendsClausesAtTop                                                                                                                100%
+  ModelicaParser.StyleRules.FollowNamingConvention                                                                                                            91.4%
+  ModelicaParser.StyleRules.ImportStatementsFirst                                                                                                              100%
+  ModelicaParser.StyleRules.InitialEquationFirst                                                                                                               100%
+  ModelicaParser.StyleRules.MixConnectionsAndEquations                                                                                                         100%
+  ModelicaParser.StyleRules.NamingConventionConfig                                                                                                             100%
+  ModelicaParser.StyleRules.NamingValidator                                                                                                                   98.8%
+  ModelicaParser.StyleRules.OneOfEachSection                                                                                                                    99%
+  ModelicaParser.StyleRules.PublicParametersAndConstantsHaveDescription                                                                                       96.4%
+  ModelicaParser.StyleRules.SectionTracker                                                                                                                     100%
+  ModelicaParser.StyleRules.SpellCheckDescriptions                                                                                                            98.7%
+  ModelicaParser.StyleRules.SpellCheckDocumentation                                                                                                           92.5%
+  ModelicaParser.StyleRules.Tracker                                                                                                                            100%
+  ModelicaParser.StyleRules.VisitorWithModelNameTracking                                                                                                      97.3%
+  ModelicaParser.Visitors.ExternalResourceExtractor                                                                                                             95%
+  ModelicaParser.Visitors.IconExtractionResult                                                                                                                 100%
+  ModelicaParser.Visitors.IconExtractor                                                                                                                       94.8%
+  ModelicaParser.Visitors.ModelExtractorVisitor                                                                                                               97.1%
+  ModelicaParser.Visitors.ModelicaRenderer                                                                                                                    98.1%
+  System.Text.RegularExpressions.Generated                                                                                                                    81.2%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__HtmlTagRegex_1                74.6%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__MultiWhitespaceRegex_2        83.9%
+  System.Text.RegularExpressions.Generated.<RegexGenerator_g>F3EEA9C3FB9A533D6CF2ACA7EF1DD558D99D7B98843177FC51E736936521BFE55__NonNewlineWhitespaceRegex_3   82.1%

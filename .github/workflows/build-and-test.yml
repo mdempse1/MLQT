@@ -1,0 +1,132 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-libraries:
+    name: Build & Test Libraries
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore dependencies
+        run: dotnet restore MLQT.slnx
+
+      - name: Build library projects
+        run: |
+          dotnet build ModelicaParser/ModelicaParser.csproj -c Release --no-restore
+          dotnet build ModelicaGraph/ModelicaGraph.csproj -c Release --no-restore
+          dotnet build RevisionControl/RevisionControl.csproj -c Release --no-restore
+          dotnet build MLQT.Services/MLQT.Services.csproj -c Release --no-restore
+          dotnet build DymolaInterface/DymolaInterface.csproj -c Release --no-restore
+          dotnet build OpenModelicaInterface/OpenModelicaInterface.csproj -c Release --no-restore
+
+      - name: Build test projects
+        run: |
+          dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release --no-restore
+          dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release --no-restore
+          dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release --no-restore
+          dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
+
+      - name: Run ModelicaParser tests
+        run: dotnet test ModelicaParser.Tests -c Release --no-build --logger "trx;LogFileName=parser.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run ModelicaGraph tests
+        run: dotnet test ModelicaGraph.Tests -c Release --no-build --logger "trx;LogFileName=graph.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run RevisionControl tests (exclude SVN integration)
+        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --logger "trx;LogFileName=revcontrol.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Services tests
+        run: dotnet test MLQT.Services.Tests -c Release --no-build --logger "trx;LogFileName=services.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: test-results
+          path: ${{ github.workspace }}/TestResults/*.trx
+
+  build-maui:
+    name: Build MAUI App (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore dependencies
+        run: dotnet restore MLQT/MLQT.csproj -r win-x64
+
+      - name: Build MAUI app
+        run: dotnet build MLQT/MLQT.csproj -c Release -r win-x64 --no-restore
+
+  code-coverage:
+    name: Code Coverage
+    runs-on: windows-latest
+    needs: build-libraries
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore and build
+        run: |
+          dotnet restore MLQT.slnx
+          dotnet build ModelicaParser.Tests -c Release --no-restore
+          dotnet build ModelicaGraph.Tests -c Release --no-restore
+          dotnet build MLQT.Services.Tests -c Release --no-restore
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test ModelicaParser.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/parser
+          dotnet test ModelicaGraph.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/graph
+          dotnet test MLQT.Services.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/services
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        run: |
+          reportgenerator -reports:"CoverageResults/**/coverage.cobertura.xml" -targetdir:CoverageReport -reporttypes:"TextSummary;HtmlSummary" -assemblyfilters:"-DymolaInterface;-OpenModelicaInterface"
+          Get-Content CoverageReport\Summary.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: CoverageReport/

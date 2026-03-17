@@ -1,0 +1,1178 @@
+﻿@using System.IO
+@using System.Text.RegularExpressions
+@using Antlr4.Runtime
+@using DymolaInterface
+@using OpenModelicaInterface
+@using RevisionControl
+
+@inject AppState NavState
+@inject ILibraryDataService LibraryDataService
+@inject IRepositoryService RepositoryService
+@inject IFilePickerService FilePickerService
+@inject IJSRuntime JSRuntime
+@inject ISettingsService SettingsService
+@inject IDialogService DialogService
+@inject ICodeReviewService CodeReviewService
+@inject IStyleCheckingService StyleCheckingService
+@inject ICustomDictionaryService CustomDictionaryService
+@inject DymolaCheckingService DymolaCheckingService
+@inject OpenModelicaCheckingService OpenModelicaCheckingService
+
+<MudPaper Elevation="0" Class="mt-1">
+    <MudStack Row="false" Style="gap:0px !important;">
+        <MudStack Row="true">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+                <MudTooltip Text="View just this version" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Article" Color="Color.Primary" Size="Size.Medium" 
+                                Variant="@(!_isDiffMode ? Variant.Filled : Variant.Outlined)" 
+                                OnClick="@(() => SetViewMode(false, _diffViewMode))"  />
+                </MudTooltip>
+                <MudTooltip Text="Side-by-side diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Compare" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                                Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySide ? Variant.Filled : Variant.Outlined)" 
+                                OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySide))"  />
+                </MudTooltip>
+                <MudTooltip Text="Unified diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Difference" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                                Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.Unified ? Variant.Filled : Variant.Outlined)" 
+                                OnClick="@(() => SetViewMode(true, DiffViewMode.Unified))"  />
+                </MudTooltip>
+                <MudTooltip Text="View both versions" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.VerticalSplit" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                                Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySideFull ? Variant.Filled : Variant.Outlined)" 
+                                OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySideFull))"  />
+                </MudTooltip>
+            </MudButtonGroup>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+                <MudTooltip Text="Show/Hide Annotations" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Variant="@(_showAnnotations ? Variant.Filled : Variant.Outlined)"
+                                OnClick="ToggleAnnotations" Size="Size.Medium" />
+                </MudTooltip>
+                <MudTooltip Text="@(_isExcludedFromFormatting ? "Include in auto-formatting" : "Exclude from auto-formatting")" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.FormatClear" Color="@(_isExcludedFromFormatting ? Color.Warning : Color.Primary)"
+                                Variant="@(_isExcludedFromFormatting ? Variant.Filled : Variant.Outlined)"
+                                OnClick="ToggleFormattingExclusionAsync" Size="Size.Medium"
+                                Disabled="@(_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))" />
+                </MudTooltip>
+            </MudButtonGroup>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+                <MudTooltip Text="Run Style Checking on ALL classes" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Primary" Variant="Variant.Outlined" 
+                                OnClick="RunStyleCheckingAsync" Size="Size.Medium" />
+                </MudTooltip>
+                @if (!string.IsNullOrEmpty(_settings.Dymola.DymolaPath)) {
+                    <MudTooltip Text="Check this class using Dymola" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
+                                    OnClick="CheckInDymola" Size="Size.Medium" />
+                    </MudTooltip>
+                }
+                @if (!string.IsNullOrEmpty(_settings.OpenModelica.OmcPath)) {
+                    <MudTooltip Text="Check this class using OpenModelica" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
+                                    OnClick="CheckInOpenModelica" Size="Size.Medium" />
+                    </MudTooltip>
+                }    
+            </MudButtonGroup>
+        </MudStack>
+        @* Height calculation: 221 px for table, 185px for other stuff*@
+        <MudPaper Elevation="1" Style="height: calc(100vh - 405px); display: flex; flex-direction: column;" Class="mt-1 mb-2">
+        @if (_isDiffMode)
+        {
+            @if (_isLoadingDiff)
+            {
+                <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                </div>
+            }
+            else
+            {
+                <div style="flex: 1; overflow: hidden;">
+                    <DiffViewer OriginalContent="@_originalModelCode"
+                                ModifiedContent="@_modifiedModelCode"
+                                FileName="model.mo"
+                                Height="100%"
+                                ContextLines="3"
+                                ShowViewModeSelectorButtons="false"
+                                ViewMode="@_diffViewMode"
+                                ViewModeChanged="@((DiffViewMode mode) => _diffViewMode = mode)" />
+                </div>
+            }
+        }
+        else if (_isLoadingCode)
+        {
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            </div>
+        }
+        else
+        {
+                <CodeViewer Lines="@_highlightedCode" Height="100%" />
+        }
+        </MudPaper>
+        <MudPaper Elevation="2" Height="221px" Style="overflow-y: auto; position: relative;">
+            <MudTable T="LogMessage" Items="@CodeReviewService.LogMessages" Hover="true" Breakpoint="Breakpoint.Sm"
+                Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
+                FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
+                <ToolBarContent>
+                    <MudText Typo="Typo.body1">@CodeReviewService.LogMessages.Count Issues to review</MudText>
+                    <MudSpacer />
+                    <MudSwitch T="bool" ValueChanged="OnIssuesScopeChanged" Value="@IssuesScopeAllModels" Label="Only this model" Color="Color.Primary" Size="Size.Small" />
+                    <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
+                        AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
+                        Typo="Typo.body1"></MudTextField>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>Model</MudTh>
+                    <MudTh>Description</MudTh>
+                    <MudTh>Line Number</MudTh>
+                    <MudTh>Type</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Model" Style="text-align: left; vertical-align:top;" Class="compact-table">
+                        @MakeShortName(context.ModelName)</MudTd>
+                    <MudTd DataLabel="Summary" Style="text-align: left; vertical-align:top;" Class="compact-table">
+                        @context.Summary</MudTd>
+                    <MudTd DataLabel="Line Number" Style="text-align: left; vertical-align:top;" Class="compact-table">
+                        @context.LineNumber</MudTd>
+                    <MudTd DataLabel="Type" Style="text-align: left; vertical-align:top;" Class="compact-table">
+                        @context.Severity</MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager HideRowsPerPage="true" PageSizeOptions="new int[] { 5, 10, 25, 50, int.MaxValue }" />
+                </PagerContent>
+            </MudTable>
+            <MudPopover Open="@_spellingPopoverOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter"
+                Style="@_spellingPopoverStyle">
+                <MudPaper Elevation="4" Class="pa-2" Style="min-width:250px;">
+                    <MudText Typo="Typo.body1" Class="mb-1">@_currentIssue?.Summary</MudText>
+                    <MudStack Row="true" Style="gap:4px;" Class="mb-1">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                            OnClick="AddToDictionary">Add to Dictionary</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                            OnClick="ShowSuggestions">Suggest</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                            OnClick="IgnoreSpellingViolation">Ignore</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                            OnClick="CloseSpellingPopover">Close</MudButton>
+                    </MudStack>
+                    @if (_suggestions != null)
+                    {
+                        @if (_suggestions.Count == 0)
+                        {
+                            <MudText Typo="Typo.body1" Color="Color.Warning">No suggestions found</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1" Class="mb-1"><strong>Suggestions:</strong></MudText>
+                            <MudPaper MaxHeight="150px" Style="overflow-y:auto;" Elevation="0">
+                                @foreach (var suggestion in _suggestions)
+                                {
+                                    <MudText Typo="Typo.body1" Class="ml-2">@suggestion</MudText>
+                                }
+                            </MudPaper>
+                        }
+                    }
+                </MudPaper>
+            </MudPopover>
+        </MudPaper>
+    </MudStack>
+</MudPaper>
+
+<MudDialog @bind-Visible="_checkProgressDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@_checkingToolName Check Progress - @_modelsChecked checked out of @_modelsToCheck</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudProgressLinear Indeterminate="false" Min=0 Max=@_modelsToCheck Value=@_modelsChecked />
+        <MudText Class="mt-2" Typo="Typo.body1">Checking model:</MudText>
+        <MudText Class="mt-0" Typo="Typo.body1">@_checkingModel</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseCheckProgressDialog"
+            Class="px-10">Stop</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_issueDetailsVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.subtitle2">Issue in @_currentIssue!.ModelName</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Class="mt-2" Typo="Typo.body1">@_currentIssue!.Summary</MudText>
+        <MudText Class="mt-2" Typo="Typo.body1">@_currentIssue!.Severity on line @_currentIssue.LineNumber</MudText>
+        @if (_currentIssue!.Details?.Length > 0)
+        {
+            <MudText Class="mt-2" Typo="Typo.body1">Details:</MudText>
+            <MudText Class="mt-2 pre-wrap" Typo="Typo.body1">@_currentIssue.Details</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudStack Row="true">
+            @if (IsSpellingViolation(_currentIssue))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="AddToDictionary" Class="px-10">Add to Dictionary
+                </MudButton>
+            }
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResolveIssue" Class="px-10">Resolve
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseIssueDialog" Class="px-10">Close
+            </MudButton>
+        </MudStack>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private AppSettings _settings = new();
+    private bool _showAnnotations = true;
+    private bool _showHighlighted = true;
+    private List<string>? _highlightedCode = null;
+    private string _modelicaCode { get; set; } = "";
+    private int _lines = 10;
+    private ModelNode? _currentModelNode = null;
+    private int _modelsToCheck = 0;
+    private int _modelsChecked = 0;
+    private bool _checkProgressDialog = false;
+    private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
+    private static readonly DialogOptions _nonClosableDialogOptions = new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
+    private string _checkingModel = "";
+    private string _checkingToolName = "";
+    private bool _issueDetailsVisible = false;
+    private LogMessage? _currentIssue = null;
+    private string _searchString = "";
+    private bool IssuesScopeAllModels = false;
+    private CancellationTokenSource? _checkCancellationTokenSource;
+    private bool _spellingPopoverOpen = false;
+    private string _spellingPopoverStyle = "";
+    private IReadOnlyList<string>? _suggestions = null;
+
+    // Code rendering state
+    private bool _isLoadingCode = false;
+    private record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
+    private readonly Dictionary<RenderCacheKey, List<string>> _renderCache = new();
+
+    // Diff view state
+    private bool _isDiffMode = false;
+    private bool _isModelModified;
+    private VcsFileStatus? _currentModelFileStatus;
+    private string? _originalModelCode;
+    private string? _modifiedModelCode;
+    private bool _isLoadingDiff;
+    private DiffViewMode _diffViewMode = DiffViewMode.Unified;
+    private string? _currentRepositoryId;
+    private string? _currentRelativeFilePath;
+    private bool _isExcludedFromFormatting;
+
+    //Tool logos
+    const string _dymolaLogo = @"<svg width=""24"" height=""24"" viewBox=""0 0 24 24"">
+        <g>
+        <rect stroke-width=""1"" height=""11"" width=""20"" y=""7"" x=""2"" stroke=""currentColor"" fill=""#fff""/>
+        <rect stroke-width=""1"" height=""7"" width=""14"" y=""3"" x=""5"" stroke=""currentColor"" fill=""#fff""/>
+        <rect stroke-width=""1"" height=""7"" width=""14"" y=""14"" x=""5"" stroke=""currentColor"" fill=""#fff""/>
+        </g>
+        </svg>";
+    const string _openModelicaLogo = @"<svg width=""24"" height=""24"" viewBox=""0 0 24 24"">
+        <g>
+        <text xml:space=""preserve"" text-anchor=""start"" font-size=""14"" stroke-width=""0"" y=""17"" x=""1"" stroke=""currentColor"" fill=""currentColor"">OM</text>
+        </g>
+        </svg>";
+
+    private void CloseCheckProgressDialog()
+    {
+        _checkProgressDialog = false;
+        _checkCancellationTokenSource?.Cancel();
+
+        // Also call StopChecking directly on services to ensure immediate cancellation
+        DymolaCheckingService.StopChecking();
+        OpenModelicaCheckingService.StopChecking();
+    }
+
+    private void CloseIssueDialog() => _issueDetailsVisible = false;
+
+    protected override void OnInitialized()
+    {
+        NavState.OnChangeModel += OnModelSelected;
+        NavState.OnModelContentChanged += OnModelContentChanged;
+        NavState.OnLibraryLoaded += LibraryLoaded;
+        NavState.OnSaveSettings += OnSettingsSaved;
+        NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
+        CodeReviewService.OnLogMessagesChanged += OnLogMessagesChanged;
+        StyleCheckingService.OnViolationsFound += OnStyleViolationsFound;
+
+        // Subscribe to model checking service events
+        DymolaCheckingService.OnProgressChanged += OnCheckProgressChanged;
+        DymolaCheckingService.OnModelChecked += OnModelChecked;
+        DymolaCheckingService.OnCheckingComplete += OnCheckingComplete;
+        OpenModelicaCheckingService.OnProgressChanged += OnCheckProgressChanged;
+        OpenModelicaCheckingService.OnModelChecked += OnModelChecked;
+        OpenModelicaCheckingService.OnCheckingComplete += OnCheckingComplete;
+
+        base.OnInitialized();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+        await ApplySyntaxHighlightingStyles();
+    }
+
+    private async void OnDeferredAnalysisCompleted()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RunStyleCheckingAsync()
+    {
+        try
+        {
+            await NavState.RunDeferredStyleCheckingAsync();
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async void OnStyleViolationsFound(List<LogMessage> violations)
+    {
+        await InvokeAsync(() =>
+        {
+            CodeReviewService.AddLogMessages(violations);
+            StateHasChanged();
+        });
+    }
+
+    private async void OnLogMessagesChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        @* if (firstRender)
+        {
+            _hasRendered = true;
+            await LoadSettings();
+            _settingsLoaded = true;
+            StateHasChanged();
+        } *@
+        if (_currentModelNode == null && ((NavState.ModelID != null && NavState.ModelID.Length > 0) || NavState.SelectedModelIDs.Count > 0))
+        {
+            if (NavState.ModelID != null && NavState.ModelID.Length > 0)
+                OnModelSelected();
+            else
+                NavState.ChangeModelID(NavState.SelectedModelIDs.First());
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            // Load each settings category
+            _settings.SyntaxHighlighting = await SettingsService.GetAsync("SyntaxHighlighting", new SyntaxHighlightingSettings());
+            _settings.StyleChecking = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+            _settings.Dymola = await SettingsService.GetAsync("Dymola", new DymolaSettings());
+            _settings.OpenModelica = await SettingsService.GetAsync("OpenModelica", new OpenModelicaSettings());
+
+            DymolaCheckingService.UpdateSettings(_settings.Dymola);            
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+        }
+    }
+
+    private async void OnSettingsSaved()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadSettings();
+            await ApplySyntaxHighlightingStyles();
+            StateHasChanged();
+        });
+    }
+
+    protected void OnDispose()
+    {
+        NavState.OnChangeModel -= OnModelSelected;
+        NavState.OnModelContentChanged -= OnModelContentChanged;
+        NavState.OnSaveSettings -= OnSettingsSaved;
+        NavState.OnLibraryLoaded -= LibraryLoaded;
+        NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
+        CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
+        StyleCheckingService.OnViolationsFound -= OnStyleViolationsFound;
+
+        // Unsubscribe from model checking service events
+        DymolaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
+        DymolaCheckingService.OnModelChecked -= OnModelChecked;
+        DymolaCheckingService.OnCheckingComplete -= OnCheckingComplete;
+        OpenModelicaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
+        OpenModelicaCheckingService.OnModelChecked -= OnModelChecked;
+        OpenModelicaCheckingService.OnCheckingComplete -= OnCheckingComplete;
+
+        _checkCancellationTokenSource?.Dispose();
+    }
+
+    private async Task ToggleAnnotations()
+    {
+        _showAnnotations = !_showAnnotations;
+        OnModelSelected();
+
+        // If in diff mode, force reload with new annotation settings
+        if (_isDiffMode)
+        {
+            _originalModelCode = null;
+            await LoadModelDiffAsync();
+        }
+    }
+
+    private async Task ToggleFormattingExclusionAsync()
+    {
+        if (_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))
+            return;
+
+        var repository = RepositoryService.GetRepository(_currentRepositoryId);
+        if (repository?.StyleSettings == null)
+            return;
+
+        var modelId = _currentModelNode.Id;
+        var excluded = repository.StyleSettings.FormattingExcludedModels;
+
+        if (_isExcludedFromFormatting)
+        {
+            // Re-include the model
+            excluded.Remove(modelId);
+            _isExcludedFromFormatting = false;
+        }
+        else
+        {
+            // Exclude the model
+            if (!excluded.Contains(modelId))
+                excluded.Add(modelId);
+            _isExcludedFromFormatting = true;
+
+            // If the file is modified in VCS, revert it to discard formatting changes
+            if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
+            {
+                await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+
+                // Reload the file to pick up the reverted content
+                var fileId = _currentModelNode.ContainingFileId ?? "";
+                var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(fileId);
+                if (fileNode != null)
+                {
+                    await LibraryDataService.ReloadFileAsync(fileNode.FilePath);
+                    // Re-fetch the model node since it may have been replaced
+                    _currentModelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
+                }
+
+                // Refresh VCS status
+                CheckModelVcsStatus();
+
+                // Re-render
+                OnModelSelected();
+            }
+        }
+
+        await RepositoryService.SaveRepositorySettingsAsync();
+    }
+
+    #region Diff View Methods
+
+    /// <summary>
+    /// Checks if the current model's file has uncommitted VCS changes.
+    /// Sets _isModelModified, _currentModelFileStatus, _currentRepositoryId,
+    /// and _currentRelativeFilePath for use by the diff view.
+    /// </summary>
+    private void CheckModelVcsStatus()
+    {
+        _isModelModified = false;
+        _currentModelFileStatus = null;
+        _currentRepositoryId = null;
+        _currentRelativeFilePath = null;
+        _isExcludedFromFormatting = false;
+
+        if (_currentModelNode == null)
+            return;
+
+        // Find the file containing this model
+        var fileId = _currentModelNode.ContainingFileId;
+        if (string.IsNullOrEmpty(fileId))
+            return;
+
+        var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(fileId);
+        if (fileNode == null)
+            return;
+
+        // Find the library and repository for this model
+        var library = LibraryDataService.Libraries
+            .FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
+        if (library == null || string.IsNullOrEmpty(library.RepositoryId))
+            return;
+
+        var repository = RepositoryService.GetRepository(library.RepositoryId);
+        if (repository is not { VcsType: not RepositoryVcsType.Local })
+            return;
+
+        _currentRepositoryId = repository.Id;
+        _isExcludedFromFormatting = repository.StyleSettings?.IsModelExcludedFromFormatting(_currentModelNode.Id) ?? false;
+
+        // Compute the path relative to VcsRootPath — this matches what GetWorkingCopyChanges
+        // returns (paths are always relative to VcsRootPath, not LocalPath).
+        // Normalize to forward slashes to match LibGit2Sharp's FilePath format.
+        var absolutePath = fileNode.FilePath;
+        if (absolutePath.StartsWith(repository.VcsRootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            _currentRelativeFilePath = absolutePath
+                .Substring(repository.VcsRootPath.Length)
+                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Replace(Path.DirectorySeparatorChar, '/');
+        }
+
+        if (string.IsNullOrEmpty(_currentRelativeFilePath))
+            return;
+
+        // Check working copy changes for this file. Normalize change.Path separators
+        // to forward slashes to match both Git (always '/') and SVN (OS-native).
+        var changes = RepositoryService.GetWorkingCopyChanges(repository.Id);
+        var matchingChange = changes?.FirstOrDefault(c =>
+            c.Path.Replace('\\', '/').Equals(_currentRelativeFilePath, StringComparison.OrdinalIgnoreCase));
+
+        if (matchingChange != null)
+        {
+            _isModelModified = true;
+            _currentModelFileStatus = matchingChange.Status;
+        }
+    }
+
+    /// <summary>
+    /// Handles the diff mode toggle button click.
+    /// Loads the diff on first toggle to avoid unnecessary work.
+    /// </summary>
+    private async Task SetViewMode(bool useDiffView, DiffViewMode mode)
+    {
+        _isDiffMode = useDiffView;        
+        if (_isDiffMode && _originalModelCode == null)
+        {
+            await LoadModelDiffAsync();
+        }
+        if (_isDiffMode)
+            _diffViewMode = mode;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Loads the diff for the current model by fetching the file content at HEAD
+    /// and using the raw source code for both versions. The DiffViewer component
+    /// handles its own syntax highlighting on raw Modelica text.
+    /// </summary>
+    private async Task LoadModelDiffAsync()
+    {
+        if (_currentModelNode == null || !_isModelModified ||
+            string.IsNullOrEmpty(_currentRepositoryId) ||
+            string.IsNullOrEmpty(_currentRelativeFilePath))
+            return;
+
+        _isLoadingDiff = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                // Get the file content at HEAD
+                var headFileContent = RepositoryService.GetFileContentAtRevision(
+                    _currentRepositoryId, _currentRelativeFilePath, "HEAD");
+
+                // Extract the raw original model code from HEAD
+                if (!string.IsNullOrEmpty(headFileContent))
+                {
+                    try
+                    {
+                        // Parse the HEAD file and find the specific model by name
+                        var headModels = ModelicaParserHelper.ExtractModels(headFileContent);
+                        var matchingModel = headModels.FirstOrDefault(m =>
+                            m.Name == _currentModelNode.Definition.Name);
+
+                        if (matchingModel != null)
+                        {
+                            var prefix = matchingModel.ElementPrefix;
+                            _originalModelCode = string.IsNullOrEmpty(prefix)
+                                ? matchingModel.SourceCode
+                                : prefix + " " + matchingModel.SourceCode;
+                        }
+                        else
+                        {
+                            _originalModelCode = headFileContent;
+                        }
+                    }
+                    catch
+                    {
+                        // HEAD version may not parse correctly
+                        _originalModelCode = headFileContent;
+                    }
+                }
+                else
+                {
+                    // File doesn't exist at HEAD (new file)
+                    _originalModelCode = "";
+                }
+
+                // Use the raw source code for the current working copy version
+                var currentCode = _currentModelNode.Definition.ModelicaCode;
+                var currentPrefix = _currentModelNode.ElementPrefix;
+                _modifiedModelCode = string.IsNullOrEmpty(currentPrefix)
+                    ? currentCode
+                    : currentPrefix + " " + currentCode;
+            });
+        }
+        catch (Exception ex)
+        {
+            _originalModelCode = $"Error loading HEAD version: {ex.Message}";
+            _modifiedModelCode = _currentModelNode?.Definition.ModelicaCode ?? "";
+        }
+        finally
+        {
+            _isLoadingDiff = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    #endregion
+
+    private async void OnModelSelected()
+    {
+        if (string.IsNullOrEmpty(NavState.ModelID))
+            return;
+
+        var totalSw = System.Diagnostics.Stopwatch.StartNew();
+
+        _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
+        _originalModelCode = null;
+        _modifiedModelCode = null;
+
+        if (_currentModelNode == null)
+            return;
+
+        var selectedModelId = NavState.ModelID;
+        bool excludeClassDefs = _currentModelNode.ClassType == "package";
+        var cacheKey = new RenderCacheKey(selectedModelId, _showAnnotations, _showHighlighted, excludeClassDefs);
+
+        if (_renderCache.TryGetValue(cacheKey, out var cachedCode))
+        {
+            // Cache hit — set code and render immediately BEFORE any await.
+            // Any await would yield to the Blazor sync context which is blocked
+            // by MainLayout/LibraryBrowser re-rendering 27K tree nodes.
+            _highlightedCode = cachedCode;
+            _lines = Math.Max(10, cachedCode.Count);
+            _modelicaCode = string.Join("\n", cachedCode);
+
+            LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
+
+            // Update UI synchronously — no await means no sync context queue delay
+            OnIssuesScopeChanged(IssuesScopeAllModels);
+            StateHasChanged();
+
+            // Run VCS check in background — will update UI when done
+            _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
+            {
+                LoggingService.Debug("CodeReview",
+                    $"  VCS ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
+
+                if (NavState.ModelID != selectedModelId)
+                    return;
+
+                var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
+                await InvokeAsync(async () =>
+                {
+                    LoggingService.Debug("CodeReview",
+                        $"  VCS InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
+
+                    if (!_isModelModified)
+                        _isDiffMode = false;
+                    await SetViewMode(_isDiffMode, _diffViewMode);
+                    StateHasChanged();
+                });
+
+                LoggingService.Debug("CodeReview",
+                    $"  VCS (background): Total: {totalSw.ElapsedMilliseconds}ms");
+            }, TaskScheduler.Default);
+        }
+        else
+        {
+            var codeLength = _currentModelNode.Definition.ModelicaCode?.Length ?? 0;
+            var hadParsedCode = _currentModelNode.Definition.ParsedCode != null;
+            LoggingService.Debug("CodeReview",
+                $"Rendering {selectedModelId}: {codeLength} chars, ParsedCode cached={hadParsedCode}, classType={_currentModelNode.ClassType}");
+
+            _isLoadingCode = true;
+            StateHasChanged();
+
+            var modelNode = _currentModelNode;
+            var showHighlighted = _showHighlighted;
+            var showAnnotations = _showAnnotations;
+            var oneOfEachSection = _settings.StyleChecking.OneOfEachSection;
+
+            // Run parse/render and VCS check concurrently, then update UI via
+            // ContinueWith to avoid queuing behind Blazor sync context renders.
+            var renderTask = Task.Run(() =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var (parseTree, errors) =
+                    ModelicaParserHelper.ParseWithErrors(modelNode.Definition.ModelicaCode ?? "");
+                modelNode.Definition.ParsedCode = parseTree;
+                var parseDuration = sw.ElapsedMilliseconds;
+
+                sw.Restart();
+                var visitor = new ModelicaRenderer(
+                    renderForCodeEditor: showHighlighted,
+                    showAnnotations: showAnnotations,
+                    excludeClassDefinitions: excludeClassDefs,
+                    oneOfEachSection: oneOfEachSection);
+                visitor.VisitStored_definition(parseTree);
+                var renderDuration = sw.ElapsedMilliseconds;
+
+                return (visitor.Code, visitor.Code.Count, parseDuration, renderDuration);
+            });
+
+            var vcsTask = Task.Run(() => CheckModelVcsStatus());
+
+            _ = Task.WhenAll(renderTask, vcsTask).ContinueWith(async _ =>
+            {
+                LoggingService.Debug("CodeReview",
+                    $"  ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
+
+                if (NavState.ModelID != selectedModelId)
+                    return;
+
+                var (code, lineCount, parseMs, renderMs) = renderTask.Result;
+
+                // If the model has an element prefix (redeclare, replaceable, etc.),
+                // prepend it to the class definition line (skipping any within clause)
+                PrependElementPrefix(code, modelNode.ElementPrefix, showHighlighted);
+
+                LoggingService.Debug("CodeReview",
+                    $"  Parse: {parseMs}ms, Render: {renderMs}ms, Lines: {lineCount}");
+
+                var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
+                await InvokeAsync(async () =>
+                {
+                    LoggingService.Debug("CodeReview",
+                        $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
+
+                    _highlightedCode = code;
+                    _lines = Math.Max(10, lineCount);
+                    _modelicaCode = string.Join("\n", code);
+                    _isLoadingCode = false;
+
+                    // Store in cache for future clicks
+                    _renderCache[cacheKey] = code;
+
+                    OnIssuesScopeChanged(IssuesScopeAllModels);
+                    if (!_isModelModified)
+                        _isDiffMode = false;
+                    await SetViewMode(_isDiffMode, _diffViewMode);
+                    StateHasChanged();
+
+                    LoggingService.Debug("CodeReview",
+                        $"  Total: {totalSw.ElapsedMilliseconds}ms");
+                });
+            }, TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>
+    /// Formats element prefix keywords (e.g., "redeclare", "inner replaceable") as a
+    /// syntax-highlighted line that can be prepended to the rendered code output.
+    /// </summary>
+    private static string FormatElementPrefixLine(string elementPrefix, bool showHighlighted)
+    {
+        if (!showHighlighted)
+            return elementPrefix;
+
+        var words = elementPrefix.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(" ", words.Select(w => $"<KEYWORD>{w}</KEYWORD>"));
+    }
+
+    /// <summary>
+    /// Prepends the element prefix to the class definition line in the rendered code,
+    /// skipping any leading "within" clause so the prefix appears on the correct line.
+    /// </summary>
+    private static void PrependElementPrefix(List<string> code, string elementPrefix, bool showHighlighted)
+    {
+        if (string.IsNullOrEmpty(elementPrefix) || code.Count == 0)
+            return;
+
+        var prefixText = FormatElementPrefixLine(elementPrefix, showHighlighted);
+        for (int i = 0; i < code.Count; i++)
+        {
+            var stripped = Regex.Replace(code[i], "<[^>]+>", "").TrimStart();
+            if (!stripped.StartsWith("within"))
+            {
+                code[i] = prefixText + " " + code[i];
+                return;
+            }
+        }
+        // Fallback: prepend to first line if no non-within line found
+        code[0] = prefixText + " " + code[0];
+    }
+
+    #region Model Checking Service Event Handlers
+
+    private async void OnCheckProgressChanged(ModelCheckProgress progress)
+    {
+        await InvokeAsync(() =>
+        {
+            _modelsToCheck = progress.TotalModels;
+            _modelsChecked = progress.ModelsChecked;
+            _checkingModel = progress.CurrentModel;
+            StateHasChanged();
+        });
+    }
+
+    private async void OnModelChecked(ModelCheckResult result)
+    {
+        await InvokeAsync(() =>
+        {
+            if (!result.Success)
+            {
+                var issue = new LogMessage(
+                    result.ModelId,
+                    "Error",
+                    0,
+                    result.Summary ?? "Check Failed",
+                    result.ErrorMessage ?? "");
+                CodeReviewService.AddLogMessage(issue);
+            }
+            StateHasChanged();
+        });
+    }
+
+    private async void OnCheckingComplete(ModelCheckProgress progress)
+    {
+        await InvokeAsync(() =>
+        {
+            _checkProgressDialog = false;
+            _checkCancellationTokenSource?.Dispose();
+            _checkCancellationTokenSource = null;
+            StateHasChanged();
+        });
+    }
+
+    #endregion
+
+    private void CheckInDymola()
+    {
+        if (_currentModelNode == null)
+            return;
+
+        _checkingToolName = DymolaCheckingService.ToolName;
+        _checkCancellationTokenSource = new CancellationTokenSource();
+
+        // Show progress dialog for packages
+        if (_currentModelNode.ClassType == "package")
+        {
+            _checkProgressDialog = true;
+        }
+
+        // StartCheckingAsync runs on background thread and returns immediately
+        _ = DymolaCheckingService.StartCheckingAsync(
+            _currentModelNode,
+            LibraryDataService.CombinedGraph,
+            _checkCancellationTokenSource.Token);
+    }
+
+    private void CheckInOpenModelica()
+    {
+        if (_currentModelNode == null)
+            return;
+
+        _checkingToolName = OpenModelicaCheckingService.ToolName;
+        _checkCancellationTokenSource = new CancellationTokenSource();
+
+        // Show progress dialog for packages
+        if (_currentModelNode.ClassType == "package")
+        {
+            _checkProgressDialog = true;
+        }
+
+        // StartCheckingAsync runs on background thread and returns immediately
+        _ = OpenModelicaCheckingService.StartCheckingAsync(
+            _currentModelNode,
+            LibraryDataService.CombinedGraph,
+            _checkCancellationTokenSource.Token);
+    }
+
+    private void RowClickEvent(TableRowClickEventArgs<LogMessage> args)
+    {
+        _currentIssue = args.Item;
+        if (_currentIssue == null) return;
+
+        // Close any open spelling popover first
+        _spellingPopoverOpen = false;
+        _suggestions = null;
+
+        if (IsSpellingViolation(_currentIssue))
+        {
+            // Show popover context menu for spelling violations
+            _spellingPopoverOpen = true;
+        }
+        else if (!string.IsNullOrEmpty(_currentIssue.Details))
+        {
+            _issueDetailsVisible = true;
+        }
+
+        NavState.ChangeModelID(_currentIssue.ModelName);
+    }
+
+    private async Task ApplySyntaxHighlightingStyles()
+    {
+        var css = $@"
+.code-viewer {{
+background-color: {_settings.SyntaxHighlighting.BackgroundColor} !important;
+color: {_settings.SyntaxHighlighting.TextColor} !important;
+border: 1px solid {_settings.SyntaxHighlighting.BorderColor} !important;
+border-radius: 4px;
+overflow: auto;
+font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+font-size: var(--mud-typography-body1-size) !important;
+line-height: 1.5;
+padding: 4px;
+}}
+
+.code-viewer-content {{
+display: flex;
+flex-direction: column;
+}}
+
+.code-line {{
+white-space: pre;
+font-family: inherit;
+}}
+
+.code-keyword {{
+color: {_settings.SyntaxHighlighting.KeywordColor} !important;
+font-weight: 600;
+}}
+
+.code-type {{
+color: {_settings.SyntaxHighlighting.TypeColor} !important;
+}}
+
+.code-ident {{
+color: {_settings.SyntaxHighlighting.IdentColor} !important;
+}}
+
+.code-name {{
+color: {_settings.SyntaxHighlighting.NameColor} !important;
+}}
+
+.code-function {{
+color: {_settings.SyntaxHighlighting.FunctionColor} !important;
+}}
+
+.code-operator {{
+color: {_settings.SyntaxHighlighting.OperatorColor} !important;
+}}
+
+.code-number {{
+color: {_settings.SyntaxHighlighting.NumberColor} !important;
+}}
+
+.code-string {{
+color: {_settings.SyntaxHighlighting.StringColor} !important;
+}}
+
+.code-comment {{
+color: {_settings.SyntaxHighlighting.CommentColor} !important;
+font-style: italic;
+}}
+
+.code-linenumber {{
+color: {_settings.SyntaxHighlighting.LineNumberColor} !important;
+}}
+";
+
+        await JSRuntime.InvokeVoidAsync("eval", $@"
+var styleId = 'dynamic-syntax-highlighting';
+var existingStyle = document.getElementById(styleId);
+if (existingStyle) {{
+existingStyle.remove();
+}}
+var style = document.createElement('style');
+style.id = styleId;
+style.textContent = `{css}`;
+document.head.appendChild(style);
+");
+    }
+
+    private void OnModelContentChanged(IReadOnlyCollection<string> modelIds)
+    {
+        // Remove stale cache entries so the next ChangeModelID call re-renders from fresh content
+        foreach (var id in modelIds)
+        {
+            var keysToRemove = _renderCache.Keys.Where(k => k.ModelId == id).ToList();
+            foreach (var key in keysToRemove)
+                _renderCache.Remove(key);
+        }
+    }
+
+    private async void LibraryLoaded()
+    {
+        // Clear render cache — models may have changed
+        _renderCache.Clear();
+
+        // Clear existing log messages when a new library is loaded
+        CodeReviewService.ClearLogMessages();
+
+        // Add parser errors to the issues list
+        foreach (var model in LibraryDataService.GetAllModels())
+        {
+            if (model.Definition.ParserErrors != null && model.Definition.ParserErrors.Count > 0)
+            {
+                foreach (var error in model.Definition.ParserErrors)
+                {
+                    var issue = new LogMessage(
+                    model.Definition.Name,
+                    "Error",
+                    error.Line,
+                    "Parser error",
+                    error.Message + (error.OffendingToken != null ? $" (token: '{error.OffendingToken}')" : ""));
+                    CodeReviewService.AddLogMessage(issue);
+                }
+            }
+        }
+
+        // Update UI with parser errors before starting background style checking
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string MakeShortName(string name)
+    {
+        var idx = name.IndexOf(".") + 1;
+        return name.Length <= 40 || name.IndexOf(".") == -1 || name.Count(c => c == '.') <= 1 ?
+                name :
+                name.Substring(0, name.IndexOf(".", idx)) + "..." + name.Substring(name.LastIndexOf("."));
+    }
+
+    private bool FilterFunc1(LogMessage element) => FilterFunc(element, _searchString + (IssuesScopeAllModels ? " " + NavState.ModelID: "") );
+
+    private bool FilterFunc(LogMessage element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+
+        if (IssuesScopeAllModels && NavState.ModelID.Length > 0) {
+            if (element.ModelName == NavState.ModelID) {
+                //Remove the model name from the search string before continuing
+                searchString = searchString.Replace(NavState.ModelID,"").Trim();
+                if (searchString.Length > 0) {
+                    var strings = searchString.ToLower().Split(' ');
+                    if (element.Summary.Length > 0 && strings.Any(element.Summary.ToLower().Contains))
+                        return true;
+                    if (element.Details.Length > 0 && strings.Any(element.Details.ToLower().Contains))
+                        return true;
+                    if (element.Severity.Length > 0 && strings.Any(element.Severity.ToLower().Contains))
+                        return true;
+                    return false;
+                }
+                return true;
+            }
+        }
+        else {
+            var strings = searchString.Split(' ');
+            if (strings.Any(element.ModelName.Contains))
+                return true;
+
+            var stringsLowerCase = searchString.ToLower().Split(' ');
+            if (element.Summary.Length > 0 && stringsLowerCase.Any(element.Summary.ToLower().Contains))
+                return true;
+            if (element.Details.Length > 0 && stringsLowerCase.Any(element.Details.ToLower().Contains))
+                return true;
+            if (element.Severity.Length > 0 && stringsLowerCase.Any(element.Severity.ToLower().Contains))
+                return true;
+        }
+        return false;
+    }
+
+    private void ResolveIssue()
+    {
+        if (_currentIssue != null)
+            CodeReviewService.RemoveLogMessage(_currentIssue);
+        _issueDetailsVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnIssuesScopeChanged(bool value) {
+        IssuesScopeAllModels = value;
+        StateHasChanged();
+    }
+
+    private static readonly Regex MisspelledWordRegex = new(@"^Misspelled word '([^']+)'", RegexOptions.Compiled);
+
+    private static bool IsSpellingViolation(LogMessage? issue)
+    {
+        return issue?.Summary?.StartsWith("Misspelled word '") == true;
+    }
+
+    private static string? ExtractMisspelledWord(LogMessage? issue)
+    {
+        if (issue == null)
+            return null;
+        var match = MisspelledWordRegex.Match(issue.Summary);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private async Task AddToDictionary()
+    {
+        var word = ExtractMisspelledWord(_currentIssue);
+        if (string.IsNullOrEmpty(word))
+            return;
+
+        await CustomDictionaryService.AddWordAsync(word);
+
+        // Also add to the spell checker's in-memory custom words
+        StyleCheckingService.GetSpellChecker()?.AddCustomWord(word);
+
+        // Remove all violations for this word across all models
+        CodeReviewService.RemoveLogMessagesByPredicate(m =>
+            m.Summary == $"Misspelled word '{word}' in description" ||
+            m.Summary == $"Misspelled word '{word}' in documentation info" ||
+            m.Summary == $"Misspelled word '{word}' in documentation revisions");
+
+        _spellingPopoverOpen = false;
+        _suggestions = null;
+        _issueDetailsVisible = false;
+        StateHasChanged();
+    }
+
+    private void IgnoreSpellingViolation()
+    {
+        if (_currentIssue != null)
+            CodeReviewService.RemoveLogMessage(_currentIssue);
+
+        _spellingPopoverOpen = false;
+        _suggestions = null;
+        StateHasChanged();
+    }
+
+    private void ShowSuggestions()
+    {
+        var word = ExtractMisspelledWord(_currentIssue);
+        if (string.IsNullOrEmpty(word))
+            return;
+
+        var spellChecker = StyleCheckingService.GetSpellChecker();
+        _suggestions = spellChecker?.Suggest(word) ?? [];
+        StateHasChanged();
+    }
+
+    private void CloseSpellingPopover()
+    {
+        _spellingPopoverOpen = false;
+        _suggestions = null;
+        StateHasChanged();
+    }
+
+}

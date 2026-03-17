@@ -1,0 +1,337 @@
+@using MLQT.Services.Interfaces
+
+@inject IRepositoryService RepositoryService
+@inject IFilePickerService FilePickerService
+@inject IStyleCheckingService StyleCheckingService
+
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Add Repository</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3" Style="min-width: 400px;">
+            <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-6" 
+                ActivePanelIndex="@_activeIndex" ActivePanelIndexChanged="@OnTabChanged">
+                <MudTabPanel Text="Select Local Directory">
+                    <MudText Typo="Typo.body1">Select a directory containing Modelica libraries to use as a repository</MudText>
+                    <MudTextField @bind-Value="_path"
+                                Label="Repository Path"
+                                Typo="Typo.body1" Margin="Margin.Dense"
+                                Variant="Variant.Outlined"
+                                Adornment="Adornment.End"
+                                AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                                OnAdornmentClick="BrowseForFolder"
+                                HelperText="Enter a local path or click the folder icon to browse"
+                                Immediate="true" />
+                    @if (_detectedVcsType != null)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                @switch (_detectedVcsType.Value)
+                                {
+                                    case RepositoryVcsType.Git:
+                                        <MudText>Git repository detected</MudText>
+                                        break;
+                                    case RepositoryVcsType.SVN:
+                                        <MudText>SVN repository detected</MudText>
+                                        break;
+                                    case RepositoryVcsType.Local:
+                                        <MudText>Local directory (no VCS)</MudText>
+                                        break;
+                                }
+                            </MudStack>
+                        </MudAlert>
+                    }
+                    @if (_detectedVcsRoot != null)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true">
+                            <MudText>This path is within a repository rooted at <strong>@_detectedVcsRoot</strong>.
+                            Branch, merge, commit and other VCS operations will apply to the full repository.</MudText>
+                        </MudAlert>
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="Download Remote Repository">
+                    <MudText Typo="Typo.body1">Enter the URL to download the repository from</MudText>
+                    <MudTextField @bind-Value="_url"
+                                Label="Remote Repository Address"
+                                Typo="Typo.body1" Margin="Margin.Dense"
+                                Variant="Variant.Outlined"
+                                HelperText="Enter the remote address to download the repository from.  Supports Git and SVN"
+                                Immediate="true"
+                                DebounceInterval="300"
+                                TextChanged="OnURLChanged" />
+                    <MudTextField @bind-Value="_checkoutPath"
+                                Label="Checkout Directory"
+                                Typo="Typo.body1" Margin="Margin.Dense"
+                                Variant="Variant.Outlined"
+                                Adornment="Adornment.End"
+                                AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                                OnAdornmentClick="BrowseForCheckoutFolder"
+                                HelperText="Select where to checkout the repository on the local machine" />
+                    @if (_detectedVcsType != null)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                @switch (_detectedVcsType.Value)
+                                {
+                                    case RepositoryVcsType.Git:
+                                        <MudIcon Icon="@Icons.Custom.Brands.GitHub" Size="Size.Small" />
+                                        <MudText>Git repository detected</MudText>
+                                        break;
+                                    case RepositoryVcsType.SVN:
+                                        <MudIcon Icon="@Icons.Material.Filled.Source" Size="Size.Small" />
+                                        <MudText>SVN repository detected</MudText>
+                                        break;
+                                    case RepositoryVcsType.Local:
+                                        <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" />
+                                        <MudText>Local directory (no VCS)</MudText>
+                                        break;
+                                }
+                            </MudStack>
+                        </MudAlert>
+                    }
+                </MudTabPanel>
+            </MudTabs>
+
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.caption">@_loadingMessage</MudText>
+            }
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="NextStep" Disabled="@(!CanProceed || _isLoading)">Add Repository</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    private int _activeIndex = 0;
+    private string _path = "";
+    private string _url = "";
+    private string _checkoutPath = "";
+    private RepositoryVcsType? _detectedVcsType = null;
+    private string? _detectedVcsRoot = null;
+    private bool _isLocal = true;
+    private bool _isLoading = false;
+    private string _loadingMessage = "";
+    private string? _errorMessage;
+    private string? _addedRepositoryId;
+
+    private bool CanProceed => _activeIndex switch
+    {
+        0 => !string.IsNullOrWhiteSpace(_path),
+        1 => !string.IsNullOrWhiteSpace(_url) && !string.IsNullOrWhiteSpace(_checkoutPath),
+        _ => false
+    };
+
+    private void OnPathChanged(string newPath)
+    {
+        _path = newPath;
+        _errorMessage = null;
+
+        if (!string.IsNullOrWhiteSpace(newPath))
+        {
+            var (vcsType, isLocal) = RepositoryService.DetectVcsType(newPath);
+            _detectedVcsType = vcsType;
+            _isLocal = isLocal;
+
+            if (isLocal && vcsType != RepositoryVcsType.Local)
+            {
+                var root = RepositoryService.FindVcsRoot(newPath);
+                _detectedVcsRoot = !string.Equals(root, newPath, StringComparison.OrdinalIgnoreCase) ? root : null;
+            }
+            else
+            {
+                _detectedVcsRoot = null;
+            }
+        }
+        else
+        {
+            _detectedVcsType = null;
+            _detectedVcsRoot = null;
+            _isLocal = true;
+        }
+    }
+
+    private void OnURLChanged(string newPath)
+    {
+        _url = newPath;
+        _errorMessage = null;
+
+        if (!string.IsNullOrWhiteSpace(newPath))
+        {
+            var (vcsType, isLocal) = RepositoryService.DetectVcsType(newPath);
+            _detectedVcsType = vcsType;
+            _isLocal = isLocal;
+        }
+        else
+        {
+            _detectedVcsType = null;
+            _isLocal = true;
+        }
+    }
+
+    private async Task BrowseForFolder()
+    {
+        try
+        {
+            var folder = await FilePickerService.PickFolderAsync("Select Repository");
+            if (!string.IsNullOrEmpty(folder))
+            {
+                OnPathChanged(folder);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to browse: {ex.Message}";
+        }
+    }
+
+    private async Task BrowseForCheckoutFolder()
+    {
+        try
+        {
+            var folder = await FilePickerService.PickFolderAsync("Select Checkout Location");
+            if (!string.IsNullOrEmpty(folder))
+            {
+                _checkoutPath = folder;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to browse: {ex.Message}";
+        }
+    }
+
+    private async Task NextStep()
+    {
+        _errorMessage = null;
+        // Add repository and load libraries
+        await AddRepository();
+    }
+
+    private async Task AddRepository()
+    {
+        _isLoading = true;
+        _loadingMessage = "Loading selected libraries...";
+        StateHasChanged();
+
+        //Need to check _path, _url and _checkoutPath here before proceeding
+        if (_activeIndex==0) {
+            if (string.IsNullOrEmpty(_path)) 
+            {
+                _errorMessage = "You need to select a directory before you can add a repository";
+                return;
+            } 
+            else if (!Directory.Exists(_path)) 
+            {
+                _errorMessage = $"The directory selected does not exist ({@_path}). You need to select a directory on this machine";
+                return;
+            }
+        }
+        else 
+        {
+            if (string.IsNullOrEmpty(_url)) 
+            {
+                _errorMessage = "You need to specify a url to checkout the repository from";
+                return;
+            } 
+            if (string.IsNullOrEmpty(_checkoutPath)) 
+            {
+                _errorMessage = "You need to specify a directory that the repository can be checked out to";
+                return;
+            } 
+            if (!Directory.Exists(_checkoutPath)) 
+            {
+                try 
+                {
+                    Directory.CreateDirectory(_checkoutPath);
+                }
+                catch (Exception ex) 
+                {
+                    _errorMessage = $"The specified checkout directory does not exist and failed to create it.\n{ex.ToString()}";
+                    return;
+                }
+            }
+        }
+
+        try
+        {
+            var result = await RepositoryService.AddRepositoryAsync(
+                _activeIndex == 0 ? _path : _url,
+                _isLocal ? null : _checkoutPath,
+                null);
+
+            if (result.Success && result.Repository != null)
+            {
+                _addedRepositoryId = result.Repository.Id;
+            }
+            else
+            {
+                _errorMessage = result.ErrorMessage ?? "Failed to add repository.";
+            }
+
+            if (_addedRepositoryId != null)
+            {
+                var discoveredLibraries = result.DiscoveredLibraries;
+                var selectedLibraries = new HashSet<string>(discoveredLibraries.Select(d => d.RelativePath));
+                await RepositoryService.LoadLibrariesAsync(_addedRepositoryId, selectedLibraries);
+                var repository = RepositoryService.GetRepository(_addedRepositoryId);
+
+                //Start style checking
+                if (repository != null)
+                    StyleCheckingService.StartBackgroundChecking(repository);
+            }
+
+            MudDialog?.Close(DialogResult.Ok(_addedRepositoryId));
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        // If we already added the repository but user cancels, remove it
+        if (_addedRepositoryId != null)
+        {
+            var repo = RepositoryService.GetRepository(_addedRepositoryId);
+            if (repo != null && repo.LibraryIds.Count == 0)
+            {
+                RepositoryService.RemoveRepository(_addedRepositoryId, false);
+            }
+        }
+        MudDialog?.Cancel();
+    }
+
+    private void OnTabChanged(int activeIndex) {
+        _activeIndex = activeIndex;
+        if (activeIndex == 0 && string.IsNullOrEmpty(_path))
+        {
+            _detectedVcsType = null;
+            _detectedVcsRoot = null;
+        }
+        else if (activeIndex == 1 && string.IsNullOrEmpty(_url))
+        {
+            _detectedVcsType = null;
+            _detectedVcsRoot = null;
+        }
+    }
+}

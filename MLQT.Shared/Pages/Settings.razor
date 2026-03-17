@@ -1,0 +1,63 @@
+@inject ISettingsService SettingsService
+@inject IJSRuntime JSRuntime
+@inject AppState NavState
+
+<MudPaper Elevation="0" Class="mt-1">
+    <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true" @bind-ActivePanelIndex="_activePanelIndex">
+        <!-- UI Settings Tab -->
+        <MudTabPanel Text="UI Settings" Icon="@Icons.Material.Filled.SettingsBrightness" ToolTip="User Interface Settings">
+            <SettingsUI />
+        </MudTabPanel>
+
+        <!-- External Tools Settings Tab -->
+        <MudTabPanel Text="External Tools" Icon="@Icons.Material.Filled.Build" ToolTip="External Tool Settings">
+            <SettingsExternalTools />
+        </MudTabPanel>
+
+        <!-- Style Checking Settings Tab -->
+        <MudTabPanel Text="Style Checking" Icon="@Icons.Material.Filled.Build" ToolTip="Style Checking Settings">
+            <SettingsStyleChecking />
+        </MudTabPanel>
+
+        <!-- Repository Settings Tab -->
+        <MudTabPanel Text="Manage Repositories" Icon="@Icons.Material.Filled.Build" ToolTip="Manage Repository Settings">
+            <SettingsRepositories />
+        </MudTabPanel>
+    </MudTabs>
+
+    <!-- Action Buttons, not displayed on the Repository Settings tab -->
+    @if (_activePanelIndex != 3)
+    {
+        <MudPaper Class="pa-2 mt-2" Elevation="0">
+            <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" StartIcon="@Icons.Material.Filled.Save" Size="Size.Small">
+                    Save Settings
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetToDefaults" StartIcon="@Icons.Material.Filled.RestartAlt" Size="Size.Small">
+                    Reset to Defaults
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</MudPaper>
+
+    @code {
+    private int _activePanelIndex = 0;
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            NavState.SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private async Task ResetToDefaults()
+    {
+        
+    }
+}

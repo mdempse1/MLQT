@@ -1,0 +1,119 @@
+@using MLQT.Services.Interfaces
+@using RevisionControl
+@using MLQT.Shared.Components
+
+@inject IRepositoryService RepositoryService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Revert Changes in @_repository?.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3" Style="min-height: 500px;">
+            @if (_repository?.RelativeLibraryPath != null)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Repository: <strong>@_repository.VcsRootPath</strong>
+                </MudAlert>
+            }
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.body1">Loading changes...</MudText>
+            }
+            else if (_changedFiles.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">No uncommitted changes found.</MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Selected files will be reverted to their last committed state. This cannot be undone.
+                </MudAlert>
+            }
+
+            <ChangeReview RepositoryId="@RepositoryId"
+                @ref="_changeReviewComponent"
+                @bind-SelectedFilesCount="@_selectedFilesCount"
+                @bind-ErrorMessage="@_errorMessage"
+                @bind-ChangedFiles="@_changedFiles"
+                @bind-IsLoading="@_isLoading" />
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Size="Size.Small" Variant="Variant.Outlined">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small"
+                   OnClick="RevertFiles" Disabled="@(!CanRevert || _isReverting)">
+            @if (_isReverting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Revert (@_selectedFilesCount files)
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string RepositoryId { get; set; } = "";
+
+    private Repository? _repository;
+    private int _selectedFilesCount = 0;
+    public List<VcsWorkingCopyFile> _changedFiles = new ();
+    private string? _errorMessage;
+    public bool _isLoading = true;
+    private ChangeReview? _changeReviewComponent;
+    private bool CanRevert => _selectedFilesCount > 0;
+    private bool _isReverting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _repository = RepositoryService.GetRepository(RepositoryId) ?? new Repository { Name = "Unknown", LocalPath = "" };        
+    }
+
+    private async Task RevertFiles()
+    {
+        if (!CanRevert)
+            return;
+
+        _isReverting = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var selectedFiles = _changeReviewComponent!.GetSelectedFiles();
+            var result = await RepositoryService.RevertFilesAsync(RepositoryId, selectedFiles);
+
+            if (result.Success)
+            {
+                MudDialog?.Close(DialogResult.Ok(selectedFiles));
+            }
+            else
+            {
+                _errorMessage = result.ErrorMessage ?? "Revert failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isReverting = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+}

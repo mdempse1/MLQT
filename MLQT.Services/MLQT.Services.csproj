@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MLQT.Services.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DymolaInterface\DymolaInterface.csproj" />
+    <ProjectReference Include="..\ModelicaGraph\ModelicaGraph.csproj" />
+    <ProjectReference Include="..\ModelicaParser\ModelicaParser.csproj" />
+    <ProjectReference Include="..\OpenModelicaInterface\OpenModelicaInterface.csproj" />
+    <ProjectReference Include="..\RevisionControl\RevisionControl.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.0.0" />
+    <PackageReference Include="NLog" Version="6.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Helpers\" />
+  </ItemGroup>
+
+</Project>

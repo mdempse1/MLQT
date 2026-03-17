@@ -1,0 +1,698 @@
+@using Nextended.Core.COM
+@using Nextended.Core.DeepClone
+@using ModelicaParser.StyleRules
+@using ModelicaGraph
+
+@inject IRepositoryService RepositoryService
+@inject ISettingsService SettingsService
+@inject IDictionaryManagerService DictionaryManagerService
+@inject IFilePickerService FilePickerService
+@inject AppState NavState
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.subtitle1" Class="ml-2 mt-4 mb-2">Project and repository settings</MudText>
+<MudText Typo="Typo.body1" Class="ml-2 mt-2 mb-2">You can only edit the repository settings for the active project.</MudText>
+@* Project expansion panels *@
+<MudExpansionPanels MultiExpansion="true" Dense="true" Gutters="false" Elevation="2">
+    @foreach (var project in _projects)
+    {
+        var isActive = project.Id == _activeProjectId;
+        var repos = isActive ? _activeRepos : project.Repositories;
+
+        <MudExpansionPanel Dense="true" Expanded="@isActive">
+            <TitleContent>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="py-0">
+                    @if (_renamingProjectId == project.Id)
+                    {
+                        <span @onclick:stopPropagation="true">
+                            <MudTextField @bind-Value="_renameInput" Variant="Variant.Outlined"
+                                Margin="Margin.Dense" Immediate="true"
+                                Style="max-width: 250px;" />
+                        </span>
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
+                                OnClick="ConfirmRename" Disabled="@(string.IsNullOrWhiteSpace(_renameInput))" />
+                        </span>
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton  Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" 
+                                OnClick="CancelRename" />                                
+                        </span>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="ml-2">
+                            <b>Project: @project.Name</b>
+                        </MudText>
+                        @if (isActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Class="ml-2">Active</MudChip>
+                        } 
+                        else
+                        {
+                            <MudTooltip Text="Load project">
+                                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" Color="Color.Primary" OnClick="() => LoadProject(project.Id)" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Rename project">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => StartRenameProject(project)" />
+                        </MudTooltip>
+                        @if (_projects.Count > 1 && !isActive) 
+                        {
+                            <MudTooltip Text="Delete project">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteProject(project)" />
+                            </MudTooltip>
+                        }
+                    }
+                </MudStack>
+            </TitleContent>
+            <ChildContent>
+                @* Repository list for this project *@
+                @if (isActive)
+                {
+                    <MudTable T="Repository" Items="_repositories" Dense="true" Hover="true"
+                        OnRowClick="OnRepoRowClick" RowClass="cursor-pointer"
+                        Style="background: transparent;" Class="mb-0">
+                        <HeaderContent>
+                            <MudTh>Repository Name</MudTh>
+                            <MudTh>VCS Type</MudTh>
+                            <MudTh>Local Path</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Repository Name"><MudText Typo="Typo.body1">@context.Name</MudText></MudTd>
+                            <MudTd DataLabel="VCS Type"><MudText Typo="Typo.body1">@context.VcsType</MudText></MudTd>
+                            <MudTd DataLabel="Local Path"><MudText Typo="Typo.body1">@context.LocalPath</MudText></MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Typo="Typo.body1" Style="color: var(--mud-palette-text-primary); font-style: italic;">
+                                No repositories in this project
+                            </MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                }
+                else
+                {
+                    <MudTable T="RepositorySettingsEntry" Items="project.Repositories" Dense="true" Hover="true"
+                        Style="background: transparent;" Class="mb-0">
+                        <HeaderContent>
+                            <MudTh>Repository Name</MudTh>
+                            <MudTh>VCS Type</MudTh>
+                            <MudTh>Local Path</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Repository Name"><MudText Typo="Typo.body1">@context.Name</MudText></MudTd>
+                            <MudTd DataLabel="VCS Type"><MudText Typo="Typo.body1">@context.VcsType</MudText></MudTd>
+                            <MudTd DataLabel="Local Path"><MudText Typo="Typo.body1">@context.LocalPath</MudText></MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Typo="Typo.body1" Style="color: var(--mud-palette-text-primary); font-style: italic;">
+                                No repositories in this project
+                            </MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+    }
+</MudExpansionPanels>
+
+@* Add new project button *@
+<MudPaper Elevation="0" Class="mt-4 ml-0">
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Style="width: fit-content;">
+        @if (_showProjectNameInput)
+        {
+            <MudTextField @bind-Value="_projectNameInput" Label="@_projectNameLabel"
+                Variant="Variant.Outlined" Margin="Margin.Dense"
+                Immediate="true" Style="max-width: 400px;" />
+            <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
+                OnClick="ConfirmProjectName" Disabled="@(string.IsNullOrWhiteSpace(_projectNameInput))" />
+            <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
+                OnClick="CancelProjectName" />
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" IconSize="Size.Small"
+                StartIcon="@Icons.Material.Filled.Add" OnClick="CreateNewProject">
+                New Project
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@* Edit repository dialog (only for active project repos) *@
+<MudDialog @bind-Visible="_editRepository" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Repository Details</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_selectedItem.Name" Label="Name:" Variant="Variant.Outlined" ReadOnly="false" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
+        <MudTextField @bind-Value="_selectedItem.VcsType" Label="VCS Type:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
+        <MudTextField @bind-Value="_selectedItem.LocalPath" Label="Library Path:" Variant="Variant.Outlined" ReadOnly="false" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
+        @if (_selectedItem.RelativeLibraryPath != null)
+        {
+            <MudTextField Value="_selectedItem.VcsRootPath" Label="VCS Repository Root:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"
+                HelperText="Library path is a subdirectory of this VCS working copy. All VCS operations apply to the full repository." />
+        }
+        <MudText Typo="Typo.body1" Class="mt-4">Commit requirements</MudText>
+        <MudSwitch @bind-Value="SelectedSettings.CommitRequiresIssueNumber" Color="Color.Primary" Size="Size.Small"
+            Label="Require an issue number as part of the commit message" />
+        <MudSwitch @bind-Value="SelectedSettings.IssueNumberAtEnd" Color="Color.Primary" Size="Size.Small" Disabled="!SelectedSettings.CommitRequiresIssueNumber"
+            Label="The issue number will be added before the commit message when disabled, after the commit message when enabled" />
+        <MudText Typo="Typo.body1" Class="mt-4">Style guidelines</MudText>
+        <MudSwitch @bind-Value="SelectedSettings.ClassHasDescription" Color="Color.Primary" Size="Size.Small"
+            Label="Every class must have a description" />
+        <MudSwitch @bind-Value="SelectedSettings.ClassHasDocumentationInfo" Color="Color.Primary" Size="Size.Small"
+            Label="Every class must have documentation info" />
+        <MudSwitch @bind-Value="SelectedSettings.ClassHasDocumentationRevisions" Color="Color.Primary" Size="Size.Small"
+            Label="Every class must have a documentation revisions" />
+        <MudSwitch @bind-Value="SelectedSettings.ClassHasIcon" Color="Color.Primary" Size="Size.Small"
+            Label="Every class must have an icon" />
+        <MudSwitch @bind-Value="SelectedSettings.ParameterHasDescription" Color="Color.Primary" Size="Size.Small"
+            Label="Every public parameter must have a description" />
+        <MudSwitch @bind-Value="SelectedSettings.ConstantHasDescription" Color="Color.Primary" Size="Size.Small"
+            Label="Every public constant must have a description" />
+
+        <MudSwitch @bind-Value="SelectedSettings.DontMixEquationAndAlgorithm" Color="Color.Primary" Size="Size.Small"
+            Label="A class may only have either an equation or algorithm section, not both" />
+        <MudSwitch @bind-Value="SelectedSettings.DontMixConnections" Color="Color.Primary" Size="Size.Small"
+            Label="Do not mix connections and equations in the same class" />
+
+        <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small"
+            Label="Check that the naming convention is followed" />
+
+        @if (SelectedSettings.FollowNamingConvention)
+        {
+            <MudExpansionPanels Class="mt-1 ml-0 mb-2" Dense="true" Elevation="0" Gutters="false">
+                <MudExpansionPanel Dense="true">
+                    <TitleContent>
+                        <MudText Typo="Typo.body1">Naming Convention: @SelectedSettings.NamingConvention.PresetName</MudText>
+                    </TitleContent>
+                    <ChildContent>
+                        <MudSelect T="string" Label="Preset" Value="@SelectedSettings.NamingConvention.PresetName"
+                            ValueChanged="OnRepoPresetChanged" Dense="true" Margin="Margin.Dense"
+                            Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
+                            @foreach (var preset in NamingConventionPresets.All)
+                            {
+                                <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
+                            }
+                            <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
+                        </MudSelect>
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
+                        <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)" />
+                        <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)" />
+                        <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)" />
+                        <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)" />
+                        <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)" />
+                        <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)" />
+                        <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)" />
+                        <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)" />
+                        <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)" />
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
+                        <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)" />
+                        <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)" />
+                        <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)" />
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
+                        <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)" />
+                        <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)" />
+                        <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)" />
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
+                        <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
+                            Color="Color.Primary" Size="Size.Small"
+                            Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Exception Names</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-1">Names that bypass convention checks (e.g., product names like NASCAR)</MudText>
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                            <MudTextField @bind-Value="_newRepoExceptionName" Placeholder="Add exception name" Variant="Variant.Outlined"
+                                Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                            <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                                OnClick="AddRepoExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newRepoExceptionName)" />
+                        </MudStack>
+                        <MudChipSet T="string" Class="mt-1">
+                            @foreach (var name in SelectedSettings.NamingConvention.ExceptionNames)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveRepoExceptionName(name)">@name</MudChip>
+                            }
+                        </MudChipSet>
+                    </ChildContent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+        
+        <MudText Typo="Typo.body1" Class="mt-4">Formatting rules</MudText>
+        <MudSwitch @bind-Value="SelectedSettings.ApplyFormattingRules" Color="Color.Primary" Size="Size.Small"
+            Label="Apply formatting rules.  If off then just used as part of style guidelines" />
+        <MudSwitch @bind-Value="SelectedSettings.OneOfEachSection" Color="Color.Primary" Size="Size.Small"
+            Label="A class may only have 1 public, 1 protected, 1 equation or algorithm section" />
+        <MudSwitch @bind-Value="SelectedSettings.ImportStatementsFirst" Color="Color.Primary" Size="Size.Small"
+            Label="Composition must be imports first; then extends at the top of the public/protected sections" />
+        <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+            Label="Composition must have components before classes" />
+
+        <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Value="@SelectedSettings.InitialEQAlgoFirst" Color="Color.Primary" Size="Size.Small"
+            Label="If there is an initial equation/algorithm section it should appear before the equation/algorithm section"/>
+        <MudSwitch T="bool" ValueChanged="OnInitialEqLast" Value="@SelectedSettings.InitialEQAlgoLast" Color="Color.Primary" Size="Size.Small"
+            Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
+
+        <MudText Typo="Typo.body1" Class="mt-4">Reference validation</MudText>
+        <MudSwitch @bind-Value="SelectedSettings.ValidateModelReferences" Color="Color.Primary" Size="Size.Small"
+            Label="Validate modelica:// model references point to existing models" />
+
+        <MudText Typo="Typo.body1" Class="mt-4">Spell checking</MudText>
+        <MudSwitch @bind-Value="SelectedSettings.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
+            Label="Spell check every description string" />
+        <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
+            Label="Spell check all documentation" />
+
+        @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
+        {
+            <MudText Typo="Typo.body1" Class="mt-4">SVN branch directories</MudText>
+            <MudText Typo="Typo.body1" Class="mt-2 mb-1">
+                Directory names used for listing and detecting branches.
+                The first entry is the trunk equivalent (no subdirectories).
+            </MudText>
+            <MudChipSet T="string" Class="mt-1">
+                @foreach (var dir in SelectedSettings.SvnBranchDirectories)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveBranchDirectory(dir)">@dir</MudChip>
+                }
+            </MudChipSet>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                <MudTextField @bind-Value="_newBranchDirectory" Placeholder="Add directory name" Variant="Variant.Outlined"
+                    Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                    OnClick="AddBranchDirectory" Disabled="@string.IsNullOrWhiteSpace(_newBranchDirectory)" />
+            </MudStack>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ConfirmChanges" Class="px-10">Apply</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CancelChanges" Class="px-10">Cancel</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FormatAllFiles" Class="px-10"
+            Disabled="@(!SelectedSettings.ApplyFormattingRules)">Format All Files</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="RemoveRepository" Class="px-10">Delete Repository</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Repository> _repositories = new();
+    private Repository _selectedItem = null!;
+    private Repository _backupItem = null!;
+    private StyleCheckingSettings SelectedSettings => _selectedItem.StyleSettings ??= new StyleCheckingSettings();
+    private bool _editRepository = false;
+    private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
+    private List<DictionaryInfo> _availableDictionaries = new();
+    private string _newRepoExceptionName = "";
+    private string _newBranchDirectory = "";
+
+    // Project management state
+    private List<ProjectProfile> _projects = new();
+    private string? _activeProjectId;
+    private bool _showProjectNameInput;
+    private string _projectNameInput = "";
+    private string _projectNameLabel = "";
+
+    // Rename state (inline within expansion panel title)
+    private string? _renamingProjectId;
+    private string _renameInput = "";
+
+    // Helper to get repo count for active project from live data
+    private IList<RepositorySettingsEntry> _activeRepos =>
+        _repositories.Select(r => new RepositorySettingsEntry { Name = r.Name, VcsType = r.VcsType.ToString(), LocalPath = r.LocalPath, VcsRootPath = r.VcsRootPath }).ToList();
+
+    protected override void OnInitialized()
+    {
+        NavState.OnSaveSettings += SaveSettings;
+        RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
+        DictionaryManagerService.OnDictionariesChanged += OnDictionariesChanged;
+        _availableDictionaries = DictionaryManagerService.GetAvailableDictionaries().ToList();
+        RefreshProjects();
+        OnRepositoriesChanged();
+        base.OnInitialized();
+    }
+
+    protected void OnDispose()
+    {
+        NavState.OnSaveSettings -= SaveSettings;
+        DictionaryManagerService.OnDictionariesChanged -= OnDictionariesChanged;
+    }
+
+    private void RefreshProjects()
+    {
+        _projects = RepositoryService.GetProjects().ToList();
+        var activeProject = RepositoryService.GetActiveProject();
+        _activeProjectId = activeProject?.Id ?? _projects.FirstOrDefault()?.Id;
+    }
+
+    private async void SaveSettings()
+    {
+        try
+        {
+            await RepositoryService.SaveRepositorySettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private async void OnRepositoriesChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            _repositories.Clear();
+            _repositories.AddRange(RepositoryService.Repositories);
+            StateHasChanged();
+        });
+    }
+
+    // ========== Project Management ==========
+
+    private void CreateNewProject()
+    {
+        _projectNameInput = "";
+        _projectNameLabel = "New Project Name";
+        _showProjectNameInput = true;
+    }
+
+    private async Task ConfirmProjectName()
+    {
+        _showProjectNameInput = false;
+
+        if (string.IsNullOrWhiteSpace(_projectNameInput))
+            return;
+
+        var newProject = RepositoryService.CreateProject(_projectNameInput.Trim());
+        RefreshProjects();
+        StateHasChanged();
+
+        // Automatically load the new empty project
+        NavState.ProjectSwitchStarting();
+        await RepositoryService.SwitchProjectAsync(newProject.Id);
+        RefreshProjects();
+        await InvokeAsync(() => Snackbar.Add($"Project '{newProject.Name}' created and loaded", Severity.Success));
+        StateHasChanged();
+    }
+
+    private void CancelProjectName()
+    {
+        _showProjectNameInput = false;
+    }
+
+    private void StartRenameProject(ProjectProfile project)
+    {
+        _renamingProjectId = project.Id;
+        _renameInput = project.Name;
+    }
+
+    private void ConfirmRename()
+    {
+        if (_renamingProjectId != null && !string.IsNullOrWhiteSpace(_renameInput))
+        {
+            RepositoryService.RenameProject(_renamingProjectId, _renameInput.Trim());
+            RefreshProjects();
+        }
+        _renamingProjectId = null;
+        StateHasChanged();
+    }
+
+    private void CancelRename()
+    {
+        _renamingProjectId = null;
+        StateHasChanged();
+    }
+
+    private async Task LoadProject(string projectId)
+    {
+        // Signal MainLayout to show progress dialog immediately before loading starts
+        NavState.ProjectSwitchStarting();
+        await RepositoryService.SwitchProjectAsync(projectId);
+        RefreshProjects();
+        StateHasChanged();
+    }
+
+    private async Task DeleteProject(ProjectProfile project)
+    {
+        if (_projects.Count <= 1)
+            return;
+
+        var parameters = new DialogParameters<ConfirmDeleteProjectDialog>
+        {
+            { x => x.ProjectName, project.Name }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ConfirmDeleteProjectDialog>("Delete Project", parameters, options);
+        var result = await dialog.Result;
+
+        if (result == null || result.Canceled)
+            return;
+
+        var wasActive = project.Id == _activeProjectId;
+        var deleted = RepositoryService.DeleteProject(project.Id);
+        if (!deleted)
+            return;
+
+        if (wasActive)
+        {
+            // Switch to the first remaining project
+            RefreshProjects();
+            var firstProject = _projects.FirstOrDefault();
+            if (firstProject != null)
+            {
+                NavState.ProjectSwitchStarting();
+                await RepositoryService.SwitchProjectAsync(firstProject.Id);
+                RefreshProjects();
+            }
+        }
+        else
+        {
+            RefreshProjects();
+        }
+
+        await InvokeAsync(() => Snackbar.Add("Project deleted", Severity.Success));
+        StateHasChanged();
+    }
+
+    // ========== Repository Management ==========
+
+    private void OnRepoRowClick(TableRowClickEventArgs<Repository> args)
+    {
+        if (args.Item != null)
+            OnRepoClick(args.Item);
+    }
+
+    private void OnRepoClick(Repository repo)
+    {
+        _selectedItem = repo;
+        _ = SelectedSettings; // ensure StyleSettings is initialized before CloneDeep
+        _backupItem = _selectedItem.CloneDeep();
+        _editRepository = true;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmChanges()
+    {
+        var oldSettings = _backupItem.StyleSettings ?? new StyleCheckingSettings();
+        var newSettings = SelectedSettings;
+
+        bool styleSettingsChanged = StyleSettingsChanged(oldSettings, newSettings);
+        bool formattingChanged = newSettings.ApplyFormattingRules &&
+                                 (!oldSettings.ApplyFormattingRules || FormattingSettingsChanged(oldSettings, newSettings));
+
+        _editRepository = false;
+        await RepositoryService.SaveRepositorySettingsAsync();
+
+        if (styleSettingsChanged || formattingChanged)
+            NavState.RepositorySettingsApplied(_selectedItem.Id, formattingChanged, styleSettingsChanged);
+
+        StateHasChanged();
+    }
+
+    private void FormatAllFiles()
+    {
+        _editRepository = false;
+        NavState.RepositorySettingsApplied(_selectedItem.Id, formattingChanged: true, styleSettingsChanged: false);
+        Snackbar.Add("Full format started for all files in repository...", Severity.Normal);
+        StateHasChanged();
+    }
+
+    private void CancelChanges()
+    {
+        _editRepository = false;
+        _selectedItem.Name = _backupItem.Name;
+        _selectedItem.RemotePath = _backupItem.RemotePath;
+        _selectedItem.LocalPath = _backupItem.LocalPath;
+        _selectedItem.StyleSettings = _backupItem.StyleSettings;
+        StateHasChanged();
+    }
+
+    private static bool StyleSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
+        old.ApplyFormattingRules != @new.ApplyFormattingRules ||
+        old.ImportStatementsFirst != @new.ImportStatementsFirst ||
+        old.ComponentsBeforeClasses != @new.ComponentsBeforeClasses ||
+        old.OneOfEachSection != @new.OneOfEachSection ||
+        old.DontMixEquationAndAlgorithm != @new.DontMixEquationAndAlgorithm ||
+        old.DontMixConnections != @new.DontMixConnections ||
+        old.InitialEQAlgoFirst != @new.InitialEQAlgoFirst ||
+        old.InitialEQAlgoLast != @new.InitialEQAlgoLast ||
+        old.ClassHasDescription != @new.ClassHasDescription ||
+        old.ClassHasDocumentationInfo != @new.ClassHasDocumentationInfo ||
+        old.ClassHasDocumentationRevisions != @new.ClassHasDocumentationRevisions ||
+        old.ClassHasIcon != @new.ClassHasIcon ||
+        old.ParameterHasDescription != @new.ParameterHasDescription ||
+        old.ConstantHasDescription != @new.ConstantHasDescription ||
+        old.FollowNamingConvention != @new.FollowNamingConvention ||
+        !old.NamingConvention.Equals(@new.NamingConvention) ||
+        old.SpellCheckDescription != @new.SpellCheckDescription ||
+        old.SpellCheckDocumentation != @new.SpellCheckDocumentation ||
+        !old.SpellCheckLanguages.SequenceEqual(@new.SpellCheckLanguages) ||
+        old.ValidateModelReferences != @new.ValidateModelReferences;
+
+    private static bool FormattingSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
+        old.OneOfEachSection != @new.OneOfEachSection ||
+        old.ImportStatementsFirst != @new.ImportStatementsFirst ||
+        old.ComponentsBeforeClasses != @new.ComponentsBeforeClasses ||
+        old.InitialEQAlgoFirst != @new.InitialEQAlgoFirst ||
+        old.InitialEQAlgoLast != @new.InitialEQAlgoLast;
+
+    private void RemoveRepository()
+    {
+        _editRepository = false;
+        if (_selectedItem == null)
+            return;
+        RepositoryService.RemoveRepository(_selectedItem.Id, true);
+    }
+
+    private void OnInitialEqFirst(bool value)
+    {
+        SelectedSettings.InitialEQAlgoFirst = value;
+        if (value)
+            SelectedSettings.InitialEQAlgoLast = false;
+        StateHasChanged();
+    }
+
+    private void OnInitialEqLast(bool value)
+    {
+        SelectedSettings.InitialEQAlgoLast = value;
+        if (value)
+            SelectedSettings.InitialEQAlgoFirst = false;
+        StateHasChanged();
+    }
+
+    private void OnRepoLanguagesChanged(IEnumerable<string> selected)
+    {
+        SelectedSettings.SpellCheckLanguages = selected.ToList();
+    }
+
+    private async Task ImportRepoLanguageDictionary()
+    {
+        var result = await FilePickerService.PickModelicaFileAsync(".aff");
+        if (result?.FilePath == null)
+            return;
+
+        var affPath = result.FilePath;
+        var dicPath = Path.ChangeExtension(affPath, ".dic");
+
+        if (!File.Exists(dicPath))
+        {
+            Snackbar.Add($"Missing matching .dic file: {Path.GetFileName(dicPath)}", Severity.Error);
+            return;
+        }
+
+        var langCode = await DictionaryManagerService.ImportDictionaryAsync(affPath, dicPath);
+        if (langCode != null)
+        {
+            if (!SelectedSettings.SpellCheckLanguages.Contains(langCode))
+                SelectedSettings.SpellCheckLanguages.Add(langCode);
+
+            Snackbar.Add($"Imported dictionary: {langCode}", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("Failed to import dictionary", Severity.Error);
+        }
+    }
+
+    private void OnRepoPresetChanged(string presetName)
+    {
+        var preset = NamingConventionPresets.All.FirstOrDefault(p => p.Name == presetName);
+        if (preset.Factory != null)
+        {
+            SelectedSettings.NamingConvention = preset.Factory();
+        }
+        else
+        {
+            SelectedSettings.NamingConvention.PresetName = "Custom";
+        }
+        StateHasChanged();
+    }
+
+    private void OnRepoNamingStyleChanged(Action applyChange)
+    {
+        applyChange();
+        SelectedSettings.NamingConvention.PresetName = "Custom";
+        StateHasChanged();
+    }
+
+    private void AddRepoExceptionName()
+    {
+        var name = _newRepoExceptionName.Trim();
+        if (!string.IsNullOrEmpty(name) && !SelectedSettings.NamingConvention.ExceptionNames.Contains(name))
+        {
+            SelectedSettings.NamingConvention.ExceptionNames.Add(name);
+            _newRepoExceptionName = "";
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveRepoExceptionName(string name)
+    {
+        SelectedSettings.NamingConvention.ExceptionNames.Remove(name);
+        StateHasChanged();
+    }
+
+    private void AddBranchDirectory()
+    {
+        var dir = _newBranchDirectory.Trim();
+        if (!string.IsNullOrEmpty(dir) && !SelectedSettings.SvnBranchDirectories.Contains(dir))
+        {
+            SelectedSettings.SvnBranchDirectories.Add(dir);
+            _newBranchDirectory = "";
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveBranchDirectory(string dir)
+    {
+        SelectedSettings.SvnBranchDirectories.Remove(dir);
+        StateHasChanged();
+    }
+
+    private async void OnDictionariesChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            _availableDictionaries = DictionaryManagerService.GetAvailableDictionaries().ToList();
+            StateHasChanged();
+        });
+    }
+}

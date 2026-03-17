@@ -1,0 +1,2713 @@
+@using MLQT.Shared.Pages
+@using DymolaInterface
+@using OpenModelicaInterface
+@using System.IO
+@using System.Collections.Concurrent
+@using System.Reflection
+@using System.Runtime
+@using static MLQT.Services.LoggingService
+@using RevisionControl
+
+@inherits LayoutComponentBase
+
+@inject AppState NavState
+@inject ILibraryDataService LibraryDataService
+@inject IRepositoryService RepositoryService
+@inject IFilePickerService FilePickerService
+@inject IJSRuntime JSRuntime
+@inject ICodeReviewService CodeReviewService
+@inject IDialogService DialogService
+@inject ISettingsService SettingsService
+@inject ISnackbar Snackbar
+@inject IStyleCheckingService StyleCheckingService
+@inject IFileMonitoringService FileMonitoringService
+@inject IExternalResourceService ExternalResourceService
+@inject IPowerManagementService PowerManagementService
+
+@implements IDisposable
+
+<MudThemeProvider Theme="@_myTheme" @bind-IsDarkMode="@_isDarkMode" />
+<MudDialogProvider BackdropClick="false" CloseOnEscapeKey="false" MaxWidth="MaxWidth.Large" />
+<MudPopoverProvider />
+<MudSnackbarProvider />
+
+<style>
+    .mud-layout {
+        height: 100vh;
+        width: 100vw;
+        position: relative;
+    }
+
+    .mud-grid {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        box-sizing: border-box;
+    }
+
+    .mud-navmenu {
+        margin: 0;
+        height: 100%;
+        position: relative;
+        list-style: none;
+        overscroll-behavior-y: contain;
+    }
+
+    @* Changes the font size for page controls at the bottom of a table *@
+    .mud-table-pagination {
+       font-size: 0.75rem;
+    }
+
+    @* Changes the size of the tabs *@
+    .mud-tabs-tabbar .mud-tabs-tabbar-inner {
+        min-height: 2rem;
+    }
+
+    .mud-tab {
+        min-height: 2rem;
+        font-size: 0.75rem;
+    }
+
+    @* Changes the border on text fields *@
+    .mud-input.mud-input-outlined .mud-input-outlined-border {
+        border-color: rgb(0,0,0,0.118);
+    }
+
+    @* Changes the border on MudButtonGroups that don't have an explicit Color set *@
+    @* Changes the padding for icons on text buttons to align the size with IconButtons *@
+    .mud-button-group-outlined.mud-button-group-override-styles .mud-button-root {
+        border-color: rgb(0,0,0,0.118);
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+    
+    .mud-button-outlined-size-small {
+        padding-top: 4px !important;
+        padding-bottom: 5px !important;
+        font-size: 0.75rem !important;
+    }
+
+    @* Reduce the padding to account for the border and prevent the button from growing *@
+    .mud-button-outlined.mud-button-outlined-primary {
+        padding-left: 11px !important;
+        padding-right: 11px !important;
+    }
+
+    @* Treeview adjustments to make more compact *@
+    .mud-treeview-item-arrow {
+        width: 0.8rem;
+        margin: 0px;
+    }
+
+    .mud-treeview-item-icon {
+        width: 1.5rem;
+        margin-right: 0px;
+        margin-inline-end: 0px;
+    }
+
+    /* Custom Modelica icon styles */
+    .modelica-tree-icon {
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 4px;
+        flex-shrink: 0;
+    }
+
+    .modelica-tree-icon svg {
+        width: 100%;
+        height: 100%;
+    }
+
+    .mud-treeview-item-checkbox {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .mud-treeview-item .mud-treeview-item-arrow .mud-icon-button{
+        padding: 0px;
+    }
+
+    .mud-treeview-item-arrow .mud-icon-size-medium{
+        width: 1rem !important;
+        height: 1rem !important;
+    }
+
+    .mud-treeview-item-checkbox .mud-icon-size-medium{
+        width: 1rem !important;
+        height: 1rem !important;
+    }
+
+    .mud-treeview-item-checkbox .mud-icon-button{
+        padding: 0px !important;
+    }
+
+
+    .mud-toolbar{
+        --mud-internal-toolbar-height: 2rem;
+    }
+
+    .mud-table-toolbar{
+        padding: 0.5rem;
+        padding-inline-start: 0.5rem;
+    }
+
+    .compact-table {
+        font-size: 0.625rem !important;
+        font-family: var(--mud-typography-body1-family) !important;
+        padding-top: 3px !important;
+        padding-bottom: 3px !important;
+    }
+
+    .body1-table {
+        font-size: var(--mud-typography-body1-size) !important;
+        font-family: var(--mud-typography-body1-family) !important;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
+    }
+
+    .body1-table-right {
+        font-size: var(--mud-typography-body1-size) !important;
+        font-family: var(--mud-typography-body1-family) !important;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
+        text-align: right !important;
+    }
+
+    .pre-wrap {
+        white-space: pre-wrap;
+    }
+
+    .mud-picker .mud-typography-subtitle1 {
+        font-size: var(--mud-typography-body1-size) !important;
+        font-family: var(--mud-typography-body1-family) !important; 
+    }
+
+    .mud-input-control>.mud-input-control-input-container>.mud-input-label-inputcontrol {
+        font-size: var(--mud-typography-body1-size) !important;
+        font-family: var(--mud-typography-body1-family) !important; 
+    }
+
+    .mud-picker .mud-input-label-inputcontrol {
+        transform: translate(0, 20px) scale(1);
+    }
+
+    .mud-toolbar-gutters {
+        padding-left: 4px;
+        padding-right: 16px;
+    }
+
+    .mud-dialog-width-lg {
+        max-width: 90%;
+    }
+
+    .mud-icon-size-small {
+        font-size: 1.0rem !important;
+    }
+
+    .mud-icon-size-medium {
+        font-size: 1.25rem !important;
+    }
+
+    .mud-icon-size-large {
+        font-size: 1.5rem !important;
+    }
+
+    .mud-button-group-root.mud-button-group-text-size-small .mud-button-root {
+        font-size: 0.75rem;
+        padding: 4px 4px;
+    }
+
+    .compact-icon-button {
+        padding: 4px !important;
+    }
+
+    .mud-button-text-size-small {
+        font-size: 0.75rem;
+        line-height: 1.25rem;
+    }
+
+    .mud-list-item-avatar {
+        min-width: 32px;
+        flex-shrink: 0;
+    }
+</style>
+
+<MudLayout>
+    <MudAppBar Color="Color.Primary" Elevation="2">
+        <MudText Typo="Typo.h6" Class="ml-2">MLQT - Modelica Library Quality Toolkit@(_currentProjectName != null ? $" - {_currentProjectName}" : "")</MudText>
+        <MudSpacer />
+        <MudTooltip Text="About MLQT and access documentation" Arrow="true" Placement="Placement.Bottom">
+            <MudIconButton Icon="@Icons.Material.Outlined.Help" Color="Color.Inherit" Size="Size.Large" OnClick="() => _showAboutDialog = true" />
+        </MudTooltip>
+    </MudAppBar>
+    <MudMainContent Style="height:calc(100vh - 4px); width:calc(100vw - 8px);">
+        <MudExSplitPanel ColumnLayout="true" SplitterSize="4" SplitterColor="Color.Primary">
+            <Left>
+                <MudExSplitPanelItem MinSize="200" Style="width: 25%; min-width:200px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2">
+                    <MudStack Row="false">
+                        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" >
+                            <MudTooltip Text="Add Repository" Arrow="true" Placement="Placement.Right">
+                                <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Color="Color.Primary" OnClick="OpenAddRepositoryDialog" Size="Size.Medium"/>
+                            </MudTooltip>
+                            @if (_settings.UI.RepositoryMode) {
+                                <MudTooltip Text="Library view"  Arrow="true" Placement="Placement.Right">
+                                    <MudIconButton Icon="@Icons.Material.Filled.LocalLibrary" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <MudTooltip Text="Repository view"  Arrow="true" Placement="Placement.Right">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Primary" OnClick="ToggleView" Size="Size.Medium"/>
+                                </MudTooltip>
+                            }
+                            <MudBadge Content="@_pendingChangesCount" Color="Color.Error" Origin="Origin.CenterRight"
+                                     Visible="@(_pendingChangesCount > 0)" Overlap="true">
+                                <MudTooltip Text="@GetRefreshTooltip()" Arrow="true" Placement="Placement.Right">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                                   Color="@(_pendingChangesCount > 0 ? Color.Warning : Color.Primary)"
+                                                   Size="Size.Medium"
+                                                   OnClick="RefreshLibrariesAsync"
+                                                   Disabled="@_isRefreshing"/>
+                                </MudTooltip>
+                            </MudBadge>
+                        </MudButtonGroup>
+                        <MudExpansionPanels MultiExpansion="true" Dense="true" Gutters="false" Elevation="2">
+                            @if (_settings.UI.RepositoryMode)
+                            {
+                                @foreach (var repo in RepositoryService.Repositories)
+                                {
+                                    <LibraryBrowser LibraryOnly="false" Repository="@repo" />
+                                }
+                            }
+                            else
+                            {
+                                <LibraryBrowser LibraryOnly="true" />
+                            }
+                        </MudExpansionPanels>
+                    </MudStack>
+                </MudExSplitPanelItem>
+            </Left>
+            <Right>
+                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2">
+                    <MudStack Row="false" Style="gap:0px !important;">
+                        <CurrentModelDisplay />
+                        <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
+                            <MudTabPanel Icon="@Icons.Material.Filled.Code" ToolTip="Code Review and Issues">
+                                <CodeReview />
+                            </MudTabPanel>
+                            <MudTabPanel Icon="@Icons.Material.Filled.AccountTree" ToolTip="View Dependencies">
+                                <Dependencies />
+                            </MudTabPanel>
+                            <MudTabPanel Icon="@Icons.Material.Filled.FolderOpen" ToolTip="External Resources">
+                                <ExternalResources />
+                            </MudTabPanel>
+                            <MudTabPanel Icon="@Icons.Material.Filled.Settings" ToolTip="Settings">
+                                <Settings />
+                            </MudTabPanel>
+                        </MudTabs>                          
+                    </MudStack>
+                </MudExSplitPanelItem>
+            </Right>
+        </MudExSplitPanel>
+    </MudMainContent>
+</MudLayout>
+
+<MudDialog @bind-Visible="_startupProcessRunning">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Loading project repositories, please wait</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudList T="string">
+            <MudListItem>
+                <AvatarContent>
+                    <MudProgressCircular Color="@_step1color" Indeterminate="_step1running" Value="100" Size="Size.Small" />
+                </AvatarContent>
+                <ChildContent>Loading libraries from repositories</ChildContent>
+            </MudListItem>
+            <MudListItem>
+                <AvatarContent>
+                    <MudProgressCircular Color="@_step2color" Indeterminate="_step2running" Value="100" Size="Size.Small" />
+                </AvatarContent>
+                <ChildContent>
+                    <MudText Typo="Typo.body1">Formatting modified files</MudText>
+                </ChildContent>
+            </MudListItem>
+            <MudListItem>
+                <AvatarContent>
+                    @if (_step3deferred)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                            OnClick="RunDeferredDependenciesFromDialogAsync" Disabled="_runningDeferredStep" />
+                    }
+                    else
+                    {
+                        <MudProgressCircular Color="@_step3color" Indeterminate="_step3running" Value="100" Size="Size.Small" />
+                    }
+                </AvatarContent>
+                <ChildContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body1" Style="@(_step3deferred ? "color: var(--mud-palette-text-disabled);" : "")">Analysing dependencies</MudText>
+                    </MudStack>
+                </ChildContent>
+            </MudListItem>
+            <MudListItem>
+                <AvatarContent>
+                    @if (_step4deferred)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                            OnClick="RunDeferredStyleCheckingFromDialogAsync" Disabled="_runningDeferredStep" />
+                    }
+                    else
+                    {
+                        <MudProgressCircular Color="@_step4color" Indeterminate="_step4running" Value="100" Size="Size.Small" />
+                    }
+                </AvatarContent>
+                <ChildContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body1" Style="@(_step4deferred ? "color: var(--mud-palette-text-disabled);" : "")">Style checking</MudText>
+                    </MudStack>
+                </ChildContent>
+            </MudListItem>
+            <MudListItem>
+                <AvatarContent>
+                    @if (_step5deferred)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                            OnClick="RunDeferredExternalResourcesFromDialogAsync" Disabled="_runningDeferredStep" />
+                    }
+                    else
+                    {
+                        <MudProgressCircular Color="@_step5color" Indeterminate="_step5running" Value="100" Size="Size.Small" />
+                    }
+                </AvatarContent>
+                <ChildContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body1" Style="@(_step5deferred ? "color: var(--mud-palette-text-disabled);" : "")">Analysing external resources</MudText>
+                    </MudStack>
+                </ChildContent>
+            </MudListItem>
+            <MudListItem>
+                <AvatarContent>
+                    <MudProgressCircular Color="@_step6color" Indeterminate="_step6running" Value="100" Size="Size.Small" />
+                </AvatarContent>
+                <ChildContent>Setup file system monitors</ChildContent>
+            </MudListItem>
+        </MudList>
+        @if (_step3deferred || _step4deferred || _step5deferred)
+        {
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Size="Size.Small" Color="Color.Primary"
+                           OnClick="RunAllDeferredFromDialogAsync" Disabled="_runningDeferredStep">Run All</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Default" Disabled="_runningDeferredStep"
+                           OnClick="CloseStartupDialog">Close</MudButton>
+            </MudStack>
+        }
+    </DialogContent>
+</MudDialog>
+
+<MudDialog @bind-Visible="_fullFormatRunning" Options="_nonClosableDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Formatting all files</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4">@_fullFormatStatusMessage</MudText>
+        </MudStack>
+    </DialogContent>
+</MudDialog>
+
+<MudDialog @bind-Visible="_styleCheckRunning" Options="_nonClosableDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Running style checking</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4">@_styleCheckStatusMessage</MudText>
+        </MudStack>
+    </DialogContent>
+</MudDialog>
+
+<MudDialog @bind-Visible="_showAboutDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6">About MLQT</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Row="false" Spacing="2">
+            <MudText Typo="Typo.subtitle1">Version @version</MudText>
+            <MudButton StartIcon="@Icons.Custom.Brands.GitHub" Size="Size.Small" Color="Color.Primary" 
+                Variant="Variant.Outlined" OnClick="OpenGitHub">Goto Github project</MudButton>
+            <MudButton StartIcon="@Icons.Custom.Brands.GitHub" Size="Size.Small" Color="Color.Primary" 
+                Variant="Variant.Outlined" OnClick="OpenDocumentation">Goto user documentation</MudButton>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton StartIcon="@Icons.Material.Outlined.Close" Size="Size.Small" Color="Color.Primary" 
+            Variant="Variant.Outlined" OnClick="()=>_showAboutDialog=false">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<TreeItemData<ModelNode>> TreeItems { get; set; } = new();
+    private AppSettings _settings = new();
+    private int _pendingChangesCount = 0;
+    private bool _isRefreshing = false;
+    private bool _startupProcessRunning = false;
+    private bool _fullFormatRunning = false;
+    private string _fullFormatStatusMessage = "Applying code formatting rules, please wait...";
+    private static readonly DialogOptions _nonClosableDialogOptions = new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
+    private bool _styleCheckRunning = false;
+    private string _styleCheckStatusMessage = "Running style checking rules on all classes";
+    private bool _step1running = false;
+    private bool _step2running = false;
+    private bool _step3running = false;
+    private bool _step4running = false;
+    private bool _step5running = false;
+    private bool _step6running = false;
+    private Color _step1color = Color.Info;
+    private Color _step2color = Color.Info;
+    private Color _step3color = Color.Info;
+    private Color _step4color = Color.Info;
+    private Color _step5color = Color.Info;
+    private Color _step6color = Color.Info;
+    private bool _step3deferred = false;
+    private bool _step4deferred = false;
+    private bool _step5deferred = false;
+    private bool _runningDeferredStep = false;
+    private bool _showStyleCheckingCompleteMessage = false;
+    /// <summary>Tracks files that have been formatted, keyed by path with the file's LastWriteTimeUtc at format time.</summary>
+    private readonly Dictionary<string, DateTime> _formattedFileTimestamps = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isDarkMode = false;
+    private MudTheme _myTheme = BuildTheme(GetDefaultPaletteLight());
+    private string? _currentProjectName = null;
+    private bool _showAboutDialog = false;
+    private string version = GetAppVersion();
+
+
+    private static string GetAppVersion()
+    {
+        var attr = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+        if (attr?.InformationalVersion is { } ver)
+        {
+            // Strip the "+commithash" suffix if present
+            var plusIndex = ver.IndexOf('+');
+            return plusIndex > 0 ? ver[..plusIndex] : ver;
+        }
+        return "dev";
+    }
+
+    private async Task OpenGitHub()
+    {
+        await JSRuntime.InvokeVoidAsync("open", "https://github.com/mdempse1/MLQT", "_blank");
+    }
+
+    private async Task OpenDocumentation()
+    {
+        await JSRuntime.InvokeVoidAsync("open", "https://github.com/mdempse1/MLQT/blob/main/Documentation/getting-started.md", "_blank");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize logging first
+        LoggingService.Initialize();
+        Info("MainLayout", "Application starting");
+
+        _settings.UI = await SettingsService.GetAsync("UI", new UISettings());
+        ApplyThemeFromSettings(_settings.UI);
+
+        NavState.OnRepositorySettingsApplied += OnRepositorySettingsApplied;
+        NavState.OnVcsFilesChanged += OnVcsFilesChanged;
+        NavState.OnVcsModelsChanged += OnVcsModelsChanged;
+        NavState.OnProjectSwitchStarting += OnProjectSwitchStarting;
+        RepositoryService.OnProjectChanged += OnProjectChanged;
+        NavState.OnThemeChanged += OnThemeChangedHandler;
+        NavState.OnRunDeferredDependencies += RunDeferredDependenciesOnlyAsync;
+        NavState.OnRunDeferredStyleChecking += RunDeferredStyleCheckingAsync;
+        NavState.OnRunDeferredExternalResources += RunDeferredExternalResourcesAsync;
+        NavState.OnRunAllDeferredAnalysis += RunAllDeferredAnalysisAsync;
+        NavState.OnFormatChangedFilesForCommit += FormatChangedFilesForCommitAsync;
+
+        RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
+        FileMonitoringService.OnPendingChangesUpdated += OnPendingChangesUpdated;
+        StyleCheckingService.OnProgressChanged += OnStyleCheckingProgressChanged;
+
+        _ = Task.Run(async () => await RunStartUpAsync());
+
+        await base.OnInitializedAsync();
+    }
+
+
+    private async Task RunStartUpAsync()
+    {
+        LogProcessStart("MainLayout", "Application startup sequence");
+        try
+        {
+            // Configure snackbar position
+            Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomRight;
+
+            Thread.Sleep(200);
+
+            // Step 0: Check if we need to show project selection dialog
+            var savedSettings = await SettingsService.GetAsync("Repositories", new RepositorySettingsCollection());
+            var projectCount = savedSettings.Projects.Count;
+            string? selectedProjectId = null;
+            // If legacy repos exist but no projects, migration will create 1 project — no dialog needed
+            if (projectCount == 0 && savedSettings.Repositories.Count > 0)
+                projectCount = 1;
+
+            string? newProjectName = null;
+            if (projectCount > 1)
+            {
+                await InvokeAsync(async () =>
+                {
+                    var options = new DialogOptions
+                    {
+                        CloseOnEscapeKey = false,
+                        BackdropClick = false,
+                        MaxWidth = MaxWidth.Small,
+                        FullWidth = true
+                    };
+                    var dialog = await DialogService.ShowAsync<ProjectSelectionDialog>("Select Project", options);
+                    var result = await dialog.Result;
+                    if (result != null && !result.Canceled && result.Data is string id)
+                    {
+                        // Check if this is a new project name (not an existing project ID)
+                        if (!savedSettings.Projects.Any(p => p.Id == id))
+                            newProjectName = id;
+                        else
+                            selectedProjectId = id;
+                    }
+                });
+            }
+
+            // If the user requested a new project, load settings first (so existing projects
+            // are in memory), then create the new project and use its real ID.
+            if (newProjectName != null)
+            {
+                await RepositoryService.LoadRepositorySettingsAsync();
+                var newProject = RepositoryService.CreateProject(newProjectName);
+                selectedProjectId = newProject.Id;
+            }
+
+            // Check if the selected project has repositories before showing the startup dialog.
+            // If it has none, load settings silently (handles migration etc.) and skip the dialog.
+            {
+                var checkId = selectedProjectId ?? savedSettings.ActiveProjectId ?? savedSettings.Projects.FirstOrDefault()?.Id;
+                var checkProject = savedSettings.Projects.FirstOrDefault(p => p.Id == checkId)
+                                   ?? savedSettings.Projects.FirstOrDefault();
+                bool hasLegacyRepos = savedSettings.Projects.Count == 0 && savedSettings.Repositories.Count > 0;
+                if (!hasLegacyRepos && (checkProject == null || checkProject.Repositories.Count == 0))
+                {
+                    await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
+                    _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+
+            // Prevent system sleep during long-running startup analysis
+            PowerManagementService.PreventSleep();
+
+            // Show startup progress dialog now that project selection is done
+            _startupProcessRunning = true;
+            _step1running = true;
+            _step1color = Color.Success;
+            await InvokeAsync(StateHasChanged);
+
+            // Step 1: Load saved repositories and libraries
+            LogProcessStart("MainLayout", "Loading repositories and libraries");
+            await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
+            var project = RepositoryService.GetActiveProject();
+            _currentProjectName = project!.Name;
+            LogProcessEnd("MainLayout", "Loading repositories and libraries");
+
+            // Compact the LOH after loading — ExtractModels creates a full ANTLR parse tree
+            // per file (all files in parallel) which fragments the LOH significantly.
+            // Also trim package ModelicaCode to remove duplicated standalone children source.
+            var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
+            if (totalModelCount > 0)
+            {
+                TrimPackageModelicaCode();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                Info("MainLayout", $"Memory after loading + trim + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB ({totalModelCount} models)");
+            }
+
+            _step1running = false;
+
+            // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
+            _step2running = true;
+            _step2color = Color.Success;
+            await InvokeAsync(StateHasChanged);
+
+            LogProcessStart("MainLayout", "Formatting modified files");
+            await FormatModifiedFilesAsync();
+            LogProcessEnd("MainLayout", "Formatting modified files");
+
+            _step2running = false;
+            await InvokeAsync(StateHasChanged);
+
+            // Only run analysis when there are repos/models. For empty projects this block
+            // is skipped entirely, leaving _step4running=false so the close check below fires.
+            if (totalModelCount > 0 || RepositoryService.Repositories.Count > 0)
+            {
+                // Check if we should defer analysis steps based on model count
+                var shouldDefer = totalModelCount > _settings.UI.DeferAnalysisThreshold;
+                if (shouldDefer)
+                {
+                    NavState.EnableDeferredMode();
+                    LogProcessStart("MainLayout", $"Deferred mode enabled ({totalModelCount} models > {_settings.UI.DeferAnalysisThreshold} threshold)");
+                    _step3deferred = true;
+                    _step4deferred = true;
+                    _step5deferred = true;
+                    _step3color = Color.Default;
+                    _step4color = Color.Default;
+                    _step5color = Color.Default;
+                }
+                else
+                {
+                    _step3running = true;
+                    _step3color = Color.Success;
+                    _step4running = true;
+                    _step4color = Color.Success;
+                }
+                await InvokeAsync(StateHasChanged);
+
+                if (!shouldDefer)
+                {
+                    // Steps 3 & 4: Analyze dependencies and start style checking in parallel
+                    LogProcessStart("MainLayout", "Analyzing dependencies and starting style checking");
+
+                    var libraryInfos = GetLibraryInfos();
+                    var dependencyTask = Task.Run(async () => await GraphBuilder.AnalyzeDependenciesAsync(
+                        LibraryDataService.CombinedGraph, libraryInfos,
+                        progressLog: msg => LogProcessStart("GraphBuilder", msg)));
+
+                    StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
+                    if (RepositoryService.Repositories.Count == 0)
+                        _step4running = false;
+
+                    await dependencyTask;
+                    LogProcessEnd("MainLayout", "Analyzing dependencies");
+
+                    // Compact the LOH after dependency analysis released parse trees
+                    GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                    Info("MainLayout", $"Memory after dependency analysis + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB");
+
+                    _step3running = false;
+                    _step5running = true;
+                    _step5color = Color.Success;
+                    await InvokeAsync(StateHasChanged);
+
+                    // Step 5: Analyze external resource references and start monitoring
+                    LogProcessStart("MainLayout", "Analyzing external resources");
+                    await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
+                    ExternalResourceService.StartMonitoringResources();
+                    LogProcessEnd("MainLayout", "Analyzing external resources");
+                    _step5running = false;
+                }
+
+                // Step 6: Start file monitoring
+                _step6running = true;
+                _step6color = Color.Success;
+                await InvokeAsync(StateHasChanged);
+
+                LogProcessEnd("MainLayout", "Application startup sequence (style checking continues in background)");
+                RepositoryService.StartMonitoringAllRepositories();
+                _step6running = false;
+                await InvokeAsync(StateHasChanged);
+
+                LogProcessEnd("MainLayout", "Application startup sequence");
+                await Task.Delay(2000).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogProcessFailed("MainLayout", "Application startup sequence", ex);
+            await InvokeAsync(() => Snackbar.Add($"Startup error: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            // Re-enable system sleep now that startup analysis is complete
+            // (style checking may still be running but it's not CPU-intensive enough to warrant blocking sleep)
+            PowerManagementService.AllowSleep();
+        }
+        // In deferred mode, keep the dialog open to show deferred steps with Run Now buttons.
+        // In normal mode, close when style checking is done (or immediately if it already finished).
+        if (NavState.IsDeferredMode)
+        {
+            // Dialog stays open — user can run deferred steps or close manually
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (!_step4running)
+        {
+            _startupProcessRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async void OnStyleCheckingProgressChanged(bool allComplete) {
+        if (allComplete)
+        {
+            _step4running = false;
+            _styleCheckRunning = false;
+            //Check to see if there are pending deferred steps
+            if (_step3deferred || _step5deferred) {
+                _runningDeferredStep = false;
+            }
+            else
+            {
+                //Check to see if this was the last step still running
+                if (!_step3running && !_step5running && !_step6running)
+                {
+                    Thread.Sleep(2000);
+                    _startupProcessRunning = false;                
+                }
+                if (!_startupProcessRunning && _showStyleCheckingCompleteMessage)
+                {
+                    _showStyleCheckingCompleteMessage = false;
+                    await InvokeAsync(() => Snackbar.Add("Style checking complete.", Severity.Success));
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async void OnProjectSwitchStarting()
+    {
+        // Show progress dialog immediately with step 1 active (loading repos/libraries)
+        // Set state synchronously BEFORE InvokeAsync to avoid a race with OnProjectChanged:
+        // If InvokeAsync is delayed (e.g., by SwitchProjectAsync completing quickly for an
+        // empty project), OnProjectChanged could finish and set _startupProcessRunning = false
+        // before this InvokeAsync runs, causing the dialog to reopen with stale state.
+        ResetStartupSteps();
+        _startupProcessRunning = true;
+        _step1running = true;
+        _step1color = Color.Success;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnProjectChanged(string projectId)
+    {
+        PowerManagementService.PreventSleep();
+        try
+        {
+            LogProcessStart("MainLayout", $"Project changed to: {projectId}");
+
+            // Clear style checking issues from the previous project
+            CodeReviewService.ClearLogMessages();
+
+            // Step 1 (loading repos/libraries) is now complete — move to step 2
+            // If OnProjectSwitchStarting wasn't called, ensure dialog is visible
+            if (!_startupProcessRunning)
+            {
+                ResetStartupSteps();
+            }
+            _step1running = false;
+            _step1color = Color.Success;
+
+            // Update the project name in the title bar
+            var project = RepositoryService.GetActiveProject();
+            _currentProjectName = project?.Name;
+
+            // Compact the LOH + trim packages after loading
+            var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
+            if (totalModelCount > 0)
+            {
+                TrimPackageModelicaCode();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                Info("MainLayout", $"Memory after loading + trim + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB ({totalModelCount} models)");
+            }
+
+            // If no repositories and no models, close the startup dialog immediately.
+            // Set synchronously before yielding so any pending renders from OnProjectSwitchStarting
+            // will see the final false value and not show the dialog.
+            if (totalModelCount == 0 && RepositoryService.Repositories.Count == 0)
+            {
+                _step1running = false;
+                _step1color = Color.Success;
+                _startupProcessRunning = false;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
+            _step2running = true;
+            _step2color = Color.Success;
+            await InvokeAsync(() =>
+            {
+                _startupProcessRunning = true;
+                StateHasChanged();
+            });
+
+            await FormatModifiedFilesAsync();
+            _step2running = false;
+            await InvokeAsync(StateHasChanged);
+
+            // Only run analysis when there are repos/models. For empty projects this block
+            // is skipped entirely, leaving _step4running=false so the close check below fires.
+            if (totalModelCount > 0 || RepositoryService.Repositories.Count > 0)
+            {
+                // Check if we should defer analysis steps based on model count
+                var shouldDefer = totalModelCount > _settings.UI.DeferAnalysisThreshold;
+                if (shouldDefer)
+                {
+                    NavState.EnableDeferredMode();
+                    LogProcessStart("MainLayout", $"Deferred mode enabled ({totalModelCount} models > {_settings.UI.DeferAnalysisThreshold} threshold)");
+                    _step3deferred = true;
+                    _step4deferred = true;
+                    _step5deferred = true;
+                    _step3color = Color.Default;
+                    _step4color = Color.Default;
+                    _step5color = Color.Default;
+                }
+                else
+                {
+                    _step3running = true;
+                    _step3color = Color.Success;
+                    _step4running = true;
+                    _step4color = Color.Success;
+                }
+                await InvokeAsync(StateHasChanged);
+
+                if (!shouldDefer)
+                {
+                    // Steps 3 & 4: Analyze dependencies and start style checking
+                    var libraryInfos = GetLibraryInfos();
+                    var dependencyTask = Task.Run(async () =>
+                        await GraphBuilder.AnalyzeDependenciesAsync(LibraryDataService.CombinedGraph, libraryInfos,
+                            progressLog: msg => LogProcessStart("GraphBuilder", msg)));
+
+                    StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
+                    if (RepositoryService.Repositories.Count == 0)
+                        _step4running = false;
+
+                    await dependencyTask;
+
+                    // Compact the LOH after dependency analysis
+                    GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                    Info("MainLayout", $"Memory after dependency analysis + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB");
+
+                    _step3running = false;
+                    _step5running = true;
+                    _step5color = Color.Success;
+                    await InvokeAsync(StateHasChanged);
+
+                    // Step 5: Analyze external resources
+                    await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
+                    ExternalResourceService.StartMonitoringResources();
+                    _step5running = false;
+                }
+
+                // Step 6: Start file monitoring
+                _step6running = true;
+                _step6color = Color.Success;
+                await InvokeAsync(StateHasChanged);
+                RepositoryService.StartMonitoringAllRepositories();
+                _step6running = false;
+                await InvokeAsync(StateHasChanged);
+
+                LogProcessEnd("MainLayout", $"Project changed to: {projectId}");
+                await Task.Delay(2000).ConfigureAwait(false);
+            }
+
+            if (NavState.IsDeferredMode)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            else if (!_step4running)
+            {
+                _startupProcessRunning = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            _startupProcessRunning = false;
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"Project switch error: {ex.Message}", Severity.Error);
+                StateHasChanged();
+            });
+            LogProcessFailed("MainLayout", "Project switch", ex);
+        }
+        finally
+        {
+            PowerManagementService.AllowSleep();
+        }
+    }
+
+    /// <summary>
+    /// Resets all startup step flags and colors to their initial state.
+    /// </summary>
+    private void ResetStartupSteps()
+    {
+        _step1running = false;
+        _step2running = false;
+        _step3running = false;
+        _step4running = false;
+        _step5running = false;
+        _step6running = false;
+        _step3deferred = false;
+        _step4deferred = false;
+        _step5deferred = false;
+        _runningDeferredStep = false;
+        _step1color = Color.Info;
+        _step2color = Color.Info;
+        _step3color = Color.Info;
+        _step4color = Color.Info;
+        _step5color = Color.Info;
+        _step6color = Color.Info;
+        _showStyleCheckingCompleteMessage = false;
+        _formattedFileTimestamps.Clear();
+        NavState.ResetDeferredState();
+    }
+
+    /// <summary>
+    /// Saves all loaded libraries back to their source directories to apply code formatting rules.
+    /// This uses the ModelicaSyntaxVisitor to reformat the code according to our standards.
+    /// Libraries loaded from Git/SVN repositories are saved to their local checkout location.
+    ///
+    /// Uses a safe replacement strategy:
+    /// 1. Collects all original file paths before saving
+    /// 2. Saves new files (which may have different structure due to formatting rules)
+    /// 3. Deletes orphaned files that are no longer part of the new structure
+    /// 4. Updates FileNodes in the graph with new file paths
+    /// </summary>
+    private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
+    {
+        LogProcessStart("MainLayout", "Saving all libraries with formatting");
+        IReadOnlyList<LoadedLibrary> libraries = filterRepositoryId == null
+            ? LibraryDataService.Libraries
+            : LibraryDataService.Libraries.Where(l => l.RepositoryId == filterRepositoryId).ToList();
+
+        // Collect all original file paths before we start saving
+        // When filtering by repository, only consider files from those libraries
+        var originalFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var librarySourcePaths = libraries.Select(l => l.SourcePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var fileNode in LibraryDataService.CombinedGraph.FileNodes)
+        {
+            if (File.Exists(fileNode.FilePath) &&
+                (filterRepositoryId == null || librarySourcePaths.Any(sp => fileNode.FilePath.StartsWith(sp, StringComparison.OrdinalIgnoreCase))))
+            {
+                originalFiles.Add(fileNode.FilePath);
+            }
+        }
+
+        // Also collect package.order files that exist in the library directories
+        // (excluding hidden directories like .svn, .git which may contain their own package.order files)
+        var originalOrderFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var library in libraries)
+        {
+            if (!string.IsNullOrEmpty(library.SourcePath) && Directory.Exists(library.SourcePath))
+            {
+                foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
+                {
+                    // Skip files inside hidden directories (e.g., .svn, .git)
+                    if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
+                    {
+                        originalOrderFiles.Add(orderFile);
+                    }
+                }
+            }
+        }
+
+        Debug("MainLayout", $"Found {originalFiles.Count} original .mo files and {originalOrderFiles.Count} package.order files");
+
+        // Track all files written during save operations
+        var allWrittenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allCreatedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var modelIdToFilePath = new Dictionary<string, string>();
+
+        // Process libraries sequentially to limit peak memory. Each library already
+        // parallelizes its parse/render phases internally (Parallel.ForEach in batches).
+        // Running libraries concurrently causes nested parallelism: N libraries × M cores
+        // of parse trees coexisting in memory simultaneously, overwhelming 16GB machines.
+        foreach (var library in libraries)
+        {
+            // Skip libraries without a valid source path or zip-based libraries
+            if (string.IsNullOrEmpty(library.SourcePath) || library.SourceType == LibrarySourceType.Zip)
+            {
+                continue;
+            }
+
+            // Skip single-file libraries (they don't have a directory structure)
+            if (library.SourceType == LibrarySourceType.File && !Directory.Exists(library.SourcePath))
+            {
+                continue;
+            }
+
+            try
+            {
+                Debug("MainLayout", $"Saving library: {library.Name}");
+
+                // Get repository-specific style settings, falling back to global settings
+                StyleCheckingSettings styleSettings;
+                if (!string.IsNullOrEmpty(library.RepositoryId))
+                {
+                    var repository = RepositoryService.GetRepository(library.RepositoryId);
+                    styleSettings = repository?.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                }
+                else
+                {
+                    styleSettings = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                }
+
+                // Skip formatting if ApplyFormattingRules is disabled for this repository
+                // But still mark the library's existing files as "written" to prevent them from being deleted as orphans
+                if (!styleSettings.ApplyFormattingRules)
+                {
+                    Debug("MainLayout", $"Skipping formatting for library: {library.Name} (ApplyFormattingRules is disabled)");
+
+                    // Collect existing files for this library to prevent them from being deleted
+                    lock (allWrittenFiles)
+                    {
+                        foreach (var modelId in library.ModelIds)
+                        {
+                            var model = LibraryDataService.GetModelById(modelId);
+                            if (model?.ContainingFileId != null)
+                            {
+                                var fileNode = LibraryDataService.CombinedGraph.GetNode(model.ContainingFileId) as FileNode;
+                                if (fileNode != null && File.Exists(fileNode.FilePath))
+                                {
+                                    allWrittenFiles.Add(fileNode.FilePath);
+                                }
+                            }
+                        }
+
+                        // Also preserve package.order files
+                        if (!string.IsNullOrEmpty(library.SourcePath) && Directory.Exists(library.SourcePath))
+                        {
+                            foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
+                            {
+                                if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
+                                {
+                                    allWrittenFiles.Add(orderFile);
+                                }
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                await Task.Run(() =>
+                {
+                    // Get the graph containing all models
+                    var graph = LibraryDataService.CombinedGraph;
+
+                    // Determine the correct save directory based on the library structure
+                    string? saveDirectory = null;
+                    var sourcePath = library.SourcePath;
+
+                    if (File.Exists(sourcePath))
+                    {
+                        // SourcePath is a file (standalone .mo file, not a package directory)
+                        // Save to the same directory the file came from
+                        saveDirectory = Path.GetDirectoryName(sourcePath);
+                    }
+                    else if (Directory.Exists(sourcePath))
+                    {
+                        // SourcePath is a directory
+                        // Check if it's a proper package (has package.mo) or just a directory with loose files
+                        var packageMoPath = Path.Combine(sourcePath, "package.mo");
+                        if (File.Exists(packageMoPath))
+                        {
+                            // This is a proper package directory - save to parent so SaveLibraryToDirectory
+                            // can create the library folder structure
+                            saveDirectory = Path.GetDirectoryName(sourcePath);
+                        }
+                        else
+                        {
+                            // Directory without package.mo - contains standalone files
+                            // Save directly to this directory
+                            saveDirectory = sourcePath;
+                        }
+                    }
+
+                    // Verify the save directory exists
+                    if (string.IsNullOrEmpty(saveDirectory) || !Directory.Exists(saveDirectory))
+                    {
+                        Warn("MainLayout", $"Save directory does not exist: {saveDirectory}");
+                        return;
+                    }
+
+                    // Save the library and get information about written files using repository-specific settings
+                    var saveResult = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+                        graph,
+                        library.ModelIds,
+                        saveDirectory,
+                        showAnnotations: true,
+                        oneOfEachSection: styleSettings.OneOfEachSection,
+                        importsFirst: styleSettings.ImportStatementsFirst,
+                        componentsBeforeClasses: styleSettings.ComponentsBeforeClasses,
+                        excludedModelIds: styleSettings.FormattingExcludedModels);
+
+                    // Collect written files and directories
+                    lock (allWrittenFiles)
+                    {
+                        foreach (var file in saveResult.WrittenFiles)
+                        {
+                            allWrittenFiles.Add(file);
+                        }
+                        foreach (var dir in saveResult.CreatedDirectories)
+                        {
+                            allCreatedDirectories.Add(dir);
+                        }
+                        foreach (var kvp in saveResult.ModelIdToFilePath)
+                        {
+                            modelIdToFilePath[kvp.Key] = kvp.Value;
+                        }
+                    }
+
+                    Debug("MainLayout", $"Successfully saved library: {library.Name} ({saveResult.WrittenFiles.Count} files)");
+                });
+            }
+            catch (Exception ex)
+            {
+                Error("MainLayout", $"Failed to format library {library.Name}", ex);
+                await InvokeAsync(() => Snackbar.Add($"Failed to format {library.Name}: {ex.Message}", Severity.Warning));
+            }
+        }
+
+        // Collect files that are scheduled for VCS addition so we don't delete them.
+        // A file added by an SVN/Git merge is "scheduled for addition" in the VCS but may
+        // not be written by the formatter if it has a malformed within-clause or mismatched
+        // model name.  Deleting it would cause a "scheduled for addition, but is missing"
+        // commit error.
+        var vcsAddedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(filterRepositoryId))
+        {
+            try
+            {
+                var repo = RepositoryService.GetRepository(filterRepositoryId);
+                if (repo?.LocalPath != null)
+                {
+                    foreach (var wc in RepositoryService.GetWorkingCopyChanges(filterRepositoryId)
+                        .Where(c => c.Status == VcsFileStatus.Added))
+                    {
+                        vcsAddedFiles.Add(Path.Combine(repo.LocalPath, wc.Path));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Warn("MainLayout", $"Could not read VCS status to protect added files: {ex.Message}");
+            }
+        }
+
+        // Delete orphaned files (original files that weren't written in the new save),
+        // but never delete files that are scheduled for VCS addition.
+        var orphanedFiles = originalFiles.Where(f => !allWrittenFiles.Contains(f) && !vcsAddedFiles.Contains(f)).ToList();
+        var orphanedOrderFiles = originalOrderFiles.Where(f => !allWrittenFiles.Contains(f) && !vcsAddedFiles.Contains(f)).ToList();
+
+        Debug("MainLayout", $"Deleting {orphanedFiles.Count} orphaned .mo files and {orphanedOrderFiles.Count} orphaned package.order files");
+
+        foreach (var orphanedFile in orphanedFiles.Concat(orphanedOrderFiles))
+        {
+            try
+            {
+                if (File.Exists(orphanedFile))
+                {
+                    File.Delete(orphanedFile);
+                    Debug("MainLayout", $"Deleted orphaned file: {orphanedFile}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Warn("MainLayout", $"Failed to delete orphaned file {orphanedFile}: {ex.Message}");
+            }
+        }
+
+        // Clean up empty directories that may have been left behind
+        CleanupEmptyDirectories(libraries);
+
+        // Record formatted file timestamps for skip-if-unchanged optimization
+        foreach (var filePath in allWrittenFiles)
+        {
+            if (filePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) && File.Exists(filePath))
+                _formattedFileTimestamps[filePath] = File.GetLastWriteTimeUtc(filePath);
+        }
+
+        // Update FileNodes in the graph with new file paths
+        UpdateFileNodesAfterSave(modelIdToFilePath);
+
+        LogProcessEnd("MainLayout", "Saving all libraries with formatting");
+    }
+
+    /// <summary>
+    /// Formats only files that have been modified according to VCS status.
+    /// This assumes the repository is already properly formatted and only files that
+    /// have been modified (or are untracked) since the last commit need formatting.
+    /// This is much faster than SaveAllLibrariesWithFormattingAsync for large repositories.
+    /// </summary>
+    private async Task FormatModifiedFilesAsync()
+    {
+        LogProcessStart("MainLayout", "Formatting VCS-modified files");
+        int totalFormatted = 0;
+
+        foreach (var repository in RepositoryService.Repositories)
+        {
+            if (string.IsNullOrEmpty(repository.LocalPath))
+                continue;
+
+            try
+            {
+                // Get per-repository style settings
+                var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                if (!styleSettings.ApplyFormattingRules)
+                {
+                    Debug("MainLayout", $"Skipping formatting for repository {repository.Name} (ApplyFormattingRules is disabled)");
+                    continue;
+                }
+
+                // Get modified and untracked files from VCS
+                var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
+                if (changedFilePaths.Count == 0)
+                {
+                    Debug("MainLayout", $"No modified files in repository {repository.Name}");
+                    continue;
+                }
+
+                Info("MainLayout", $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
+                await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
+                totalFormatted += changedFilePaths.Count;
+            }
+            catch (Exception ex)
+            {
+                Warn("MainLayout", $"Failed to format modified files in repository {repository.Name}: {ex.Message}");
+            }
+        }
+
+        Info("MainLayout", $"Formatted {totalFormatted} modified file(s) across all repositories");
+        LogProcessEnd("MainLayout", "Formatting VCS-modified files");
+    }
+
+    /// <summary>
+    /// Gets the full paths of modified, added, and untracked .mo files within the
+    /// repository's Modelica library directory. VCS status covers the full VcsRootPath,
+    /// so paths are filtered to LocalPath to scope analysis to Modelica files only.
+    /// </summary>
+    private HashSet<string> GetModifiedFilePathsFromVcs(Repository repository)
+    {
+        var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(repository.LocalPath))
+            return changedFilePaths;
+
+        try
+        {
+            var changes = RepositoryService.GetWorkingCopyChanges(repository.Id);
+            foreach (var change in changes.Where(c => c.Status != VcsFileStatus.Deleted))
+            {
+                // Paths from VCS are relative to VcsRootPath (which may be a parent of LocalPath)
+                var fullPath = Path.Combine(repository.VcsRootPath, change.Path);
+                if (fullPath.StartsWith(repository.LocalPath, StringComparison.OrdinalIgnoreCase)
+                    && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(fullPath))
+                {
+                    changedFilePaths.Add(fullPath);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Warn("MainLayout", $"Could not read VCS status for repository {repository.Name}: {ex.Message}");
+        }
+
+        return changedFilePaths;
+    }
+
+    /// <summary>
+    /// Cleans up empty directories that may have been left behind after deleting orphaned files.
+    /// Only removes directories within the library source paths.
+    /// Skips hidden directories (e.g., .svn, .git) to avoid corrupting version control metadata.
+    /// </summary>
+    private void CleanupEmptyDirectories(IReadOnlyList<LoadedLibrary> libraries)
+    {
+        foreach (var library in libraries)
+        {
+            if (string.IsNullOrEmpty(library.SourcePath) || !Directory.Exists(library.SourcePath))
+                continue;
+
+            try
+            {
+                // Get all directories in the library, ordered by depth (deepest first)
+                // Filter out hidden directories (e.g., .svn, .git) to avoid corrupting VCS metadata
+                var directories = Directory.GetDirectories(library.SourcePath, "*", SearchOption.AllDirectories)
+                    .Where(d => !FileMonitoringServiceHelpers.IsInHiddenDirectory(d))
+                    .OrderByDescending(d => d.Count(c => c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar))
+                    .ToList();
+
+                foreach (var dir in directories)
+                {
+                    try
+                    {
+                        // Only delete if the directory is empty (no files and no subdirectories)
+                        if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                        {
+                            Directory.Delete(dir);
+                            Debug("MainLayout", $"Deleted empty directory: {dir}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Ignore errors for individual directories
+                        Debug("MainLayout", $"Could not delete directory {dir}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Warn("MainLayout", $"Error cleaning up empty directories for library {library.Name}: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Trims package ModelicaCode to remove source code that's duplicated in standalone children.
+    /// After loading, a package's ModelicaCode contains the full file content including all nested
+    /// classes. Each standalone child also has its own ModelicaCode. This causes ~2× memory usage
+    /// for all source code. This method re-renders each package excluding standalone children,
+    /// replacing the bloated extracted source with the compact package shell.
+    /// </summary>
+    private void TrimPackageModelicaCode()
+    {
+        var graph = LibraryDataService.CombinedGraph;
+        var allModels = graph.ModelNodes.ToList();
+
+        // Build children-by-parent index
+        var childrenByParent = new Dictionary<string, List<ModelNode>>();
+        foreach (var model in allModels)
+        {
+            var parentName = model.ParentModelName;
+            if (!string.IsNullOrEmpty(parentName))
+            {
+                if (!childrenByParent.TryGetValue(parentName, out var list))
+                {
+                    list = new List<ModelNode>();
+                    childrenByParent[parentName] = list;
+                }
+                list.Add(model);
+            }
+        }
+
+        // Find package models that have standalone children to exclude
+        var packagesToTrim = allModels.Where(m =>
+            m.ClassType == "package" &&
+            childrenByParent.TryGetValue(m.Id, out var children) &&
+            children.Any(c => c.CanBeStoredStandalone)).ToList();
+
+        if (packagesToTrim.Count == 0)
+            return;
+
+        int trimmed = 0;
+        long savedBytes = 0;
+
+        Parallel.ForEach(packagesToTrim, model =>
+        {
+            try
+            {
+                var children = childrenByParent[model.Id];
+
+                // Build set of standalone child names to exclude (same logic as ModelicaPackageSaver)
+                var nameCounts = children
+                    .GroupBy(c => c.Definition.Name.ToLowerInvariant())
+                    .ToDictionary(g => g.Key, g => g.Count());
+
+                var standaloneNames = new HashSet<string>();
+                foreach (var child in children)
+                {
+                    var lowerName = child.Definition.Name.ToLowerInvariant();
+                    if (child.CanBeStoredStandalone && nameCounts[lowerName] == 1 && lowerName != "package")
+                        standaloneNames.Add(child.Definition.Name);
+                }
+
+                if (standaloneNames.Count == 0)
+                    return;
+
+                // Parse the package's current ModelicaCode
+                var code = model.Definition.ModelicaCode;
+
+                // Prepend within clause if needed (required for valid parsing)
+                string codeToParse = code;
+                if (!code.StartsWith("within"))
+                {
+                    var parent = model.ParentModelName;
+                    codeToParse = !string.IsNullOrEmpty(parent)
+                        ? string.Concat("within ", parent, ";\n", code)
+                        : "within;\n" + code;
+                }
+
+                var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(codeToParse);
+                if (parseTree == null || errors.Count > 0)
+                    return;
+
+                // Check if this is a short class definition (don't trim those)
+                foreach (var classDef in parseTree.class_definition())
+                {
+                    if (classDef.class_specifier()?.short_class_specifier() != null)
+                        return;
+                }
+
+                // Render excluding standalone children
+                var visitor = new ModelicaRenderer(
+                    renderForCodeEditor: false,
+                    showAnnotations: true,
+                    excludeClassDefinitions: false,
+                    tokenStream: null,
+                    classNamesToExclude: standaloneNames,
+                    oneOfEachSection: false,
+                    importsFirst: false,
+                    componentsBeforeClasses: false);
+                visitor.VisitStored_definition(parseTree);
+                var trimmedCode = string.Join("\n", visitor.Code);
+
+                var oldSize = model.Definition.ModelicaCode.Length * 2; // chars × 2 bytes
+                model.Definition.ModelicaCode = trimmedCode;
+                model.Definition.ParsedCode = null; // Release parse tree
+                var newSize = trimmedCode.Length * 2;
+
+                Interlocked.Add(ref savedBytes, oldSize - newSize);
+                Interlocked.Increment(ref trimmed);
+            }
+            catch
+            {
+                // If trimming fails for a model, keep the original — it's still valid
+            }
+        });
+
+        Info("MainLayout", $"Trimmed {trimmed} package models, freed ~{savedBytes / (1024 * 1024)} MB of duplicated source code");
+    }
+
+    /// <summary>
+    /// Updates the graph after a formatting save to reflect the new file structure.
+    /// When formatting is applied, classes may move from a single .mo file into
+    /// per-class files within a directory hierarchy. This method:
+    ///   1. Creates FileNodes for any new file paths
+    ///   2. Removes the model from its old FileNode (edge + ContainedModelIds)
+    ///   3. Adds the model to its new FileNode (edge + ContainingFileId)
+    ///   4. Removes FileNodes that are now empty (original files that were restructured)
+    /// </summary>
+    private void UpdateFileNodesAfterSave(Dictionary<string, string> modelIdToFilePath)
+    {
+        var graph = LibraryDataService.CombinedGraph;
+
+        foreach (var kvp in modelIdToFilePath)
+        {
+            var modelId = kvp.Key;
+            var newFilePath = kvp.Value;
+            var newFileId = GraphBuilder.GenerateFileId(newFilePath);
+
+            var modelNode = graph.GetNode<ModelNode>(modelId);
+            if (modelNode == null)
+                continue;
+
+            var oldFileId = modelNode.ContainingFileId;
+
+            if (oldFileId == newFileId)
+                continue;
+
+            // Ensure the new FileNode exists
+            if (graph.GetNode<FileNode>(newFileId) == null)
+            {
+                var newFileNode = new FileNode(newFileId, newFilePath);
+                graph.AddNode(newFileNode);
+            }
+
+            // Detach from old FileNode
+            if (oldFileId != null)
+            {
+                var oldFileNode = graph.GetNode<FileNode>(oldFileId);
+                if (oldFileNode != null)
+                {
+                    oldFileNode.ContainedModelIds.Remove(modelId);
+                    graph.RemoveEdge(oldFileId, modelId);
+                }
+            }
+
+            // Attach to new FileNode (sets ContainingFileId, ContainedModelIds, and edge)
+            graph.AddFileContainsModel(newFileId, modelId);
+            Debug("MainLayout", $"Model {modelId} moved: {oldFileId} -> {newFileId}");
+        }
+
+        // Remove FileNodes that contain no models — these are original files that were
+        // restructured into a directory hierarchy during formatting
+        var emptyFileNodes = graph.FileNodes.Where(f => f.ContainedModelIds.Count == 0).ToList();
+        foreach (var emptyFile in emptyFileNodes)
+        {
+            graph.RemoveNode(emptyFile.Id);
+            Debug("MainLayout", $"Removed empty FileNode: {emptyFile.FilePath}");
+        }
+    }
+
+    // ========== Deferred Analysis Methods ==========
+
+    /// <summary>
+    /// Parameterless wrapper for event subscription (events can't bind to methods with optional params).
+    /// </summary>
+    private Task RunDeferredDependenciesOnlyAsync() => RunDeferredDependenciesAsync(combineStyleChecking: false);
+
+    /// <summary>
+    /// Runs deferred dependency analysis. Called via AppState event from pages or startup dialog.
+    /// </summary>
+    /// <param name="combineStyleChecking">When true, also runs style checking inline during
+    /// dependency analysis to avoid re-parsing all models a second time.</param>
+    private async Task RunDeferredDependenciesAsync(bool combineStyleChecking = false)
+    {
+        if (NavState.HasDependencyAnalysisRun) return;
+        PowerManagementService.PreventSleep();
+        try
+        {
+            LogProcessStart("MainLayout", combineStyleChecking
+                ? "Running deferred dependency analysis + style checking (combined)"
+                : "Running deferred dependency analysis");
+            await InvokeAsync(() => Snackbar.Add(
+                combineStyleChecking ? "Analysing dependencies and checking style..." : "Analysing dependencies...",
+                Severity.Normal));
+
+            var libraryInfos = GetLibraryInfos();
+
+            // Build a per-model style checking callback when combining.
+            // This runs style rules on each model while the parse tree is still available from
+            // dependency analysis, avoiding a separate re-parse pass for style checking.
+            Action<ModelNode>? postAnalysisAction = null;
+            ConcurrentBag<LogMessage>? combinedViolations = null;
+
+            if (combineStyleChecking && !NavState.HasStyleCheckingRun)
+            {
+                // Build model-to-settings lookup: each model belongs to a library with a repository
+                var modelToSettings = BuildModelToStyleSettingsMap();
+                combinedViolations = new ConcurrentBag<LogMessage>();
+
+                // Clear existing violations before re-running
+                var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
+                if (allModelIds.Count > 0)
+                    CodeReviewService.RemoveLogMessagesForModels(allModelIds);
+
+                postAnalysisAction = model =>
+                {
+                    if (modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
+                    {
+                        var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
+                            isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id));
+                        foreach (var v in violations)
+                            combinedViolations.Add(v);
+                    }
+                };
+            }
+
+            await Task.Run(async () => await GraphBuilder.AnalyzeDependenciesAsync(
+                LibraryDataService.CombinedGraph, libraryInfos,
+                progressLog: msg => LogProcessStart("GraphBuilder", msg),
+                postAnalysisAction: postAnalysisAction));
+
+            // Compact the LOH after dependency analysis released all parse trees
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            Info("MainLayout", $"Memory after dependency analysis + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB");
+
+            NavState.DependencyAnalysisCompleted();
+            _step3deferred = false;
+            _step3color = Color.Success;
+            LogProcessEnd("MainLayout", "Running deferred dependency analysis");
+
+            // If style checking was combined, report violations and mark as complete
+            if (combineStyleChecking && combinedViolations != null)
+            {
+                var violationsList = combinedViolations.ToList();
+                if (violationsList.Count > 0)
+                    CodeReviewService.AddLogMessages(violationsList);
+
+                NavState.StyleCheckingCompleted();
+                _step4deferred = false;
+                _step4color = Color.Success;
+                _showStyleCheckingCompleteMessage = true;
+                LogProcessEnd("MainLayout", "Running deferred style checking (combined with dependency analysis)");
+            }
+
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add("Dependency analysis complete.", Severity.Success);
+                StateHasChanged();
+            });
+        }
+        finally
+        {
+            PowerManagementService.AllowSleep();
+        }
+    }
+
+    /// <summary>
+    /// Builds a mapping from model ID to the style checking settings for its repository.
+    /// </summary>
+    private Dictionary<string, StyleCheckingSettings> BuildModelToStyleSettingsMap()
+    {
+        var result = new Dictionary<string, StyleCheckingSettings>();
+        var defaultSettings = SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings()).GetAwaiter().GetResult();
+
+        foreach (var library in LibraryDataService.Libraries)
+        {
+            StyleCheckingSettings settings = defaultSettings;
+            if (!string.IsNullOrEmpty(library.RepositoryId))
+            {
+                var repo = RepositoryService.GetRepository(library.RepositoryId);
+                if (repo?.StyleSettings != null)
+                    settings = repo.StyleSettings;
+            }
+
+            foreach (var modelId in library.ModelIds)
+                result[modelId] = settings;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Runs deferred style checking. Called via AppState event from pages or startup dialog.
+    /// </summary>
+    private async Task RunDeferredStyleCheckingAsync()
+    {
+        if (NavState.HasStyleCheckingRun) return;
+        PowerManagementService.PreventSleep();
+        try
+        {
+            if (!_step4deferred) {
+                _styleCheckStatusMessage = "Running style checking rules on all classes";
+                _styleCheckRunning = true;
+                await InvokeAsync(StateHasChanged);
+            }
+            LogProcessStart("MainLayout", "Running deferred style checking");
+            await InvokeAsync(() => Snackbar.Add("Running style checking...", Severity.Normal));
+
+            // Clear any existing style checking violations before re-running
+            // (matches the pattern used by OnRepositorySettingsApplied and OnVcsFilesChanged)
+            var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
+            if (allModelIds.Count > 0)
+                CodeReviewService.RemoveLogMessagesForModels(allModelIds);
+
+            StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
+
+            NavState.StyleCheckingCompleted();
+            _step4deferred = false;
+            _step4color = Color.Success;
+            _showStyleCheckingCompleteMessage = true;
+            LogProcessEnd("MainLayout", "Running deferred style checking (continues in background)");
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            PowerManagementService.AllowSleep();
+        }
+    }
+
+    /// <summary>
+    /// Runs deferred external resource analysis. Called via AppState event from pages or startup dialog.
+    /// </summary>
+    private async Task RunDeferredExternalResourcesAsync()
+    {
+        if (NavState.HasExternalResourcesAnalyzed) return;
+
+        // External resource analysis reads resource edges from the graph, which are
+        // only populated by dependency analysis. Ensure dependencies are analyzed first.
+        if (!NavState.HasDependencyAnalysisRun)
+        {
+            await RunDeferredDependenciesAsync();
+        }
+
+        PowerManagementService.PreventSleep();
+        try
+        {
+            LogProcessStart("MainLayout", "Running deferred external resource analysis");
+            await InvokeAsync(() => Snackbar.Add("Analysing external resources...", Severity.Normal));
+
+            await ExternalResourceService.AnalyzeResourcesAsync(LibraryDataService.CombinedGraph);
+            ExternalResourceService.StartMonitoringResources();
+
+            NavState.ExternalResourcesAnalysisCompleted();
+            _step5deferred = false;
+            _step5color = Color.Success;
+            LogProcessEnd("MainLayout", "Running deferred external resource analysis");
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add("External resource analysis complete.", Severity.Success);
+                StateHasChanged();
+            });
+        }
+        finally
+        {
+            PowerManagementService.AllowSleep();
+        }
+    }
+
+    /// <summary>
+    /// Runs all deferred analysis steps in sequence.
+    /// Combines dependency analysis and style checking into a single pass to avoid
+    /// re-parsing all models a second time (saves ~40-80 seconds for 27K models).
+    /// </summary>
+    private async Task RunAllDeferredAnalysisAsync()
+    {
+        // Combine dependency analysis + style checking: each model is parsed once and
+        // both analysis + style checking run before the parse tree is released.
+        await RunDeferredDependenciesAsync(combineStyleChecking: true);
+        // If style checking wasn't combined (e.g., already completed), run it separately
+        await RunDeferredStyleCheckingAsync();
+        await RunDeferredExternalResourcesAsync();
+        NavState.DisableDeferredMode();
+    }
+
+    // ========== Startup Dialog Deferred Button Handlers ==========
+
+    private async Task RunDeferredDependenciesFromDialogAsync()
+    {
+        _runningDeferredStep = true;
+        _step3running = true;
+        _step3deferred = false;
+        _step3color = Color.Success;
+        StateHasChanged();
+        await Task.Run(() => RunDeferredDependenciesAsync());
+        _step3running = false;
+        _runningDeferredStep = false;
+        //Check to see if the dialog should stay open
+        if (!_step3deferred && !_step4deferred && !_step5deferred)
+            _startupProcessRunning = false;
+        StateHasChanged();
+    }
+
+    private async Task RunDeferredStyleCheckingFromDialogAsync()
+    {
+        _runningDeferredStep = true;
+        _step4running = true;
+        _step4deferred = false;
+        _step4color = Color.Success;
+        StateHasChanged();
+        await Task.Run(RunDeferredStyleCheckingAsync);
+    }
+
+    private async Task RunDeferredExternalResourcesFromDialogAsync()
+    {
+        _runningDeferredStep = true;
+        _step5running = true;
+        _step5deferred = false;
+        _step5color = Color.Success;
+        StateHasChanged();
+        await Task.Run(RunDeferredExternalResourcesAsync);
+        _step5running = false;
+        _runningDeferredStep = false;
+        //Check to see if the dialog should stay open
+        if (!_step3deferred && !_step4deferred && !_step5deferred)
+            _startupProcessRunning = false;
+        StateHasChanged();
+    }
+
+    private async Task RunAllDeferredFromDialogAsync()
+    {
+        _runningDeferredStep = true;
+        StateHasChanged();
+
+        // Combined dependency analysis + style checking: parse each model once for both
+        _step3running = true;
+        _step3deferred = false;
+        _step3color = Color.Success;
+        _step4running = true;
+        _step4deferred = false;
+        _step4color = Color.Success;
+        StateHasChanged();
+        await Task.Run(() => RunDeferredDependenciesAsync(combineStyleChecking: true));
+        _step3running = false;
+        _step4running = false;
+        StateHasChanged();
+
+        // If style checking wasn't combined (e.g., dependency analysis was already done), run separately
+        await RunDeferredStyleCheckingFromDialogAsync();
+        await RunDeferredExternalResourcesFromDialogAsync();
+        NavState.DisableDeferredMode();
+        _runningDeferredStep = false;
+        _startupProcessRunning = false;
+        StateHasChanged();
+    }
+
+    private void CloseStartupDialog()
+    {
+        _startupProcessRunning = false;
+        _step3deferred = false;
+        _step4deferred = false;
+        _step5deferred = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Formats changed files in a repository before commit.
+    /// Gets the working copy changes, identifies affected .mo files, pauses monitoring,
+    /// applies formatting, then restarts monitoring.
+    /// </summary>
+    private async Task FormatChangedFilesForCommitAsync(string repositoryId)
+    {
+        var repository = RepositoryService.GetRepository(repositoryId);
+        if (repository == null) return;
+
+        var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+        if (!styleSettings.ApplyFormattingRules)
+            return;
+
+        var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
+        if (changedFilePaths.Count == 0) return;
+
+        // Skip files that have already been formatted and not modified since
+        var alreadyFormatted = changedFilePaths
+            .Where(f => _formattedFileTimestamps.TryGetValue(f, out var formattedAt)
+                        && File.GetLastWriteTimeUtc(f) == formattedAt)
+            .ToList();
+
+        if (alreadyFormatted.Count > 0)
+        {
+            Debug("MainLayout", $"Skipping {alreadyFormatted.Count} already-formatted file(s)");
+            changedFilePaths.ExceptWith(alreadyFormatted);
+        }
+
+        if (changedFilePaths.Count == 0)
+        {
+            Info("MainLayout", "All changed files are already formatted — skipping pre-commit formatting");
+            return;
+        }
+
+        LogProcessStart("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
+        FileMonitoringService.StopMonitoring(repositoryId);
+        try
+        {
+            await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
+        }
+        finally
+        {
+            FileMonitoringService.ClearPendingChanges(repositoryId);
+            if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+        }
+        LogProcessEnd("MainLayout", $"Pre-commit formatting for {changedFilePaths.Count} file(s)");
+    }
+
+    public void Dispose()
+    {
+        NavState.OnThemeChanged -= OnThemeChangedHandler;
+        NavState.OnRepositorySettingsApplied -= OnRepositorySettingsApplied;
+        NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
+        NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
+        NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
+        NavState.OnRunDeferredDependencies -= RunDeferredDependenciesOnlyAsync;
+        NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingAsync;
+        NavState.OnRunDeferredExternalResources -= RunDeferredExternalResourcesAsync;
+        NavState.OnRunAllDeferredAnalysis -= RunAllDeferredAnalysisAsync;
+        NavState.OnFormatChangedFilesForCommit -= FormatChangedFilesForCommitAsync;
+        RepositoryService.OnProjectChanged -= OnProjectChanged;
+        RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
+        FileMonitoringService.OnPendingChangesUpdated -= OnPendingChangesUpdated;
+    }
+
+    private async void OnRepositoriesChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRepositorySettingsApplied(string repositoryId, bool formattingChanged, bool styleSettingsChanged)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var repository = RepositoryService.GetRepository(repositoryId);
+                if (repository == null) return;
+
+                if (formattingChanged)
+                {
+                    // Clear cached timestamps since formatting rules changed
+                    _formattedFileTimestamps.Clear();
+
+                    // Show progress dialog — full formatting can take several minutes
+                    _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
+                    _fullFormatRunning = true;
+                    await InvokeAsync(StateHasChanged);
+
+                    // Pause monitoring to suppress the thousands of change events that
+                    // formatting generates; clear any events that slipped through afterwards
+                    FileMonitoringService.StopMonitoring(repositoryId);
+                    try
+                    {
+                        await SaveAllLibrariesWithFormattingAsync(repositoryId);
+                    }
+                    finally
+                    {
+                        FileMonitoringService.ClearPendingChanges(repositoryId);
+                        if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                            FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+
+                        // Invalidate working copy cache and notify the library browser
+                        // so it picks up the thousands of files modified by formatting
+                        RepositoryService.InvalidateWorkingCopyCache(repositoryId);
+                        FileMonitoringService.NotifyFileActivity(repositoryId);
+
+                        _fullFormatRunning = false;
+                        await InvokeAsync(StateHasChanged);
+                    }
+
+                    await InvokeAsync(() => Snackbar.Add("Code formatting complete.", Severity.Success));
+                }
+
+                if (formattingChanged || styleSettingsChanged)
+                {
+                    _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
+                    _styleCheckRunning = true;
+                    await InvokeAsync(StateHasChanged);
+
+                    var repositoryModelIds = LibraryDataService.Libraries
+                        .Where(l => l.RepositoryId == repositoryId)
+                        .SelectMany(l => l.ModelIds)
+                        .ToHashSet();
+
+                    if (repositoryModelIds.Count > 0)
+                    {
+                        CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
+                        await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
+                        _showStyleCheckingCompleteMessage = true;
+                        StyleCheckingService.StartBackgroundChecking(repository);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Error("MainLayout", "Error applying repository settings", ex);
+                await InvokeAsync(() => Snackbar.Add($"Error applying settings: {ex.Message}", Severity.Error));
+            }
+        });
+    }
+
+    /// <summary>
+    /// Handles VCS operations (pull, switch branch, revert, checkout) that change files on disk.
+    ///
+    /// The caller is expected to have already:
+    ///   1. Stopped the file monitor for the repository (to prevent UI lockup during VCS op)
+    ///   2. Performed the VCS operation
+    ///   3. Called RefreshRepositoryAsync to reload the graph
+    ///
+    /// This handler then:
+    ///   1. Reads any pending file changes captured before the monitor was paused
+    ///   2. If no specific changes detected, falls back to all models in the repository
+    ///   3. Pauses the monitor, applies code formatting, then restarts the monitor
+    ///   4. Re-runs dependency analysis, style checking, and external resource analysis
+    /// </summary>
+    private void OnVcsFilesChanged(string repositoryId)
+    {
+        _ = Task.Run(async () =>
+        {
+            var repository = RepositoryService.GetRepository(repositoryId);
+            if (repository == null) return;
+
+            try
+            {
+                await InvokeAsync(() => Snackbar.Add("Processing VCS file changes...", Severity.Normal));
+                LogProcessStart("MainLayout", $"Processing VCS changes for repository {repository.Name}");
+
+                var affectedModelIds = new HashSet<string>();
+                var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var graph = LibraryDataService.CombinedGraph;
+
+                // Read pending changes that accumulated before the monitor was paused (dialog-based
+                // VCS ops where we cannot pause before the operation). These give us the specific
+                // files that changed, enabling targeted analysis instead of full-repo re-analysis.
+                var pendingChanges = FileMonitoringService.GetPendingChangesForRepository(repositoryId).ToList();
+                bool hasSpecificChanges = false;
+
+                if (pendingChanges.Count > 0)
+                {
+                    foreach (var change in pendingChanges.Where(c => c.IsModelicaFile))
+                    {
+                        if (change.ChangeType == FileChangeType.Deleted)
+                            continue; // RefreshRepositoryAsync already removed deleted models
+
+                        var fileId = GraphBuilder.GenerateFileId(change.FilePath);
+                        var modelsInFile = graph.GetModelsInFile(fileId).ToList();
+                        // Only format files that are part of the loaded library (within LocalPath).
+                        // The monitor covers VcsRootPath, so changes outside LocalPath are valid
+                        // for VCS purposes but should not be formatted by MLQT.
+                        if (modelsInFile.Count > 0)
+                            changedFilePaths.Add(change.FilePath);
+                        foreach (var model in modelsInFile)
+                            affectedModelIds.Add(model.Id);
+                    }
+                    hasSpecificChanges = affectedModelIds.Count > 0;
+                    FileMonitoringService.ClearPendingChanges(repositoryId);
+                }
+
+                // Fallback: monitor was paused before the VCS op, so no pending changes were
+                // captured. Use VCS status to determine which files were modified.
+                if (!hasSpecificChanges)
+                {
+                    var vcsModifiedPaths = GetModifiedFilePathsFromVcs(repository);
+                    foreach (var filePath in vcsModifiedPaths)
+                    {
+                        changedFilePaths.Add(filePath);
+                        var fileId = GraphBuilder.GenerateFileId(filePath);
+                        foreach (var model in graph.GetModelsInFile(fileId))
+                            affectedModelIds.Add(model.Id);
+                    }
+                    hasSpecificChanges = affectedModelIds.Count > 0;
+
+                    // If VCS reports no changes either, fall back to all models for re-analysis
+                    // (e.g., after a branch switch where all files are replaced)
+                    if (!hasSpecificChanges)
+                    {
+                        foreach (var id in LibraryDataService.Libraries
+                            .Where(l => l.RepositoryId == repositoryId)
+                            .SelectMany(l => l.ModelIds))
+                        {
+                            affectedModelIds.Add(id);
+                        }
+                    }
+                }
+
+                if (affectedModelIds.Count == 0)
+                {
+                    await InvokeAsync(() => Snackbar.Add("No changes to process.", Severity.Info));
+                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+                    return;
+                }
+
+                // Get per-repository style settings for formatting
+                var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+
+                // Pause monitor and apply formatting. StopMonitoring is idempotent — safe to call
+                // even if the caller already paused it (e.g., for update/checkout operations).
+                try
+                {
+                    FileMonitoringService.StopMonitoring(repositoryId);
+
+                    if (changedFilePaths.Count > 0)
+                    {
+                        await InvokeAsync(() => Snackbar.Add($"Applying code formatting to {changedFilePaths.Count} changed file(s)...", Severity.Normal));
+                        await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
+                    }
+                }
+                finally
+                {
+                    // Clear any change events that slipped through or were generated by formatting,
+                    // then restart monitoring so future user edits are tracked again.
+                    FileMonitoringService.ClearPendingChanges(repositoryId);
+                    if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                        FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+                }
+
+                // Re-analyze dependencies for affected models (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun)
+                {
+                    await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
+                    var libraryInfos = GetLibraryInfos();
+                    await Task.Run(async () =>
+                    {
+                        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                            LibraryDataService.CombinedGraph, affectedModelIds, libraryInfos);
+                        LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                    });
+                }
+
+                // Re-run style checking for affected models (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
+                {
+                    CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                    await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
+                    await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
+                    await InvokeAsync(() => Snackbar.Add("Style checking complete.", Severity.Success));
+                }
+
+                // Re-analyze external resources for affected models (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
+                {
+                    await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                        affectedModelIds, LibraryDataService.CombinedGraph);
+                }
+
+                // If the currently selected model was affected, invalidate its render cache and
+                // refresh the model viewer so it re-reads fresh content from the graph.
+                if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
+                    await InvokeAsync(() =>
+                    {
+                        NavState.ModelContentChanged(affectedModelIds.ToList());
+                        NavState.ChangeModelID(NavState.ModelID);
+                    });
+
+                await InvokeAsync(() => Snackbar.Add("VCS changes processed successfully.", Severity.Success));
+                LogProcessEnd("MainLayout", $"Processing VCS changes for repository {repository.Name}");
+            }
+            catch (Exception ex)
+            {
+                Error("MainLayout", "Error processing VCS changes", ex);
+                await InvokeAsync(() => Snackbar.Add($"Error processing VCS changes: {ex.Message}", Severity.Error));
+                // Always restart monitor on error so future edits are tracked
+                if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                    FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
+            }
+        });
+    }
+
+    private void OnVcsModelsChanged(string repositoryId, IReadOnlyList<string> modelIds)
+    {
+        _ = Task.Run(async () =>
+        {
+            var repository = RepositoryService.GetRepository(repositoryId);
+            if (repository == null) return;
+
+            try
+            {
+                // Clear any pending monitor events captured during the revert so the monitor
+                // does not try to re-process the same files as "changed" on the next VCS op.
+                FileMonitoringService.ClearPendingChanges(repositoryId);
+
+                var affectedModelIds = new HashSet<string>(modelIds);
+                if (affectedModelIds.Count == 0) return;
+
+                // Re-analyze dependencies (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun)
+                {
+                    await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
+                    var libraryInfos = GetLibraryInfos();
+                    await Task.Run(async () =>
+                    {
+                        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                            LibraryDataService.CombinedGraph, affectedModelIds, libraryInfos);
+                        LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                    });
+                }
+
+                // Re-run style checking (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
+                {
+                    CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                    await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
+                    await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
+                }
+
+                // Re-analyze external resources (skip if deferred and not yet run)
+                if (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed)
+                {
+                    await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                        affectedModelIds, LibraryDataService.CombinedGraph);
+                }
+
+                // Refresh model viewer if the selected model was affected
+                if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
+                    await InvokeAsync(() =>
+                    {
+                        NavState.ModelContentChanged(affectedModelIds.ToList());
+                        NavState.ChangeModelID(NavState.ModelID);
+                    });
+
+                await InvokeAsync(() => Snackbar.Add("Revert analysis complete.", Severity.Success));
+            }
+            catch (Exception ex)
+            {
+                Error("MainLayout", "Error processing reverted models", ex);
+                await InvokeAsync(() => Snackbar.Add($"Error after revert: {ex.Message}", Severity.Error));
+            }
+        });
+    }
+
+    private async void OnPendingChangesUpdated()
+    {
+        await InvokeAsync(() =>
+        {
+            _pendingChangesCount = FileMonitoringService.GetPendingChangesSummary().TotalChanges;
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// Converts loaded libraries to LibraryInfo objects for GraphBuilder.
+    /// </summary>
+    private List<LibraryInfo> GetLibraryInfos()
+    {
+        return LibraryDataService.Libraries.Select(lib =>
+        {
+            // Determine library root path based on source type
+            string rootPath;
+            if (lib.SourceType == LibrarySourceType.Directory)
+            {
+                rootPath = lib.SourcePath;
+            }
+            else if (lib.SourceType == LibrarySourceType.File)
+            {
+                rootPath = Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath;
+            }
+            else
+            {
+                rootPath = lib.SourcePath;
+            }
+
+            return new LibraryInfo(lib.Name, rootPath);
+        }).ToList();
+    }
+
+    private string GetRefreshTooltip()
+    {
+        if (_isRefreshing)
+            return "Refreshing...";
+
+        if (_pendingChangesCount == 0)
+            return "Refresh libraries";
+
+        var summary = FileMonitoringService.GetPendingChangesSummary();
+        var parts = new List<string>();
+
+        if (summary.AddedFiles > 0)
+            parts.Add($"{summary.AddedFiles} added");
+        if (summary.ModifiedFiles > 0)
+            parts.Add($"{summary.ModifiedFiles} modified");
+        if (summary.DeletedFiles > 0)
+            parts.Add($"{summary.DeletedFiles} deleted");
+        if (summary.RenamedFiles > 0)
+            parts.Add($"{summary.RenamedFiles} renamed");
+
+        return $"Refresh libraries ({string.Join(", ", parts)})";
+    }
+
+    private async Task RefreshLibrariesAsync()
+    {
+        if (_isRefreshing)
+            return;
+
+        _isRefreshing = true;
+        StateHasChanged();
+
+        try
+        {
+            var pendingChanges = FileMonitoringService.PendingChanges.ToList();
+            if (pendingChanges.Count == 0)
+            {
+                Snackbar.Add("No pending changes to process", Severity.Info);
+                return;
+            }
+
+            LogProcessStart("MainLayout", $"Processing {pendingChanges.Count} file changes");
+            Snackbar.Add($"Processing {pendingChanges.Count} file changes...", Severity.Normal);
+
+            var affectedModelIds = new HashSet<string>();
+            var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Process deletions first
+            var deletions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Deleted && c.IsModelicaFile).ToList();
+            foreach (var deletion in deletions)
+            {
+                Debug("MainLayout", $"Processing deletion: {deletion.FilePath}");
+                var removedIds = LibraryDataService.RemoveModelsFromFile(deletion.FilePath);
+                foreach (var id in removedIds)
+                {
+                    affectedModelIds.Add(id);
+                }
+            }
+
+            // Process renames (remove old, reload new)
+            var renames = pendingChanges.Where(c => c.ChangeType == FileChangeType.Renamed && c.IsModelicaFile).ToList();
+            foreach (var rename in renames)
+            {
+                Debug("MainLayout", $"Processing rename: {rename.OldFilePath} -> {rename.FilePath}");
+                if (!string.IsNullOrEmpty(rename.OldFilePath))
+                {
+                    var removedIds = LibraryDataService.RemoveModelsFromFile(rename.OldFilePath);
+                    foreach (var id in removedIds)
+                    {
+                        affectedModelIds.Add(id);
+                    }
+                }
+                var reloadedIds = await LibraryDataService.ReloadFileAsync(rename.FilePath);
+                foreach (var id in reloadedIds)
+                {
+                    affectedModelIds.Add(id);
+                }
+                changedFilePaths.Add(rename.FilePath);
+            }
+
+            // Process modifications
+            var modifications = pendingChanges.Where(c => c.ChangeType == FileChangeType.Modified && c.IsModelicaFile).ToList();
+            foreach (var modification in modifications)
+            {
+                Debug("MainLayout", $"Processing modification: {modification.FilePath}");
+                var reloadedIds = await LibraryDataService.ReloadFileAsync(modification.FilePath);
+                foreach (var id in reloadedIds)
+                {
+                    affectedModelIds.Add(id);
+                }
+                changedFilePaths.Add(modification.FilePath);
+            }
+
+            // Process additions
+            var additions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Added && c.IsModelicaFile).ToList();
+            foreach (var addition in additions)
+            {
+                Debug("MainLayout", $"Processing addition: {addition.FilePath}");
+                var reloadedIds = await LibraryDataService.ReloadFileAsync(addition.FilePath);
+                foreach (var id in reloadedIds)
+                {
+                    affectedModelIds.Add(id);
+                }
+                changedFilePaths.Add(addition.FilePath);
+            }
+
+            // Save changed files with formatting, using per-repository style settings
+            if (changedFilePaths.Count > 0)
+            {
+                Snackbar.Add("Applying code formatting to changed files...", Severity.Normal);
+
+                // Group changed files by repository so each group uses the correct style settings
+                var filesByRepo = pendingChanges
+                    .Where(c => c.ChangeType != FileChangeType.Deleted && c.IsModelicaFile && changedFilePaths.Contains(c.FilePath))
+                    .GroupBy(c => c.RepositoryId)
+                    .ToList();
+
+                foreach (var repoGroup in filesByRepo)
+                {
+                    var repository = RepositoryService.GetRepository(repoGroup.Key);
+                    var styleSettings = repository?.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                    var repoPaths = repoGroup.Select(c => c.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    await SaveChangedFilesWithFormattingAsync(repoPaths, styleSettings);
+                }
+            }
+
+            // Re-analyze dependencies — incremental (skip if deferred and not yet run)
+            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun))
+            {
+                Snackbar.Add("Analyzing dependencies...", Severity.Normal);
+                var libraryInfos = GetLibraryInfos();
+                var analysisScope = affectedModelIds.ToHashSet();
+                await Task.Run(async () =>
+                {
+                    await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                        LibraryDataService.CombinedGraph, analysisScope, libraryInfos);
+                    LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                });
+            }
+
+            // Remove old log messages and re-check style (skip if deferred and not yet run)
+            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun))
+            {
+                CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                Snackbar.Add($"Style checking {affectedModelIds.Count} affected model(s)...", Severity.Normal);
+                await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
+            }
+
+            // Re-analyze external resources for affected models (skip if deferred and not yet run)
+            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed))
+            {
+                await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                    affectedModelIds, LibraryDataService.CombinedGraph);
+            }
+
+            // If the currently selected model was affected, invalidate its render cache so
+            // the model viewer re-reads fresh content (not stale cached output).
+            if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
+            {
+                NavState.ModelContentChanged(affectedModelIds.ToList());
+                NavState.ChangeModelID(NavState.ModelID);
+            }
+
+            // Clear pending changes
+            FileMonitoringService.ClearPendingChanges();
+
+            LogProcessEnd("MainLayout", $"Processing {pendingChanges.Count} file changes");
+            Snackbar.Add($"Successfully processed {pendingChanges.Count} file changes", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Error("MainLayout", "Error processing file changes", ex);
+            Snackbar.Add($"Error processing file changes: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isRefreshing = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Saves only the changed files with formatting applied.
+    /// This is more efficient than saving all libraries when only a few files have changed.
+    /// </summary>
+    /// <param name="changedFilePaths">File paths that have been modified.</param>
+    /// <param name="styleSettings">Optional per-repository style settings. If null, uses global settings.</param>
+    private async Task SaveChangedFilesWithFormattingAsync(IEnumerable<string> changedFilePaths, StyleCheckingSettings? styleSettings = null)
+    {
+        var graph = LibraryDataService.CombinedGraph;
+
+        // Use provided settings or fall back to global settings
+        var effectiveSettings = styleSettings ?? _settings.StyleChecking;
+
+        // Skip if formatting is disabled
+        if (!effectiveSettings.ApplyFormattingRules)
+            return;
+
+        // Capture settings once for thread safety
+        var oneOfEachSection = effectiveSettings.OneOfEachSection;
+        var importsFirst = effectiveSettings.ImportStatementsFirst;
+        var componentsBeforeClasses = effectiveSettings.ComponentsBeforeClasses;
+
+        // Build list of files to process with their model nodes
+        var filesToProcess = new List<(string FilePath, List<ModelNode> Models)>();
+        foreach (var filePath in changedFilePaths)
+        {
+            if (!File.Exists(filePath))
+                continue;
+
+            if (FileMonitoringServiceHelpers.IsInHiddenDirectory(filePath))
+            {
+                Warn("MainLayout", $"Skipping file in hidden directory: {filePath}");
+                continue;
+            }
+
+            var fileId = GraphBuilder.GenerateFileId(filePath);
+            var fileNode = graph.GetNode<FileNode>(fileId);
+            if (fileNode == null)
+                continue;
+
+            var modelNodes = graph.GetModelsInFile(fileId).ToList();
+            if (modelNodes.Count == 0)
+                continue;
+
+            filesToProcess.Add((filePath, modelNodes));
+        }
+
+        // Parse and render in parallel (CPU-bound), then write files
+        var formattedFiles = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+
+        await Task.Run(() =>
+        {
+            Parallel.ForEach(filesToProcess, fileEntry =>
+            {
+                try
+                {
+                    foreach (var modelNode in fileEntry.Models)
+                    {
+                        // Skip formatting for models excluded from reformatting
+                        if (effectiveSettings.IsModelExcludedFromFormatting(modelNode.Id))
+                            continue;
+
+                        var parseTree = ModelicaParserHelper.Parse(modelNode.Definition.ModelicaCode);
+                        var visitor = new ModelicaRenderer(
+                            renderForCodeEditor: false,
+                            showAnnotations: true,
+                            excludeClassDefinitions: false,
+                            tokenStream: null,
+                            classNamesToExclude: null,
+                            oneOfEachSection: oneOfEachSection,
+                            importsFirst: importsFirst,
+                            componentsBeforeClasses: componentsBeforeClasses);
+                        visitor.Visit(parseTree);
+                        modelNode.Definition.ModelicaCode = string.Join("\n", visitor.Code);
+                    }
+
+                    // Build file content
+                    var fileContent = new System.Text.StringBuilder();
+                    var firstModel = fileEntry.Models.FirstOrDefault();
+                    if (firstModel != null)
+                    {
+                        var lastDotIndex = firstModel.Id.LastIndexOf('.');
+                        if (lastDotIndex > 0)
+                        {
+                            var withinClause = firstModel.Id.Substring(0, lastDotIndex);
+                            fileContent.AppendLine($"within {withinClause};");
+                            fileContent.AppendLine();
+                        }
+                    }
+
+                    foreach (var modelNode in fileEntry.Models)
+                    {
+                        fileContent.AppendLine(modelNode.Definition.ModelicaCode);
+                        fileContent.AppendLine();
+                    }
+
+                    formattedFiles[fileEntry.FilePath] = fileContent.ToString().TrimEnd() + "\n";
+                }
+                catch (Exception ex)
+                {
+                    Warn("MainLayout", $"Failed to format file {fileEntry.FilePath}: {ex.Message}");
+                }
+            });
+        });
+
+        // Write files sequentially and record timestamps
+        foreach (var (filePath, content) in formattedFiles)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(filePath, content);
+                _formattedFileTimestamps[filePath] = File.GetLastWriteTimeUtc(filePath);
+                Debug("MainLayout", $"Saved formatted file: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                Warn("MainLayout", $"Failed to save formatted file {filePath}: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task OpenAddRepositoryDialog()
+    {
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<AddRepositoryDialog>("Add Repository", options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            // Switch to repository mode to show the newly added repository
+            _settings.UI.RepositoryMode = true;
+            StateHasChanged();
+
+            // Run the same post-load analysis steps as startup for the new repository's models
+            var repositoryId = result.Data as string;
+            if (repositoryId != null)
+            {
+                var newModelIds = LibraryDataService.Libraries
+                    .Where(l => l.RepositoryId == repositoryId)
+                    .SelectMany(l => l.ModelIds)
+                    .ToHashSet();
+
+                if (newModelIds.Count > 0)
+                {
+                    Snackbar.Add("Analyzing dependencies for new repository...", Severity.Normal);
+                    var libraryInfos = GetLibraryInfos();
+                    await Task.Run(async () =>
+                    {
+                        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                            LibraryDataService.CombinedGraph, newModelIds, libraryInfos);
+                        // Reconcile edges in case existing models already referenced
+                        // models from the newly added library
+                        LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                    });
+
+                    await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                        newModelIds, LibraryDataService.CombinedGraph);
+                    ExternalResourceService.StartMonitoringResources();
+                }
+            }
+        }
+    }
+
+    private void ApplyThemeFromSettings(UISettings uiSettings)
+    {
+        _isDarkMode = uiSettings.Theme == Theme.Dark;
+        _myTheme = uiSettings.Theme == Theme.Custom
+            ? BuildTheme(BuildCustomPalette(uiSettings))
+            : BuildTheme(GetDefaultPaletteLight());
+    }
+
+    private async void OnThemeChangedHandler(UISettings uiSettings)
+    {
+        ApplyThemeFromSettings(uiSettings);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static PaletteLight GetDefaultPaletteLight() => new PaletteLight()
+    {
+        Primary = "#6a70b1",
+        Secondary = "#666666",
+        Tertiary = "#a18ac1",
+        TextPrimary = "#6a70b1",
+        AppbarBackground = "#6a93b1",
+        AppbarText = "#ffffff",
+        Info = "#cccccc",
+        PrimaryContrastText = "#ffffff"
+    };
+
+    private static PaletteDark GetDefaultPaletteDark() => new PaletteDark()
+    {
+        Primary = "#6a70b1",
+        Secondary = "#666666",
+        Tertiary = "#a18ac1",
+        AppbarBackground = "#6a93b1",
+        AppbarText = "#ffffff",
+        Background = "#32333d"
+    };
+
+    private static PaletteLight BuildCustomPalette(UISettings uiSettings) => new PaletteLight()
+    {
+        Black = uiSettings.CustomBlack,
+        White = uiSettings.CustomWhite,
+        Primary = uiSettings.CustomPrimary,
+        PrimaryContrastText = uiSettings.CustomPrimaryContrastText,
+        Secondary = uiSettings.CustomSecondary,
+        SecondaryContrastText = uiSettings.CustomSecondaryContrastText,
+        Tertiary = uiSettings.CustomTertiary,
+        TertiaryContrastText = uiSettings.CustomTertiaryContrastText,
+        Info = uiSettings.CustomInfo,
+        InfoContrastText = uiSettings.CustomInfoContrastText,
+        TextPrimary = uiSettings.CustomPrimary,
+        AppbarBackground = uiSettings.CustomPrimary,
+        AppbarText = uiSettings.CustomPrimaryContrastText
+    };
+
+    private static MudTheme BuildTheme(PaletteLight paletteLight) => new MudTheme()
+    {
+        PaletteLight = paletteLight,
+        PaletteDark = GetDefaultPaletteDark(),
+        LayoutProperties = new LayoutProperties()
+        {
+            DrawerWidthLeft = "200px",
+            DrawerWidthRight = "200px",
+            AppbarHeight = "2rem"
+        },
+        Typography = new Typography()
+        {
+            H4 = new DefaultTypography()
+            {
+                FontSize = "1.25rem",
+                FontWeight = "500"
+            },
+            H5 = new DefaultTypography()
+            {
+                FontSize = "1.125rem",
+                FontWeight = "500"
+            },
+            H6 = new DefaultTypography()
+            {
+                FontSize = "1rem",
+                FontWeight = "500"
+            },
+            Body1 = new DefaultTypography()
+            {
+                FontSize = "0.75rem"
+            },
+            Body2 = new DefaultTypography()
+            {
+                FontFamily = new[] { "monospace"},
+                FontSize = "0.75rem"
+            },
+            Subtitle1 = new DefaultTypography()
+            {
+                FontSize = "0.875rem",
+                FontWeight = "500"
+            },
+            Subtitle2 = new DefaultTypography()
+            {
+                FontSize = "0.75rem",
+                FontWeight = "500"
+            },
+            Caption = new DefaultTypography()
+            {
+                FontSize = "0.625rem"
+            }
+        }
+    };
+
+    private void ToggleView() {
+        _settings.UI.RepositoryMode = !_settings.UI.RepositoryMode;
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,149 @@
+@using DymolaInterface
+@using OpenModelicaInterface
+@using System.Threading.Tasks
+
+@inject ISettingsService SettingsService
+@inject IJSRuntime JSRuntime
+@inject AppState NavState
+@inject IFilePickerService FilePickerService
+
+<MudPaper Elevation="0">
+    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">Dymola</MudText>
+    <MudTextField @bind-Value="@_settings.Dymola.DymolaPath"
+                    Label="Path to Dymola Executable"
+                    Variant="Variant.Outlined"
+                    Adornment="Adornment.End"
+                    AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                    OnAdornmentClick="BrowseForDymolaFolder"
+                    Margin="Margin.Dense"
+                    Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+    @if (_showDymolaWarning) 
+    {
+        <MudAlert Severity="Severity.Warning">Could not find Dymola at @_settings.Dymola.DymolaPath</MudAlert>
+    }
+
+    <MudNumericField @bind-Value="@_settings.Dymola.PortNumber"
+                    Label="Port Number"
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Min="1" Max="65535"
+                    Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+
+
+    <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">OpenModelica</MudText>
+    <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
+                    Label="Path to OpenModelica Compiler Executable"
+                    Variant="Variant.Outlined"
+                    Adornment="Adornment.End"
+                    AdornmentIcon="@Icons.Material.Filled.FolderOpen"
+                    OnAdornmentClick="BrowseForOpenModelicaFolder"
+                    Margin="Margin.Dense"
+                    Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+    @if (_showOpenModelicaWarning) 
+    {
+        <MudAlert Severity="Severity.Warning">Could not find OpenModelica at @_settings.OpenModelica.OmcPath</MudAlert>
+    }
+
+    <MudNumericField @bind-Value="@_settings.OpenModelica.PortNumber"
+                    Label="Port Number"
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Min="1" Max="65535"
+                    Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+</MudPaper>
+
+
+@code {
+    private AppSettings _settings = new();
+    private bool _showDymolaWarning = false;
+    private bool _showOpenModelicaWarning = false;
+
+    protected override void OnInitialized()
+    {
+        NavState.OnSaveSettings += SaveSettings;
+        base.OnInitialized();
+    }
+
+    protected void OnDispose()
+    {
+        NavState.OnSaveSettings -= SaveSettings;
+    }  
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            // Load each settings category
+            _settings.Dymola = await SettingsService.GetAsync("Dymola", new DymolaSettings());
+            _settings.OpenModelica = await SettingsService.GetAsync("OpenModelica", new OpenModelicaSettings());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+        }
+    }
+
+    private async void SaveSettings()
+    {
+        try
+        {
+            await SettingsService.SetAsync("Dymola", _settings.Dymola);
+            await SettingsService.SetAsync("OpenModelica", _settings.OpenModelica);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private async Task BrowseForDymolaFolder()
+    {
+        try
+        {
+            var folder = await FilePickerService.PickFolderAsync("Select Dymola installation directory");
+            if (!string.IsNullOrEmpty(folder))
+            {
+                _settings.Dymola.DymolaPath = Path.Combine(folder, "bin64", "dymola.exe");
+                _showDymolaWarning = !File.Exists(_settings.Dymola.DymolaPath);
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+
+        }
+    }
+
+    private async Task BrowseForOpenModelicaFolder()
+    {
+        try
+        {
+            var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
+            if (!string.IsNullOrEmpty(folder))
+            {
+                _settings.OpenModelica.OmcPath = Path.Combine(folder, "bin", "omc.exe");
+                _showOpenModelicaWarning = !File.Exists(_settings.OpenModelica.OmcPath);
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+
+        }
+    }
+}
