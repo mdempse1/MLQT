@@ -340,7 +340,7 @@ end WithInitialFirst;
 """;
 
         var parseTree = ModelicaParserHelper.Parse(code);
-        var visitor = new InitialEquationFirst(initialFirst: true);
+        var visitor = new InitialEquationFirst(initialFirst: true, initialLast: false);
         visitor.Visit(parseTree);
 
         Assert.Empty(visitor.RuleViolations);

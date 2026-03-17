@@ -11,7 +11,7 @@ public class InitialEquationFirstTests
     private List<LogMessage> CheckRule(string code, bool first)
     {
         var parseTree = ModelicaParserHelper.Parse(code);
-        var visitor = new InitialEquationFirst(first);
+        var visitor = new InitialEquationFirst(first, !first);
         visitor.Visit(parseTree);
         return visitor.RuleViolations;
     }

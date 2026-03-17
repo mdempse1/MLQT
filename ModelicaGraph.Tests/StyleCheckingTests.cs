@@ -813,4 +813,421 @@ end TestModel;
 
         Assert.True(settings.NamingConvention.AllowUnderscoreSuffixes);
     }
+
+    // ============================================================================
+    // ClassHasDocumentationInfo
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationInfo_DetectsMissingInfo()
+    {
+        var code = """
+            model TestModel "A model without documentation"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasDocumentationInfo = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+        Assert.Contains("Documentation info", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationInfo_NoViolationWhenPresent()
+    {
+        var code = """
+            model TestModel "A documented model"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(Documentation(info="<html><p>Info here</p></html>"));
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasDocumentationInfo = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationInfo_IncludedInHasAnyStyleRuleEnabled()
+    {
+        var settings = new StyleCheckingSettings { ClassHasDocumentationInfo = true };
+        Assert.True(settings.HasAnyStyleRuleEnabled);
+    }
+
+    // ============================================================================
+    // ClassHasDocumentationRevisions
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationRevisions_DetectsMissingRevisions()
+    {
+        var code = """
+            model TestModel "A model without revisions"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(Documentation(info="<html><p>Info</p></html>"));
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasDocumentationRevisions = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+        Assert.Contains("Documentation revisions", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationRevisions_NoViolationWhenPresent()
+    {
+        var code = """
+            model TestModel "A documented model"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(Documentation(info="<html><p>Info</p></html>", revisions="<html><p>v1.0</p></html>"));
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasDocumentationRevisions = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasDocumentationRevisions_IncludedInHasAnyStyleRuleEnabled()
+    {
+        var settings = new StyleCheckingSettings { ClassHasDocumentationRevisions = true };
+        Assert.True(settings.HasAnyStyleRuleEnabled);
+    }
+
+    // ============================================================================
+    // ClassHasIcon
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_ClassHasIcon_DetectsMissingIcon()
+    {
+        var code = """
+            model TestModel "A model without icon"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasIcon = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+        Assert.Contains("Icon", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasIcon_NoViolationWhenPresent()
+    {
+        var code = """
+            model TestModel "A model with icon"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(Icon(coordinateSystem(extent={{-100,-100},{100,100}})));
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasIcon = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ClassHasIcon_IncludedInHasAnyStyleRuleEnabled()
+    {
+        var settings = new StyleCheckingSettings { ClassHasIcon = true };
+        Assert.True(settings.HasAnyStyleRuleEnabled);
+    }
+
+    // ============================================================================
+    // Combined annotation checks
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_AllAnnotationChecks_DetectsAllMissing()
+    {
+        var code = """
+            model TestModel "A bare model"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings
+        {
+            ClassHasDocumentationInfo = true,
+            ClassHasDocumentationRevisions = true,
+            ClassHasIcon = true
+        };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Equal(3, violations.Count);
+        Assert.Contains(violations, v => v.Summary.Contains("Documentation info"));
+        Assert.Contains(violations, v => v.Summary.Contains("Documentation revisions"));
+        Assert.Contains(violations, v => v.Summary.Contains("Icon"));
+    }
+
+    [Fact]
+    public void RunStyleChecking_AllAnnotationChecks_NoViolationsWhenAllPresent()
+    {
+        var code = """
+            model TestModel "A fully annotated model"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(
+                Documentation(info="<html><p>Info</p></html>", revisions="<html><p>v1.0</p></html>"),
+                Icon(coordinateSystem(extent={{-100,-100},{100,100}}))
+              );
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings
+        {
+            ClassHasDocumentationInfo = true,
+            ClassHasDocumentationRevisions = true,
+            ClassHasIcon = true
+        };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_AnnotationChecks_DocumentationWithoutIcon_OnlyIconViolation()
+    {
+        var code = """
+            model TestModel "A model with docs but no icon"
+              Real x;
+            equation
+              x = 1.0;
+              annotation(Documentation(info="<html><p>Info</p></html>", revisions="<html><p>v1.0</p></html>"));
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings
+        {
+            ClassHasDocumentationInfo = true,
+            ClassHasDocumentationRevisions = true,
+            ClassHasIcon = true
+        };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Single(violations);
+        Assert.Contains("Icon", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_AnnotationChecks_DisabledByDefault()
+    {
+        var code = """
+            model TestModel "A bare model"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings();
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    // ============================================================================
+    // InitialEQAlgoLast (fixed implementation)
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoLast_DetectsInitialBeforeRegular()
+    {
+        // Initial equation comes BEFORE regular equation — violates "last" rule
+        var code = """
+            model TestModel
+              Real x;
+            initial equation
+              x = 0.0;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+        Assert.Contains("should appear after the equation/algorithm section", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWhenInitialIsLast()
+    {
+        // Initial equation comes AFTER regular equation — satisfies "last" rule
+        var code = """
+            model TestModel
+              Real x;
+            equation
+              x = 1.0;
+            initial equation
+              x = 0.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoLast_DetectsInitialAlgorithmBeforeRegular()
+    {
+        // Initial algorithm comes BEFORE regular algorithm — violates "last" rule
+        var code = """
+            model TestModel
+              Real x;
+            initial algorithm
+              x := 0.0;
+            algorithm
+              x := 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWhenInitialAlgorithmIsLast()
+    {
+        // Initial algorithm comes AFTER regular algorithm — satisfies "last" rule
+        var code = """
+            model TestModel
+              Real x;
+            algorithm
+              x := 1.0;
+            initial algorithm
+              x := 0.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoFirst_DetectsInitialAfterRegular()
+    {
+        // Initial equation comes AFTER regular equation — violates "first" rule
+        var code = """
+            model TestModel
+              Real x;
+            equation
+              x = 1.0;
+            initial equation
+              x = 0.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.NotEmpty(violations);
+        Assert.Contains("should appear before", violations[0].Summary);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoFirst_NoViolationWhenInitialIsFirst()
+    {
+        // Initial equation comes BEFORE regular equation — satisfies "first" rule
+        var code = """
+            model TestModel
+              Real x;
+            initial equation
+              x = 0.0;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoFirst_NoViolationWithOnlyEquation()
+    {
+        // Only regular equation section, no initial — no violation for either rule
+        var code = """
+            model TestModel
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWithOnlyEquation()
+    {
+        var code = """
+            model TestModel
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings);
+
+        Assert.Empty(violations);
+    }
 }

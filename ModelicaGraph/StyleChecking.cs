@@ -77,7 +77,7 @@ public static class StyleChecking
             }
             if (settings.InitialEQAlgoFirst || settings.InitialEQAlgoLast)
             {
-                var visitor = new InitialEquationFirst(settings.InitialEQAlgoFirst, basePackage);
+                var visitor = new InitialEquationFirst(settings.InitialEQAlgoFirst, settings.InitialEQAlgoLast, basePackage);
                 visitor.VisitStored_definition(parsedCode);
                 violations.AddRange(visitor.RuleViolations);
             }
@@ -97,6 +97,12 @@ public static class StyleChecking
         if (settings.ClassHasDescription)
         {
             var visitor = new CheckClassDescriptionStrings(basePackage);
+            visitor.VisitStored_definition(parsedCode);
+            violations.AddRange(visitor.RuleViolations);
+        }
+        if (settings.ClassHasDocumentationInfo || settings.ClassHasDocumentationRevisions || settings.ClassHasIcon)
+        {
+            var visitor = new CheckClassAnnotations(settings.ClassHasDocumentationInfo, settings.ClassHasDocumentationRevisions, settings.ClassHasIcon, basePackage);
             visitor.VisitStored_definition(parsedCode);
             violations.AddRange(visitor.RuleViolations);
         }
