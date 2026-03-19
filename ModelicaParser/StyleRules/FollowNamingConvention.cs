@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
 
@@ -11,6 +12,7 @@ namespace ModelicaParser.StyleRules;
 public class FollowNamingConvention : VisitorWithModelNameTracking
 {
     private readonly NamingConventionConfig _config;
+    private readonly Dictionary<string, List<Regex>> _compiledPatterns = new();
     private readonly Stack<string> _classTypeStack = new();
     private bool _isPublic = true;
     private ElementCategory _currentElementCategory = ElementCategory.Variable;
@@ -27,6 +29,28 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
         : base(basePackage)
     {
         _config = config;
+
+        foreach (var (slotKey, patterns) in config.AdditionalPatterns)
+        {
+            if (patterns.Count > 0)
+            {
+                var compiled = new List<Regex>(patterns.Count);
+                foreach (var pattern in patterns)
+                {
+                    try
+                    {
+                        compiled.Add(new Regex(pattern, RegexOptions.Compiled,
+                            TimeSpan.FromMilliseconds(100)));
+                    }
+                    catch (RegexParseException)
+                    {
+                        // Skip invalid patterns — may have been manually edited in settings JSON
+                    }
+                }
+                if (compiled.Count > 0)
+                    _compiledPatterns[slotKey] = compiled;
+            }
+        }
     }
 
     protected override void OnClassEntered()
@@ -136,18 +160,23 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
             return base.VisitComponent_declaration(context);
 
         var style = GetElementNamingStyle();
-        if (style != NamingStyle.Any && !NamingValidator.IsValid(name, style,
-                _config.AllowUnderscoreSuffixes))
+        if (style != NamingStyle.Any)
         {
-            var visibility = _isPublic ? "public" : "protected";
-            var category = _currentElementCategory switch
+            var slotKey = GetElementSlotKey();
+            var patterns = GetPatternsForSlot(slotKey);
+            if (!NamingValidator.IsValid(name, style, _config.AllowUnderscoreSuffixes, patterns))
             {
-                ElementCategory.Parameter => "parameter",
-                ElementCategory.Constant => "constant",
-                _ => "variable"
-            };
-            AddViolation(lineNumber,
-                $"{char.ToUpper(category[0])}{category[1..]} name '{name}' should be {FormatStyleName(style)} ({visibility} {category})");
+                var visibility = _isPublic ? "public" : "protected";
+                var category = _currentElementCategory switch
+                {
+                    ElementCategory.Parameter => "parameter",
+                    ElementCategory.Constant => "constant",
+                    _ => "variable"
+                };
+                var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
+                AddViolation(lineNumber,
+                    $"{char.ToUpper(category[0])}{category[1..]} name '{name}' should be {FormatStyleName(style)}{suffix} ({visibility} {category})");
+            }
         }
 
         return base.VisitComponent_declaration(context);
@@ -164,11 +193,30 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
         if (style == NamingStyle.Any)
             return;
 
-        if (!NamingValidator.IsValid(className, style, _config.AllowUnderscoreSuffixes))
+        var patterns = GetPatternsForSlot(classType);
+        if (!NamingValidator.IsValid(className, style, _config.AllowUnderscoreSuffixes, patterns))
         {
+            var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
             AddViolation(lineNumber,
-                $"Class name '{className}' should be {FormatStyleName(style)} ({classType})");
+                $"Class name '{className}' should be {FormatStyleName(style)}{suffix} ({classType})");
         }
+    }
+
+    private IReadOnlyList<Regex>? GetPatternsForSlot(string slotKey)
+    {
+        return _compiledPatterns.TryGetValue(slotKey, out var patterns) ? patterns : null;
+    }
+
+    private string GetElementSlotKey()
+    {
+        var visibility = _isPublic ? "public" : "protected";
+        var category = _currentElementCategory switch
+        {
+            ElementCategory.Parameter => "Parameter",
+            ElementCategory.Constant => "Constant",
+            _ => "Variable"
+        };
+        return $"{visibility}{category}";
     }
 
     private NamingStyle GetElementNamingStyle()

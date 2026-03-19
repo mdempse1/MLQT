@@ -53,6 +53,7 @@ Static utility with no ANTLR dependencies. All methods are pure functions.
 | Method | Purpose |
 |--------|---------|
 | `IsValid(name, style, allowSuffixes)` | Main entry point — checks name against style with optional suffix stripping |
+| `IsValid(name, style, allowSuffixes, additionalPatterns)` | Overload that also checks pre-compiled `IReadOnlyList<Regex>?` patterns if base style fails |
 | `IsCamelCase(name)` | Starts lowercase, no underscores |
 | `IsPascalCase(name)` | Starts uppercase, no underscores |
 | `IsSnakeCase(name)` | All lowercase + underscores + digits, no leading/trailing/double underscores |
@@ -84,12 +85,17 @@ public record NamingConventionConfig
     public NamingStyle ProtectedConstantNaming { get; init; }
     public bool AllowUnderscoreSuffixes { get; init; }
     public HashSet<string> ExceptionNames { get; init; } = [];
+    public Dictionary<string, List<string>> AdditionalPatterns { get; init; } = new();
+
+    public static class SlotKeys { /* constants for all 15 slot keys */ }
 }
 ```
 
 The `ClassNamingRules` dictionary is keyed by Modelica class keyword: `"model"`, `"function"`, `"block"`, `"connector"`, `"record"`, `"type"`, `"package"`, `"class"`, `"operator"`.
 
 `ExceptionNames` contains names that bypass all convention checks (case-sensitive). Used for product names like "NASCAR" or established abbreviations like "OMC".
+
+`AdditionalPatterns` contains per-slot regex patterns. A name is valid if it matches the base style OR any pattern for its slot. Keys are from the nested `SlotKeys` class: class types use the same keys as `ClassNamingRules`; element categories use `"publicVariable"`, `"publicParameter"`, `"publicConstant"`, `"protectedVariable"`, `"protectedParameter"`, `"protectedConstant"`. Patterns are matched against the full original name (not suffix-stripped).
 
 ## FollowNamingConvention Visitor
 
@@ -105,6 +111,7 @@ Extends `VisitorWithModelNameTracking`. Follows the same patterns as `PublicPara
 | `_currentElementCategory` | Set in `VisitComponent_clause()` from `type_prefix` |
 | `_classTypeStack` | Pushed in `VisitClass_definition()`, popped in `OnClassExited()` |
 | `_pendingClassName/Type/Line` | Deferred class name check (see below) |
+| `_compiledPatterns` | Pre-compiled regex patterns per slot, built in constructor from `config.AdditionalPatterns` |
 
 ### Deferred Class Name Checking
 
@@ -149,6 +156,7 @@ Key methods:
 Properties match the `NamingConventionConfig` fields plus:
 - `PresetName` — Display name of the current preset (or "Custom")
 - `ExceptionNames` — `List<string>` of names that bypass all checks
+- `AdditionalPatterns` — `Dictionary<string, List<string>>` of per-slot regex patterns (keys from `NamingConventionConfig.SlotKeys`)
 
 ## NamingConventionPresets
 
@@ -197,26 +205,34 @@ When `FollowNamingConvention` is enabled, the `NamingConvention` object is seria
 {
     "FollowNamingConvention": true,
     "NamingConvention": {
-        "PresetName": "Modelica Standard",
+        "PresetName": "Custom",
         "ModelNaming": 2,
         "FunctionNaming": 1,
         "PublicVariableNaming": 1,
         "PublicConstantNaming": 1,
         "AllowUnderscoreSuffixes": true,
-        "ExceptionNames": ["NASCAR"]
+        "ExceptionNames": ["NASCAR"],
+        "AdditionalPatterns": {
+            "model": ["^[A-Z][a-zA-Z]+(_\\d+)+$"]
+        }
     }
 }
 ```
 
-Backward compatibility: existing JSON files without `NamingConvention` deserialize with defaults (Modelica Standard).
+Backward compatibility: existing JSON files without `NamingConvention` or `AdditionalPatterns` deserialize with defaults (Modelica Standard, empty patterns).
 
 ## UI Components
 
 ### NamingStyleSelect.razor
 
-Reusable `MudSelect<NamingStyle>` wrapper with five options: Any (no check), PascalCase, camelCase, snake_case, UPPER_CASE.
+Reusable `MudSelect<NamingStyle>` wrapper with five options: Any (no check), PascalCase, camelCase, snake_case, UPPER_CASE. Includes an optional per-slot regex pattern editor.
 
-Parameters: `Label`, `Value`, `ValueChanged`.
+Parameters: `Label`, `Value`, `ValueChanged`, `SlotKey` (string), `Patterns` (List\<string\>?), `PatternsChanged` (EventCallback).
+
+When `SlotKey` is non-empty, a filter icon button appears next to the dropdown. A `MudBadge` shows the pattern count when > 0. Clicking the icon toggles the pattern editor panel, which contains:
+- Helper text explaining regex matching on full name
+- Monospace text input + Add button with regex validation (`RegexParseException` catch)
+- `MudChipSet` showing existing patterns as closeable monospace chips
 
 ### Settings Panels (SettingsStyleChecking.razor / SettingsRepositories.razor)
 
@@ -239,6 +255,8 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 | `OnNamingStyleChanged(action)` | `OnRepoNamingStyleChanged(action)` | Apply change + set "Custom" |
 | `AddExceptionName()` | `AddRepoExceptionName()` | Add to exception list |
 | `RemoveExceptionName(name)` | `RemoveRepoExceptionName(name)` | Remove from exception list |
+| `GetPatterns(slotKey)` | `GetRepoPatterns(slotKey)` | Get pattern list for slot (creates empty list if absent) |
+| `OnPatternsChanged(slotKey, patterns)` | `OnRepoPatternsChanged(slotKey, patterns)` | Update patterns + set "Custom" |
 
 ### Change Detection (SettingsRepositories.razor)
 
@@ -248,8 +266,9 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 
 | Test File | Coverage |
 |-----------|----------|
-| `ModelicaParser.Tests/StyleRuleChecks/NamingValidatorTests.cs` | IsCamelCase, IsPascalCase, IsSnakeCase, IsUpperCase, StripSuffix, IsShortAbbreviation, IsValid integration |
-| `ModelicaParser.Tests/StyleRuleChecks/FollowNamingConventionTests.cs` | Class names, element names, visibility, suffixes, nested classes, array subscripts, short abbreviations, exception names, quoted identifiers |
+| `ModelicaParser.Tests/StyleRuleChecks/NamingValidatorTests.cs` | IsCamelCase, IsPascalCase, IsSnakeCase, IsUpperCase, StripSuffix, IsShortAbbreviation, IsValid integration, additional regex patterns |
+| `ModelicaParser.Tests/StyleRuleChecks/FollowNamingConventionTests.cs` | Class names, element names, visibility, suffixes, nested classes, array subscripts, short abbreviations, exception names, quoted identifiers, per-slot additional patterns |
+| `ModelicaGraph.Tests/NamingConventionSettingsTests.cs` | AdditionalPatterns in ToConfig, Equals, Clone; empty list filtering; order-independent comparison |
 
 ## Key Design Decisions
 
@@ -262,3 +281,7 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 7. **Quoted identifier handling** — Modelica allows quoted identifiers (Q_IDENT grammar rule) like `'r_0'` where single quotes are part of the token text. Both class names and element names have quotes stripped via `StripQuotes()` before convention checking. This ensures `'r_0'` → `r_0` → suffix strip → `r` → valid single char.
 8. **`record` for config** — Enables `with` expressions in tests for easy config variation
 9. **Nested classes skipped** — `VisitorWithModelNameTracking` skips nested class definitions (depth > 1). Each nested class has its own `ModelNode` and is checked independently, preventing duplicate violations when a parent package's code includes nested class source
+10. **Per-slot additional patterns** — Each naming slot can have regex patterns that supplement the base style. A name is valid if it matches the base style OR any pattern. Keys use `NamingConventionConfig.SlotKeys` constants
+11. **Patterns match full original name** — Regex patterns are matched against the original name, not the suffix-stripped version, giving pattern authors full control
+12. **Pre-compiled regex with timeout** — Patterns are compiled once in the visitor constructor with `RegexOptions.Compiled` and a 100ms timeout to prevent catastrophic backtracking. Invalid patterns are silently skipped
+13. **Adding patterns sets preset to "Custom"** — Consistent with how changing any naming style value switches away from a preset

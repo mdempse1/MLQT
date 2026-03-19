@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace ModelicaParser.StyleRules;
 
 /// <summary>
@@ -43,6 +45,29 @@ public static class NamingValidator
             NamingStyle.UpperCase => IsUpperCase(nameToCheck),
             _ => true
         };
+    }
+
+    /// <summary>
+    /// Checks whether a name conforms to the specified naming style or matches any
+    /// additional regex pattern. Patterns are matched against the full original name
+    /// (not the suffix-stripped version).
+    /// </summary>
+    public static bool IsValid(string name, NamingStyle style,
+        bool allowSuffixes, IReadOnlyList<Regex>? additionalPatterns)
+    {
+        if (IsValid(name, style, allowSuffixes))
+            return true;
+
+        if (additionalPatterns != null)
+        {
+            foreach (var pattern in additionalPatterns)
+            {
+                if (pattern.IsMatch(name))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

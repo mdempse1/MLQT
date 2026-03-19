@@ -123,6 +123,24 @@ To add a name that should always be accepted regardless of the naming convention
 
 Exception names are case-sensitive — adding "NASCAR" does not accept "Nascar" or "nascar".
 
+### Additional Allowed Patterns
+
+For cases where you need to allow a *pattern* of names rather than individual exceptions, each naming slot supports additional allowed regex patterns. A name is valid if it matches the base naming style OR any additional pattern configured for that slot.
+
+This is useful when a convention has systematic exceptions. For example, if model class names should be PascalCase but documentation release notes classes use a versioned format like `Version_2026_1`:
+
+1. Next to any naming style dropdown, click the **filter icon** to expand the pattern editor
+2. Enter a regex pattern (e.g., `^[A-Z][a-zA-Z]+(_\d+)+$` to match PascalCase followed by underscore-digit segments)
+3. Click the **+** button to add the pattern
+4. The pattern appears as a chip and the filter icon shows a badge with the pattern count
+5. To remove a pattern, click the close button on its chip
+
+Patterns are scoped per slot — a pattern added to "model" does not apply to "function" or other class types. This allows different exception patterns for different naming contexts.
+
+Patterns are matched against the **full original name**, not the suffix-stripped version. The regex must match the entire intended name format.
+
+Adding patterns sets the preset to "Custom". Invalid regex patterns are rejected with an error message when you try to add them.
+
 ## Violation Examples
 
 With Modelica Standard conventions enabled, the following code would produce violations:

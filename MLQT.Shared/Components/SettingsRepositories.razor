@@ -2,6 +2,7 @@
 @using Nextended.Core.DeepClone
 @using ModelicaParser.StyleRules
 @using ModelicaGraph
+@using static ModelicaParser.StyleRules.NamingConventionConfig
 
 @inject IRepositoryService RepositoryService
 @inject ISettingsService SettingsService
@@ -200,39 +201,54 @@
 
                         <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
                         <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)"
+                            SlotKey="@SlotKeys.Model" Patterns="@GetRepoPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Model, p))" />
                         <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)"
+                            SlotKey="@SlotKeys.Function" Patterns="@GetRepoPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Function, p))" />
                         <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)"
+                            SlotKey="@SlotKeys.Block" Patterns="@GetRepoPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Block, p))" />
                         <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)"
+                            SlotKey="@SlotKeys.Connector" Patterns="@GetRepoPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Connector, p))" />
                         <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)"
+                            SlotKey="@SlotKeys.Record" Patterns="@GetRepoPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Record, p))" />
                         <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)"
+                            SlotKey="@SlotKeys.Type" Patterns="@GetRepoPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Type, p))" />
                         <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)"
+                            SlotKey="@SlotKeys.Package" Patterns="@GetRepoPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Package, p))" />
                         <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)"
+                            SlotKey="@SlotKeys.Class" Patterns="@GetRepoPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Class, p))" />
                         <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)"
+                            SlotKey="@SlotKeys.Operator" Patterns="@GetRepoPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Operator, p))" />
 
                         <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
                         <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)"
+                            SlotKey="@SlotKeys.PublicVariable" Patterns="@GetRepoPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicVariable, p))" />
                         <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)"
+                            SlotKey="@SlotKeys.PublicParameter" Patterns="@GetRepoPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicParameter, p))" />
                         <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)"
+                            SlotKey="@SlotKeys.PublicConstant" Patterns="@GetRepoPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicConstant, p))" />
 
                         <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
                         <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetRepoPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedVariable, p))" />
                         <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetRepoPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedParameter, p))" />
                         <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)" />
+                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetRepoPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedConstant, p))" />
 
                         <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
                         <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
@@ -684,6 +700,23 @@
     private void RemoveBranchDirectory(string dir)
     {
         SelectedSettings.SvnBranchDirectories.Remove(dir);
+        StateHasChanged();
+    }
+
+    private List<string> GetRepoPatterns(string slotKey)
+    {
+        if (!SelectedSettings.NamingConvention.AdditionalPatterns.TryGetValue(slotKey, out var patterns))
+        {
+            patterns = new List<string>();
+            SelectedSettings.NamingConvention.AdditionalPatterns[slotKey] = patterns;
+        }
+        return patterns;
+    }
+
+    private void OnRepoPatternsChanged(string slotKey, List<string> patterns)
+    {
+        SelectedSettings.NamingConvention.AdditionalPatterns[slotKey] = patterns;
+        SelectedSettings.NamingConvention.PresetName = "Custom";
         StateHasChanged();
     }
 

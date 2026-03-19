@@ -284,7 +284,10 @@ The `settings.json` file contains all the repository-specific settings in JSON f
         "ProtectedParameterNaming": 1,
         "ProtectedConstantNaming": 1,
         "AllowUnderscoreSuffixes": true,
-        "ExceptionNames": []
+        "ExceptionNames": [],
+        "AdditionalPatterns": {
+            "model": ["^[A-Z][a-zA-Z]+(_\\d+)+$"]
+        }
     },
     "SpellCheckDescription": false,
     "SpellCheckDocumentation": false,

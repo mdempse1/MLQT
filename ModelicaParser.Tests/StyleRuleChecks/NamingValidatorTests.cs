@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Xunit;
 using ModelicaParser.StyleRules;
 
@@ -229,6 +230,75 @@ public class NamingValidatorTests
     {
         // "T_a" → base "T" → single char → always valid
         Assert.True(NamingValidator.IsValid("T_a", NamingStyle.CamelCase, allowSuffixes: true));
+    }
+
+    // ── IsValid with additional patterns ──
+
+    [Fact]
+    public void IsValid_WithPatterns_BaseStyleFails_PatternMatches_ReturnsTrue()
+    {
+        // "Version_2026_1" fails PascalCase but matches the additional pattern
+        var patterns = new List<Regex> { new(@"^[A-Z][a-zA-Z]+(_\d+)+$") };
+        Assert.True(NamingValidator.IsValid("Version_2026_1", NamingStyle.PascalCase, false, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_BaseStyleFails_NoPatterns_ReturnsFalse()
+    {
+        // "Version_2026_1" fails PascalCase and no patterns provided
+        Assert.False(NamingValidator.IsValid("Version_2026_1", NamingStyle.PascalCase, false, null));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_BaseStyleFails_PatternDoesNotMatch_ReturnsFalse()
+    {
+        // "Version_2026_1" fails PascalCase and pattern does not match
+        var patterns = new List<Regex> { new(@"^[a-z]+$") };
+        Assert.False(NamingValidator.IsValid("Version_2026_1", NamingStyle.PascalCase, false, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_BaseStylePasses_PatternsNotChecked()
+    {
+        // "MyModel" passes PascalCase directly; patterns are present but not needed
+        var patterns = new List<Regex> { new(@"^NEVER_MATCH$") };
+        Assert.True(NamingValidator.IsValid("MyModel", NamingStyle.PascalCase, false, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_EmptyPatternList_SameAsNoPatterns()
+    {
+        // "bad_name" fails PascalCase and empty pattern list provides no rescue
+        var patterns = new List<Regex>();
+        Assert.False(NamingValidator.IsValid("bad_name", NamingStyle.PascalCase, false, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_MultiplePatterns_AnyMatchReturnsTrue()
+    {
+        // Two patterns, second one matches
+        var patterns = new List<Regex>
+        {
+            new(@"^NO_MATCH$"),
+            new(@"^[A-Z][a-zA-Z]+(_\d+)+$")
+        };
+        Assert.True(NamingValidator.IsValid("Version_2026_1", NamingStyle.PascalCase, false, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_PatternMatchesOriginalName_NotSuffixStripped()
+    {
+        // "pressure_in" fails PascalCase even with suffix stripping (base "pressure" is camelCase).
+        // Pattern matches the full original name including the "_in" suffix.
+        var patterns = new List<Regex> { new(@"_in$") };
+        Assert.True(NamingValidator.IsValid("pressure_in", NamingStyle.PascalCase, true, patterns));
+    }
+
+    [Fact]
+    public void IsValid_WithPatterns_ShortAbbreviation_AlwaysValid()
+    {
+        // "T2" is a short abbreviation — always valid regardless of style or patterns
+        Assert.True(NamingValidator.IsValid("T2", NamingStyle.PascalCase, false, null));
     }
 
 }

@@ -844,4 +844,139 @@ public class FollowNamingConventionTests
             """;
         Assert.Empty(CheckRule(code, config));
     }
+
+    // ── AdditionalPatterns ──
+
+    [Fact]
+    public void AdditionalPattern_ClassName_MatchesPattern_NoViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = [@"^[A-Z][a-zA-Z]+(_\d+)+$"]
+            }
+        };
+
+        var code = """
+            model Version_2026_1
+              Real x;
+            end Version_2026_1;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void AdditionalPattern_ClassName_WrongSlot_StillViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["function"] = [@"^[A-Z][a-zA-Z]+(_\d+)+$"]
+            }
+        };
+
+        var code = """
+            model Version_2026_1
+              Real x;
+            end Version_2026_1;
+            """;
+        var violations = CheckRule(code, config);
+        Assert.Single(violations);
+        Assert.Contains("'Version_2026_1'", violations[0].Summary);
+    }
+
+    [Fact]
+    public void AdditionalPattern_ElementName_MatchesPattern_NoViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["publicVariable"] = [@"^[A-Z_]+$"]
+            }
+        };
+
+        var code = """
+            model MyModel
+              Real MY_SPECIAL_VAR;
+            end MyModel;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void AdditionalPattern_ProtectedElement_UsesCorrectSlot()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["protectedParameter"] = [@"^_[a-z]+$"]
+            }
+        };
+
+        var code = """
+            model MyModel
+            protected
+              parameter Real _internal = 1.0;
+            end MyModel;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void AdditionalPattern_ViolationMessage_IncludesPatternReference()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = [@"^Version_\d+$"]
+            }
+        };
+
+        var code = """
+            model bad_model_name
+              Real x;
+            end bad_model_name;
+            """;
+        var violations = CheckRule(code, config);
+        Assert.Single(violations);
+        Assert.Contains("or match an allowed pattern", violations[0].Summary);
+    }
+
+    [Fact]
+    public void AdditionalPattern_NoPatterns_ViolationMessage_NoPatternReference()
+    {
+        var code = """
+            model bad_model_name
+              Real x;
+            end bad_model_name;
+            """;
+        var violations = CheckRule(code);
+        Assert.Single(violations);
+        Assert.DoesNotContain("pattern", violations[0].Summary);
+    }
+
+    [Fact]
+    public void AdditionalPattern_ExceptionNameTakesPrecedence()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            ExceptionNames = new HashSet<string> { "SPECIAL_NAME" },
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = [@"^DoesNotMatch$"]
+            }
+        };
+
+        var code = """
+            model SPECIAL_NAME
+              Real x;
+            end SPECIAL_NAME;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
 }

@@ -362,4 +362,200 @@ public class NamingConventionSettingsTests
             Assert.Equal(settings.AllowUnderscoreSuffixes, config.AllowUnderscoreSuffixes);
         }
     }
+
+    // ========================================================================
+    // AdditionalPatterns — Default values
+    // ========================================================================
+
+    [Fact]
+    public void DefaultSettings_AdditionalPatternsIsEmpty()
+    {
+        var settings = new NamingConventionSettings();
+        Assert.Empty(settings.AdditionalPatterns);
+    }
+
+    // ========================================================================
+    // AdditionalPatterns — ToConfig
+    // ========================================================================
+
+    [Fact]
+    public void ToConfig_MapsAdditionalPatterns()
+    {
+        var settings = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
+                ["function"] = ["^get_"]
+            }
+        };
+
+        var config = settings.ToConfig();
+
+        Assert.Equal(2, config.AdditionalPatterns.Count);
+        Assert.Equal(2, config.AdditionalPatterns["model"].Count);
+        Assert.Contains("^[A-Z]{2,}$", config.AdditionalPatterns["model"]);
+        Assert.Contains("^I[A-Z]", config.AdditionalPatterns["model"]);
+        Assert.Single(config.AdditionalPatterns["function"]);
+        Assert.Contains("^get_", config.AdditionalPatterns["function"]);
+    }
+
+    [Fact]
+    public void ToConfig_EmptyAdditionalPatterns_ProducesEmptyDict()
+    {
+        var settings = new NamingConventionSettings();
+        var config = settings.ToConfig();
+        Assert.Empty(config.AdditionalPatterns);
+    }
+
+    [Fact]
+    public void ToConfig_EmptyListForSlot_ExcludedFromConfig()
+    {
+        var settings = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = [],
+                ["function"] = ["^get_"]
+            }
+        };
+
+        var config = settings.ToConfig();
+
+        Assert.Single(config.AdditionalPatterns);
+        Assert.False(config.AdditionalPatterns.ContainsKey("model"));
+        Assert.True(config.AdditionalPatterns.ContainsKey("function"));
+    }
+
+    // ========================================================================
+    // AdditionalPatterns — Equals
+    // ========================================================================
+
+    [Fact]
+    public void Equals_IdenticalPatterns_ReturnsTrue()
+    {
+        var a = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
+                ["function"] = ["^get_"]
+            }
+        };
+        var b = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["function"] = ["^get_"],
+                ["model"] = ["^I[A-Z]", "^[A-Z]{2,}$"]
+            }
+        };
+
+        Assert.True(a.Equals(b));
+    }
+
+    [Fact]
+    public void Equals_DifferentPatterns_ReturnsFalse()
+    {
+        var a = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$"]
+            }
+        };
+        var b = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[a-z]+$"]
+            }
+        };
+
+        Assert.False(a.Equals(b));
+    }
+
+    [Fact]
+    public void Equals_EmptyVsNonEmptyPatterns_ReturnsFalse()
+    {
+        var a = new NamingConventionSettings();
+        var b = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$"]
+            }
+        };
+
+        Assert.False(a.Equals(b));
+    }
+
+    [Fact]
+    public void Equals_BothEmptyPatterns_ReturnsTrue()
+    {
+        var a = new NamingConventionSettings();
+        var b = new NamingConventionSettings();
+
+        Assert.True(a.Equals(b));
+    }
+
+    [Fact]
+    public void Equals_EmptyListVsMissingKey_ReturnsTrue()
+    {
+        var a = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = []
+            }
+        };
+        var b = new NamingConventionSettings();
+
+        Assert.True(a.Equals(b));
+    }
+
+    // ========================================================================
+    // AdditionalPatterns — Clone
+    // ========================================================================
+
+    [Fact]
+    public void Clone_CopiesAdditionalPatterns()
+    {
+        var original = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
+                ["function"] = ["^get_"]
+            }
+        };
+
+        var clone = original.Clone();
+
+        Assert.True(original.Equals(clone));
+        Assert.Equal(2, clone.AdditionalPatterns.Count);
+        Assert.Equal(2, clone.AdditionalPatterns["model"].Count);
+        Assert.Single(clone.AdditionalPatterns["function"]);
+    }
+
+    [Fact]
+    public void Clone_AdditionalPatternsAreIndependent()
+    {
+        var original = new NamingConventionSettings
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["model"] = ["^[A-Z]{2,}$"]
+            }
+        };
+
+        var clone = original.Clone();
+
+        clone.AdditionalPatterns["model"].Add("^I[A-Z]");
+        clone.AdditionalPatterns["function"] = ["^get_"];
+
+        Assert.Single(original.AdditionalPatterns);
+        Assert.Single(original.AdditionalPatterns["model"]);
+        Assert.False(original.AdditionalPatterns.ContainsKey("function"));
+    }
 }

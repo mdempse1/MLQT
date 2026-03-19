@@ -42,6 +42,13 @@ public class NamingConventionSettings
     public List<string> ExceptionNames { get; set; } = [];
 
     /// <summary>
+    /// Additional regex patterns per naming slot. Keys are slot names from
+    /// <see cref="NamingConventionConfig.SlotKeys"/>. Each list contains regex pattern strings.
+    /// A name is valid if it matches the base style OR any pattern for its slot.
+    /// </summary>
+    public Dictionary<string, List<string>> AdditionalPatterns { get; set; } = new();
+
+    /// <summary>
     /// Converts to the parser-layer config for the naming convention visitor.
     /// </summary>
     public NamingConventionConfig ToConfig() => new()
@@ -65,7 +72,10 @@ public class NamingConventionSettings
         ProtectedParameterNaming = ProtectedParameterNaming,
         ProtectedConstantNaming = ProtectedConstantNaming,
         AllowUnderscoreSuffixes = AllowUnderscoreSuffixes,
-        ExceptionNames = new HashSet<string>(ExceptionNames)
+        ExceptionNames = new HashSet<string>(ExceptionNames),
+        AdditionalPatterns = AdditionalPatterns
+            .Where(kvp => kvp.Value.Count > 0)
+            .ToDictionary(kvp => kvp.Key, kvp => new List<string>(kvp.Value))
     };
 
     /// <summary>
@@ -91,7 +101,29 @@ public class NamingConventionSettings
                ProtectedParameterNaming == other.ProtectedParameterNaming &&
                ProtectedConstantNaming == other.ProtectedConstantNaming &&
                AllowUnderscoreSuffixes == other.AllowUnderscoreSuffixes &&
-               ExceptionNames.OrderBy(x => x).SequenceEqual(other.ExceptionNames.OrderBy(x => x));
+               ExceptionNames.OrderBy(x => x).SequenceEqual(other.ExceptionNames.OrderBy(x => x)) &&
+               AdditionalPatternsEqual(other.AdditionalPatterns);
+    }
+
+    private bool AdditionalPatternsEqual(Dictionary<string, List<string>> other)
+    {
+        var thisKeys = AdditionalPatterns
+            .Where(kvp => kvp.Value.Count > 0)
+            .Select(kvp => kvp.Key).OrderBy(k => k).ToList();
+        var otherKeys = other
+            .Where(kvp => kvp.Value.Count > 0)
+            .Select(kvp => kvp.Key).OrderBy(k => k).ToList();
+
+        if (!thisKeys.SequenceEqual(otherKeys))
+            return false;
+
+        foreach (var key in thisKeys)
+        {
+            if (!AdditionalPatterns[key].OrderBy(p => p)
+                    .SequenceEqual(other[key].OrderBy(p => p)))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -116,6 +148,9 @@ public class NamingConventionSettings
         ProtectedParameterNaming = ProtectedParameterNaming,
         ProtectedConstantNaming = ProtectedConstantNaming,
         AllowUnderscoreSuffixes = AllowUnderscoreSuffixes,
-        ExceptionNames = new List<string>(ExceptionNames)
+        ExceptionNames = new List<string>(ExceptionNames),
+        AdditionalPatterns = AdditionalPatterns.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new List<string>(kvp.Value))
     };
 }

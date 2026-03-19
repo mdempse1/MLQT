@@ -1,6 +1,7 @@
 @using System.Threading.Tasks
 @using ModelicaParser.StyleRules
 @using ModelicaGraph
+@using static ModelicaParser.StyleRules.NamingConventionConfig
 
 @inject ISettingsService SettingsService
 @inject IJSRuntime JSRuntime
@@ -49,39 +50,54 @@
 
                     <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
                     <NamingStyleSelect Label="model" Value="_settings.StyleChecking.NamingConvention.ModelNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ModelNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ModelNaming = v)"
+                        SlotKey="@SlotKeys.Model" Patterns="@GetPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Model, p))" />
                     <NamingStyleSelect Label="function" Value="_settings.StyleChecking.NamingConvention.FunctionNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.FunctionNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.FunctionNaming = v)"
+                        SlotKey="@SlotKeys.Function" Patterns="@GetPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Function, p))" />
                     <NamingStyleSelect Label="block" Value="_settings.StyleChecking.NamingConvention.BlockNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.BlockNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.BlockNaming = v)"
+                        SlotKey="@SlotKeys.Block" Patterns="@GetPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Block, p))" />
                     <NamingStyleSelect Label="connector" Value="_settings.StyleChecking.NamingConvention.ConnectorNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ConnectorNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ConnectorNaming = v)"
+                        SlotKey="@SlotKeys.Connector" Patterns="@GetPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Connector, p))" />
                     <NamingStyleSelect Label="record" Value="_settings.StyleChecking.NamingConvention.RecordNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.RecordNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.RecordNaming = v)"
+                        SlotKey="@SlotKeys.Record" Patterns="@GetPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Record, p))" />
                     <NamingStyleSelect Label="type" Value="_settings.StyleChecking.NamingConvention.TypeNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.TypeNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.TypeNaming = v)"
+                        SlotKey="@SlotKeys.Type" Patterns="@GetPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Type, p))" />
                     <NamingStyleSelect Label="package" Value="_settings.StyleChecking.NamingConvention.PackageNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PackageNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PackageNaming = v)"
+                        SlotKey="@SlotKeys.Package" Patterns="@GetPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Package, p))" />
                     <NamingStyleSelect Label="class" Value="_settings.StyleChecking.NamingConvention.ClassNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ClassNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ClassNaming = v)"
+                        SlotKey="@SlotKeys.Class" Patterns="@GetPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Class, p))" />
                     <NamingStyleSelect Label="operator" Value="_settings.StyleChecking.NamingConvention.OperatorNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.OperatorNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.OperatorNaming = v)"
+                        SlotKey="@SlotKeys.Operator" Patterns="@GetPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Operator, p))" />
 
                     <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
                     <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.PublicVariableNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicVariableNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicVariableNaming = v)"
+                        SlotKey="@SlotKeys.PublicVariable" Patterns="@GetPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicVariable, p))" />
                     <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.PublicParameterNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicParameterNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicParameterNaming = v)"
+                        SlotKey="@SlotKeys.PublicParameter" Patterns="@GetPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicParameter, p))" />
                     <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.PublicConstantNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicConstantNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicConstantNaming = v)"
+                        SlotKey="@SlotKeys.PublicConstant" Patterns="@GetPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicConstant, p))" />
 
                     <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
                     <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.ProtectedVariableNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedVariableNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedVariableNaming = v)"
+                        SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedVariable, p))" />
                     <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.ProtectedParameterNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedParameterNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedParameterNaming = v)"
+                        SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedParameter, p))" />
                     <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.ProtectedConstantNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedConstantNaming = v)" />
+                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedConstantNaming = v)"
+                        SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedConstant, p))" />
 
                     <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
                     <MudSwitch @bind-Value="_settings.StyleChecking.NamingConvention.AllowUnderscoreSuffixes"
@@ -393,6 +409,23 @@
     private void RemoveExceptionName(string name)
     {
         _settings.StyleChecking.NamingConvention.ExceptionNames.Remove(name);
+        StateHasChanged();
+    }
+
+    private List<string> GetPatterns(string slotKey)
+    {
+        if (!_settings.StyleChecking.NamingConvention.AdditionalPatterns.TryGetValue(slotKey, out var patterns))
+        {
+            patterns = new List<string>();
+            _settings.StyleChecking.NamingConvention.AdditionalPatterns[slotKey] = patterns;
+        }
+        return patterns;
+    }
+
+    private void OnPatternsChanged(string slotKey, List<string> patterns)
+    {
+        _settings.StyleChecking.NamingConvention.AdditionalPatterns[slotKey] = patterns;
+        _settings.StyleChecking.NamingConvention.PresetName = "Custom";
         StateHasChanged();
     }
 

@@ -31,4 +31,37 @@ public record NamingConventionConfig
     /// like "NASCAR", established abbreviations like "OMC"). Compared case-sensitively.
     /// </summary>
     public HashSet<string> ExceptionNames { get; init; } = [];
+
+    /// <summary>
+    /// Additional regex patterns per naming slot. A name is valid if it matches the base
+    /// NamingStyle OR any pattern for its slot. Keys are slot names from <see cref="SlotKeys"/>.
+    /// Patterns are matched against the full original name (not suffix-stripped).
+    /// </summary>
+    public Dictionary<string, List<string>> AdditionalPatterns { get; init; } = new();
+
+    /// <summary>
+    /// Constants for the naming slot keys used in <see cref="AdditionalPatterns"/>.
+    /// Class type keys match the keys used in <see cref="ClassNamingRules"/>.
+    /// </summary>
+    public static class SlotKeys
+    {
+        // Class types
+        public const string Model = "model";
+        public const string Function = "function";
+        public const string Block = "block";
+        public const string Connector = "connector";
+        public const string Record = "record";
+        public const string Type = "type";
+        public const string Package = "package";
+        public const string Class = "class";
+        public const string Operator = "operator";
+
+        // Elements
+        public const string PublicVariable = "publicVariable";
+        public const string PublicParameter = "publicParameter";
+        public const string PublicConstant = "publicConstant";
+        public const string ProtectedVariable = "protectedVariable";
+        public const string ProtectedParameter = "protectedParameter";
+        public const string ProtectedConstant = "protectedConstant";
+    }
 }
