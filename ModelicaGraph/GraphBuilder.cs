@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
@@ -118,7 +119,7 @@ public static class GraphBuilder
 
             Parallel.ForEach(batch, filePath =>
             {
-                var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath));
+                var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath, Encoding.Latin1));
                 foreach (var model in models)
                 {
                     modelIDs.Add(model);
@@ -165,7 +166,7 @@ public static class GraphBuilder
                     if (File.Exists(packageOrderPath))
                     {
                         // Read the package.order file
-                        var packageOrderContent = File.ReadAllLines(packageOrderPath);
+                        var packageOrderContent = File.ReadAllLines(packageOrderPath, Encoding.Latin1);
 
                         // Find the TOP-LEVEL package model from the package.mo file
                         // A package.order file only applies to the main package in the file, not nested packages
