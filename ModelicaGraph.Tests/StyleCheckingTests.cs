@@ -1230,4 +1230,367 @@ end TestModel;
 
         Assert.Empty(violations);
     }
+
+    // ============================================================================
+    // isExcludedFromFormatting parameter
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_SkipsFormattingRules()
+    {
+        // Import after component should produce violations when NOT excluded
+        var code = """
+            model TestModel
+              Real x;
+              import Modelica.Math;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+
+        // First verify it produces violations normally
+        var normalViolations = StyleChecking.RunStyleChecking(model, settings);
+
+        // Now check that the same code with isExcludedFromFormatting skips the formatting rules
+        var model2 = MakeModel("TestModel", code);
+        var excludedViolations = StyleChecking.RunStyleChecking(model2, settings, isExcludedFromFormatting: true);
+
+        Assert.NotEmpty(normalViolations);
+        Assert.Empty(excludedViolations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_SkipsInitialEqAlgo()
+    {
+        var code = """
+            model TestModel
+              Real x;
+            equation
+              x = 1.0;
+            initial equation
+              x = 0.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_SkipsOneOfEachSection()
+    {
+        var code = """
+            model TestModel
+              Real x;
+              Real y;
+            equation
+              x = 1.0;
+            equation
+              y = 2.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { OneOfEachSection = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_SkipsDontMixConnections()
+    {
+        var code = """
+            model TestModel
+              Real x;
+              RealOutput y;
+            equation
+              connect(x, y);
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { DontMixConnections = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_StillChecksNonFormattingRules()
+    {
+        // Non-formatting rules like ClassHasDescription should still be checked
+        var code = "model TestModel Real x; end TestModel;";
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings
+        {
+            ClassHasDescription = true,
+            ImportStatementsFirst = true  // This should be skipped
+        };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        // Only ClassHasDescription violation, not ImportStatementsFirst
+        Assert.Single(violations);
+        Assert.Contains("description", violations[0].Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_StillChecksParameterDescription()
+    {
+        var code = """
+            model TestModel
+              parameter Real x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ParameterHasDescription = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_ExcludedFromFormatting_StillChecksAnnotations()
+    {
+        var code = """
+            model TestModel "A model"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings
+        {
+            ClassHasDocumentationInfo = true,
+            ClassHasIcon = true
+        };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+
+        Assert.Equal(2, violations.Count);
+    }
+
+    // ============================================================================
+    // CreateBaseClassHasIconCallback
+    // ============================================================================
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_NullGraph_ReturnsNull()
+    {
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(null);
+
+        Assert.Null(callback);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_WithGraph_ReturnsNonNull()
+    {
+        var graph = new DirectedGraph();
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph);
+
+        Assert.NotNull(callback);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_BaseClassNotInGraph_ReturnsFalse()
+    {
+        var graph = new DirectedGraph();
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+
+        var result = callback("NonExistent.BaseClass", "MyPackage.MyModel");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_BaseClassWithIcon_ReturnsTrue()
+    {
+        var graph = new DirectedGraph();
+        var baseCode = """
+            model BaseModel "A base"
+              annotation(Icon(coordinateSystem(extent={{-100,-100},{100,100}}),
+                graphics={Rectangle(extent={{-80,-80},{80,80}})}));
+            end BaseModel;
+            """;
+        var baseNode = new ModelNode("BaseModel", "BaseModel", baseCode);
+        graph.AddNode(baseNode);
+
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+        var result = callback("BaseModel", "MyPackage.MyModel");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_BaseClassWithoutIcon_ReturnsFalse()
+    {
+        var graph = new DirectedGraph();
+        var baseCode = """
+            model BaseModel "A base"
+              Real x;
+            equation
+              x = 1.0;
+            end BaseModel;
+            """;
+        var baseNode = new ModelNode("BaseModel", "BaseModel", baseCode);
+        graph.AddNode(baseNode);
+
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+        var result = callback("BaseModel", "MyPackage.MyModel");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_RelativeName_ResolvesViaPackageHierarchy()
+    {
+        var graph = new DirectedGraph();
+        var baseCode = """
+            model BaseModel "A base"
+              annotation(Icon(coordinateSystem(extent={{-100,-100},{100,100}}),
+                graphics={Rectangle(extent={{-80,-80},{80,80}})}));
+            end BaseModel;
+            """;
+        // The base class is at MyPackage.BaseModel
+        var baseNode = new ModelNode("MyPackage.BaseModel", "BaseModel", baseCode);
+        graph.AddNode(baseNode);
+
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+        // Relative name "BaseModel" should resolve to "MyPackage.BaseModel"
+        // when current model is "MyPackage.SubPkg.MyModel"
+        var result = callback("BaseModel", "MyPackage.SubPkg.MyModel");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_CyclicInheritance_ReturnsFalse()
+    {
+        var graph = new DirectedGraph();
+        // ModelA extends ModelB, ModelB extends ModelA (cycle) — neither has an icon
+        var codeA = """
+            model ModelA "A"
+              extends ModelB;
+            end ModelA;
+            """;
+        var codeB = """
+            model ModelB "B"
+              extends ModelA;
+            end ModelB;
+            """;
+        graph.AddNode(new ModelNode("ModelA", "ModelA", codeA));
+        graph.AddNode(new ModelNode("ModelB", "ModelB", codeB));
+
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+        var result = callback("ModelA", "SomeModel");
+
+        // Should not infinite loop, should return false
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CreateBaseClassHasIconCallback_TransitiveInheritance_ReturnsTrue()
+    {
+        var graph = new DirectedGraph();
+        // GrandBase has icon, Base extends GrandBase (no icon), Model extends Base
+        var grandBaseCode = """
+            model GrandBase "Grand base"
+              annotation(Icon(coordinateSystem(extent={{-100,-100},{100,100}}),
+                graphics={Rectangle(extent={{-80,-80},{80,80}})}));
+            end GrandBase;
+            """;
+        var baseCode = """
+            model Base "A base"
+              extends GrandBase;
+            end Base;
+            """;
+        graph.AddNode(new ModelNode("GrandBase", "GrandBase", grandBaseCode));
+        graph.AddNode(new ModelNode("Base", "Base", baseCode));
+
+        var callback = StyleChecking.CreateBaseClassHasIconCallback(graph)!;
+        var result = callback("Base", "MyModel");
+
+        Assert.True(result);
+    }
+
+    // ============================================================================
+    // baseClassHasIcon parameter in RunStyleChecking
+    // ============================================================================
+
+    [Fact]
+    public void RunStyleChecking_WithBaseClassHasIconCallback_PassesToVisitor()
+    {
+        var code = """
+            model TestModel "A model"
+              extends BaseModel;
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasIcon = true };
+
+        // Callback says base class has icon
+        Func<string, string, bool> callback = (baseClass, currentModel) => baseClass == "BaseModel";
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: callback);
+
+        // No icon violation because inherited icon found
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void RunStyleChecking_NullBaseClassHasIcon_NoInheritanceCheck()
+    {
+        var code = """
+            model TestModel "A model"
+              extends BaseModel;
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+        var model = MakeModel("TestModel", code);
+        var settings = new StyleCheckingSettings { ClassHasIcon = true };
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: null);
+
+        Assert.Single(violations);
+        Assert.Contains("Icon", violations[0].Summary);
+    }
+
+    // ============================================================================
+    // HasAnyStyleRuleEnabled
+    // ============================================================================
+
+    [Fact]
+    public void HasAnyStyleRuleEnabled_FollowNamingConvention_ReturnsTrue()
+    {
+        var settings = new StyleCheckingSettings { FollowNamingConvention = true };
+        Assert.True(settings.HasAnyStyleRuleEnabled);
+    }
+
+    [Fact]
+    public void HasAnyStyleRuleEnabled_ConstantHasDescription_ReturnsTrue()
+    {
+        var settings = new StyleCheckingSettings { ConstantHasDescription = true };
+        Assert.True(settings.HasAnyStyleRuleEnabled);
+    }
+
+    [Fact]
+    public void HasAnyStyleRuleEnabled_NoneEnabled_ReturnsFalse()
+    {
+        var settings = new StyleCheckingSettings();
+        Assert.False(settings.HasAnyStyleRuleEnabled);
+    }
 }
