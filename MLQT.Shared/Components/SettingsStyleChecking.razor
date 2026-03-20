@@ -27,107 +27,114 @@
         Label="Every public parameter must have a description" />
     <MudSwitch @bind-Value="_settings.StyleChecking.ConstantHasDescription" Color="Color.Primary" Size="Size.Small"
         Label="Every public constant must have a description" />
-    <MudSwitch @bind-Value="_settings.StyleChecking.FollowNamingConvention" Color="Color.Primary" Size="Size.Small"
-        Label="Check that the naming convention is followed" />
-
-    @if (_settings.StyleChecking.FollowNamingConvention)
-    {
-        <MudExpansionPanels Class="mt-1 ml-4 mb-2" Dense="true" Elevation="1">
-            <MudExpansionPanel Dense="true">
-                <TitleContent>
-                    <MudText Typo="Typo.body1">Naming Convention: @_settings.StyleChecking.NamingConvention.PresetName</MudText>
-                </TitleContent>
-                <ChildContent>
-                    <MudSelect T="string" Label="Preset" Value="@_settings.StyleChecking.NamingConvention.PresetName"
-                        ValueChanged="OnPresetChanged" Dense="true" Margin="Margin.Dense"
-                        Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
-                        @foreach (var preset in NamingConventionPresets.All)
-                        {
-                            <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
-                        }
-                        <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
-                    </MudSelect>
-
-                    <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
-                    <NamingStyleSelect Label="model" Value="_settings.StyleChecking.NamingConvention.ModelNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ModelNaming = v)"
-                        SlotKey="@SlotKeys.Model" Patterns="@GetPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Model, p))" />
-                    <NamingStyleSelect Label="function" Value="_settings.StyleChecking.NamingConvention.FunctionNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.FunctionNaming = v)"
-                        SlotKey="@SlotKeys.Function" Patterns="@GetPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Function, p))" />
-                    <NamingStyleSelect Label="block" Value="_settings.StyleChecking.NamingConvention.BlockNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.BlockNaming = v)"
-                        SlotKey="@SlotKeys.Block" Patterns="@GetPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Block, p))" />
-                    <NamingStyleSelect Label="connector" Value="_settings.StyleChecking.NamingConvention.ConnectorNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ConnectorNaming = v)"
-                        SlotKey="@SlotKeys.Connector" Patterns="@GetPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Connector, p))" />
-                    <NamingStyleSelect Label="record" Value="_settings.StyleChecking.NamingConvention.RecordNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.RecordNaming = v)"
-                        SlotKey="@SlotKeys.Record" Patterns="@GetPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Record, p))" />
-                    <NamingStyleSelect Label="type" Value="_settings.StyleChecking.NamingConvention.TypeNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.TypeNaming = v)"
-                        SlotKey="@SlotKeys.Type" Patterns="@GetPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Type, p))" />
-                    <NamingStyleSelect Label="package" Value="_settings.StyleChecking.NamingConvention.PackageNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PackageNaming = v)"
-                        SlotKey="@SlotKeys.Package" Patterns="@GetPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Package, p))" />
-                    <NamingStyleSelect Label="class" Value="_settings.StyleChecking.NamingConvention.ClassNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ClassNaming = v)"
-                        SlotKey="@SlotKeys.Class" Patterns="@GetPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Class, p))" />
-                    <NamingStyleSelect Label="operator" Value="_settings.StyleChecking.NamingConvention.OperatorNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.OperatorNaming = v)"
-                        SlotKey="@SlotKeys.Operator" Patterns="@GetPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Operator, p))" />
-
-                    <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
-                    <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.PublicVariableNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicVariableNaming = v)"
-                        SlotKey="@SlotKeys.PublicVariable" Patterns="@GetPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicVariable, p))" />
-                    <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.PublicParameterNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicParameterNaming = v)"
-                        SlotKey="@SlotKeys.PublicParameter" Patterns="@GetPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicParameter, p))" />
-                    <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.PublicConstantNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicConstantNaming = v)"
-                        SlotKey="@SlotKeys.PublicConstant" Patterns="@GetPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicConstant, p))" />
-
-                    <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
-                    <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.ProtectedVariableNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedVariableNaming = v)"
-                        SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedVariable, p))" />
-                    <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.ProtectedParameterNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedParameterNaming = v)"
-                        SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedParameter, p))" />
-                    <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.ProtectedConstantNaming"
-                        ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedConstantNaming = v)"
-                        SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedConstant, p))" />
-
-                    <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
-                    <MudSwitch @bind-Value="_settings.StyleChecking.NamingConvention.AllowUnderscoreSuffixes"
-                        Color="Color.Primary" Size="Size.Small"
-                        Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
-
-                    <MudText Typo="Typo.subtitle2" Class="mt-3">Exception Names</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-1">Names that bypass convention checks (e.g., product names like NASCAR)</MudText>
-                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-                        <MudTextField @bind-Value="_newExceptionName" Placeholder="Add exception name" Variant="Variant.Outlined"
-                            Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
-                        <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
-                            OnClick="AddExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newExceptionName)" />
-                    </MudStack>
-                    <MudChipSet T="string" Class="mt-1">
-                        @foreach (var name in _settings.StyleChecking.NamingConvention.ExceptionNames)
-                        {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExceptionName(name)">@name</MudChip>
-                        }
-                    </MudChipSet>
-                </ChildContent>
-            </MudExpansionPanel>
-        </MudExpansionPanels>
-    }
-
     <MudSwitch @bind-Value="_settings.StyleChecking.DontMixEquationAndAlgorithm" Color="Color.Primary" Size="Size.Small"
         Label="A class may only have either an equation or algorithm section, not both" />
     <MudSwitch @bind-Value="_settings.StyleChecking.DontMixConnections" Color="Color.Primary" Size="Size.Small"
         Label="Do not mix connections and equations in the same class" />
 
+    <MudSwitch @bind-Value="_settings.StyleChecking.FollowNamingConvention" Color="Color.Primary" Size="Size.Small"
+        Label="Check that the naming convention is followed" />
+
+    @if (_settings.StyleChecking.FollowNamingConvention)
+    {
+        <MudPaper Elevation="3" Class="pa-2 mt-2">
+            <MudSelect T="string" Label="Naming Convention Rules" Value="@_settings.StyleChecking.NamingConvention.PresetName"
+                ValueChanged="OnPresetChanged" Dense="true" Margin="Margin.Dense"
+                Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
+                @foreach (var preset in NamingConventionPresets.All)
+                {
+                    <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
+                }
+                <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
+            </MudSelect>
+
+            <MudSwitch @bind-Value="_settings.StyleChecking.NamingConvention.AllowUnderscoreSuffixes"
+                Color="Color.Primary" Size="Size.Small"
+                Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
+
+            <MudText Typo="Typo.body1" Class="mb-1 mt-2">Names that bypass convention checks (e.g., product names)</MudText>
+            <MudChipSet T="string" Class="mt-1">
+                @foreach (var name in _settings.StyleChecking.NamingConvention.ExceptionNames)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExceptionName(name)">@name</MudChip>
+                }
+            </MudChipSet>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                <MudTextField @bind-Value="_newExceptionName" Placeholder="e.g. product names" 
+                    Variant="Variant.Outlined" Label="Add additional exceptions"
+                    Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
+                    OnClick="AddExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newExceptionName)" />
+            </MudStack>
+
+            @if (_settings.StyleChecking.NamingConvention.PresetName == "Custom")
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
+                <MudGrid>
+                    <MudItem xs="6">
+                        <NamingStyleSelect Label="package" Value="_settings.StyleChecking.NamingConvention.PackageNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PackageNaming = v)"
+                            SlotKey="@SlotKeys.Package" Patterns="@GetPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Package, p))" />
+                        <NamingStyleSelect Label="model" Value="_settings.StyleChecking.NamingConvention.ModelNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ModelNaming = v)"
+                            SlotKey="@SlotKeys.Model" Patterns="@GetPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Model, p))" />
+                        <NamingStyleSelect Label="function" Value="_settings.StyleChecking.NamingConvention.FunctionNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.FunctionNaming = v)"
+                            SlotKey="@SlotKeys.Function" Patterns="@GetPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Function, p))" />
+                        <NamingStyleSelect Label="block" Value="_settings.StyleChecking.NamingConvention.BlockNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.BlockNaming = v)"
+                            SlotKey="@SlotKeys.Block" Patterns="@GetPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Block, p))" />
+                        <NamingStyleSelect Label="connector" Value="_settings.StyleChecking.NamingConvention.ConnectorNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ConnectorNaming = v)"
+                            SlotKey="@SlotKeys.Connector" Patterns="@GetPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Connector, p))" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <NamingStyleSelect Label="record" Value="_settings.StyleChecking.NamingConvention.RecordNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.RecordNaming = v)"
+                            SlotKey="@SlotKeys.Record" Patterns="@GetPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Record, p))" />
+                        <NamingStyleSelect Label="type" Value="_settings.StyleChecking.NamingConvention.TypeNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.TypeNaming = v)"
+                            SlotKey="@SlotKeys.Type" Patterns="@GetPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Type, p))" />
+                        <NamingStyleSelect Label="class" Value="_settings.StyleChecking.NamingConvention.ClassNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ClassNaming = v)"
+                            SlotKey="@SlotKeys.Class" Patterns="@GetPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Class, p))" />
+                        <NamingStyleSelect Label="operator" Value="_settings.StyleChecking.NamingConvention.OperatorNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.OperatorNaming = v)"
+                            SlotKey="@SlotKeys.Operator" Patterns="@GetPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.Operator, p))" />
+                    </MudItem>
+                </MudGrid>
+
+
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
+                        <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.PublicVariableNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicVariableNaming = v)"
+                            SlotKey="@SlotKeys.PublicVariable" Patterns="@GetPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicVariable, p))" />
+                        <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.PublicParameterNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicParameterNaming = v)"
+                            SlotKey="@SlotKeys.PublicParameter" Patterns="@GetPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicParameter, p))" />
+                        <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.PublicConstantNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.PublicConstantNaming = v)"
+                            SlotKey="@SlotKeys.PublicConstant" Patterns="@GetPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.PublicConstant, p))" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
+                        <NamingStyleSelect Label="Variables" Value="_settings.StyleChecking.NamingConvention.ProtectedVariableNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedVariableNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedVariable, p))" />
+                        <NamingStyleSelect Label="Parameters" Value="_settings.StyleChecking.NamingConvention.ProtectedParameterNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedParameterNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedParameter, p))" />
+                        <NamingStyleSelect Label="Constants" Value="_settings.StyleChecking.NamingConvention.ProtectedConstantNaming"
+                            ValueChanged="v => OnNamingStyleChanged(() => _settings.StyleChecking.NamingConvention.ProtectedConstantNaming = v)"
+                            SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnPatternsChanged(SlotKeys.ProtectedConstant, p))" />
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudPaper>
+    }
+                
     <MudText Typo="Typo.subtitle2" Class="mt-4">Formatting rules</MudText>
     <MudSwitch @bind-Value="_settings.StyleChecking.ApplyFormattingRules" Color="Color.Primary" Size="Size.Small"
         Label="Apply formatting rules.  If off then just used as part of style guidelines" />

@@ -183,95 +183,102 @@
 
         @if (SelectedSettings.FollowNamingConvention)
         {
-            <MudExpansionPanels Class="mt-1 ml-0 mb-2" Dense="true" Elevation="0" Gutters="false">
-                <MudExpansionPanel Dense="true">
-                    <TitleContent>
-                        <MudText Typo="Typo.body1">Naming Convention: @SelectedSettings.NamingConvention.PresetName</MudText>
-                    </TitleContent>
-                    <ChildContent>
-                        <MudSelect T="string" Label="Preset" Value="@SelectedSettings.NamingConvention.PresetName"
-                            ValueChanged="OnRepoPresetChanged" Dense="true" Margin="Margin.Dense"
-                            Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
-                            @foreach (var preset in NamingConventionPresets.All)
-                            {
-                                <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
-                            }
-                            <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
-                        </MudSelect>
+            <MudPaper Elevation="3" Class="pa-2 mt-2">
+                <MudSelect T="string" Label="Naming Convention Rules" Value="@SelectedSettings.NamingConvention.PresetName"
+                    ValueChanged="OnRepoPresetChanged" Dense="true" Margin="Margin.Dense"
+                    Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
+                    @foreach (var preset in NamingConventionPresets.All)
+                    {
+                        <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
+                    }
+                    <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
+                </MudSelect>
 
-                        <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
-                        <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)"
-                            SlotKey="@SlotKeys.Model" Patterns="@GetRepoPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Model, p))" />
-                        <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)"
-                            SlotKey="@SlotKeys.Function" Patterns="@GetRepoPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Function, p))" />
-                        <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)"
-                            SlotKey="@SlotKeys.Block" Patterns="@GetRepoPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Block, p))" />
-                        <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)"
-                            SlotKey="@SlotKeys.Connector" Patterns="@GetRepoPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Connector, p))" />
-                        <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)"
-                            SlotKey="@SlotKeys.Record" Patterns="@GetRepoPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Record, p))" />
-                        <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)"
-                            SlotKey="@SlotKeys.Type" Patterns="@GetRepoPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Type, p))" />
-                        <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)"
-                            SlotKey="@SlotKeys.Package" Patterns="@GetRepoPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Package, p))" />
-                        <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)"
-                            SlotKey="@SlotKeys.Class" Patterns="@GetRepoPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Class, p))" />
-                        <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)"
-                            SlotKey="@SlotKeys.Operator" Patterns="@GetRepoPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Operator, p))" />
+                <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
+                    Color="Color.Primary" Size="Size.Small"
+                    Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
 
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
-                        <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)"
-                            SlotKey="@SlotKeys.PublicVariable" Patterns="@GetRepoPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicVariable, p))" />
-                        <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)"
-                            SlotKey="@SlotKeys.PublicParameter" Patterns="@GetRepoPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicParameter, p))" />
-                        <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)"
-                            SlotKey="@SlotKeys.PublicConstant" Patterns="@GetRepoPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicConstant, p))" />
+                <MudText Typo="Typo.body1" Class="mb-1 mt-2">Names that bypass convention checks (e.g., product names)</MudText>
+                <MudChipSet T="string" Class="mt-1">
+                    @foreach (var name in SelectedSettings.NamingConvention.ExceptionNames)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveRepoExceptionName(name)">@name</MudChip>
+                    }
+                </MudChipSet>
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                    <MudTextField @bind-Value="_newRepoExceptionName" Placeholder="e.g. product names" 
+                        Variant="Variant.Outlined" Label="Add additional exceptions"
+                        Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
+                        OnClick="AddRepoExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newRepoExceptionName)" />
+                </MudStack>
 
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
-                        <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)"
-                            SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetRepoPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedVariable, p))" />
-                        <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)"
-                            SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetRepoPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedParameter, p))" />
-                        <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
-                            ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)"
-                            SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetRepoPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedConstant, p))" />
+                @if (SelectedSettings.NamingConvention.PresetName == "Custom")
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)"
+                                SlotKey="@SlotKeys.Package" Patterns="@GetRepoPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Package, p))" />
+                            <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)"
+                                SlotKey="@SlotKeys.Model" Patterns="@GetRepoPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Model, p))" />
+                            <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)"
+                                SlotKey="@SlotKeys.Function" Patterns="@GetRepoPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Function, p))" />
+                            <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)"
+                                SlotKey="@SlotKeys.Block" Patterns="@GetRepoPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Block, p))" />
+                            <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)"
+                                SlotKey="@SlotKeys.Connector" Patterns="@GetRepoPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Connector, p))" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)"
+                                SlotKey="@SlotKeys.Record" Patterns="@GetRepoPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Record, p))" />
+                            <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)"
+                                SlotKey="@SlotKeys.Type" Patterns="@GetRepoPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Type, p))" />
+                            <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)"
+                                SlotKey="@SlotKeys.Class" Patterns="@GetRepoPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Class, p))" />
+                            <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)"
+                                SlotKey="@SlotKeys.Operator" Patterns="@GetRepoPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Operator, p))" />
+                        </MudItem>
+                    </MudGrid>
 
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Suffix Handling</MudText>
-                        <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
-                            Color="Color.Primary" Size="Size.Small"
-                            Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
 
-                        <MudText Typo="Typo.subtitle2" Class="mt-3">Exception Names</MudText>
-                        <MudText Typo="Typo.body2" Class="mb-1">Names that bypass convention checks (e.g., product names like NASCAR)</MudText>
-                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-                            <MudTextField @bind-Value="_newRepoExceptionName" Placeholder="Add exception name" Variant="Variant.Outlined"
-                                Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
-                            <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
-                                OnClick="AddRepoExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newRepoExceptionName)" />
-                        </MudStack>
-                        <MudChipSet T="string" Class="mt-1">
-                            @foreach (var name in SelectedSettings.NamingConvention.ExceptionNames)
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveRepoExceptionName(name)">@name</MudChip>
-                            }
-                        </MudChipSet>
-                    </ChildContent>
-                </MudExpansionPanel>
-            </MudExpansionPanels>
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
+                            <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)"
+                                SlotKey="@SlotKeys.PublicVariable" Patterns="@GetRepoPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicVariable, p))" />
+                            <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)"
+                                SlotKey="@SlotKeys.PublicParameter" Patterns="@GetRepoPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicParameter, p))" />
+                            <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)"
+                                SlotKey="@SlotKeys.PublicConstant" Patterns="@GetRepoPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicConstant, p))" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
+                            <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)"
+                                SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetRepoPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedVariable, p))" />
+                            <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)"
+                                SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetRepoPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedParameter, p))" />
+                            <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
+                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)"
+                                SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetRepoPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedConstant, p))" />
+                        </MudItem>
+                    </MudGrid>
+                }
+            </MudPaper>
         }
         
         <MudText Typo="Typo.body1" Class="mt-4">Formatting rules</MudText>

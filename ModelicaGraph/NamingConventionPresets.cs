@@ -30,6 +30,7 @@ public static class NamingConventionPresets
         ProtectedParameterNaming = NamingStyle.CamelCase,
         ProtectedConstantNaming = NamingStyle.CamelCase,
         AllowUnderscoreSuffixes = true,
+        AdditionalPatterns = new()
     };
 
     /// <summary>
@@ -54,6 +55,7 @@ public static class NamingConventionPresets
         ProtectedParameterNaming = NamingStyle.SnakeCase,
         ProtectedConstantNaming = NamingStyle.SnakeCase,
         AllowUnderscoreSuffixes = false,
+        AdditionalPatterns = new()
     };
 
     /// <summary>
@@ -78,6 +80,7 @@ public static class NamingConventionPresets
         ProtectedParameterNaming = NamingStyle.CamelCase,
         ProtectedConstantNaming = NamingStyle.UpperCase,
         AllowUnderscoreSuffixes = true,
+        AdditionalPatterns = new()
     };
 
     /// <summary>

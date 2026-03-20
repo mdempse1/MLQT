@@ -2,10 +2,10 @@
 @using System.Text.RegularExpressions
 
 <MudStack Spacing="0">
-    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center">
+    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" Style="width: fit-content;">
         <MudSelect T="NamingStyle" Label="@Label" Value="@Value" ValueChanged="OnValueChanged"
             Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
-            Style="max-width:250px;" Typo="Typo.body1">
+            Style="min-width:200px;" Typo="Typo.body1">
             <MudSelectItem T="NamingStyle" Value="NamingStyle.Any">Any (no check)</MudSelectItem>
             <MudSelectItem T="NamingStyle" Value="NamingStyle.PascalCase">PascalCase</MudSelectItem>
             <MudSelectItem T="NamingStyle" Value="NamingStyle.CamelCase">camelCase</MudSelectItem>
@@ -14,35 +14,42 @@
         </MudSelect>
         @if (!string.IsNullOrEmpty(SlotKey))
         {
-            <MudBadge Content="@PatternCount" Visible="@(PatternCount > 0)" Color="Color.Primary" Overlap="true">
-                <MudIconButton Icon="@Icons.Material.Outlined.FilterAlt" Size="Size.Small"
-                    OnClick="() => _showPatterns = !_showPatterns" />
+            <MudBadge Content="@PatternCount" Visible="@(PatternCount > 0)" Color="Color.Tertiary" Overlap="true">
+                <MudTooltip Text="Add additional allowed patterns using regular expressions">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Size="Size.Medium" Color="Color.Primary"
+                        OnClick="() => _showPatterns = !_showPatterns" />
+                </MudTooltip>
             </MudBadge>
         }
     </MudStack>
 
-    @if (_showPatterns && Patterns != null)
+    @if ((Patterns != null && Patterns.Count > 0) || _showPatterns)
     {
         <MudPaper Elevation="0" Class="ml-4 mt-1 mb-1 pa-2"
             Style="border-left: 2px solid var(--mud-palette-primary);">
-            <MudText Typo="Typo.body2" Class="mb-1">Additional allowed patterns (regex, matched on full name)</MudText>
-            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-                <MudTextField @bind-Value="_newPattern" Placeholder="e.g., ^[A-Z][a-zA-Z]+(_\d+)+$"
-                    Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body2"
-                    Style="width: 300px; font-family: monospace;" Immediate="true"
-                    Error="@(_patternError != null)" ErrorText="@_patternError" />
-                <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined"
-                    Color="Color.Primary" Size="Size.Medium"
-                    OnClick="AddPattern" Disabled="@string.IsNullOrWhiteSpace(_newPattern)" />
-            </MudStack>
-            <MudChipSet T="string" Class="mt-1">
-                @foreach (var pattern in Patterns)
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                        Style="font-family: monospace;"
-                        OnClose="() => RemovePattern(pattern)">@pattern</MudChip>
-                }
-            </MudChipSet>
+            @if (Patterns != null) {
+                <MudChipSet T="string" Class="mt-1">
+                    @foreach (var pattern in Patterns)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                            Style="font-family: monospace;"
+                            OnClose="() => RemovePattern(pattern)">@pattern</MudChip>
+                    }
+                </MudChipSet>                
+            }
+            @if (_showPatterns)
+            {
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                    <MudTextField @bind-Value="_newPattern" Placeholder="e.g., ^[A-Z][a-zA-Z]+(_\d+)+$"
+                        Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body2"
+                        Style="width: 300px; font-family: monospace;" Immediate="true"
+                        Label="Add additional allowed patterns (regex, matched on full name)"
+                        Error="@(_patternError != null)" ErrorText="@_patternError" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Check" Variant="Variant.Outlined"
+                        Color="Color.Success" Size="Size.Medium"
+                        OnClick="AddPattern" Disabled="@string.IsNullOrWhiteSpace(_newPattern)" />
+                </MudStack>
+            }
         </MudPaper>
     }
 </MudStack>
@@ -68,7 +75,7 @@
     }
 
     private async Task AddPattern()
-    {
+    {        
         _patternError = null;
         var pattern = _newPattern.Trim();
         if (string.IsNullOrEmpty(pattern))
@@ -89,6 +96,7 @@
             Patterns.Add(pattern);
             _newPattern = "";
             await PatternsChanged.InvokeAsync(Patterns);
+            _showPatterns = false;
         }
     }
 
