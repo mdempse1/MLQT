@@ -24,6 +24,25 @@ public class StyleCheckingService : IStyleCheckingService
     private bool _stopRequested;
     private long _lastProgressTicks = 0;
 
+    /// <summary>
+    /// Cancels any in-flight workers and clears pending violations so a new
+    /// checking run starts from a clean slate. Must be called at the top of
+    /// every public entry point that starts style checking.
+    /// </summary>
+    private void CancelExistingWorkers()
+    {
+        lock (_workerLock)
+        {
+            foreach (var worker in _workers)
+                worker.CancelProcessing();
+            _workers.Clear();
+        }
+        lock (_pendingViolationsLock)
+        {
+            _pendingViolations.Clear();
+        }
+    }
+
     /// <inheritdoc/>
     public event Action<bool>? OnProgressChanged;
 
@@ -194,6 +213,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public async Task StartBackgroundCheckingAsync(Repository repository)
     {
+        CancelExistingWorkers();
         _stopRequested = false;
 
         //Check that the repository style settings exist
@@ -246,6 +266,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public void StartBackgroundChecking(Repository repository)
     {
+        CancelExistingWorkers();
         _stopRequested = false;
 
         //Check that the repository style settings exist
@@ -298,7 +319,9 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public void StartBackgroundCheckingForRepositories(IReadOnlyList<Repository> repositories)
     {
+        CancelExistingWorkers();
         _stopRequested = false;
+
         bool anyWorkerStarted = false;
 
         foreach (var repository in repositories)
@@ -381,6 +404,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public async Task CheckModelsAsync(IEnumerable<string> modelIds, DirectedGraph graph)
     {
+        CancelExistingWorkers();
         _stopRequested = false;
 
         var modelIdList = modelIds.ToList();

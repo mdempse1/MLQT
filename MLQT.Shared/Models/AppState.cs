@@ -327,6 +327,17 @@ public class AppState
             await OnRunDeferredStyleChecking.Invoke();
     }
 
+    /// <summary>
+    /// Re-runs style checking unconditionally, resetting the <see cref="HasStyleCheckingRun"/>
+    /// guard so that <see cref="RunDeferredStyleCheckingAsync"/> proceeds even if style
+    /// checking has already completed in this session.
+    /// </summary>
+    public async Task RerunStyleCheckingAsync()
+    {
+        HasStyleCheckingRun = false;
+        await RunDeferredStyleCheckingAsync();
+    }
+
     /// <summary>Triggers deferred external resource analysis.</summary>
     public async Task RunDeferredExternalResourcesAsync()
     {
