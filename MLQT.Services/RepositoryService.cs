@@ -220,12 +220,14 @@ public class RepositoryService : IRepositoryService
             {
                 var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(File.ReadAllText(settingsPath));
                 repository.StyleSettings = settings;
+
             }
             else
             {
                 StyleCheckingSettings settings = new();
                 var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 repository.StyleSettings = settings;
+                Info("RepositoryService", $"No settings.json found for '{repository.Name}' — using defaults");
             }
 
             repository.IsLoaded = true;

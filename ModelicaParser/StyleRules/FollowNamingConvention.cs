@@ -39,7 +39,8 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
                 {
                     try
                     {
-                        compiled.Add(new Regex(pattern, RegexOptions.Compiled,
+                        var sanitized = NamingValidator.SanitizePattern(pattern);
+                        compiled.Add(new Regex(sanitized, RegexOptions.Compiled,
                             TimeSpan.FromMilliseconds(100)));
                     }
                     catch (RegexParseException)

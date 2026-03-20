@@ -60,6 +60,7 @@ Static utility with no ANTLR dependencies. All methods are pure functions.
 | `IsUpperCase(name)` | All uppercase + underscores + digits, no leading/trailing/double underscores |
 | `IsShortAbbreviation(name)` | Letter followed by only digits (T, P3, V12) — always valid |
 | `StripSuffix(name)` | Strips last `_segment`; returns `(baseName, suffix)` |
+| `SanitizePattern(pattern)` | Strips accidental outer `[`/`]` brackets when inner content has `^`/`$` anchors |
 
 **Key behaviors of `IsValid`:**
 1. `null`/empty names → always valid
@@ -285,3 +286,4 @@ When any individual value changes, `PresetName` is set to "Custom". When a prese
 11. **Patterns match full original name** — Regex patterns are matched against the original name, not the suffix-stripped version, giving pattern authors full control
 12. **Pre-compiled regex with timeout** — Patterns are compiled once in the visitor constructor with `RegexOptions.Compiled` and a 100ms timeout to prevent catastrophic backtracking. Invalid patterns are silently skipped
 13. **Adding patterns sets preset to "Custom"** — Consistent with how changing any naming style value switches away from a preset
+14. **Pattern sanitization** — `NamingValidator.SanitizePattern()` strips accidental outer `[`/`]` brackets from patterns when the inner content contains regex anchors (`^` or `$`). This handles patterns manually entered in settings JSON with unintended bracket wrapping (e.g., `[^[A-Z]...$]` → `^[A-Z]...$`). Applied both in the `FollowNamingConvention` constructor during compilation and in `NamingStyleSelect.AddPattern()` during UI input

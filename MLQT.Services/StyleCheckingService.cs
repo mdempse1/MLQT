@@ -25,8 +25,9 @@ public class StyleCheckingService : IStyleCheckingService
     private long _lastProgressTicks = 0;
 
     /// <summary>
-    /// Cancels any in-flight workers and clears pending violations so a new
-    /// checking run starts from a clean slate. Must be called at the top of
+    /// Cancels any in-flight workers, clears pending violations, and removes
+    /// previously delivered style checking messages from CodeReviewService so a
+    /// new checking run starts from a clean slate. Must be called at the top of
     /// every public entry point that starts style checking.
     /// </summary>
     private void CancelExistingWorkers()
@@ -41,6 +42,9 @@ public class StyleCheckingService : IStyleCheckingService
         {
             _pendingViolations.Clear();
         }
+        // Remove style checking violations already delivered to CodeReviewService
+        // so they don't duplicate when the new run re-produces them
+        _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == "StyleChecking");
     }
 
     /// <inheritdoc/>
@@ -57,6 +61,7 @@ public class StyleCheckingService : IStyleCheckingService
     private readonly ISettingsService _settingsService;
     private readonly ICustomDictionaryService _customDictionaryService;
     private readonly IDictionaryManagerService _dictionaryManagerService;
+    private readonly ICodeReviewService _codeReviewService;
     private SpellChecker? _spellChecker;
     private bool _dictionaryLoaded;
     private List<string>? _lastLanguages;
@@ -67,13 +72,15 @@ public class StyleCheckingService : IStyleCheckingService
         IRepositoryService repositoryService,
         ISettingsService settingsService,
         ICustomDictionaryService customDictionaryService,
-        IDictionaryManagerService dictionaryManagerService)
+        IDictionaryManagerService dictionaryManagerService,
+        ICodeReviewService codeReviewService)
     {
         _libraryDataService = libraryDataService;
         _repositoryService = repositoryService;
         _settingsService = settingsService;
         _customDictionaryService = customDictionaryService;
         _dictionaryManagerService = dictionaryManagerService;
+        _codeReviewService = codeReviewService;
 
         // Reload the spell checker when the custom dictionary or available dictionaries change
         _customDictionaryService.OnDictionaryChanged += () =>

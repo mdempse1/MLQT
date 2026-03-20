@@ -301,4 +301,78 @@ public class NamingValidatorTests
         Assert.True(NamingValidator.IsValid("T2", NamingStyle.PascalCase, false, null));
     }
 
+    // ── SanitizePattern ──
+
+    [Theory]
+    [InlineData(@"[^[A-Z][a-zA-Z]*(_rec)$]", @"^[A-Z][a-zA-Z]*(_rec)$")]
+    [InlineData(@"[^[a-z][a-zA-Z\d_]*(_rec)$]", @"^[a-z][a-zA-Z\d_]*(_rec)$")]
+    [InlineData(@"[^[A-Z][a-zA-Z]*(_\d+)+$]", @"^[A-Z][a-zA-Z]*(_\d+)+$")]
+    public void SanitizePattern_StripsAccidentalOuterBrackets(string input, string expected)
+    {
+        Assert.Equal(expected, NamingValidator.SanitizePattern(input));
+    }
+
+    [Theory]
+    [InlineData(@"^[A-Z][a-zA-Z]*$")]
+    [InlineData(@"^[a-z]+(_\d+)+$")]
+    [InlineData(@"[A-Z]")]
+    [InlineData(@"abc")]
+    [InlineData(@"")]
+    public void SanitizePattern_LeavesValidPatternsUnchanged(string pattern)
+    {
+        Assert.Equal(pattern, NamingValidator.SanitizePattern(pattern));
+    }
+
+    [Fact]
+    public void SanitizePattern_OnlyStripsWhenInnerHasAnchors()
+    {
+        // [abc] — no ^ or $ inside, so not stripped (legitimate character class)
+        Assert.Equal("[abc]", NamingValidator.SanitizePattern("[abc]"));
+    }
+
+    [Fact]
+    public void SanitizePattern_StripsWhenInnerHasStartAnchor()
+    {
+        // [^abc] — inner starts with ^, and ^abc is valid regex
+        Assert.Equal("^abc", NamingValidator.SanitizePattern("[^abc]"));
+    }
+
+    [Fact]
+    public void SanitizePattern_StripsWhenInnerHasEndAnchor()
+    {
+        // [abc$] — inner ends with $, and abc$ is valid regex
+        Assert.Equal("abc$", NamingValidator.SanitizePattern("[abc$]"));
+    }
+
+    [Fact]
+    public void SanitizePattern_DoesNotStripWhenInnerIsInvalidRegex()
+    {
+        // [^(unclosed$] — inner "^(unclosed$" is not valid regex
+        // so the original is kept
+        Assert.Equal("[^(unclosed$]", NamingValidator.SanitizePattern("[^(unclosed$]"));
+    }
+
+    [Fact]
+    public void SanitizePattern_TooShortToStrip()
+    {
+        Assert.Equal("[]", NamingValidator.SanitizePattern("[]"));
+        Assert.Equal("[", NamingValidator.SanitizePattern("["));
+        Assert.Equal("]", NamingValidator.SanitizePattern("]"));
+    }
+
+    [Fact]
+    public void SanitizePattern_SanitizedPatternMatchesCorrectly()
+    {
+        // End-to-end: bracket-wrapped pattern from settings.json should match frame_rec
+        var original = @"[^[a-z][a-zA-Z\d_]*(_rec)$]";
+        var sanitized = NamingValidator.SanitizePattern(original);
+        Assert.Equal(@"^[a-z][a-zA-Z\d_]*(_rec)$", sanitized);
+
+        var regex = new Regex(sanitized);
+        Assert.Matches(regex, "frame_rec");
+        Assert.Matches(regex, "myData_rec");
+        Assert.DoesNotMatch(regex, "FrameRec");
+        Assert.DoesNotMatch(regex, "frame");
+    }
+
 }

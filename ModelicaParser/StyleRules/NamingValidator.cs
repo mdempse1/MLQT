@@ -184,4 +184,37 @@ public static class NamingValidator
 
         return (baseName, suffix);
     }
+
+    /// <summary>
+    /// Sanitizes a regex pattern by detecting and stripping accidental outer brackets.
+    /// Patterns like "[^[A-Z][a-zA-Z]*(_rec)$]" are sanitized to "^[A-Z][a-zA-Z]*(_rec)$"
+    /// because the outer brackets turn the ^ from a start-of-string anchor into a negated
+    /// character class, completely changing the regex semantics. This handles patterns that
+    /// were manually entered in settings JSON files with unintended wrapping brackets.
+    /// </summary>
+    public static string SanitizePattern(string pattern)
+    {
+        if (pattern.Length <= 2 || pattern[0] != '[' || pattern[^1] != ']')
+            return pattern;
+
+        var inner = pattern[1..^1];
+
+        // Only strip if the inner content has start/end anchors — this strongly
+        // indicates the brackets were wrapping a complete regex rather than being
+        // an intentional character class
+        if (inner.Length > 0 && (inner[0] == '^' || inner[^1] == '$'))
+        {
+            try
+            {
+                _ = new Regex(inner);
+                return inner;
+            }
+            catch (RegexParseException)
+            {
+                // Inner content is not valid regex — keep original
+            }
+        }
+
+        return pattern;
+    }
 }

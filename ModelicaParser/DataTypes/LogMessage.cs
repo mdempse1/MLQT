@@ -30,6 +30,12 @@ public class LogMessage
     /// </summary>
     public int LineNumber { get; set; }
 
+    /// <summary>
+    /// Identifies the origin of this message (e.g., "StyleChecking", "Parser", "ExternalTool").
+    /// Used to selectively clear messages when a subsystem re-runs.
+    /// </summary>
+    public string Source { get; set; } = "";
+
     public LogMessage(string modelName, string severity, int lineNumber, string summary, string details = "")
     {
         ModelName = modelName;

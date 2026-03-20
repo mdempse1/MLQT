@@ -1598,6 +1598,7 @@
                     {
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
                             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id));
+
                         foreach (var v in violations)
                             combinedViolations.Add(v);
                     }

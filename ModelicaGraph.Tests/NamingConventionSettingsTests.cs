@@ -1,3 +1,5 @@
+using System.Text.Json;
+using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 
 namespace ModelicaGraph.Tests;
@@ -557,5 +559,108 @@ public class NamingConventionSettingsTests
         Assert.Single(original.AdditionalPatterns);
         Assert.Single(original.AdditionalPatterns["model"]);
         Assert.False(original.AdditionalPatterns.ContainsKey("function"));
+    }
+
+    // ========================================================================
+    // AdditionalPatterns — JSON round-trip
+    // ========================================================================
+
+    [Fact]
+    public void JsonRoundTrip_AdditionalPatterns_PreservedCorrectly()
+    {
+        var original = new NamingConventionSettings
+        {
+            RecordNaming = NamingStyle.PascalCase,
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [
+                    @"^[A-Z][a-zA-Z]*(_rec)$",
+                    @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                ]
+            }
+        };
+
+        var json = JsonSerializer.Serialize(original);
+        var deserialized = JsonSerializer.Deserialize<NamingConventionSettings>(json)!;
+
+        Assert.True(deserialized.AdditionalPatterns.ContainsKey("record"));
+        Assert.Equal(2, deserialized.AdditionalPatterns["record"].Count);
+        Assert.Equal(@"^[A-Z][a-zA-Z]*(_rec)$", deserialized.AdditionalPatterns["record"][0]);
+        Assert.Equal(@"^[a-z][a-zA-Z\d_]*(_rec)$", deserialized.AdditionalPatterns["record"][1]);
+    }
+
+    // ========================================================================
+    // AdditionalPatterns — Full end-to-end: Settings → JSON → ToConfig → Visitor
+    // ========================================================================
+
+    [Fact]
+    public void EndToEnd_FrameRec_RecordWithPatterns_NoViolation()
+    {
+        // Simulate the full runtime flow: settings with patterns → JSON → deserialize → ToConfig → visitor
+        var settings = new NamingConventionSettings
+        {
+            RecordNaming = NamingStyle.PascalCase,
+            AllowUnderscoreSuffixes = true,
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [
+                    @"^[A-Z][a-zA-Z]*(_rec)$",
+                    @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                ]
+            }
+        };
+
+        // Serialize and deserialize to simulate persistence
+        var json = JsonSerializer.Serialize(settings);
+        var loadedSettings = JsonSerializer.Deserialize<NamingConventionSettings>(json)!;
+
+        // Convert to config (as StyleChecking.RunStyleChecking does)
+        var config = loadedSettings.ToConfig();
+
+        // Verify patterns survived the round-trip into the config
+        Assert.True(config.AdditionalPatterns.ContainsKey("record"),
+            "Config should have 'record' key in AdditionalPatterns");
+        Assert.Equal(2, config.AdditionalPatterns["record"].Count);
+
+        // Run the visitor (as StyleChecking.RunStyleChecking does)
+        var code = "record frame_rec\nend frame_rec;";
+        var parseTree = ModelicaParserHelper.Parse(code);
+        var visitor = new FollowNamingConvention(config, "TestPackage");
+        visitor.VisitStored_definition(parseTree);
+
+        Assert.Empty(visitor.RuleViolations);
+    }
+
+    [Fact]
+    public void EndToEnd_StyleCheckingSettings_FrameRec_NoViolation()
+    {
+        // Simulate via StyleCheckingSettings (the outer container)
+        var styleSettings = new StyleCheckingSettings
+        {
+            FollowNamingConvention = true,
+            NamingConvention = new NamingConventionSettings
+            {
+                RecordNaming = NamingStyle.PascalCase,
+                AllowUnderscoreSuffixes = true,
+                AdditionalPatterns = new Dictionary<string, List<string>>
+                {
+                    ["record"] = [
+                        @"^[A-Z][a-zA-Z]*(_rec)$",
+                        @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                    ]
+                }
+            }
+        };
+
+        // Serialize and deserialize the full StyleCheckingSettings
+        var json = JsonSerializer.Serialize(styleSettings);
+        var loaded = JsonSerializer.Deserialize<StyleCheckingSettings>(json)!;
+
+        // Run through StyleChecking.RunStyleChecking
+        var model = new ModelicaGraph.DataTypes.ModelDefinition(
+            "frame_rec", "record frame_rec\nend frame_rec;");
+
+        var violations = StyleChecking.RunStyleChecking(model, loaded, "TestPackage.frame_rec");
+        Assert.Empty(violations);
     }
 }

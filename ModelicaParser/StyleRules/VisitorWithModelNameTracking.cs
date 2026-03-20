@@ -44,7 +44,10 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
     /// </summary>
     protected void AddViolation(int lineNumber, string message)
     {
-        _ruleViolations.Add(new LogMessage(CurrentModelName, "Style warning", lineNumber, message));
+        _ruleViolations.Add(new LogMessage(CurrentModelName, "Style warning", lineNumber, message)
+        {
+            Source = "StyleChecking"
+        });
     }
 
     /// <summary>

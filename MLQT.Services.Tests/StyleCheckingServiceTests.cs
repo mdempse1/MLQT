@@ -15,6 +15,7 @@ public class StyleCheckingServiceTests
     private LibraryDataService _libraryDataService = null!;
     private RepositoryService _repositoryService = null!;
     private InMemorySettingsService _settingsService = null!;
+    private CodeReviewService _codeReviewService = null!;
 
     private StyleCheckingService CreateService()
     {
@@ -24,7 +25,8 @@ public class StyleCheckingServiceTests
         _repositoryService = new RepositoryService(_libraryDataService, _settingsService, fileMonitoringService);
         var customDictionaryService = new StubCustomDictionaryService();
         var dictionaryManagerService = new StubDictionaryManagerService();
-        return new StyleCheckingService(_libraryDataService, _repositoryService, _settingsService, customDictionaryService, dictionaryManagerService);
+        _codeReviewService = new CodeReviewService();
+        return new StyleCheckingService(_libraryDataService, _repositoryService, _settingsService, customDictionaryService, dictionaryManagerService, _codeReviewService);
     }
 
     private class StubCustomDictionaryService : ICustomDictionaryService
@@ -493,6 +495,67 @@ end TestModel;");
         await WaitForCompletionAsync(service);
 
         Assert.NotNull(service.GetSpellChecker());
+    }
+
+    [Fact]
+    public async Task ReRun_ClearsOldStyleCheckingViolationsFromCodeReviewService()
+    {
+        var service = CreateService();
+        var violationsReceived = new List<LogMessage>();
+        service.OnViolationsFound += v =>
+        {
+            _codeReviewService.AddLogMessages(v);
+            violationsReceived.AddRange(v);
+        };
+
+        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+        var repo = await CreateRepositoryWithModelsAsync(settings,
+            ("TestModel", "model TestModel Real x; end TestModel;"));
+
+        // First run — produces violations
+        service.StartBackgroundChecking(repo);
+        await WaitForCompletionAsync(service);
+        var firstRunCount = _codeReviewService.LogMessages.Count;
+        Assert.True(firstRunCount > 0, "First run should produce violations");
+
+        // Second run — old violations should be cleared, not duplicated
+        violationsReceived.Clear();
+        service.StartBackgroundChecking(repo);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(firstRunCount, _codeReviewService.LogMessages.Count);
+    }
+
+    [Fact]
+    public async Task ReRun_PreservesNonStyleCheckingMessages()
+    {
+        var service = CreateService();
+        service.OnViolationsFound += v => _codeReviewService.AddLogMessages(v);
+
+        // Add a non-style-checking message (e.g., a parser error)
+        _codeReviewService.AddLogMessage(new LogMessage("SomeModel", "Parser error", 1, "Syntax error"));
+
+        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+        var repo = await CreateRepositoryWithModelsAsync(settings,
+            ("TestModel", "model TestModel Real x; end TestModel;"));
+
+        service.StartBackgroundChecking(repo);
+        await WaitForCompletionAsync(service);
+
+        // Parser error should survive style checking re-run
+        Assert.Contains(_codeReviewService.LogMessages, m => m.Source != "StyleChecking" && m.Summary == "Syntax error");
+    }
+
+    [Fact]
+    public void StyleCheckingViolations_HaveSourceSetToStyleChecking()
+    {
+        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+        var model = new ModelDefinition("TestModel", "model TestModel Real x; end TestModel;");
+
+        var violations = StyleChecking.RunStyleChecking(model, settings, "Pkg.TestModel");
+
+        Assert.NotEmpty(violations);
+        Assert.All(violations, v => Assert.Equal("StyleChecking", v.Source));
     }
 
     /// <summary>

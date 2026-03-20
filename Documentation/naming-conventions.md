@@ -141,6 +141,8 @@ Patterns are matched against the **full original name**, not the suffix-stripped
 
 Adding patterns sets the preset to "Custom". Invalid regex patterns are rejected with an error message when you try to add them.
 
+**Note on bracket-wrapped patterns:** If you have manually edited `.mlqt/settings.json` and accidentally wrapped a pattern in square brackets (e.g., `[^[A-Z]...$]` instead of `^[A-Z]...$`), MLQT will automatically detect and correct this. The outer brackets are stripped when the inner content contains regex anchors (`^` or `$`), restoring the intended pattern semantics.
+
 ## Violation Examples
 
 With Modelica Standard conventions enabled, the following code would produce violations:

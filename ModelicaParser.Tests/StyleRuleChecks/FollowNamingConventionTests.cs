@@ -961,6 +961,72 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
+    public void AdditionalPattern_RecordClass_FrameRec_WithBody_NoViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [
+                    @"^[A-Z][a-zA-Z]*(_rec)$",
+                    @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                ]
+            }
+        };
+
+        var code = """
+            record frame_rec
+              Real x;
+            end frame_rec;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void AdditionalPattern_RecordClass_FrameRec_EmptyBody_NoViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [
+                    @"^[A-Z][a-zA-Z]*(_rec)$",
+                    @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                ]
+            }
+        };
+
+        var code = """
+            record frame_rec
+            end frame_rec;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void AdditionalPattern_RecordClass_FrameRec_NestedInPackage_NoViolation()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [
+                    @"^[A-Z][a-zA-Z]*(_rec)$",
+                    @"^[a-z][a-zA-Z\d_]*(_rec)$"
+                ]
+            }
+        };
+
+        var code = """
+            package MyPackage
+              record frame_rec
+              end frame_rec;
+            end MyPackage;
+            """;
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
     public void AdditionalPattern_ExceptionNameTakesPrecedence()
     {
         var config = ModelicaStandardConfig() with
@@ -978,5 +1044,55 @@ public class FollowNamingConventionTests
             end SPECIAL_NAME;
             """;
         Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void BracketWrappedPattern_SanitizedAndMatches()
+    {
+        // Patterns loaded from settings.json may have accidental outer brackets
+        // (e.g., "[^[a-z]...$]" instead of "^[a-z]...$"). The visitor should
+        // sanitize them and match correctly.
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [@"[^[a-z][a-zA-Z\d_]*(_rec)$]"]
+            }
+        };
+
+        var code = """
+            record frame_rec
+              Real x;
+            end frame_rec;
+            """;
+        // Should produce no violations — bracket-wrapped pattern is sanitized to match
+        Assert.Empty(CheckRule(code, config));
+    }
+
+    [Fact]
+    public void BracketWrappedPattern_MultipleSlots_SanitizedCorrectly()
+    {
+        var config = ModelicaStandardConfig() with
+        {
+            AdditionalPatterns = new Dictionary<string, List<string>>
+            {
+                ["record"] = [@"[^[A-Z][a-zA-Z]*(_rec)$]", @"[^[a-z][a-zA-Z\d_]*(_rec)$]"],
+                ["class"] = [@"[^[A-Z][a-zA-Z]*(_\d+)+$]"]
+            }
+        };
+
+        var recordCode = """
+            record frame_rec
+              Real x;
+            end frame_rec;
+            """;
+        Assert.Empty(CheckRule(recordCode, config));
+
+        var classCode = """
+            class Version_2026_1
+              Real x;
+            end Version_2026_1;
+            """;
+        Assert.Empty(CheckRule(classCode, config));
     }
 }

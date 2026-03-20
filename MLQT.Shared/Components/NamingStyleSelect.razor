@@ -75,11 +75,14 @@
     }
 
     private async Task AddPattern()
-    {        
+    {
         _patternError = null;
         var pattern = _newPattern.Trim();
         if (string.IsNullOrEmpty(pattern))
             return;
+
+        // Sanitize accidental bracket-wrapping (e.g., "[^[A-Z]...$]" → "^[A-Z]...$")
+        pattern = NamingValidator.SanitizePattern(pattern);
 
         try
         {
