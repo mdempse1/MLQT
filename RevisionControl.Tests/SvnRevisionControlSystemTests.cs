@@ -113,7 +113,7 @@ public class SvnRevisionControlSystemTests
     }
 
     [Fact]
-    public void CheckoutRevision_WithNonExistentRepository_ReturnsFalse()
+    public void CheckoutRevision_WithNonExistentRepository_Throws()
     {
         // Arrange
         var nonExistentRepo = "http://invalid.example.com/svn/nonexistent";
@@ -121,25 +121,17 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act
-            var result = _svn.CheckoutRevision(nonExistentRepo, "HEAD", outputPath);
-
-            // Assert
-            Assert.False(result);
+            // Act & Assert
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(nonExistentRepo, "HEAD", outputPath));
+            Assert.Contains("SVN checkout failed", ex.Message);
         }
         finally
         {
-            // Cleanup
             if (Directory.Exists(outputPath))
             {
-                try
-                {
-                    Directory.Delete(outputPath, recursive: true);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
+                try { Directory.Delete(outputPath, true); }
+                catch { }
             }
         }
     }
@@ -215,11 +207,10 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act - empty string should be treated as HEAD
-            var result = _svn.CheckoutRevision(invalidRepo, "", outputPath);
-
-            // Assert - will fail because repo doesn't exist, but tests parameter handling
-            Assert.False(result);
+            // Act - empty string should be treated as HEAD; throws because repo doesn't exist
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "", outputPath));
+            Assert.Contains("SVN checkout failed", ex.Message);
         }
         finally
         {
@@ -240,11 +231,10 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act - numeric revision should be parsed
-            var result = _svn.CheckoutRevision(invalidRepo, "12345", outputPath);
-
-            // Assert - will fail because repo doesn't exist, but tests parameter handling
-            Assert.False(result);
+            // Act - numeric revision should be parsed; throws because repo doesn't exist
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "12345", outputPath));
+            Assert.Contains("SVN checkout failed", ex.Message);
         }
         finally
         {
@@ -265,17 +255,15 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act - keyword revisions should be recognized
-            var result1 = _svn.CheckoutRevision(invalidRepo, "HEAD", outputPath);
-            var result2 = _svn.CheckoutRevision(invalidRepo, "BASE", outputPath);
-            var result3 = _svn.CheckoutRevision(invalidRepo, "COMMITTED", outputPath);
-            var result4 = _svn.CheckoutRevision(invalidRepo, "PREV", outputPath);
-
-            // Assert - all will fail because repo doesn't exist, but tests parameter handling
-            Assert.False(result1);
-            Assert.False(result2);
-            Assert.False(result3);
-            Assert.False(result4);
+            // Act & Assert - keyword revisions should be recognized; all throw because repo doesn't exist
+            Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "HEAD", outputPath));
+            Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "BASE", outputPath));
+            Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "COMMITTED", outputPath));
+            Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "PREV", outputPath));
         }
         finally
         {
@@ -419,11 +407,10 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act - unknown keyword should default to HEAD
-            var result = _svn.CheckoutRevision(invalidRepo, "UNKNOWN_KEYWORD", outputPath);
-
-            // Assert - will fail because repo doesn't exist, but tests parameter handling
-            Assert.False(result);
+            // Act - unknown keyword should default to HEAD; throws because repo doesn't exist
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "UNKNOWN_KEYWORD", outputPath));
+            Assert.Contains("SVN checkout failed", ex.Message);
         }
         finally
         {
@@ -445,10 +432,12 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act
-            _svn.CheckoutRevision(invalidRepo, "HEAD", outputPath);
+            // Act - checkout throws because repo doesn't exist, but directory should
+            // be created before the SVN operation is attempted
+            Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "HEAD", outputPath));
 
-            // Assert - directory should be created even if checkout fails
+            // Assert - directory should be created even though checkout failed
             Assert.True(Directory.Exists(outputPath));
         }
         finally
@@ -519,11 +508,10 @@ public class SvnRevisionControlSystemTests
 
         try
         {
-            // Act - lowercase keywords should be handled (case-insensitive)
-            var result = _svn.CheckoutRevision(invalidRepo, "head", outputPath);
-
-            // Assert - will fail because repo doesn't exist, but tests case-insensitive handling
-            Assert.False(result);
+            // Act - lowercase keywords should be handled (case-insensitive); throws because repo doesn't exist
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _svn.CheckoutRevision(invalidRepo, "head", outputPath));
+            Assert.Contains("SVN checkout failed", ex.Message);
         }
         finally
         {
