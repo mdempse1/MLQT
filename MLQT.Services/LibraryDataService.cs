@@ -46,6 +46,15 @@ public class LibraryDataService : ILibraryDataService
     public event Action? OnTreeDataChanged;
 
     /// <inheritdoc/>
+    public bool SuppressTreeDataChangedEvents { get; set; }
+
+    private void RaiseTreeDataChanged()
+    {
+        if (!SuppressTreeDataChangedEvents)
+            OnTreeDataChanged?.Invoke();
+    }
+
+    /// <inheritdoc/>
     public async Task<LoadedLibrary> AddLibraryFromFileAsync(string filePath, string? content = null)
     {
         LogProcessStart("LibraryDataService", $"Loading library from file: {filePath}");
@@ -78,7 +87,7 @@ public class LibraryDataService : ILibraryDataService
             }
 
             OnLibrariesChanged?.Invoke();
-            OnTreeDataChanged?.Invoke();
+            RaiseTreeDataChanged();
 
             Info("LibraryDataService", $"Successfully loaded library '{library.Name}' with {library.ModelIds.Count} models");
             LogProcessEnd("LibraryDataService", $"Loading library from file: {filePath}");
@@ -125,7 +134,7 @@ public class LibraryDataService : ILibraryDataService
             }
 
             OnLibrariesChanged?.Invoke();
-            OnTreeDataChanged?.Invoke();
+            RaiseTreeDataChanged();
 
             Info("LibraryDataService", $"Successfully loaded library '{library.Name}' with {library.ModelIds.Count} models from directory");
             LogProcessEnd("LibraryDataService", $"Loading library from directory: {directoryPath}");
@@ -300,7 +309,7 @@ public class LibraryDataService : ILibraryDataService
             }
 
             OnLibrariesChanged?.Invoke();
-            OnTreeDataChanged?.Invoke();
+            RaiseTreeDataChanged();
 
             Info("LibraryDataService", $"Successfully loaded library '{library.Name}' with {library.ModelIds.Count} models from zip");
             LogProcessEnd("LibraryDataService", $"Loading library from zip with {files.Count} files");
@@ -332,7 +341,7 @@ public class LibraryDataService : ILibraryDataService
         }
 
         OnLibrariesChanged?.Invoke();
-        OnTreeDataChanged?.Invoke();
+        RaiseTreeDataChanged();
     }
 
     /// <inheritdoc/>
@@ -345,7 +354,7 @@ public class LibraryDataService : ILibraryDataService
         }
 
         OnLibrariesChanged?.Invoke();
-        OnTreeDataChanged?.Invoke();
+        RaiseTreeDataChanged();
     }
 
     /// <inheritdoc/>
@@ -512,7 +521,7 @@ public class LibraryDataService : ILibraryDataService
             });
         }
 
-        OnTreeDataChanged?.Invoke();
+        RaiseTreeDataChanged();
 
         return affectedModelIds;
     }

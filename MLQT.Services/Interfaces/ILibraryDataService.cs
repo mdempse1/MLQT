@@ -107,4 +107,12 @@ public interface ILibraryDataService
     /// Event fired when tree data needs to be refreshed.
     /// </summary>
     event Action? OnTreeDataChanged;
+
+    /// <summary>
+    /// When true, OnTreeDataChanged events are suppressed. Used during batch
+    /// operations (e.g., refreshing multiple files) to avoid triggering expensive
+    /// side effects (VCS status queries) on every individual file reload.
+    /// The caller must fire OnTreeDataChanged once after unsetting this flag.
+    /// </summary>
+    bool SuppressTreeDataChangedEvents { get; set; }
 }

@@ -32,6 +32,19 @@ public class StyleCheckingService : IStyleCheckingService
     /// </summary>
     private void CancelExistingWorkers()
     {
+        CancelRunningWorkers();
+        // Remove style checking violations already delivered to CodeReviewService
+        // so they don't duplicate when the new run re-produces them
+        _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == "StyleChecking");
+    }
+
+    /// <summary>
+    /// Cancels any running workers and clears unflushed violations, but does NOT
+    /// remove already-delivered violations from CodeReviewService. Used by targeted
+    /// checks (CheckModelsAsync) where the caller handles removal for specific models.
+    /// </summary>
+    private void CancelRunningWorkers()
+    {
         lock (_workerLock)
         {
             foreach (var worker in _workers)
@@ -42,9 +55,6 @@ public class StyleCheckingService : IStyleCheckingService
         {
             _pendingViolations.Clear();
         }
-        // Remove style checking violations already delivered to CodeReviewService
-        // so they don't duplicate when the new run re-produces them
-        _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == "StyleChecking");
     }
 
     /// <inheritdoc/>
@@ -411,7 +421,10 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public async Task CheckModelsAsync(IEnumerable<string> modelIds, DirectedGraph graph)
     {
-        CancelExistingWorkers();
+        // Cancel running workers but preserve already-delivered violations.
+        // The caller is responsible for removing old violations for the targeted
+        // models via CodeReviewService.RemoveLogMessagesForModels before calling.
+        CancelRunningWorkers();
         _stopRequested = false;
 
         var modelIdList = modelIds.ToList();
@@ -482,8 +495,11 @@ public class StyleCheckingService : IStyleCheckingService
         LogProcessStart("StyleCheckingService", $"Style checking {modelIdList.Count} model(s)");
         OnProgressChanged?.Invoke(false);
 
-        // Start the flush loop (if not already running)
-        await Task.Run(ProcessQueueAsync);
+        // Start the flush loop (fire-and-forget). Must NOT be awaited because
+        // FlushPendingViolations fires OnViolationsFound which calls InvokeAsync
+        // to marshal to the render thread — awaiting would deadlock if the caller
+        // is already on the render thread.
+        _ = Task.Run(ProcessQueueAsync);
     }
 
     private async Task ProcessQueueAsync()

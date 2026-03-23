@@ -2295,72 +2295,83 @@
             LogProcessStart("MainLayout", $"Processing {pendingChanges.Count} file changes");
             Snackbar.Add($"Processing {pendingChanges.Count} file changes...", Severity.Normal);
 
+            // Pause file monitoring for affected repositories to prevent file writes
+            // (from formatting) generating new pending changes and triggering cascading
+            // VCS status queries via OnRepositoryFileActivity.
+            var affectedRepoIds = pendingChanges.Select(c => c.RepositoryId).Distinct().ToList();
+            foreach (var repoId in affectedRepoIds)
+                FileMonitoringService.StopMonitoring(repoId);
+
             var affectedModelIds = new HashSet<string>();
             var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Process deletions first
+            // Classify pending changes
             var deletions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Deleted && c.IsModelicaFile).ToList();
-            foreach (var deletion in deletions)
-            {
-                Debug("MainLayout", $"Processing deletion: {deletion.FilePath}");
-                var removedIds = LibraryDataService.RemoveModelsFromFile(deletion.FilePath);
-                foreach (var id in removedIds)
-                {
-                    affectedModelIds.Add(id);
-                }
-            }
-
-            // Process renames (remove old, reload new)
             var renames = pendingChanges.Where(c => c.ChangeType == FileChangeType.Renamed && c.IsModelicaFile).ToList();
-            foreach (var rename in renames)
-            {
-                Debug("MainLayout", $"Processing rename: {rename.OldFilePath} -> {rename.FilePath}");
-                if (!string.IsNullOrEmpty(rename.OldFilePath))
-                {
-                    var removedIds = LibraryDataService.RemoveModelsFromFile(rename.OldFilePath);
-                    foreach (var id in removedIds)
-                    {
-                        affectedModelIds.Add(id);
-                    }
-                }
-                var reloadedIds = await LibraryDataService.ReloadFileAsync(rename.FilePath);
-                foreach (var id in reloadedIds)
-                {
-                    affectedModelIds.Add(id);
-                }
-                changedFilePaths.Add(rename.FilePath);
-            }
-
-            // Process modifications
             var modifications = pendingChanges.Where(c => c.ChangeType == FileChangeType.Modified && c.IsModelicaFile).ToList();
-            foreach (var modification in modifications)
+            var additions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Added && c.IsModelicaFile).ToList();
+
+            Info("MainLayout", $"Classified changes: {deletions.Count} deletions, {renames.Count} renames, {modifications.Count} modifications, {additions.Count} additions (from {pendingChanges.Count} total pending)");
+
+            // Suppress OnTreeDataChanged events during batch reloads. Each ReloadFileAsync
+            // fires OnTreeDataChanged, which triggers CheckForUncommittedChangesAsync in
+            // LibraryBrowser — an expensive VCS status query on every single file reload.
+            LibraryDataService.SuppressTreeDataChangedEvents = true;
+            try
             {
-                Debug("MainLayout", $"Processing modification: {modification.FilePath}");
-                var reloadedIds = await LibraryDataService.ReloadFileAsync(modification.FilePath);
-                foreach (var id in reloadedIds)
+                foreach (var deletion in deletions)
                 {
-                    affectedModelIds.Add(id);
+                    Info("MainLayout", $"Processing deletion: {deletion.FilePath}");
+                    var removedIds = LibraryDataService.RemoveModelsFromFile(deletion.FilePath);
+                    foreach (var id in removedIds)
+                        affectedModelIds.Add(id);
                 }
-                changedFilePaths.Add(modification.FilePath);
+
+                foreach (var rename in renames)
+                {
+                    Info("MainLayout", $"Processing rename: {rename.OldFilePath} -> {rename.FilePath}");
+                    if (!string.IsNullOrEmpty(rename.OldFilePath))
+                    {
+                        var removedIds = LibraryDataService.RemoveModelsFromFile(rename.OldFilePath);
+                        foreach (var id in removedIds)
+                            affectedModelIds.Add(id);
+                    }
+                    var reloadedIds = await LibraryDataService.ReloadFileAsync(rename.FilePath);
+                    foreach (var id in reloadedIds)
+                        affectedModelIds.Add(id);
+                    changedFilePaths.Add(rename.FilePath);
+                }
+
+                foreach (var modification in modifications)
+                {
+                    Info("MainLayout", $"Processing modification: {modification.FilePath}");
+                    var reloadedIds = await LibraryDataService.ReloadFileAsync(modification.FilePath);
+                    Info("MainLayout", $"Reloaded {reloadedIds.Count} models from: {modification.FilePath}");
+                    foreach (var id in reloadedIds)
+                        affectedModelIds.Add(id);
+                    changedFilePaths.Add(modification.FilePath);
+                }
+
+                foreach (var addition in additions)
+                {
+                    Info("MainLayout", $"Processing addition: {addition.FilePath}");
+                    var reloadedIds = await LibraryDataService.ReloadFileAsync(addition.FilePath);
+                    foreach (var id in reloadedIds)
+                        affectedModelIds.Add(id);
+                    changedFilePaths.Add(addition.FilePath);
+                }
+            }
+            finally
+            {
+                LibraryDataService.SuppressTreeDataChangedEvents = false;
             }
 
-            // Process additions
-            var additions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Added && c.IsModelicaFile).ToList();
-            foreach (var addition in additions)
-            {
-                Debug("MainLayout", $"Processing addition: {addition.FilePath}");
-                var reloadedIds = await LibraryDataService.ReloadFileAsync(addition.FilePath);
-                foreach (var id in reloadedIds)
-                {
-                    affectedModelIds.Add(id);
-                }
-                changedFilePaths.Add(addition.FilePath);
-            }
+            Info("MainLayout", $"File processing complete: {affectedModelIds.Count} affected models, {changedFilePaths.Count} changed files");
 
             // Save changed files with formatting, using per-repository style settings
             if (changedFilePaths.Count > 0)
             {
-                Snackbar.Add("Applying code formatting to changed files...", Severity.Normal);
+                Info("MainLayout", "Applying code formatting...");
 
                 // Group changed files by repository so each group uses the correct style settings
                 var filesByRepo = pendingChanges
@@ -2375,12 +2386,13 @@
                     var repoPaths = repoGroup.Select(c => c.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                     await SaveChangedFilesWithFormattingAsync(repoPaths, styleSettings);
                 }
+                Info("MainLayout", "Code formatting complete");
             }
 
-            // Re-analyze dependencies — incremental (skip if deferred and not yet run)
-            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun))
+            // Re-analyze dependencies only if the user has already run dependency analysis.
+            if (affectedModelIds.Count > 0 && NavState.HasDependencyAnalysisRun)
             {
-                Snackbar.Add("Analyzing dependencies...", Severity.Normal);
+                Info("MainLayout", "Re-analyzing dependencies for affected models...");
                 var libraryInfos = GetLibraryInfos();
                 var analysisScope = affectedModelIds.ToHashSet();
                 await Task.Run(async () =>
@@ -2389,33 +2401,45 @@
                         LibraryDataService.CombinedGraph, analysisScope, libraryInfos);
                     LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
                 });
+                Info("MainLayout", "Dependency analysis complete");
             }
 
-            // Remove old log messages and re-check style (skip if deferred and not yet run)
-            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun))
+            // Remove old violations for affected models and re-check style.
+            // Run off the render thread because EnsureSpellChecker uses
+            // .GetAwaiter().GetResult() which deadlocks the Blazor sync context.
+            if (affectedModelIds.Count > 0)
             {
+                Info("MainLayout", $"Style checking {affectedModelIds.Count} affected model(s)...");
                 CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
-                Snackbar.Add($"Style checking {affectedModelIds.Count} affected model(s)...", Severity.Normal);
-                await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
+                var graph = LibraryDataService.CombinedGraph;
+                await Task.Run(async () =>
+                    await StyleCheckingService.CheckModelsAsync(affectedModelIds, graph));
+                Info("MainLayout", "Style checking complete");
             }
 
-            // Re-analyze external resources for affected models (skip if deferred and not yet run)
-            if (affectedModelIds.Count > 0 && (!NavState.IsDeferredMode || NavState.HasExternalResourcesAnalyzed))
+            // Re-analyze external resources only if already run
+            if (affectedModelIds.Count > 0 && NavState.HasExternalResourcesAnalyzed)
             {
                 await ExternalResourceService.AnalyzeResourcesForModelsAsync(
                     affectedModelIds, LibraryDataService.CombinedGraph);
             }
 
-            // If the currently selected model was affected, invalidate its render cache so
-            // the model viewer re-reads fresh content (not stale cached output).
+            // If the currently selected model was affected, invalidate its render cache
             if (!string.IsNullOrEmpty(NavState.ModelID) && affectedModelIds.Contains(NavState.ModelID))
             {
                 NavState.ModelContentChanged(affectedModelIds.ToList());
                 NavState.ChangeModelID(NavState.ModelID);
             }
 
-            // Clear pending changes
+            // Clear pending changes (including any generated by formatting file writes)
+            // and restart file monitoring for affected repositories.
             FileMonitoringService.ClearPendingChanges();
+            foreach (var repoId in affectedRepoIds)
+            {
+                var repo = RepositoryService.GetRepository(repoId);
+                if (repo != null && !string.IsNullOrEmpty(repo.VcsRootPath))
+                    FileMonitoringService.StartMonitoring(repoId, repo.VcsRootPath);
+            }
 
             LogProcessEnd("MainLayout", $"Processing {pendingChanges.Count} file changes");
             Snackbar.Add($"Successfully processed {pendingChanges.Count} file changes", Severity.Success);
