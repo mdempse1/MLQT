@@ -218,15 +218,21 @@ public class RepositoryService : IRepositoryService
             var settingsPath = Path.Combine(repository.LocalPath, ".mlqt", "settings.json");
             if (File.Exists(settingsPath))
             {
-                var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(File.ReadAllText(settingsPath));
-                repository.StyleSettings = settings;
-
+                try
+                {
+                    var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(File.ReadAllText(settingsPath));
+                    repository.StyleSettings = settings;
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or JsonException)
+                {
+                    repository.StyleSettings = new StyleCheckingSettings();
+                    Warn("RepositoryService",
+                        $"Could not read .mlqt/settings.json for '{repository.Name}': {ex.Message}. Using defaults.");
+                }
             }
             else
             {
-                StyleCheckingSettings settings = new();
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                repository.StyleSettings = settings;
+                repository.StyleSettings = new StyleCheckingSettings();
                 Info("RepositoryService", $"No settings.json found for '{repository.Name}' — using defaults");
             }
 
@@ -254,6 +260,13 @@ public class RepositoryService : IRepositoryService
 
             // Save settings
             await SaveRepositorySettingsAsync();
+
+            if (repository.IsSettingsReadOnly)
+            {
+                result.Warnings.Add(
+                    $"Could not write settings to '{repository.Name}' repository " +
+                    "(insufficient permissions). Global settings will be used instead.");
+            }
 
             Info("RepositoryService", $"Successfully added repository: {repository.Name} with {discoveredLibraries.Count} libraries");
             LogProcessEnd("RepositoryService", $"Adding repository: {pathOrUrl}");
@@ -528,12 +541,22 @@ public class RepositoryService : IRepositoryService
                 });
 
                 //Save the formatting settings into the repository so that every user gets the same
-                var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
-                var json = JsonSerializer.Serialize(repo.StyleSettings, new JsonSerializerOptions { WriteIndented = true });
-                var settingsDir = Path.GetDirectoryName(settingsPath);
-                if (settingsDir != null && !Directory.Exists(settingsDir))
-                    Directory.CreateDirectory(settingsDir);
-                File.WriteAllText(settingsPath, json);
+                try
+                {
+                    var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
+                    var json = JsonSerializer.Serialize(repo.StyleSettings, new JsonSerializerOptions { WriteIndented = true });
+                    var settingsDir = Path.GetDirectoryName(settingsPath);
+                    if (settingsDir != null && !Directory.Exists(settingsDir))
+                        Directory.CreateDirectory(settingsDir);
+                    File.WriteAllText(settingsPath, json);
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    Warn("RepositoryService",
+                        $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
+                        "Repository will use global settings.");
+                    repo.IsSettingsReadOnly = true;
+                }
             }
 
             // Ensure at least a default project exists

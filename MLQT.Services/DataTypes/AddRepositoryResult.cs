@@ -24,4 +24,10 @@ public class AddRepositoryResult
     /// Libraries discovered within the repository.
     /// </summary>
     public List<DiscoveredLibraryInfo> DiscoveredLibraries { get; set; } = new();
+
+    /// <summary>
+    /// Non-fatal warnings that occurred during the operation.
+    /// The repository was still added successfully but some features may be limited.
+    /// </summary>
+    public List<string> Warnings { get; set; } = new();
 }

@@ -3,6 +3,7 @@
 @inject IRepositoryService RepositoryService
 @inject IFilePickerService FilePickerService
 @inject IStyleCheckingService StyleCheckingService
+@inject ISnackbar Snackbar
 
 
 <MudDialog>
@@ -277,6 +278,11 @@
             if (result.Success && result.Repository != null)
             {
                 _addedRepositoryId = result.Repository.Id;
+
+                foreach (var warning in result.Warnings)
+                {
+                    Snackbar.Add(warning, MudBlazor.Severity.Warning);
+                }
             }
             else
             {

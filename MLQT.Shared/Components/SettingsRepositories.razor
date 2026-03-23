@@ -146,6 +146,13 @@
         <MudText Typo="Typo.h6">Edit Repository Details</MudText>
     </TitleContent>
     <DialogContent>
+        @if (_selectedItem.IsSettingsReadOnly)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                Settings cannot be saved to this repository (insufficient permissions).
+                Changes will only apply to the current session.
+            </MudAlert>
+        }
         <MudTextField @bind-Value="_selectedItem.Name" Label="Name:" Variant="Variant.Outlined" ReadOnly="false" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
         <MudTextField @bind-Value="_selectedItem.VcsType" Label="VCS Type:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
         <MudTextField @bind-Value="_selectedItem.LocalPath" Label="Library Path:" Variant="Variant.Outlined" ReadOnly="false" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>

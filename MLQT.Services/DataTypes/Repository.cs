@@ -98,4 +98,10 @@ public class Repository
     /// Style checking settings for this repository
     /// </summary>
     public StyleCheckingSettings? StyleSettings { get; set; }
+
+    /// <summary>
+    /// True when the repository's .mlqt/settings.json could not be written
+    /// (e.g. due to permissions). The repository still functions using global settings.
+    /// </summary>
+    public bool IsSettingsReadOnly { get; set; }
 }
