@@ -31,7 +31,8 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         catch (Exception ex)
         {
             RevisionControlLogger.Error("CheckoutRevision", ex);
-            return false;
+            throw new InvalidOperationException(
+                $"SVN checkout failed for '{repositoryPath}' at revision '{revision}' to '{outputPath}': {ex.Message}", ex);
         }
     }
 
@@ -230,8 +231,23 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             using var client = new SvnClient();
 
-            // If checkout doesn't exist or isn't a working copy, do initial checkout
-            if (!Directory.Exists(checkoutPath) || !client.GetInfo(checkoutPath, out _))
+            // If checkout doesn't exist or isn't a valid working copy, do initial checkout
+            bool isWorkingCopy = false;
+            if (Directory.Exists(checkoutPath))
+            {
+                try
+                {
+                    isWorkingCopy = client.GetInfo(checkoutPath, out _);
+                }
+                catch (SvnException)
+                {
+                    // Directory exists but is not a valid working copy — remove it so
+                    // CheckoutRevision can start fresh (it calls Directory.CreateDirectory).
+                    Directory.Delete(checkoutPath, recursive: true);
+                }
+            }
+
+            if (!isWorkingCopy)
             {
                 return CheckoutRevision(repositoryPath, revision, checkoutPath);
             }
