@@ -45,13 +45,15 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             using var client = new SvnClient();
 
-            // Get the working copy info
             if (!client.GetInfo(repositoryPath, out var info))
             {
                 return null;
             }
 
-            return info.Revision.ToString();
+            // Use LastChangeRevision (last commit that affected THIS path) rather than
+            // Revision (global repository HEAD). This prevents false positives when
+            // commits happen on other branches in the same SVN repository.
+            return info.LastChangeRevision.ToString();
         }
         catch (Exception ex)
         {
