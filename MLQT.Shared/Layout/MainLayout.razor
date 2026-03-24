@@ -2302,64 +2302,28 @@
             foreach (var repoId in affectedRepoIds)
                 FileMonitoringService.StopMonitoring(repoId);
 
-            var affectedModelIds = new HashSet<string>();
+            // Collect all changed file paths (deletions, renames, modifications, additions)
             var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var change in pendingChanges.Where(c => c.IsModelicaFile))
+            {
+                changedFilePaths.Add(change.FilePath);
+                // For renames, the old path is also affected (needs removal)
+                if (change.ChangeType == FileChangeType.Renamed && !string.IsNullOrEmpty(change.OldFilePath))
+                    changedFilePaths.Add(change.OldFilePath);
+            }
 
-            // Classify pending changes
-            var deletions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Deleted && c.IsModelicaFile).ToList();
-            var renames = pendingChanges.Where(c => c.ChangeType == FileChangeType.Renamed && c.IsModelicaFile).ToList();
-            var modifications = pendingChanges.Where(c => c.ChangeType == FileChangeType.Modified && c.IsModelicaFile).ToList();
-            var additions = pendingChanges.Where(c => c.ChangeType == FileChangeType.Added && c.IsModelicaFile).ToList();
+            Info("MainLayout", $"Processing {changedFilePaths.Count} changed Modelica files from {pendingChanges.Count} pending changes");
 
-            Info("MainLayout", $"Classified changes: {deletions.Count} deletions, {renames.Count} renames, {modifications.Count} modifications, {additions.Count} additions (from {pendingChanges.Count} total pending)");
+            // Determine root path from the first affected repository
+            var firstRepo = RepositoryService.GetRepository(pendingChanges[0].RepositoryId);
+            var rootPath = firstRepo?.VcsRootPath ?? Path.GetDirectoryName(pendingChanges[0].FilePath) ?? "";
 
-            // Suppress OnTreeDataChanged events during batch reloads. Each ReloadFileAsync
-            // fires OnTreeDataChanged, which triggers CheckForUncommittedChangesAsync in
-            // LibraryBrowser — an expensive VCS status query on every single file reload.
+            // Batch update: remove stale models, re-parse changed files, rebuild library indexes
             LibraryDataService.SuppressTreeDataChangedEvents = true;
+            HashSet<string> affectedModelIds;
             try
             {
-                foreach (var deletion in deletions)
-                {
-                    Info("MainLayout", $"Processing deletion: {deletion.FilePath}");
-                    var removedIds = LibraryDataService.RemoveModelsFromFile(deletion.FilePath);
-                    foreach (var id in removedIds)
-                        affectedModelIds.Add(id);
-                }
-
-                foreach (var rename in renames)
-                {
-                    Info("MainLayout", $"Processing rename: {rename.OldFilePath} -> {rename.FilePath}");
-                    if (!string.IsNullOrEmpty(rename.OldFilePath))
-                    {
-                        var removedIds = LibraryDataService.RemoveModelsFromFile(rename.OldFilePath);
-                        foreach (var id in removedIds)
-                            affectedModelIds.Add(id);
-                    }
-                    var reloadedIds = await LibraryDataService.ReloadFileAsync(rename.FilePath);
-                    foreach (var id in reloadedIds)
-                        affectedModelIds.Add(id);
-                    changedFilePaths.Add(rename.FilePath);
-                }
-
-                foreach (var modification in modifications)
-                {
-                    Info("MainLayout", $"Processing modification: {modification.FilePath}");
-                    var reloadedIds = await LibraryDataService.ReloadFileAsync(modification.FilePath);
-                    Info("MainLayout", $"Reloaded {reloadedIds.Count} models from: {modification.FilePath}");
-                    foreach (var id in reloadedIds)
-                        affectedModelIds.Add(id);
-                    changedFilePaths.Add(modification.FilePath);
-                }
-
-                foreach (var addition in additions)
-                {
-                    Info("MainLayout", $"Processing addition: {addition.FilePath}");
-                    var reloadedIds = await LibraryDataService.ReloadFileAsync(addition.FilePath);
-                    foreach (var id in reloadedIds)
-                        affectedModelIds.Add(id);
-                    changedFilePaths.Add(addition.FilePath);
-                }
+                affectedModelIds = await LibraryDataService.UpdateChangedFilesAsync(changedFilePaths, rootPath);
             }
             finally
             {

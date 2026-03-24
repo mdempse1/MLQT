@@ -527,6 +527,98 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public async Task<HashSet<string>> UpdateChangedFilesAsync(
+        IReadOnlyCollection<string> changedFilePaths, string rootPath)
+    {
+        // Convert absolute paths to relative paths for GraphBuilder
+        var normalizedRoot = Path.GetFullPath(rootPath).Replace('\\', '/').TrimEnd('/') + "/";
+        var relativeFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var filePath in changedFilePaths)
+        {
+            var fullPath = Path.GetFullPath(filePath).Replace('\\', '/');
+            if (fullPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                relativeFiles.Add(fullPath[normalizedRoot.Length..]);
+            else
+                relativeFiles.Add(Path.GetRelativePath(rootPath, filePath).Replace('\\', '/'));
+        }
+
+        // Use GraphBuilder for the core graph operations (remove stale, re-parse changed)
+        List<string> affectedModelIds;
+        lock (_lock)
+        {
+            // Capture models that will be removed (for library index cleanup)
+            var moFiles = relativeFiles.Where(f => f.EndsWith(".mo", StringComparison.OrdinalIgnoreCase));
+            foreach (var relPath in moFiles)
+            {
+                var fullPath = Path.Combine(rootPath, relPath.Replace('/', Path.DirectorySeparatorChar));
+                var fileId = GraphBuilder.GenerateFileId(fullPath);
+                var modelsInFile = _combinedGraph.GetModelsInFile(fileId).ToList();
+                foreach (var model in modelsInFile)
+                {
+                    foreach (var lib in _libraries)
+                    {
+                        lib.ModelIds.Remove(model.Id);
+                        lib.TopLevelModelIds.Remove(model.Id);
+                        foreach (var children in lib.ChildrenByParent.Values)
+                            children.Remove(model.Id);
+                    }
+                }
+            }
+        }
+
+        affectedModelIds = await Task.Run(() =>
+            GraphBuilder.UpdateGraphForChangedFiles(_combinedGraph, rootPath, relativeFiles));
+
+        // Rebuild library indexes for newly added models
+        lock (_lock)
+        {
+            foreach (var modelId in affectedModelIds)
+            {
+                var model = _combinedGraph.GetNode<ModelNode>(modelId);
+                if (model == null) continue;
+
+                // Find which library this model belongs to by checking file paths
+                LoadedLibrary? library = null;
+                if (model.ContainingFileId != null)
+                {
+                    var fileNode = _combinedGraph.GetNode<FileNode>(model.ContainingFileId);
+                    if (fileNode != null)
+                    {
+                        foreach (var lib in _libraries)
+                        {
+                            if (!string.IsNullOrEmpty(lib.SourcePath) &&
+                                fileNode.FilePath.StartsWith(lib.SourcePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                library = lib;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (library == null) continue;
+
+                library.ModelIds.Add(modelId);
+                if (string.IsNullOrEmpty(model.ParentModelName))
+                {
+                    if (!library.TopLevelModelIds.Contains(modelId))
+                        library.TopLevelModelIds.Add(modelId);
+                }
+                else
+                {
+                    if (!library.ChildrenByParent.ContainsKey(model.ParentModelName))
+                        library.ChildrenByParent[model.ParentModelName] = new List<string>();
+                    if (!library.ChildrenByParent[model.ParentModelName].Contains(modelId))
+                        library.ChildrenByParent[model.ParentModelName].Add(modelId);
+                }
+            }
+        }
+
+        RaiseTreeDataChanged();
+        return affectedModelIds.ToHashSet();
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyCollection<TreeItemData<ModelNode>>> GetTopLevelTreeItemsAsync()
     {
         var items = new List<TreeItemData<ModelNode>>();

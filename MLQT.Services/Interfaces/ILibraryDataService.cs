@@ -65,6 +65,16 @@ public interface ILibraryDataService
     List<string> RemoveModelsFromFile(string filePath);
 
     /// <summary>
+    /// Batch update: applies a set of changed file paths to the graph using
+    /// GraphBuilder.UpdateGraphForChangedFiles, then rebuilds library indexes.
+    /// More efficient than calling ReloadFileAsync/RemoveModelsFromFile individually.
+    /// </summary>
+    /// <param name="changedFilePaths">Absolute paths of files that were added, modified, or deleted.</param>
+    /// <param name="rootPath">Root directory of the library (for resolving relative paths).</param>
+    /// <returns>Set of affected model IDs.</returns>
+    Task<HashSet<string>> UpdateChangedFilesAsync(IReadOnlyCollection<string> changedFilePaths, string rootPath);
+
+    /// <summary>
     /// Gets the top-level tree items for the tree view.
     /// Called by MudTreeView when ServerData is invoked with null parent.
     /// </summary>

@@ -995,6 +995,87 @@ public static class GraphBuilder
     /// Generates a unique file ID from a file path.
     /// On Windows, paths are normalized to lowercase for case-insensitive matching.
     /// </summary>
+    /// <summary>
+    /// Incrementally updates a graph by re-parsing only the files that changed.
+    /// Removes models from changed/deleted files and re-parses changed/added files.
+    /// </summary>
+    /// <param name="graph">The existing graph to update in-place.</param>
+    /// <param name="rootPath">Root directory of the new checkout (where changed files are read from).</param>
+    /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).</param>
+    /// <returns>List of model IDs that were affected (removed or added).</returns>
+    public static List<string> UpdateGraphForChangedFiles(
+        DirectedGraph graph,
+        string rootPath,
+        HashSet<string> changedRelativeFiles)
+    {
+        var affectedModelIds = new List<string>();
+
+        // Filter to .mo files only
+        var changedMoFiles = changedRelativeFiles
+            .Where(f => f.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var changedOrderFiles = changedRelativeFiles
+            .Where(f => f.EndsWith("package.order", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Step 1: Remove models from changed/deleted .mo files
+        foreach (var relativePath in changedMoFiles)
+        {
+            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var fileId = GenerateFileId(fullPath);
+
+            // Collect models in this file before removing
+            var modelsInFile = graph.GetModelsInFile(fileId).ToList();
+            foreach (var model in modelsInFile)
+            {
+                affectedModelIds.Add(model.Id);
+                graph.RemoveNode(model.Id);
+            }
+            graph.RemoveNode(fileId);
+        }
+
+        // Step 2: Re-parse changed/added .mo files that still exist on disk
+        var filesToReparse = changedMoFiles
+            .Select(f => Path.Combine(rootPath, f.Replace('/', Path.DirectorySeparatorChar)))
+            .Where(File.Exists)
+            .ToArray();
+
+        if (filesToReparse.Length > 0)
+        {
+            var newModelIds = LoadModelicaFiles(graph, filesToReparse);
+            affectedModelIds.AddRange(newModelIds);
+        }
+
+        // Step 3: Update changed package.order files
+        foreach (var relativePath in changedOrderFiles)
+        {
+            var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(fullPath)) continue;
+
+            // Find the package model by looking at the directory's package.mo
+            var directory = Path.GetDirectoryName(fullPath);
+            if (directory == null) continue;
+
+            var packageMoPath = Path.Combine(directory, "package.mo");
+            if (!File.Exists(packageMoPath)) continue;
+
+            var packageFileId = GenerateFileId(packageMoPath);
+            var packageModels = graph.GetModelsInFile(packageFileId).ToList();
+            if (packageModels.Count > 0)
+            {
+                var packageNode = packageModels[0]; // The package model
+                var orderLines = File.ReadAllLines(fullPath)
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrEmpty(l))
+                    .ToArray();
+                packageNode.PackageOrder = orderLines;
+            }
+        }
+
+        return affectedModelIds.Distinct().ToList();
+    }
+
     public static string GenerateFileId(string filePath)
     {
         var fullPath = Path.GetFullPath(filePath);
