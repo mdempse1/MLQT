@@ -317,6 +317,9 @@
 
     private async void OnDeferredAnalysisCompleted()
     {
+        // After deferred analysis, EnsureParsed() has been called on models.
+        // Surface any parser errors that were found during parsing.
+        SurfaceParserErrors();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -1026,26 +1029,51 @@ document.head.appendChild(style);
         // Clear existing log messages when a new library is loaded
         CodeReviewService.ClearLogMessages();
 
-        // Add parser errors to the issues list
+        // Add parser errors found during file loading to the issues list
+        SurfaceParserErrors();
+
+        // Update UI with parser errors before starting background style checking
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Scans all models for parser errors and adds any new ones to the issues list.
+    /// Called after library loading (file-level errors) and after deferred analysis
+    /// (model-level errors from EnsureParsed).
+    /// </summary>
+    private void SurfaceParserErrors()
+    {
+        var existingMessages = CodeReviewService.LogMessages;
+        var newMessages = new List<LogMessage>();
+
         foreach (var model in LibraryDataService.GetAllModels())
         {
-            if (model.Definition.ParserErrors != null && model.Definition.ParserErrors.Count > 0)
+            if (model.Definition.ParserErrors is { Count: > 0 } errors)
             {
-                foreach (var error in model.Definition.ParserErrors)
+                foreach (var error in errors)
                 {
-                    var issue = new LogMessage(
-                    model.Definition.Name,
-                    "Error",
-                    error.Line,
-                    "Parser error",
-                    error.Message + (error.OffendingToken != null ? $" (token: '{error.OffendingToken}')" : ""));
-                    CodeReviewService.AddLogMessage(issue);
+                    var modelName = model.Definition.Name;
+                    var line = error.Line;
+                    var details = error.Message + (error.OffendingToken != null ? $" (token: '{error.OffendingToken}')" : "");
+
+                    // Avoid duplicates — file-level errors from loading may overlap with
+                    // model-level errors from EnsureParsed
+                    bool alreadyExists = existingMessages.Any(m =>
+                        m.ModelName == modelName &&
+                        m.LineNumber == line &&
+                        m.Summary == "Parser error" &&
+                        m.Details == details);
+
+                    if (!alreadyExists)
+                    {
+                        newMessages.Add(new LogMessage(modelName, "Error", line, "Parser error", details));
+                    }
                 }
             }
         }
 
-        // Update UI with parser errors before starting background style checking
-        await InvokeAsync(StateHasChanged);
+        if (newMessages.Count > 0)
+            CodeReviewService.AddLogMessages(newMessages);
     }
 
     private string MakeShortName(string name)

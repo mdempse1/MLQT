@@ -254,5 +254,11 @@ public class AlgorithmTests
         AssertAlgorithm(expectedLine);
     }
 
+    [Fact]
+    public void OutputExpressionWithArrayArgs_FormatsCorrectly()
+    {
+        var expectedLine = "  x := (func(a))[1];";
+        AssertAlgorithm(expectedLine);
+    }
     #endregion
 }

@@ -95,7 +95,8 @@ enumeration_literal
 
 //Added support for a more c-style comment locations
 composition
-    : element_list (
+    : (annotation ';')?
+      element_list (
         'public' element_list
         | 'protected' element_list
         | equation_section
@@ -437,6 +438,7 @@ factor
 
 //In Modelica 3.6 replaced name with component_reference
 //In Modelica 3.6 added pure as a function_call_args prefix option
+//Added optional array_arguments after output_expression_list to align with Dymola
 primary
     : UNSIGNED_NUMBER
     | STRING
@@ -444,7 +446,7 @@ primary
     | 'true'
     | (component_reference | 'der' | 'initial' | 'pure') function_call_args
     | component_reference
-    | '(' output_expression_list ')'
+    | '(' output_expression_list ')' ( '[' array_arguments ']' )?
     | '[' expression_list (';' expression_list)* ']'
     | '{' array_arguments '}'
     | 'end'
@@ -555,7 +557,6 @@ STRING
     : '"' (S_CHAR | S_ESCAPE)* '"'
     ;
 
-//Might need to add " to this list of characters.  Space is also missing but exists in the concrete syntax.
 fragment Q_CHAR
     : NONDIGIT
     | DIGIT
@@ -586,6 +587,8 @@ fragment Q_CHAR
     | '}'
     | '|'
     | '~'
+    | '"'
+    | ' '
     ;
 
 fragment S_ESCAPE

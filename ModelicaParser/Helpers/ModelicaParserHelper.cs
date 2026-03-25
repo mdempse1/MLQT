@@ -49,6 +49,7 @@ public class ModelicaParserHelper
         var code = PreprocessCode(modelicaCode);
         var inputStream = new AntlrInputStream(code);
         var lexer = new modelicaLexer(inputStream);
+        lexer.RemoveErrorListeners();
         var tokenStream = new CommonTokenStream(lexer);
         var parser = new modelicaParser(tokenStream);
         parser.RemoveErrorListeners();
@@ -67,6 +68,8 @@ public class ModelicaParserHelper
         var inputStream = new AntlrInputStream(code);
         var lexer = new modelicaLexer(inputStream);
         var errorListener = new ModelicaErrorListener();
+        lexer.RemoveErrorListeners();
+        lexer.AddErrorListener(errorListener);
         var tokenStream = new CommonTokenStream(lexer);
         var parser = new modelicaParser(tokenStream);
         parser.RemoveErrorListeners();
@@ -87,6 +90,8 @@ public class ModelicaParserHelper
         var inputStream = new AntlrInputStream(code);
         var lexer = new modelicaLexer(inputStream);
         var errorListener = new ModelicaErrorListener();
+        lexer.RemoveErrorListeners();
+        lexer.AddErrorListener(errorListener);
         var tokenStream = new CommonTokenStream(lexer);
         var parser = new modelicaParser(tokenStream);
         parser.RemoveErrorListeners();
@@ -102,17 +107,32 @@ public class ModelicaParserHelper
     /// <returns>List of model information extracted from the code.</returns>
     public static List<ModelInfo> ExtractModels(string modelicaCode)
     {
+        var (models, _) = ExtractModelsWithErrors(modelicaCode);
+        return models;
+    }
+
+    /// <summary>
+    /// Extracts all model definitions from Modelica source code, also returning any parser/lexer errors.
+    /// </summary>
+    /// <param name="modelicaCode">The Modelica source code to parse.</param>
+    /// <returns>Tuple containing the list of models and any parser errors encountered.</returns>
+    public static (List<ModelInfo> models, List<ParserError> errors) ExtractModelsWithErrors(string modelicaCode)
+    {
         var code = PreprocessCode(modelicaCode);
         var inputStream = new AntlrInputStream(code);
         var lexer = new modelicaLexer(inputStream);
+        var errorListener = new ModelicaErrorListener();
+        lexer.RemoveErrorListeners();
+        lexer.AddErrorListener(errorListener);
         var tokenStream = new CommonTokenStream(lexer);
         var parser = new modelicaParser(tokenStream);
         parser.RemoveErrorListeners();
+        parser.AddErrorListener(errorListener);
 
         var parseTree = parser.stored_definition();
         var visitor = new ModelExtractorVisitor(code);
         visitor.Visit(parseTree);
-        return visitor.Models;
+        return (visitor.Models, errorListener.Errors);
     }
 
 }

@@ -29,9 +29,9 @@ public static class GraphBuilder
 
         graph.AddNode(fileNode);
 
-        // Extract all models from the file
+        // Extract all models from the file (capturing any lexer/parser errors)
         List<string> modelIDs = new();
-        var models = ModelicaParserHelper.ExtractModels(normalizedContent);
+        var (models, fileParserErrors) = ModelicaParserHelper.ExtractModelsWithErrors(normalizedContent);
 
         // Track child order for packages
         var packageChildOrder = new Dictionary<string, List<string>>();
@@ -89,6 +89,38 @@ public static class GraphBuilder
             {
                 // Store the nested children order
                 packageNode.NestedChildrenOrder = childNames;
+            }
+        }
+
+        // Distribute file-level parser errors to the appropriate model based on line range.
+        // This makes errors available immediately after loading (before EnsureParsed runs).
+        if (fileParserErrors.Count > 0)
+        {
+            foreach (var error in fileParserErrors)
+            {
+                // Find the model whose line range contains this error
+                var owningModel = models
+                    .Where(m => error.Line >= m.StartLine && error.Line <= m.StopLine)
+                    .OrderBy(m => m.StopLine - m.StartLine) // prefer most specific (innermost) model
+                    .FirstOrDefault();
+
+                if (owningModel != null)
+                {
+                    var modelId = GenerateModelId(owningModel.ParentModelName, owningModel.Name);
+                    var modelNode = graph.GetNode<ModelNode>(modelId);
+                    modelNode?.Definition.ParserErrors.Add(error);
+                }
+                else
+                {
+                    // Error outside any model range — attach to the first model in the file
+                    var firstModel = models.FirstOrDefault();
+                    if (firstModel != null)
+                    {
+                        var modelId = GenerateModelId(firstModel.ParentModelName, firstModel.Name);
+                        var modelNode = graph.GetNode<ModelNode>(modelId);
+                        modelNode?.Definition.ParserErrors.Add(error);
+                    }
+                }
             }
         }
 

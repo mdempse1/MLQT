@@ -764,6 +764,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         bool externalElement = false;
         // Handle public/protected sections
+        // A leading annotation will be automatically pushed to the end of the file as per the Modelica spec
+        // even though it is allowed in the grammar for compatibility with Dymola
         if (context.children != null)
         {
             if (_oneOfEachSection)
@@ -2885,6 +2887,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 Visit(context.output_expression_list());
             _bracketDepth--;
             Write(")");
+            if (context.array_arguments() != null) {
+                Write("[");
+                Visit(context.array_arguments());
+                Write("]");
+            }
         }
         else if (context.GetText().StartsWith('['))
         {
