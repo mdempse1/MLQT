@@ -266,4 +266,96 @@ end Undocumented;
         Assert.Single(visitor.RuleViolations);
         Assert.Contains("Undocumented", visitor.RuleViolations[0].ModelName);
     }
+
+    [Fact]
+    public void ReplaceableClass_WithDescription()
+    {
+        // Replaceable classes are checked as elements within their parent class
+        var code = """
+model Container "A container"
+  replaceable model thisModel = Library.Model "Replaceable model description";
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Empty(ruleViolations);
+    }
+
+    [Fact]
+    public void ReplaceableClass_NoDescription()
+    {
+        // Replaceable classes are checked as elements within their parent class
+        var code = """
+model Container "A container"
+  replaceable model thisModel = Library.Model;
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Single(ruleViolations);
+    }
+
+    [Fact]
+    public void ReplaceableClassConstrainingClause_WithDescription()
+    {
+        // Description on constraining clause comment counts for the class
+        var code = """
+model Container "A container"
+  replaceable model thisModel = Library.Model
+    constrainedby Library.BaseClass
+    "Replaceable model description";
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Empty(ruleViolations);
+    }
+
+    [Fact]
+    public void ReplaceableClassConstrainingClause_NoDescription()
+    {
+        // Replaceable class with constraining clause but no description should flag
+        var code = """
+model Container "A container"
+  replaceable model thisModel = Library.Model
+    constrainedby Library.BaseClass;
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Single(ruleViolations);
+    }
+
+    [Fact]
+    public void RedeclareClass_WithDescription()
+    {
+        // Redeclare classes are also non-standalone and checked within parent
+        var code = """
+model Container "A container"
+  redeclare model thisModel = Library.Model "Redeclared model";
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Empty(ruleViolations);
+    }
+
+    [Fact]
+    public void RedeclareClass_NoDescription()
+    {
+        var code = """
+model Container "A container"
+  redeclare model thisModel = Library.Model;
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Single(ruleViolations);
+    }
 }

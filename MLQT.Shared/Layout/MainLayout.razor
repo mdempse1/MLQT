@@ -1594,7 +1594,7 @@
 
                 postAnalysisAction = model =>
                 {
-                    if (modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
+                    if (model.CanBeStoredStandalone && modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
                     {
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
                             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id));

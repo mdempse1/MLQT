@@ -18,7 +18,10 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
     {
         if (context.string_comment() == null || context.string_comment().GetText().Length == 0)
         {
-            AddViolation(context.Start.Line, "The class is missing a description string");
+            // For replaceable/redeclare elements, the description may be on the
+            // element's constraining clause comment rather than the class specifier
+            if (!HasElementLevelDescription(context))
+                AddViolation(context.Start.Line, "The class is missing a description string");
         }
         return base.VisitLong_class_specifier(context);
     }
@@ -27,7 +30,10 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
     {
         if (context.comment() == null || context.comment().string_comment() == null || context.comment().string_comment().GetText().Length == 0)
         {
-            AddViolation(context.Start.Line, "The class is missing a description string");
+            // For replaceable/redeclare elements, the description may be on the
+            // element's constraining clause comment rather than the class specifier
+            if (!HasElementLevelDescription(context))
+                AddViolation(context.Start.Line, "The class is missing a description string");
         }
         return base.VisitShort_class_specifier(context);
     }
@@ -36,8 +42,26 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
     {
         if (context.comment() == null || context.comment().string_comment() == null || context.comment().string_comment().GetText().Length == 0)
         {
-            AddViolation(context.Start.Line, "The class is missing a description string");
+            if (!HasElementLevelDescription(context))
+                AddViolation(context.Start.Line, "The class is missing a description string");
         }
         return base.VisitDer_class_specifier(context);
+    }
+
+    /// <summary>
+    /// Checks whether a class specifier's parent element has a description string
+    /// on its constraining clause comment. This handles the Modelica pattern:
+    /// <code>replaceable model X = Y constrainedby Z "description";</code>
+    /// where the description is on the element, not the short class specifier.
+    /// </summary>
+    private static bool HasElementLevelDescription(Antlr4.Runtime.ParserRuleContext context)
+    {
+        // Walk up: *_class_specifier → class_specifier → class_definition → element
+        var element = context.Parent?.Parent?.Parent as modelicaParser.ElementContext;
+        if (element == null)
+            return false;
+
+        var comment = element.comment();
+        return comment?.string_comment() != null && comment.string_comment().GetText().Length > 0;
     }
 }

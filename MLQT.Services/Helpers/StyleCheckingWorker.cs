@@ -109,7 +109,7 @@ public class StyleCheckingWorker
                 try
                 {
                     var node = _currentGraph.GetNode<ModelNode>(modelId);
-                    if (node != null && !node.Definition.StyleRulesChecked)
+                    if (node != null && !node.Definition.StyleRulesChecked && node.CanBeStoredStandalone)
                     {
                         var violations = StyleChecking.RunStyleChecking(node.Definition, _settings, modelId, knownModelIds, _spellChecker, knownModelNames,
                             isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId),
