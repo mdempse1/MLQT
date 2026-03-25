@@ -49,12 +49,11 @@ end SimpleModel;";
     }
 
     [Fact]
-    public void ExtractIcon_ModelWithEmptyIcon_ReturnsIconWithNoGraphics()
+    public void ExtractIcon_ModelWithEmptyIconAndBrackets_ReturnsNull()
     {
-        // Arrange
         var code = @"
 model SimpleModel
-  annotation(Icon(graphics={}));
+  annotation(Icon());
 end SimpleModel;";
 
         // Act
@@ -65,6 +64,22 @@ end SimpleModel;";
         Assert.False(result.HasGraphics);
     }
 
+
+    [Fact]
+    public void ExtractIcon_ModelWithEmptyIcon_ReturnsNull()
+    {
+        var code = @"
+model SimpleModel
+  annotation(Icon);
+end SimpleModel;";
+
+        // Act
+        var result = IconExtractor.ExtractIcon(code);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.False(result.HasGraphics);
+    }
     #endregion
 
     #region Rectangle Tests
