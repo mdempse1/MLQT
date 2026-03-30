@@ -260,6 +260,24 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return false;
             }
 
+            // Check if the working copy URL matches the target repository URL.
+            // If they differ (e.g., was trunk, now tickets/ML-123), switch the
+            // working copy to the new URL before updating to the target revision.
+            var targetUri = GetRepositoryUri(repositoryPath);
+            if (client.GetInfo(checkoutPath, out var wcInfo))
+            {
+                if (!Uri.Equals(wcInfo.Uri, targetUri.Uri))
+                {
+                    RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Uri} to {targetUri.Uri}");
+                    if (!client.Switch(checkoutPath, targetUri.Uri))
+                    {
+                        RevisionControlLogger.Error("UpdateExistingCheckout",
+                            new InvalidOperationException($"SVN switch from {wcInfo.Uri} to {targetUri.Uri} failed"));
+                        return false;
+                    }
+                }
+            }
+
             // Resolve the revision
             var svnRevision = ParseRevision(revision);
 
@@ -471,6 +489,15 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 Limit = options.MaxEntries,
                 RetrieveChangedPaths = true
             };
+
+            // If a specific revision is requested, pin Start/End to that revision
+            if (!string.IsNullOrEmpty(options.Revision))
+            {
+                var svnRevision = ParseRevision(options.Revision);
+                logArgs.Start = svnRevision;
+                logArgs.End = svnRevision;
+                logArgs.Limit = 1;
+            }
 
             var minEntriesFromSinceFilter = 10;
             var sinceDate = options.Since;

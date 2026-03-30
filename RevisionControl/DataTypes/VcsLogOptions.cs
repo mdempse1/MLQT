@@ -26,6 +26,12 @@ public class VcsLogOptions
     public string? Branch { get; set; }
 
     /// <summary>
+    /// Optional specific revision to retrieve. When set, only the log entry for this
+    /// exact revision is returned (MaxEntries, Since, Until are ignored).
+    /// </summary>
+    public string? Revision { get; set; }
+
+    /// <summary>
     /// Creates default options for retrieving log entries for the past week,
     /// but ensures at least the specified minimum number of entries.
     /// </summary>

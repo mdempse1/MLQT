@@ -372,6 +372,27 @@ public class GitRevisionControlSystem : IRevisionControlSystem
             // Get the current branch for reference
             var currentBranch = !repo.Info.IsHeadDetached ? repo.Head.FriendlyName : null;
 
+            // If a specific revision is requested, look it up directly
+            if (!string.IsNullOrEmpty(options.Revision))
+            {
+                var commit = ResolveToCommit(repo, options.Revision);
+                if (commit != null)
+                {
+                    entries.Add(new VcsLogEntry
+                    {
+                        Revision = commit.Sha,
+                        ShortRevision = commit.Sha[..Math.Min(7, commit.Sha.Length)],
+                        Author = commit.Author.Name,
+                        AuthorEmail = commit.Author.Email,
+                        Date = commit.Author.When,
+                        Message = commit.Message.Trim(),
+                        MessageShort = commit.MessageShort.Trim(),
+                        Branch = currentBranch
+                    });
+                }
+                return entries;
+            }
+
             // Create commit filter
             var filter = new CommitFilter
             {
