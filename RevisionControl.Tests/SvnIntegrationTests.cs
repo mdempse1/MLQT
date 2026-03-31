@@ -1,138 +1,156 @@
+using System.Diagnostics;
+
 namespace RevisionControl.Tests;
 
 /// <summary>
-/// Integration tests for SvnRevisionControlSystem using the real test repository.
-/// Repository: file:///C:/Projects/SVN/ModelicaEditorTest
-///
-/// Note: These tests are designed to work with an empty or minimal SVN repository.
-/// Some tests may be skipped if the repository doesn't have specific content.
+/// Integration tests for SvnRevisionControlSystem using a temporary SVN repository
+/// created fresh for each test run via svnadmin.
 /// </summary>
 public class SvnIntegrationTests : IDisposable
 {
-    private const string TestRepoUrl = "file:///C:/Projects/SVN/ModelicaEditorTest/trunk";
-    private const string TestRepoRoot = "file:///C:/Projects/SVN/ModelicaEditorTest";
+    private readonly string _repoDir;
+    private readonly string _trunkUrl;
+    private readonly string _repoRoot;
     private readonly SvnRevisionControlSystem _svn;
     private readonly List<string> _checkoutPaths = new();
 
     public SvnIntegrationTests()
     {
         _svn = new SvnRevisionControlSystem();
+
+        // Create a temporary SVN repository with standard layout
+        _repoDir = Path.Combine(Path.GetTempPath(), "SvnTestRepo_" + Guid.NewGuid());
+        Directory.CreateDirectory(_repoDir);
+
+        // svnadmin create
+        RunSvnAdmin($"create \"{_repoDir}\"");
+
+        // Build the file:/// URL (forward slashes)
+        var repoPath = _repoDir.Replace('\\', '/');
+        _repoRoot = $"file:///{repoPath}";
+        _trunkUrl = $"{_repoRoot}/trunk";
+
+        // Create standard layout (trunk, branches, tags) via svn mkdir
+        RunSvn($"mkdir \"{_repoRoot}/trunk\" \"{_repoRoot}/branches\" \"{_repoRoot}/tags\" -m \"Create standard layout\"");
+
+        // Create a tag so tag-related tests work
+        RunSvn($"copy \"{_repoRoot}/trunk\" \"{_repoRoot}/tags/v1.0\" -m \"Tag v1.0\"");
+        RunSvn($"copy \"{_repoRoot}/trunk\" \"{_repoRoot}/tags/v2.0\" -m \"Tag v2.0\"");
     }
 
     public void Dispose()
     {
         foreach (var path in _checkoutPaths)
-        {
             ForceDeleteDirectory(path);
-        }
+
+        ForceDeleteDirectory(_repoDir);
     }
 
     private string CreateCheckoutPath()
     {
-        var path = Path.Combine(Path.GetTempPath(), "SvnIntegrationTest_" + Guid.NewGuid().ToString());
+        var path = Path.Combine(Path.GetTempPath(), "SvnIntegrationTest_" + Guid.NewGuid());
         _checkoutPaths.Add(path);
         return path;
+    }
+
+    private static void RunSvnAdmin(string arguments)
+    {
+        var psi = new ProcessStartInfo("svnadmin", arguments)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var process = Process.Start(psi)!;
+        process.WaitForExit(30_000);
+        if (process.ExitCode != 0)
+        {
+            var error = process.StandardError.ReadToEnd();
+            throw new InvalidOperationException($"svnadmin {arguments} failed: {error}");
+        }
+    }
+
+    private static void RunSvn(string arguments)
+    {
+        var psi = new ProcessStartInfo("svn", arguments)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var process = Process.Start(psi)!;
+        process.WaitForExit(30_000);
+        if (process.ExitCode != 0)
+        {
+            var error = process.StandardError.ReadToEnd();
+            throw new InvalidOperationException($"svn {arguments} failed: {error}");
+        }
     }
 
     private static void ForceDeleteDirectory(string path)
     {
         if (!Directory.Exists(path))
-        {
             return;
-        }
 
         try
         {
             var files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
             foreach (var file in files)
             {
-                try
-                {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                }
-                catch
-                {
-                    // Continue even if we can't change attributes
-                }
+                try { File.SetAttributes(file, FileAttributes.Normal); }
+                catch { }
             }
-
             Directory.Delete(path, recursive: true);
         }
-        catch
-        {
-            // Ignore cleanup errors
-        }
+        catch { }
     }
 
     [Fact]
     public void IsValidRepository_WithFileUrl_ChecksRepository()
     {
-        // Act
-        var result = _svn.IsValidRepository(TestRepoUrl);
-
-        // Assert - Should be true if SVN repository exists at this path
+        var result = _svn.IsValidRepository(_trunkUrl);
         Assert.True(result);
     }
 
     [Fact]
     public void IsValidRepository_WithTrunkUrl_ReturnsTrue()
     {
-        // Act
-        var result = _svn.IsValidRepository(TestRepoUrl);
-
-        // Assert
+        var result = _svn.IsValidRepository(_trunkUrl);
         Assert.True(result);
     }
 
     [Fact]
     public void IsValidRepository_WithBranchesUrl_ReturnsTrue()
     {
-        // Arrange
-        var branchesUrl = TestRepoRoot + "/branches";
-
-        // Act
+        var branchesUrl = _repoRoot + "/branches";
         var result = _svn.IsValidRepository(branchesUrl);
-
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public void IsValidRepository_WithTagsUrl_ReturnsTrue()
     {
-        // Arrange
-        var tagsUrl = TestRepoRoot + "/tags";
-
-        // Act
+        var tagsUrl = _repoRoot + "/tags";
         var result = _svn.IsValidRepository(tagsUrl);
-
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public void IsValidRepository_WithInvalidUrl_ReturnsFalse()
     {
-        // Arrange
         var invalidUrl = "file:///C:/NonExistent/SVN/Repository";
-
-        // Act
         var result = _svn.IsValidRepository(invalidUrl);
-
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public void CheckoutRevision_WithHEAD_ChecksOutSuccessfully()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
+        var result = _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
 
-        // Act
-        var result = _svn.CheckoutRevision(TestRepoUrl, "HEAD", checkoutPath);
-
-        // Assert
         Assert.True(result);
         Assert.True(Directory.Exists(checkoutPath));
         Assert.True(Directory.Exists(Path.Combine(checkoutPath, ".svn")));
@@ -141,13 +159,9 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithEmptyRevision_DefaultsToHEAD()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
+        var result = _svn.CheckoutRevision(_trunkUrl, "", checkoutPath);
 
-        // Act
-        var result = _svn.CheckoutRevision(TestRepoUrl, "", checkoutPath);
-
-        // Assert
         Assert.True(result);
         Assert.True(Directory.Exists(checkoutPath));
     }
@@ -155,13 +169,9 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_WithLowercaseKeyword_WorksCaseInsensitive()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
+        var result = _svn.CheckoutRevision(_trunkUrl, "head", checkoutPath);
 
-        // Act
-        var result = _svn.CheckoutRevision(TestRepoUrl, "head", checkoutPath);
-
-        // Assert
         Assert.True(result);
         Assert.True(Directory.Exists(checkoutPath));
     }
@@ -169,14 +179,11 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentRevision_AfterCheckout_ReturnsRevisionNumber()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl, "HEAD", checkoutPath);
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
 
-        // Act
         var revision = _svn.GetCurrentRevision(checkoutPath);
 
-        // Assert
         Assert.NotNull(revision);
         Assert.True(long.TryParse(revision, out _), "Revision should be a number");
     }
@@ -184,10 +191,8 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentRevision_WithRemoteUrl_ReturnsHeadRevision()
     {
-        // Act
-        var revision = _svn.GetCurrentRevision(TestRepoUrl);
+        var revision = _svn.GetCurrentRevision(_trunkUrl);
 
-        // Assert
         Assert.NotNull(revision);
         Assert.True(long.TryParse(revision, out _), "Revision should be a number");
     }
@@ -195,27 +200,20 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void GetRevisionDescription_WithHEAD_HandlesEmptyRepository()
     {
-        // Act
-        var description = _svn.GetRevisionDescription(TestRepoUrl, "HEAD");
+        var description = _svn.GetRevisionDescription(_trunkUrl, "HEAD");
 
-        // Assert - may be null or empty for empty/new repository
-        // This test just ensures the method doesn't throw
+        // May be null or empty for empty/new repository — just ensure no exception
         if (description != null)
-        {
             Assert.NotNull(description);
-        }
     }
 
     [Fact]
     public void UpdateExistingCheckout_WithNonExistentCheckout_PerformsInitialCheckout()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
 
-        // Act
-        var result = _svn.UpdateExistingCheckout(checkoutPath, TestRepoUrl, "HEAD");
+        var result = _svn.UpdateExistingCheckout(checkoutPath, _trunkUrl, "HEAD");
 
-        // Assert
         Assert.True(result);
         Assert.True(Directory.Exists(checkoutPath));
         Assert.True(Directory.Exists(Path.Combine(checkoutPath, ".svn")));
@@ -224,13 +222,11 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void UpdateExistingCheckout_MultipleTimes_WorksConsistently()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
 
-        // Act & Assert - multiple updates should all succeed
         for (int i = 0; i < 3; i++)
         {
-            var result = _svn.UpdateExistingCheckout(checkoutPath, TestRepoUrl, "HEAD");
+            var result = _svn.UpdateExistingCheckout(checkoutPath, _trunkUrl, "HEAD");
             Assert.True(result, $"Update {i + 1} should succeed");
         }
     }
@@ -238,13 +234,10 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void CheckoutRevision_ToNestedPath_CreatesDirectories()
     {
-        // Arrange
         var nestedPath = Path.Combine(CreateCheckoutPath(), "nested", "deep", "path");
 
-        // Act
-        var result = _svn.CheckoutRevision(TestRepoUrl, "HEAD", nestedPath);
+        var result = _svn.CheckoutRevision(_trunkUrl, "HEAD", nestedPath);
 
-        // Assert
         Assert.True(result);
         Assert.True(Directory.Exists(nestedPath));
     }
@@ -252,80 +245,52 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void IsValidRepository_WithWorkingCopy_ReturnsTrue()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
-        _svn.CheckoutRevision(TestRepoUrl, "HEAD", checkoutPath);
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
 
-        // Act
         var result = _svn.IsValidRepository(checkoutPath);
-
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public void IsValidRepository_WithNonWorkingCopyDirectory_ReturnsFalse()
     {
-        // Arrange
         var emptyDir = CreateCheckoutPath();
         Directory.CreateDirectory(emptyDir);
 
-        // Act
         var result = _svn.IsValidRepository(emptyDir);
-
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public void GetCurrentRevision_WithInvalidPath_ReturnsNull()
     {
-        // Arrange
-        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid().ToString());
-
-        // Act
+        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid());
         var result = _svn.GetCurrentRevision(invalidPath);
-
-        // Assert
         Assert.Null(result);
     }
 
     [Fact]
     public void CleanWorkspace_WithInvalidPath_ReturnsFalse()
     {
-        // Arrange
-        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid().ToString());
-
-        // Act
+        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid());
         var result = _svn.CleanWorkspace(invalidPath);
-
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public void ResolveRevision_WithInvalidRepository_ReturnsNull()
     {
-        // Arrange
-        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid().ToString());
-
-        // Act
+        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid());
         var result = _svn.ResolveRevision(invalidPath, "HEAD");
-
-        // Assert
         Assert.Null(result);
     }
 
     [Fact]
     public void GetRevisionDescription_WithInvalidRepository_ReturnsNull()
     {
-        // Arrange
-        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid().ToString());
-
-        // Act
+        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid());
         var result = _svn.GetRevisionDescription(invalidPath, "HEAD");
-
-        // Assert
         Assert.Null(result);
     }
 
@@ -334,126 +299,82 @@ public class SvnIntegrationTests : IDisposable
     [Fact]
     public void GetCurrentBranch_WithTrunkUrl_ReturnsTrunk()
     {
-        // Arrange
-        var trunkUrl = TestRepoRoot + "/trunk";
-
-        // Act
-        var result = _svn.GetCurrentBranch(trunkUrl);
-
-        // Assert
+        var result = _svn.GetCurrentBranch(_trunkUrl);
         Assert.Equal("trunk", result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithTrunkWorkingCopy_ReturnsTrunk()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var trunkUrl = TestRepoRoot + "/trunk";
-        _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
 
-        // Act
         var result = _svn.GetCurrentBranch(checkoutPath);
-
-        // Assert
         Assert.Equal("trunk", result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithBranchesUrl_ReturnsBranchName()
     {
-        // Arrange - check if there are any branches in the repository
-        var branchUrl = TestRepoRoot + "/branches/test-branch";
+        var branchUrl = _repoRoot + "/branches/test-branch";
 
-        // Act
         var result = _svn.GetCurrentBranch(branchUrl);
 
-        // Assert - if branch exists, should return branches/test-branch
+        // If branch exists, should return branches/test-branch
         // If it doesn't exist, result may be null
         if (result != null)
-        {
             Assert.StartsWith("branches/", result);
-        }
     }
 
     [Fact]
     public void GetCurrentBranch_WithTagsUrl_ReturnsTagName()
     {
-        // Arrange
-        var tagUrl = TestRepoRoot + "/tags/v1.0";
-
-        // Act
+        var tagUrl = _repoRoot + "/tags/v1.0";
         var result = _svn.GetCurrentBranch(tagUrl);
-
-        // Assert
         Assert.Equal("tags/v1.0", result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithTagV2Url_ReturnsTagName()
     {
-        // Arrange
-        var tagUrl = TestRepoRoot + "/tags/v2.0";
-
-        // Act
+        var tagUrl = _repoRoot + "/tags/v2.0";
         var result = _svn.GetCurrentBranch(tagUrl);
-
-        // Assert
         Assert.Equal("tags/v2.0", result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithTagWorkingCopy_ReturnsTagName()
     {
-        // Arrange
         var checkoutPath = CreateCheckoutPath();
-        var tagUrl = TestRepoRoot + "/tags/v1.0";
+        var tagUrl = _repoRoot + "/tags/v1.0";
         _svn.CheckoutRevision(tagUrl, "HEAD", checkoutPath);
 
-        // Act
         var result = _svn.GetCurrentBranch(checkoutPath);
-
-        // Assert
         Assert.Equal("tags/v1.0", result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithInvalidPath_ReturnsNull()
     {
-        // Arrange
-        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid().ToString());
-
-        // Act
+        var invalidPath = Path.Combine(Path.GetTempPath(), "NonExistent_" + Guid.NewGuid());
         var result = _svn.GetCurrentBranch(invalidPath);
-
-        // Assert
         Assert.Null(result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithNonWorkingCopyDirectory_ReturnsNull()
     {
-        // Arrange
         var emptyDir = CreateCheckoutPath();
         Directory.CreateDirectory(emptyDir);
 
-        // Act
         var result = _svn.GetCurrentBranch(emptyDir);
-
-        // Assert
         Assert.Null(result);
     }
 
     [Fact]
     public void GetCurrentBranch_WithRootUrl_ReturnsNull()
     {
-        // Arrange - repository root doesn't have a branch pattern
-        var rootUrl = TestRepoRoot;
-
-        // Act
-        var result = _svn.GetCurrentBranch(rootUrl);
-
-        // Assert - root URL doesn't match any branch pattern
+        var result = _svn.GetCurrentBranch(_repoRoot);
         Assert.Null(result);
     }
 
