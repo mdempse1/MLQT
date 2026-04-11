@@ -358,4 +358,19 @@ end Container;
 
         Assert.Single(ruleViolations);
     }
+
+
+    [Fact]
+    public void ElementRedeclareClass_NoDescription_IsValid()
+    {
+        var code = """
+model Container "A container"
+  extends BaseClass(redeclare model thisModel = Library.Model);
+end Container;
+""";
+
+        var ruleViolations = CheckRule(code, true, false, false, false, false);
+
+        Assert.Empty(ruleViolations);
+    }
 }

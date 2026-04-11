@@ -28,6 +28,11 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
 
     public override object? VisitShort_class_specifier([NotNull] modelicaParser.Short_class_specifierContext context)
     {
+        // Element redeclarations (e.g. extends Base(redeclare model X = Y)) don't
+        // normally include description strings — skip them.
+        if (IsInsideElementRedeclaration(context))
+            return base.VisitShort_class_specifier(context);
+
         if (context.comment() == null || context.comment().string_comment() == null || context.comment().string_comment().GetText().Length == 0)
         {
             // For replaceable/redeclare elements, the description may be on the
@@ -46,6 +51,21 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
                 AddViolation(context.Start.Line, "The class is missing a description string");
         }
         return base.VisitDer_class_specifier(context);
+    }
+
+    /// <summary>
+    /// Checks whether the context is inside an element_redeclaration (e.g.
+    /// <c>extends Base(redeclare model X = Y)</c>). Redeclared classes don't
+    /// normally include description strings.
+    /// </summary>
+    private static bool IsInsideElementRedeclaration(Antlr4.Runtime.ParserRuleContext context)
+    {
+        for (var parent = context.Parent; parent != null; parent = parent.Parent)
+        {
+            if (parent is modelicaParser.Element_redeclarationContext)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
