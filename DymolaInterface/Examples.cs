@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 
 namespace DymolaInterface.Examples;
@@ -6,7 +7,9 @@ namespace DymolaInterface.Examples;
 /// <summary>
 /// Example usage of the DymolaInterface class.
 /// These examples demonstrate common scenarios for interacting with Dymola.
+/// They are illustrative and are excluded from code coverage measurement.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class Examples
 {
     /// <summary>

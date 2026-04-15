@@ -20,9 +20,9 @@ public class DymolaInterfaceTests
     [Fact]
     public void Constructor_WithValidPath_CreatesInstance()
     {
-        // Arrange & Act
+        // Arrange & Act - use the same auto-discovered path as the fixture.
         using var dymola = new DymolaInterface(
-            @"C:\Program Files\Dymola 2025x Refresh 1\bin64\Dymola.exe",
+            DymolaFixture.ResolveDymolaPath(),
             8083,
             "127.0.0.1"
         );
@@ -47,7 +47,7 @@ public class DymolaInterfaceTests
     {
         // Arrange - Use non-standard port that won't have Dymola running
         using var dymola = new DymolaInterface(
-            @"C:\Program Files\Dymola 2025x Refresh 1\bin64\Dymola.exe",
+            DymolaFixture.ResolveDymolaPath(),
             9999,
             "127.0.0.1"
         );
@@ -68,10 +68,10 @@ public class DymolaInterfaceTests
         // Act
         var version = await _fixture.Dymola.DymolaVersionAsync();
 
-        // Assert
+        // Assert - Dymola version strings are of the form "Dymola Version 2026x, 2025-10-10".
         Assert.NotNull(version);
         Assert.NotEmpty(version);
-        Assert.Contains("2025", version);
+        Assert.Contains("Dymola", version, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -83,8 +83,8 @@ public class DymolaInterfaceTests
         // Act
         var versionNumber = await _fixture.Dymola.DymolaVersionNumberAsync();
 
-        // Assert
-        Assert.True(versionNumber >= 2025.0);
+        // Assert - any supported release (2020 onwards).
+        Assert.True(versionNumber >= 2020.0);
     }
 
     [Fact]

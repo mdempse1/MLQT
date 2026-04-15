@@ -103,10 +103,21 @@ public class InterfaceFactoryTests
         // Arrange & Act
         var settings = new DymolaSettings();
 
-        // Assert - this value will change based on what is installed
-        Assert.Equal("C:\\Program Files\\Dymola 2025x Refresh 1\\bin64\\dymola.exe", settings.DymolaPath);
+        // Assert - DymolaPath is discovered at construction from ProgramFiles.
+        // It should either be the empty string (no Dymola installed) or point
+        // at an existing dymola.exe under a recognised "Dymola <year>x[ Refresh 1]"
+        // directory. We do not hard-code the version — that makes the test
+        // portable across machines with different installations.
         Assert.Equal("127.0.0.1", settings.HostAddress);
         Assert.Equal(8082, settings.PortNumber);
+
+        if (!string.IsNullOrEmpty(settings.DymolaPath))
+        {
+            Assert.True(File.Exists(settings.DymolaPath),
+                $"Discovered DymolaPath '{settings.DymolaPath}' should exist on disk.");
+            Assert.EndsWith("dymola.exe", settings.DymolaPath, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Dymola", settings.DymolaPath);
+        }
     }
 
     [Fact]
