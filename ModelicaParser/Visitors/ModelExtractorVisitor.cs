@@ -195,7 +195,11 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
 
             var name = elemMod.name().GetText();
 
-            if (name == "version")
+            if (name == "experiment")
+            {
+                modelInfo.HasExperimentAnnotation = true;
+            }
+            else if (name == "version")
             {
                 // version="1.2.3" -> modification -> '=' modification_expression -> expression (STRING)
                 var mod = elemMod.modification();

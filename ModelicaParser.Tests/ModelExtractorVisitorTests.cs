@@ -1020,4 +1020,91 @@ end Container;";
     Assert.True(standalone.CanBeStoredStandalone);
     Assert.StartsWith("model", standalone.SourceCode.TrimStart());
   }
+
+  // ── HasExperimentAnnotation ──────────────────────────────────────────
+
+  [Fact]
+  public void ExtractModels_ModelWithExperimentAnnotation_SetsHasExperimentAnnotation()
+  {
+    var code = @"
+within TestLib;
+model Demo
+  Real x;
+  annotation(experiment(StopTime=10));
+end Demo;";
+
+    var models = ExtractModels(code);
+
+    Assert.Single(models);
+    Assert.True(models[0].HasExperimentAnnotation);
+  }
+
+  [Fact]
+  public void ExtractModels_ModelWithoutExperimentAnnotation_HasExperimentAnnotationIsFalse()
+  {
+    var code = @"
+within TestLib;
+model Plain
+  Real x;
+end Plain;";
+
+    var models = ExtractModels(code);
+
+    Assert.Single(models);
+    Assert.False(models[0].HasExperimentAnnotation);
+  }
+
+  [Fact]
+  public void ExtractModels_ModelWithDocumentationOnly_HasExperimentAnnotationIsFalse()
+  {
+    var code = @"
+within TestLib;
+model Documented
+  Real x;
+  annotation(Documentation(info=""<html>Hello</html>""));
+end Documented;";
+
+    var models = ExtractModels(code);
+
+    Assert.Single(models);
+    Assert.False(models[0].HasExperimentAnnotation);
+  }
+
+  [Fact]
+  public void ExtractModels_NestedModelWithExperiment_OnlyInnerHasAnnotation()
+  {
+    var code = @"
+package TestPkg
+  model Outer
+    model Inner
+      Real x;
+      annotation(experiment(StopTime=5));
+    end Inner;
+    Real y;
+  end Outer;
+end TestPkg;";
+
+    var models = ExtractModels(code);
+
+    var outer = models.First(m => m.Name == "Outer");
+    var inner = models.First(m => m.Name == "Inner");
+    Assert.False(outer.HasExperimentAnnotation);
+    Assert.True(inner.HasExperimentAnnotation);
+  }
+
+  [Fact]
+  public void ExtractModels_ExperimentWithMultipleAnnotations_DetectsExperiment()
+  {
+    var code = @"
+within TestLib;
+model Demo
+  Real x;
+  annotation(Documentation(info=""<html>Test</html>""), experiment(StopTime=10, Tolerance=1e-6));
+end Demo;";
+
+    var models = ExtractModels(code);
+
+    Assert.Single(models);
+    Assert.True(models[0].HasExperimentAnnotation);
+  }
 }

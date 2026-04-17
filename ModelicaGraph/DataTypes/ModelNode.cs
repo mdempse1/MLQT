@@ -67,6 +67,11 @@ public class ModelNode : GraphNode
     public bool CanBeStoredStandalone { get; set; } = true;
 
     /// <summary>
+    /// Whether this model has a standard Modelica <c>experiment(...)</c> annotation.
+    /// </summary>
+    public bool HasExperimentAnnotation { get; set; }
+
+    /// <summary>
     /// Element-level prefix keywords (e.g., "redeclare", "inner replaceable") that precede
     /// the class definition. Empty when the class has no element prefix.
     /// </summary>

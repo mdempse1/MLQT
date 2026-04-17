@@ -50,6 +50,7 @@ public static class GraphBuilder
             modelNode.StopLine = modelInfo.StopLine;
             modelNode.IsNested = modelInfo.IsNested;
             modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
+            modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;
             modelNode.ElementPrefix = modelInfo.ElementPrefix;
             modelNode.Version = modelInfo.Version;
             modelNode.Uses = modelInfo.Uses;

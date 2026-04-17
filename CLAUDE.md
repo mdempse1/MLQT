@@ -168,7 +168,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 
 **Node Types:**
 - `FileNode` - Represents a Modelica file
-- `ModelNode` - Represents a Modelica model with definition and dependencies
+- `ModelNode` - Represents a Modelica model with definition, dependencies, and `HasExperimentAnnotation` flag
 - `ResourceFileNode` - Represents an external resource file
 - `ResourceDirectoryNode` - Represents an external resource directory
 

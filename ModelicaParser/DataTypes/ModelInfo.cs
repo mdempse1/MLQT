@@ -47,6 +47,11 @@ public class ModelInfo
     public bool CanBeStoredStandalone { get; set; } = true;
 
     /// <summary>
+    /// Whether the outermost class has a standard Modelica <c>experiment(...)</c> annotation.
+    /// </summary>
+    public bool HasExperimentAnnotation { get; set; }
+
+    /// <summary>
     /// Element-level prefix keywords (e.g., "redeclare", "inner replaceable") that precede
     /// the class definition in the parent element rule. Empty when the class has no element prefix.
     /// These prefixes are not part of the class_definition grammar rule and cannot appear

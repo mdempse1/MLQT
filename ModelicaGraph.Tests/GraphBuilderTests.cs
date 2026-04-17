@@ -949,4 +949,43 @@ end UserModel2;
         // EnsureParsed can re-create it on demand
         Assert.NotNull(model.Definition.EnsureParsed());
     }
+
+    // ── HasExperimentAnnotation propagation ────────────────────────────
+
+    [Fact]
+    public void LoadModelicaFile_ModelWithExperiment_SetsHasExperimentAnnotation()
+    {
+        var graph = new DirectedGraph();
+        var content = @"
+within TestLib;
+model Demo
+  Real x;
+  annotation(experiment(StopTime=10));
+end Demo;";
+        var filePath = Path.Combine(_testFilesPath, "ExperimentModel.mo");
+
+        GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        var model = graph.GetNode<ModelNode>("TestLib.Demo");
+        Assert.NotNull(model);
+        Assert.True(model.HasExperimentAnnotation);
+    }
+
+    [Fact]
+    public void LoadModelicaFile_ModelWithoutExperiment_HasExperimentAnnotationIsFalse()
+    {
+        var graph = new DirectedGraph();
+        var content = @"
+within TestLib;
+model Plain
+  Real x;
+end Plain;";
+        var filePath = Path.Combine(_testFilesPath, "PlainModel.mo");
+
+        GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        var model = graph.GetNode<ModelNode>("TestLib.Plain");
+        Assert.NotNull(model);
+        Assert.False(model.HasExperimentAnnotation);
+    }
 }
