@@ -29,105 +29,279 @@ public static class GraphBuilder
 
         graph.AddNode(fileNode);
 
-        // Extract all models from the file (capturing any lexer/parser errors)
         List<string> modelIDs = new();
-        var (models, fileParserErrors) = ModelicaParserHelper.ExtractModelsWithErrors(normalizedContent);
+        List<ModelInfo> models = new();
+        List<ParserError> fileParserErrors = new();
 
-        // Track child order for packages
-        var packageChildOrder = new Dictionary<string, List<string>>();
-
-        // Add each model to the graph
-        foreach (var modelInfo in models)
+        try
         {
-            var modelId = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
-            modelIDs.Add(modelId);
-            var modelNode = new ModelNode(modelId, modelInfo.Name, modelInfo.SourceCode);
-            //modelNode.Definition.CodeContext = modelInfo.CodeContext;
-
-            // Store additional information as typed properties
-            modelNode.ClassType = modelInfo.ClassType;
-            modelNode.StartLine = modelInfo.StartLine;
-            modelNode.StopLine = modelInfo.StopLine;
-            modelNode.IsNested = modelInfo.IsNested;
-            modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
-            modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;
-            modelNode.ElementPrefix = modelInfo.ElementPrefix;
-            modelNode.Version = modelInfo.Version;
-            modelNode.Uses = modelInfo.Uses;
-            modelNode.ParentModelName = modelInfo.ParentModelName;
-
-            // ParsedCode is NOT created here — it's parsed lazily on first access
-            // by AnalyzeDependenciesAsync, StyleChecking, icon extraction, etc.
-            // This avoids parsing each model individually during loading (the file
-            // is already parsed once by ExtractModels above), saving significant
-            // CPU time and memory for large repositories.
-
-            if (modelInfo.ParentModelName != null)
+            // Extract all models from the file (capturing any lexer/parser errors).
+            // ExtractModelsWithErrors catches visitor crashes and returns them as a
+            // FatalParseFailure entry, but we still wrap defensively here.
+            try
             {
-                // Track the order of children for the parent package
-                if (!packageChildOrder.ContainsKey(modelInfo.ParentModelName))
-                {
-                    packageChildOrder[modelInfo.ParentModelName] = new List<string>();
-                }
-                packageChildOrder[modelInfo.ParentModelName].Add(modelInfo.Name);
+                (models, fileParserErrors) = ModelicaParserHelper.ExtractModelsWithErrors(normalizedContent);
             }
-
-            graph.AddNode(modelNode);
-
-            // Link the file to the model
-            graph.AddFileContainsModel(fileId, modelId);
-        }
-
-        // Store the child order in package properties
-        foreach (var kvp in packageChildOrder)
-        {
-            var packageId = kvp.Key;
-            var childNames = kvp.Value.ToArray(); // Reverse to maintain original order when using stack-based traversal
-
-            // Find the package model node
-            var packageNode = graph.GetNode<ModelNode>(packageId);
-            if (packageNode != null)
+            catch (Exception ex)
             {
-                // Store the nested children order
-                packageNode.NestedChildrenOrder = childNames;
-            }
-        }
-
-        // Distribute file-level parser errors to the appropriate model based on line range.
-        // This makes errors available immediately after loading (before EnsureParsed runs).
-        if (fileParserErrors.Count > 0)
-        {
-            foreach (var error in fileParserErrors)
-            {
-                // Find the model whose line range contains this error
-                var owningModel = models
-                    .Where(m => error.Line >= m.StartLine && error.Line <= m.StopLine)
-                    .OrderBy(m => m.StopLine - m.StartLine) // prefer most specific (innermost) model
-                    .FirstOrDefault();
-
-                if (owningModel != null)
+                models = new List<ModelInfo>();
+                fileParserErrors = new List<ParserError>
                 {
-                    var modelId = GenerateModelId(owningModel.ParentModelName, owningModel.Name);
-                    var modelNode = graph.GetNode<ModelNode>(modelId);
-                    modelNode?.Definition.ParserErrors.Add(error);
-                }
-                else
-                {
-                    // Error outside any model range — attach to the first model in the file
-                    var firstModel = models.FirstOrDefault();
-                    if (firstModel != null)
+                    new ParserError
                     {
-                        var modelId = GenerateModelId(firstModel.ParentModelName, firstModel.Name);
+                        Line = 0,
+                        CharPosition = 0,
+                        Message = $"Unable to parse file. {ex.GetType().Name}: {ex.Message}",
+                        Severity = ParserErrorSeverity.FatalParseFailure
+                    }
+                };
+            }
+
+            // If extraction failed catastrophically we still want the file to appear in the
+            // library tree so the user can see and fix it. Produce a placeholder model that
+            // carries the full file contents and the fatal error.
+            bool hasFatal = fileParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
+            if (hasFatal && models.Count == 0)
+            {
+                var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fileParserErrors);
+                modelIDs.Add(placeholderId);
+                return modelIDs;
+            }
+
+            // Track child order for packages
+            var packageChildOrder = new Dictionary<string, List<string>>();
+
+            // Add each model to the graph
+            foreach (var modelInfo in models)
+            {
+                var modelId = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
+                modelIDs.Add(modelId);
+                var modelNode = new ModelNode(modelId, modelInfo.Name, modelInfo.SourceCode);
+
+                // Store additional information as typed properties
+                modelNode.ClassType = modelInfo.ClassType;
+                modelNode.StartLine = modelInfo.StartLine;
+                modelNode.StopLine = modelInfo.StopLine;
+                modelNode.IsNested = modelInfo.IsNested;
+                modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
+                modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;
+                modelNode.ElementPrefix = modelInfo.ElementPrefix;
+                modelNode.Version = modelInfo.Version;
+                modelNode.Uses = modelInfo.Uses;
+                modelNode.ParentModelName = modelInfo.ParentModelName;
+
+                // ParsedCode is NOT created here — it's parsed lazily on first access
+                // by AnalyzeDependenciesAsync, StyleChecking, icon extraction, etc.
+                // This avoids parsing each model individually during loading (the file
+                // is already parsed once by ExtractModels above), saving significant
+                // CPU time and memory for large repositories.
+
+                if (modelInfo.ParentModelName != null)
+                {
+                    // Track the order of children for the parent package
+                    if (!packageChildOrder.ContainsKey(modelInfo.ParentModelName))
+                    {
+                        packageChildOrder[modelInfo.ParentModelName] = new List<string>();
+                    }
+                    packageChildOrder[modelInfo.ParentModelName].Add(modelInfo.Name);
+                }
+
+                graph.AddNode(modelNode);
+
+                // Link the file to the model
+                graph.AddFileContainsModel(fileId, modelId);
+            }
+
+            // Store the child order in package properties
+            foreach (var kvp in packageChildOrder)
+            {
+                var packageId = kvp.Key;
+                var childNames = kvp.Value.ToArray(); // Reverse to maintain original order when using stack-based traversal
+
+                // Find the package model node
+                var packageNode = graph.GetNode<ModelNode>(packageId);
+                if (packageNode != null)
+                {
+                    // Store the nested children order
+                    packageNode.NestedChildrenOrder = childNames;
+                }
+            }
+
+            // Distribute file-level parser errors to the appropriate model based on line range.
+            // This makes errors available immediately after loading (before EnsureParsed runs).
+            if (fileParserErrors.Count > 0)
+            {
+                foreach (var error in fileParserErrors)
+                {
+                    // Find the model whose line range contains this error
+                    var owningModel = models
+                        .Where(m => error.Line >= m.StartLine && error.Line <= m.StopLine)
+                        .OrderBy(m => m.StopLine - m.StartLine) // prefer most specific (innermost) model
+                        .FirstOrDefault();
+
+                    if (owningModel != null)
+                    {
+                        var modelId = GenerateModelId(owningModel.ParentModelName, owningModel.Name);
                         var modelNode = graph.GetNode<ModelNode>(modelId);
                         modelNode?.Definition.ParserErrors.Add(error);
                     }
+                    else
+                    {
+                        // Error outside any model range — attach to the first model in the file
+                        var firstModel = models.FirstOrDefault();
+                        if (firstModel != null)
+                        {
+                            var modelId = GenerateModelId(firstModel.ParentModelName, firstModel.Name);
+                            var modelNode = graph.GetNode<ModelNode>(modelId);
+                            modelNode?.Definition.ParserErrors.Add(error);
+                        }
+                    }
                 }
             }
+
+            // Deduplicate — prefixed classes (e.g., redeclare function extends X) can produce
+            // the same model ID as the standalone class they modify
+            return modelIDs.Distinct().ToList();
+        }
+        catch (Exception ex)
+        {
+            // Final safety net: anything in the post-extraction path failed (e.g., a partial
+            // parse produced a malformed ModelInfo whose fields blow up here). Roll back any
+            // partially-added models for this file and produce a placeholder so the user
+            // still sees the file and knows something went wrong. This guarantees no file
+            // ever disappears silently from the library tree.
+            foreach (var id in modelIDs)
+                graph.RemoveNode(id);
+
+            var fallbackErrors = new List<ParserError>(fileParserErrors)
+            {
+                new ParserError
+                {
+                    Line = 0,
+                    CharPosition = 0,
+                    Message = $"Failed while adding models from file to graph. {ex.GetType().Name}: {ex.Message}",
+                    Severity = ParserErrorSeverity.FatalParseFailure
+                }
+            };
+            var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fallbackErrors);
+            return new List<string> { placeholderId };
+        }
+    }
+
+    /// <summary>
+    /// Creates a placeholder <see cref="ModelNode"/> for a file whose contents could not
+    /// be parsed, preserving the full source so the user can still open and fix it. The
+    /// placeholder is linked to the file node and flagged via
+    /// <see cref="ModelNode.IsParseFailurePlaceholder"/> so downstream analysis can skip it.
+    /// </summary>
+    private static string CreateParseFailurePlaceholder(
+        DirectedGraph graph,
+        string fileId,
+        string filePath,
+        string fileContent,
+        List<ParserError> parserErrors)
+    {
+        // Determine the class name. For `package.mo` the Modelica class is named after
+        // the *containing directory*, not the filename. For all other .mo files the
+        // class name is the filename without extension.
+        string className;
+        var fileName = Path.GetFileName(filePath);
+        if (string.Equals(fileName, "package.mo", StringComparison.OrdinalIgnoreCase))
+        {
+            var dir = Path.GetFileName(Path.GetDirectoryName(filePath) ?? "");
+            className = !string.IsNullOrEmpty(dir) ? dir : "package";
+        }
+        else
+        {
+            className = Path.GetFileNameWithoutExtension(filePath);
+            if (string.IsNullOrEmpty(className))
+                className = "UnparseableFile";
         }
 
-        // Deduplicate — prefixed classes (e.g., redeclare function extends X) can produce
-        // the same model ID as the standalone class they modify
-        return modelIDs.Distinct().ToList();
+        // The full Modelica path is `{within}.{className}`. Even when ANTLR fails to
+        // build a parse tree for the class body, the top-of-file `within` statement is
+        // usually intact — regex it directly from the raw source so the placeholder id
+        // matches what a valid parse would have produced. That lets "Only this model"
+        // filters, row-clicks in the Issues table, and the library tree all line up.
+        var withinPackage = ExtractWithinStatement(fileContent);
+        var fullName = string.IsNullOrEmpty(withinPackage) ? className : $"{withinPackage}.{className}";
+
+        // Disambiguator — two unparseable files could in principle produce the same
+        // fullName (e.g., a typo'd `within` clause). Include the file id only if the
+        // graph already has a node at that id.
+        var placeholderId = fullName;
+        if (graph.HasNode(placeholderId))
+            placeholderId = $"{fullName}#{fileId}";
+
+        var placeholder = new ModelNode(placeholderId, className, fileContent)
+        {
+            ClassType = "unknown",
+            StartLine = 1,
+            StopLine = Math.Max(1, fileContent.Count(c => c == '\n') + 1),
+            IsNested = false,
+            ParentModelName = string.IsNullOrEmpty(withinPackage) ? null : withinPackage,
+            // True because the file *is* already on disk as a standalone .mo — this keeps
+            // the placeholder eligible for planner-side "included conservatively" handling.
+            // Downstream tools that must skip unparseable files should check
+            // IsParseFailurePlaceholder explicitly rather than relying on this flag.
+            CanBeStoredStandalone = true,
+            IsParseFailurePlaceholder = true
+        };
+
+        foreach (var error in parserErrors)
+            placeholder.Definition.ParserErrors.Add(error);
+
+        graph.AddNode(placeholder);
+        graph.AddFileContainsModel(fileId, placeholderId);
+        return placeholderId;
+    }
+
+    /// <summary>
+    /// Extracts the parent package from a file's `within` statement using a regex so it
+    /// works even when the rest of the file fails to parse. Returns an empty string when
+    /// there is no `within` clause (a valid state for top-level root package files) or
+    /// when the clause is malformed.
+    ///
+    /// Handles: <c>within Foo.Bar;</c>, <c>within  Foo.Bar ;</c>, <c>within;</c> (empty),
+    /// leading whitespace / line comments, and CR/LF line endings.
+    /// </summary>
+    private static string ExtractWithinStatement(string fileContent)
+    {
+        if (string.IsNullOrEmpty(fileContent))
+            return string.Empty;
+
+        // Strip leading single-line `//` comments and whitespace before looking for the
+        // first non-comment statement. Block comments (/* … */) are rare at the top of
+        // Modelica files but would trip a naive regex — if we hit one, stop and return
+        // empty rather than risk matching `within` inside the comment body.
+        int i = 0;
+        while (i < fileContent.Length)
+        {
+            var ch = fileContent[i];
+            if (char.IsWhiteSpace(ch)) { i++; continue; }
+            if (ch == '/' && i + 1 < fileContent.Length && fileContent[i + 1] == '/')
+            {
+                // Skip to end of line
+                while (i < fileContent.Length && fileContent[i] != '\n') i++;
+                continue;
+            }
+            break;
+        }
+
+        if (i >= fileContent.Length)
+            return string.Empty;
+
+        // Match `within` optionally followed by a dotted name, terminated by `;`.
+        var rest = fileContent.AsSpan(i);
+        var match = System.Text.RegularExpressions.Regex.Match(
+            rest.ToString(),
+            @"^within\b\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*)?\s*;");
+        if (!match.Success)
+            return string.Empty;
+
+        var name = match.Groups[1].Value;
+        // Strip whitespace around the dots, e.g. `within Foo . Bar ;`.
+        return System.Text.RegularExpressions.Regex.Replace(name, @"\s+", "");
     }
 
     /// <summary>
@@ -152,10 +326,23 @@ public static class GraphBuilder
 
             Parallel.ForEach(batch, filePath =>
             {
-                var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath, Encoding.Latin1));
-                foreach (var model in models)
+                try
                 {
-                    modelIDs.Add(model);
+                    var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath, Encoding.Latin1));
+                    foreach (var model in models)
+                    {
+                        modelIDs.Add(model);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Final safety net: LoadModelicaFile already absorbs parser failures via
+                    // placeholder nodes, so any exception here is either an IO failure (unreadable
+                    // file) or a graph-level defect. Skip the file rather than aborting the whole
+                    // library load; the placeholder path inside LoadModelicaFile covers parse
+                    // problems, and an IO error should not block the other files.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"GraphBuilder.LoadModelicaFiles: skipping '{filePath}' due to {ex.GetType().Name}: {ex.Message}");
                 }
             });
 
@@ -270,7 +457,9 @@ public static class GraphBuilder
     {
         const int batchSize = 500;
 
-        var allModels = graph.ModelNodes.ToList();
+        // Placeholder nodes carry raw (unparseable) file content and already have a fatal
+        // error attached — re-parsing them wastes work and produces noise. Skip them here.
+        var allModels = graph.ModelNodes.Where(m => !m.IsParseFailurePlaceholder).ToList();
         progressLog?.Invoke($"Starting dependency analysis for {allModels.Count} models");
 
         // Phase 1+2: Parse, analyze, and add edges in batches to limit peak memory.

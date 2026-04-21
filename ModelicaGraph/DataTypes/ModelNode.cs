@@ -1,3 +1,4 @@
+using ModelicaParser.DataTypes;
 using RevisionControl;
 
 namespace ModelicaGraph.DataTypes;
@@ -132,6 +133,31 @@ public class ModelNode : GraphNode
     /// VCS file status of the file containing this model, if applicable.
     /// </summary>
     public VcsFileStatus? FileStatus { get; set; }
+
+    /// <summary>
+    /// True when this node is a placeholder that stands in for a file whose contents
+    /// could not be parsed. The full source is preserved in <see cref="Definition"/>.ModelicaCode
+    /// and the failure is recorded in <see cref="Definition"/>.ParserErrors as a
+    /// <see cref="ParserError"/> with severity <see cref="ParserErrorSeverity.FatalParseFailure"/>.
+    /// Downstream tooling should skip these nodes for dependency analysis, style checking,
+    /// and formatting, but may still present them to the user (e.g., in the library tree).
+    /// </summary>
+    public bool IsParseFailurePlaceholder { get; set; }
+
+    /// <summary>
+    /// True when any <see cref="ParserError"/> has been recorded against this model —
+    /// either a recoverable syntax error or a fatal parse failure. Convenience for UI
+    /// code that needs to flag problem models in the tree and code viewer.
+    /// </summary>
+    public bool HasParserErrors => Definition?.ParserErrors.Count > 0;
+
+    /// <summary>
+    /// True when a <see cref="ParserErrorSeverity.FatalParseFailure"/> error is attached
+    /// — the file's contents could not be parsed at all. Implies either a placeholder or
+    /// a model whose file crashed the extractor.
+    /// </summary>
+    public bool HasFatalParseFailure =>
+        Definition?.ParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure) == true;
 
     /// <summary>
     /// Indicates whether any descendant model has uncommitted VCS changes.

@@ -544,4 +544,78 @@ end SimpleModel;
         Assert.NotNull(parseTree);
         Assert.Empty(errors);
     }
+
+    [Fact]
+    public void ExtractModelsWithErrors_ConstrainedbyOnNonReplaceableElement_DoesNotThrow()
+    {
+        // Arrange — `constrainedby` is only valid on replaceable elements per the
+        // Modelica spec. Dymola silently accepts this; we must not crash on it.
+        var code = @"
+model Test
+parameter SetupRecord setup constrainedby BaseSetup;
+end Test;";
+
+        // Act
+        var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(code);
+
+        // Assert
+        Assert.NotNull(models);
+        Assert.NotNull(errors);
+        Assert.NotEmpty(errors); // at least one syntax error reported
+    }
+
+    [Fact]
+    public void ExtractModelsWithErrors_HtmlTypoInsideString_ParsesWithoutErrors()
+    {
+        // Real-world input from a customer's documentation annotation. The HTML has a
+        // typo (`<\p>` instead of `</p>`), and the spec says `\p` isn't a valid escape —
+        // but Dymola accepts this and users routinely write this kind of thing. We must
+        // accept any char after `\` inside a string rather than emitting a token error.
+        var code = @"within ;
+package FordVDLOpen ""FordVDLOpen - Ford Performance Confidential Source Code Library.""
+  annotation (
+    Documentation(revisions=""<html>
+<p>2019.08.07 Version 1.00 - Original Release of FordVDLOpen. <\p>
+<p>2020.02.14 Version 1.01 - Update to Claytex/VeSyMA library 2019.2. </p>
+</html>""));
+end FordVDLOpen;";
+
+        var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(code);
+
+        Assert.Single(models);
+        Assert.Equal("FordVDLOpen", models[0].Name);
+        Assert.DoesNotContain(errors, e => e.Severity == DataTypes.ParserErrorSeverity.FatalParseFailure);
+    }
+
+    [Fact]
+    public void ExtractModelsWithErrors_WindowsPathInsideString_ParsesWithoutErrors()
+    {
+        // Windows paths in annotation strings used to crash the lexer because `\U` is
+        // not a spec-defined escape. The relaxed S_ESCAPE rule accepts them.
+        var code = @"model PathTest
+  String file = ""C:\Users\someone\file.txt"";
+end PathTest;";
+
+        var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(code);
+
+        Assert.Single(models);
+        Assert.DoesNotContain(errors, e => e.Severity == DataTypes.ParserErrorSeverity.FatalParseFailure);
+    }
+
+    [Fact]
+    public void ExtractModelsWithErrors_ValidCode_ReportsNoFatalFailure()
+    {
+        // Arrange
+        var code = @"
+model Valid
+  Real x;
+end Valid;";
+
+        // Act
+        var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(code);
+
+        // Assert
+        Assert.Single(models);
+        Assert.DoesNotContain(errors, e => e.Severity == DataTypes.ParserErrorSeverity.FatalParseFailure);
+    }
 }

@@ -89,7 +89,7 @@ The colors for each element type can be customized in **Settings > UI Settings >
 
 The issues table at the bottom shows all detected problems across your loaded libraries. Issues come from three sources:
 
-1. **Parser errors** — Syntax errors found when parsing Modelica code
+1. **Parser errors** — Syntax errors found when parsing Modelica code. Recoverable syntax errors are labelled **Parser error** (severity *Error*); issues severe enough that the whole file could not be parsed are labelled **Fatal parse failure** (severity *Fatal*), and the file appears in the library browser as a placeholder node so you can still open and correct it.
 2. **Style checking violations** — Rules violations detected by the background style checker based on your repository settings
 3. **External tool errors** — Errors reported by Dymola or OpenModelica during model checking
 

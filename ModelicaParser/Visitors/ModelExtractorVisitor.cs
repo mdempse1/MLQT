@@ -50,11 +50,15 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
     // Visit all class definitions
     public override object? VisitClass_definition([NotNull] modelicaParser.Class_definitionContext context)
     {
-        // Get the class type (model, block, function, etc.)
-        var classType = GetClassType(context.class_prefixes());
-
-        // Get the class specifier to extract the name
+        // Error recovery can leave class_prefixes() or class_specifier() null when ANTLR
+        // couldn't build a valid subtree. Skip silently — the parser error listener has
+        // already recorded a syntax error for this location.
+        var prefixes = context.class_prefixes();
         var specifier = context.class_specifier();
+        if (prefixes == null || specifier == null)
+            return base.VisitClass_definition(context);
+
+        var classType = GetClassType(prefixes);
 
         if (specifier.long_class_specifier() != null)
         {
@@ -191,7 +195,7 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
         {
             var elemModOrRepl = argument.element_modification_or_replaceable();
             var elemMod = elemModOrRepl?.element_modification();
-            if (elemMod == null) continue;
+            if (elemMod?.name() == null) continue;
 
             var name = elemMod.name().GetText();
 
@@ -224,7 +228,7 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                 {
                     var usesElemModOrRepl = usesArg.element_modification_or_replaceable();
                     var usesElemMod = usesElemModOrRepl?.element_modification();
-                    if (usesElemMod == null) continue;
+                    if (usesElemMod?.name() == null) continue;
 
                     var packageName = usesElemMod.name().GetText();
 
@@ -238,7 +242,7 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     {
                         var pkgElemModOrRepl = pkgArg.element_modification_or_replaceable();
                         var pkgElemMod = pkgElemModOrRepl?.element_modification();
-                        if (pkgElemMod == null) continue;
+                        if (pkgElemMod?.name() == null) continue;
 
                         if (pkgElemMod.name().GetText() == "version")
                         {

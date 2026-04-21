@@ -591,8 +591,14 @@ fragment Q_CHAR
     | ' '
     ;
 
+// The Modelica spec only defines a specific set of escape sequences, but Dymola
+// and every other tool in the wild treat any `\<char>` inside a string as literal
+// text. Enforcing the spec here causes the lexer to reject real-world files that
+// contain HTML with typos (e.g. `<\p>`), Windows file paths (`C:\Users\...`), or
+// JavaScript snippets inside annotation strings — files that Dymola loads without
+// complaint. Accept any character after `\` so these files parse.
 fragment S_ESCAPE
-    : '\\' ('’' | '\'' | '"' | '?' | '\\' | 'a' | 'b' | 'f' | 'n' | 'r' | 't' | 'v')
+    : '\\' .
     ;
 
 fragment DIGIT

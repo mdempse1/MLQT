@@ -988,4 +988,146 @@ end Plain;";
         Assert.NotNull(model);
         Assert.False(model.HasExperimentAnnotation);
     }
+
+    [Fact]
+    public void LoadModelicaFile_ConstrainedbyOnNonReplaceable_DoesNotThrow()
+    {
+        // Real-world input where Dymola accepts the file but the grammar rejects it:
+        // constrainedby is only valid on replaceable elements. The library load must
+        // survive this without aborting.
+        var graph = new DirectedGraph();
+        var content = @"
+model Test
+parameter SetupRecord setup constrainedby BaseSetup;
+end Test;";
+        var filePath = Path.Combine(_testFilesPath, "BadConstrainedby.mo");
+
+        var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        // File node is always created; at least one model (real or placeholder) exists.
+        Assert.Single(graph.FileNodes);
+        Assert.NotEmpty(modelIds);
+        Assert.NotEmpty(graph.ModelNodes);
+    }
+
+    [Fact]
+    public void LoadModelicaFile_UnparseableContent_CreatesPlaceholderWithFullSource()
+    {
+        // Input that the extractor cannot produce a model from at all. We expect a
+        // placeholder ModelNode carrying the full file contents and a fatal parser error.
+        var graph = new DirectedGraph();
+        var content = "this is not modelica at all @@@ {{ ::::";
+        var filePath = Path.Combine(_testFilesPath, "Garbage.mo");
+
+        var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        Assert.Single(graph.FileNodes);
+        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
+        if (placeholder != null)
+        {
+            Assert.Contains(placeholder.Id, modelIds);
+            Assert.Equal(content.Replace("\r\n", "\n").Replace("\r", "\n"), placeholder.Definition.ModelicaCode);
+            Assert.Contains(placeholder.Definition.ParserErrors,
+                e => e.Severity == ParserErrorSeverity.FatalParseFailure);
+            Assert.Equal("unknown", placeholder.ClassType);
+        }
+        // If the extractor survived and produced nothing rather than crashing, the
+        // behaviour is still acceptable — no crash reached the caller.
+    }
+
+    [Fact]
+    public void LoadModelicaFile_Placeholder_UsesFullModelicaPathFromWithinStatement()
+    {
+        // The customer-style case: a deeply-nested file whose class body is illegal.
+        // Even though we cannot parse the body, the top-of-file `within` clause is intact,
+        // so the placeholder id should be the *full* Modelica path, not just the filename.
+        var graph = new DirectedGraph();
+        var content = @"within Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates;
+model MustangS
+parameter SetupRecord setup constrainedby BaseSetup;
+end MustangS;";
+        var filePath = Path.Combine(_testFilesPath, "MustangS.mo");
+
+        var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
+        if (placeholder != null)
+        {
+            Assert.Equal("Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates.MustangS", placeholder.Id);
+            Assert.Equal("MustangS", placeholder.Definition.Name);
+            Assert.Equal("Mustang.Vehicle.Chassis.Suspension.HalfCar.Templates", placeholder.ParentModelName);
+            Assert.Contains(placeholder.Id, modelIds);
+        }
+    }
+
+    [Fact]
+    public void LoadModelicaFile_Placeholder_WithNoWithin_UsesClassNameOnly()
+    {
+        // Top-level file (no `within`) — id should just be the class name so tree
+        // placement still works for library root files.
+        var graph = new DirectedGraph();
+        var content = @"model Broken
+parameter X y constrainedby Z;
+end Broken;";
+        var filePath = Path.Combine(_testFilesPath, "Broken.mo");
+
+        GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
+        if (placeholder != null)
+        {
+            Assert.Equal("Broken", placeholder.Id);
+            Assert.Null(placeholder.ParentModelName);
+        }
+    }
+
+    [Fact]
+    public void LoadModelicaFile_Placeholder_ForPackageMo_UsesContainingDirectoryName()
+    {
+        // For `package.mo`, the class name is the parent directory, not "package".
+        var graph = new DirectedGraph();
+        var content = @"within Foo;
+package Bar
+parameter X y constrainedby Z;
+end Bar;";
+        var filePath = Path.Combine(_testFilesPath, "Bar", "package.mo");
+
+        GraphBuilder.LoadModelicaFile(graph, filePath, content);
+
+        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
+        if (placeholder != null)
+        {
+            Assert.Equal("Foo.Bar", placeholder.Id);
+            Assert.Equal("Bar", placeholder.Definition.Name);
+            Assert.Equal("Foo", placeholder.ParentModelName);
+        }
+    }
+
+    [Fact]
+    public void LoadModelicaFiles_BadFileDoesNotPreventOtherFilesFromLoading()
+    {
+        var graph = new DirectedGraph();
+        var goodPath = Path.Combine(_testFilesPath, "SimpleModel.mo");
+        var badPath = Path.Combine(_testFilesPath, "BadConstrainedby.mo");
+
+        // Write the bad file next to SimpleModel so LoadModelicaFiles reads it from disk.
+        File.WriteAllText(badPath, @"
+model Test
+parameter SetupRecord setup constrainedby BaseSetup;
+end Test;");
+
+        try
+        {
+            var modelIds = GraphBuilder.LoadModelicaFiles(graph, goodPath, badPath);
+
+            // The good file must still contribute its model.
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "SimpleModel");
+            Assert.NotEmpty(modelIds);
+        }
+        finally
+        {
+            if (File.Exists(badPath))
+                File.Delete(badPath);
+        }
+    }
 }

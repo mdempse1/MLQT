@@ -17,6 +17,7 @@
 @inject ICustomDictionaryService CustomDictionaryService
 @inject DymolaCheckingService DymolaCheckingService
 @inject OpenModelicaCheckingService OpenModelicaCheckingService
+@inject ISnackbar Snackbar
 
 <MudPaper Elevation="0" Class="mt-1">
     <MudStack Row="false" Style="gap:0px !important;">
@@ -74,6 +75,27 @@
                 }    
             </MudButtonGroup>
         </MudStack>
+        @if (_currentModelNode?.HasParserErrors == true)
+        {
+            <MudAlert Severity="@(_currentModelNode.HasFatalParseFailure ? MudBlazor.Severity.Error : MudBlazor.Severity.Warning)"
+                      Dense="true" Class="mt-1 mb-0 py-1">
+                @if (_currentModelNode.IsParseFailurePlaceholder)
+                {
+                    <text>This file could not be parsed. The raw contents are shown below so you can view and fix them — no models were extracted from it. See the Issues panel for the first syntax error.</text>
+                }
+                else if (_currentModelNode.HasFatalParseFailure)
+                {
+                    <text>Parsing of this file failed before it completed. Some models were extracted but the code shown may be incomplete. See the Issues panel for the first syntax error.</text>
+                }
+                else
+                {
+                    var n = _currentModelNode.Definition.ParserErrors.Count;
+                    var first = _currentModelNode.Definition.ParserErrors.FirstOrDefault();
+                    var atLine = first != null && first.Line > 0 ? $" (first at line {first.Line})" : "";
+                    <text>This model has @n parser @(n == 1 ? "error" : "errors")@atLine. See the Issues panel for details.</text>
+                }
+            </MudAlert>
+        }
         @* Height calculation: 221 px for table, 185px for other stuff*@
         <MudPaper Elevation="1" Style="height: calc(100vh - 405px); display: flex; flex-direction: column;" Class="mt-1 mb-2">
         @if (_isDiffMode)
@@ -662,6 +684,17 @@
         bool excludeClassDefs = _currentModelNode.ClassType == "package";
         var cacheKey = new RenderCacheKey(selectedModelId, _showAnnotations, _showHighlighted, excludeClassDefs);
 
+        // When a model has parser errors, skip ModelicaRenderer entirely — rendering a
+        // partial/invalid parse tree produces misleading or truncated output. Show the raw
+        // source from Definition.ModelicaCode so the user sees exactly what's in the file,
+        // unmodified, with no syntax highlighting. Placeholder nodes (whole-file failures)
+        // benefit from this the most — they carry the full file as ModelicaCode.
+        if (_currentModelNode.HasParserErrors)
+        {
+            ShowRawSource(selectedModelId);
+            return;
+        }
+
         if (_renderCache.TryGetValue(cacheKey, out var cachedCode))
         {
             // Cache hit — set code and render immediately BEFORE any await.
@@ -783,6 +816,78 @@
                 });
             }, TaskScheduler.Default);
         }
+    }
+
+    /// <summary>
+    /// Loads the full original contents of the file that contains the given model, so that
+    /// models whose extraction was truncated by a parse failure still show the whole file
+    /// to the user rather than just the successfully-extracted prefix. Returns <c>null</c>
+    /// if the containing file can't be located on disk — the caller will then fall back to
+    /// <c>Definition.ModelicaCode</c>, which for placeholder nodes is already the full file.
+    /// </summary>
+    private string? LoadOriginalFileContents(ModelNode? model)
+    {
+        if (model == null || string.IsNullOrEmpty(model.ContainingFileId))
+            return null;
+
+        var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId);
+        if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath) || !File.Exists(fileNode.FilePath))
+            return null;
+
+        try
+        {
+            return File.ReadAllText(fileNode.FilePath, System.Text.Encoding.Latin1);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Displays the raw, unrendered source of the current model. Used when the model has
+    /// parser errors — running ModelicaRenderer on a broken parse tree yields misleading
+    /// output, so we show the file contents verbatim instead. For non-placeholder models
+    /// the file is read fresh from disk so the user sees the *entire* original file,
+    /// not just the sub-range that the extractor managed to pull out before it failed.
+    /// Each line is HTML-encoded so that any <c>&lt;</c> or <c>&gt;</c> characters in the
+    /// source don't get mistaken for CodeViewer markup tags; no syntax highlighting is applied.
+    /// </summary>
+    private void ShowRawSource(string selectedModelId)
+    {
+        var raw = LoadOriginalFileContents(_currentModelNode)
+            ?? _currentModelNode?.Definition.ModelicaCode
+            ?? string.Empty;
+        var normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
+        var lines = normalized.Split('\n')
+            .Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? string.Empty)
+            .ToList();
+
+        _highlightedCode = lines;
+        _lines = Math.Max(10, lines.Count);
+        _modelicaCode = normalized;
+        _isLoadingCode = false;
+
+        // Deliberately do NOT populate _renderCache — raw content isn't tied to the
+        // render-option cache key and we don't want it served to a later cache hit if the
+        // model is ever cleared of errors (e.g. after a reload/fix).
+
+        OnIssuesScopeChanged(IssuesScopeAllModels);
+        StateHasChanged();
+
+        // Run VCS check in the background so the diff toggle reflects working-copy state.
+        _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
+        {
+            if (NavState.ModelID != selectedModelId)
+                return;
+            await InvokeAsync(async () =>
+            {
+                if (!_isModelModified)
+                    _isDiffMode = false;
+                await SetViewMode(_isDiffMode, _diffViewMode);
+                StateHasChanged();
+            });
+        }, TaskScheduler.Default);
     }
 
     /// <summary>
@@ -1032,8 +1137,55 @@ document.head.appendChild(style);
         // Add parser errors found during file loading to the issues list
         SurfaceParserErrors();
 
+        // If anything failed to parse, tell the user explicitly — the Issues panel is
+        // easy to miss and without this notification the user only sees a silently
+        // incomplete library.
+        NotifyParserErrorsIfAny();
+
         // Update UI with parser errors before starting background style checking
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Emits a snackbar notification summarising parser errors found during library load.
+    /// Fatal parse failures are raised as an Error, recovered syntax errors as a Warning,
+    /// and the user is pointed at the Issues panel for details.
+    /// </summary>
+    private void NotifyParserErrorsIfAny()
+    {
+        int fatalCount = 0;
+        int recoveredCount = 0;
+
+        foreach (var model in LibraryDataService.GetAllModels())
+        {
+            foreach (var error in model.Definition.ParserErrors)
+            {
+                if (error.Severity == ParserErrorSeverity.FatalParseFailure)
+                    fatalCount++;
+                else
+                    recoveredCount++;
+            }
+        }
+
+        if (fatalCount == 0 && recoveredCount == 0)
+            return;
+
+        if (fatalCount > 0)
+        {
+            var msg = fatalCount == 1
+                ? "1 file could not be parsed. It appears in the library tree as a placeholder — see the Issues panel."
+                : $"{fatalCount} files could not be parsed. They appear in the library tree as placeholders — see the Issues panel.";
+            if (recoveredCount > 0)
+                msg += $" ({recoveredCount} additional recoverable syntax {(recoveredCount == 1 ? "error" : "errors")} also reported.)";
+            Snackbar.Add(msg, MudBlazor.Severity.Error);
+        }
+        else
+        {
+            var msg = recoveredCount == 1
+                ? "1 syntax error found while loading the library. See the Issues panel."
+                : $"{recoveredCount} syntax errors found while loading the library. See the Issues panel.";
+            Snackbar.Add(msg, MudBlazor.Severity.Warning);
+        }
     }
 
     /// <summary>
@@ -1052,21 +1204,32 @@ document.head.appendChild(style);
             {
                 foreach (var error in errors)
                 {
-                    var modelName = model.Definition.Name;
+                    // Use the node id (full Modelica path, e.g. "Mustang.Vehicle.Chassis.MustangS")
+                    // rather than Definition.Name (short class name only). NavState.ModelID is
+                    // set from the node id in LibraryBrowser, so row-click navigation and the
+                    // "Only this model" filter both match against the id.
+                    var modelName = model.Id;
                     var line = error.Line;
                     var details = error.Message + (error.OffendingToken != null ? $" (token: '{error.OffendingToken}')" : "");
+
+                    // Fatal failures (file could not be parsed — a placeholder model stands in
+                    // for it) are flagged separately so the user can distinguish them from a
+                    // recovered syntax error where the rest of the file still loaded.
+                    bool isFatal = error.Severity == ParserErrorSeverity.FatalParseFailure;
+                    var summary = isFatal ? "Fatal parse failure" : "Parser error";
+                    var severity = isFatal ? "Fatal" : "Error";
 
                     // Avoid duplicates — file-level errors from loading may overlap with
                     // model-level errors from EnsureParsed
                     bool alreadyExists = existingMessages.Any(m =>
                         m.ModelName == modelName &&
                         m.LineNumber == line &&
-                        m.Summary == "Parser error" &&
+                        m.Summary == summary &&
                         m.Details == details);
 
                     if (!alreadyExists)
                     {
-                        newMessages.Add(new LogMessage(modelName, "Error", line, "Parser error", details));
+                        newMessages.Add(new LogMessage(modelName, severity, line, summary, details));
                     }
                 }
             }

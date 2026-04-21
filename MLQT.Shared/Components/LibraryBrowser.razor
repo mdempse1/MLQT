@@ -50,6 +50,15 @@
                                      Size="Size.Small" Color="Color.Warning"
                                      Style="font-size: 8px; margin-left: 4px;" />
                         }
+                        @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
+                        {
+                            <MudTooltip Text="@GetParserErrorTooltip(treeItem.Value)" Placement="Placement.Right">
+                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+                                         Size="Size.Small"
+                                         Color="@(treeItem.Value.HasFatalParseFailure ? Color.Error : Color.Warning)"
+                                         Style="font-size: 14px; margin-left: 4px;" />
+                            </MudTooltip>
+                        }
                     </MudStack>
                 </BodyContent>
             </MudTreeViewItem>
@@ -209,6 +218,15 @@ else if (Repository != null)
                                                     Size="Size.Small" Color="Color.Warning"
                                                     Style="font-size: 8px; margin-left: 4px;" />
                                         }
+                                        @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
+                                        {
+                                            <MudTooltip Text="@GetParserErrorTooltip(treeItem.Value)" Placement="Placement.Right">
+                                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+                                                         Size="Size.Small"
+                                                         Color="@(treeItem.Value.HasFatalParseFailure ? Color.Error : Color.Warning)"
+                                                         Style="font-size: 14px; margin-left: 4px;" />
+                                            </MudTooltip>
+                                        }
                                     </MudStack>
                                 </ChildContent>
                                 <TooltipContent>
@@ -289,6 +307,13 @@ else if (Repository != null)
     /// Used to show a generic change indicator on parent packages.
     /// </summary>
     private HashSet<string> _modelsWithDescendantChanges = new();
+
+    /// <summary>
+    /// Set of model IDs whose descendants have recorded parser errors. Used to bubble the
+    /// error indicator up parent packages so the user can navigate down to find the problem
+    /// model without having to expand every branch.
+    /// </summary>
+    private HashSet<string> _modelsWithDescendantParserErrors = new();
 
     //Menu icons - https://www.svgrepo.com/vectors/git
     const string _rebaseIcon = @"<svg width=""24"" height=""24"" viewBox=""0 -960 960 960"" fill=""currentColor"">
@@ -566,8 +591,53 @@ else if (Repository != null)
         // Annotate items with VCS status indicators
         AnnotateVcsStatus(TreeItems);
 
+        // Compute which parent packages contain descendants with parser errors so the
+        // warning icon bubbles up the tree and the user can find the problem model.
+        RefreshDescendantParserErrors();
+
         // Restore expansion state for previously expanded nodes
         RestoreExpansionState(TreeItems);
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="_modelsWithDescendantParserErrors"/> from the current set of
+    /// models in the graph. A package id is added to the set if any model whose id begins
+    /// with "<packageId>." has parser errors.
+    /// </summary>
+    private void RefreshDescendantParserErrors()
+    {
+        var descendants = new HashSet<string>();
+        foreach (var model in LibraryDataService.GetAllModels())
+        {
+            if (!model.HasParserErrors)
+                continue;
+
+            var lastDot = model.Id.LastIndexOf('.');
+            while (lastDot > 0)
+            {
+                var parentId = model.Id.Substring(0, lastDot);
+                descendants.Add(parentId);
+                lastDot = parentId.LastIndexOf('.');
+            }
+        }
+        _modelsWithDescendantParserErrors = descendants;
+    }
+
+    /// <summary>
+    /// Builds the hover tooltip for a tree node's parser-error indicator.
+    /// </summary>
+    private string GetParserErrorTooltip(ModelNode node)
+    {
+        if (node.HasFatalParseFailure)
+            return "This file could not be fully parsed. The contents shown may be incomplete or replaced with a placeholder. See the Issues panel for details.";
+        if (node.HasParserErrors)
+        {
+            var count = node.Definition.ParserErrors.Count;
+            return count == 1
+                ? "This model has 1 parser error. See the Issues panel for details."
+                : $"This model has {count} parser errors. See the Issues panel for details.";
+        }
+        return "A model inside this package has a parser error.";
     }
 
     /// <summary>

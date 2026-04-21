@@ -113,6 +113,11 @@ public class ModelicaParserHelper
 
     /// <summary>
     /// Extracts all model definitions from Modelica source code, also returning any parser/lexer errors.
+    ///
+    /// Catches exceptions thrown during tree traversal (which can happen when ANTLR error
+    /// recovery leaves the parse tree in a shape the visitor can't handle) and records them
+    /// as a <see cref="ParserErrorSeverity.FatalParseFailure"/> entry so callers can decide
+    /// whether to produce a placeholder rather than propagate the crash.
     /// </summary>
     /// <param name="modelicaCode">The Modelica source code to parse.</param>
     /// <returns>Tuple containing the list of models and any parser errors encountered.</returns>
@@ -129,9 +134,30 @@ public class ModelicaParserHelper
         parser.RemoveErrorListeners();
         parser.AddErrorListener(errorListener);
 
-        var parseTree = parser.stored_definition();
         var visitor = new ModelExtractorVisitor(code);
-        visitor.Visit(parseTree);
+        try
+        {
+            var parseTree = parser.stored_definition();
+            visitor.Visit(parseTree);
+        }
+        catch (Exception ex)
+        {
+            // The parse tree (or the parser itself on a ParseCanceledException) didn't
+            // survive long enough to produce a full model list. Use the first recovered
+            // syntax error (if any) to point the user at the likely source of the problem;
+            // that's almost always more informative than the stack trace.
+            var firstSyntax = errorListener.Errors.FirstOrDefault();
+            errorListener.Errors.Add(new ParserError
+            {
+                Line = firstSyntax?.Line ?? 0,
+                CharPosition = firstSyntax?.CharPosition ?? 0,
+                Message = firstSyntax != null
+                    ? $"Unable to extract models from file. First syntax error at line {firstSyntax.Line}: {firstSyntax.Message}. Inner: {ex.GetType().Name}: {ex.Message}"
+                    : $"Unable to extract models from file. {ex.GetType().Name}: {ex.Message}",
+                OffendingToken = firstSyntax?.OffendingToken,
+                Severity = ParserErrorSeverity.FatalParseFailure
+            });
+        }
         return (visitor.Models, errorListener.Errors);
     }
 

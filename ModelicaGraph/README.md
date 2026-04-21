@@ -32,6 +32,8 @@ ModelicaGraph provides a graph structure to represent and query:
 
 `GraphBuilder` is a static utility class that handles loading Modelica files into the graph, parsing them, extracting models, and analyzing dependencies.
 
+When a file contains code the parser cannot process — for example Modelica that Dymola accepts but the grammar rejects — `LoadModelicaFile` creates a placeholder `ModelNode` carrying the full file contents and marks it with `IsParseFailurePlaceholder = true`. A `ParserError` with `Severity = ParserErrorSeverity.FatalParseFailure` is attached so the UI can distinguish fatal failures from recovered syntax errors. Downstream analysis (dependency analysis, style checking, formatting) skips placeholder nodes.
+
 ### StyleChecking
 
 `StyleChecking` provides a static method to run configurable style rules against model definitions, with `StyleCheckingSettings` controlling which rules are active.
