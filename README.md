@@ -2,6 +2,12 @@
 
 MLQT is an open-source desktop application and set of libraries for managing, analyzing, and reviewing [Modelica](https://modelica.org/) libraries stored in version control systems (Git or SVN).
 
+## Origin
+
+MLQT started from a familiar frustration: every time a Modelica tool saved a file, it would introduce a flurry of whitespace and formatting changes that cluttered commits, obscured the real edits in diffs, and made code review painful. The original goal was simple — put a layer between Modelica tools and the repository that applied consistent formatting to every `.mo` file before it was committed, so that Git and SVN diffs showed meaningful changes rather than stylistic churn. Formatting rules are stored in the repository itself so everyone on the team applies the same rules.
+
+From that starting point, MLQT grew into a broader set of tools for working with Modelica code. The same parser that powers the formatter also drives configurable style checking, dependency impact analysis, and external resource tracking, alongside integrations with Dymola and OpenModelica for model checking.
+
 ## What Is MLQT?
 
 Modelica is an object-oriented language for modeling complex physical systems (mechanical, electrical, thermal, hydraulic, etc.). Large Modelica projects typically store their model libraries in Git or SVN and involve teams who need to:
@@ -9,11 +15,11 @@ Modelica is an object-oriented language for modeling complex physical systems (m
 - Review what has changed between revisions
 - Understand which other models are affected when a model is modified
 - Apply consistent formatting rules to your Modelica code
-- Checking naming conventions and coding style guidelines
+- Check naming conventions and coding style guidelines
 - Check models with simulation tools (Dymola, OpenModelica) before committing
 - Track external resources (data files, C libraries, images) referenced by models
 
-MLQT provides a UI to do all of this as your primary way to interact with your version control system. It can ensure consistent formatting of your Modelica code to ensure that whitespace changes made in the Modelica editor don't make it into the version control system.  The formatting rules are stored in the version control system so that all users are applying the same set of rules to ensure consistency.
+MLQT provides a UI to do all of this as your primary way to interact with your version control system.
 
 ## Key Features
 
