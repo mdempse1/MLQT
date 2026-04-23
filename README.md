@@ -19,15 +19,14 @@ Modelica is an object-oriented language for modeling complex physical systems (m
 - Check models with simulation tools (Dymola, OpenModelica) before committing
 - Track external resources (data files, C libraries, images) referenced by models
 
-MLQT provides a UI to do all of this as your primary way to interact with your version control system.
+MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep using whichever editor you prefer; MLQT sits between the editor and the repository, filtering out the formatting noise so commits contain only meaningful changes.
 
 ## Key Features
 
 - **Library Browser** — Browse Modelica package hierarchies with syntax-highlighted code viewing
 - **Version Control Integration** — Review uncommitted changes, view history, switch branches, commit, update, merge for both Git and SVN repositories
 - **Impact Analysis** — Select a set of models and see the network of models that depend on them, visualized as an interactive graph
-- **Style Checking** — Configurable rules enforce coding conventions (description strings, section ordering, naming conventions, etc.)
-- **Spell Checking** — Hunspell-based spell checking for description strings and documentation annotations with multi-language support, custom dictionaries, and intelligent word filtering
+- **Style Checking** — Configurable rules enforce coding conventions (description strings, section ordering, naming conventions, Hunspell-based spell checking of descriptions and documentation, etc.)
 - **External Resources** — Track all data files, C libraries, and images referenced by models; detect missing files and portability issues
 - **Code Formatting** — Auto-format Modelica source with configurable rules (section ordering, imports first, annotation placement, etc.)
 - **Dymola Integration** — Check and simulate models via Dymola's HTTP JSON-RPC interface
