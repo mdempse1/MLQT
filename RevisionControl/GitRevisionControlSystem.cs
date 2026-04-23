@@ -1599,6 +1599,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         }
     }
 
+    /// <summary>
+    /// Not implemented for Git. Resolving the branch point in Git requires computing the
+    /// merge-base against the branch's upstream, which isn't part of the current workflows
+    /// that consume this method. Returns null.
+    /// </summary>
+    public DateTimeOffset? GetBranchPointDate(string repositoryPath) => null;
+
     private static bool TryParseRemoteUrl(string remoteUrl, out string host, out string repoPath)
     {
         host = string.Empty;

@@ -255,5 +255,23 @@ public interface IRevisionControlSystem
     /// <param name="baseBranch">Target branch to merge into (null = auto-detect remote default)</param>
     /// <returns>URL to open in a browser, or null if the service could not be determined</returns>
     string? GetPullRequestUrl(string repositoryPath, string? baseBranch = null);
+
+    /// <summary>
+    /// Gets the commit date of the source revision the specified branch was created from —
+    /// i.e. the point on the parent branch at which the new branch diverges.
+    ///
+    /// Note this is NOT the same as the date the branch was created: an <c>svn copy</c>
+    /// performed today may copy from a trunk revision that is days or weeks old. Callers
+    /// that need an upper bound on the parent-branch ancestry (for example a trunk-fallback
+    /// search for reference data) must use this date, not the copy operation's own date.
+    ///
+    /// For SVN: walks the branch's history with <c>--stop-on-copy</c> to find the copy that
+    /// established the branch, reads the copy-from revision, then returns that revision's
+    /// <c>svn:date</c> (which is uniform across the repository at that revision).
+    /// For Git: not currently implemented — returns null.
+    /// </summary>
+    /// <param name="repositoryPath">Path or URL to the branch (e.g. a release or ticket branch).</param>
+    /// <returns>The commit date of the copy-from revision, or null if it could not be determined.</returns>
+    DateTimeOffset? GetBranchPointDate(string repositoryPath);
 }
 

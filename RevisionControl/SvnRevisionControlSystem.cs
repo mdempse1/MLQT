@@ -576,6 +576,83 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
+    /// Gets the commit date of the source revision this branch was created from. See
+    /// <see cref="IRevisionControlSystem.GetBranchPointDate"/> for semantics.
+    ///
+    /// Implementation: walks the branch with SharpSvn's <c>StrictNodeHistory = true</c>
+    /// (i.e. <c>svn log --stop-on-copy</c>). The oldest entry is the copy that established
+    /// the branch; any of its changed-paths entries with a non-null <c>CopyFromRevision</c>
+    /// identifies the source revision. We then read that revision's <c>svn:date</c> via a
+    /// single-revision log query at the repository root (the repo root exists at every
+    /// revision, whereas the branch URL itself does not exist at the source revision).
+    /// Returns null if the path has no copy origin (trunk itself, or a non-branch path),
+    /// or if any SVN query fails.
+    /// </summary>
+    public DateTimeOffset? GetBranchPointDate(string repositoryPath)
+    {
+        try
+        {
+            using var client = new SvnClient();
+            var uri = GetRepositoryUri(repositoryPath);
+
+            // Step 1: find the copy that created this branch, and its source revision.
+            // Stream is newest-first; we keep overwriting, so the final capture corresponds
+            // to the oldest entry — the branch-establishing copy.
+            long? copyFromRevision = null;
+
+            var walkArgs = new SvnLogArgs
+            {
+                StrictNodeHistory = true,
+                RetrieveChangedPaths = true,
+                Limit = 0,
+            };
+
+            client.Log(uri.Uri, walkArgs, (sender, e) =>
+            {
+                if (e.ChangedPaths == null) return;
+                long? candidate = null;
+                foreach (var p in e.ChangedPaths)
+                {
+                    if (p.CopyFromRevision > 0)
+                        candidate = p.CopyFromRevision;
+                }
+                if (candidate.HasValue)
+                    copyFromRevision = candidate;
+            });
+
+            if (copyFromRevision == null)
+                return null;
+
+            // Step 2: resolve the date of the copy-from revision. Query at the repository
+            // root so the lookup is independent of which paths existed at that revision.
+            if (!client.GetInfo(uri, out var info))
+                return null;
+
+            DateTime? sourceDate = null;
+            var lookupArgs = new SvnLogArgs
+            {
+                Start = new SvnRevision(copyFromRevision.Value),
+                End = new SvnRevision(copyFromRevision.Value),
+                Limit = 1,
+            };
+            client.Log(info.RepositoryRoot, lookupArgs, (sender, e) =>
+            {
+                sourceDate = e.Time;
+            });
+
+            if (sourceDate == null)
+                return null;
+
+            return new DateTimeOffset(sourceDate.Value, TimeSpan.Zero);
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetBranchPointDate", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Gets the list of files changed in a specific revision.
     /// </summary>
     public List<VcsChangedFile> GetChangedFiles(string repositoryPath, string revision)

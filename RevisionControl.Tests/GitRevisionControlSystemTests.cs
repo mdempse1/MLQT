@@ -157,6 +157,15 @@ public class GitRevisionControlSystemTests : IDisposable
     }
 
     [Fact]
+    public void GetBranchPointDate_AlwaysReturnsNull()
+    {
+        // Git implementation is intentionally not supported — callers (e.g. the planner)
+        // log a warning and fall back to the commit date.
+        var result = _git.GetBranchPointDate(_tempRepoPath);
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void GetCurrentRevision_WithNonGitRepo_ReturnsNull()
     {
         // Arrange - empty directory

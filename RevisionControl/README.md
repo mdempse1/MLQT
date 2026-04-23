@@ -102,6 +102,14 @@ List<VcsChangedFile> changes = git.GetChangedFiles(@"C:\Projects\MyRepo", "abc12
 foreach (var file in changes)
     Console.WriteLine($"  {file.ChangeType}: {file.Path}");
 
+// Get the commit date of the revision this branch was created from — i.e. the
+// point on the parent branch where the new branch diverges. This is NOT the date
+// of the copy operation itself: an 'svn copy' today may copy from a week-old
+// trunk revision; this method returns the week-old date. SVN walks the branch
+// with 'svn log --stop-on-copy' to find the copy-from revision. Git returns null.
+DateTimeOffset? branchPoint = svn.GetBranchPointDate(
+    @"https://svn.example.com/repo/releases/2026.1");
+
 // Get uncommitted working copy changes
 List<VcsWorkingCopyFile> wcChanges = git.GetWorkingCopyChanges(@"C:\Projects\MyRepo");
 ```
