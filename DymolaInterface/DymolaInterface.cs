@@ -257,7 +257,7 @@ public class DymolaInterface : IDisposable
             var request = new
             {
                 method = cmd.Replace("\\", "\\\\"),
-                @params = fixedParams.Length > 0 ? fixedParams : null,
+                @params = fixedParams.Length > 0 || !cmd.Contains("(") ? fixedParams : null,
                 id = _rpcId
             };
 
