@@ -436,10 +436,10 @@ public class DymolaInterface : IDisposable
     public async Task<bool> AddModelicaPathAsync(string path, bool erase = false)
         => GetBooleanResult(await CallDymolaFunctionAsync("AddModelicaPath", new object?[] { path, erase }));
 
-    public async Task<string> CdAsync(string dir = "")
+    public async Task<bool> CdAsync(string dir = "")
     {
         var result = await CallDymolaFunctionAsync("cd", new object?[] { dir });
-        return GetStringResult(result);
+        return GetBooleanResult(result);
     }
 
     public async Task<bool> ClearAsync(bool fast = false)

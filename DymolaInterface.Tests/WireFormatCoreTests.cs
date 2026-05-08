@@ -143,12 +143,12 @@ public class WireFormatCoreTests
     }
 
     [Fact]
-    public async Task CdAsync_ReturnsStringResult()
+    public async Task CdAsync_ReturnsBooleanResult()
     {
         using var h = new DymolaTestHarness();
-        h.SetResultString("/tmp");
+        h.SetResultBool(true);
         var s = await h.Dymola.CdAsync("/tmp");
-        Assert.Equal("/tmp", s);
+        Assert.True(s);
         Assert.Equal("cd", h.Handler.LastRequest.Method);
     }
 
