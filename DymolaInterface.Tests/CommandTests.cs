@@ -29,6 +29,33 @@ public class CommandTests
         Assert.True(true);
     }
 
+
+    [Fact]
+    public async Task ExecuteCommandAsync_NoCommandAndArguments_Succeeds()
+    {
+        // Arrange
+        await _fixture.EnsureDymolaStartedAsync();
+
+        // Act
+        var result = await _fixture.Dymola.ExecuteCommandAsync("cd()");
+
+        // Assert - Command should execute without throwing exception
+        Assert.True(true);
+    }
+
+    [Fact]
+    public async Task ExecuteCommandAsync_WithCommandAndArguments_Succeeds()
+    {
+        // Arrange
+        await _fixture.EnsureDymolaStartedAsync();
+
+        // Act
+        var result = await _fixture.Dymola.ExecuteCommandAsync("cd(\"c:\\Temp\")");
+
+        // Assert - Command should execute without throwing exception
+        Assert.True(true);
+    }
+
     [Fact]
     public async Task SetVariableAsync_WithDoubleValue_Succeeds()
     {
