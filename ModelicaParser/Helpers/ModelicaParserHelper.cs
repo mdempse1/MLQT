@@ -101,6 +101,33 @@ public class ModelicaParserHelper
     }
 
     /// <summary>
+    /// Parses a Modelica <c>modification_expression</c> — the grammar rule that
+    /// covers everything a default-value binding (or other modifier expression)
+    /// can be: any <c>expression</c> shape, plus the literal <c>break</c> used
+    /// in <c>else break</c> contexts. Returns the parsed tree along with the
+    /// token stream so callers can use ANTLR <c>Interval</c> ranges to extract
+    /// original source text and run <see cref="Antlr4.Runtime.TokenStreamRewriter"/>.
+    /// </summary>
+    public static (modelicaParser.Modification_expressionContext parseTree,
+                   CommonTokenStream tokenStream,
+                   List<ParserError> errors)
+        ParseModificationExpression(string expression)
+    {
+        var inputStream = new AntlrInputStream(expression ?? string.Empty);
+        var lexer = new modelicaLexer(inputStream);
+        var errorListener = new ModelicaErrorListener();
+        lexer.RemoveErrorListeners();
+        lexer.AddErrorListener(errorListener);
+        var tokenStream = new CommonTokenStream(lexer);
+        var parser = new modelicaParser(tokenStream);
+        parser.RemoveErrorListeners();
+        parser.AddErrorListener(errorListener);
+
+        var parseTree = parser.modification_expression();
+        return (parseTree, tokenStream, errorListener.Errors);
+    }
+
+    /// <summary>
     /// Extracts all model definitions from Modelica source code.
     /// </summary>
     /// <param name="modelicaCode">The Modelica source code to parse.</param>
