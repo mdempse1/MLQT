@@ -1150,6 +1150,523 @@ end Bar;";
         }
     }
 
+    // ============================================================================
+    // UpdateGraphForChangedFiles — incremental refresh path (was at 0% coverage)
+    // ============================================================================
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_EmptyChangeSet_ReturnsEmptyList()
+    {
+        var graph = new DirectedGraph();
+
+        var affected = GraphBuilder.UpdateGraphForChangedFiles(
+            graph, Path.GetTempPath(), new HashSet<string>());
+
+        Assert.Empty(affected);
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_OnlyNonModelicaFiles_IgnoresThem()
+    {
+        // Files that aren't .mo or package.order should be filtered out — the
+        // helper only acts on Modelica-related paths.
+        var graph = new DirectedGraph();
+
+        var affected = GraphBuilder.UpdateGraphForChangedFiles(
+            graph, Path.GetTempPath(),
+            new HashSet<string> { "README.md", "src/foo.cs", "Resources/data.csv" });
+
+        Assert.Empty(affected);
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_AddsNewFile_AddsModelsToGraph()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdAdd_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var graph = new DirectedGraph();
+            // Pre-create a file on disk so the re-parse step finds it
+            File.WriteAllText(Path.Combine(tempDir, "NewModel.mo"),
+                "model NewModel\n  Real x;\nend NewModel;");
+
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "NewModel.mo" });
+
+            Assert.Contains("NewModel", affected);
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "NewModel");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_ChangedFile_RemovesOldModelsThenReparses()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdChg_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var moPath = Path.Combine(tempDir, "Demo.mo");
+            File.WriteAllText(moPath, "model Demo\n  Real x;\nend Demo;");
+
+            // Load the initial state into the graph
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, moPath, File.ReadAllText(moPath));
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "Demo");
+
+            // Mutate the file on disk so the reparse picks up a different model name
+            File.WriteAllText(moPath, "model Demo\n  Real y;\nend Demo;\nmodel Extra\n  Real z;\nend Extra;");
+
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "Demo.mo" });
+
+            // Both the old Demo and the new Extra appear in the affected list —
+            // Demo because it was removed and re-added, Extra because it's new.
+            Assert.Contains("Demo", affected);
+            Assert.Contains("Extra", affected);
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "Extra");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_DeletedFile_RemovesModelsButDoesNotReparse()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdDel_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var moPath = Path.Combine(tempDir, "ToDelete.mo");
+            File.WriteAllText(moPath, "model ToDelete\n  Real x;\nend ToDelete;");
+
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, moPath, File.ReadAllText(moPath));
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "ToDelete");
+
+            // Simulate VCS deletion — file is gone before the incremental update runs
+            File.Delete(moPath);
+
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "ToDelete.mo" });
+
+            Assert.Contains("ToDelete", affected);
+            Assert.DoesNotContain(graph.ModelNodes, m => m.Definition.Name == "ToDelete");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_PackageOrderFile_UpdatesPackageOrder()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdOrd_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Initial state: package.mo + package.order both present
+            var pkgPath = Path.Combine(tempDir, "package.mo");
+            var ordPath = Path.Combine(tempDir, "package.order");
+            File.WriteAllText(pkgPath, "package P\nend P;");
+            File.WriteAllLines(ordPath, new[] { "Old1", "Old2" });
+
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaDirectory(graph, tempDir);
+            var pkg = graph.ModelNodes.Single(m => m.Definition.Name == "P");
+            Assert.Equal(new[] { "Old1", "Old2" }, pkg.PackageOrder);
+
+            // Rewrite the order file with different/blank entries, then announce the change
+            File.WriteAllLines(ordPath, new[] { "New1", "", "New2", "  ", "New3" });
+
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "package.order" });
+
+            // package.order changes don't touch model nodes, so affected list stays empty
+            Assert.Empty(affected);
+            // Blank lines must be filtered, surviving entries trimmed
+            Assert.Equal(new[] { "New1", "New2", "New3" }, pkg.PackageOrder);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_PackageOrderWithoutPackageMo_IsIgnored()
+    {
+        // Defensive: a stray package.order with no sibling package.mo must not crash.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdNoPkg_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllLines(Path.Combine(tempDir, "package.order"), new[] { "X" });
+
+            var graph = new DirectedGraph();
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "package.order" });
+
+            Assert.Empty(affected);
+            Assert.Empty(graph.ModelNodes);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_DeletedPackageOrder_IgnoredSilently()
+    {
+        // VCS may report package.order as deleted — the helper just skips the
+        // entry rather than throwing on the missing file.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdMissOrd_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var graph = new DirectedGraph();
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "missing/package.order" });
+
+            Assert.Empty(affected);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_MixedChanges_HandlesAllInOnePass()
+    {
+        // Realistic VCS update: one file added, one modified, one deleted, plus a
+        // package.order change — all in a single change set.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdMix_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Initial state
+            File.WriteAllText(Path.Combine(tempDir, "package.mo"), "package P\nend P;");
+            File.WriteAllLines(Path.Combine(tempDir, "package.order"), new[] { "A", "B" });
+            File.WriteAllText(Path.Combine(tempDir, "Existing.mo"),
+                "model Existing\n  Real x;\nend Existing;");
+            File.WriteAllText(Path.Combine(tempDir, "ToRemove.mo"),
+                "model ToRemove\n  Real y;\nend ToRemove;");
+
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaDirectory(graph, tempDir);
+
+            // Apply changes: rewrite Existing, delete ToRemove, add NewFile,
+            // rewrite package.order
+            File.WriteAllText(Path.Combine(tempDir, "Existing.mo"),
+                "model Existing\n  Real changed;\nend Existing;");
+            File.Delete(Path.Combine(tempDir, "ToRemove.mo"));
+            File.WriteAllText(Path.Combine(tempDir, "NewFile.mo"),
+                "model NewFile\n  Real z;\nend NewFile;");
+            File.WriteAllLines(Path.Combine(tempDir, "package.order"),
+                new[] { "Existing", "NewFile" });
+
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir,
+                new HashSet<string> { "Existing.mo", "ToRemove.mo", "NewFile.mo", "package.order" });
+
+            Assert.Contains("Existing", affected);
+            Assert.Contains("ToRemove", affected);
+            Assert.Contains("NewFile", affected);
+            Assert.DoesNotContain(graph.ModelNodes, m => m.Definition.Name == "ToRemove");
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "NewFile");
+
+            var pkg = graph.ModelNodes.Single(m => m.Definition.Name == "P");
+            Assert.Equal(new[] { "Existing", "NewFile" }, pkg.PackageOrder);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void UpdateGraphForChangedFiles_ForwardSlashesInRelativePath_NormalisedToOsSeparator()
+    {
+        // VCS systems consistently report forward-slash paths; the helper must
+        // convert them to the OS-native separator so File.Exists/Combine work.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbUpdSep_" + Guid.NewGuid().ToString("N"));
+        var subDir = Path.Combine(tempDir, "Sub");
+        Directory.CreateDirectory(subDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(subDir, "Inner.mo"),
+                "model Inner\n  Real x;\nend Inner;");
+
+            var graph = new DirectedGraph();
+            var affected = GraphBuilder.UpdateGraphForChangedFiles(
+                graph, tempDir, new HashSet<string> { "Sub/Inner.mo" });
+
+            Assert.Contains("Inner", affected);
+            Assert.Contains(graph.ModelNodes, m => m.Definition.Name == "Inner");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    // ============================================================================
+    // ResolveResourcePath — relative and absolute non-modelica:// paths
+    // ============================================================================
+
+    [Fact]
+    public async Task AnalyzeDependencies_LoadResourceWithRelativePath_ResolvesAgainstFileDirectory()
+    {
+        // loadResource("Data/file.txt") with no modelica:// prefix must resolve
+        // relative to the directory of the file containing the model. This is
+        // the uncovered relative-path branch of ResolveResourcePath.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbRelPath_" + Guid.NewGuid().ToString("N"));
+        var subDir = Path.Combine(tempDir, "Resources");
+        Directory.CreateDirectory(subDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(subDir, "data.txt"), "payload");
+
+            var graph = new DirectedGraph();
+            var moPath = Path.Combine(tempDir, "User.mo");
+            var content = @"
+model User
+  parameter String f = Modelica.Utilities.Files.loadResource(""Resources/data.txt"");
+end User;";
+            File.WriteAllText(moPath, content);
+            GraphBuilder.LoadModelicaFile(graph, moPath, content);
+
+            await GraphBuilder.AnalyzeDependenciesAsync(graph);
+
+            // The relative path resolves to an absolute path under tempDir
+            var resourceNode = graph.ResourceFileNodes
+                .FirstOrDefault(n => n.ResolvedPath.EndsWith("data.txt", StringComparison.OrdinalIgnoreCase));
+            Assert.NotNull(resourceNode);
+            Assert.Contains(tempDir, resourceNode.ResolvedPath);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task AnalyzeDependencies_LoadResourceWithAbsolutePath_UsesPathAsIs()
+    {
+        // loadResource with an absolute filesystem path exercises the
+        // Path.IsPathRooted branch in ResolveResourcePath.
+        var tempDir = Path.Combine(Path.GetTempPath(), "GbAbsPath_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var absoluteResource = Path.Combine(tempDir, "external.bin");
+            File.WriteAllText(absoluteResource, "data");
+
+            var graph = new DirectedGraph();
+            // Use Modelica's double-quote escape so the path embeds in the source
+            var content = $@"
+model AbsUser
+  parameter String f = Modelica.Utilities.Files.loadResource(""{absoluteResource.Replace("\\", "\\\\")}"");
+end AbsUser;";
+            GraphBuilder.LoadModelicaFile(graph, Path.Combine(tempDir, "AbsUser.mo"), content);
+
+            await GraphBuilder.AnalyzeDependenciesAsync(graph);
+
+            // The resource is registered using the same absolute path. Compare via
+            // GetFullPath on both sides so any directory-separator or casing
+            // normalisation done by ResolveResourcePath doesn't trip us up.
+            var expected = Path.GetFullPath(absoluteResource);
+            Assert.Contains(graph.ResourceFileNodes,
+                n => string.Equals(
+                    Path.GetFullPath(n.ResolvedPath),
+                    expected,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    // ============================================================================
+    // Placeholder paths — CreateParseFailurePlaceholder + ExtractWithinStatement.
+    // We exercise these by loading the file directly via the same helper
+    // GraphBuilder uses when the placeholder is needed. Reflection lets us hit
+    // the methods without engineering a Modelica string that crashes the visitor —
+    // the visitor is intentionally very defensive and rarely throws.
+    // ============================================================================
+
+    [Fact]
+    public void CreateParseFailurePlaceholder_RegularFile_UsesFileNameAsClass()
+    {
+        var graph = new DirectedGraph();
+        var fileId = "file:placeholder1";
+        graph.AddNode(new FileNode(fileId, "C:/tmp/MyModel.mo"));
+
+        var errors = new List<ParserError>
+        {
+            new ParserError
+            {
+                Line = 1,
+                CharPosition = 0,
+                Message = "parse failure",
+                Severity = ParserErrorSeverity.FatalParseFailure
+            }
+        };
+
+        var content = "this is unparseable content for the placeholder";
+        var id = InvokeCreatePlaceholder(graph, fileId, "C:/tmp/MyModel.mo", content, errors);
+
+        var node = graph.GetNode<ModelNode>(id);
+        Assert.NotNull(node);
+        Assert.True(node!.IsParseFailurePlaceholder);
+        Assert.Equal("MyModel", node.Definition.Name);
+        Assert.Null(node.ParentModelName);
+        Assert.Equal("unknown", node.ClassType);
+        Assert.Equal(content, node.Definition.ModelicaCode);
+        Assert.Contains(node.Definition.ParserErrors,
+            e => e.Severity == ParserErrorSeverity.FatalParseFailure);
+    }
+
+    [Fact]
+    public void CreateParseFailurePlaceholder_PackageMo_UsesContainingDirectoryName()
+    {
+        // For package.mo the class name is the parent directory, not "package".
+        var graph = new DirectedGraph();
+        var fileId = "file:pkg1";
+        var path = Path.Combine("C:", "tmp", "MyPackage", "package.mo");
+        graph.AddNode(new FileNode(fileId, path));
+
+        var errors = new List<ParserError>
+        {
+            new ParserError { Severity = ParserErrorSeverity.FatalParseFailure, Message = "x" }
+        };
+
+        var id = InvokeCreatePlaceholder(graph, fileId, path, "broken content", errors);
+        var node = graph.GetNode<ModelNode>(id);
+
+        Assert.NotNull(node);
+        Assert.Equal("MyPackage", node!.Definition.Name);
+    }
+
+    [Fact]
+    public void CreateParseFailurePlaceholder_WithWithinStatement_UsesFullModelicaPathAsId()
+    {
+        // The placeholder id should be `{within}.{className}` when a `within`
+        // clause is intact — that lets the library tree and filters line up
+        // with what a successful parse would have produced.
+        var graph = new DirectedGraph();
+        var fileId = "file:within1";
+        graph.AddNode(new FileNode(fileId, "C:/tmp/Submodel.mo"));
+
+        var content = "within Top.Sub.Pkg;\nmodel Submodel parameter X y constrainedby Z; end Submodel;";
+        var errors = new List<ParserError>
+        {
+            new ParserError { Severity = ParserErrorSeverity.FatalParseFailure, Message = "x" }
+        };
+
+        var id = InvokeCreatePlaceholder(graph, fileId, "C:/tmp/Submodel.mo", content, errors);
+
+        Assert.Equal("Top.Sub.Pkg.Submodel", id);
+        var node = graph.GetNode<ModelNode>(id);
+        Assert.Equal("Top.Sub.Pkg", node!.ParentModelName);
+    }
+
+    [Fact]
+    public void CreateParseFailurePlaceholder_DuplicateId_DisambiguatesWithFileId()
+    {
+        // Two unparseable files producing the same `{within}.{class}` id must
+        // not collide — the second one gets the file id appended.
+        var graph = new DirectedGraph();
+        var fileId1 = "file:dup1";
+        var fileId2 = "file:dup2";
+        graph.AddNode(new FileNode(fileId1, "C:/tmp/dup1/Foo.mo"));
+        graph.AddNode(new FileNode(fileId2, "C:/tmp/dup2/Foo.mo"));
+
+        var content = "within Lib;\nmodel Foo parameter X y constrainedby Z; end Foo;";
+        var errors = new List<ParserError>
+        {
+            new ParserError { Severity = ParserErrorSeverity.FatalParseFailure, Message = "x" }
+        };
+
+        var id1 = InvokeCreatePlaceholder(graph, fileId1, "C:/tmp/dup1/Foo.mo", content, errors);
+        var id2 = InvokeCreatePlaceholder(graph, fileId2, "C:/tmp/dup2/Foo.mo", content, errors);
+
+        Assert.Equal("Lib.Foo", id1);
+        Assert.NotEqual(id1, id2);
+        Assert.StartsWith("Lib.Foo#", id2);
+    }
+
+    [Theory]
+    [InlineData("within Foo.Bar;", "Foo.Bar")]
+    [InlineData("within  Foo.Bar ;", "Foo.Bar")]
+    [InlineData("within Foo . Bar ;", "Foo.Bar")]
+    [InlineData("within;", "")]
+    [InlineData("", "")]
+    [InlineData("// header comment\nwithin Pkg;", "Pkg")]
+    [InlineData("\n\n\t  within Pkg;", "Pkg")]
+    [InlineData("/* block comment */ within Pkg;", "")]
+    [InlineData("model X end X;", "")]
+    [InlineData("within 123Invalid;", "")]
+    public void ExtractWithinStatement_VariousInputs_ReturnsExpected(string content, string expected)
+    {
+        var result = InvokeExtractWithin(content);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ExtractWithinStatement_OnlyWhitespace_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, InvokeExtractWithin("\n\n  \t  "));
+    }
+
+    [Fact]
+    public void GenerateFileId_NormalisesPath()
+    {
+        // Same absolute path with different cases should map to the same id on
+        // Windows (case-insensitive) and to different ids elsewhere.
+        var idA = GraphBuilder.GenerateFileId(@"C:\Tmp\Test.mo");
+        var idB = GraphBuilder.GenerateFileId(@"c:\tmp\TEST.mo");
+
+        if (OperatingSystem.IsWindows())
+            Assert.Equal(idA, idB);
+        else
+            Assert.NotEqual(idA, idB);
+    }
+
+    // -- reflection helpers ------------------------------------------------
+    //
+    // CreateParseFailurePlaceholder and ExtractWithinStatement are private
+    // implementation details of GraphBuilder. We exercise them via reflection
+    // because they sit on the file-loading defensive path that public inputs
+    // almost never reach (the visitor is too robust to crash deterministically).
+    private static string InvokeCreatePlaceholder(
+        DirectedGraph graph, string fileId, string filePath, string content,
+        List<ParserError> errors)
+    {
+        var method = typeof(GraphBuilder).GetMethod(
+            "CreateParseFailurePlaceholder",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        return (string)method.Invoke(null, new object[] { graph, fileId, filePath, content, errors })!;
+    }
+
+    private static string InvokeExtractWithin(string content)
+    {
+        var method = typeof(GraphBuilder).GetMethod(
+            "ExtractWithinStatement",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        return (string)method.Invoke(null, new object[] { content })!;
+    }
+
     [Fact]
     public void LoadModelicaFiles_BadFileDoesNotPreventOtherFilesFromLoading()
     {

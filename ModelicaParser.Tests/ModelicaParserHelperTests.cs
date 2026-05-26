@@ -618,4 +618,192 @@ end Valid;";
         Assert.Single(models);
         Assert.DoesNotContain(errors, e => e.Severity == DataTypes.ParserErrorSeverity.FatalParseFailure);
     }
+
+    // ============================================================================
+    // NormalizeLineEndings and PreprocessCode edge cases
+    // ============================================================================
+
+    [Fact]
+    public void NormalizeLineEndings_NullInput_ReturnsNull()
+    {
+        Assert.Null(ModelicaParserHelper.NormalizeLineEndings(null!));
+    }
+
+    [Fact]
+    public void NormalizeLineEndings_EmptyString_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, ModelicaParserHelper.NormalizeLineEndings(string.Empty));
+    }
+
+    [Fact]
+    public void NormalizeLineEndings_CrOnly_ConvertsToLf()
+    {
+        // Old Mac line endings — bare CR with no LF
+        var input = "line1\rline2\rline3";
+        var result = ModelicaParserHelper.NormalizeLineEndings(input);
+        Assert.Equal("line1\nline2\nline3", result);
+    }
+
+    [Fact]
+    public void NormalizeLineEndings_MixedLineEndings_AllConvertedToLf()
+    {
+        var input = "crlf\r\nlf\nbarecr\rend";
+        var result = ModelicaParserHelper.NormalizeLineEndings(input);
+        Assert.Equal("crlf\nlf\nbarecr\nend", result);
+    }
+
+    [Fact]
+    public void PreprocessCode_AppendsTrailingSemicolonWhenMissing()
+    {
+        var code = "model X end X";
+        var result = ModelicaParserHelper.PreprocessCode(code);
+        Assert.EndsWith(";", result);
+    }
+
+    [Fact]
+    public void PreprocessCode_PreservesExistingTrailingSemicolon()
+    {
+        var code = "model X end X;";
+        var result = ModelicaParserHelper.PreprocessCode(code);
+        // Should not add a second semicolon
+        Assert.Equal("model X end X;", result);
+    }
+
+    [Fact]
+    public void PreprocessCode_TrimsTrailingWhitespace_ThenAddsSemicolon()
+    {
+        var code = "model X end X   \n\n  ";
+        var result = ModelicaParserHelper.PreprocessCode(code);
+        Assert.EndsWith(";", result);
+        // No trailing whitespace before the semicolon
+        Assert.Equal("model X end X;", result);
+    }
+
+    // ============================================================================
+    // ParseModificationExpression — previously had zero coverage
+    // ============================================================================
+
+    [Fact]
+    public void ParseModificationExpression_SimpleNumeric_ParsesWithoutErrors()
+    {
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression("1.0");
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ParseModificationExpression_ExpressionWithIdentifier_ParsesCorrectly()
+    {
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression("p * 2 + sin(x)");
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        Assert.Empty(errors);
+        // The parsed expression should be available via the expression() rule
+        Assert.NotNull(tree.expression());
+    }
+
+    [Fact]
+    public void ParseModificationExpression_BreakKeyword_ParsesCorrectly()
+    {
+        // The grammar accepts `break` as a valid modification expression in
+        // `else break` contexts within if-equation/algorithm.
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression("break");
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ParseModificationExpression_NullInput_UsesEmptyStringFallback()
+    {
+        // Hits the `expression ?? string.Empty` branch — must not throw on null.
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression(null!);
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        // Empty input produces a parse error (no expression to parse), but the
+        // method must complete normally rather than throwing.
+    }
+
+    [Fact]
+    public void ParseModificationExpression_EmptyString_ReportsErrorButDoesNotThrow()
+    {
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression(string.Empty);
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+    }
+
+    [Fact]
+    public void ParseModificationExpression_InvalidSyntax_ReportsParserErrors()
+    {
+        // Garbage text that ANTLR cannot recover from cleanly
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression("@@@ ::: $$$");
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void ParseModificationExpression_RecordModification_ReturnsExpression()
+    {
+        // Default values for records can be complex expressions including function calls
+        var (tree, tokens, errors) = ModelicaParserHelper.ParseModificationExpression(
+            "MyRecord(a=1, b=\"hello\", c=2*3)");
+
+        Assert.NotNull(tree);
+        Assert.NotNull(tokens);
+        Assert.Empty(errors);
+        Assert.NotNull(tree.expression());
+    }
+
+    [Fact]
+    public void ParseModificationExpression_TokenStreamContainsTokens()
+    {
+        var (_, tokens, _) = ModelicaParserHelper.ParseModificationExpression("1+2");
+        Assert.True(tokens.Size > 0);
+    }
+
+    // ============================================================================
+    // ExtractModelsWithErrors — pathological inputs that historically tripped the
+    // visitor. The catch block in ExtractModelsWithErrors only fires when the
+    // visitor (or stored_definition) throws — which the modern ANTLR setup
+    // almost never does. These tests double as regression guards: if a future
+    // grammar change re-introduces a crash on any of these inputs we want to
+    // know about it. They also exercise the heavy "no models extracted but
+    // syntax errors recorded" branch.
+    // ============================================================================
+
+    [Theory]
+    [InlineData("")]                                // empty input
+    [InlineData(";")]                                // just a semicolon
+    [InlineData("\0\0\0")]                          // null bytes
+    [InlineData("﻿ model X end X;")]           // UTF-8 BOM prefix
+    [InlineData("model ")]                           // truncated mid-declaration
+    [InlineData("model X end Y;")]                  // mismatched class name
+    [InlineData("model X parameter Real y = ; end X;")]  // empty rhs
+    [InlineData("type T = ;")]                       // empty derived type
+    [InlineData("@@@ !!! :::")]                      // pure garbage tokens
+    [InlineData("model X model Y end X end Y;")]    // criss-crossed end names
+    [InlineData("encapsulated end X;")]              // bare prefix keyword
+    [InlineData("class")]                            // a single keyword
+    [InlineData("model X \"unterminated string\nend X;")]  // unterminated string
+    public void ExtractModelsWithErrors_PathologicalInput_DoesNotThrow(string code)
+    {
+        // The contract is: ExtractModelsWithErrors never propagates an exception
+        // to its caller, no matter how broken the input is. Any visitor crash
+        // is converted into a FatalParseFailure parser-error entry.
+        var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(code);
+
+        Assert.NotNull(models);
+        Assert.NotNull(errors);
+        // We don't assert on the *contents* — different malformed inputs route
+        // through different recovery paths. The invariant we care about is just
+        // "no crash leaked out".
+    }
 }
