@@ -826,9 +826,170 @@ end Complex;";
     Assert.Equal("record", models[0].ClassType);
   }
 
+  // -------------------------------------------------------------------------
+  // StartIndex / StopIndex population — the char offsets are what CSD's
+  // snapshot rehydrator uses to re-slice a class out of its source file
+  // without having to re-parse, mirroring GetSourceCode exactly. The slice
+  // must cover the class_definition rule only (not the surrounding element
+  // prefixes) so re-parsing as a stored_definition succeeds.
+  // -------------------------------------------------------------------------
+
+  [Fact]
+  public void StartIndexAndStopIndex_PointAtClassDefinitionRange()
+  {
+    var code = "model SimpleModel\n  Real x;\nend SimpleModel;";
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    var models = ExtractModels(code);
+
+    var model = Assert.Single(models);
+    Assert.True(model.StartIndex >= 0, "StartIndex should be populated");
+    Assert.True(model.StopIndex > model.StartIndex, "StopIndex should be after StartIndex");
+
+    // Slicing by char offset reproduces the class_definition rule text.
+    // The trailing ';' is part of the parent rule so it's not included —
+    // GetSourceCode appends it; the rehydrator does the same.
+    var slice = normalised.Substring(model.StartIndex, model.StopIndex - model.StartIndex + 1);
+    Assert.StartsWith("model SimpleModel", slice);
+    Assert.EndsWith("end SimpleModel", slice);
+  }
+
+  [Fact]
+  public void StartIndexAndStopIndex_SkipReplaceableElementPrefix()
+  {
+    // The whole reason we capture char offsets: line-based slicing would
+    // leak the `replaceable` prefix into the rehydrated source and break
+    // re-parsing as a stored_definition (which doesn't allow element
+    // prefixes). The captured StartIndex must point at the class keyword
+    // (here `type`), not at `replaceable`.
+    var code = "package P\n  replaceable type Length = Real(unit=\"m\");\nend P;";
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    var models = ExtractModels(code);
+    var lengthType = models.Single(m => m.Name == "Length");
+
+    var slice = normalised.Substring(
+      lengthType.StartIndex, lengthType.StopIndex - lengthType.StartIndex + 1);
+    Assert.StartsWith("type Length", slice);
+    Assert.DoesNotContain("replaceable", slice);
+    Assert.Equal("replaceable", lengthType.ElementPrefix);
+    Assert.False(lengthType.CanBeStoredStandalone);
+  }
+
+  [Fact]
+  public void StartIndexAndStopIndex_SkipRedeclareInnerOuterElementPrefixes()
+  {
+    // Same rule for redeclare / inner / outer / final and their combinations.
+    // The element prefixes go onto ElementPrefix; the char range covers
+    // only the class_definition itself.
+    var code = """
+      model Outer
+        redeclare model M
+          Real x;
+        end M;
+      end Outer;
+      """;
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    var models = ExtractModels(code);
+    var m = models.Single(x => x.Name == "M");
+
+    var slice = normalised.Substring(m.StartIndex, m.StopIndex - m.StartIndex + 1);
+    Assert.StartsWith("model M", slice);
+    Assert.DoesNotContain("redeclare", slice);
+    Assert.Equal("redeclare", m.ElementPrefix);
+  }
+
+  [Fact]
+  public void StartIndexAndStopIndex_PopulatedForNestedModels()
+  {
+    // Inner models go through the same VisitClass_definition path; offsets
+    // must be populated for them too so the rehydrator can recover their
+    // text independently of the parent.
+    var code = """
+      model OuterModel
+        Real x;
+
+        model InnerModel
+          Real y;
+        end InnerModel;
+
+      end OuterModel;
+      """;
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    var models = ExtractModels(code);
+    var inner = models.Single(m => m.Name == "InnerModel");
+
+    Assert.True(inner.StartIndex >= 0);
+    Assert.True(inner.StopIndex > inner.StartIndex);
+    var slice = normalised.Substring(inner.StartIndex, inner.StopIndex - inner.StartIndex + 1);
+    Assert.StartsWith("model InnerModel", slice);
+    Assert.EndsWith("end InnerModel", slice);
+  }
+
+  [Fact]
+  public void StartIndexAndStopIndex_PopulatedForShortClassSpecifier()
+  {
+    // Short class specifier (`type X = ...`) goes through the second branch
+    // of VisitClass_definition. Easy to break independently of the long
+    // form so it gets its own coverage.
+    var code = """
+      package P
+        type Length = Real(unit="m");
+        type Mass = Real(unit="kg");
+      end P;
+      """;
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    var models = ExtractModels(code);
+    var length = models.Single(m => m.Name == "Length");
+    var mass = models.Single(m => m.Name == "Mass");
+
+    Assert.True(length.StartIndex >= 0);
+    Assert.True(length.StopIndex > length.StartIndex);
+    Assert.True(mass.StartIndex > length.StopIndex,
+      "Sibling types should have non-overlapping ranges");
+
+    var lengthSlice = normalised.Substring(
+      length.StartIndex, length.StopIndex - length.StartIndex + 1);
+    Assert.StartsWith("type Length", lengthSlice);
+  }
+
+  [Fact]
+  public void StartIndexAndStopIndex_SliceWithSemicolonAppendedReparses()
+  {
+    // The contract the rehydrator depends on end-to-end: take the char
+    // slice, append `;` if missing, feed back to ModelicaParserHelper.Parse
+    // — it must succeed without errors. This is the round-trip that
+    // pre-fix snapshot rehydration was failing on prefixed classes.
+    var code = """
+      package P
+        replaceable type Length = Real(unit="m") constrainedby Real;
+
+        model M
+          Real x;
+        end M;
+      end P;
+      """;
+    var normalised = ModelicaParserHelper.NormalizeLineEndings(code);
+
+    foreach (var model in ExtractModels(code))
+    {
+      var slice = normalised.Substring(
+        model.StartIndex, model.StopIndex - model.StartIndex + 1);
+      if (!slice.TrimEnd().EndsWith(';'))
+        slice = slice.TrimEnd() + ";";
+
+      var (tree, errors) = ModelicaParserHelper.ParseWithErrors(slice);
+      Assert.NotNull(tree);
+      Assert.Empty(errors);
+    }
+  }
+
   private List<ModelInfo> ExtractModels(string code)
   {
-    var parseTree = ModelicaParserHelper.Parse(code);    
+    var parseTree = ModelicaParserHelper.Parse(code);
     var visitor = new ModelExtractorVisitor(ModelicaParserHelper.NormalizeLineEndings(code));
     visitor.Visit(parseTree);
     return visitor.Models;

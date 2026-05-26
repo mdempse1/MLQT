@@ -26,9 +26,27 @@ public class ModelInfoTests
         // Assert
         Assert.Equal(0, modelInfo.StartLine);
         Assert.Equal(0, modelInfo.StopLine);
+        // StartIndex/StopIndex default to -1 so consumers (notably the CSD
+        // snapshot rehydrator) can distinguish "char offsets not populated"
+        // from "valid offset 0" and fall back to line-range slicing.
+        Assert.Equal(-1, modelInfo.StartIndex);
+        Assert.Equal(-1, modelInfo.StopIndex);
         Assert.False(modelInfo.IsNested);
         Assert.Null(modelInfo.ParentModelName);
         Assert.True(modelInfo.CanBeStoredStandalone);
+    }
+
+    [Fact]
+    public void StartIndexAndStopIndex_CanBeSet()
+    {
+        var modelInfo = new ModelInfo("Test", "code", "model")
+        {
+            StartIndex = 12,
+            StopIndex = 47
+        };
+
+        Assert.Equal(12, modelInfo.StartIndex);
+        Assert.Equal(47, modelInfo.StopIndex);
     }
 
     [Fact]

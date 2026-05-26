@@ -31,6 +31,20 @@ public class ModelInfo
     public int StopLine { get; set; }
 
     /// <summary>
+    /// Zero-based character offset of the first character of the
+    /// <c>class_definition</c> rule. <c>-1</c> when not populated. Lets a
+    /// caller (notably the CSD snapshot rehydrator) recover the original
+    /// parser-grade source slice without re-running <see cref="ModelExtractorVisitor"/>.
+    /// </summary>
+    public int StartIndex { get; set; } = -1;
+
+    /// <summary>
+    /// Zero-based character offset of the last character of the
+    /// <c>class_definition</c> rule (inclusive). <c>-1</c> when not populated.
+    /// </summary>
+    public int StopIndex { get; set; } = -1;
+
+    /// <summary>
     /// Whether this is a nested model (contained within another model).
     /// </summary>
     public bool IsNested { get; set; }

@@ -74,6 +74,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                 {
                     StartLine = context.Start.Line,
                     StopLine = context.Stop?.Line ?? context.Start.Line,
+                    StartIndex = context.Start.StartIndex,
+                    StopIndex = context.Stop?.StopIndex ?? context.Start.StopIndex,
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
@@ -110,6 +112,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                 {
                     StartLine = context.Start.Line,
                     StopLine = context.Stop?.Line ?? context.Start.Line,
+                    StartIndex = context.Start.StartIndex,
+                    StopIndex = context.Stop?.StopIndex ?? context.Start.StopIndex,
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
@@ -134,6 +138,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                 {
                     StartLine = context.Start.Line,
                     StopLine = context.Stop?.Line ?? context.Start.Line,
+                    StartIndex = context.Start.StartIndex,
+                    StopIndex = context.Stop?.StopIndex ?? context.Start.StopIndex,
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,

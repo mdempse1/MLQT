@@ -52,6 +52,26 @@ public class ModelNode : GraphNode
     public int StopLine { get; set; }
 
     /// <summary>
+    /// Zero-based character offset of the first character of the
+    /// <c>class_definition</c> rule in the underlying source file, read with
+    /// <see cref="System.Text.Encoding.Latin1"/> to match the parser.
+    /// <c>-1</c> when not populated (legacy placeholder nodes, snapshots
+    /// written before the field existed, etc.). Used by snapshot rehydration
+    /// to slice the same character range the parser originally captured —
+    /// line-based slicing alone can leak preceding element prefixes
+    /// (<c>replaceable</c>, <c>redeclare</c>, …) into the rehydrated
+    /// <see cref="ModelDefinition.ModelicaCode"/> and break re-parsing.
+    /// </summary>
+    public int StartIndex { get; set; } = -1;
+
+    /// <summary>
+    /// Zero-based character offset of the last character of the
+    /// <c>class_definition</c> rule (inclusive) in the underlying source file.
+    /// <c>-1</c> when not populated. See <see cref="StartIndex"/>.
+    /// </summary>
+    public int StopIndex { get; set; } = -1;
+
+    /// <summary>
     /// Whether this is a nested model (contained within another model).
     /// </summary>
     public bool IsNested { get; set; }

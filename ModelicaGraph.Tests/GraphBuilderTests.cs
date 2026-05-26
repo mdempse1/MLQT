@@ -95,6 +95,53 @@ public class GraphBuilderTests
     }
 
     [Fact]
+    public void LoadModelicaFile_PropagatesCharOffsetsToModelNode()
+    {
+        // The CSD snapshot rehydrator slices each model out of its source
+        // file using these char offsets. They must flow ModelInfo →
+        // ModelNode unchanged or the rehydrated source code won't match
+        // what the parser originally captured.
+        var graph = new DirectedGraph();
+        var content = "model Test\n  Real x;\nend Test;";
+        GraphBuilder.LoadModelicaFile(graph, "virtual.mo", content);
+
+        var node = graph.ModelNodes.Single();
+        Assert.True(node.StartIndex >= 0, "StartIndex should be populated from ModelInfo");
+        Assert.True(node.StopIndex > node.StartIndex, "StopIndex should be after StartIndex");
+
+        // The char slice should cover the class_definition rule range.
+        // GraphBuilder uses the visitor's NormalizeLineEndings'd source as
+        // the basis for offsets, so we normalise here too before slicing.
+        var normalised = content.Replace("\r\n", "\n");
+        var slice = normalised.Substring(node.StartIndex, node.StopIndex - node.StartIndex + 1);
+        Assert.StartsWith("model Test", slice);
+        Assert.EndsWith("end Test", slice);
+    }
+
+    [Fact]
+    public void LoadModelicaFile_PropagatesCharOffsets_ForReplaceableClass()
+    {
+        // The bug the offsets were added to fix: line-based slicing would
+        // include `replaceable` in the rehydrated source and break re-parse.
+        // The char offsets must point past the element prefix to the class
+        // keyword itself.
+        var graph = new DirectedGraph();
+        var content = "package P\n  replaceable type Length = Real(unit=\"m\");\nend P;";
+        GraphBuilder.LoadModelicaFile(graph, "virtual.mo", content);
+
+        var lengthNode = graph.ModelNodes.Single(n => n.Definition.Name == "Length");
+        Assert.True(lengthNode.StartIndex >= 0);
+
+        var normalised = content.Replace("\r\n", "\n");
+        var slice = normalised.Substring(
+            lengthNode.StartIndex, lengthNode.StopIndex - lengthNode.StartIndex + 1);
+        Assert.StartsWith("type Length", slice);
+        Assert.DoesNotContain("replaceable", slice);
+        Assert.Equal("replaceable", lengthNode.ElementPrefix);
+        Assert.False(lengthNode.CanBeStoredStandalone);
+    }
+
+    [Fact]
     public void LoadModelicaFile_WithContent_LoadsFromProvidedContent()
     {
         // Arrange

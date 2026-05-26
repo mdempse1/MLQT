@@ -82,6 +82,8 @@ public static class GraphBuilder
                 modelNode.ClassType = modelInfo.ClassType;
                 modelNode.StartLine = modelInfo.StartLine;
                 modelNode.StopLine = modelInfo.StopLine;
+                modelNode.StartIndex = modelInfo.StartIndex;
+                modelNode.StopIndex = modelInfo.StopIndex;
                 modelNode.IsNested = modelInfo.IsNested;
                 modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
                 modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;

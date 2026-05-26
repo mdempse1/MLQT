@@ -179,4 +179,30 @@ public class ModelNodeTests
         Assert.Equal(10, node.StartLine);
         Assert.True(node.IsNested);
     }
+
+    [Fact]
+    public void StartIndexAndStopIndex_DefaultToMinusOne()
+    {
+        // -1 is the "not populated" sentinel — consumers like the CSD
+        // snapshot rehydrator distinguish this from a real offset of 0 to
+        // decide whether to use char-based slicing or fall back to line
+        // numbers (placeholder nodes, pre-v2 snapshots, etc.).
+        var node = new ModelNode("model1", "Model1");
+
+        Assert.Equal(-1, node.StartIndex);
+        Assert.Equal(-1, node.StopIndex);
+    }
+
+    [Fact]
+    public void StartIndexAndStopIndex_CanBeSetAndRetrieved()
+    {
+        var node = new ModelNode("model1", "Model1")
+        {
+            StartIndex = 42,
+            StopIndex = 256
+        };
+
+        Assert.Equal(42, node.StartIndex);
+        Assert.Equal(256, node.StopIndex);
+    }
 }
