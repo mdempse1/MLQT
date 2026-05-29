@@ -9,7 +9,6 @@
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <PackageReference Include="NLog" Version="6.1.0" />
-    <PackageReference Include="SharpSvn" Version="1.14005.390" />
   </ItemGroup>
 
 </Project>

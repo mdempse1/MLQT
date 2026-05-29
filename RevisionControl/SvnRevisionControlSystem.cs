@@ -1,34 +1,49 @@
-using System.ComponentModel;
 using System.Diagnostics;
-using SharpSvn;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using RevisionControl.Interfaces;
 
 namespace RevisionControl;
 
 /// <summary>
 /// Subversion (SVN) implementation of the revision control system interface.
-/// Uses SharpSvn to interact with SVN repositories.
+/// Talks to SVN exclusively through the <c>svn</c> command-line client via
+/// <see cref="SvnCli"/> (the bundled SlikSVN client, then MLQT_SVN_PATH, then svn on
+/// PATH). The managed SharpSvn library has been removed from the shipped product because
+/// the CLI is roughly an order of magnitude faster on large working copies.
 /// </summary>
 public class SvnRevisionControlSystem : IRevisionControlSystem
 {
+    // ===================================================================================
+    // Small value types used to carry parsed svn --xml output around internally.
+    // ===================================================================================
+
+    /// <summary>Parsed subset of <c>svn info --xml</c> for a single entry.</summary>
+    private sealed record SvnInfo(string Url, string RepositoryRoot, long Revision, long LastChangedRevision);
+
+    /// <summary>Parsed subset of one <c>svn status --xml</c> entry.</summary>
+    private sealed record SvnStatusEntry(string Path, string Item, string Props, bool TreeConflicted);
+
+    private const StringComparison OIC = StringComparison.OrdinalIgnoreCase;
+    private static readonly string[] DefaultBranchDirectories = ["trunk", "branches", "tags"];
+
+    // ===================================================================================
+    // Read-only operations.
+    // ===================================================================================
+
     /// <summary>
-    /// Checks out a specific revision to a temporary directory.
+    /// Checks out a specific revision to a directory.
     /// </summary>
     public bool CheckoutRevision(string repositoryPath, string revision, string outputPath)
     {
         try
         {
-            using var client = new SvnClient();
-
-            // Resolve the revision
-            var svnRevision = ParseRevision(revision);
-
-            // Create the output directory if it doesn't exist
             Directory.CreateDirectory(outputPath);
-
-            // Perform the checkout
-            var uri = GetRepositoryUri(repositoryPath);
-            return client.CheckOut(uri, outputPath, new SvnCheckOutArgs { Revision = svnRevision });
+            var url = ResolveUrl(repositoryPath);
+            var rev = SvnCli.NormalizeRevision(revision);
+            SvnCli.Run("checkout", "-r", rev, url, outputPath).EnsureSuccess("checkout");
+            return true;
         }
         catch (Exception ex)
         {
@@ -39,23 +54,15 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Gets the current revision identifier (current revision number).
+    /// Gets the current revision identifier. Uses the last-changed revision of the path
+    /// (the last commit that affected THIS path) rather than the global repository HEAD,
+    /// so commits on other branches in the same repository don't register as changes.
     /// </summary>
     public string? GetCurrentRevision(string repositoryPath)
     {
         try
         {
-            using var client = new SvnClient();
-
-            if (!client.GetInfo(repositoryPath, out var info))
-            {
-                return null;
-            }
-
-            // Use LastChangeRevision (last commit that affected THIS path) rather than
-            // Revision (global repository HEAD). This prevents false positives when
-            // commits happen on other branches in the same SVN repository.
-            return info.LastChangeRevision.ToString();
+            return GetInfo(repositoryPath)?.LastChangedRevision.ToString();
         }
         catch (Exception ex)
         {
@@ -71,21 +78,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     {
         try
         {
-            using var client = new SvnClient();
-
-            // Check if it's a working copy
-            if (Directory.Exists(repositoryPath))
-            {
-                return client.GetInfo(repositoryPath, out _);
-            }
-
-            // Check if it's a valid repository URL
-            if (Uri.TryCreate(repositoryPath, UriKind.Absolute, out var uri))
-            {
-                return client.GetInfo(uri, out _);
-            }
-
-            return false;
+            return GetInfo(repositoryPath) != null;
         }
         catch (Exception ex)
         {
@@ -95,25 +88,24 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Discovers the root of the SVN working copy containing the given path.
-    /// SVN 1.7+ stores .svn metadata only at the working copy root, so we walk
-    /// up the directory tree and return the highest ancestor that is still a
-    /// valid working copy.
+    /// Discovers the root of the SVN working copy containing the given path. SVN 1.7+
+    /// stores .svn metadata only at the working copy root, so we walk up the directory
+    /// tree and return the highest ancestor that still contains a .svn directory.
     /// </summary>
     public string? FindRepositoryRoot(string path)
     {
         try
         {
             if (!Directory.Exists(path)) return null;
-            // SVN 1.7+ stores .svn metadata only at the working copy root.
             var current = new DirectoryInfo(Path.GetFullPath(path));
+            string? root = null;
             while (current != null)
             {
                 if (Directory.Exists(Path.Combine(current.FullName, ".svn")))
-                    return current.FullName;
+                    root = current.FullName;
                 current = current.Parent;
             }
-            return null;
+            return root;
         }
         catch (Exception ex)
         {
@@ -124,52 +116,25 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
     /// <summary>
     /// Gets a human-readable description of a revision (commit message and author).
+    /// Queries the log at the repository root so the revision can be found even if it
+    /// touched a different branch/path than the one passed in.
     /// </summary>
     public string? GetRevisionDescription(string repositoryPath, string revision)
     {
         try
         {
-            using var client = new SvnClient();
+            var info = GetInfo(repositoryPath);
+            if (info == null) return null;
 
-            var svnRevision = ParseRevision(revision);
+            var rev = SvnCli.NormalizeRevision(revision);
+            var doc = SvnCli.RunXml("log", info.RepositoryRoot, "-r", rev, "-l", "1");
+            var logEntry = doc?.Root?.Element("logentry");
+            if (logEntry == null) return null;
 
-            // Get the repository root to query logs at repo level (not path level)
-            // This ensures we can get log info even if the revision was on a different branch/path
-            Uri repoRoot;
-            if (Directory.Exists(repositoryPath))
-            {
-                if (!client.GetInfo(repositoryPath, out var info))
-                {
-                    return null;
-                }
-                repoRoot = info.RepositoryRoot;
-            }
-            else
-            {
-                var uri = GetRepositoryUri(repositoryPath);
-                if (!client.GetInfo(uri, out var info))
-                {
-                    return null;
-                }
-                repoRoot = info.RepositoryRoot;
-            }
-
-            // Get log information for the revision at repo root level
-            var logArgs = new SvnLogArgs
-            {
-                Start = svnRevision,
-                End = svnRevision
-            };
-
-            SvnLogEventArgs? logEntry = null;
-            client.Log(repoRoot, logArgs, (sender, e) => { logEntry = e; });
-
-            if (logEntry == null)
-            {
-                return null;
-            }
-
-            return $"{logEntry.LogMessage} (by {logEntry.Author} on {logEntry.Time:yyyy-MM-dd})";
+            var message = logEntry.Element("msg")?.Value ?? "";
+            var author = logEntry.Element("author")?.Value ?? "";
+            var date = ParseSvnDateUtc(logEntry.Element("date")?.Value);
+            return $"{message} (by {author} on {date:yyyy-MM-dd})";
         }
         catch (Exception ex)
         {
@@ -179,44 +144,29 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Resolves a revision identifier to its canonical form (revision number).
-    /// PREV is handled specially by querying the log for the second-most-recent revision,
-    /// since SvnRevision.Previous only works in working copy context and fails against URIs.
+    /// Resolves a revision identifier to its canonical revision number. PREV is handled
+    /// specially (the second-most-recent revision from the log), since the PREV keyword is
+    /// only meaningful in a working-copy context and not against a URL.
     /// </summary>
     public string? ResolveRevision(string repositoryPath, string revision)
     {
         try
         {
-            using var client = new SvnClient();
-            var uri = GetRepositoryUri(repositoryPath);
+            var url = ResolveUrl(repositoryPath);
 
-            // PREV requires special handling — query the log for the 2nd most recent revision
-            if (revision.Equals("PREV", StringComparison.OrdinalIgnoreCase))
+            if (revision.Equals("PREV", OIC))
             {
-                var logArgs = new SvnLogArgs { Limit = 2 };
-                var revisions = new List<long>();
-                client.Log(uri.Uri, logArgs, (sender, e) => { revisions.Add(e.Revision); });
-
-                if (revisions.Count < 2)
-                {
+                var doc = SvnCli.RunXml("log", url, "-l", "2");
+                var revisions = doc?.Root?.Elements("logentry")
+                    .Select(e => e.Attribute("revision")?.Value)
+                    .Where(v => !string.IsNullOrEmpty(v))
+                    .ToList();
+                if (revisions == null || revisions.Count < 2)
                     return null;
-                }
-
-                return revisions[1].ToString();
+                return revisions[1];
             }
 
-            var svnRevision = ParseRevision(revision);
-
-            // Get info at the specified revision to resolve it
-            SvnInfoEventArgs? info = null;
-            client.Info(uri, new SvnInfoArgs { Revision = svnRevision }, (sender, e) => { info = e; });
-
-            if (info == null)
-            {
-                return null;
-            }
-
-            return info.Revision.ToString();
+            return GetInfo(url, revision)?.Revision.ToString();
         }
         catch (Exception ex)
         {
@@ -224,6 +174,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             return null;
         }
     }
+
+    // ===================================================================================
+    // Workspace operations.
+    // ===================================================================================
 
     /// <summary>
     /// Updates an existing checkout to a different revision, discarding any local changes.
@@ -233,58 +187,40 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     {
         try
         {
-            using var client = new SvnClient();
-
-            // If checkout doesn't exist or isn't a valid working copy, do initial checkout
             bool isWorkingCopy = false;
             if (Directory.Exists(checkoutPath))
             {
-                try
-                {
-                    isWorkingCopy = client.GetInfo(checkoutPath, out _);
-                }
-                catch (SvnException)
-                {
+                isWorkingCopy = GetInfo(checkoutPath) != null;
+                if (!isWorkingCopy)
                     // Directory exists but is not a valid working copy — remove it so
                     // CheckoutRevision can start fresh (it calls Directory.CreateDirectory).
                     Directory.Delete(checkoutPath, recursive: true);
-                }
             }
 
             if (!isWorkingCopy)
-            {
                 return CheckoutRevision(repositoryPath, revision, checkoutPath);
-            }
 
-            // Clean the workspace first (revert changes, remove untracked files)
+            // Clean the workspace first (revert changes, remove untracked files).
             if (!CleanWorkspace(checkoutPath))
-            {
                 return false;
-            }
 
-            // Check if the working copy URL matches the target repository URL.
-            // If they differ (e.g., was trunk, now tickets/ML-123), switch the
-            // working copy to the new URL before updating to the target revision.
-            var targetUri = GetRepositoryUri(repositoryPath);
-            if (client.GetInfo(checkoutPath, out var wcInfo))
+            // Switch the working copy if its URL no longer matches the target (e.g. it was
+            // trunk and is now tickets/ML-123) before updating to the target revision.
+            var targetUrl = ResolveUrl(repositoryPath);
+            var wcInfo = GetInfo(checkoutPath);
+            if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
-                if (!Uri.Equals(wcInfo.Uri, targetUri.Uri))
+                RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
+                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
                 {
-                    RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Uri} to {targetUri.Uri}");
-                    if (!client.Switch(checkoutPath, targetUri.Uri))
-                    {
-                        RevisionControlLogger.Error("UpdateExistingCheckout",
-                            new InvalidOperationException($"SVN switch from {wcInfo.Uri} to {targetUri.Uri} failed"));
-                        return false;
-                    }
+                    RevisionControlLogger.Error("UpdateExistingCheckout",
+                        new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
+                    return false;
                 }
             }
 
-            // Resolve the revision
-            var svnRevision = ParseRevision(revision);
-
-            // Update to the specified revision
-            return client.Update(checkoutPath, new SvnUpdateArgs { Revision = svnRevision });
+            var rev = SvnCli.NormalizeRevision(revision);
+            return SvnCli.Run("update", "-r", rev, checkoutPath).Success;
         }
         catch (Exception ex)
         {
@@ -293,30 +229,32 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
     }
 
+    /// <summary>
+    /// Updates a working copy in place to the requested revision via <c>svn update</c>.
+    /// On a multi-thousand-file working copy this is an order of magnitude faster than the
+    /// old SharpSvn path (measured ~2.7s CLI vs ~38s SharpSvn on a 30000-file Modelica
+    /// library). Timing of each phase is logged for diagnosis.
+    /// </summary>
     public bool UpdateRevisionInPlace(string checkoutPath, string repositoryPath, string revision)
     {
         var totalSw = Stopwatch.StartNew();
         var infoSw = new Stopwatch();
         var switchSw = new Stopwatch();
         var updateSw = new Stopwatch();
-        string updatedBy = "n/a";
 
         try
         {
-            using var client = new SvnClient();
-
             // 1. Validate the working copy.
             infoSw.Start();
             bool isWorkingCopy = false;
-            SvnInfoEventArgs? wcInfo = null;
+            SvnInfo? wcInfo = null;
             if (Directory.Exists(checkoutPath))
             {
-                try { isWorkingCopy = client.GetInfo(checkoutPath, out wcInfo); }
-                catch (SvnException)
-                {
+                wcInfo = GetInfo(checkoutPath);
+                isWorkingCopy = wcInfo != null;
+                if (!isWorkingCopy)
                     // Stale / corrupt wc state — wipe so CheckoutRevision starts fresh.
                     Directory.Delete(checkoutPath, recursive: true);
-                }
             }
             infoSw.Stop();
 
@@ -325,42 +263,33 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             // 2. Switch URL only if it differs (cheap to check, no-op when they match).
             switchSw.Start();
-            var targetUri = GetRepositoryUri(repositoryPath);
-            if (wcInfo != null && !Uri.Equals(wcInfo.Uri, targetUri.Uri))
+            var targetUrl = ResolveUrl(repositoryPath);
+            if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
-                RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Uri} to {targetUri.Uri}");
-                if (!client.Switch(checkoutPath, targetUri.Uri))
+                RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
+                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
                 {
                     RevisionControlLogger.Error("UpdateRevisionInPlace",
-                        new InvalidOperationException($"SVN switch from {wcInfo.Uri} to {targetUri.Uri} failed"));
+                        new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
                     return false;
                 }
             }
             switchSw.Stop();
 
-            // 3. Run the actual update. Prefer the svn CLI: on a multi-thousand-file
-            //    working copy `svn update -r N` is an order of magnitude faster than
-            //    SharpSvn's client.Update (measured at 2.7s CLI vs 38s SharpSvn on
-            //    a 30000-file Modelica library). The cost difference appears to be
-            //    per-file managed-side bookkeeping inside SharpSvn — the underlying
-            //    libsvn call is identical. We fall back to SharpSvn when svn.exe
-            //    isn't on PATH so we don't introduce a hard dependency.
+            // 3. Run the update. --quiet suppresses per-file output so stdout doesn't fill
+            //    with one line per file on a 30000-file working copy.
             updateSw.Start();
-            var cliResult = TryRunSvnUpdateCli(checkoutPath, revision);
-            bool updateOk;
-            if (cliResult.HasValue)
-            {
-                updateOk = cliResult.Value;
-                updatedBy = "cli";
-            }
-            else
-            {
-                updateOk = client.Update(checkoutPath, new SvnUpdateArgs { Revision = ParseRevision(revision) });
-                updatedBy = "sharpsvn";
-            }
+            var rev = SvnCli.NormalizeRevision(revision);
+            var update = SvnCli.Run("update", "-r", rev, "--quiet", checkoutPath);
             updateSw.Stop();
 
-            return updateOk;
+            if (!update.Success)
+            {
+                RevisionControlLogger.Error("UpdateRevisionInPlace",
+                    new InvalidOperationException($"`svn update` failed: {update.StdErr}"));
+                return false;
+            }
+            return true;
         }
         catch (Exception ex)
         {
@@ -375,63 +304,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 $"total {totalSw.Elapsed.TotalSeconds:F2}s " +
                 $"[getInfo {infoSw.Elapsed.TotalSeconds:F2}s, " +
                 $"switch {switchSw.Elapsed.TotalSeconds:F2}s, " +
-                $"update {updateSw.Elapsed.TotalSeconds:F2}s via {updatedBy}]");
-        }
-    }
-
-    /// <summary>
-    /// Runs <c>svn update [-r &lt;revision&gt;] --non-interactive --quiet &lt;checkoutPath&gt;</c>
-    /// via the svn CLI located by <see cref="SvnToolLocator"/> (the bundled SlikSVN
-    /// client when present, otherwise svn from PATH). Returns null when no svn
-    /// executable can be found or started (the caller should fall back to SharpSvn).
-    /// Returns true / false based on the CLI's exit code. <c>--quiet</c> suppresses
-    /// per-file output so stdout doesn't fill with one line per file on a
-    /// 30000-file working copy.
-    /// </summary>
-    private static bool? TryRunSvnUpdateCli(string checkoutPath, string revision)
-    {
-        var svnExe = SvnToolLocator.SvnExecutablePath;
-        if (svnExe == null)
-        {
-            // No svn executable available — let the caller fall back to SharpSvn.
-            return null;
-        }
-
-        var revisionArg = string.IsNullOrEmpty(revision)
-            || string.Equals(revision, "HEAD", StringComparison.OrdinalIgnoreCase)
-            ? ""
-            : $"-r {revision} ";
-        var args = $"update {revisionArg}--non-interactive --quiet \"{checkoutPath}\"";
-
-        var psi = new ProcessStartInfo(svnExe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        Process? process;
-        try
-        {
-            process = Process.Start(psi);
-        }
-        catch (Win32Exception)
-        {
-            // svn executable resolved but could not be started — fall back to SharpSvn.
-            return null;
-        }
-        if (process == null) return null;
-
-        using (process)
-        {
-            process.WaitForExit();
-            if (process.ExitCode == 0) return true;
-            var err = process.StandardError.ReadToEnd();
-            RevisionControlLogger.Error("TryRunSvnUpdateCli",
-                new InvalidOperationException(
-                    $"`svn update` exited with code {process.ExitCode}: {err}"));
-            return false;
+                $"update {updateSw.Elapsed.TotalSeconds:F2}s]");
         }
     }
 
@@ -443,53 +316,32 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         try
         {
             if (!Directory.Exists(checkoutPath))
-            {
                 return false;
-            }
 
-            using var client = new SvnClient();
-
-            // Verify it's a valid working copy
-            if (!client.GetInfo(checkoutPath, out _))
-            {
+            if (GetInfo(checkoutPath) == null)
                 return false;
-            }
 
-            // Revert all changes recursively
-            client.Revert(checkoutPath, new SvnRevertArgs { Depth = SvnDepth.Infinity });
+            // Revert all changes recursively.
+            SvnCli.Run("revert", "-R", checkoutPath);
 
-            // Get status to find unversioned items
-            var unversionedItems = new List<SvnStatusEventArgs>();
-            client.Status(checkoutPath, new SvnStatusArgs { Depth = SvnDepth.Infinity },
-                (sender, e) =>
-                {
-                    if (e.LocalContentStatus == SvnStatus.NotVersioned)
-                    {
-                        unversionedItems.Add(e);
-                    }
-                });
-
-            // Remove all unversioned files and directories (deeper paths first)
-            var itemsToDelete = unversionedItems
-                .OrderByDescending(s => s.FullPath.Length)
+            // Remove all unversioned files and directories (deeper paths first).
+            var unversioned = GetStatusEntries(checkoutPath)
+                .Where(e => e.Item == "unversioned")
+                .OrderByDescending(e => e.Path.Length)
                 .ToList();
 
-            foreach (var item in itemsToDelete)
+            foreach (var item in unversioned)
             {
                 try
                 {
-                    if (File.Exists(item.FullPath))
-                    {
-                        File.Delete(item.FullPath);
-                    }
-                    else if (Directory.Exists(item.FullPath))
-                    {
-                        Directory.Delete(item.FullPath, recursive: true);
-                    }
+                    if (File.Exists(item.Path))
+                        File.Delete(item.Path);
+                    else if (Directory.Exists(item.Path))
+                        Directory.Delete(item.Path, recursive: true);
                 }
                 catch
                 {
-                    // Continue with other items even if one fails
+                    // Continue with other items even if one fails.
                 }
             }
 
@@ -503,8 +355,101 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Gets the current branch name from the SVN URL.
-    /// Extracts branch from standard SVN layouts: trunk, branches/*, tags/*
+    /// Updates the working copy to the latest version from the remote (HEAD).
+    /// </summary>
+    public VcsUpdateResult UpdateToLatest(string repositoryPath)
+    {
+        var result = new VcsUpdateResult();
+
+        try
+        {
+            if (!Directory.Exists(repositoryPath))
+            {
+                result.ErrorMessage = "Repository path does not exist.";
+                return result;
+            }
+
+            var info = GetInfo(repositoryPath);
+            if (info == null)
+            {
+                result.ErrorMessage = "Not a valid SVN working copy.";
+                return result;
+            }
+
+            result.OldRevision = info.Revision.ToString();
+
+            var update = SvnCli.Run("update", "-r", "HEAD", repositoryPath);
+            if (!update.Success)
+            {
+                result.ErrorMessage = "SVN update failed.";
+                return result;
+            }
+
+            var newInfo = GetInfo(repositoryPath);
+            result.NewRevision = newInfo?.Revision.ToString() ?? result.OldRevision;
+            result.HasChanges = result.OldRevision != result.NewRevision;
+            result.Success = true;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("UpdateToLatest", ex);
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reverts changes to specific files in the working copy. Unversioned files are simply
+    /// deleted; versioned files are reverted.
+    /// </summary>
+    public VcsOperationResult RevertFiles(string repositoryPath, IEnumerable<string> filesToRevert)
+    {
+        var result = new VcsOperationResult();
+
+        try
+        {
+            if (!Directory.Exists(repositoryPath))
+            {
+                result.ErrorMessage = "Repository path does not exist.";
+                return result;
+            }
+
+            foreach (var file in filesToRevert)
+            {
+                var fullPath = Path.Combine(repositoryPath, file);
+                var status = GetSingleStatus(fullPath);
+
+                if (status?.Item == "unversioned")
+                {
+                    if (File.Exists(fullPath))
+                        File.Delete(fullPath);
+                    else if (Directory.Exists(fullPath))
+                        Directory.Delete(fullPath, recursive: true);
+                }
+                else
+                {
+                    SvnCli.Run("revert", fullPath);
+                }
+            }
+
+            result.Success = true;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("RevertFiles", ex);
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
+    }
+
+    // ===================================================================================
+    // Branch / history operations.
+    // ===================================================================================
+
+    /// <summary>
+    /// Gets the current branch name from the SVN URL (trunk, branches/*, tags/*).
     /// </summary>
     public string? GetCurrentBranch(string repositoryPath)
         => GetCurrentBranch(repositoryPath, branchDirectories: null);
@@ -513,34 +458,24 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     {
         try
         {
-            using var client = new SvnClient();
-
-            // Get info for the working copy or URL
-            string? uri = null;
+            string? url = null;
 
             if (Directory.Exists(repositoryPath))
             {
-                // It's a working copy
-                if (!client.GetInfo(repositoryPath, out var wcInfo))
-                {
+                var info = GetInfo(repositoryPath);
+                if (info == null)
                     return null;
-                }
-                // Get the URL from working copy info
-                uri = wcInfo.Uri.ToString();
+                url = info.Url;
             }
             else if (Uri.TryCreate(repositoryPath, UriKind.Absolute, out var confirmedUri))
             {
-                // It's a URL
-                uri = confirmedUri.ToString();
+                url = confirmedUri.ToString();
             }
 
-            if (uri == null)
-            {
+            if (url == null)
                 return null;
-            }
 
-            // Extract branch from URL path
-            return ExtractBranchFromSvnUrl(uri, branchDirectories);
+            return ExtractBranchFromSvnUrl(url, branchDirectories);
         }
         catch (Exception ex)
         {
@@ -550,9 +485,8 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Extracts the branch name from an SVN URL.
-    /// Uses the provided branch directories, or falls back to defaults.
-    /// The first directory in the list is treated as the trunk equivalent (no subdirectories).
+    /// Extracts the branch name from an SVN URL. The first directory in the list is treated
+    /// as the trunk equivalent (matched as a leaf segment); the rest are branch containers.
     /// </summary>
     internal string? ExtractBranchFromSvnUrl(string url, IReadOnlyList<string>? branchDirectories = null)
     {
@@ -564,14 +498,11 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             var dirLower = dir.ToLowerInvariant();
 
-            // Check if this is a trunk-like directory (first entry, or "trunk" by convention)
-            // Trunk directories match as a leaf: /trunk or /trunk/ but have no subdirectories
             if (dir == branchDirectories[0] || dirLower == "trunk")
             {
                 var trunkIndex = urlLower.IndexOf($"/{dirLower}", StringComparison.Ordinal);
                 if (trunkIndex >= 0)
                 {
-                    // Verify it's a full segment (followed by / or end of string)
                     var afterTrunk = trunkIndex + dirLower.Length + 1;
                     if (afterTrunk >= url.Length || url[afterTrunk] == '/')
                         return dir;
@@ -579,7 +510,6 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
             else
             {
-                // Branch-like directory: has subdirectories (e.g., branches/feature-x)
                 var result = CheckForBranchName(url, dir);
                 if (result != null)
                     return result;
@@ -588,8 +518,6 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         return null;
     }
-
-    private static readonly string[] DefaultBranchDirectories = ["trunk", "branches", "tags"];
 
     private string? CheckForBranchName(string url, string branchGroupName)
     {
@@ -618,74 +546,60 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            using var client = new SvnClient();
-            var uri = GetRepositoryUri(repositoryPath);
+            var url = ResolveUrl(repositoryPath);
+            var currentBranch = ExtractBranchFromSvnUrl(url, branchDirectories);
 
-            // Get the current branch as a fallback for entries without changed paths
-            var currentBranch = ExtractBranchFromSvnUrl(uri.Uri.ToString(), branchDirectories);
-
-            // Configure log args - use revision-based range instead of date-based
-            // to ensure full revision properties (author, message) are retrieved.
-            // RetrieveChangedPaths is needed to determine the actual branch for each
-            // revision, since SVN log follows copy history across branches.
-            var logArgs = new SvnLogArgs
-            {
-                Limit = options.MaxEntries,
-                RetrieveChangedPaths = true
-            };
-
-            // If a specific revision is requested, pin Start/End to that revision
+            // -v (verbose) retrieves changed paths, needed to determine the actual branch for
+            // each revision since SVN log follows copy history across branches.
+            var args = new List<string> { "log", url, "-v" };
             if (!string.IsNullOrEmpty(options.Revision))
             {
-                var svnRevision = ParseRevision(options.Revision);
-                logArgs.Start = svnRevision;
-                logArgs.End = svnRevision;
-                logArgs.Limit = 1;
+                args.Add("-r");
+                args.Add(SvnCli.NormalizeRevision(options.Revision));
+                args.Add("-l");
+                args.Add("1");
+            }
+            else
+            {
+                args.Add("-l");
+                args.Add(options.MaxEntries.ToString());
             }
 
-            var minEntriesFromSinceFilter = 10;
+            var doc = SvnCli.RunXml(args.ToArray());
+            if (doc?.Root == null)
+                return entries;
+
+            const int minEntriesFromSinceFilter = 10;
             var sinceDate = options.Since;
             var untilDate = options.Until;
 
-            // Fetch logs and filter by date in the callback
-            // IMPORTANT: We must extract values immediately in the callback because
-            // SharpSvn reuses/clears the SvnLogEventArgs object after the callback returns
-            client.Log(uri.Uri, logArgs, (sender, e) =>
+            foreach (var le in doc.Root.Elements("logentry"))
             {
-                // Apply date filters
-                if (untilDate.HasValue && e.Time > untilDate.Value.UtcDateTime)
-                {
-                    return; // Skip entries after the until date
-                }
+                var time = ParseSvnDateUtc(le.Element("date")?.Value);
 
-                if (sinceDate.HasValue && e.Time < sinceDate.Value.UtcDateTime)
-                {
-                    // If we have enough entries, we can stop
-                    if (entries.Count >= minEntriesFromSinceFilter)
-                    {
-                        e.Cancel = true;
-                        return;
-                    }
-                }
+                if (untilDate.HasValue && time > untilDate.Value.UtcDateTime)
+                    continue;
 
-                // Extract all values immediately - do not store the event args object
-                var message = e.LogMessage?.Trim() ?? "";
+                if (sinceDate.HasValue && time < sinceDate.Value.UtcDateTime &&
+                    entries.Count >= minEntriesFromSinceFilter)
+                    break;
+
+                var message = le.Element("msg")?.Value?.Trim() ?? "";
                 var messageShort = message;
                 var newlineIndex = message.IndexOf('\n');
                 if (newlineIndex > 0)
-                {
                     messageShort = message.Substring(0, newlineIndex).Trim();
-                }
 
-                // Determine the actual branch from the changed paths rather than
-                // assuming all entries are on the current branch. SVN log follows
-                // copy history, so older entries may be from trunk or another branch.
+                // Determine the actual branch from the changed paths rather than assuming all
+                // entries are on the current branch. SVN log follows copy history, so older
+                // entries may be from trunk or another branch.
                 var branch = currentBranch;
-                if (e.ChangedPaths != null && e.ChangedPaths.Count > 0)
+                var paths = le.Element("paths");
+                if (paths != null)
                 {
-                    foreach (var changedPath in e.ChangedPaths)
+                    foreach (var p in paths.Elements("path"))
                     {
-                        var pathStr = changedPath.Path;
+                        var pathStr = p.Value;
                         if (!string.IsNullOrEmpty(pathStr))
                         {
                             branch = ExtractBranchFromSvnUrl(pathStr, branchDirectories);
@@ -696,20 +610,19 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                     branch ??= currentBranch;
                 }
 
-                var entry = new VcsLogEntry
+                var revision = le.Attribute("revision")?.Value ?? "";
+                entries.Add(new VcsLogEntry
                 {
-                    Revision = e.Revision.ToString(),
-                    ShortRevision = $"{e.Revision}",
-                    Author = e.Author ?? "",
-                    AuthorEmail = "", // SVN doesn't typically have email in author field
-                    Date = new DateTimeOffset(e.Time),
+                    Revision = revision,
+                    ShortRevision = revision,
+                    Author = le.Element("author")?.Value ?? "",
+                    AuthorEmail = "",
+                    Date = new DateTimeOffset(time, TimeSpan.Zero),
                     Message = message,
                     MessageShort = messageShort,
                     Branch = branch
-                };
-
-                entries.Add(entry);
-            });
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -723,71 +636,59 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// Gets the commit date of the source revision this branch was created from. See
     /// <see cref="IRevisionControlSystem.GetBranchPointDate"/> for semantics.
     ///
-    /// Implementation: walks the branch with SharpSvn's <c>StrictNodeHistory = true</c>
-    /// (i.e. <c>svn log --stop-on-copy</c>). The oldest entry is the copy that established
-    /// the branch; any of its changed-paths entries with a non-null <c>CopyFromRevision</c>
-    /// identifies the source revision. We then read that revision's <c>svn:date</c> via a
-    /// single-revision log query at the repository root (the repo root exists at every
-    /// revision, whereas the branch URL itself does not exist at the source revision).
-    /// Returns null if the path has no copy origin (trunk itself, or a non-branch path),
-    /// or if any SVN query fails.
+    /// Implementation: walks the branch with <c>svn log --stop-on-copy -v</c>. The oldest
+    /// entry is the copy that established the branch; the highest <c>copyfrom-rev</c> among
+    /// its changed paths identifies the source revision. We then read that revision's date
+    /// via a single-revision log query at the repository root (the repo root exists at every
+    /// revision, whereas the branch URL does not exist at the source revision). Returns null
+    /// if the path has no copy origin (trunk itself, or a non-branch path), or on any failure.
     /// </summary>
     public DateTimeOffset? GetBranchPointDate(string repositoryPath)
     {
         try
         {
-            using var client = new SvnClient();
-            var uri = GetRepositoryUri(repositoryPath);
+            var url = ResolveUrl(repositoryPath);
 
             // Step 1: find the copy that created this branch, and its source revision.
-            // Stream is newest-first; we keep overwriting, so the final capture corresponds
+            // Entries are newest-first; we keep overwriting, so the final capture corresponds
             // to the oldest entry — the branch-establishing copy.
+            var doc = SvnCli.RunXml("log", url, "--stop-on-copy", "-v");
+            if (doc?.Root == null)
+                return null;
+
             long? copyFromRevision = null;
-
-            var walkArgs = new SvnLogArgs
+            foreach (var le in doc.Root.Elements("logentry"))
             {
-                StrictNodeHistory = true,
-                RetrieveChangedPaths = true,
-                Limit = 0,
-            };
-
-            client.Log(uri.Uri, walkArgs, (sender, e) =>
-            {
-                if (e.ChangedPaths == null) return;
                 long? candidate = null;
-                foreach (var p in e.ChangedPaths)
+                var paths = le.Element("paths");
+                if (paths != null)
                 {
-                    if (p.CopyFromRevision > 0)
-                        candidate = p.CopyFromRevision;
+                    foreach (var p in paths.Elements("path"))
+                    {
+                        if (long.TryParse(p.Attribute("copyfrom-rev")?.Value, out var r) && r > 0)
+                            candidate = r;
+                    }
                 }
                 if (candidate.HasValue)
                     copyFromRevision = candidate;
-            });
+            }
 
             if (copyFromRevision == null)
                 return null;
 
             // Step 2: resolve the date of the copy-from revision. Query at the repository
             // root so the lookup is independent of which paths existed at that revision.
-            if (!client.GetInfo(uri, out var info))
+            var info = GetInfo(url);
+            if (info == null)
                 return null;
 
-            DateTime? sourceDate = null;
-            var lookupArgs = new SvnLogArgs
-            {
-                Start = new SvnRevision(copyFromRevision.Value),
-                End = new SvnRevision(copyFromRevision.Value),
-                Limit = 1,
-            };
-            client.Log(info.RepositoryRoot, lookupArgs, (sender, e) =>
-            {
-                sourceDate = e.Time;
-            });
-
-            if (sourceDate == null)
+            var lookup = SvnCli.RunXml("log", info.RepositoryRoot, "-r", copyFromRevision.Value.ToString(), "-l", "1");
+            var sourceEntry = lookup?.Root?.Element("logentry");
+            if (sourceEntry == null)
                 return null;
 
-            return new DateTimeOffset(sourceDate.Value, TimeSpan.Zero);
+            var sourceDate = ParseSvnDateUtc(sourceEntry.Element("date")?.Value);
+            return new DateTimeOffset(sourceDate, TimeSpan.Zero);
         }
         catch (Exception ex)
         {
@@ -805,53 +706,41 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            using var client = new SvnClient();
-            var uri = GetRepositoryUri(repositoryPath);
-            var svnRevision = ParseRevision(revision);
+            var url = ResolveUrl(repositoryPath);
+            var rev = SvnCli.NormalizeRevision(revision);
 
-            // Get the log entry with changed paths
-            var logArgs = new SvnLogArgs
-            {
-                Start = svnRevision,
-                End = svnRevision,
-                RetrieveChangedPaths = true
-            };
+            var doc = SvnCli.RunXml("log", url, "-r", rev, "-v", "-l", "1");
+            var paths = doc?.Root?.Element("logentry")?.Element("paths");
+            if (paths == null)
+                return changedFiles;
 
-            client.Log(uri.Uri, logArgs, (sender, e) =>
+            foreach (var p in paths.Elements("path"))
             {
-                if (e.ChangedPaths != null)
+                var path = p.Value ?? "";
+                var action = p.Attribute("action")?.Value ?? "";
+                var copyFromPath = p.Attribute("copyfrom-path")?.Value;
+
+                var changedFile = new VcsChangedFile
                 {
-                    foreach (var changedPath in e.ChangedPaths)
+                    Path = path.TrimStart('/'),
+                    ChangeType = action switch
                     {
-                        // Extract all values immediately - SharpSvn reuses event args
-                        var path = changedPath.Path ?? "";
-                        var action = changedPath.Action;
-                        var copyFromPath = changedPath.CopyFromPath;
-
-                        var changedFile = new VcsChangedFile
-                        {
-                            Path = path.TrimStart('/'),
-                            ChangeType = action switch
-                            {
-                                SvnChangeAction.Add => VcsChangeType.Added,
-                                SvnChangeAction.Delete => VcsChangeType.Deleted,
-                                SvnChangeAction.Modify => VcsChangeType.Modified,
-                                SvnChangeAction.Replace => VcsChangeType.Modified,
-                                _ => VcsChangeType.Modified
-                            }
-                        };
-
-                        // Check if this is a copy/rename (has CopyFromPath)
-                        if (!string.IsNullOrEmpty(copyFromPath))
-                        {
-                            changedFile.OldPath = copyFromPath.TrimStart('/');
-                            changedFile.ChangeType = VcsChangeType.Copied;
-                        }
-
-                        changedFiles.Add(changedFile);
+                        "A" => VcsChangeType.Added,
+                        "D" => VcsChangeType.Deleted,
+                        "M" => VcsChangeType.Modified,
+                        "R" => VcsChangeType.Modified,
+                        _ => VcsChangeType.Modified
                     }
+                };
+
+                if (!string.IsNullOrEmpty(copyFromPath))
+                {
+                    changedFile.OldPath = copyFromPath.TrimStart('/');
+                    changedFile.ChangeType = VcsChangeType.Copied;
                 }
-            });
+
+                changedFiles.Add(changedFile);
+            }
         }
         catch (Exception ex)
         {
@@ -862,235 +751,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Parses a revision string to an SvnRevision object.
-    /// Supports revision numbers (e.g., "123") and special keywords (e.g., "HEAD").
-    /// </summary>
-    private SvnRevision ParseRevision(string revision)
-    {
-        if (string.IsNullOrWhiteSpace(revision))
-        {
-            return SvnRevision.Head;
-        }
-
-        // Try to parse as revision number
-        if (long.TryParse(revision, out var revisionNumber))
-        {
-            return new SvnRevision(revisionNumber);
-        }
-
-        // Handle special keywords
-        return revision.ToUpperInvariant() switch
-        {
-            "HEAD" => SvnRevision.Head,
-            "BASE" => SvnRevision.Base,
-            "COMMITTED" => SvnRevision.Committed,
-            "PREV" => SvnRevision.Previous,
-            _ => SvnRevision.Head
-        };
-    }
-
-    /// <summary>
-    /// Gets a repository URI from a path (working copy or URL).
-    /// </summary>
-    private SvnUriTarget GetRepositoryUri(string repositoryPath)
-    {
-        // Check if it's a local directory first (working copy)
-        if (Directory.Exists(repositoryPath))
-        {
-            using var client = new SvnClient();
-            if (client.GetInfo(repositoryPath, out var info))
-            {
-                return new SvnUriTarget(info.Uri);
-            }
-        }
-
-        // If it's a URL, use it directly
-        if (Uri.TryCreate(repositoryPath, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == "http" || uri.Scheme == "https" || uri.Scheme == "svn" || uri.Scheme == "file"))
-        {
-            return new SvnUriTarget(uri);
-        }
-
-        // Fallback: try to create a file:// URL from the path
-        return new SvnUriTarget(new Uri(Path.GetFullPath(repositoryPath)));
-    }
-
-    /// <summary>
-    /// Updates the working copy to the latest version from the remote (HEAD).
-    /// </summary>
-    public VcsUpdateResult UpdateToLatest(string repositoryPath)
-    {
-        var result = new VcsUpdateResult();
-
-        try
-        {
-            if (!Directory.Exists(repositoryPath))
-            {
-                result.ErrorMessage = "Repository path does not exist.";
-                return result;
-            }
-
-            using var client = new SvnClient();
-
-            // Verify it's a valid working copy
-            if (!client.GetInfo(repositoryPath, out var info))
-            {
-                result.ErrorMessage = "Not a valid SVN working copy.";
-                return result;
-            }
-
-            // Get the current revision before update
-            result.OldRevision = info.Revision.ToString();
-
-            // Perform the update to HEAD
-            SvnUpdateResult? updateResult = null;
-            var success = client.Update(repositoryPath, new SvnUpdateArgs
-            {
-                Revision = SvnRevision.Head
-            }, out updateResult);
-
-            if (!success)
-            {
-                result.ErrorMessage = "SVN update failed.";
-                return result;
-            }
-
-            // Get the new revision
-            result.NewRevision = updateResult?.Revision.ToString() ?? result.OldRevision;
-            result.HasChanges = result.OldRevision != result.NewRevision;
-            result.Success = true;
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("UpdateToLatest", ex);
-            result.ErrorMessage = ex.Message;
-        }
-        catch (Exception ex)
-        {
-            RevisionControlLogger.Error("UpdateToLatest", ex);
-            result.ErrorMessage = ex.Message;
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Gets the list of files with uncommitted changes in the working copy.
-    /// </summary>
-    public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryPath)
-    {
-        var files = new List<VcsWorkingCopyFile>();
-
-        try
-        {
-            if (!Directory.Exists(repositoryPath))
-            {
-                return files;
-            }
-
-            using var client = new SvnClient();
-
-            // Verify it's a valid working copy
-            if (!client.GetInfo(repositoryPath, out _))
-            {
-                return files;
-            }
-
-            // Get status of all files
-            client.Status(repositoryPath, new SvnStatusArgs { Depth = SvnDepth.Infinity },
-                (sender, e) =>
-                {
-                    // Skip unchanged files
-                    if (e.LocalContentStatus == SvnStatus.Normal &&
-                        e.LocalPropertyStatus == SvnStatus.Normal)
-                    {
-                        return;
-                    }
-
-                    // Extract values immediately - SharpSvn reuses event args
-                    var path = Path.GetRelativePath(repositoryPath, e.FullPath);
-                    var contentStatus = e.LocalContentStatus;
-                    var propStatus = e.LocalPropertyStatus;
-
-                    var file = new VcsWorkingCopyFile
-                    {
-                        Path = path,
-                        IsStaged = false // SVN doesn't have staging
-                    };
-
-                    file.Status = contentStatus switch
-                    {
-                        SvnStatus.Modified => VcsFileStatus.Modified,
-                        SvnStatus.Added => VcsFileStatus.Added,
-                        SvnStatus.Deleted => VcsFileStatus.Deleted,
-                        SvnStatus.Replaced => VcsFileStatus.Modified,
-                        SvnStatus.NotVersioned => VcsFileStatus.Untracked,
-                        SvnStatus.Conflicted => VcsFileStatus.Conflicted,
-                        SvnStatus.Missing => VcsFileStatus.Deleted,
-                        // Property-only change (e.g. svn:mergeinfo updated on the repo root during a merge)
-                        SvnStatus.Normal when propStatus != SvnStatus.Normal => VcsFileStatus.Modified,
-                        _ => VcsFileStatus.Modified
-                    };
-
-                    // Include items with content changes AND items with property-only changes
-                    // (e.g. svn:mergeinfo on the root must be committed to finalise a merge).
-                    // Only skip items that SVN has marked as explicitly ignored.
-                    if (contentStatus != SvnStatus.Ignored)
-                    {
-                        files.Add(file);
-                    }
-                });
-
-            // SVN's recursive status does not enumerate files inside unversioned directories,
-            // so any directory entry with Untracked status needs to be expanded manually into
-            // its individual files. Directories with a versioned status (Added, Modified, etc.)
-            // are kept as-is: their file children are already returned by SVN's recursive status,
-            // and the directory entry itself must appear in the commit list so it can be committed
-            // (e.g. a directory Added via merge must be committed before new files can be added to it).
-            var filesToRemove = new List<VcsWorkingCopyFile>();
-            var filesToAdd = new List<VcsWorkingCopyFile>();
-            foreach (var f in files)
-            {
-                if (Directory.Exists(Path.Combine(repositoryPath, f.Path)) &&
-                    f.Status == VcsFileStatus.Untracked)
-                {
-                    var newFiles = Directory.GetFiles(Path.Combine(repositoryPath, f.Path), "*", SearchOption.AllDirectories);
-                    foreach (var newFile in newFiles)
-                    {
-                        var relativePath = Path.GetRelativePath(repositoryPath, newFile);
-                        filesToAdd.Add(new VcsWorkingCopyFile
-                        {
-                            Path = relativePath,
-                            Status = VcsFileStatus.Untracked,
-                            IsStaged = false
-                        });
-                    }
-                    filesToRemove.Add(f);
-                }
-            }
-            foreach (var f in filesToRemove)
-            {
-                files.Remove(f);
-            }
-            // Deduplicate: SVN may have already returned some of these files individually
-            var existingPaths = new HashSet<string>(files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
-            foreach (var f in filesToAdd)
-            {
-                if (existingPaths.Add(f.Path))
-                    files.Add(f);
-            }
-        }
-        catch (Exception ex)
-        {
-            RevisionControlLogger.Error("GetWorkingCopyChanges", ex);
-        }
-
-        return files;
-    }
-
-    /// <summary>
-    /// Gets the list of available branches.
-    /// For SVN, this looks for standard branch paths in the repository.
+    /// Gets the list of available branches by inspecting the standard branch paths.
     /// </summary>
     public List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false)
         => GetBranches(repositoryPath, includeRemote, branchDirectories: null);
@@ -1102,60 +763,59 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
         try
         {
-            using var client = new SvnClient();
-            var uri = GetRepositoryUri(repositoryPath);
+            var url = ResolveUrl(repositoryPath);
             var currentBranch = GetCurrentBranch(repositoryPath, branchDirectories);
 
-            // Get the repository root
-            if (!client.GetInfo(uri, out var info))
-            {
+            var info = GetInfo(url);
+            if (info == null)
                 return branches;
-            }
 
-            var repoRoot = info.RepositoryRoot;
+            var repoRoot = info.RepositoryRoot.TrimEnd('/');
 
             foreach (var branchPath in branchDirectories)
             {
-                try
-                {
-                    var branchUri = new Uri(repoRoot, branchPath);
+                // Build the URL by string concatenation rather than new Uri(base, rel): the
+                // repository root from svn has no trailing slash, and Uri's relative-resolution
+                // would otherwise replace the last path segment.
+                var branchUrl = $"{repoRoot}/{branchPath}";
 
-                    // The first entry is the trunk equivalent — it's a single branch, not a container
-                    if (branchPath == branchDirectories[0])
+                // The first entry is the trunk equivalent — a single branch, not a container.
+                if (branchPath == branchDirectories[0])
+                {
+                    if (GetInfo(branchUrl) != null)
                     {
-                        if (client.GetInfo(branchUri, out _))
+                        branches.Add(new VcsBranchInfo
                         {
-                            branches.Add(new VcsBranchInfo
-                            {
-                                Name = branchPath,
-                                IsCurrent = currentBranch == branchPath,
-                                IsRemote = true
-                            });
-                        }
-                    }
-                    else
-                    {
-                        // List subdirectories for branches/tags/etc.
-                        var listArgs = new SvnListArgs { Depth = SvnDepth.Children };
-                        client.List(branchUri, listArgs, (sender, e) =>
-                        {
-                            if (e.Entry.NodeKind == SvnNodeKind.Directory && !string.IsNullOrEmpty(e.Name))
-                            {
-                                var name = $"{branchPath}/{e.Name}";
-                                branches.Add(new VcsBranchInfo
-                                {
-                                    Name = name,
-                                    IsCurrent = name == currentBranch,
-                                    IsRemote = true,
-                                    LastCommit = e.Entry.Revision.ToString()
-                                });
-                            }
+                            Name = branchPath,
+                            IsCurrent = currentBranch == branchPath,
+                            IsRemote = true
                         });
                     }
                 }
-                catch
+                else
                 {
-                    // Branch path doesn't exist, skip
+                    var doc = SvnCli.RunXml("list", branchUrl, "--depth", "immediates");
+                    var list = doc?.Root?.Element("list");
+                    if (list == null)
+                        continue;
+
+                    foreach (var entry in list.Elements("entry"))
+                    {
+                        if (entry.Attribute("kind")?.Value != "dir")
+                            continue;
+                        var entryName = entry.Element("name")?.Value;
+                        if (string.IsNullOrEmpty(entryName))
+                            continue;
+
+                        var name = $"{branchPath}/{entryName}";
+                        branches.Add(new VcsBranchInfo
+                        {
+                            Name = name,
+                            IsCurrent = name == currentBranch,
+                            IsRemote = true,
+                            LastCommit = entry.Element("commit")?.Attribute("revision")?.Value
+                        });
+                    }
                 }
             }
         }
@@ -1168,444 +828,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Commits changes to the repository.
-    /// </summary>
-    public VcsCommitResult Commit(string repositoryPath, string message, IEnumerable<string>? filesToCommit = null, IProgress<string>? progress = null)
-    {
-        var result = new VcsCommitResult();
-
-        try
-        {
-            if (!Directory.Exists(repositoryPath))
-            {
-                result.ErrorMessage = "Repository path does not exist.";
-                return result;
-            }
-
-            using var client = new SvnClient();
-
-            // Verify it's a valid working copy
-            if (!client.GetInfo(repositoryPath, out _))
-            {
-                result.ErrorMessage = "Not a valid SVN working copy.";
-                return result;
-            }
-
-            // Prepare files to commit
-            var pathsToCommit = new List<string>();
-            if (filesToCommit != null)
-            {
-                foreach (var file in filesToCommit)
-                {
-                    pathsToCommit.Add(Path.Combine(repositoryPath, file));
-                }
-            }
-            else
-            {
-                pathsToCommit.Add(repositoryPath);
-            }
-
-            // If the repository root has uncommitted property changes (e.g. svn:mergeinfo updated
-            // during a merge), always include it in this commit regardless of what the caller
-            // selected. Leaving merge metadata uncommitted puts the working copy in an inconsistent
-            // state that blocks subsequent commits.
-            SvnStatusEventArgs? rootStatus = null;
-            client.Status(repositoryPath, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                (_, e) => { rootStatus = e; });
-            if (rootStatus?.LocalPropertyStatus != SvnStatus.Normal &&
-                !pathsToCommit.Contains(repositoryPath, StringComparer.OrdinalIgnoreCase))
-            {
-                pathsToCommit.Add(repositoryPath);
-            }
-
-            // Check for unversioned files and add them first.
-            // SVN requires files to be explicitly added before they can be committed.
-            // Also track any parent directories that were added so they can be included in the commit.
-            var addedParentDirs = new HashSet<string>();
-            // Files that cannot be in this commit because their parent directory was Added via merge.
-            // SVN forbids adding new files to a merge-committed directory in the same transaction.
-            var filesToSkip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            var pathsList = pathsToCommit.ToList();
-            var totalPaths = pathsList.Count;
-            for (int i = 0; i < pathsList.Count; i++)
-            {
-                var path = pathsList[i];
-                if (i % 100 == 0 || i == totalPaths - 1)
-                    progress?.Report($"Preparing file {i + 1} of {totalPaths}...");
-
-                if (!File.Exists(path) && !Directory.Exists(path))
-                {
-                    // File/directory is missing from disk. Schedule it for deletion in SVN
-                    // so the commit removes it from the repository. Without this, SVN treats
-                    // the file as "missing" but not "deleted" and the commit either ignores
-                    // it or fails.
-                    try
-                    {
-                        SvnStatusEventArgs? missingStatus = null;
-                        client.Status(path, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                            (_, e) => { missingStatus = e; });
-
-                        if (missingStatus?.LocalContentStatus == SvnStatus.Missing)
-                        {
-                            client.Delete(path, new SvnDeleteArgs { Force = true });
-                        }
-                    }
-                    catch (SvnException)
-                    {
-                        // If delete fails (e.g., already scheduled), continue — the commit
-                        // will handle it or report the error.
-                    }
-                    continue;
-                }
-
-                {
-                    try
-                    {
-                        // Check if the file is already versioned
-                        SvnStatusEventArgs? status = null;
-                        client.Status(path, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                            (sender, e) => { status = e; });
-
-                        if (status?.LocalContentStatus == SvnStatus.NotVersioned)
-                        {
-                            var parentDir = Path.GetDirectoryName(path);
-
-                            // If the parent directory was itself added via SVN merge (has svn:mergeinfo),
-                            // adding a new file to it in the same commit causes an "out of date" server
-                            // error. Mark the file for a separate commit instead.
-                            // Skip this check for directories we ourselves added during this commit
-                            // preparation (tracked in addedParentDirs) — those are new directories
-                            // created by the formatter, not by a merge operation. Without this
-                            // exclusion, GetProperty can return inherited svn:mergeinfo from an
-                            // ancestor directory, causing false positives (e.g., after branch creation).
-                            if (!string.IsNullOrEmpty(parentDir) &&
-                                !parentDir.Equals(repositoryPath, StringComparison.OrdinalIgnoreCase) &&
-                                !addedParentDirs.Contains(parentDir) &&
-                                IsDirectoryAddedViaMerge(client, parentDir))
-                            {
-                                filesToSkip.Add(path);
-                                continue;
-                            }
-
-                            // File is genuinely new. Before adding it, explicitly check and stage any
-                            // unversioned parent directories. We do this BEFORE the svn add so that we
-                            // can detect them while they are still NotVersioned — querying status after
-                            // the add is unreliable in SharpSvn. AddParentDirectories also records them
-                            // in addedParentDirs so they appear in pathsToCommit.
-                            if (!string.IsNullOrEmpty(parentDir) &&
-                                !parentDir.Equals(repositoryPath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                AddParentDirectories(client, parentDir, repositoryPath, addedParentDirs);
-                            }
-
-                            client.Add(path, new SvnAddArgs { AddParents = true });
-                        }
-                    }
-                    catch (SvnException svnError)
-                    {
-                        // SVN_ERR_WC_PATH_NOT_FOUND means the file's parent directory is not part of the
-                        // working copy at all — add parent directories explicitly first.
-                        if (svnError.SvnErrorCode == SvnErrorCode.SVN_ERR_WC_PATH_NOT_FOUND)
-                        {
-                            var parentDir = Path.GetDirectoryName(path);
-                            if (!string.IsNullOrEmpty(parentDir))
-                            {
-                                AddParentDirectories(client, parentDir, repositoryPath, addedParentDirs);
-                            }
-                            try
-                            {
-                                client.Add(path, new SvnAddArgs { AddParents = true });
-                            }
-                            catch (SvnException addError)
-                            {
-                                // Ignore "already under version control" errors
-                                if (addError.SvnErrorCode != SvnErrorCode.SVN_ERR_ENTRY_EXISTS)
-                                {
-                                    result.ErrorMessage = BuildFullSvnErrorMessage(addError);
-                                    return result;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            result.ErrorMessage = BuildFullSvnErrorMessage(svnError);
-                            return result;
-                        }
-                    }
-                }
-            }
-
-            // Remove files that must be committed separately (new files in merge-added directories).
-            // Record them as skipped so the UI can offer a follow-up commit.
-            foreach (var skipPath in filesToSkip)
-            {
-                pathsToCommit.Remove(skipPath);
-                result.SkippedFiles.Add(Path.GetRelativePath(repositoryPath, skipPath));
-            }
-
-            // Add any parent directories that were scheduled for add to the commit paths
-            foreach (var dir in addedParentDirs)
-            {
-                if (!pathsToCommit.Contains(dir))
-                {
-                    pathsToCommit.Add(dir);
-                }
-            }
-
-            // If everything was skipped there is nothing left to commit. Tell the user they
-            // must include the parent directory in the commit first.
-            if (pathsToCommit.Count == 0)
-            {
-                if (result.SkippedFiles.Count > 0)
-                    result.ErrorMessage =
-                        "All selected files are in directories that were added via merge and cannot be " +
-                        "added in the same transaction. Please also select the parent directory so it is " +
-                        "committed first, then commit these files separately.";
-                else
-                    result.ErrorMessage = "No files to commit.";
-                return result;
-            }
-
-            // Perform the commit with progress reporting via SVN notifications.
-            // SVN commit has two phases: processing files (CommitModified/Added/Deleted)
-            // and transmitting data (CommitSendData). Track both phases.
-            SvnCommitResult? commitResult = null;
-            var commitArgs = new SvnCommitArgs { LogMessage = message };
-            var processedCount = 0;
-            var sentCount = 0;
-            var totalToCommit = pathsToCommit.Count;
-            progress?.Report($"Committing {totalToCommit} files to server...");
-            commitArgs.Notify += (_, e) =>
-            {
-                switch (e.Action)
-                {
-                    case SvnNotifyAction.CommitModified:
-                    case SvnNotifyAction.CommitAdded:
-                    case SvnNotifyAction.CommitDeleted:
-                    case SvnNotifyAction.CommitReplaced:
-                    {
-                        var count = Interlocked.Increment(ref processedCount);
-                        if (count % 100 == 0 || count == totalToCommit)
-                            progress?.Report($"Processing file {count} of {totalToCommit}...");
-                        break;
-                    }
-                    case SvnNotifyAction.CommitSendData:
-                    {
-                        var count = Interlocked.Increment(ref sentCount);
-                        if (count % 100 == 0)
-                            progress?.Report($"Sending data ({count} files sent)...");
-                        break;
-                    }
-                }
-            };
-            var success = client.Commit(pathsToCommit, commitArgs, out commitResult);
-
-            if (!success || commitResult == null)
-            {
-                result.ErrorMessage = "SVN commit failed.";
-                return result;
-            }
-
-            //Commit succeeded so run update
-            UpdateToLatest(repositoryPath);
-            
-            result.Success = true;
-            result.NewRevision = commitResult.Revision.ToString();
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("Commit", ex);
-            result.ErrorMessage = BuildFullSvnErrorMessage(ex);
-            result.IsOutOfDate = IsOutOfDateError(ex);
-        }
-        catch (Exception ex)
-        {
-            RevisionControlLogger.Error("Commit", ex);
-            result.ErrorMessage = ex.Message;
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Builds a full error message by walking the SVN exception inner chain.
-    /// SvnException.Message only returns the top-level summary line; the details live in inner exceptions.
-    /// </summary>
-    private static string BuildFullSvnErrorMessage(Exception ex)
-    {
-        var messages = new List<string>();
-        var current = ex;
-        while (current != null)
-        {
-            if (!string.IsNullOrWhiteSpace(current.Message) && !messages.Contains(current.Message))
-                messages.Add(current.Message);
-            current = current.InnerException;
-        }
-        return string.Join("\n", messages);
-    }
-
-    /// <summary>
-    /// Returns true if the exception (or any inner exception) indicates the working copy is out of date.
-    /// </summary>
-    private static bool IsOutOfDateError(SvnException ex)
-    {
-        Exception? current = ex;
-        while (current != null)
-        {
-            if (current is SvnException svnEx &&
-                svnEx.SvnErrorCode == SvnErrorCode.SVN_ERR_FS_TXN_OUT_OF_DATE)
-                return true;
-            current = current.InnerException;
-        }
-        // Fallback: check message text in case error code is wrapped differently
-        return BuildFullSvnErrorMessage(ex).Contains("out of date", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Returns true if the directory at <paramref name="directoryPath"/> was added to the working
-    /// copy via an SVN merge operation. Such directories carry <c>svn:mergeinfo</c> in the WC.
-    /// New files cannot be added to a merge-committed directory in the same commit transaction.
-    /// </summary>
-    private static bool IsDirectoryAddedViaMerge(SvnClient client, string directoryPath)
-    {
-        try
-        {
-            SvnStatusEventArgs? status = null;
-            client.Status(directoryPath, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                (_, e) => { status = e; });
-
-            if (status?.LocalContentStatus != SvnStatus.Added)
-                return false;
-
-            // The directory is scheduled for addition. When SVN merges a branch that introduces
-            // a new directory, the child directory is Added but svn:mergeinfo is only set on the
-            // merge root — not on the child itself. So we cannot rely on property checks here.
-            // The caller already excludes directories we created ourselves (tracked in
-            // addedParentDirs), so any remaining Added directory came from a merge or manual
-            // svn copy. In both cases, committing a new unversioned file inside it in the same
-            // transaction would fail with an "out of date" error, so we must skip.
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void AddParentDirectories(SvnClient client, string path, string repositoryRoot, HashSet<string> addedDirs)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-        {
-            return;
-        }
-
-        // Don't go above the repository root
-        if (path.Equals(repositoryRoot, StringComparison.OrdinalIgnoreCase) ||
-            !path.StartsWith(repositoryRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        try
-        {
-            // Check if the directory is already versioned
-            SvnStatusEventArgs? status = null;
-            client.Status(path, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                (sender, e) => { status = e; });
-
-            if (status?.LocalContentStatus == SvnStatus.NotVersioned)
-            {
-                // Add unversioned directory to SVN - use Depth.Empty to only add the directory,
-                // not its contents (files will be added separately)
-                client.Add(path, new SvnAddArgs { AddParents = true, Depth = SvnDepth.Empty });
-                addedDirs.Add(path);
-            }
-        }
-        catch (SvnException)
-        {
-            // Parent directory may not be versioned, recursively add it first
-            var parentDir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(parentDir))
-            {
-                AddParentDirectories(client, parentDir, repositoryRoot, addedDirs);
-                // Now try to add this directory again
-                try
-                {
-                    client.Add(path, new SvnAddArgs { AddParents = true, Depth = SvnDepth.Empty });
-                    addedDirs.Add(path);
-                }
-                catch (SvnException)
-                {
-                    // Ignore if already added
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Reverts changes to specific files in the working copy.
-    /// </summary>
-    public VcsOperationResult RevertFiles(string repositoryPath, IEnumerable<string> filesToRevert)
-    {
-        var result = new VcsOperationResult();
-
-        try
-        {
-            if (!Directory.Exists(repositoryPath))
-            {
-                result.ErrorMessage = "Repository path does not exist.";
-                return result;
-            }
-
-            using var client = new SvnClient();
-
-            foreach (var file in filesToRevert)
-            {
-                var fullPath = Path.Combine(repositoryPath, file);
-
-                // Check if file is unversioned - just delete it
-                SvnStatusEventArgs? status = null;
-                client.Status(fullPath, new SvnStatusArgs { Depth = SvnDepth.Empty },
-                    (sender, e) => { status = e; });
-
-                if (status?.LocalContentStatus == SvnStatus.NotVersioned)
-                {
-                    if (File.Exists(fullPath))
-                    {
-                        File.Delete(fullPath);
-                    }
-                    else if (Directory.Exists(fullPath))
-                    {
-                        Directory.Delete(fullPath, recursive: true);
-                    }
-                }
-                else
-                {
-                    // Revert versioned file
-                    client.Revert(fullPath, new SvnRevertArgs { Depth = SvnDepth.Empty });
-                }
-            }
-
-            result.Success = true;
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("RevertFiles", ex);
-            result.ErrorMessage = ex.Message;
-        }
-        catch (Exception ex)
-        {
-            RevisionControlLogger.Error("RevertFiles", ex);
-            result.ErrorMessage = ex.Message;
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Switches to a different branch.
-    /// In SVN, this performs an svn switch to the branch URL.
+    /// Switches the working copy to a different branch via <c>svn switch</c>.
     /// </summary>
     public VcsOperationResult SwitchBranch(string repositoryPath, string branchName)
     {
@@ -1619,41 +842,28 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            using var client = new SvnClient();
-
-            // Get repository root
-            if (!client.GetInfo(repositoryPath, out var info))
+            var info = GetInfo(repositoryPath);
+            if (info == null)
             {
                 result.ErrorMessage = "Not a valid SVN working copy.";
                 return result;
             }
 
-            var repoRoot = info.RepositoryRoot;
+            var branchUrl = $"{info.RepositoryRoot.TrimEnd('/')}/{branchName.TrimStart('/')}";
 
-            // Construct the branch URL
-            var branchUri = new Uri(repoRoot, branchName);
-
-            // Verify the branch exists
-            if (!client.GetInfo(branchUri, out _))
+            if (GetInfo(branchUrl) == null)
             {
                 result.ErrorMessage = $"Branch '{branchName}' not found.";
                 return result;
             }
 
-            // Perform the switch
-            var success = client.Switch(repositoryPath, branchUri);
-            if (!success)
+            if (!SvnCli.Run("switch", branchUrl, repositoryPath).Success)
             {
                 result.ErrorMessage = "SVN switch failed.";
                 return result;
             }
 
             result.Success = true;
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("SwitchBranch", ex);
-            result.ErrorMessage = ex.Message;
         }
         catch (Exception ex)
         {
@@ -1665,8 +875,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Creates a new branch by copying the current working copy URL.
-    /// In SVN, this creates a server-side copy.
+    /// Creates a new branch as a server-side copy of the current working copy URL.
     /// </summary>
     public VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch = true)
         => CreateBranch(repositoryPath, branchName, switchToBranch, branchDirectories: null);
@@ -1684,59 +893,41 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            using var client = new SvnClient();
-
-            // Get current URL
-            if (!client.GetInfo(repositoryPath, out var info))
+            var info = GetInfo(repositoryPath);
+            if (info == null)
             {
                 result.ErrorMessage = "Not a valid SVN working copy.";
                 return result;
             }
 
-            var repoRoot = info.RepositoryRoot;
-            var currentUri = info.Uri;
+            var repoRoot = info.RepositoryRoot.TrimEnd('/');
+            var currentUrl = info.Url;
 
-            // Construct the new branch URL
-            // Check if the name already starts with a known branch directory prefix
-            var hasPrefix = branchDirectories.Any(d => branchName.StartsWith($"{d}/", StringComparison.OrdinalIgnoreCase));
-            // Default to the second directory (first branch-like directory) for new branches
+            // If the name already carries a known branch-directory prefix, use it as-is;
+            // otherwise place it under the first branch-like directory (default "branches").
+            var hasPrefix = branchDirectories.Any(d => branchName.StartsWith($"{d}/", OIC));
             var defaultBranchDir = branchDirectories.Count > 1 ? branchDirectories[1] : "branches";
-            var branchUri = hasPrefix
-                ? new Uri(repoRoot, branchName)
-                : new Uri(repoRoot, $"{defaultBranchDir}/{branchName}");
+            var branchUrl = hasPrefix
+                ? $"{repoRoot}/{branchName}"
+                : $"{repoRoot}/{defaultBranchDir}/{branchName}";
 
-            // Check if branch already exists
-            try
+            if (GetInfo(branchUrl) != null)
             {
-                if (client.GetInfo(branchUri, out _))
-                {
-                    result.ErrorMessage = $"Branch '{branchName}' already exists.";
-                    return result;
-                }                
-            }
-            catch (Exception ex)
-            {
-                //SVN throws an exception if the path doesn't exist, so we can ignore it here
-                RevisionControlLogger.Debug($"CreateBranch: Branch existence check threw (expected for new branches): {ex.Message}");
+                result.ErrorMessage = $"Branch '{branchName}' already exists.";
+                return result;
             }
 
-            // Create the branch (server-side copy)
-            var copyArgs = new SvnCopyArgs
-            {
-                LogMessage = $"Create branch: {branchName}"
-            };
-            var success = client.RemoteCopy(currentUri, branchUri, copyArgs);
-
-            if (!success)
+            var copy = SvnCli.Run("copy", currentUrl, branchUrl, "-m", $"Create branch: {branchName}");
+            if (!copy.Success)
             {
                 result.ErrorMessage = "Failed to create branch.";
                 return result;
             }
 
-            // Switch to the new branch if requested
             if (switchToBranch)
             {
-                var switchResult = SwitchBranch(repositoryPath, branchUri.ToString().Substring(repoRoot.ToString().Length));
+                var rel = branchUrl.Substring(repoRoot.Length).TrimStart('/');
+                var switchResult = SwitchBranch(repositoryPath, rel);
                 if (!switchResult.Success)
                 {
                     result.ErrorMessage = $"Branch created but failed to switch: {switchResult.ErrorMessage}";
@@ -1745,11 +936,6 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             result.Success = true;
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("CreateBranch", ex);
-            result.ErrorMessage = ex.Message;
         }
         catch (Exception ex)
         {
@@ -1761,58 +947,44 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
-    /// Gets the content of a file at a specific revision.
+    /// Gets the content of a file at a specific revision via <c>svn cat</c>. When no revision
+    /// (or HEAD) is requested, returns the BASE (last committed) version of the working file.
+    /// For a numeric revision, the file's HEAD peg is used so SVN can follow copy history back
+    /// to revisions that predate the current branch.
     /// </summary>
     public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
         {
             if (!Directory.Exists(repositoryPath))
-            {
                 return null;
-            }
 
-            using var client = new SvnClient();
-
-            // Verify it's a valid working copy
-            if (!client.GetInfo(repositoryPath, out _))
-            {
+            if (GetInfo(repositoryPath) == null)
                 return null;
-            }
 
             var fullPath = Path.Combine(repositoryPath, filePath);
 
-            // Determine the revision
-            var svnRevision = string.IsNullOrEmpty(revision) || revision.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
-                ? SvnRevision.Base  // BASE is the last committed version in SVN
-                : long.TryParse(revision, out var revNum)
-                    ? new SvnRevision(revNum)
-                    : SvnRevision.Base;
+            var useBase = string.IsNullOrEmpty(revision)
+                || revision.Equals("HEAD", OIC)
+                || !long.TryParse(revision, out _);
 
-            using var memoryStream = new MemoryStream();
-
-            if (svnRevision != SvnRevision.Base && File.Exists(fullPath))
+            SvnCli.Result result;
+            if (useBase)
             {
-                // For specific revisions, use the local path with HEAD as the peg revision
-                // (to identify the file) and the requested revision as the operational revision.
-                // This allows SVN to follow copy history (e.g., branch created from trunk)
-                // to find the file content at revisions that predate the current branch.
-                var target = new SvnPathTarget(fullPath);
-                var writeArgs = new SvnWriteArgs { Revision = svnRevision };
-                if (!client.Write(target, memoryStream, writeArgs))
-                    return null;
+                result = SvnCli.Run("cat", "-r", "BASE", fullPath);
+            }
+            else if (File.Exists(fullPath))
+            {
+                // Peg at HEAD to identify the file, operate at the requested revision so SVN
+                // follows copy history (e.g. a branch created from trunk).
+                result = SvnCli.Run("cat", "-r", revision!, $"{fullPath}@HEAD");
             }
             else
             {
-                // For BASE revision or when file doesn't exist locally, use local path target
-                var target = new SvnPathTarget(fullPath, svnRevision);
-                if (!client.Write(target, memoryStream))
-                    return null;
+                result = SvnCli.Run("cat", "-r", revision!, fullPath);
             }
 
-            memoryStream.Position = 0;
-            using var reader = new StreamReader(memoryStream);
-            return reader.ReadToEnd();
+            return result.Success ? result.StdOut : null;
         }
         catch (Exception ex)
         {
@@ -1821,22 +993,114 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
     }
 
-    /// <summary>
-    /// Merges changes from a source branch into the current working copy.
-    /// </summary>
-    public VcsMergeResult MergeBranch(string repositoryPath, string sourceBranch)
-    {
-        var result = new VcsMergeResult();
+    // ===================================================================================
+    // Commit / merge operations.
+    // ===================================================================================
 
-        // Declare tracking variables outside the try block so they're visible in the catch.
-        // SharpSvn throws SvnException when conflicts occur with SvnAccept.Postpone, so the
-        // catch block needs to inspect what was collected before the exception was raised.
-        var textConflictedFiles = new List<string>();   // content conflicts in files
-        var treeConflictedFiles = new List<string>();   // structural conflicts (add/add, del/mod, etc.)
-        var modifiedFiles = new List<string>();
-        long minRevision = long.MaxValue;
-        long maxRevision = long.MinValue;
-        SvnInfoEventArgs? sourceInfo = null;
+    /// <summary>
+    /// Gets the list of files with uncommitted changes in the working copy.
+    /// </summary>
+    public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryPath)
+    {
+        var files = new List<VcsWorkingCopyFile>();
+
+        try
+        {
+            if (!Directory.Exists(repositoryPath))
+                return files;
+
+            if (GetInfo(repositoryPath) == null)
+                return files;
+
+            foreach (var e in GetStatusEntries(repositoryPath))
+            {
+                var propClean = e.Props is "none" or "normal";
+
+                // Skip unchanged files.
+                if (e.Item == "normal" && propClean && !e.TreeConflicted)
+                    continue;
+
+                // Only skip items SVN has marked as explicitly ignored. Items with content
+                // changes AND property-only changes (e.g. svn:mergeinfo on the root, which
+                // must be committed to finalise a merge) are included.
+                if (e.Item == "ignored")
+                    continue;
+
+                var file = new VcsWorkingCopyFile
+                {
+                    Path = Path.GetRelativePath(repositoryPath, e.Path),
+                    IsStaged = false, // SVN doesn't have staging.
+                    Status = e.TreeConflicted
+                        ? VcsFileStatus.Conflicted
+                        : e.Item switch
+                        {
+                            "modified" => VcsFileStatus.Modified,
+                            "added" => VcsFileStatus.Added,
+                            "deleted" => VcsFileStatus.Deleted,
+                            "replaced" => VcsFileStatus.Modified,
+                            "unversioned" => VcsFileStatus.Untracked,
+                            "conflicted" => VcsFileStatus.Conflicted,
+                            "missing" => VcsFileStatus.Deleted,
+                            // Property-only change (e.g. svn:mergeinfo updated during a merge).
+                            "normal" when !propClean => VcsFileStatus.Modified,
+                            _ => VcsFileStatus.Modified
+                        }
+                };
+
+                files.Add(file);
+            }
+
+            // SVN's recursive status does not enumerate files inside unversioned directories,
+            // so any directory entry with Untracked status needs to be expanded manually into
+            // its individual files. Directories with a versioned status (Added, Modified, etc.)
+            // are kept as-is: their file children are already returned by SVN's recursive status,
+            // and the directory entry itself must appear in the commit list so it can be committed
+            // (e.g. a directory Added via merge must be committed before new files can be added to it).
+            var filesToRemove = new List<VcsWorkingCopyFile>();
+            var filesToAdd = new List<VcsWorkingCopyFile>();
+            foreach (var f in files)
+            {
+                if (Directory.Exists(Path.Combine(repositoryPath, f.Path)) &&
+                    f.Status == VcsFileStatus.Untracked)
+                {
+                    var newFiles = Directory.GetFiles(Path.Combine(repositoryPath, f.Path), "*", SearchOption.AllDirectories);
+                    foreach (var newFile in newFiles)
+                    {
+                        filesToAdd.Add(new VcsWorkingCopyFile
+                        {
+                            Path = Path.GetRelativePath(repositoryPath, newFile),
+                            Status = VcsFileStatus.Untracked,
+                            IsStaged = false
+                        });
+                    }
+                    filesToRemove.Add(f);
+                }
+            }
+            foreach (var f in filesToRemove)
+                files.Remove(f);
+
+            // Deduplicate: SVN may have already returned some of these files individually.
+            var existingPaths = new HashSet<string>(files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
+            foreach (var f in filesToAdd)
+            {
+                if (existingPaths.Add(f.Path))
+                    files.Add(f);
+            }
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetWorkingCopyChanges", ex);
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// Commits changes to the repository.
+    /// </summary>
+    public VcsCommitResult Commit(string repositoryPath, string message, IEnumerable<string>? filesToCommit = null, IProgress<string>? progress = null)
+    {
+        var result = new VcsCommitResult();
 
         try
         {
@@ -1846,89 +1110,235 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            using var client = new SvnClient();
-
-            // Get repository root
-            if (!client.GetInfo(repositoryPath, out var info))
+            if (GetInfo(repositoryPath) == null)
             {
                 result.ErrorMessage = "Not a valid SVN working copy.";
                 return result;
             }
 
-            var repoRoot = info.RepositoryRoot;
+            var pathsToCommit = new List<string>();
+            if (filesToCommit != null)
+            {
+                foreach (var file in filesToCommit)
+                    pathsToCommit.Add(Path.Combine(repositoryPath, file));
+            }
+            else
+            {
+                pathsToCommit.Add(repositoryPath);
+            }
 
-            // Construct the source branch URL
-            var sourceUri = new Uri(repoRoot, sourceBranch);
+            // If the repository root has uncommitted property changes (e.g. svn:mergeinfo updated
+            // during a merge), include it in this commit regardless of selection. Leaving merge
+            // metadata uncommitted puts the working copy in an inconsistent state that blocks
+            // subsequent commits.
+            var rootStatus = GetSingleStatus(repositoryPath);
+            var rootPropClean = rootStatus != null && rootStatus.Props is "none" or "normal";
+            if (!rootPropClean &&
+                !pathsToCommit.Contains(repositoryPath, StringComparer.OrdinalIgnoreCase))
+            {
+                pathsToCommit.Add(repositoryPath);
+            }
 
-            // Verify the source branch exists and capture its HEAD revision
-            if (!client.GetInfo(sourceUri, out sourceInfo))
+            // SVN requires files to be explicitly added before they can be committed.
+            var addedParentDirs = new HashSet<string>();
+            // Files that cannot be in this commit because their parent directory was Added via merge.
+            // SVN forbids adding new files to a merge-committed directory in the same transaction.
+            var filesToSkip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var pathsList = pathsToCommit.ToList();
+            var totalPaths = pathsList.Count;
+            for (int i = 0; i < pathsList.Count; i++)
+            {
+                var path = pathsList[i];
+                if (i % 100 == 0 || i == totalPaths - 1)
+                    progress?.Report($"Preparing file {i + 1} of {totalPaths}...");
+
+                if (!File.Exists(path) && !Directory.Exists(path))
+                {
+                    // File/directory is missing from disk. Schedule it for deletion so the commit
+                    // removes it from the repository. Without this, SVN treats it as "missing" but
+                    // not "deleted" and the commit either ignores it or fails.
+                    var missingStatus = GetSingleStatus(path);
+                    if (missingStatus?.Item == "missing")
+                        SvnCli.Run("delete", "--force", path);
+                    continue;
+                }
+
+                var status = GetSingleStatus(path);
+                // A brand-new file inside a brand-new (still unversioned) directory makes svn
+                // report its node as "not found" rather than "unversioned", so GetSingleStatus
+                // returns null. Fall back to an explicit version-control check to tell a genuinely
+                // new path apart from a clean, already-versioned one (both yield a null status).
+                var isUnversioned = status?.Item == "unversioned"
+                    || (status == null && !IsVersioned(path));
+                if (isUnversioned)
+                {
+                    var parentDir = Path.GetDirectoryName(path);
+
+                    // If the parent directory was itself added via SVN merge, adding a new file to
+                    // it in the same commit causes an "out of date" server error. Mark the file for
+                    // a separate commit instead. Skip this check for directories we ourselves added
+                    // during this commit preparation (tracked in addedParentDirs).
+                    if (!string.IsNullOrEmpty(parentDir) &&
+                        !parentDir.Equals(repositoryPath, OIC) &&
+                        !addedParentDirs.Contains(parentDir) &&
+                        IsDirectoryAddedViaMerge(parentDir))
+                    {
+                        filesToSkip.Add(path);
+                        continue;
+                    }
+
+                    // File is genuinely new. Stage any unversioned parent directories first so they
+                    // appear in pathsToCommit (recorded in addedParentDirs), then add the file.
+                    if (!string.IsNullOrEmpty(parentDir) &&
+                        !parentDir.Equals(repositoryPath, OIC))
+                    {
+                        AddParentDirectories(parentDir, repositoryPath, addedParentDirs);
+                    }
+
+                    var add = SvnCli.Run("add", "--parents", path);
+                    if (!add.Success)
+                    {
+                        result.ErrorMessage = add.StdErr.Trim();
+                        return result;
+                    }
+                }
+            }
+
+            // Remove files that must be committed separately (new files in merge-added directories).
+            // Record them as skipped so the UI can offer a follow-up commit.
+            foreach (var skipPath in filesToSkip)
+            {
+                pathsToCommit.Remove(skipPath);
+                result.SkippedFiles.Add(Path.GetRelativePath(repositoryPath, skipPath));
+            }
+
+            // Add any parent directories that were scheduled for add to the commit paths.
+            foreach (var dir in addedParentDirs)
+            {
+                if (!pathsToCommit.Contains(dir))
+                    pathsToCommit.Add(dir);
+            }
+
+            if (pathsToCommit.Count == 0)
+            {
+                result.ErrorMessage = result.SkippedFiles.Count > 0
+                    ? "All selected files are in directories that were added via merge and cannot be " +
+                      "added in the same transaction. Please also select the parent directory so it is " +
+                      "committed first, then commit these files separately."
+                    : "No files to commit.";
+                return result;
+            }
+
+            // Commit via a --targets file so the (potentially large) path list and any paths
+            // containing spaces are passed safely.
+            progress?.Report($"Committing {pathsToCommit.Count} files to server...");
+            var targetsFile = Path.GetTempFileName();
+            SvnCli.Result commit;
+            try
+            {
+                File.WriteAllLines(targetsFile, pathsToCommit);
+                commit = SvnCli.Run("commit", "--targets", targetsFile, "-m", message);
+            }
+            finally
+            {
+                try { File.Delete(targetsFile); } catch { /* best effort */ }
+            }
+
+            if (!commit.Success)
+            {
+                result.ErrorMessage = string.IsNullOrWhiteSpace(commit.StdErr) ? "SVN commit failed." : commit.StdErr.Trim();
+                result.IsOutOfDate = IsOutOfDateError(commit.StdErr);
+                return result;
+            }
+
+            var newRevision = ParseCommittedRevision(commit.StdOut);
+            if (newRevision == null)
+            {
+                // svn committed nothing (no actual changes were staged).
+                result.ErrorMessage = "SVN commit failed.";
+                return result;
+            }
+
+            // Commit succeeded so run update.
+            UpdateToLatest(repositoryPath);
+
+            result.Success = true;
+            result.NewRevision = newRevision;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("Commit", ex);
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Merges changes from a source branch into the current working copy. Uses SVN merge
+    /// tracking (<c>svn mergeinfo --show-revs eligible</c>) to determine which revisions are
+    /// not yet merged, then runs an automatic <c>svn merge</c> with <c>--accept postpone</c>
+    /// so the user resolves any conflicts via the dialog.
+    /// </summary>
+    public VcsMergeResult MergeBranch(string repositoryPath, string sourceBranch)
+    {
+        var result = new VcsMergeResult();
+
+        try
+        {
+            if (!Directory.Exists(repositoryPath))
+            {
+                result.ErrorMessage = "Repository path does not exist.";
+                return result;
+            }
+
+            var info = GetInfo(repositoryPath);
+            if (info == null)
+            {
+                result.ErrorMessage = "Not a valid SVN working copy.";
+                return result;
+            }
+
+            var repoRoot = info.RepositoryRoot.TrimEnd('/');
+            var sourceUrl = $"{repoRoot}/{sourceBranch.TrimStart('/')}";
+
+            var sourceInfo = GetInfo(sourceUrl);
+            if (sourceInfo == null)
             {
                 result.ErrorMessage = $"Source branch '{sourceBranch}' not found.";
                 return result;
             }
 
-            // Set up merge arguments to merge all eligible revisions
-            var mergeArgs = new SvnMergeArgs
+            // Determine eligible (not-yet-merged) revisions. This prevents "File already exists"
+            // errors that an r0:HEAD range merge would cause when a file independently exists in
+            // both source and target (e.g. .mlqt/settings.json committed to both branches).
+            var eligible = SvnCli.Run("mergeinfo", "--show-revs", "eligible", sourceUrl, repositoryPath);
+            var eligibleRevs = ParseMergeinfoRevs(eligible.StdOut);
+            if (!eligible.Success || eligibleRevs.Count == 0)
             {
-                // Don't record mergeinfo for now (simpler)
-                RecordOnly = false
-            };
-
-            client.Notify += (sender, e) =>
-            {
-                if (e.FullPath == null) return;
-
-                if (e.Action == SvnNotifyAction.TreeConflict)
-                {
-                    treeConflictedFiles.Add(e.FullPath);
-                }
-                else if (e.ContentState == SvnNotifyState.Conflicted)
-                {
-                    // Text conflict — file content could not be auto-merged
-                    textConflictedFiles.Add(e.FullPath);
-                }
-                else if (e.Action == SvnNotifyAction.UpdateUpdate ||
-                         e.Action == SvnNotifyAction.UpdateAdd ||
-                         e.Action == SvnNotifyAction.UpdateDelete ||
-                         e.Action == SvnNotifyAction.UpdateReplace)
-                {
-                    modifiedFiles.Add(e.FullPath);
-                    if (e.Revision > 0)
-                    {
-                        if (e.Revision < minRevision) minRevision = e.Revision;
-                        if (e.Revision > maxRevision) maxRevision = e.Revision;
-                    }
-                }
-            };
-
-            // Postpone all conflicts — the user resolves them via the dialog.
-            // Do NOT track e.Path here: it can be a repository-relative or working-copy-relative
-            // path that differs from the absolute local path we need. The Notify handler above
-            // captures absolute paths via e.FullPath instead.
-            client.Conflict += (sender, e) =>
-            {
-                e.Choice = SvnAccept.Postpone;
-            };
-
-            // Use SVN merge tracking via GetMergesEligible to determine which revisions from the
-            // source have not yet been merged into the target, based on svn:mergeinfo properties.
-            // This prevents "File already exists" commit errors that occur with r0:HEAD range merges
-            // when a file independently exists in both the source branch and the target branch
-            // (e.g. .mlqt/settings.json committed to trunk AND to the feature branch independently).
-            bool gotEligible = client.GetMergesEligible(
-                new SvnPathTarget(repositoryPath),
-                new SvnUriTarget(sourceUri),
-                out var eligibleRevisions);
-
-            if (!gotEligible || eligibleRevisions == null || eligibleRevisions.Count == 0)
-            {
-                // Nothing eligible to merge - already up to date per SVN merge tracking
+                // Nothing eligible to merge — already up to date per SVN merge tracking.
                 result.Success = true;
                 return result;
             }
 
-            var eligibleRanges = eligibleRevisions.Select(e => e.AsRange()).ToList();
-            var success = client.Merge(repositoryPath, new SvnUriTarget(sourceUri), eligibleRanges, mergeArgs);
+            // Postpone all conflicts; the user resolves them via the dialog. With --accept
+            // postpone the CLI exits 0 even when conflicts occur, so we classify the outcome
+            // from the working-copy status afterwards rather than from an exception.
+            var merge = SvnCli.Run("merge", sourceUrl, repositoryPath, "--accept", "postpone");
+
+            var textConflictedFiles = new List<string>();
+            var treeConflictedFiles = new List<string>();
+            var modifiedFiles = new List<string>();
+            foreach (var e in GetStatusEntries(repositoryPath))
+            {
+                if (e.TreeConflicted)
+                    treeConflictedFiles.Add(e.Path);
+                else if (e.Item == "conflicted")
+                    textConflictedFiles.Add(e.Path);
+                else if (e.Item is "modified" or "added" or "deleted" or "replaced")
+                    modifiedFiles.Add(e.Path);
+            }
 
             var anyConflicts = textConflictedFiles.Count > 0 || treeConflictedFiles.Count > 0;
             result.HasChanges = modifiedFiles.Count > 0 || anyConflicts;
@@ -1938,55 +1348,24 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             result.HasConflicts = anyConflicts;
             result.SourceBranch = sourceBranch;
 
-            // Record the revision range actually merged, falling back to source HEAD if no revisions tracked
-            if (minRevision <= maxRevision && minRevision != long.MaxValue)
+            // Record the revision range from the eligible set, falling back to source HEAD.
+            if (eligibleRevs.Count > 0)
             {
-                result.StartRevision = minRevision;
-                result.EndRevision = maxRevision;
+                result.StartRevision = eligibleRevs.Min();
+                result.EndRevision = eligibleRevs.Max();
             }
-            else if (result.HasChanges && sourceInfo?.Revision > 0)
+            else if (result.HasChanges && sourceInfo.Revision > 0)
             {
                 result.EndRevision = sourceInfo.Revision;
             }
 
-            if (!success)
+            if (!merge.Success && !anyConflicts)
             {
-                result.ErrorMessage = "SVN merge failed.";
+                result.ErrorMessage = string.IsNullOrWhiteSpace(merge.StdErr) ? "SVN merge failed." : merge.StdErr.Trim();
                 return result;
             }
 
             result.Success = true;
-        }
-        catch (SvnException ex)
-        {
-            var anyConflicts = textConflictedFiles.Count > 0 || treeConflictedFiles.Count > 0;
-            if (anyConflicts)
-            {
-                // SharpSvn throws SvnException when conflicts occur with SvnAccept.Postpone.
-                // The notify events already fired and populated the conflict lists before the
-                // exception was raised — treat this as a completed merge-with-conflicts.
-                result.Success = true;
-                result.HasConflicts = true;
-                result.HasChanges = modifiedFiles.Count > 0 || anyConflicts;
-                result.ModifiedFiles = modifiedFiles;
-                result.ConflictedFiles = textConflictedFiles.Distinct().ToList();
-                result.TreeConflictedFiles = treeConflictedFiles.Distinct().ToList();
-                result.SourceBranch = sourceBranch;
-                if (minRevision <= maxRevision && minRevision != long.MaxValue)
-                {
-                    result.StartRevision = minRevision;
-                    result.EndRevision = maxRevision;
-                }
-                else if (sourceInfo?.Revision > 0)
-                {
-                    result.EndRevision = sourceInfo.Revision;
-                }
-            }
-            else
-            {
-                RevisionControlLogger.Error("MergeBranch", ex);
-                result.ErrorMessage = ex.Message;
-            }
         }
         catch (Exception ex)
         {
@@ -2005,24 +1384,18 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         var result = new VcsOperationResult();
         try
         {
-            using var client = new SvnClient();
-
             var accept = choice switch
             {
-                ConflictResolutionChoice.AcceptIncoming => SvnAccept.TheirsFull,
-                ConflictResolutionChoice.KeepMine       => SvnAccept.MineFull,
-                ConflictResolutionChoice.MarkResolved   => SvnAccept.Working,
-                _                                       => SvnAccept.Postpone
+                ConflictResolutionChoice.AcceptIncoming => "theirs-full",
+                ConflictResolutionChoice.KeepMine => "mine-full",
+                ConflictResolutionChoice.MarkResolved => "working",
+                _ => "postpone"
             };
 
-            result.Success = client.Resolve(filePath, accept, new SvnResolveArgs { Depth = SvnDepth.Empty });
+            var resolve = SvnCli.Run("resolve", "--accept", accept, filePath);
+            result.Success = resolve.Success;
             if (!result.Success)
-                result.ErrorMessage = "SVN resolve returned false.";
-        }
-        catch (SvnException ex)
-        {
-            RevisionControlLogger.Error("ResolveConflict", ex);
-            result.ErrorMessage = ex.Message;
+                result.ErrorMessage = string.IsNullOrWhiteSpace(resolve.StdErr) ? "SVN resolve returned false." : resolve.StdErr.Trim();
         }
         catch (Exception ex)
         {
@@ -2043,11 +1416,11 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var dir = Path.GetDirectoryName(filePath) ?? "";
             var fileName = Path.GetFileName(filePath);
 
-            // "Ours" = the working copy version before the merge conflict markers were applied
+            // "Ours" = the working copy version before the merge conflict markers were applied.
             var mineFile = Path.Combine(dir, fileName + ".mine");
             var ours = File.Exists(mineFile) ? File.ReadAllText(mineFile) : null;
 
-            // "Theirs" = the incoming branch revision — highest-numbered .r{n} sidecar file
+            // "Theirs" = the incoming branch revision — highest-numbered .r{n} sidecar file.
             var rFiles = Directory.GetFiles(dir, fileName + ".r*")
                 .Select(f =>
                 {
@@ -2067,13 +1440,14 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
     }
 
-    /// <summary>
-    /// SVN commits go directly to the remote server, so push is a no-op.
-    /// </summary>
-    public VcsOperationResult Push(string repositoryPath, string? branchName = null)
-        => new() { Success = true }; // SVN commits go directly to remote
+    // ===================================================================================
+    // Git-only operations: no-ops / unsupported for SVN.
+    // ===================================================================================
 
-    // Rebase is a Git-only concept; SVN has no equivalent operation.
+    /// <summary>SVN commits go directly to the remote server, so push is a no-op.</summary>
+    public VcsOperationResult Push(string repositoryPath, string? branchName = null)
+        => new() { Success = true };
+
     public VcsMergeResult Rebase(string repositoryPath, string targetBranch)
         => new() { ErrorMessage = "Rebase is not supported for SVN repositories." };
 
@@ -2084,11 +1458,200 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         => new() { ErrorMessage = "Rebase is not supported for SVN repositories." };
 
     public VcsOperationResult ForcePush(string repositoryPath, string? branchName = null)
-        => new() { Success = true }; // SVN commits go directly to remote
+        => new() { Success = true };
 
     public bool IsBranchPushed(string repositoryPath)
-        => true; // SVN commits go directly to the remote server
+        => true;
 
     public string? GetPullRequestUrl(string repositoryPath, string? baseBranch = null)
-        => null; // Pull requests are not a native SVN concept
+        => null;
+
+    // ===================================================================================
+    // Private helpers.
+    // ===================================================================================
+
+    /// <summary>
+    /// Runs <c>svn info --xml</c> on a working copy or URL and parses the single entry.
+    /// Returns null when the target is not a valid working copy or repository object.
+    /// </summary>
+    private static SvnInfo? GetInfo(string target, string? revision = null)
+    {
+        var args = new List<string> { "info", target };
+        if (!string.IsNullOrEmpty(revision))
+        {
+            args.Add("-r");
+            args.Add(SvnCli.NormalizeRevision(revision));
+        }
+
+        var entry = SvnCli.RunXml(args.ToArray())?.Root?.Element("entry");
+        if (entry == null)
+            return null;
+
+        var url = entry.Element("url")?.Value ?? "";
+        var root = entry.Element("repository")?.Element("root")?.Value ?? "";
+        long.TryParse(entry.Attribute("revision")?.Value, out var revisionNumber);
+
+        var lastChanged = revisionNumber;
+        var commit = entry.Element("commit");
+        if (commit != null)
+            long.TryParse(commit.Attribute("revision")?.Value, out lastChanged);
+
+        return new SvnInfo(url, root, revisionNumber, lastChanged);
+    }
+
+    /// <summary>
+    /// Resolves a repository path (working copy or URL) to a repository URL string suitable
+    /// for passing to the svn CLI.
+    /// </summary>
+    private string ResolveUrl(string repositoryPath)
+    {
+        if (Directory.Exists(repositoryPath))
+        {
+            var info = GetInfo(repositoryPath);
+            if (info != null)
+                return info.Url;
+        }
+
+        if (Uri.TryCreate(repositoryPath, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == "http" || uri.Scheme == "https" || uri.Scheme == "svn" || uri.Scheme == "file"))
+        {
+            return repositoryPath;
+        }
+
+        // Fallback: a file:// URL built from the full filesystem path.
+        return new Uri(Path.GetFullPath(repositoryPath)).ToString();
+    }
+
+    /// <summary>
+    /// Runs <c>svn status --xml</c> recursively and returns one entry per reported path.
+    /// </summary>
+    private static List<SvnStatusEntry> GetStatusEntries(string path)
+    {
+        var list = new List<SvnStatusEntry>();
+        var target = SvnCli.RunXml("status", path)?.Root?.Element("target");
+        if (target == null)
+            return list;
+
+        foreach (var entry in target.Elements("entry"))
+        {
+            var wc = entry.Element("wc-status");
+            if (wc == null)
+                continue;
+            list.Add(new SvnStatusEntry(
+                Path.GetFullPath(entry.Attribute("path")?.Value ?? ""),
+                wc.Attribute("item")?.Value ?? "",
+                wc.Attribute("props")?.Value ?? "",
+                wc.Attribute("tree-conflicted")?.Value == "true"));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Runs <c>svn status --depth empty --xml</c> for a single path. Returns null when SVN
+    /// reports nothing for it (a versioned, unmodified item).
+    /// </summary>
+    private static SvnStatusEntry? GetSingleStatus(string path)
+    {
+        var entry = SvnCli.RunXml("status", path, "--depth", "empty")?.Root?.Element("target")?.Element("entry");
+        var wc = entry?.Element("wc-status");
+        if (wc == null)
+            return null;
+        return new SvnStatusEntry(
+            Path.GetFullPath(path),
+            wc.Attribute("item")?.Value ?? "",
+            wc.Attribute("props")?.Value ?? "",
+            wc.Attribute("tree-conflicted")?.Value == "true");
+    }
+
+    /// <summary>
+    /// Returns true if the directory was added to the working copy via an SVN merge (or copy).
+    /// New files cannot be added to such a directory in the same commit transaction. The caller
+    /// already excludes directories it created itself, so any remaining Added directory came
+    /// from a merge/copy and must be committed first.
+    /// </summary>
+    private static bool IsDirectoryAddedViaMerge(string directoryPath)
+        => GetSingleStatus(directoryPath)?.Item == "added";
+
+    /// <summary>
+    /// Returns true if the path is under version control. Uses <c>svn info</c> (exit 0) rather
+    /// than <c>svn status</c> because status cannot locate a node whose parent directory is
+    /// itself still unversioned — it reports "node not found" instead of "unversioned", which
+    /// would otherwise be mistaken for a clean, versioned path. The caller guarantees the path
+    /// exists on disk.
+    /// </summary>
+    private static bool IsVersioned(string path)
+        => SvnCli.Run("info", path).Success;
+
+    /// <summary>
+    /// Stages unversioned ancestor directories (deepest-first via recursion) with
+    /// <c>svn add --depth empty --parents</c>, recording each in <paramref name="addedDirs"/>
+    /// so they can be included in the commit.
+    /// </summary>
+    private void AddParentDirectories(string path, string repositoryRoot, HashSet<string> addedDirs)
+    {
+        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+            return;
+
+        // Don't go above the repository root.
+        if (path.Equals(repositoryRoot, OIC) || !path.StartsWith(repositoryRoot, OIC))
+            return;
+
+        // Already under version control (normal, added, or merge-added) — nothing to stage.
+        // GetSingleStatus returns null both for a clean path and for one whose parent is itself
+        // unversioned, so check version-control membership directly rather than via status.
+        if (IsVersioned(path))
+            return;
+
+        // Ensure ancestors are versioned first.
+        var parentDir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(parentDir))
+            AddParentDirectories(parentDir, repositoryRoot, addedDirs);
+
+        if (SvnCli.Run("add", "--depth", "empty", "--parents", path).Success)
+            addedDirs.Add(path);
+    }
+
+    /// <summary>Compares two SVN URLs ignoring a trailing slash.</summary>
+    private static bool UrlEquals(string a, string b)
+        => string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.Ordinal);
+
+    /// <summary>Parses an ISO-8601 svn:date string to a UTC <see cref="DateTime"/>.</summary>
+    private static DateTime ParseSvnDateUtc(string? value)
+    {
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dto))
+            return dto.UtcDateTime;
+        return default;
+    }
+
+    private static readonly Regex CommittedRevisionRegex =
+        new(@"Committed revision (\d+)\.", RegexOptions.Compiled);
+
+    /// <summary>Extracts the revision number from <c>svn commit</c>'s "Committed revision N." line.</summary>
+    private static string? ParseCommittedRevision(string stdout)
+    {
+        var match = CommittedRevisionRegex.Match(stdout);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    /// <summary>Returns true when commit stderr indicates the working copy is out of date.</summary>
+    private static bool IsOutOfDateError(string stderr)
+        => stderr.Contains("E160028", StringComparison.Ordinal) ||
+           stderr.Contains("out of date", OIC);
+
+    private static readonly Regex MergeinfoRevisionRegex =
+        new(@"^\s*r(\d+)", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>Parses the "rN" lines from <c>svn mergeinfo --show-revs eligible</c> output.</summary>
+    private static List<long> ParseMergeinfoRevs(string stdout)
+    {
+        var revs = new List<long>();
+        foreach (Match m in MergeinfoRevisionRegex.Matches(stdout))
+        {
+            if (long.TryParse(m.Groups[1].Value, out var r))
+                revs.Add(r);
+        }
+        return revs;
+    }
 }

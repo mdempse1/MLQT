@@ -1,10 +1,11 @@
 # Bundled SVN command-line client
 
 MLQT shells out to a private copy of the **SlikSVN** command-line client for the
-performance-critical SVN working-copy operations (`svn update` is roughly an order of
-magnitude faster via the CLI than through SharpSvn's per-file managed interop — see
-`RevisionControl/SvnRevisionControlSystem.cs`). `RevisionControl/SvnToolLocator.cs`
-prefers this bundled client over anything installed system-wide.
+SVN operations. All SVN access goes through the `svn` CLI (`svn update` is roughly an
+order of magnitude faster via the CLI than the previously-used SharpSvn managed interop —
+see `RevisionControl/SvnRevisionControlSystem.cs` and `RevisionControl/SvnCli.cs`).
+`RevisionControl/SvnToolLocator.cs` prefers this bundled client over anything installed
+system-wide.
 
 ## Layout
 
@@ -42,5 +43,6 @@ shipped (older clients refuse newer working copies).
 ## When the folder is empty
 
 If `svn-tools/win-x64/` is empty, nothing is bundled and `SvnToolLocator` falls back to
-`svn` on the system `PATH`, then to SharpSvn. The app still works; it just won't carry
-its own client. CI populates this folder before publishing the release zip.
+`svn` on the system `PATH` (or the `MLQT_SVN_PATH` override). There is no managed
+fallback — SVN operations require an `svn` executable to be resolvable. CI populates this
+folder before publishing the release zip.

@@ -17,7 +17,8 @@ namespace RevisionControl;
 /// 3. Bare <c>svn</c> resolved via the OS PATH.
 ///
 /// The resolved value is cached for the process lifetime. Returns null only when no
-/// candidate exists at all — callers fall back to SharpSvn in that case.
+/// candidate exists at all, in which case <see cref="SvnCli"/> raises an error explaining
+/// how to provide an svn client (there is no managed fallback any more).
 /// </summary>
 public static class SvnToolLocator
 {

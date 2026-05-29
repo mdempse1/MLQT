@@ -28,14 +28,14 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **License**: [MIT](https://github.com/libgit2/libgit2sharp/blob/master/LICENSE.md)
 - **NuGet**: https://www.nuget.org/packages/LibGit2Sharp
 
-### SharpSvn (v1.14005.390)
-- **Purpose**: .NET wrapper for Subversion (SVN) - enables SVN repository operations
-- **Used in**: RevisionControl
+### SharpSvn (v1.14005.390) — test-only
+- **Purpose**: .NET wrapper for Subversion (SVN). **No longer used by the shipped product** — the SVN implementation talks to the `svn` CLI directly (see `RevisionControl/SvnCli.cs`). Retained only as a test dependency to set up and validate repository state in the integration tests.
+- **Used in**: RevisionControl.Tests (test project only)
 - **License**: [Apache 2.0](https://sharpsvn.open.collab.net/)
 - **NuGet**: https://www.nuget.org/packages/SharpSvn.1.14-x64
 
 ### SlikSVN command-line client (bundled, not a NuGet package)
-- **Purpose**: `svn.exe` used for the working-copy update fast path (much faster than SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
+- **Purpose**: `svn.exe` used for **all** SVN operations (much faster than the previously-used SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
 - **Used in**: bundled into the MLQT app output under `svn/`; staged by `build/fetch-svn-tools.ps1` into `MLQT/svn-tools/win-x64` (not committed to source control).
 - **License**: Apache 2.0 (SlikSVN is a distribution of [Apache Subversion](https://subversion.apache.org/)). Redistribution requires retaining the Apache license/NOTICE; keep these with the bundled binaries.
 
@@ -177,10 +177,10 @@ Test packages are marked as development dependencies and don't ship with the app
 |---------|--------------|
 | ModelicaParser | Antlr4.Runtime.Standard, Antlr4BuildTasks |
 | ModelicaGraph | _(project reference to ModelicaParser only)_ |
-| RevisionControl | LibGit2Sharp, SharpSvn, NLog |
+| RevisionControl | LibGit2Sharp, NLog _(SVN via bundled svn CLI)_ |
 | DymolaInterface | Microsoft.Extensions.DependencyInjection |
 | OpenModelicaInterface | NetMQ |
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
 | MLQT | Microsoft.Maui.*, Microsoft.AspNetCore.Components.WebView.Maui |
-| Test Projects | xunit, Microsoft.NET.Test.Sdk, coverlet.collector |
+| Test Projects | xunit, Microsoft.NET.Test.Sdk, coverlet.collector (RevisionControl.Tests also: SharpSvn) |

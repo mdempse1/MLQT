@@ -7,7 +7,7 @@ A .NET 10 library for integrating with Git and Subversion (SVN) version control 
 RevisionControl abstracts version control operations behind the `IRevisionControlSystem` interface, with implementations for:
 
 - **Git** via LibGit2Sharp
-- **SVN** via SharpSvn
+- **SVN** via the `svn` command-line client
 
 This enables higher-level tools (such as ModelicaComparer's `RevisionComparer`) to work with either VCS without knowing the implementation details.
 
@@ -296,12 +296,13 @@ public class HgRevisionControlSystem : IRevisionControlSystem
 
 MIT License — see [LICENSE](../LICENSE) for details.
 
-## Bundled SVN command-line client
+## SVN command-line client
 
-For the performance-critical working-copy update, `SvnRevisionControlSystem` shells out to
-the `svn` command-line client rather than using SharpSvn: on a 30,000-file Modelica library
-`svn update -r N` runs in ~2.7s versus ~38s through SharpSvn, whose cost is dominated by
-per-file managed-side bookkeeping in its C++/CLI layer.
+All SVN operations go through the `svn` command-line client, wrapped by `SvnCli` and driven
+by `SvnRevisionControlSystem`. The managed SharpSvn library is no longer used by the shipped
+product: the CLI is roughly an order of magnitude faster on large working copies (on a
+30,000-file Modelica library `svn update -r N` runs in ~2.7s versus ~38s through SharpSvn,
+whose cost is dominated by per-file managed-side bookkeeping in its C++/CLI layer).
 
 `SvnToolLocator` resolves which `svn` executable to use, in order:
 
@@ -312,13 +313,15 @@ per-file managed-side bookkeeping in its C++/CLI layer.
    by `build/fetch-svn-tools.ps1` and copied into the app output by `MLQT.csproj`.
 3. Bare `svn` on the system `PATH`.
 
-When no `svn` executable is found at all, the code falls back to SharpSvn, so the library
-still functions (just without the CLI speed-up). Use a client **>= 1.14** to match the
-working-copy format SharpSvn has written.
+When no `svn` executable can be found, `SvnCli` raises an error explaining how to provide one
+(set `MLQT_SVN_PATH`, bundle the SlikSVN client, or install svn on `PATH`) — there is no
+managed fallback. Use a client **>= 1.14** to match the working-copy format MLQT has shipped.
 
 ## Dependencies
 
-- **LibGit2Sharp** (v0.31.0) - .NET wrapper for libgit2
-- **SharpSvn** (v1.14005.390) - .NET wrapper for Subversion (used for all SVN operations except
-  the working-copy update fast path, which uses the bundled CLI — see above)
+- **LibGit2Sharp** (v0.31.0) - .NET wrapper for libgit2 (Git operations)
 - **NLog** (v6.1.0) - Logging framework
+
+SVN operations require an external `svn` command-line client (see above), not a NuGet
+package. SharpSvn remains only as a **test-only** dependency of `RevisionControl.Tests`,
+where it is used to set up and validate repository state.

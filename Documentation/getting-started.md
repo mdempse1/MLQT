@@ -28,7 +28,7 @@ MLQT is a desktop application for managing Modelica libraries under revision con
 |-------------|---------|
 | **Git** | MLQT uses LibGit2Sharp for local operations (commit, branch, history) but shells out to `git.exe` for remote operations (fetch, push, rebase) to leverage your configured credential helpers (Git Credential Manager, SSH keys, etc.). Install Git from [git-scm.com](https://git-scm.com/) and ensure it is on your PATH. |
 
-SVN repositories do **not** require you to install any external tools. MLQT uses the managed SharpSvn library for most SVN operations and ships its own bundled `svn` command-line client (used to make working-copy updates much faster on large libraries), so everything needed is included in the MLQT download.
+SVN repositories do **not** require you to install any external tools. MLQT performs all SVN operations through the `svn` command-line client and ships its own bundled copy, so everything needed is included in the MLQT download.
 
 ### Optional External Tools
 
