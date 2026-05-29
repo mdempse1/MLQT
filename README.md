@@ -71,6 +71,26 @@ dotnet build
 dotnet run --project MLQT/MLQT.csproj
 ```
 
+### Bundling the SVN client
+
+All SVN operations go through the `svn` command-line client (there is no managed
+fallback). MLQT can ship its own private copy so end users don't need SVN installed; at
+runtime it resolves the executable from the `MLQT_SVN_PATH` environment variable, then the
+bundled copy under the app's `svn/` folder, then `svn` on the system `PATH`.
+
+The bundled binaries are **not** stored in source control. For local development this is
+fine as long as you have `svn` on your `PATH` (or `MLQT_SVN_PATH` set) — the bundle folder
+may be empty. To produce a **distributable** build, populate it first with the SlikSVN
+client:
+
+```pwsh
+# From a SlikSVN .zip (verify the current URL at https://sliksvn.com/download/)
+pwsh build/fetch-svn-tools.ps1 -ZipUrl <SlikSVN-x64-zip-url>
+```
+
+See [MLQT/svn-tools/README.md](MLQT/svn-tools/README.md) for the other ways to populate the
+folder (local zip, existing install) and how the binaries are copied into the app output.
+
 ## Running Tests
 
 ```bash
