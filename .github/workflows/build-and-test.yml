@@ -52,6 +52,13 @@ jobs:
       - name: Run ModelicaGraph tests
         run: dotnet test ModelicaGraph.Tests -c Release --no-build --logger "trx;LogFileName=graph.trx" --results-directory ${{ github.workspace }}/TestResults
 
+      # SVN tests are excluded on CI: the integration tests need a live working copy /
+      # server (e.g. C:\Projects\ModelicaEditorTest) that doesn't exist on the runner, and
+      # they self-skip when it's absent. Bundling the SlikSVN client (see
+      # build/fetch-svn-tools.ps1) does NOT make these runnable on its own — it only
+      # supplies svn.exe, not a repository. The bundled client is validated instead by the
+      # release workflow's "Verify bundled svn client" step. To run SVN tests locally,
+      # check out a working copy at that path and run RevisionControl.Tests without the filter.
       - name: Run RevisionControl tests (exclude SVN integration)
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --logger "trx;LogFileName=revcontrol.trx" --results-directory ${{ github.workspace }}/TestResults
 

@@ -64,6 +64,22 @@ public interface IRevisionControlSystem
     bool UpdateExistingCheckout(string checkoutPath, string repositoryPath, string revision);
 
     /// <summary>
+    /// Updates an existing checkout to <paramref name="revision"/> WITHOUT first
+    /// reverting local changes or removing untracked files. The caller asserts the
+    /// working copy has no local modifications (e.g. a server-managed wc the
+    /// application owns end-to-end). This is materially faster than
+    /// <see cref="UpdateExistingCheckout"/> on large working copies because it
+    /// skips the full-tree Revert + Status walks — on a 30000-file Modelica
+    /// library that's tens of seconds saved per refresh. Falls back to a fresh
+    /// <see cref="CheckoutRevision"/> when the path is not a valid working copy.
+    /// </summary>
+    /// <param name="checkoutPath">Path to the existing checkout</param>
+    /// <param name="repositoryPath">URL of the source repository</param>
+    /// <param name="revision">Revision identifier to update to</param>
+    /// <returns>True if update (or fallback checkout) succeeded.</returns>
+    bool UpdateRevisionInPlace(string checkoutPath, string repositoryPath, string revision);
+
+    /// <summary>
     /// Cleans a workspace by reverting all changes and removing untracked files.
     /// </summary>
     /// <param name="checkoutPath">Path to the workspace to clean</param>

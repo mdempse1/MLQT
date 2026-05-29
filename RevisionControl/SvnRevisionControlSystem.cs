@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using SharpSvn;
 using RevisionControl.Interfaces;
 
@@ -287,6 +289,148 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         catch (Exception ex)
         {
             RevisionControlLogger.Error("UpdateExistingCheckout", ex);
+            return false;
+        }
+    }
+
+    public bool UpdateRevisionInPlace(string checkoutPath, string repositoryPath, string revision)
+    {
+        var totalSw = Stopwatch.StartNew();
+        var infoSw = new Stopwatch();
+        var switchSw = new Stopwatch();
+        var updateSw = new Stopwatch();
+        string updatedBy = "n/a";
+
+        try
+        {
+            using var client = new SvnClient();
+
+            // 1. Validate the working copy.
+            infoSw.Start();
+            bool isWorkingCopy = false;
+            SvnInfoEventArgs? wcInfo = null;
+            if (Directory.Exists(checkoutPath))
+            {
+                try { isWorkingCopy = client.GetInfo(checkoutPath, out wcInfo); }
+                catch (SvnException)
+                {
+                    // Stale / corrupt wc state — wipe so CheckoutRevision starts fresh.
+                    Directory.Delete(checkoutPath, recursive: true);
+                }
+            }
+            infoSw.Stop();
+
+            if (!isWorkingCopy)
+                return CheckoutRevision(repositoryPath, revision, checkoutPath);
+
+            // 2. Switch URL only if it differs (cheap to check, no-op when they match).
+            switchSw.Start();
+            var targetUri = GetRepositoryUri(repositoryPath);
+            if (wcInfo != null && !Uri.Equals(wcInfo.Uri, targetUri.Uri))
+            {
+                RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Uri} to {targetUri.Uri}");
+                if (!client.Switch(checkoutPath, targetUri.Uri))
+                {
+                    RevisionControlLogger.Error("UpdateRevisionInPlace",
+                        new InvalidOperationException($"SVN switch from {wcInfo.Uri} to {targetUri.Uri} failed"));
+                    return false;
+                }
+            }
+            switchSw.Stop();
+
+            // 3. Run the actual update. Prefer the svn CLI: on a multi-thousand-file
+            //    working copy `svn update -r N` is an order of magnitude faster than
+            //    SharpSvn's client.Update (measured at 2.7s CLI vs 38s SharpSvn on
+            //    a 30000-file Modelica library). The cost difference appears to be
+            //    per-file managed-side bookkeeping inside SharpSvn — the underlying
+            //    libsvn call is identical. We fall back to SharpSvn when svn.exe
+            //    isn't on PATH so we don't introduce a hard dependency.
+            updateSw.Start();
+            var cliResult = TryRunSvnUpdateCli(checkoutPath, revision);
+            bool updateOk;
+            if (cliResult.HasValue)
+            {
+                updateOk = cliResult.Value;
+                updatedBy = "cli";
+            }
+            else
+            {
+                updateOk = client.Update(checkoutPath, new SvnUpdateArgs { Revision = ParseRevision(revision) });
+                updatedBy = "sharpsvn";
+            }
+            updateSw.Stop();
+
+            return updateOk;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("UpdateRevisionInPlace", ex);
+            return false;
+        }
+        finally
+        {
+            totalSw.Stop();
+            RevisionControlLogger.Info(
+                $"UpdateRevisionInPlace({checkoutPath} -> r{revision}): " +
+                $"total {totalSw.Elapsed.TotalSeconds:F2}s " +
+                $"[getInfo {infoSw.Elapsed.TotalSeconds:F2}s, " +
+                $"switch {switchSw.Elapsed.TotalSeconds:F2}s, " +
+                $"update {updateSw.Elapsed.TotalSeconds:F2}s via {updatedBy}]");
+        }
+    }
+
+    /// <summary>
+    /// Runs <c>svn update [-r &lt;revision&gt;] --non-interactive --quiet &lt;checkoutPath&gt;</c>
+    /// via the svn CLI located by <see cref="SvnToolLocator"/> (the bundled SlikSVN
+    /// client when present, otherwise svn from PATH). Returns null when no svn
+    /// executable can be found or started (the caller should fall back to SharpSvn).
+    /// Returns true / false based on the CLI's exit code. <c>--quiet</c> suppresses
+    /// per-file output so stdout doesn't fill with one line per file on a
+    /// 30000-file working copy.
+    /// </summary>
+    private static bool? TryRunSvnUpdateCli(string checkoutPath, string revision)
+    {
+        var svnExe = SvnToolLocator.SvnExecutablePath;
+        if (svnExe == null)
+        {
+            // No svn executable available — let the caller fall back to SharpSvn.
+            return null;
+        }
+
+        var revisionArg = string.IsNullOrEmpty(revision)
+            || string.Equals(revision, "HEAD", StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : $"-r {revision} ";
+        var args = $"update {revisionArg}--non-interactive --quiet \"{checkoutPath}\"";
+
+        var psi = new ProcessStartInfo(svnExe, args)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        Process? process;
+        try
+        {
+            process = Process.Start(psi);
+        }
+        catch (Win32Exception)
+        {
+            // svn executable resolved but could not be started — fall back to SharpSvn.
+            return null;
+        }
+        if (process == null) return null;
+
+        using (process)
+        {
+            process.WaitForExit();
+            if (process.ExitCode == 0) return true;
+            var err = process.StandardError.ReadToEnd();
+            RevisionControlLogger.Error("TryRunSvnUpdateCli",
+                new InvalidOperationException(
+                    $"`svn update` exited with code {process.ExitCode}: {err}"));
             return false;
         }
     }

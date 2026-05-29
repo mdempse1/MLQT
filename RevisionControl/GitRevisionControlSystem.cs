@@ -270,6 +270,15 @@ public class GitRevisionControlSystem : IRevisionControlSystem
     /// Updates an existing checkout to a different revision, discarding any local changes.
     /// Much more efficient than deleting and re-checking out for large repositories.
     /// </summary>
+    public bool UpdateRevisionInPlace(string checkoutPath, string repositoryPath, string revision)
+    {
+        // Git's UpdateExistingCheckout is already lighter than SVN's — no separate
+        // Revert-the-world step is needed because LibGit2Sharp's Checkout walks
+        // only what's actually different. Delegate for now; if Git later grows a
+        // CleanWorkspace pre-step we'll add a separate fast path here too.
+        return UpdateExistingCheckout(checkoutPath, repositoryPath, revision);
+    }
+
     public bool UpdateExistingCheckout(string checkoutPath, string repositoryPath, string revision)
     {
         try

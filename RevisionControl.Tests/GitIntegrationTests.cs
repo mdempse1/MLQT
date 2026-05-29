@@ -261,6 +261,37 @@ public class GitIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void UpdateRevisionInPlace_WithNonExistentPath_PerformsCheckout()
+    {
+        // Git's fast path currently delegates to UpdateExistingCheckout (LibGit2Sharp's
+        // Checkout is already narrow), so this is a smoke test that the new interface
+        // method is wired through for Git too.
+        if (!_repositoryAvailable) return;
+
+        var checkoutPath = CreateTempPath();
+        var sha = _git.GetCurrentRevision(_clonePath);
+
+        var result = _git.UpdateRevisionInPlace(checkoutPath, _clonePath, sha!);
+
+        Assert.True(result);
+        Assert.True(Directory.Exists(checkoutPath));
+    }
+
+    [Fact]
+    public void UpdateRevisionInPlace_WithExistingCheckout_UpdatesSuccessfully()
+    {
+        if (!_repositoryAvailable) return;
+
+        var checkoutPath = CreateTempPath();
+        var sha = _git.GetCurrentRevision(_clonePath);
+        _git.UpdateExistingCheckout(checkoutPath, _clonePath, sha!);
+
+        var result = _git.UpdateRevisionInPlace(checkoutPath, _clonePath, sha!);
+
+        Assert.True(result);
+    }
+
+    [Fact]
     public void UpdateExistingCheckout_MultipleTimes_WorksConsistently()
     {
         // Skip if repository not available

@@ -53,6 +53,14 @@ jobs:
           dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
           dotnet test MLQT.Services.Tests -c Release --no-restore
 
+      # Stage the SlikSVN command-line client into MLQT/svn-tools/win-x64 so the publish
+      # step (via MLQT.csproj) copies it into the app output under svn/. The zip URL is
+      # configured as a repository variable (Settings > Secrets and variables > Actions >
+      # Variables): SLIKSVN_ZIP_URL must point at a SlikSVN >= 1.14 x64 .zip.
+      - name: Bundle SlikSVN command-line client
+        shell: pwsh
+        run: pwsh build/fetch-svn-tools.ps1 -ZipUrl "${{ vars.SLIKSVN_ZIP_URL }}"
+
       - name: Publish MLQT (self-contained)
         run: >
           dotnet publish MLQT/MLQT.csproj
@@ -63,6 +71,18 @@ jobs:
           -p:PublishSingleFile=false
           -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
           -o publish/MLQT
+
+      # Fail the release loudly if the svn client did not make it into the output, rather
+      # than silently shipping a zip that falls back to PATH/SharpSvn on the user's machine.
+      - name: Verify bundled svn client
+        shell: pwsh
+        run: |
+          $svn = "publish/MLQT/svn/svn.exe"
+          if (-not (Test-Path $svn)) {
+            throw "Bundled svn.exe missing from publish output ($svn). Check the 'Bundle SlikSVN' step and the SLIKSVN_ZIP_URL variable."
+          }
+          & $svn --version --quiet
+          Write-Host "Bundled svn client OK."
 
       - name: Create zip archive
         shell: pwsh

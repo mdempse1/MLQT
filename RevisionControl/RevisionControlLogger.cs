@@ -17,6 +17,12 @@ internal static class RevisionControlLogger
     internal static void Debug(string message) => Logger.Debug(message);
 
     /// <summary>
+    /// Logs an informational message — used for per-operation timing summaries
+    /// that the consuming application is expected to see in production logs.
+    /// </summary>
+    internal static void Info(string message) => Logger.Info(message);
+
+    /// <summary>
     /// Logs an exception from a revision control operation.
     /// </summary>
     internal static void Error(string operation, Exception ex)

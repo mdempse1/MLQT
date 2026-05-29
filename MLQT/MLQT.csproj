@@ -59,4 +59,19 @@
     <ProjectReference Include="..\OpenModelicaInterface\OpenModelicaInterface.csproj" />
   </ItemGroup>
 
+  <!--
+    Bundle the SlikSVN command-line client into the app output under "svn/" so the app
+    can shell out to a private svn.exe regardless of what the user has installed
+    (see RevisionControl/SvnToolLocator.cs). The binaries live in svn-tools/win-x64
+    and are populated by build/fetch-svn-tools.ps1 — they are not committed, so when the
+    folder is empty this glob matches nothing and the app falls back to PATH / SharpSvn.
+    The Link metadata redirects the files from "svn-tools/win-x64/..." to "svn/...".
+  -->
+  <ItemGroup>
+    <None Include="svn-tools\win-x64\**\*"
+          Link="svn\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
 </Project>

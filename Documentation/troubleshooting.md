@@ -109,7 +109,7 @@ No. MLQT is a library management and quality tool, not a code editor. You edit c
 ### Do I need Git or SVN installed?
 
 - **Git**: MLQT uses LibGit2Sharp (a built-in library) for local Git operations such as committing, branching, and reading history. However, operations that interact with a remote server — **fetch, push, rebase** — shell out to `git.exe` so that all configured credential helpers (Git Credential Manager, SSH keys, GitHub Desktop, etc.) are used automatically. You **must have Git installed** for these operations to work.
-- **SVN**: MLQT uses SharpSvn (a built-in library) for all SVN operations, so you do **not** need the SVN command-line client installed.
+- **SVN**: MLQT uses SharpSvn (a built-in library) for SVN operations and ships its own bundled `svn` command-line client (used internally to speed up working-copy updates), so you do **not** need to install an SVN client. If you prefer to use a specific svn executable, set the `MLQT_SVN_PATH` environment variable to its full path.
 
 ### Can I use both Git and SVN repositories in the same project?
 

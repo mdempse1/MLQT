@@ -34,6 +34,11 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **License**: [Apache 2.0](https://sharpsvn.open.collab.net/)
 - **NuGet**: https://www.nuget.org/packages/SharpSvn.1.14-x64
 
+### SlikSVN command-line client (bundled, not a NuGet package)
+- **Purpose**: `svn.exe` used for the working-copy update fast path (much faster than SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
+- **Used in**: bundled into the MLQT app output under `svn/`; staged by `build/fetch-svn-tools.ps1` into `MLQT/svn-tools/win-x64` (not committed to source control).
+- **License**: Apache 2.0 (SlikSVN is a distribution of [Apache Subversion](https://subversion.apache.org/)). Redistribution requires retaining the Apache license/NOTICE; keep these with the bundled binaries.
+
 ## UI Framework
 
 ### MudBlazor (v9.0.0)

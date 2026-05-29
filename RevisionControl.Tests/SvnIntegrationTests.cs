@@ -232,6 +232,98 @@ public class SvnIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void UpdateRevisionInPlace_WithNonExistentCheckout_PerformsInitialCheckout()
+    {
+        // Same fall-back as UpdateExistingCheckout — there's no wc to update so a
+        // fresh checkout is the only thing that makes sense.
+        var checkoutPath = CreateCheckoutPath();
+
+        var result = _svn.UpdateRevisionInPlace(checkoutPath, _trunkUrl, "HEAD");
+
+        Assert.True(result);
+        Assert.True(Directory.Exists(checkoutPath));
+        Assert.True(Directory.Exists(Path.Combine(checkoutPath, ".svn")));
+    }
+
+    [Fact]
+    public void UpdateRevisionInPlace_MultipleTimes_WorksConsistently()
+    {
+        var checkoutPath = CreateCheckoutPath();
+
+        for (int i = 0; i < 3; i++)
+        {
+            var result = _svn.UpdateRevisionInPlace(checkoutPath, _trunkUrl, "HEAD");
+            Assert.True(result, $"Update {i + 1} should succeed");
+        }
+    }
+
+    [Fact]
+    public void UpdateRevisionInPlace_AdvancesContentInPlace()
+    {
+        // Commit, checkout HEAD into a second wc, then commit again so HEAD has
+        // moved past that wc's BASE. UpdateRevisionInPlace should pull the second
+        // commit's content into the existing wc.
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+        File.WriteAllText(Path.Combine(workingDir, "a.txt"), "v1");
+        RunSvn($"add \"{Path.Combine(workingDir, "a.txt")}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add a v1\"");
+
+        // Fresh checkout — at this point trunk@HEAD has a.txt=v1.
+        var checkoutPath = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(checkoutPath, "a.txt")));
+
+        // Commit a second revision via the original wc; HEAD now moves past
+        // checkoutPath's BASE.
+        File.WriteAllText(Path.Combine(workingDir, "a.txt"), "v2");
+        RunSvn($"commit \"{workingDir}\" -m \"set a v2\"");
+
+        var ok = _svn.UpdateRevisionInPlace(checkoutPath, _trunkUrl, "HEAD");
+
+        Assert.True(ok);
+        Assert.Equal("v2", File.ReadAllText(Path.Combine(checkoutPath, "a.txt")));
+    }
+
+    [Fact]
+    public void UpdateRevisionInPlace_PreservesLocalModifications_UnlikeUpdateExistingCheckout()
+    {
+        // The defining behavioural difference: UpdateRevisionInPlace asserts the
+        // caller knows the wc has no local changes and skips the Revert step.
+        // If we DO have a local modification it survives the update; the sibling
+        // UpdateExistingCheckout would revert it.
+        var checkoutPath = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", checkoutPath);
+
+        var localFilePath = Path.Combine(checkoutPath, "local-mod.txt");
+        File.WriteAllText(localFilePath, "untracked-local-only");
+
+        var ok = _svn.UpdateRevisionInPlace(checkoutPath, _trunkUrl, "HEAD");
+
+        Assert.True(ok);
+        // The local untracked file is still present — no Revert/Status cleanup ran.
+        Assert.True(File.Exists(localFilePath));
+        Assert.Equal("untracked-local-only", File.ReadAllText(localFilePath));
+    }
+
+    [Fact]
+    public void UpdateRevisionInPlace_FromOneTagToAnother_SwitchesUrl()
+    {
+        // Switch handling: when the wc's URL no longer matches the requested URL
+        // UpdateRevisionInPlace should still do the right thing (svn switch +
+        // update). Use the v1.0 -> v2.0 tags so we cover the cross-URL path.
+        var checkoutPath = CreateCheckoutPath();
+        _svn.CheckoutRevision($"{_repoRoot}/tags/v1.0", "HEAD", checkoutPath);
+
+        var ok = _svn.UpdateRevisionInPlace(checkoutPath, $"{_repoRoot}/tags/v2.0", "HEAD");
+
+        Assert.True(ok);
+        // wc is now associated with the v2.0 URL.
+        var branch = _svn.GetCurrentBranch(checkoutPath);
+        Assert.Equal("tags/v2.0", branch);
+    }
+
+    [Fact]
     public void CheckoutRevision_ToNestedPath_CreatesDirectories()
     {
         var nestedPath = Path.Combine(CreateCheckoutPath(), "nested", "deep", "path");

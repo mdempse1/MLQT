@@ -383,3 +383,7 @@ FodyWeavers.xsd
 Modelica 4.0.0.zip
 nul
 .claude/settings.local.json
+
+# Bundled SlikSVN command-line client — populated by build/fetch-svn-tools.ps1, not committed.
+# (The README and the folder itself are kept; only the binaries are ignored.)
+MLQT/svn-tools/win-x64/

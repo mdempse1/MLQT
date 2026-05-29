@@ -98,7 +98,15 @@ bool success = git.CheckoutRevision(@"C:\Projects\MyRepo", "v1.0.0", @"C:\Temp\c
 
 ## SVN Implementation (SvnRevisionControlSystem)
 
-Uses SharpSvn library.
+Uses the SharpSvn library for most operations. The working-copy update fast path
+(`UpdateRevisionInPlace` / `TryRunSvnUpdateCli`) instead shells out to the `svn`
+command-line client, which is ~14x faster than SharpSvn on large working copies
+(~2.7s vs ~38s for `svn update` on a 30,000-file library — SharpSvn's cost is per-file
+managed interop). `SvnToolLocator` picks the executable: `MLQT_SVN_PATH` env var, then the
+bundled SlikSVN client at `{AppContext.BaseDirectory}/svn/svn.exe`, then `svn` on PATH, then
+falls back to SharpSvn if none is found. The bundled binaries are staged by
+`build/fetch-svn-tools.ps1` into `MLQT/MLQT/svn-tools/win-x64` and copied to the app output
+by `MLQT.csproj`.
 
 ```csharp
 var svn = new SvnRevisionControlSystem();
@@ -297,12 +305,16 @@ public class HgRevisionControlSystem : IRevisionControlSystem
 
 - **LibGit2Sharp** v0.31.0 - For Git repository operations
 - **SharpSvn** v1.14005.390 - For SVN repository operations
+- **Bundled SlikSVN CLI** (not a NuGet package) - svn.exe used for the update fast path; staged by `build/fetch-svn-tools.ps1`
 
 ## Key Files
 
 - `RevisionControl/IRevisionControlSystem.cs` - Interface definition
 - `RevisionControl/GitRevisionControlSystem.cs` - Git implementation
 - `RevisionControl/SvnRevisionControlSystem.cs` - SVN implementation
+- `RevisionControl/SvnToolLocator.cs` - Resolves the bundled/PATH svn.exe for CLI operations
+- `build/fetch-svn-tools.ps1` - Stages the SlikSVN client for bundling
+- `MLQT/svn-tools/README.md` - How the bundled client is populated and shipped
 - `RevisionControl.Tests/` - Comprehensive test coverage
 
 ## Testing

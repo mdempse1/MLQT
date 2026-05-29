@@ -296,8 +296,29 @@ public class HgRevisionControlSystem : IRevisionControlSystem
 
 MIT License — see [LICENSE](../LICENSE) for details.
 
+## Bundled SVN command-line client
+
+For the performance-critical working-copy update, `SvnRevisionControlSystem` shells out to
+the `svn` command-line client rather than using SharpSvn: on a 30,000-file Modelica library
+`svn update -r N` runs in ~2.7s versus ~38s through SharpSvn, whose cost is dominated by
+per-file managed-side bookkeeping in its C++/CLI layer.
+
+`SvnToolLocator` resolves which `svn` executable to use, in order:
+
+1. The `MLQT_SVN_PATH` environment variable, if it points at an existing file.
+2. A **bundled** client at `{AppContext.BaseDirectory}/svn/svn.exe`. The MLQT app ships a
+   private copy of the [SlikSVN](https://sliksvn.com/) command-line build here so users do
+   not have to install an SVN client. The binaries are staged into `MLQT/MLQT/svn-tools/win-x64`
+   by `build/fetch-svn-tools.ps1` and copied into the app output by `MLQT.csproj`.
+3. Bare `svn` on the system `PATH`.
+
+When no `svn` executable is found at all, the code falls back to SharpSvn, so the library
+still functions (just without the CLI speed-up). Use a client **>= 1.14** to match the
+working-copy format SharpSvn has written.
+
 ## Dependencies
 
 - **LibGit2Sharp** (v0.31.0) - .NET wrapper for libgit2
-- **SharpSvn** (v1.14005.390) - .NET wrapper for Subversion
+- **SharpSvn** (v1.14005.390) - .NET wrapper for Subversion (used for all SVN operations except
+  the working-copy update fast path, which uses the bundled CLI — see above)
 - **NLog** (v6.1.0) - Logging framework
