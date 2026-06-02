@@ -504,4 +504,110 @@ public class ModelicaPackageSaverTests : IDisposable
     }
 
     #endregion
+
+    #region RenderFileOwnerModel (single-file save)
+
+    [Fact]
+    public void RenderFileOwnerModel_RendersModelToFormattedSource()
+    {
+        var code = "within;\nmodel TestModel \"A description\"\n  Real x;\nend TestModel;";
+        var node = new ModelNode("TestModel", new ModelDefinition("TestModel", code));
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        Assert.Contains("model TestModel", rendered);
+        Assert.Contains("A description", rendered);
+        Assert.Contains("Real x", rendered);
+    }
+
+    [Fact]
+    public void RenderFileOwnerModel_ReparsesFromCurrentModelicaCode()
+    {
+        // The spelling-correction caller mutates ModelicaCode (and nulls ParsedCode) before
+        // rendering; the render must reflect the mutated source, not a stale parse tree.
+        var original = "within;\nmodel TestModel \"An exmaple model\"\nend TestModel;";
+        var node = new ModelNode("TestModel", new ModelDefinition("TestModel", original)
+        {
+            ParsedCode = ModelicaParserHelper.Parse(original)
+        });
+
+        node.Definition.ModelicaCode = original.Replace("exmaple", "example");
+        node.Definition.ParsedCode = null;
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        Assert.Contains("An example model", rendered);
+        Assert.DoesNotContain("exmaple", rendered);
+    }
+
+    [Fact]
+    public void RenderFileOwnerModel_PackageExcludesNothingFromSliceOnlySource()
+    {
+        // The file-owner package's ModelicaCode is the package.mo slice (no standalone children),
+        // so rendering reproduces only what the slice contains.
+        var code = "within;\npackage TestPackage \"Pkg doc\"\n  constant Real pi = 3.14;\nend TestPackage;";
+        var node = new ModelNode("TestPackage", new ModelDefinition("TestPackage", code));
+        node.ClassType = "package";
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        Assert.Contains("package TestPackage", rendered);
+        Assert.Contains("constant Real pi", rendered);
+        Assert.Contains("Pkg doc", rendered);
+    }
+
+    [Fact]
+    public void RenderFileOwnerModel_PrependsWithinClauseFromParent()
+    {
+        // The stored ModelicaCode is the within-less class body. The file written to disk must
+        // carry the within clause so the standalone file re-parses with the correct package
+        // context on reload and the model keeps its hierarchical ID. Without this, a spelling
+        // correction would strip the within clause and the reloaded model would get a detached,
+        // un-prefixed ID, breaking GetModelById(NavState.ModelID).
+        var code = "model Null \"Empty summary\"\nend Null;";
+        var node = new ModelNode("VeSyMA.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
+        {
+            ParentModelName = "VeSyMA.EnergyStorage.Summary"
+        };
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        Assert.Contains("within VeSyMA.EnergyStorage.Summary", rendered);
+        Assert.Contains("model Null", rendered);
+        // The stored body must remain within-less so the in-memory convention is preserved.
+        Assert.DoesNotContain("within", node.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public void RenderFileOwnerModel_PrependsBareWithinWhenNoParent()
+    {
+        var code = "model TopLevel \"A top-level model\"\nend TopLevel;";
+        var node = new ModelNode("TopLevel", new ModelDefinition("TopLevel", code))
+        {
+            ParentModelName = null
+        };
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        Assert.Contains("within", rendered);
+        Assert.Contains("model TopLevel", rendered);
+    }
+
+    [Fact]
+    public void RenderFileOwnerModel_DoesNotDoublePrependWithinClause()
+    {
+        var code = "within VeSyMA.EnergyStorage.Summary;\nmodel Null \"Empty\"\nend Null;";
+        var node = new ModelNode("VeSyMA.EnergyStorage.Summary.Null", new ModelDefinition("Null", code))
+        {
+            ParentModelName = "VeSyMA.EnergyStorage.Summary"
+        };
+
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+
+        // Exactly one within clause, not two.
+        var occurrences = rendered.Split("within").Length - 1;
+        Assert.Equal(1, occurrences);
+    }
+
+    #endregion
 }

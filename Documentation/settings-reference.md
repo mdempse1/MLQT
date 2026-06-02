@@ -148,13 +148,13 @@ The reference validator handles several edge cases found in real Modelica librar
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica-specific terms (Modelica, Dymola, Jacobian, linearization, etc.) is also included.
 
-Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation opens a popover with options to add the word to your custom dictionary, view spelling suggestions, ignore the violation, or close the popover. See [Spell Checking](spell-checking.md) for full details.
+Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, add the word to your custom dictionary, ignore the violation, or close the menu. See [Spell Checking](spell-checking.md) for full details.
 
 #### Custom Dictionary
 
 A custom dictionary stores additional words that should be accepted as correct (company names, domain terms, abbreviations). It is shared across all repositories and stored at `%LocalAppData%/MLQT/custom_dictionary.txt`.
 
-In the default settings (**Settings > Style Checking**), the **Custom Dictionary** expandable panel lets you add, remove, filter, import, and export custom words. Words can also be added directly from the Code Review spelling popover — this is the fastest workflow.
+In the default settings (**Settings > Style Checking**), the **Custom Dictionary** expandable panel lets you add, remove, filter, import, and export custom words. Words can also be added directly by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary** — this is the fastest workflow.
 
 ![Screenshot: The Spell checking section of the Settings dialog showing the two spell check toggle switches, the language dictionary dropdown, and the Import Language button.](Images/settings-reference-6.png)
 

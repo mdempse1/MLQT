@@ -297,8 +297,12 @@
                 var repository = RepositoryService.GetRepository(_addedRepositoryId);
 
                 //Start style checking
+                // Offload to a background thread: StartBackgroundChecking does
+                // sync-over-async work (settings + custom dictionary load) whose
+                // continuations would post back to the Blazor UI sync context. Running
+                // it inline here — on the UI thread after the awaits above — deadlocks.
                 if (repository != null)
-                    StyleCheckingService.StartBackgroundChecking(repository);
+                    await Task.Run(() => StyleCheckingService.StartBackgroundChecking(repository));
             }
 
             MudDialog?.Close(DialogResult.Ok(_addedRepositoryId));

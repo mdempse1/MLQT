@@ -119,16 +119,23 @@ The issues table provides two filtering mechanisms:
 
 ### Spelling Violations
 
-Spelling violations from the spell checker are handled differently from other issues. When you click a spelling violation (issues starting with "Misspelled word"), a **spelling popover** appears instead of the standard issue dialog, offering four actions:
+Spelling violations from the spell checker (issues starting with "Misspelled word") are handled differently from other issues. Clicking a spelling violation navigates to the model and scrolls the code viewer so the misspelled word is brought into view, **highlighted inline** with a wavy red underline. To act on the word, **right-click the underlined word** in the code viewer.
 
-| Button | Action |
+#### Correcting a Spelling Inline
+
+To act on a misspelled word, right-click the highlighted word in the rendered code. A correction menu appears just below the word, offering:
+
+| Option | Action |
 |--------|--------|
+| **Suggestions** | A scrollable list of similar words from the loaded language dictionaries. Click one to apply it in place. |
+| **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
 | **Add to Dictionary** | Adds the word to your custom dictionary. All violations for this word across all models are immediately removed. The word will be accepted as correct in all future checks. |
-| **Suggest** | Queries the loaded language dictionaries for similar words and displays a scrollable list of suggestions. This helps identify the correct spelling, but you need to fix the typo in your Modelica code manually. |
 | **Ignore** | Removes this single violation from the list. The word will be flagged again on the next style check run. |
-| **Close** | Closes the popover without taking any action. |
+| **Close** | Closes the menu without taking any action. |
 
-The spelling popover provides a fast workflow for triaging spelling issues: click a violation, assess whether it is a real typo or a valid term, and either add it to the dictionary or note it for correction in the source code.
+When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk immediately**, re-parses it, and removes the resolved violation.
+
+The replacement is whole-word and case-sensitive, and is applied only inside description strings and documentation prose — occurrences inside HTML links and `<code>`/`<pre>` blocks are left untouched so a correction never breaks a link. If the result would fail to parse, the change is aborted and the file is left unchanged. (Repairing already-broken documentation links is a separate, planned feature.)
 
 For more details on configuring spell checking, language dictionaries, and the custom dictionary, see [Spell Checking](spell-checking.md).
 

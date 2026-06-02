@@ -1693,7 +1693,13 @@
             if (allModelIds.Count > 0)
                 CodeReviewService.RemoveLogMessagesForModels(allModelIds);
 
-            StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
+            // Offload to a background thread: StartBackgroundCheckingForRepositories performs
+            // sync-over-async work (custom dictionary + settings load). When this method is
+            // invoked directly on the Blazor UI thread (e.g. the Code Review "run style
+            // checking" button rather than the startup dialog's Task.Run path), running it
+            // inline would deadlock the renderer sync context.
+            await Task.Run(() =>
+                StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories));
 
             NavState.StyleCheckingCompleted();
             _step4deferred = false;

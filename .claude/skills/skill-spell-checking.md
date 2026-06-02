@@ -33,7 +33,7 @@ MLQT.Services (lifecycle, persistence)
   DictionaryManagerService.cs - Imported dictionaries at %LocalAppData%/MLQT/Dictionaries/
 
 MLQT.Shared (UI)
-  Pages/CodeReview.razor     - Spelling popover: Add to Dictionary, Suggest, Ignore, Close
+  Pages/CodeReview.razor     - Click issue -> scroll/underline word; right-click word -> correction menu (Suggestions, Replace with, Add to Dictionary, Ignore, Close)
   Components/SettingsStyleChecking.razor  - Default language selection + custom dictionary management
   Components/SettingsRepositories.razor   - Per-repo language selection
 ```
@@ -231,18 +231,43 @@ Manages available Hunspell dictionaries — both bundled (hardcoded list matchin
 
 ## UI Integration
 
-### Code Review Popover (CodeReview.razor)
+### Clicking a Spelling Violation (CodeReview.razor)
 
-When a spelling violation is clicked, a popover appears with four actions:
-
-| Button | Action |
-|--------|--------|
-| **Add to Dictionary** | Adds word to custom dictionary, removes ALL violations for that word across all models |
-| **Suggest** | Calls `SpellChecker.Suggest(word)`, displays scrollable list of suggestions |
-| **Ignore** | Removes this single violation from the review |
-| **Close** | Closes popover without any action |
+There is **no click-popover**. Clicking a spelling violation in the issues table (`RowClickEvent`) navigates to the model and arms `_pendingScrollWord` so the misspelled word is scrolled into view and shown underlined once the model renders (see *Scroll-to-mistake from the issues list* below). All correction actions live in the **right-click correction menu** described next.
 
 **Violation detection:** Checks if `LogMessage.Summary` starts with `"Misspelled word '"`. Word is extracted via regex.
+
+### Inline Highlight & Right-Click Correction (CodeReview.razor + CodeViewer.razor)
+
+Misspelled words are highlighted directly in the rendered Modelica source on the Code Review page. Right-clicking a highlighted word opens a correction menu that lets the user apply a fix that is written to disk immediately.
+
+**Highlighting:** `CodeReview` computes the set of misspelled words (`RecomputeMisspelledWords`) from the current spelling violations and passes them to `CodeViewer` via the `MisspelledWords` parameter. `CodeViewer` wraps matching words in markup so they render with a highlight.
+
+**Right-click interop:** `spellCheck.js` attaches a delegated `contextmenu` listener that detects a right-click on a highlighted word and calls the `OnMisspelledWordRightClick` `[JSInvokable]` on `CodeReview`. Rather than the raw cursor position, it captures the clicked word's `getBoundingClientRect()` into a module-level `_anchorRect` and passes the word's **bottom-left** (`r.left, r.bottom`) so the menu opens *below* the word instead of under the cursor (which would cover it).
+
+**Menu positioning (`positionContextMenu`):** The initial position is provisional. `OnMisspelledWordRightClick` sets `_repositionContextMenu = true`; on the next `OnAfterRenderAsync` (once the menu — tagged with the `spell-context-menu` CSS class — has rendered and its real width/height are known) `CodeReview` calls `spellCheck.positionContextMenu(".spell-context-menu", 4)`. The JS measures the menu and `_anchorRect`, aligns the menu's left edge to the word, places it `gap` px below, then **clamps within the viewport**: horizontally into `[margin, vw - margin]`, and vertically flipping *above* the word if it would overflow the bottom (else clamping to the bottom margin). It returns the clamped `[left, top]`, which `CodeReview` writes back into `_contextMenuX/_contextMenuY` so **.NET stays the source of truth** (later keystroke re-renders keep the clamped spot). The flag gates this to run once per open, avoiding loops/jitter. `_anchorRect` is cleared in `dispose`.
+
+**Correction menu options:** (this is the only spelling action surface — the old click-popover was removed)
+- One entry per `SpellChecker.Suggest(word)` suggestion — selecting one applies it.
+- A free-text input (`_customCorrection`, applied on Enter via `OnCustomCorrectionKeyDown` or the **Apply** button) so the user can type their own spelling when no suggestion fits.
+- **Add to Dictionary** (`AddToDictionary`) — adds the word to the custom dictionary and removes ALL violations for that word across all models.
+- **Ignore** (`IgnoreSpellingViolation`) — removes this single violation without touching the dictionary.
+- **Close** (`CloseContextMenu`) — dismisses the menu without any action.
+
+**Applying a correction (`ApplyCorrection`):**
+1. Resolve the **file-owner** model (topmost model sharing the current node's `ContainingFileId`) — its `Definition.ModelicaCode` is the full physical `.mo` file content.
+2. `SpellingCorrector.ReplaceWordInStrings(code, oldWord, newWord)` performs a whole-word, case-sensitive replacement **only inside string literals and documentation prose**, skipping occurrences inside HTML links/`href`s and `<code>`/`<pre>` blocks (so corrections never break links). Aborts if zero replacements were made.
+3. Validate the result with `ModelicaParserHelper.ParseWithErrors`; abort (with a Snackbar) on any `FatalParseFailure`.
+4. Re-render the whole file through `ModelicaPackageSaver.RenderFileOwnerModel` (reuses the saver's exact renderer config — format-on-save semantics; may reformat beyond the corrected word). The stored `Definition.ModelicaCode` is the **within-less class body**, so `RenderFileOwnerModel` prepends the `within {ParentModelName};` clause (or bare `within;` for a top-level model) before parsing — mirroring the full-save `PreParseModelsParallel` path. This is essential: without the within clause the saved standalone file re-parses with no package context on reload, so the model regenerates a detached, un-prefixed ID and `GetModelById(NavState.ModelID)` returns null (leaving stale code on screen and breaking re-navigation to the class).
+5. Pause the file monitor (`StopMonitoring`), `File.WriteAllText` the rendered file, then `StartMonitoring` + `NotifyFileActivity` to refresh VCS indicators.
+6. `LibraryDataService.ReloadFileAsync` re-parses the file and rebuilds all its model nodes; `NavState.ModelContentChanged(affected)` invalidates the render cache.
+7. Remove the now-fixed spelling violations (`CodeReviewService.RemoveLogMessagesByPredicate`) and re-render.
+8. **Scroll preservation:** `ApplyCorrection` captures the `.code-viewer` scroll offsets (vertical and horizontal) via `spellCheck.getScroll` into `_pendingScroll`, recording the current `_highlightedCode` list reference in `_scrollBaselineCode`. Capture happens **just before** the re-render is triggered (past every early-return) so a stale offset can never leak into ordinary navigation. The offsets are restored in `OnAfterRenderAsync` via `spellCheck.setScroll`, gated on `!_isLoadingCode && _highlightedCode is { Count: > 0 } && !ReferenceEquals(_highlightedCode, _scrollBaselineCode)`. The **reference-change** check is the crucial part: the reload assigns a brand-new `_highlightedCode` list, so a changed reference means the *corrected* content is now mounted. Any render of the **old** content that fires between capture and the re-render keeps the same reference and is skipped — without this, the restore fires ~17ms after capture on the stale content and is lost before the real re-render reaches the top. (Earlier attempts to gate on the loading spinner failed: for small/fast files the spinner render coalesces away and `OnAfterRender` never observes `_isLoadingCode == true`.) `spellCheck.setScroll` re-applies the offset across animation frames (retrying ~30 frames until it sticks within 1px, the content genuinely can't scroll that far, or the budget is exhausted) because the freshly-mounted content is not laid out when `OnAfterRender` first runs. (`spellCheck.getScroll`/`setScroll` live in `wwwroot/spellCheck.js`.)
+9. **Scroll-to-mistake from the issues list:** clicking a spelling violation in the issues table (`RowClickEvent`) arms `_pendingScrollWord` with `ExtractMisspelledWord(issue)` before `NavState.ChangeModelID`. Once the selected model's content has rendered (`OnAfterRenderAsync`, gated on `!_isLoadingCode && _highlightedCode is { Count: > 0 }`), `spellCheck.scrollWordIntoView(".code-viewer", word)` centres the first `.code-misspell` span whose `data-word` matches. It scrolls to the **highlight span** rather than a line number because the rendered code is re-formatted, so stored file line numbers wouldn't line up. The JS helper retries across frames (the highlight spans are added a beat after the code lines, since `RecomputeMisspelledWords` runs just after the render) and matches `data-word` by value so words with quotes/apostrophes need no escaping.
+
+**Single-file persistence rationale:** Spelling fixes never change class names, so `package.order` is unaffected and a focused single-file write is safe (and avoids the order-corruption risk of a narrowly-scoped `SaveLibraryToDirectoryWithResult`).
+
+> **Deferred:** fixing **broken links** is intentionally out of scope here — `SpellingCorrector` only avoids corrupting links, it does not repair them. A separate "fix broken links" feature is planned.
 
 ### Settings - Style Checking (SettingsStyleChecking.razor)
 
@@ -279,7 +304,7 @@ Per-repository settings dialog includes the same language multi-select and impor
 
 ## Key Design Decisions
 
-1. **No `Suggest()` during background checking** — only called on-demand from the UI popover to avoid performance overhead
+1. **No `Suggest()` during background checking** — only called on-demand from the right-click correction menu to avoid performance overhead
 2. **Context words are per-call, not shared** — component names are scoped to the model being checked, model names are shared across all checks in a run
 3. **Spell checker is cached and invalidated** — recreated only when languages or dictionaries change, not per-model
 4. **Custom dictionary is separate from language dictionaries** — custom words are always included regardless of language selection

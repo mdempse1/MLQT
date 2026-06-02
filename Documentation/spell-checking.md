@@ -111,26 +111,42 @@ The custom dictionary panel is in **Settings > Style Checking**, inside the **Cu
 
 ### Adding Words from Code Review
 
-The fastest way to add words to the custom dictionary is directly from a spelling violation in the Code Review issues table. See [Reviewing Spelling Issues](#reviewing-spelling-issues) below.
+The fastest way to add words to the custom dictionary is directly from a spelling violation on the Code Review page — right-click the underlined word in the code view and choose **Add to Dictionary**. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
 
 ## Reviewing Spelling Issues
 
 Spelling violations appear in the **Code Review** issues table alongside other style checking issues. Each violation shows the misspelled word, which model it is in, and the line number where it appears.
 
-### Spelling Popover
+### Finding a Misspelled Word
 
-When you click on a spelling violation in the issues table, a popover appears with four actions:
+When you click a spelling violation in the issues table, MLQT opens the corresponding model and scrolls the code view so the misspelled word is brought into view — so you don't have to hunt for it. The word is **highlighted inline** with a wavy red underline in the rendered Modelica source.
 
-| Button | Action |
-|--------|--------|
-| **Add to Dictionary** | Adds the word to your custom dictionary. The word is immediately accepted as correct and **all** violations for that word across all models are removed. |
-| **Suggest** | Shows a list of possible correct spellings from the loaded dictionaries. This helps you identify what the correct spelling should be (you still need to fix it in your Modelica code manually). |
-| **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
-| **Close** | Closes the popover without taking any action. |
+To act on the word — see suggestions, correct it, add it to your dictionary, or ignore it — **right-click the underlined word** in the code view. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
 
-### Suggestions
+## Correcting Spelling from the Code View
 
-When you click **Suggest**, MLQT queries all loaded language dictionaries for words similar to the misspelled word. The suggestions appear in a scrollable list below the action buttons. This is a read-only list — to fix the spelling, edit the Modelica source code directly.
+Misspelled words are **highlighted inline** (wavy red underline) in the rendered Modelica source on the Code Review page. Right-clicking a highlighted word opens a correction menu, letting you fix a typo without leaving the page and have the change written to disk immediately.
+
+1. Right-click a highlighted misspelled word in the rendered code.
+2. A correction menu appears just below the word (so it never covers it), automatically nudged to stay within the screen edges. It offers:
+
+   | Option | Action |
+   |--------|--------|
+   | **Suggestions** | A list of possible correct spellings from the loaded dictionaries. Click one to apply it in place. |
+   | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
+   | **Add to Dictionary** | Adds the word to your custom dictionary. The word is immediately accepted as correct and **all** violations for that word across all models are removed. |
+   | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
+   | **Close** | Closes the menu without taking any action. |
+
+3. When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk**, re-parses it, and clears the resolved violation.
+
+The replacement is **whole-word and case-sensitive**, and is only applied inside description strings and documentation prose. Occurrences inside HTML links (`href`s) and `<code>`/`<pre>` blocks are deliberately left untouched, so correcting a word never breaks a link or a code example. If the correction would produce code that fails to parse, the change is aborted and the file is left unchanged.
+
+Because the save reuses the same formatter as save-on-format, the saved file may be re-formatted beyond just the corrected word (consistent with how MLQT writes Modelica files elsewhere).
+
+After a correction is applied, the code view reloads but keeps your current scroll position (both vertical and horizontal), so you stay where you were in the file rather than jumping back to the top-left.
+
+> **Note:** This corrects spelling only. Repairing **broken links** in documentation is a separate, planned feature — the spelling correction is careful not to disturb links, but it does not fix ones that are already broken.
 
 ### Line Numbers
 
@@ -142,7 +158,7 @@ Spelling violations report the actual line where the misspelled word appears, ev
 
 - **Build up your custom dictionary early.** The first time you enable spell checking on a library, spend some time adding your project's common terms to the custom dictionary. This significantly reduces noise in subsequent checks.
 
-- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the violation, click "Add to Dictionary", and all instances across your library are resolved immediately.
+- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the violation to jump to the word, right-click the underlined word, and choose "Add to Dictionary"; all instances across your library are resolved immediately.
 
 - **Different languages for different repositories.** If your team maintains libraries documented in different languages, set the appropriate dictionaries per repository rather than at the application level.
 

@@ -88,6 +88,54 @@ public class ModelicaPackageSaver
     }
 
     /// <summary>
+    /// Renders the single file that <paramref name="fileOwner"/> heads to the formatted Modelica
+    /// source that should be written to disk, using the same renderer configuration as a full
+    /// library save. Used by single-file edits (e.g. spelling corrections) that persist one .mo
+    /// file without rewriting the whole library.
+    /// <para>
+    /// <paramref name="fileOwner"/> must be the topmost model stored in its file — its
+    /// <c>ModelicaCode</c> is the complete file slice. Standalone children stored in their own
+    /// files are excluded automatically because that slice does not contain them, so no
+    /// <c>classNamesToExclude</c> set is needed. The file-owner's <c>ParsedCode</c> is (re)parsed
+    /// from its current <c>ModelicaCode</c> so a caller can mutate the source first.
+    /// </para>
+    /// </summary>
+    public static string RenderFileOwnerModel(ModelNode fileOwner, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses)
+    {
+        // The stored ModelicaCode is the extracted class body without a 'within' clause.
+        // The file written to disk must carry the within clause so that, when the library is
+        // reloaded, the standalone file re-parses with the correct package context and the model
+        // regenerates its original hierarchical ID (e.g. "VeSyMA.EnergyStorage.Summary.Null"
+        // rather than a detached "Null"). Mirror the full-save path (PreParseModelsParallel) and
+        // prepend the within clause for rendering, without mutating the stored within-less body.
+        var sourceCode = fileOwner.Definition.ModelicaCode ?? "";
+        if (!sourceCode.StartsWith("within"))
+        {
+            var parent = fileOwner.ParentModelName;
+            sourceCode = !string.IsNullOrEmpty(parent)
+                ? string.Concat("within ", parent, ";\n", sourceCode)
+                : string.Concat("within;\n", sourceCode);
+        }
+
+        var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
+        fileOwner.Definition.ParsedCode = parseTree;
+
+        var visitor = new ModelicaRenderer(
+            renderForCodeEditor: false,
+            showAnnotations: true,
+            excludeClassDefinitions: false,
+            tokenStream: null,
+            classNamesToExclude: null,
+            oneOfEachSection: oneOfEachSection,
+            importsFirst: importsFirst,
+            componentsBeforeClasses: componentsBeforeClasses);
+        visitor.VisitStored_definition(parseTree);
+
+        var code = string.Join("\n", visitor.Code);
+        return DymolaChecksumRegex.Replace(code, "");
+    }
+
+    /// <summary>
     /// Pre-parses all models in parallel to prepare ParsedCode.
     /// Processes in batches with GC hints to limit peak memory from parse trees.
     /// </summary>

@@ -4,6 +4,7 @@
 @using DymolaInterface
 @using OpenModelicaInterface
 @using RevisionControl
+@using ModelicaParser.SpellChecking
 
 @inject AppState NavState
 @inject ILibraryDataService LibraryDataService
@@ -15,9 +16,11 @@
 @inject ICodeReviewService CodeReviewService
 @inject IStyleCheckingService StyleCheckingService
 @inject ICustomDictionaryService CustomDictionaryService
+@inject IFileMonitoringService FileMonitoringService
 @inject DymolaCheckingService DymolaCheckingService
 @inject OpenModelicaCheckingService OpenModelicaCheckingService
 @inject ISnackbar Snackbar
+@implements IAsyncDisposable
 
 <MudPaper Elevation="0" Class="mt-1">
     <MudStack Row="false" Style="gap:0px !important;">
@@ -128,7 +131,7 @@
         }
         else
         {
-                <CodeViewer Lines="@_highlightedCode" Height="100%" />
+                <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords" Height="100%" />
         }
         </MudPaper>
         <MudPaper Elevation="2" Height="221px" Style="overflow-y: auto; position: relative;">
@@ -163,42 +166,53 @@
                     <MudTablePager HideRowsPerPage="true" PageSizeOptions="new int[] { 5, 10, 25, 50, int.MaxValue }" />
                 </PagerContent>
             </MudTable>
-            <MudPopover Open="@_spellingPopoverOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter"
-                Style="@_spellingPopoverStyle">
-                <MudPaper Elevation="4" Class="pa-2" Style="min-width:250px;">
-                    <MudText Typo="Typo.body1" Class="mb-1">@_currentIssue?.Summary</MudText>
-                    <MudStack Row="true" Style="gap:4px;" Class="mb-1">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                            OnClick="AddToDictionary">Add to Dictionary</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                            OnClick="ShowSuggestions">Suggest</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                            OnClick="IgnoreSpellingViolation">Ignore</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                            OnClick="CloseSpellingPopover">Close</MudButton>
-                    </MudStack>
-                    @if (_suggestions != null)
-                    {
-                        @if (_suggestions.Count == 0)
-                        {
-                            <MudText Typo="Typo.body1" Color="Color.Warning">No suggestions found</MudText>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.body1" Class="mb-1"><strong>Suggestions:</strong></MudText>
-                            <MudPaper MaxHeight="150px" Style="overflow-y:auto;" Elevation="0">
-                                @foreach (var suggestion in _suggestions)
-                                {
-                                    <MudText Typo="Typo.body1" Class="ml-2">@suggestion</MudText>
-                                }
-                            </MudPaper>
-                        }
-                    }
-                </MudPaper>
-            </MudPopover>
         </MudPaper>
     </MudStack>
 </MudPaper>
+
+@if (_contextMenuOpen)
+{
+    <div style="position:fixed; inset:0; z-index:1400;" @onclick="CloseContextMenu"
+         @oncontextmenu="CloseContextMenu" @oncontextmenu:preventDefault="true">
+        <MudPaper Elevation="8" Class="pa-2 spell-context-menu" @onclick:stopPropagation="true"
+            Style="@($"position:fixed; left:{_contextMenuX.ToString(System.Globalization.CultureInfo.InvariantCulture)}px; top:{_contextMenuY.ToString(System.Globalization.CultureInfo.InvariantCulture)}px; min-width:260px; max-width:320px; z-index:1401;")">
+            <MudText Typo="Typo.body1" Class="mb-1">Misspelled: <strong>@_contextWord</strong></MudText>
+
+            @if (_suggestions != null && _suggestions.Count > 0)
+            {
+                <MudText Typo="Typo.body1"><strong>Suggestions</strong></MudText>
+                <MudPaper MaxHeight="150px" Style="overflow-y:auto;" Elevation="0" Class="mb-1">
+                    @foreach (var suggestion in _suggestions)
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                            FullWidth="true" Class="justify-start" Style="text-transform: lowercase;"
+                            OnClick="@(() => ApplyCorrection(suggestion))">@suggestion</MudButton>
+                    }
+                </MudPaper>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="mb-1">No suggestions found</MudText>
+            }
+
+            <MudTextField @bind-Value="_customCorrection" Label="Replace with" Variant="Variant.Outlined"
+                Margin="Margin.Dense" Immediate="true" Class="mb-1"
+                OnKeyDown="OnCustomCorrectionKeyDown" />
+
+            <MudStack Row="true" Style="gap:4px;">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                    Disabled="@(string.IsNullOrWhiteSpace(_customCorrection) || _customCorrection == _contextWord)"
+                    OnClick="@(() => ApplyCorrection(_customCorrection))">Apply</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                    OnClick="AddToDictionary">Add to Dictionary</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                    OnClick="IgnoreSpellingViolation">Ignore</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                    OnClick="CloseContextMenu">Close</MudButton>
+            </MudStack>
+        </MudPaper>
+    </div>
+}
 
 <MudDialog @bind-Visible="_checkProgressDialog" Options="_dialogOptions">
     <TitleContent>
@@ -255,7 +269,6 @@
     private int _modelsChecked = 0;
     private bool _checkProgressDialog = false;
     private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
-    private static readonly DialogOptions _nonClosableDialogOptions = new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
     private string _checkingModel = "";
     private string _checkingToolName = "";
     private bool _issueDetailsVisible = false;
@@ -263,9 +276,37 @@
     private string _searchString = "";
     private bool IssuesScopeAllModels = false;
     private CancellationTokenSource? _checkCancellationTokenSource;
-    private bool _spellingPopoverOpen = false;
-    private string _spellingPopoverStyle = "";
     private IReadOnlyList<string>? _suggestions = null;
+    private HashSet<string>? _misspelledWords = null;
+    private DotNetObjectReference<CodeReview>? _spellCheckRef;
+    private bool _contextMenuOpen = false;
+    private double _contextMenuX;
+    private double _contextMenuY;
+    private string _contextWord = "";
+    private string _customCorrection = "";
+
+    // Scroll offsets (top, left) captured when a spelling correction is applied, restored after the
+    // file reloads and re-renders so the user stays where they were instead of jumping to the
+    // top-left. Null means "nothing pending".
+    private (double Top, double Left)? _pendingScroll;
+
+    // Baseline for the scroll restore: the _highlightedCode list reference at the moment of capture
+    // (i.e. the OLD content). The correction reload assigns a brand-new list when the corrected
+    // content renders, so we restore only on the render where _highlightedCode differs from this
+    // baseline. This reliably distinguishes the new-content render from any render of the old
+    // content that fires between capture and the re-render — without depending on catching the
+    // transient loading spinner, which coalesces away for small/fast files.
+    private List<string>? _scrollBaselineCode;
+
+    // The misspelled word to scroll into view after a spelling issue is clicked in the issues list.
+    // Consumed once the selected model's content has rendered (see OnAfterRenderAsync).
+    private string? _pendingScrollWord;
+
+    // Set when the correction context menu opens with a provisional position. On the next after-render
+    // OnAfterRenderAsync re-measures the now-rendered menu and clamps it within the viewport, writing
+    // the result back into _contextMenuX/_contextMenuY so .NET stays the source of truth (later
+    // keystroke re-renders keep the clamped spot). Flag-gated to run once per open, avoiding jitter.
+    private bool _repositionContextMenu;
 
     // Code rendering state
     private bool _isLoadingCode = false;
@@ -368,18 +409,17 @@
 
     private async void OnLogMessagesChanged()
     {
+        RecomputeMisspelledWords();
         await InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        @* if (firstRender)
+        if (firstRender)
         {
-            _hasRendered = true;
-            await LoadSettings();
-            _settingsLoaded = true;
-            StateHasChanged();
-        } *@
+            _spellCheckRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("spellCheck.init", _spellCheckRef);
+        }
         if (_currentModelNode == null && ((NavState.ModelID != null && NavState.ModelID.Length > 0) || NavState.SelectedModelIDs.Count > 0))
         {
             if (NavState.ModelID != null && NavState.ModelID.Length > 0)
@@ -387,6 +427,68 @@
             else
                 NavState.ChangeModelID(NavState.SelectedModelIDs.First());
         }
+
+        // Restore the scroll position captured before a spelling correction, but only once the
+        // *corrected* content has rendered. The reload assigns a brand-new _highlightedCode list,
+        // so a reference change from the captured baseline means the new content is now mounted.
+        // Any render of the old content that fires between capture and the re-render keeps the same
+        // reference and is correctly skipped. (Catching the transient loading spinner instead is
+        // unreliable: for small files the spinner render coalesces away before OnAfterRender runs.)
+        if (_pendingScroll is { } scroll && !_isLoadingCode && _highlightedCode is { Count: > 0 }
+            && !ReferenceEquals(_highlightedCode, _scrollBaselineCode))
+        {
+            _pendingScroll = null;
+            _scrollBaselineCode = null;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("spellCheck.setScroll", ".code-viewer", scroll.Top, scroll.Left);
+            }
+            catch (Exception)
+            {
+                // View may have been torn down; ignore.
+            }
+        }
+
+        // After clicking a spelling issue in the issues list, scroll the highlighted misspelled
+        // word into view once the (possibly newly selected) model's content has rendered. The JS
+        // helper retries across frames, so it tolerates the highlight spans appearing slightly
+        // after the code lines (RecomputeMisspelledWords runs just after the render).
+        if (_pendingScrollWord is { Length: > 0 } word && !_isLoadingCode && _highlightedCode is { Count: > 0 })
+        {
+            _pendingScrollWord = null;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("spellCheck.scrollWordIntoView", ".code-viewer", word);
+            }
+            catch (Exception)
+            {
+                // View may have been torn down; ignore.
+            }
+        }
+
+        // Reposition the correction context menu now that it has rendered and its real size is known.
+        // The JS helper anchors it below the right-clicked word and clamps it within the viewport;
+        // we write the clamped [left, top] back so .NET owns the final position (keystroke re-renders
+        // then keep it put). Gated by the flag so it runs once per open and never loops.
+        if (_repositionContextMenu && _contextMenuOpen)
+        {
+            _repositionContextMenu = false;
+            try
+            {
+                var pos = await JSRuntime.InvokeAsync<double[]>("spellCheck.positionContextMenu", ".spell-context-menu", 4);
+                if (pos is { Length: >= 2 })
+                {
+                    _contextMenuX = pos[0];
+                    _contextMenuY = pos[1];
+                    StateHasChanged();
+                }
+            }
+            catch (Exception)
+            {
+                // Menu may have been closed before measuring; ignore.
+            }
+        }
+
         await base.OnAfterRenderAsync(firstRender);
     }
 
@@ -437,6 +539,66 @@
         OpenModelicaCheckingService.OnCheckingComplete -= OnCheckingComplete;
 
         _checkCancellationTokenSource?.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        OnDispose();
+
+        if (_spellCheckRef != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("spellCheck.dispose");
+            }
+            catch (Exception)
+            {
+                // JS runtime may already be torn down during app shutdown — ignore.
+            }
+            _spellCheckRef.Dispose();
+            _spellCheckRef = null;
+        }
+    }
+
+    /// <summary>
+    /// Invoked from JavaScript when a highlighted misspelled word is right-clicked. Opens the
+    /// correction context menu at the cursor with suggestions for the word.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnMisspelledWordRightClick(string word, double x, double y)
+    {
+        if (string.IsNullOrEmpty(word))
+            return;
+
+        _contextWord = word;
+        _customCorrection = word;
+        _contextMenuX = x;
+        _contextMenuY = y;
+
+        // Track a representative violation for this word so Add to Dictionary / Ignore can reuse it.
+        _currentIssue = CodeReviewService.LogMessages.FirstOrDefault(m =>
+            m.ModelName == NavState.ModelID && IsSpellingViolation(m) && ExtractMisspelledWord(m) == word);
+
+        _suggestions = StyleCheckingService.GetSpellChecker()?.Suggest(word) ?? [];
+        _contextMenuOpen = true;
+        // Position is provisional (the word's bottom-left from JS). Once the menu has rendered and its
+        // real size is known, OnAfterRenderAsync re-measures and clamps it within the viewport.
+        _repositionContextMenu = true;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseContextMenu()
+    {
+        _contextMenuOpen = false;
+        _suggestions = null;
+        StateHasChanged();
+    }
+
+    private async Task OnCustomCorrectionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ApplyCorrection(_customCorrection);
     }
 
     private async Task ToggleAnnotations()
@@ -703,6 +865,7 @@
             _highlightedCode = cachedCode;
             _lines = Math.Max(10, cachedCode.Count);
             _modelicaCode = string.Join("\n", cachedCode);
+            _isLoadingCode = false;
 
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
 
@@ -750,8 +913,13 @@
             var showAnnotations = _showAnnotations;
             var oneOfEachSection = _settings.StyleChecking.OneOfEachSection;
 
-            // Run parse/render and VCS check concurrently, then update UI via
-            // ContinueWith to avoid queuing behind Blazor sync context renders.
+            // Render parse/format on a background thread. Display the code as soon as this
+            // completes — crucially, do NOT gate code display on the VCS status check.
+            // CheckModelVcsStatus calls GetWorkingCopyChanges, which shells out to the
+            // git/svn CLI and can be slow or block; coupling the two via Task.WhenAll meant
+            // a stalled VCS call left the loading spinner spinning forever even though the
+            // rendered code was ready in milliseconds. The VCS check now runs independently
+            // (mirroring the cache-hit path) and only updates the modified/diff indicator.
             var renderTask = Task.Run(() =>
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -772,9 +940,7 @@
                 return (visitor.Code, visitor.Code.Count, parseDuration, renderDuration);
             });
 
-            var vcsTask = Task.Run(() => CheckModelVcsStatus());
-
-            _ = Task.WhenAll(renderTask, vcsTask).ContinueWith(async _ =>
+            _ = renderTask.ContinueWith(async _ =>
             {
                 LoggingService.Debug("CodeReview",
                     $"  ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
@@ -782,37 +948,67 @@
                 if (NavState.ModelID != selectedModelId)
                     return;
 
-                var (code, lineCount, parseMs, renderMs) = renderTask.Result;
+                try
+                {
+                    var (code, lineCount, parseMs, renderMs) = renderTask.Result;
 
-                // If the model has an element prefix (redeclare, replaceable, etc.),
-                // prepend it to the class definition line (skipping any within clause)
-                PrependElementPrefix(code, modelNode.ElementPrefix, showHighlighted);
+                    // If the model has an element prefix (redeclare, replaceable, etc.),
+                    // prepend it to the class definition line (skipping any within clause)
+                    PrependElementPrefix(code, modelNode.ElementPrefix, showHighlighted);
 
-                LoggingService.Debug("CodeReview",
-                    $"  Parse: {parseMs}ms, Render: {renderMs}ms, Lines: {lineCount}");
+                    LoggingService.Debug("CodeReview",
+                        $"  Parse: {parseMs}ms, Render: {renderMs}ms, Lines: {lineCount}");
 
-                var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
+                    var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
+                    await InvokeAsync(() =>
+                    {
+                        LoggingService.Debug("CodeReview",
+                            $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
+
+                        _highlightedCode = code;
+                        _lines = Math.Max(10, lineCount);
+                        _modelicaCode = string.Join("\n", code);
+                        _isLoadingCode = false;
+
+                        // Store in cache for future clicks
+                        _renderCache[cacheKey] = code;
+
+                        OnIssuesScopeChanged(IssuesScopeAllModels);
+                        StateHasChanged();
+
+                        LoggingService.Debug("CodeReview",
+                            $"  Total: {totalSw.ElapsedMilliseconds}ms");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // A render fault must never strand the loading spinner.
+                    LoggingService.Error("CodeReview",
+                        $"Failed to render {selectedModelId}", ex);
+                    await InvokeAsync(() =>
+                    {
+                        if (NavState.ModelID == selectedModelId)
+                        {
+                            _isLoadingCode = false;
+                            StateHasChanged();
+                        }
+                    });
+                }
+            }, TaskScheduler.Default);
+
+            // VCS status check runs independently — never blocks code display. When it
+            // finishes it refreshes the modified/diff indicator for the current model.
+            _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
+            {
+                if (NavState.ModelID != selectedModelId)
+                    return;
+
                 await InvokeAsync(async () =>
                 {
-                    LoggingService.Debug("CodeReview",
-                        $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
-
-                    _highlightedCode = code;
-                    _lines = Math.Max(10, lineCount);
-                    _modelicaCode = string.Join("\n", code);
-                    _isLoadingCode = false;
-
-                    // Store in cache for future clicks
-                    _renderCache[cacheKey] = code;
-
-                    OnIssuesScopeChanged(IssuesScopeAllModels);
                     if (!_isModelModified)
                         _isDiffMode = false;
                     await SetViewMode(_isDiffMode, _diffViewMode);
                     StateHasChanged();
-
-                    LoggingService.Debug("CodeReview",
-                        $"  Total: {totalSw.ElapsedMilliseconds}ms");
                 });
             }, TaskScheduler.Default);
         }
@@ -1017,14 +1213,12 @@
         _currentIssue = args.Item;
         if (_currentIssue == null) return;
 
-        // Close any open spelling popover first
-        _spellingPopoverOpen = false;
         _suggestions = null;
 
         if (IsSpellingViolation(_currentIssue))
         {
-            // Show popover context menu for spelling violations
-            _spellingPopoverOpen = true;
+            // Arm a scroll so the misspelled word is brought into view once the model renders.
+            _pendingScrollWord = ExtractMisspelledWord(_currentIssue);
         }
         else if (!string.IsNullOrEmpty(_currentIssue.Details))
         {
@@ -1099,6 +1293,12 @@ font-style: italic;
 
 .code-linenumber {{
 color: {_settings.SyntaxHighlighting.LineNumberColor} !important;
+}}
+
+.code-misspell {{
+text-decoration: underline wavy #d32f2f;
+text-decoration-skip-ink: none;
+cursor: context-menu;
 }}
 ";
 
@@ -1297,7 +1497,35 @@ document.head.appendChild(style);
 
     private void OnIssuesScopeChanged(bool value) {
         IssuesScopeAllModels = value;
+        RecomputeMisspelledWords();
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Rebuilds the set of misspelled words for the current model from the spelling violations,
+    /// assigning a fresh instance so CodeViewer re-renders its highlight overlay.
+    /// </summary>
+    private void RecomputeMisspelledWords()
+    {
+        var modelId = NavState.ModelID;
+        if (string.IsNullOrEmpty(modelId))
+        {
+            _misspelledWords = null;
+            return;
+        }
+
+        var words = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var msg in CodeReviewService.LogMessages)
+        {
+            if (msg.ModelName == modelId && IsSpellingViolation(msg))
+            {
+                var word = ExtractMisspelledWord(msg);
+                if (!string.IsNullOrEmpty(word))
+                    words.Add(word);
+            }
+        }
+
+        _misspelledWords = words.Count > 0 ? words : null;
     }
 
     private static readonly Regex MisspelledWordRegex = new(@"^Misspelled word '([^']+)'", RegexOptions.Compiled);
@@ -1317,7 +1545,7 @@ document.head.appendChild(style);
 
     private async Task AddToDictionary()
     {
-        var word = ExtractMisspelledWord(_currentIssue);
+        var word = ExtractMisspelledWord(_currentIssue) ?? (_contextMenuOpen ? _contextWord : null);
         if (string.IsNullOrEmpty(word))
             return;
 
@@ -1332,9 +1560,10 @@ document.head.appendChild(style);
             m.Summary == $"Misspelled word '{word}' in documentation info" ||
             m.Summary == $"Misspelled word '{word}' in documentation revisions");
 
-        _spellingPopoverOpen = false;
+        _contextMenuOpen = false;
         _suggestions = null;
         _issueDetailsVisible = false;
+        RecomputeMisspelledWords();
         StateHasChanged();
     }
 
@@ -1343,27 +1572,151 @@ document.head.appendChild(style);
         if (_currentIssue != null)
             CodeReviewService.RemoveLogMessage(_currentIssue);
 
-        _spellingPopoverOpen = false;
+        _contextMenuOpen = false;
         _suggestions = null;
+        RecomputeMisspelledWords();
         StateHasChanged();
     }
 
-    private void ShowSuggestions()
+    /// <summary>
+    /// Replaces the right-clicked misspelled word with the chosen correction throughout the
+    /// containing file's descriptions and documentation, persists the reformatted file to disk
+    /// immediately, reloads it, and refreshes the view. Occurrences inside links/hrefs and code
+    /// blocks are left untouched (see <see cref="SpellingCorrector"/>).
+    /// </summary>
+    private async Task ApplyCorrection(string newWord)
     {
-        var word = ExtractMisspelledWord(_currentIssue);
-        if (string.IsNullOrEmpty(word))
+        var oldWord = _contextWord;
+        if (_currentModelNode == null || string.IsNullOrEmpty(oldWord)
+            || string.IsNullOrWhiteSpace(newWord) || newWord.Trim() == oldWord)
+        {
+            CloseContextMenu();
             return;
+        }
+        newWord = newWord.Trim();
 
-        var spellChecker = StyleCheckingService.GetSpellChecker();
-        _suggestions = spellChecker?.Suggest(word) ?? [];
-        StateHasChanged();
-    }
+        var graph = LibraryDataService.CombinedGraph;
+        var fileId = _currentModelNode.ContainingFileId;
+        var fileNode = string.IsNullOrEmpty(fileId) ? null : graph.GetNode<FileNode>(fileId);
+        if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath))
+        {
+            Snackbar.Add("Cannot locate the file on disk to correct.", MudBlazor.Severity.Warning);
+            CloseContextMenu();
+            return;
+        }
 
-    private void CloseSpellingPopover()
-    {
-        _spellingPopoverOpen = false;
-        _suggestions = null;
-        StateHasChanged();
+        // Resolve the file-owner: the topmost model stored in this file. Its ModelicaCode is the
+        // complete file slice, so correcting and re-rendering it rewrites the whole .mo file.
+        var fileOwner = graph.GetModelsInFile(fileId!).FirstOrDefault(m =>
+                string.IsNullOrEmpty(m.ParentModelName)
+                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId)
+            ?? _currentModelNode;
+
+        // Correct every occurrence of the word inside descriptions and documentation prose in the
+        // whole file. Links/hrefs and code blocks are preserved by SpellingCorrector.
+        var (correctedCode, replacements) = SpellingCorrector.ReplaceWordInStrings(
+            fileOwner.Definition.ModelicaCode ?? "", oldWord, newWord);
+
+        if (replacements == 0)
+        {
+            Snackbar.Add($"Could not find '{oldWord}' to correct in this file.", MudBlazor.Severity.Warning);
+            CloseContextMenu();
+            return;
+        }
+
+        // Never persist broken code: abort if the correction somehow fails to parse.
+        var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(correctedCode);
+        if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
+        {
+            Snackbar.Add("Correction was not applied: the result failed to parse.", MudBlazor.Severity.Error);
+            CloseContextMenu();
+            return;
+        }
+
+        // Render the whole file via the saver (same formatting as format-on-save).
+        fileOwner.Definition.ModelicaCode = correctedCode;
+        fileOwner.Definition.ParsedCode = null;
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(
+            fileOwner,
+            _settings.StyleChecking.OneOfEachSection,
+            _settings.StyleChecking.ImportStatementsFirst,
+            _settings.StyleChecking.ComponentsBeforeClasses);
+
+        var filePath = fileNode.FilePath;
+
+        // Identify the repository (if any) so file monitoring can be paused across the write,
+        // preventing the watcher from echoing our own change back as a pending refresh.
+        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(fileOwner.Id));
+        var repository = string.IsNullOrEmpty(library?.RepositoryId)
+            ? null : RepositoryService.GetRepository(library.RepositoryId);
+        var repoId = repository?.Id;
+        var monitoredRoot = repository?.VcsRootPath;
+        bool monitorPaused = false;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(repoId))
+            {
+                FileMonitoringService.StopMonitoring(repoId);
+                monitorPaused = true;
+            }
+            await Task.Run(() => File.WriteAllText(filePath, rendered));
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to write corrected file {filePath}", ex);
+            Snackbar.Add($"Failed to save correction: {ex.Message}", MudBlazor.Severity.Error);
+            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+            CloseContextMenu();
+            return;
+        }
+
+        // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
+        var affected = await LibraryDataService.ReloadFileAsync(filePath);
+
+        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+        {
+            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+            FileMonitoringService.NotifyFileActivity(repoId!);   // file is now genuinely modified
+        }
+
+        // Capture the current scroll position so it can be restored after the reload re-renders
+        // the code view (the correction changes only a word, so the same offsets stay valid).
+        // Captured here — past every early-return and just before the re-render is triggered — so
+        // a stale pending offset can never leak into ordinary navigation. The scroll position is
+        // unchanged by the sync edit and the off-thread file write above, so it still reflects
+        // where the user was looking. _scrollBaselineCode records the current (old) content list so
+        // the restore fires only when the corrected content renders (see OnAfterRenderAsync).
+        try
+        {
+            var offsets = await JSRuntime.InvokeAsync<double[]>("spellCheck.getScroll", ".code-viewer");
+            _pendingScroll = offsets is { Length: >= 2 } ? (offsets[0], offsets[1]) : null;
+            _scrollBaselineCode = _highlightedCode;
+        }
+        catch (Exception)
+        {
+            _pendingScroll = null;
+        }
+
+        // Invalidate cached renders for every model that lived in the file, then re-fetch the
+        // current node (reload replaced the old instances).
+        NavState.ModelContentChanged(affected);
+        _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
+
+        // Drop resolved spelling violations for this word on the file's models — they're fixed now.
+        var affectedSet = new HashSet<string>(affected, StringComparer.Ordinal);
+        CodeReviewService.RemoveLogMessagesByPredicate(m =>
+            affectedSet.Contains(m.ModelName) && IsSpellingViolation(m) && ExtractMisspelledWord(m) == oldWord);
+
+        CloseContextMenu();
+        OnModelSelected();   // re-render with corrected content and refresh VCS status
+        RecomputeMisspelledWords();
+
+        Snackbar.Add(
+            $"Replaced '{oldWord}' with '{newWord}' ({replacements} occurrence{(replacements == 1 ? "" : "s")}).",
+            MudBlazor.Severity.Success);
+        await InvokeAsync(StateHasChanged);
     }
 
 }
