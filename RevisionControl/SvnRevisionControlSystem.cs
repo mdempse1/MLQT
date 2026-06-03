@@ -649,35 +649,12 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             var url = ResolveUrl(repositoryPath);
 
-            // Step 1: find the copy that created this branch, and its source revision.
-            // Entries are newest-first; we keep overwriting, so the final capture corresponds
-            // to the oldest entry — the branch-establishing copy.
-            var doc = SvnCli.RunXml("log", url, "--stop-on-copy", "-v");
-            if (doc?.Root == null)
-                return null;
-
-            long? copyFromRevision = null;
-            foreach (var le in doc.Root.Elements("logentry"))
-            {
-                long? candidate = null;
-                var paths = le.Element("paths");
-                if (paths != null)
-                {
-                    foreach (var p in paths.Elements("path"))
-                    {
-                        if (long.TryParse(p.Attribute("copyfrom-rev")?.Value, out var r) && r > 0)
-                            candidate = r;
-                    }
-                }
-                if (candidate.HasValue)
-                    copyFromRevision = candidate;
-            }
-
+            var copyFromRevision = FindBranchPointRevision(url);
             if (copyFromRevision == null)
                 return null;
 
-            // Step 2: resolve the date of the copy-from revision. Query at the repository
-            // root so the lookup is independent of which paths existed at that revision.
+            // Resolve the date of the copy-from revision. Query at the repository root so the
+            // lookup is independent of which paths existed at that revision.
             var info = GetInfo(url);
             if (info == null)
                 return null;
@@ -695,6 +672,67 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             RevisionControlLogger.Error("GetBranchPointDate", ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Gets the copy-from revision the specified branch was created from. See
+    /// <see cref="IRevisionControlSystem.GetBranchPointRevision"/> for semantics.
+    /// </summary>
+    public string? GetBranchPointRevision(string repositoryPath, string? startRevision = null)
+    {
+        try
+        {
+            var url = ResolveUrl(repositoryPath);
+            var copyFromRevision = FindBranchPointRevision(url, startRevision);
+            return copyFromRevision?.ToString();
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetBranchPointRevision", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Finds the copy that established this branch and returns its copy-from revision, by
+    /// walking the branch history with <c>svn log --stop-on-copy -v</c>. Entries are
+    /// newest-first; we keep overwriting, so the final capture corresponds to the oldest
+    /// entry — the branch-establishing copy. Returns null if the path has no copy origin
+    /// (trunk itself, or a non-branch path).
+    ///
+    /// When <paramref name="startRevision"/> is supplied, the URL is pegged at that revision
+    /// (<c>URL@REV</c>) so the branch is resolved as it existed at that revision — important
+    /// for branches that were later rebased (renamed + recreated from a newer trunk revision),
+    /// where HEAD would otherwise report a copy-from revision newer than the revision under test.
+    /// </summary>
+    private static long? FindBranchPointRevision(string url, string? startRevision = null)
+    {
+        var target = url;
+        if (!string.IsNullOrWhiteSpace(startRevision))
+            target = $"{url}@{SvnCli.NormalizeRevision(startRevision)}";
+
+        var doc = SvnCli.RunXml("log", target, "--stop-on-copy", "-v");
+        if (doc?.Root == null)
+            return null;
+
+        long? copyFromRevision = null;
+        foreach (var le in doc.Root.Elements("logentry"))
+        {
+            long? candidate = null;
+            var paths = le.Element("paths");
+            if (paths != null)
+            {
+                foreach (var p in paths.Elements("path"))
+                {
+                    if (long.TryParse(p.Attribute("copyfrom-rev")?.Value, out var r) && r > 0)
+                        candidate = r;
+                }
+            }
+            if (candidate.HasValue)
+                copyFromRevision = candidate;
+        }
+
+        return copyFromRevision;
     }
 
     /// <summary>

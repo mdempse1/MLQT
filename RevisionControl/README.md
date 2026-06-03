@@ -110,6 +110,17 @@ foreach (var file in changes)
 DateTimeOffset? branchPoint = svn.GetBranchPointDate(
     @"https://svn.example.com/repo/releases/2026.1");
 
+// Get the source REVISION the branch was created from (the copy-from revision) — the
+// revision-number counterpart to GetBranchPointDate. Use this as the "old" side of a
+// change diff when the reference baseline lives on a different timeline than the branch
+// under test: the branch point is an ancestor of the branch head, so the diff yields
+// exactly the changes made on the branch. SVN returns the copy-from revision; Git null.
+// Pass the revision under test as startRevision to peg the search (SVN URL@REV) so a
+// branch later rebased (renamed + recreated from newer trunk) still resolves its ORIGINAL
+// branch point rather than the post-rebase copy-from revision reported by HEAD.
+string? branchPointRev = svn.GetBranchPointRevision(
+    @"https://svn.example.com/repo/releases/2026.1", startRevision: "38810");
+
 // Get uncommitted working copy changes
 List<VcsWorkingCopyFile> wcChanges = git.GetWorkingCopyChanges(@"C:\Projects\MyRepo");
 ```

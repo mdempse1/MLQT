@@ -87,6 +87,19 @@ public class SvnRevisionControlSystemTests
     }
 
     [Fact]
+    public void GetBranchPointRevision_WithInvalidUrl_ReturnsNull()
+    {
+        // Arrange
+        var invalidUrl = "http://invalid.example.com/svn/nonexistent/branches/xyz";
+
+        // Act
+        var result = _svn.GetBranchPointRevision(invalidUrl);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void GetCurrentRevision_WithNonExistentPath_ReturnsNull()
     {
         // Arrange

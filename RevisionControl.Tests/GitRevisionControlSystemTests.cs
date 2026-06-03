@@ -166,6 +166,15 @@ public class GitRevisionControlSystemTests : IDisposable
     }
 
     [Fact]
+    public void GetBranchPointRevision_AlwaysReturnsNull()
+    {
+        // Git implementation is intentionally not supported — callers (e.g. the planner)
+        // log a warning and fall back to the reference revision.
+        var result = _git.GetBranchPointRevision(_tempRepoPath);
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void GetCurrentRevision_WithNonGitRepo_ReturnsNull()
     {
         // Arrange - empty directory

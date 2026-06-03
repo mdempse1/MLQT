@@ -289,5 +289,33 @@ public interface IRevisionControlSystem
     /// <param name="repositoryPath">Path or URL to the branch (e.g. a release or ticket branch).</param>
     /// <returns>The commit date of the copy-from revision, or null if it could not be determined.</returns>
     DateTimeOffset? GetBranchPointDate(string repositoryPath);
+
+    /// <summary>
+    /// Gets the source revision the specified branch was created from — i.e. the revision on
+    /// the parent branch at which the new branch diverges (the copy-from revision). This is the
+    /// revision-number counterpart to <see cref="GetBranchPointDate"/>.
+    ///
+    /// Use this as the "old" side of a change diff when the reference baseline lives on a
+    /// different timeline than the branch under test: the branch point is an ancestor of the
+    /// branch's head, so diffing against it yields exactly the changes made on the branch,
+    /// without mixing in unrelated changes from the reference timeline.
+    ///
+    /// For SVN: walks the branch's history with <c>--stop-on-copy</c> to find the copy that
+    /// established the branch and returns its copy-from revision.
+    /// For Git: not currently implemented — returns null.
+    ///
+    /// When <paramref name="startRevision"/> is supplied, the search is pegged at that revision
+    /// (SVN <c>URL@REV</c>): the branch is resolved as it existed at that revision and its copy
+    /// origin traced from there, rather than from HEAD. This matters when a branch has since
+    /// been rebased (in SVN: renamed, recreated from a newer trunk revision under the same name,
+    /// and the original deleted) — at HEAD the branch reports a copy-from revision that may be
+    /// NEWER than the revision under test. Pegging at the test revision resolves the original
+    /// branch line and its true branch point.
+    /// </summary>
+    /// <param name="repositoryPath">Path or URL to the branch (e.g. a release or ticket branch).</param>
+    /// <param name="startRevision">Optional revision to peg the search at (the revision under
+    /// test). When null/empty the search runs from HEAD.</param>
+    /// <returns>The copy-from revision as a string, or null if it could not be determined.</returns>
+    string? GetBranchPointRevision(string repositoryPath, string? startRevision = null);
 }
 
