@@ -118,6 +118,47 @@ public class DymolaInterface : IDisposable
         }
     }
 
+    /// <summary>
+    /// True if this interface started — and therefore owns — a still-running Dymola
+    /// process. False when it merely attached to a Dymola that some other process
+    /// started, or after <see cref="Detach"/>.
+    /// </summary>
+    public bool OwnsProcess => _dymolaProcess != null && !_dymolaProcess.HasExited;
+
+    /// <summary>
+    /// Relinquish ownership of the underlying Dymola process without terminating it.
+    /// After Detach, <see cref="Dispose"/> / <see cref="StopDymolaProcessAsync"/> no
+    /// longer kill the process, so the running Dymola survives this interface being
+    /// torn down. Used when the MCP server shuts down but should leave Dymola running
+    /// for the user's follow-on work.
+    /// </summary>
+    public void Detach()
+    {
+        // Releasing the Process handle does NOT terminate the OS process (only Kill
+        // does that); it just drops our local reference to it.
+        try { _dymolaProcess?.Dispose(); } catch { /* ignore */ }
+        _dymolaProcess = null;
+    }
+
+    /// <summary>
+    /// Lightweight check for whether a Dymola JSON-RPC server is answering on the
+    /// given port, using a short-lived client with its own timeout so callers can
+    /// probe several candidate ports cheaply without risking the 300s command timeout
+    /// on a port held by something that is not Dymola.
+    /// </summary>
+    public static async Task<bool> PingAsync(int port, string hostname = "127.0.0.1", TimeSpan? timeout = null)
+    {
+        using var client = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(2) };
+        try
+        {
+            var request = new { method = "ping", @params = (object?)null, id = 1 };
+            var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            var response = await client.PostAsync($"http://{hostname}:{port}", content);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
     private bool IsDymolaRunning()
     {
         try
@@ -415,6 +456,20 @@ public class DymolaInterface : IDisposable
         var result = await CallDymolaFunctionAsync(cmd, null);
         return GetBooleanResult(result);
     }
+
+    /// <summary>
+    /// Show a modal message dialog inside the Dymola GUI and block until the user
+    /// responds or the dialog times out. Maps to the Dymola builtin
+    /// <c>messageDialog(message, timeOut, position, continueAfterStop)</c>.
+    /// Returns the builtin's <c>ok</c> flag — true if the user pressed continue OR
+    /// the dialog timed out, false if the user pressed stop. Because continue and
+    /// time-out both return true, callers that must distinguish them (e.g. to treat
+    /// a silent time-out as "no") should measure the call duration.
+    /// </summary>
+    public async Task<bool> ShowMessageDialogAsync(string message, double timeOut = 5,
+        bool continueAfterStop = false, double[]? position = null)
+        => GetBooleanResult(await CallDymolaFunctionAsync("messageDialog",
+            new object?[] { message, timeOut, position ?? new[] { 0.4, 0.4 }, continueAfterStop }));
 
     public async Task<string> GetLastErrorLogAsync()
     {
