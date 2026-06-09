@@ -11,4 +11,8 @@
     <PackageReference Include="NLog" Version="6.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="RevisionControl.Tests" />
+  </ItemGroup>
+
 </Project>
