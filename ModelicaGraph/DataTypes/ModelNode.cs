@@ -42,6 +42,13 @@ public class ModelNode : GraphNode
     public string ClassType { get; set; } = "model";
 
     /// <summary>
+    /// Whether the class carries the <c>partial</c> prefix — intended to be
+    /// extended, not instantiated directly. Captured separately from
+    /// <see cref="ClassType"/>, which only records the restriction keyword.
+    /// </summary>
+    public bool IsPartial { get; set; }
+
+    /// <summary>
     /// Starting line number in the source file.
     /// </summary>
     public int StartLine { get; set; }

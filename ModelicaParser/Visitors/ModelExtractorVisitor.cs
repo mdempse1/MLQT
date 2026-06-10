@@ -79,7 +79,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
-                    ElementPrefix = _elementPrefix
+                    ElementPrefix = _elementPrefix,
+                    IsPartial = GetIsPartial(prefixes)
                 };
 
                 ExtractAnnotations(longSpec.composition(), modelInfo);
@@ -117,7 +118,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
-                    ElementPrefix = _elementPrefix
+                    ElementPrefix = _elementPrefix,
+                    IsPartial = GetIsPartial(prefixes)
                 };
 
                 _models.Add(modelInfo);
@@ -143,7 +145,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     IsNested = _parentModelNames.Count > 0,
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
-                    ElementPrefix = _elementPrefix
+                    ElementPrefix = _elementPrefix,
+                    IsPartial = GetIsPartial(prefixes)
                 };
 
                 _models.Add(modelInfo);
@@ -286,6 +289,14 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
         var prefix = _sourceCode.Substring(elementStart, classDefStart - elementStart).Trim();
         return prefix;
     }
+
+    // The class_prefixes rule is `('partial')? (class|model|...)`, so the
+    // partial keyword (when present) sits at the front of the concatenated
+    // GetText(). No other prefix keyword contains the substring "partial", and
+    // the class name lives in class_specifier (not here), so a plain Contains
+    // check is unambiguous.
+    private static bool GetIsPartial(modelicaParser.Class_prefixesContext context) =>
+        context.GetText().Contains("partial");
 
     private static string GetClassType(modelicaParser.Class_prefixesContext context)
     {

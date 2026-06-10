@@ -311,6 +311,21 @@ end PartialModel;";
     Assert.Single(models);
     Assert.Equal("PartialModel", models[0].Name);
     Assert.Equal("model", models[0].ClassType);
+    Assert.True(models[0].IsPartial);
+  }
+
+  [Fact]
+  public void ExtractModels_NonPartialModel_IsNotPartial()
+  {
+    var code = @"
+model PlainModel
+  Real x;
+end PlainModel;";
+
+    var models = ExtractModels(code);
+
+    Assert.Single(models);
+    Assert.False(models[0].IsPartial);
   }
 
   [Fact]

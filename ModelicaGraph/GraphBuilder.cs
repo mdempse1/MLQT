@@ -80,6 +80,7 @@ public static class GraphBuilder
 
                 // Store additional information as typed properties
                 modelNode.ClassType = modelInfo.ClassType;
+                modelNode.IsPartial = modelInfo.IsPartial;
                 modelNode.StartLine = modelInfo.StartLine;
                 modelNode.StopLine = modelInfo.StopLine;
                 modelNode.StartIndex = modelInfo.StartIndex;
