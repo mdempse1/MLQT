@@ -71,6 +71,17 @@ var simResult = await dymola.SimulateModelAsync(
 - `DymolaInterface/DymolaFactory.cs` - Factory pattern
 - `MLQT.Services/DymolaCheckingService.cs` - Editor integration
 
+### Culture invariance
+Modelica command strings always use `.` as the decimal separator and never use `,`
+as a thousands separator. When encoding scalar/array values into `name=value` commands
+(`SetVariableAsync`, named arguments via `FixNamedArgument`/`FormatModelicaArray`), the
+interface formats numeric values through the `FormatScalar` helper, which uses
+`CultureInfo.InvariantCulture`. This means correct output regardless of the host
+machine's locale — important because DymolaInterface is a shared library consumed by
+programs other than MLQT, which may not set an invariant default culture. Any new code
+that emits numbers into Modelica command text must route through `FormatScalar` (or
+otherwise specify `InvariantCulture`) rather than calling `.ToString()` directly.
+
 ---
 
 ## OpenModelicaInterface
@@ -212,6 +223,14 @@ await Examples.RunAllExamples();
 - `OpenModelicaInterface/OpenModelicaFactory.cs` - Factory pattern
 - `OpenModelicaInterface/Examples.cs` - Usage examples
 - `MLQT.Services/OpenModelicaCheckingService.cs` - Editor integration
+
+### Culture invariance
+As with DymolaInterface, OMC commands require '.' as the decimal separator. The
+`simulate(...)` command is assembled by the `BuildSimulateCommand` helper, which uses
+`FormattableString.Invariant` so interpolated `double` values (startTime, stopTime,
+tolerance) are formatted invariantly regardless of the host locale. New commands that
+interpolate numbers must do the same (wrap the interpolated string in
+`FormattableString.Invariant`, as a single interpolated literal — not `$"..." + $"..."`).
 
 ---
 

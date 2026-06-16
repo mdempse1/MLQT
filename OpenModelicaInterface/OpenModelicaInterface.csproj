@@ -11,4 +11,8 @@
     <PackageReference Include="NetMQ" Version="4.0.2.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenModelicaInterface.Tests" />
+  </ItemGroup>
+
 </Project>

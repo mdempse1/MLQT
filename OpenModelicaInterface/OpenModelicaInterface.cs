@@ -268,11 +268,26 @@ public class OpenModelicaInterface : IDisposable
         double tolerance = 1e-6,
         string method = "dassl")
     {
-        var command = $"simulate({modelName}, startTime={startTime}, stopTime={stopTime}, " +
-                     $"numberOfIntervals={numberOfIntervals}, tolerance={tolerance}, method=\"{method}\")";
+        var command = BuildSimulateCommand(modelName, startTime, stopTime, numberOfIntervals, tolerance, method);
         var response = await SendCommandAsync(command);
 
         return ParseSimulationResult(response);
+    }
+
+    /// <summary>
+    /// Builds the OMC <c>simulate(...)</c> command string. Modelica/OMC commands are
+    /// culture-invariant: numeric values must use '.' as the decimal separator regardless
+    /// of the host machine's locale. <see cref="FormattableString.Invariant"/> forces
+    /// invariant-culture formatting of the interpolated doubles. Note this must be a single
+    /// interpolated string (not <c>$"..." + $"..."</c>, which concatenates to a plain string
+    /// and would lose the invariant formatting).
+    /// </summary>
+    internal static string BuildSimulateCommand(
+        string modelName, double startTime, double stopTime, int numberOfIntervals,
+        double tolerance, string method)
+    {
+        return FormattableString.Invariant(
+            $"simulate({modelName}, startTime={startTime}, stopTime={stopTime}, numberOfIntervals={numberOfIntervals}, tolerance={tolerance}, method=\"{method}\")");
     }
 
     /// <summary>

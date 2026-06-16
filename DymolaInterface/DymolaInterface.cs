@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -252,7 +253,7 @@ public class DymolaInterface : IDisposable
         else if (fixedValue is bool b)
             text = b ? "true" : "false";
         else
-            text = fixedValue.ToString() ?? "";
+            text = FormatScalar(fixedValue);
 
         return named.Name + "=" + text;
     }
@@ -269,10 +270,26 @@ public class DymolaInterface : IDisposable
             else if (item is bool ib)
                 sb.Append(ib ? "true" : "false");
             else
-                sb.Append(item?.ToString() ?? "");
+                sb.Append(FormatScalar(item));
         }
         sb.Append('}');
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Format a scalar value for inclusion in a Modelica command string. Numeric and
+    /// other <see cref="IFormattable"/> values are formatted with the invariant culture
+    /// so the decimal separator is always '.', as Modelica requires — regardless of the
+    /// host machine's locale (e.g. a comma-decimal culture must not emit <c>3,14</c>).
+    /// </summary>
+    private static string FormatScalar(object? value)
+    {
+        return value switch
+        {
+            null => "",
+            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? ""
+        };
     }
 
     private static string EscapeModelicaString(string value)
@@ -436,12 +453,12 @@ public class DymolaInterface : IDisposable
                     foreach (var item in arr)
                     {
                         if (item is string si) items.Add("\"" + EscapeModelicaString(si) + "\"");
-                        else items.Add(item?.ToString() ?? "");
+                        else items.Add(FormatScalar(item));
                     }
                     s = "{" + string.Join(",", items) + "}";
                     break;
                 }
-            default: s = value?.ToString() ?? ""; break;
+            default: s = FormatScalar(value); break;
         }
         return await ExecuteCommandAsync(name + "=" + s);
     }
