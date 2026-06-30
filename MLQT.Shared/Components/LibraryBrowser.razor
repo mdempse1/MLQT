@@ -26,6 +26,7 @@
         <ItemTemplate Context="treeItem">
             <MudTreeViewItem Value="@treeItem.Value"
                         Items="@treeItem.Children"
+                        ItemsChanged="@(new Action<IReadOnlyCollection<ITreeItemData<ModelNode>>>(items => OnNodeChildrenLoaded(treeItem, items)))"
                         Expanded="@treeItem.Expanded"
                         ExpandedChanged="@((bool expanded) => OnNodeExpandedChanged(treeItem, expanded))"
                         CanExpand="@treeItem.Expandable"
@@ -192,6 +193,7 @@ else if (Repository != null)
                 <ItemTemplate Context="treeItem">
                     <MudTreeViewItem Value="@treeItem.Value"
                                 Items="@treeItem.Children"
+                                ItemsChanged="@(new Action<IReadOnlyCollection<ITreeItemData<ModelNode>>>(items => OnNodeChildrenLoaded(treeItem, items)))"
                                 Expanded="@treeItem.Expanded"
                                 ExpandedChanged="@((bool expanded) => OnNodeExpandedChanged(treeItem, expanded))"
                                 CanExpand="@treeItem.Expandable"
@@ -678,6 +680,26 @@ else if (Repository != null)
                 _expandedNodeIds.Remove(node.Value.Id);
             }
         }
+    }
+
+    /// <summary>
+    /// Persists children loaded on demand by <see cref="LoadServerData"/> back into the
+    /// <c>treeItem.Children</c> data tree.
+    /// <para>
+    /// Required by MudBlazor 9.4+: when a MudTreeView has both <c>ItemTemplate</c> and
+    /// <c>Items</c> set, <c>GetSelectableValues()</c> derives the set of selectable values
+    /// from the <c>Items</c> data tree (not the rendered components). A child loaded on
+    /// demand that isn't written back here is therefore treated as unselectable —
+    /// <c>SetSelectedValueAsync</c> resets the selection to default and the click appears to
+    /// do nothing. Writing the loaded children back keeps the data tree complete so nested
+    /// nodes select on the first click. (In 9.0 selectable values came from the registered
+    /// items, so this wiring wasn't needed for selection.)
+    /// </para>
+    /// </summary>
+    private void OnNodeChildrenLoaded(
+        ITreeItemData<ModelNode> treeItem, IReadOnlyCollection<ITreeItemData<ModelNode>> children)
+    {
+        treeItem.Children = children?.ToList();
     }
 
     private async void OnSelectionModeChanged()
