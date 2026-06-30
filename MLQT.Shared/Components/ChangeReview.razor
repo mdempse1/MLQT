@@ -36,6 +36,7 @@
                         <MudTreeViewItem T="FileTreeNode"
                                             Value="@node.Value"
                                             Items="@node.Children"
+                                            ItemsChanged="@(new Action<IReadOnlyCollection<ITreeItemData<FileTreeNode>>>(items => OnNodeChildrenLoaded(node, items)))"
                                             Expanded="@node.Expanded"
                                             ExpandedChanged="@((bool expanded) => OnExpandNode(node, expanded))"
                                             CanExpand="@node.Expandable">
@@ -328,6 +329,20 @@
     {
         node.Expanded = expanded;
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Persists children loaded on demand by <see cref="LoadServerData"/> back into the
+    /// <c>node.Children</c> data tree. Required by MudBlazor 9.4+: with both
+    /// <c>ItemTemplate</c> and <c>Items</c> set, selectable values are derived from the
+    /// <c>Items</c> data tree, so a lazily-loaded child that isn't written back is treated
+    /// as unselectable and clicking it resets selection to default (the click does nothing).
+    /// See LibraryBrowser for the same fix.
+    /// </summary>
+    private void OnNodeChildrenLoaded(
+        ITreeItemData<FileTreeNode> node, IReadOnlyCollection<ITreeItemData<FileTreeNode>> children)
+    {
+        node.Children = children?.ToList();
     }
 
     private List<string> GetAllChildFiles(FileTreeNode node)
