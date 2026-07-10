@@ -34,13 +34,22 @@ public class DependencyResourceToolsTests
     }
 
     [Fact]
-    public void GetDependencies_BeforeAnalyze_FlagsNotAnalyzed()
+    public void GetDependencies_BeforeAnalyze_TellsYouToAnalyze()
     {
         using var host = new TestHost();
         var (deps, _) = Load(host);
-        var res = ToolAssert.Ok<DependencyResult>(deps.GetDependencies("DepLib.Middle"));
-        Assert.False(res.DependenciesAnalyzed);
-        Assert.Equal(0, res.Count);
+        // The class exists, but analysis has not run — guide to analyze_dependencies, not "not found".
+        var err = ToolAssert.Error(deps.GetDependencies("DepLib.Middle"));
+        Assert.Contains("analyze_dependencies", err.Error);
+    }
+
+    [Fact]
+    public void GetDependencies_NoLibrary_TellsYouToLoad()
+    {
+        using var host = new TestHost();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        var err = ToolAssert.Error(deps.GetDependencies("Modelica.Blocks.Continuous.Integrator"));
+        Assert.Contains("load_", err.Error);
     }
 
     [Fact]

@@ -80,7 +80,7 @@ public sealed class StyleTools
     {
         var node = _libraries.GetModelById(classId);
         if (node is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
         if (node.IsParseFailurePlaceholder)
             return new ToolError($"Class '{classId}' failed to parse and cannot be style-checked.");
 
@@ -104,6 +104,9 @@ public sealed class StyleTools
         [Description("Rules to apply. Omit to use the current global settings.")]
         StyleSettingsInput? settings = null)
     {
+        if (ToolDiagnostics.RequireLibrary(_libraries, "checking a library") is { } noLib)
+            return noLib;
+
         IReadOnlyList<ModelNode> models;
         if (libraryId is not null)
         {
@@ -158,6 +161,9 @@ public sealed class StyleTools
         [Description("Max items to return (default 100, max 1000).")] int limit = 100,
         [Description("Items to skip for pagination (default 0).")] int offset = 0)
     {
+        if (ToolDiagnostics.RequireLibrary(_libraries, "listing issues") is { } noLib)
+            return noLib;
+
         limit = Math.Clamp(limit, 1, MaxIssueLimit);
         offset = Math.Max(offset, 0);
 
@@ -226,8 +232,4 @@ public sealed class StyleTools
             .ToList();
         return new CheckResult(modelsChecked, violations.Count, shown, violations.Count > shown.Count);
     }
-
-    private static ToolError NotFound(string classId) =>
-        new($"No class with id '{classId}'. Ensure a library is loaded and the id is fully-qualified; " +
-            "use search_classes to find it.");
 }

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph.DataTypes;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
@@ -52,6 +53,9 @@ public sealed class VcsTools
         var repo = _repositories.GetRepository(repositoryId);
         if (repo is null)
             return new ToolError($"No repository with id '{repositoryId}'. Call list_repositories.");
+        if (ToolDiagnostics.RequireLibrary(_libraries,
+                "mapping changed files to classes (load_repository loads the repository's libraries by default)") is { } noLib)
+            return noLib;
 
         var files = ResolveChangedFiles(repo, revision);
         var allClassIds = files.SelectMany(f => f.ClassIds).Distinct(StringComparer.Ordinal)
@@ -76,6 +80,9 @@ public sealed class VcsTools
         var repo = _repositories.GetRepository(repositoryId);
         if (repo is null)
             return new ToolError($"No repository with id '{repositoryId}'. Call list_repositories.");
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries,
+                "analysing change impact (use get_changed_classes to see the changed classes without analysis)");
 
         limit = Math.Clamp(limit, 1, MaxImpactLimit);
         offset = Math.Max(offset, 0);

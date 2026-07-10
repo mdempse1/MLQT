@@ -77,7 +77,7 @@ public sealed class FormattingTools
     {
         var node = _libraries.GetModelById(classId);
         if (node is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
         if (node.IsParseFailurePlaceholder)
             return new ToolError($"Class '{classId}' failed to parse and cannot be formatted.");
 
@@ -111,8 +111,4 @@ public sealed class FormattingTools
     }
 
     private static string NormalizeEol(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
-
-    private static ToolError NotFound(string classId) =>
-        new($"No class with id '{classId}'. Ensure a library is loaded and the id is fully-qualified; " +
-            "use search_classes to find it.");
 }

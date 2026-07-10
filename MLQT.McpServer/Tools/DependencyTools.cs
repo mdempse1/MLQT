@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
@@ -77,7 +78,9 @@ public sealed class DependencyTools
         string classId)
     {
         if (_libraries.GetModelById(classId) is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "getting a class's dependencies");
 
         var items = _libraries.CombinedGraph.GetUsedModels(classId)
             .Select(ToRef)
@@ -95,7 +98,9 @@ public sealed class DependencyTools
         [Description("Fully-qualified class id whose direct dependents you want.")] string classId)
     {
         if (_libraries.GetModelById(classId) is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "finding a class's usages");
 
         var items = _libraries.CombinedGraph.GetModelUsedBy(classId)
             .Select(ToRef)
@@ -122,7 +127,11 @@ public sealed class DependencyTools
 
         var missing = classIds.Where(id => _libraries.GetModelById(id) is null).ToList();
         if (missing.Count > 0)
-            return new ToolError($"Unknown class id(s): {string.Join(", ", missing)}. Use search_classes.");
+            return _libraries.Libraries.Count == 0
+                ? ToolDiagnostics.ClassNotFound(_libraries, missing[0])
+                : new ToolError($"Unknown class id(s): {string.Join(", ", missing)}. Use search_classes to find them.");
+        if (!_session.DependenciesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "analysing change impact");
 
         limit = Math.Clamp(limit, 1, MaxImpactLimit);
         offset = Math.Max(offset, 0);
@@ -147,8 +156,4 @@ public sealed class DependencyTools
     }).ToList();
 
     private static ClassRef ToRef(ModelNode n) => new(n.Id, n.Name, n.ClassType);
-
-    private static ToolError NotFound(string classId) =>
-        new($"No class with id '{classId}'. Ensure a library is loaded and the id is fully-qualified; " +
-            "use search_classes to find it.");
 }

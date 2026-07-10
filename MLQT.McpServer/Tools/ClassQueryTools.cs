@@ -4,6 +4,7 @@ using ModelicaGraph.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.McpServer.Tools;
@@ -35,7 +36,7 @@ public sealed class ClassQueryTools
     {
         var node = _libraries.GetModelById(classId);
         if (node is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
 
         string? filePath = null;
         if (node.ContainingFileId is not null)
@@ -75,7 +76,7 @@ public sealed class ClassQueryTools
     {
         var node = _libraries.GetModelById(classId);
         if (node is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
 
         var code = node.Definition.ModelicaCode ?? string.Empty;
 
@@ -117,6 +118,9 @@ public sealed class ClassQueryTools
         [Description("Max items to return (default 100, max 1000).")] int limit = 100,
         [Description("Number of items to skip for pagination (default 0).")] int offset = 0)
     {
+        if (ToolDiagnostics.RequireLibrary(_libraries, "listing classes") is { } noLib)
+            return noLib;
+
         limit = Math.Clamp(limit, 1, MaxListLimit);
         offset = Math.Max(offset, 0);
 
@@ -158,6 +162,8 @@ public sealed class ClassQueryTools
     {
         if (string.IsNullOrWhiteSpace(query))
             return new ToolError("query must be a non-empty search string.");
+        if (ToolDiagnostics.RequireLibrary(_libraries, "searching classes") is { } noLib)
+            return noLib;
 
         limit = Math.Clamp(limit, 1, MaxListLimit);
 
@@ -187,6 +193,9 @@ public sealed class ClassQueryTools
         string? rootClassId = null,
         [Description("How many levels to expand (default 1, max 8).")] int maxDepth = 1)
     {
+        if (ToolDiagnostics.RequireLibrary(_libraries, "browsing the package tree") is { } noLib)
+            return noLib;
+
         maxDepth = Math.Clamp(maxDepth, 1, MaxTreeDepth);
 
         // Parent id -> child ids, merged across all libraries. Ids are globally unique, so no clashes.
@@ -199,7 +208,7 @@ public sealed class ClassQueryTools
         if (rootClassId is not null)
         {
             if (_libraries.GetModelById(rootClassId) is null)
-                return NotFound(rootClassId);
+                return ToolDiagnostics.ClassNotFound(_libraries, rootClassId);
             rootIds = [rootClassId];
         }
         else
@@ -237,8 +246,4 @@ public sealed class ClassQueryTools
 
         return new PackageTreeNode(node.Id, node.Name, node.ClassType, childCount, children);
     }
-
-    private static ToolError NotFound(string classId) =>
-        new($"No class with id '{classId}'. Ensure a library is loaded (list_libraries) and the id is " +
-            "fully-qualified (e.g. 'Modelica.Blocks.Continuous.Integrator'); use search_classes to find it.");
 }

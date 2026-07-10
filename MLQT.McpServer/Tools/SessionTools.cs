@@ -52,6 +52,14 @@ public sealed class SessionTools
             .Select(d => new DiscoveredLibrarySummary(d.LibraryName, d.RelativePath, d.FullPath))
             .ToList();
 
+        var warnings = result.Warnings.ToList();
+        if (discovered.Count == 0)
+        {
+            warnings.Add(
+                $"No Modelica libraries (directories containing package.mo) were found under '{path}'. " +
+                "If the library lives in a subfolder, pass that subfolder to load_repository or load_library.");
+        }
+
         var loaded = new List<LibrarySummary>();
         if (loadLibraries)
         {
@@ -64,7 +72,7 @@ public sealed class SessionTools
 
         return new LoadRepositoryResult(
             true, repo.Id, repo.Name, repo.VcsType.ToString(), null,
-            discovered, loaded, result.Warnings);
+            discovered, loaded, warnings);
     }
 
     [McpServerTool(Name = "load_library")]
@@ -86,7 +94,20 @@ public sealed class SessionTools
         }
         else
         {
-            return new ToolError($"Path not found, or not a .mo file / directory: '{path}'.");
+            return new ToolError(
+                $"Path not found, or not a .mo file / directory: '{path}'. Pass an absolute path to a " +
+                "library directory containing a package.mo file, or to a single .mo file.");
+        }
+
+        // A directory with no package.mo (or an empty one) loads nothing — tell the caller how to fix it
+        // rather than returning an empty library that looks loaded.
+        if (library.ModelIds.Count == 0)
+        {
+            _libraries.RemoveLibrary(library.Id);
+            return new ToolError(
+                $"No Modelica models were found at '{path}'. Point load_library at a library directory " +
+                "containing a package.mo file, or a single .mo file. For a repository whose libraries live " +
+                "in subfolders, use load_repository instead.");
         }
 
         return ToSummary(library);
@@ -128,8 +149,10 @@ public sealed class SessionTools
     public object UnloadLibrary(
         [Description("The library id (from list_libraries).")] string libraryId)
     {
+        if (_libraries.Libraries.Count == 0)
+            return new ToolError("No libraries are loaded. Nothing to unload.");
         if (_libraries.Libraries.All(l => l.Id != libraryId))
-            return new ToolError($"No loaded library with id '{libraryId}'. Call list_libraries.");
+            return new ToolError($"No loaded library with id '{libraryId}'. Call list_libraries to see loaded ids.");
 
         _libraries.RemoveLibrary(libraryId);
         return new { success = true, unloadedLibraryId = libraryId };

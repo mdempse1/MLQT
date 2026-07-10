@@ -119,6 +119,39 @@ public class StyleSettingsInputTests
     }
 }
 
+public class ToolDiagnosticsTests
+{
+    [Fact]
+    public void ClassQuery_NoLibrary_GuidesToLoad()
+    {
+        using var host = new TestHost();
+        var q = new ClassQueryTools(host.Libraries);
+        var err = ToolAssert.Error(q.GetClassInfo("Modelica.Blocks.Continuous.Integrator"));
+        Assert.Contains("load_", err.Error);
+        Assert.Contains("No library is loaded", err.Error);
+    }
+
+    [Fact]
+    public void ClassQuery_LibraryLoadedBadId_GuidesToSearch()
+    {
+        using var host = new TestHost();
+        host.Libraries.AddLibraryFromFileAsync(
+            host.WriteMoFile("X.mo", "model X\n Real a;\nequation\n a=1;\nend X;")).GetAwaiter().GetResult();
+        var q = new ClassQueryTools(host.Libraries);
+        var err = ToolAssert.Error(q.GetClassInfo("Nope"));
+        Assert.Contains("search_classes", err.Error);
+    }
+
+    [Fact]
+    public void ListClasses_NoLibrary_Guides()
+    {
+        using var host = new TestHost();
+        var q = new ClassQueryTools(host.Libraries);
+        var err = ToolAssert.Error(q.ListClasses());
+        Assert.Contains("load_", err.Error);
+    }
+}
+
 public class SessionStateAndServerInfoTests
 {
     [Fact]

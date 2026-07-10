@@ -69,6 +69,19 @@ public class VcsToolsTests
     }
 
     [Fact]
+    public void GetChangedClasses_NoLibraryLoaded_Guides()
+    {
+        using var host = new TestHost();
+        var repoMock = new Mock<IRepositoryService>();
+        repoMock.Setup(r => r.GetRepository("r1"))
+            .Returns(new Repository { Id = "r1", Name = "r", LocalPath = "x", VcsRootPath = "x" });
+        var vcs = new VcsTools(host.Libraries, repoMock.Object, host.Impact, host.Session);
+
+        var err = ToolAssert.Error(vcs.GetChangedClasses("r1"));
+        Assert.Contains("library", err.Error);
+    }
+
+    [Fact]
     public void GetChangedClasses_NonMoChange_Ignored()
     {
         using var host = new TestHost();
@@ -83,11 +96,9 @@ public class VcsToolsTests
         using var host = new TestHost();
         var vcs = Build(host, out var repoId);
 
-        // Before analysis: changed classes are listed but there is no impact yet.
-        var pre = ToolAssert.Ok<ChangeImpactResult>(vcs.AnalyzeChangeImpact(repoId));
-        Assert.Contains("DepLib.Base", pre.ChangedClasses);
-        Assert.False(pre.DependenciesAnalyzed);
-        Assert.Equal(0, pre.ImpactedModelsCount);
+        // Before analysis: guidance to run analyze_dependencies (get_changed_classes still works).
+        var pre = ToolAssert.Error(vcs.AnalyzeChangeImpact(repoId));
+        Assert.Contains("analyze_dependencies", pre.Error);
 
         // Run dependency analysis, then the impact appears.
         var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);

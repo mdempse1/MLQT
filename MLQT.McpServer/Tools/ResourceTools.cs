@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
@@ -39,7 +40,9 @@ public sealed class ResourceTools
         [Description("Fully-qualified class id.")] string classId)
     {
         if (_libraries.GetModelById(classId) is null)
-            return NotFound(classId);
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (!_session.ResourcesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "listing a class's external resources");
 
         var resources = _resources.GetResourcesForModel(classId).Select(ToDto).ToList();
         return new ClassResourcesResult(classId, _session.ResourcesAnalyzed, resources.Count, resources);
@@ -54,6 +57,8 @@ public sealed class ResourceTools
     {
         if (string.IsNullOrWhiteSpace(resolvedFilePath))
             return new ToolError("resolvedFilePath must be a non-empty path.");
+        if (!_session.ResourcesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "looking up which classes reference a resource");
 
         var models = _resources.GetModelsReferencingResource(resolvedFilePath);
         return new { resolvedFilePath, resourcesAnalyzed = _session.ResourcesAnalyzed, count = models.Count, models };
@@ -67,6 +72,9 @@ public sealed class ResourceTools
         [Description("Max warnings to return (default 200, max 1000).")] int limit = 200,
         [Description("Warnings to skip for pagination (default 0).")] int offset = 0)
     {
+        if (!_session.ResourcesAnalyzed)
+            return ToolDiagnostics.NotAnalyzed(_libraries, "listing external-resource warnings");
+
         limit = Math.Clamp(limit, 1, MaxWarningLimit);
         offset = Math.Max(offset, 0);
 
@@ -81,8 +89,4 @@ public sealed class ResourceTools
     private static ResourceRefDto ToDto(ExternalResourceReference r) => new(
         r.ModelId, r.RawPath, r.ResolvedPath, r.ReferenceType.ToString(), r.ParameterName,
         r.IsAbsolutePath, r.FileExists, r.IsImageFile, r.IsDirectory);
-
-    private static ToolError NotFound(string classId) =>
-        new($"No class with id '{classId}'. Ensure a library is loaded and the id is fully-qualified; " +
-            "use search_classes to find it.");
 }

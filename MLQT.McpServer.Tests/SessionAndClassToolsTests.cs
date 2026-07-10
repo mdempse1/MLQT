@@ -60,6 +60,18 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
+    public async Task LoadLibrary_EmptyDirectory_GuidesToPackageMo()
+    {
+        using var host = new TestHost();
+        var emptyDir = host.NewTempDir();
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var err = ToolAssert.Error(await session.LoadLibrary(emptyDir));
+        Assert.Contains("No Modelica models", err.Error);
+        Assert.Empty(session.ListLibraries()); // the empty library was not left loaded
+    }
+
+    [Fact]
     public async Task LoadLibrary_BadPath_ReturnsError()
     {
         using var host = new TestHost();
