@@ -1,0 +1,264 @@
+using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Tools;
+
+namespace MLQT.McpServer.Tests;
+
+public class SessionAndClassToolsTests
+{
+    private const string Package = """
+        within;
+        package TestLib "Test library"
+          model Base "Base model"
+            Real b "state";
+          equation
+            b = time;
+          end Base;
+
+          model Middle "Middle model"
+            Base base1 "a base";
+          end Middle;
+
+          block Gain "gain block"
+            parameter Real k=1 "gain";
+          end Gain;
+        end TestLib;
+        """;
+
+    private static string LoadPackage(TestHost host, out SessionTools session)
+    {
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
+        session = new SessionTools(host.Libraries, host.Repositories);
+        var result = session.LoadLibrary(dir).GetAwaiter().GetResult();
+        ToolAssert.Ok<LibrarySummary>(result);
+        return dir;
+    }
+
+    [Fact]
+    public async Task LoadLibrary_FromDirectory_LoadsModels()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(dir));
+
+        Assert.Equal("TestLib", summary.Name);
+        Assert.Equal("Directory", summary.SourceType);
+        Assert.True(summary.ModelCount >= 4);
+        Assert.Equal(1, summary.TopLevelModelCount);
+    }
+
+    [Fact]
+    public async Task LoadLibrary_FromSingleFile_Loads()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("Thing.mo", "model Thing \"t\"\n  Real x;\nequation\n x=1;\nend Thing;");
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(path));
+        Assert.Equal("File", summary.SourceType);
+    }
+
+    [Fact]
+    public async Task LoadLibrary_BadPath_ReturnsError()
+    {
+        using var host = new TestHost();
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var result = await session.LoadLibrary(Path.Combine(Path.GetTempPath(), "does-not-exist-xyz"));
+        Assert.Contains("not found", ToolAssert.Error(result).Error);
+    }
+
+    [Fact]
+    public void ListLibraries_ReflectsLoaded()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out var session);
+
+        var libs = session.ListLibraries();
+        Assert.Single(libs);
+        Assert.Equal("TestLib", libs[0].Name);
+    }
+
+    [Fact]
+    public void UnloadLibrary_RemovesIt_AndBadIdErrors()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out var session);
+        var libId = session.ListLibraries()[0].Id;
+
+        Assert.IsType<ToolError>(session.UnloadLibrary("nope"));
+
+        var ok = session.UnloadLibrary(libId);
+        Assert.IsNotType<ToolError>(ok);
+        Assert.Empty(session.ListLibraries());
+    }
+
+    [Fact]
+    public async Task LoadRepository_LocalDirectory_DiscoversAndLoads()
+    {
+        using var host = new TestHost();
+        var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot));
+        Assert.True(result.Success);
+        Assert.Contains(result.DiscoveredLibraries, d => d.LibraryName == "TestLib");
+        Assert.NotEmpty(result.LoadedLibraries);
+
+        var repos = session.ListRepositories();
+        Assert.Single(repos);
+        Assert.Equal(result.RepositoryId, repos[0].Id);
+    }
+
+    [Fact]
+    public async Task LoadRepository_DiscoverOnly_ThenDiscoverTool()
+    {
+        using var host = new TestHost();
+        var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
+        var session = new SessionTools(host.Libraries, host.Repositories);
+
+        var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot, loadLibraries: false));
+        Assert.Empty(result.LoadedLibraries);
+        Assert.Contains(result.DiscoveredLibraries, d => d.LibraryName == "TestLib");
+
+        var discovered = await session.DiscoverLibraries(result.RepositoryId!);
+        Assert.IsNotType<ToolError>(discovered);
+    }
+
+    [Fact]
+    public void ListRepositories_EmptyInitially()
+    {
+        using var host = new TestHost();
+        var session = new SessionTools(host.Libraries, host.Repositories);
+        Assert.Empty(session.ListRepositories());
+    }
+
+    [Fact]
+    public async Task DiscoverLibraries_UnknownRepo_Errors()
+    {
+        using var host = new TestHost();
+        var session = new SessionTools(host.Libraries, host.Repositories);
+        var result = await session.DiscoverLibraries("no-such-repo");
+        Assert.IsType<ToolError>(result);
+    }
+
+    [Fact]
+    public void GetClassInfo_ReturnsMetadata()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var info = ToolAssert.Ok<ClassInfo>(query.GetClassInfo("TestLib.Base"));
+        Assert.Equal("model", info.ClassType);
+        Assert.Equal("TestLib", info.ParentModelName);
+        Assert.True(info.IsNested);
+        Assert.False(info.HasParserErrors);
+        Assert.NotNull(info.FilePath);
+    }
+
+    [Fact]
+    public void GetClassInfo_Package_IsPackage()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var info = ToolAssert.Ok<ClassInfo>(query.GetClassInfo("TestLib"));
+        Assert.True(info.IsPackage);
+    }
+
+    [Fact]
+    public void GetClassInfo_Missing_Errors()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+        Assert.IsType<ToolError>(query.GetClassInfo("TestLib.Nope"));
+    }
+
+    [Fact]
+    public void GetClassSource_StripsAnnotationsByDefault()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("Ann.mo",
+            "model Ann \"d\"\n  Real x;\n  annotation(Documentation(info=\"<html>hi</html>\"));\nequation\n x=1;\nend Ann;");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var query = new ClassQueryTools(host.Libraries);
+
+        var stripped = ToolAssert.Ok<ClassSourceResult>(query.GetClassSource("Ann", includeAnnotations: false));
+        Assert.False(stripped.AnnotationsIncluded);
+        Assert.DoesNotContain("Documentation", stripped.Source);
+
+        var verbatim = ToolAssert.Ok<ClassSourceResult>(query.GetClassSource("Ann", includeAnnotations: true));
+        Assert.Contains("Documentation", verbatim.Source);
+    }
+
+    [Fact]
+    public void GetClassSource_Missing_Errors()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+        Assert.IsType<ToolError>(query.GetClassSource("Nope"));
+    }
+
+    [Fact]
+    public void ListClasses_FiltersAndPaginates()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var all = ToolAssert.Ok<ClassListResult>(query.ListClasses());
+        Assert.True(all.Total >= 4);
+
+        var blocks = ToolAssert.Ok<ClassListResult>(query.ListClasses(classType: "block"));
+        Assert.All(blocks.Items, i => Assert.Equal("block", i.ClassType));
+        Assert.Contains(blocks.Items, i => i.Id == "TestLib.Gain");
+
+        var page = ToolAssert.Ok<ClassListResult>(query.ListClasses(limit: 2, offset: 0));
+        Assert.Equal(2, page.Count);
+    }
+
+    [Fact]
+    public void ListClasses_BadLibrary_Errors()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+        Assert.IsType<ToolError>(query.ListClasses(libraryId: "nope"));
+    }
+
+    [Fact]
+    public void SearchClasses_MatchesAndRanksExact()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var res = ToolAssert.Ok<ClassListResult>(query.SearchClasses("Base"));
+        Assert.Contains(res.Items, i => i.Id == "TestLib.Base");
+
+        Assert.IsType<ToolError>(query.SearchClasses("  "));
+    }
+
+    [Fact]
+    public void GetPackageTree_RootAndChildren()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+
+        var roots = ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree());
+        Assert.Contains(roots, n => n.Id == "TestLib");
+
+        var sub = ToolAssert.Ok<List<PackageTreeNode>>(query.GetPackageTree("TestLib", maxDepth: 1));
+        var testLib = Assert.Single(sub);
+        Assert.Equal(3, testLib.ChildCount);
+        Assert.NotNull(testLib.Children);
+
+        Assert.IsType<ToolError>(query.GetPackageTree("TestLib.Nope"));
+    }
+}

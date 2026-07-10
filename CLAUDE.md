@@ -15,6 +15,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **MLQT.Shared** - Shared Blazor components, pages, layouts, services
 - **MLQT** - .NET MAUI application
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
+- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration

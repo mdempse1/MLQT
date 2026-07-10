@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="MLQT.McpServer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MLQT.Services\MLQT.Services.csproj" />
     <ProjectReference Include="..\ModelicaGraph\ModelicaGraph.csproj" />
     <ProjectReference Include="..\ModelicaParser\ModelicaParser.csproj" />
