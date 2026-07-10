@@ -101,6 +101,30 @@ public class ModelicaParserHelper
     }
 
     /// <summary>
+    /// Parses Modelica source code and returns the parse tree, its token stream, AND any lexer/parser
+    /// errors — the combination needed to both render (the token stream preserves comments) and report
+    /// syntax problems in a single parse.
+    /// </summary>
+    /// <param name="modelicaCode">The Modelica source code to parse.</param>
+    /// <returns>Tuple containing the parse tree, token stream, and list of parser errors.</returns>
+    public static (modelicaParser.Stored_definitionContext parseTree, BufferedTokenStream tokenStream, List<ParserError> errors) ParseWithTokensAndErrors(string modelicaCode)
+    {
+        var code = PreprocessCode(modelicaCode);
+        var inputStream = new AntlrInputStream(code);
+        var lexer = new modelicaLexer(inputStream);
+        var errorListener = new ModelicaErrorListener();
+        lexer.RemoveErrorListeners();
+        lexer.AddErrorListener(errorListener);
+        var tokenStream = new CommonTokenStream(lexer);
+        var parser = new modelicaParser(tokenStream);
+        parser.RemoveErrorListeners();
+        parser.AddErrorListener(errorListener);
+
+        var parseTree = parser.stored_definition();
+        return (parseTree, tokenStream, errorListener.Errors);
+    }
+
+    /// <summary>
     /// Parses a Modelica <c>modification_expression</c> — the grammar rule that
     /// covers everything a default-value binding (or other modifier expression)
     /// can be: any <c>expression</c> shape, plus the literal <c>break</c> used

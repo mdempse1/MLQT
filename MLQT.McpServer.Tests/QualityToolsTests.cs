@@ -205,6 +205,25 @@ public class QualityToolsTests
     }
 
     [Fact]
+    public void FormatCode_Fragment_ReturnsGuidanceError()
+    {
+        using var host = new TestHost();
+        // A bare equation / declaration is not a complete class and cannot be formatted.
+        var eqErr = ToolAssert.Error(Formatting(host).FormatCode("x = 2*y + 1;"));
+        Assert.Contains("class definition", eqErr.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<ToolError>(Formatting(host).FormatCode("Real x = 1 \"desc\";"));
+    }
+
+    [Fact]
+    public void FormatCode_SyntaxError_IsReported()
+    {
+        using var host = new TestHost();
+        // 'type = Real;' is missing the type name — previously returned 'type ;' with no hint.
+        var err = ToolAssert.Error(Formatting(host).FormatCode("type = Real;"));
+        Assert.Contains("syntax error", err.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FormatClass_PreviewDoesNotWrite_ThenWrites()
     {
         using var host = new TestHost();
@@ -227,5 +246,18 @@ public class QualityToolsTests
     {
         using var host = new TestHost();
         Assert.IsType<ToolError>(Formatting(host).FormatClass("Nope").GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public void FormatClass_SyntaxErrorInFile_ReportsAndDoesNotWrite()
+    {
+        using var host = new TestHost();
+        var path = host.WriteMoFile("Bad.mo", "model Bad \"d\"\n  Real x;\nequation\n  x = ;\nend Bad;");
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var before = File.ReadAllText(path);
+
+        var err = ToolAssert.Error(Formatting(host).FormatClass("Bad").GetAwaiter().GetResult());
+        Assert.Contains("syntax", err.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(before, File.ReadAllText(path)); // file left untouched
     }
 }

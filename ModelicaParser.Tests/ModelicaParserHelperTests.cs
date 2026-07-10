@@ -193,6 +193,31 @@ end TestModel;";
     }
 
     [Fact]
+    public void ParseWithTokensAndErrors_ValidCode_NoErrors()
+    {
+        var code = "model TestModel\n  Real x;\nend TestModel;";
+
+        var (parseTree, tokenStream, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(code);
+
+        Assert.NotNull(parseTree);
+        Assert.True(tokenStream.Size > 0);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ParseWithTokensAndErrors_InvalidCode_ReportsErrors()
+    {
+        // Missing the type name in a short class definition is a syntax error.
+        var code = "type = Real;";
+
+        var (parseTree, tokenStream, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(code);
+
+        Assert.NotNull(parseTree);
+        Assert.NotNull(tokenStream);
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
     public void ExtractModels_SimpleModel_ExtractsCorrectly()
     {
         // Arrange

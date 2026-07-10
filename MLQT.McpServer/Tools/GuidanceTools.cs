@@ -100,11 +100,16 @@ public sealed class GuidanceTools
             """,
 
         ["formatting"] = """
-            Formatting:
-            - format_code(source, ...): stateless, returns formatted text; nothing written.
-            - format_class(classId, ..., preview?): formats the .mo file that contains the class and,
-              unless preview=true, writes it to disk and refreshes the graph. Note this reformats the
-              whole containing file (all classes stored in it), matching how MLQT saves files.
+            Formatting. MLQT only formats COMPLETE class definitions, never loose fragments:
+            - format_code(source, ...): stateless. The source must be one or more whole class definitions
+              (model / block / package / record / function / connector / type ... end Name;). It CANNOT
+              format a bare equation, a single declaration, or an expression — wrap the fragment in a class
+              first, or it returns an error. Syntax errors are reported rather than silently formatted into
+              malformed output. Nothing is written.
+            - format_class(classId, ..., preview?): formats the .mo file that contains a loaded class and,
+              unless preview=true, writes it to disk and refreshes the graph. Reformats the whole
+              containing file (all classes stored in it), matching how MLQT saves files. If the file has
+              syntax errors it reports them and writes nothing (fix them first).
             - Ordering options: oneOfEachSection, importStatementsFirst, componentsBeforeClasses.
             """,
 
