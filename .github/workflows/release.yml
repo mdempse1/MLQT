@@ -45,6 +45,7 @@ jobs:
         run: |
           dotnet restore MLQT.slnx
           dotnet restore MLQT/MLQT.csproj -r win-x64
+          dotnet restore MLQT.McpServer/MLQT.McpServer.csproj -r win-x64
 
       - name: Run tests
         run: |
@@ -52,6 +53,7 @@ jobs:
           dotnet test ModelicaGraph.Tests -c Release --no-restore
           dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
           dotnet test MLQT.Services.Tests -c Release --no-restore
+          dotnet test MLQT.McpServer.Tests -c Release --no-restore
 
       # Stage the SlikSVN command-line client into MLQT/svn-tools/win-x64 so the publish
       # step (via MLQT.csproj) copies it into the app output under svn/. The zip URL is
@@ -84,21 +86,39 @@ jobs:
           & $svn --version --quiet
           Write-Host "Bundled svn client OK."
 
-      - name: Create zip archive
+      # The MCP server is a separate, headless console executable (not part of the MAUI app).
+      # Publish it self-contained so it runs without a preinstalled .NET runtime, and ship it as
+      # its own release asset so the main app download stays lean.
+      - name: Publish MLQT.McpServer (self-contained)
+        run: >
+          dotnet publish MLQT.McpServer/MLQT.McpServer.csproj
+          -c Release
+          -f net10.0
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -o publish/MLQT.McpServer
+
+      - name: Create zip archives
         shell: pwsh
         run: |
           Compress-Archive -Path publish/MLQT/* -DestinationPath "MLQT-${{ steps.version.outputs.version }}-win-x64.zip"
+          Compress-Archive -Path publish/MLQT.McpServer/* -DestinationPath "MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip"
 
-      - name: Upload build artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
           name: MLQT-${{ steps.version.outputs.version }}-win-x64
-          path: MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+          path: |
+            MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+            MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+          files: |
+            MLQT-${{ steps.version.outputs.version }}-win-x64.zip
+            MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
           generate_release_notes: true
           draft: true
