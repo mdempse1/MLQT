@@ -14,6 +14,12 @@ public interface IRepositoryService
     IReadOnlyList<Repository> Repositories { get; }
 
     /// <summary>
+    /// Warnings from the most recent <see cref="LoadRepositorySettingsAsync"/> call — one per
+    /// repository that could not be loaded (e.g. its path no longer exists). Empty on success.
+    /// </summary>
+    IReadOnlyList<string> LastLoadWarnings { get; }
+
+    /// <summary>
     /// Adds a new repository from a local path or URL.
     /// Auto-detects VCS type and discovers Modelica libraries.
     /// </summary>

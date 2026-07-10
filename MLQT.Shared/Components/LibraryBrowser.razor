@@ -513,7 +513,7 @@ else if (Repository != null)
     /// </summary>
     private async Task<IReadOnlyCollection<TreeItemData<ModelNode>>> LoadServerData(ModelNode? parentNode)
     {
-        var allItems = await LibraryDataService.GetChildTreeItemsAsync(parentNode);
+        var allItems = ToTreeItems(await LibraryDataService.GetChildModelsAsync(parentNode));
 
         // If in repository mode, filter to only show items from this repository's libraries
         List<TreeItemData<ModelNode>> items;
@@ -536,6 +536,31 @@ else if (Repository != null)
 
         return items.AsReadOnly();
     }
+
+    /// <summary>
+    /// Wraps models from the (UI-agnostic) library data service into MudTreeView items: picks an icon
+    /// from the class type and marks the node expandable when the model has children. Children are left
+    /// null so they load on demand via ServerData.
+    /// </summary>
+    private List<TreeItemData<ModelNode>> ToTreeItems(IReadOnlyList<ModelNode> models)
+        => models.Select(model => new TreeItemData<ModelNode>
+        {
+            Value = model,
+            Icon = IconForClassType(model.ClassType),
+            Expandable = LibraryDataService.ModelHasChildren(model.Id),
+            Expanded = false,
+            Children = null
+        }).ToList();
+
+    private static string IconForClassType(string classType) => classType switch
+    {
+        "function" => Icons.Material.Filled.Functions,
+        "block" => Icons.Material.Filled.ViewModule,
+        "connector" => Icons.Material.Filled.Power,
+        "record" => Icons.Material.Filled.DataObject,
+        "package" => Icons.Material.Filled.FolderOpen,
+        _ => Icons.Material.Filled.ModelTraining
+    };
 
     private bool IsLibraryInRepository(string libraryId)
     {
@@ -575,7 +600,7 @@ else if (Repository != null)
     /// </summary>
     private async Task RefreshTreeItems()
     {
-        var allItems = await LibraryDataService.GetTopLevelTreeItemsAsync();
+        var allItems = ToTreeItems(await LibraryDataService.GetTopLevelModelsAsync());
 
         if (Repository != null)
         {

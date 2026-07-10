@@ -356,8 +356,11 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ## Dependencies
 
 **NuGet Packages:**
-- MudBlazor 9.0.0
 - NLog 6.1.0
+
+This project is UI-agnostic (no Blazor/MudBlazor dependency). The library tree data is returned as
+`ModelNode` lists (`GetTopLevelModelsAsync` / `GetChildModelsAsync` / `ModelHasChildren`); the UI layer
+(`MLQT.Shared`) wraps them into MudBlazor `TreeItemData`.
 
 **Project References:**
 - DymolaInterface

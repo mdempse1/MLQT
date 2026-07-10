@@ -3,7 +3,6 @@ using MLQT.Services.DataTypes;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.Icons;
-using MudBlazor;
 using static MLQT.Services.LoggingService;
 using MLQT.Services.Helpers;
 
@@ -619,9 +618,9 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<TreeItemData<ModelNode>>> GetTopLevelTreeItemsAsync()
+    public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
-        var items = new List<TreeItemData<ModelNode>>();
+        var items = new List<ModelNode>();
 
         lock (_lock)
         {
@@ -632,25 +631,25 @@ public class LibraryDataService : ILibraryDataService
                     var model = _combinedGraph.GetNode<ModelNode>(modelId);
                     if (model != null)
                     {
-                        var treeItem = CreateTreeItemFromModel(model, library);
-                        items.Add(treeItem);
+                        PrepareModelForDisplay(model, library);
+                        items.Add(model);
                     }
                 }
             }
         }
 
-        return Task.FromResult<IReadOnlyCollection<TreeItemData<ModelNode>>>(items);
+        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<TreeItemData<ModelNode>>> GetChildTreeItemsAsync(ModelNode? parentNode)
+    public Task<IReadOnlyList<ModelNode>> GetChildModelsAsync(ModelNode? parentNode)
     {
         if (parentNode == null)
         {
-            return GetTopLevelTreeItemsAsync();
+            return GetTopLevelModelsAsync();
         }
 
-        var items = new List<TreeItemData<ModelNode>>();
+        var items = new List<ModelNode>();
 
         lock (_lock)
         {
@@ -678,8 +677,8 @@ public class LibraryDataService : ILibraryDataService
 
                         foreach (var child in childModels)
                         {
-                            var treeItem = CreateTreeItemFromModel(child, library);
-                            items.Add(treeItem);
+                            PrepareModelForDisplay(child, library);
+                            items.Add(child);
                         }
                     }
 
@@ -688,7 +687,22 @@ public class LibraryDataService : ILibraryDataService
             }
         }
 
-        return Task.FromResult<IReadOnlyCollection<TreeItemData<ModelNode>>>(items);
+        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+    }
+
+    /// <inheritdoc/>
+    public bool ModelHasChildren(string modelId)
+    {
+        lock (_lock)
+        {
+            foreach (var library in _libraries)
+            {
+                if (library.ChildrenByParent.TryGetValue(modelId, out var childIds) && childIds.Count > 0)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
@@ -771,12 +785,13 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <summary>
-    /// Creates a TreeItemData from a ModelNode.
+    /// Populates a model's display metadata for tree presentation: renders its Modelica icon to SVG
+    /// (with base-class inheritance) into <see cref="ModelNode.IconSvg"/> and stamps its LibraryId.
+    /// UI-agnostic — returns nothing and uses no Blazor/MudBlazor types; the UI layer wraps the model
+    /// into its own tree-item representation.
     /// </summary>
-    private TreeItemData<ModelNode> CreateTreeItemFromModel(ModelNode model, LoadedLibrary library)
+    private void PrepareModelForDisplay(ModelNode model, LoadedLibrary library)
     {
-        var classType = model.ClassType;
-
         // Try to extract Modelica Icon annotation and render as SVG (with inheritance support)
         try
         {
@@ -808,29 +823,6 @@ public class LibraryDataService : ILibraryDataService
         }
 
         model.LibraryId = library.Id;
-
-        var icon = classType switch
-        {
-            "function" => Icons.Material.Filled.Functions,
-            "block" => Icons.Material.Filled.ViewModule,
-            "connector" => Icons.Material.Filled.Power,
-            "record" => Icons.Material.Filled.DataObject,
-            "package" => Icons.Material.Filled.FolderOpen,
-            _ => Icons.Material.Filled.ModelTraining
-        };
-
-        // Check if this model has children using the ChildrenByParent dictionary
-        var hasChildren = library.ChildrenByParent.ContainsKey(model.Id) &&
-                          library.ChildrenByParent[model.Id].Count > 0;
-
-        return new TreeItemData<ModelNode>
-        {
-            Value = model,
-            Icon = icon,
-            Expandable = hasChildren,
-            Expanded = false,
-            Children = null // Children will be loaded on-demand via ServerData
-        };
     }
 
     /// <summary>

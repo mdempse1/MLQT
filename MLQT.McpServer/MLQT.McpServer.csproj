@@ -12,13 +12,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MLQT.Services (transitively) pulls in MudBlazor, whose component dependencies live in
-         the ASP.NET Core shared framework. Reference it so those assemblies resolve at runtime. -->
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
+    <!-- Generic host (Host.CreateApplicationBuilder). This was previously provided by the
+         Microsoft.AspNetCore.App framework reference, which is no longer needed now that
+         MLQT.Services is UI-free (no MudBlazor). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>

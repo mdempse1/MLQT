@@ -21,6 +21,7 @@ public class RepositoryService : IRepositoryService
     private readonly SvnRevisionControlSystem _svn;
     private readonly List<Repository> _repositories = new();
     private readonly List<ProjectProfile> _projects = new();
+    private readonly List<string> _loadWarnings = new();
     private string? _activeProjectId;
     private readonly object _lock = new();
     private readonly Dictionary<string, (List<VcsWorkingCopyFile> Changes, long Ticks)> _workingCopyCache = new();
@@ -54,6 +55,26 @@ public class RepositoryService : IRepositoryService
             {
                 return _repositories.ToList().AsReadOnly();
             }
+        }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> LastLoadWarnings
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _loadWarnings.ToList().AsReadOnly();
+            }
+        }
+    }
+
+    private void AddLoadWarning(string message)
+    {
+        lock (_lock)
+        {
+            _loadWarnings.Add(message);
         }
     }
 
@@ -601,6 +622,10 @@ public class RepositoryService : IRepositoryService
     public async Task LoadRepositorySettingsAsync(string? projectId = null, CancellationToken cancellationToken = default)
     {
         LogProcessStart("RepositoryService", "Loading repository settings");
+        lock (_lock)
+        {
+            _loadWarnings.Clear();
+        }
         var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
         // Migration: if no projects defined but legacy Repositories exist, migrate them
@@ -656,6 +681,8 @@ public class RepositoryService : IRepositoryService
             if (!Directory.Exists(entry.LocalPath))
             {
                 Warn("RepositoryService", $"Repository path no longer exists, skipping: {entry.LocalPath}");
+                AddLoadWarning($"Repository '{entry.Name}' was not loaded: its path no longer exists ({entry.LocalPath}). " +
+                    "Fix or remove it in Settings > Repositories.");
                 continue;
             }
 
@@ -680,11 +707,13 @@ public class RepositoryService : IRepositoryService
                 else if (!result.Success)
                 {
                     Warn("RepositoryService", $"Failed to add repository {entry.Name}: {result.ErrorMessage}");
+                    AddLoadWarning($"Repository '{entry.Name}' could not be loaded: {result.ErrorMessage}");
                 }
             }
             catch (Exception ex)
             {
                 Error("RepositoryService", $"Exception while loading repository {entry.Name}", ex);
+                AddLoadWarning($"Repository '{entry.Name}' could not be loaded: {ex.Message}");
             }
         }
 

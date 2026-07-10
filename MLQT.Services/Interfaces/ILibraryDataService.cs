@@ -1,7 +1,6 @@
 using MLQT.Services.DataTypes;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
-using MudBlazor;
 
 namespace MLQT.Services.Interfaces;
 
@@ -75,19 +74,25 @@ public interface ILibraryDataService
     Task<HashSet<string>> UpdateChangedFilesAsync(IReadOnlyCollection<string> changedFilePaths, string rootPath);
 
     /// <summary>
-    /// Gets the top-level tree items for the tree view.
-    /// Called by MudTreeView when ServerData is invoked with null parent.
+    /// Gets the top-level models for the tree view, each with display metadata (icon SVG, LibraryId)
+    /// populated. The UI layer wraps these into its own tree-item type.
     /// </summary>
-    /// <returns>Collection of top-level tree items.</returns>
-    Task<IReadOnlyCollection<TreeItemData<ModelNode>>> GetTopLevelTreeItemsAsync();
+    /// <returns>Top-level models.</returns>
+    Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync();
 
     /// <summary>
-    /// Gets the child tree items for a given parent node.
-    /// Called by MudTreeView's ServerData when expanding a node.
+    /// Gets the child models for a given parent node (sorted by package.order / source order), each
+    /// with display metadata populated. Pass null to get the top-level models.
     /// </summary>
-    /// <param name="parentNode">The parent node to get children for.</param>
-    /// <returns>Collection of child tree items.</returns>
-    Task<IReadOnlyCollection<TreeItemData<ModelNode>>> GetChildTreeItemsAsync(ModelNode? parentNode);
+    /// <param name="parentNode">The parent node to get children for, or null for top level.</param>
+    /// <returns>Child models.</returns>
+    Task<IReadOnlyList<ModelNode>> GetChildModelsAsync(ModelNode? parentNode);
+
+    /// <summary>
+    /// Returns whether a model has child models (i.e. the tree node is expandable).
+    /// </summary>
+    /// <param name="modelId">The fully qualified model ID.</param>
+    bool ModelHasChildren(string modelId);
 
     /// <summary>
     /// Gets a model node by its fully qualified ID.
