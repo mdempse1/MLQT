@@ -93,15 +93,27 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
-    public void UnloadLibrary_RemovesIt_AndBadIdErrors()
+    public void UnloadLibrary_ById_Works_AndBadValueErrors()
     {
         using var host = new TestHost();
         LoadPackage(host, out var session);
         var libId = session.ListLibraries()[0].Id;
 
-        Assert.IsType<ToolError>(session.UnloadLibrary("nope"));
+        var err = ToolAssert.Error(session.UnloadLibrary("nope"));
+        Assert.Contains("TestLib", err.Error); // error lists the loaded libraries to choose from
 
         var ok = session.UnloadLibrary(libId);
+        Assert.IsNotType<ToolError>(ok);
+        Assert.Empty(session.ListLibraries());
+    }
+
+    [Fact]
+    public void UnloadLibrary_ByName_Works()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out var session);
+
+        var ok = session.UnloadLibrary("TestLib"); // by name, not the GUID id
         Assert.IsNotType<ToolError>(ok);
         Assert.Empty(session.ListLibraries());
     }
@@ -232,6 +244,17 @@ public class SessionAndClassToolsTests
 
         var page = ToolAssert.Ok<ClassListResult>(query.ListClasses(limit: 2, offset: 0));
         Assert.Equal(2, page.Count);
+    }
+
+    [Fact]
+    public void ListClasses_ByLibraryName_Works()
+    {
+        using var host = new TestHost();
+        LoadPackage(host, out _);
+        var query = new ClassQueryTools(host.Libraries);
+        // Filter by the library NAME rather than its GUID id.
+        var res = ToolAssert.Ok<ClassListResult>(query.ListClasses(libraryId: "TestLib"));
+        Assert.True(res.Total >= 4);
     }
 
     [Fact]

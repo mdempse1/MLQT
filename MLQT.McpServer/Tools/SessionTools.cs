@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
+using MLQT.McpServer.Helpers;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
@@ -129,33 +130,38 @@ public sealed class SessionTools
 
     [McpServerTool(Name = "discover_libraries")]
     [Description("Discover the Modelica libraries within an already-added repository without loading " +
-                "them. Returns each library's name and path. Pass a repositoryId from load_repository " +
-                "or list_repositories.")]
+                "them. Returns each library's name and path. Identify the repository by its id (the " +
+                "GUID from load_repository / list_repositories) or its name — not a filesystem path.")]
     public async Task<object> DiscoverLibraries(
-        [Description("The repository id (from load_repository or list_repositories).")] string repositoryId)
+        [Description("The repository's id (GUID from load_repository / list_repositories) or its name. " +
+                     "Not a filesystem path.")]
+        string repositoryId)
     {
-        if (_repositories.GetRepository(repositoryId) is null)
-            return new ToolError($"No repository with id '{repositoryId}'. Call list_repositories.");
+        var (repo, error) = EntityResolver.ResolveRepository(_repositories, repositoryId);
+        if (error is not null)
+            return error;
 
-        var discovered = await _repositories.DiscoverLibrariesAsync(repositoryId);
+        var discovered = await _repositories.DiscoverLibrariesAsync(repo!.Id);
         return discovered
             .Select(d => new DiscoveredLibrarySummary(d.LibraryName, d.RelativePath, d.FullPath))
             .ToList();
     }
 
     [McpServerTool(Name = "unload_library")]
-    [Description("Unload a previously loaded library, removing its models from the in-memory graph. " +
-                "Pass a libraryId from list_libraries.")]
+    [Description("Unload a loaded library, removing its models from the in-memory graph. Identify the " +
+                "library by EITHER its id (the opaque GUID in the 'id' field from list_libraries) OR its " +
+                "name (the 'name' field, e.g. 'Modelica'). The name is usually the convenient choice.")]
     public object UnloadLibrary(
-        [Description("The library id (from list_libraries).")] string libraryId)
+        [Description("The library to unload: its id (GUID from list_libraries's 'id' field) or its name " +
+                     "(e.g. 'Modelica'). Not a class id.")]
+        string library)
     {
-        if (_libraries.Libraries.Count == 0)
-            return new ToolError("No libraries are loaded. Nothing to unload.");
-        if (_libraries.Libraries.All(l => l.Id != libraryId))
-            return new ToolError($"No loaded library with id '{libraryId}'. Call list_libraries to see loaded ids.");
+        var (match, error) = EntityResolver.ResolveLibrary(_libraries, library);
+        if (error is not null)
+            return error;
 
-        _libraries.RemoveLibrary(libraryId);
-        return new { success = true, unloadedLibraryId = libraryId };
+        _libraries.RemoveLibrary(match!.Id);
+        return new { success = true, unloadedLibraryId = match.Id, name = match.Name };
     }
 
     private static LibrarySummary ToSummary(LoadedLibrary l) => new(

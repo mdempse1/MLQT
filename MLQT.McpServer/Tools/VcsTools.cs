@@ -46,18 +46,20 @@ public sealed class VcsTools
                 "Note: classes in newly-added files that aren't loaded yet won't resolve until reloaded. " +
                 "Read-only.")]
     public object GetChangedClasses(
-        [Description("Repository id (from load_repository or list_repositories).")] string repositoryId,
+        [Description("The repository's id (GUID from load_repository / list_repositories) or its name. " +
+                     "Not a filesystem path.")]
+        string repositoryId,
         [Description("Optional revision (commit hash / SVN revision). Omit for uncommitted working-copy changes.")]
         string? revision = null)
     {
-        var repo = _repositories.GetRepository(repositoryId);
-        if (repo is null)
-            return new ToolError($"No repository with id '{repositoryId}'. Call list_repositories.");
+        var (repo, repoError) = EntityResolver.ResolveRepository(_repositories, repositoryId);
+        if (repoError is not null)
+            return repoError;
         if (ToolDiagnostics.RequireLibrary(_libraries,
                 "mapping changed files to classes (load_repository loads the repository's libraries by default)") is { } noLib)
             return noLib;
 
-        var files = ResolveChangedFiles(repo, revision);
+        var files = ResolveChangedFiles(repo!, revision);
         var allClassIds = files.SelectMany(f => f.ClassIds).Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal).ToList();
 
@@ -71,15 +73,17 @@ public sealed class VcsTools
                 "on them. Answers 'what does this change affect downstream'. Requires analyze_dependencies " +
                 "to have been run (for the dependency graph). Read-only.")]
     public object AnalyzeChangeImpact(
-        [Description("Repository id (from load_repository or list_repositories).")] string repositoryId,
+        [Description("The repository's id (GUID from load_repository / list_repositories) or its name. " +
+                     "Not a filesystem path.")]
+        string repositoryId,
         [Description("Optional revision. Omit for uncommitted working-copy changes.")]
         string? revision = null,
         [Description("Max impact detail rows to return (default 100, max 2000).")] int limit = 100,
         [Description("Detail rows to skip for pagination (default 0).")] int offset = 0)
     {
-        var repo = _repositories.GetRepository(repositoryId);
-        if (repo is null)
-            return new ToolError($"No repository with id '{repositoryId}'. Call list_repositories.");
+        var (repo, repoError) = EntityResolver.ResolveRepository(_repositories, repositoryId);
+        if (repoError is not null)
+            return repoError;
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries,
                 "analysing change impact (use get_changed_classes to see the changed classes without analysis)");
@@ -87,7 +91,7 @@ public sealed class VcsTools
         limit = Math.Clamp(limit, 1, MaxImpactLimit);
         offset = Math.Max(offset, 0);
 
-        var changedClasses = ResolveChangedFiles(repo, revision)
+        var changedClasses = ResolveChangedFiles(repo!, revision)
             .SelectMany(f => f.ClassIds).Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal).ToList();
 

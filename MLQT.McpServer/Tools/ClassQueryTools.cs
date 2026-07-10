@@ -110,7 +110,8 @@ public sealed class ClassQueryTools
                 "total match count so you know how many pages remain. Use search_classes to find classes " +
                 "by name substring instead.")]
     public object ListClasses(
-        [Description("Optional library id (from list_libraries) to restrict to one library.")]
+        [Description("Optional: restrict to one library, by its id (GUID from list_libraries) or its " +
+                     "name (e.g. 'Modelica'). Omit for all libraries. Not a class id.")]
         string? libraryId = null,
         [Description("Optional class type filter, e.g. 'model', 'package', 'function', 'block', " +
                      "'record', 'connector', 'type'.")]
@@ -127,10 +128,10 @@ public sealed class ClassQueryTools
         IEnumerable<ModelNode> models;
         if (libraryId is not null)
         {
-            var library = _libraries.Libraries.FirstOrDefault(l => l.Id == libraryId);
-            if (library is null)
-                return new ToolError($"No loaded library with id '{libraryId}'. Call list_libraries.");
-            models = library.ModelIds
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId);
+            if (error is not null)
+                return error;
+            models = library!.ModelIds
                 .Select(id => _libraries.GetModelById(id))
                 .Where(m => m is not null)!
                 .Cast<ModelNode>();

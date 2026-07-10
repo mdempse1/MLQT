@@ -27,6 +27,7 @@ public class VcsToolsTests
         var repo = new Repository { Id = id, Name = "r", LocalPath = dir, VcsRootPath = dir };
 
         var repoMock = new Mock<IRepositoryService>();
+        repoMock.Setup(r => r.Repositories).Returns(new List<Repository> { repo });
         repoMock.Setup(r => r.GetRepository(id)).Returns(repo);
         repoMock.Setup(r => r.GetRepository(It.Is<string>(s => s != id))).Returns((Repository?)null);
         repoMock.Setup(r => r.GetWorkingCopyChanges(id))
@@ -46,6 +47,15 @@ public class VcsToolsTests
         var res = ToolAssert.Ok<ChangedClassesResult>(vcs.GetChangedClasses(repoId));
         Assert.Equal("workingCopy", res.Revision);
         Assert.Equal(1, res.ChangedFileCount);
+        Assert.Contains("DepLib.Base", res.ClassIds);
+    }
+
+    [Fact]
+    public void GetChangedClasses_ByRepositoryName_Works()
+    {
+        using var host = new TestHost();
+        var vcs = Build(host, out _); // repository Name is "r"
+        var res = ToolAssert.Ok<ChangedClassesResult>(vcs.GetChangedClasses("r"));
         Assert.Contains("DepLib.Base", res.ClassIds);
     }
 
@@ -72,9 +82,10 @@ public class VcsToolsTests
     public void GetChangedClasses_NoLibraryLoaded_Guides()
     {
         using var host = new TestHost();
+        var repo = new Repository { Id = "r1", Name = "r", LocalPath = "x", VcsRootPath = "x" };
         var repoMock = new Mock<IRepositoryService>();
-        repoMock.Setup(r => r.GetRepository("r1"))
-            .Returns(new Repository { Id = "r1", Name = "r", LocalPath = "x", VcsRootPath = "x" });
+        repoMock.Setup(r => r.Repositories).Returns(new List<Repository> { repo });
+        repoMock.Setup(r => r.GetRepository("r1")).Returns(repo);
         var vcs = new VcsTools(host.Libraries, repoMock.Object, host.Impact, host.Session);
 
         var err = ToolAssert.Error(vcs.GetChangedClasses("r1"));

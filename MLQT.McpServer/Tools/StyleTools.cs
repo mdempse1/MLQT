@@ -99,7 +99,8 @@ public sealed class StyleTools
                 "violations are stored for retrieval via list_issues. This can be slow on a large " +
                 "library. Pass 'settings' to check with specific rules.")]
     public object CheckLibrary(
-        [Description("Optional library id (from list_libraries). Omit to check every loaded library.")]
+        [Description("Optional: one library to check, by its id (GUID from list_libraries) or its name " +
+                     "(e.g. 'Modelica'). Omit to check every loaded library. Not a class id.")]
         string? libraryId = null,
         [Description("Rules to apply. Omit to use the current global settings.")]
         StyleSettingsInput? settings = null)
@@ -110,10 +111,10 @@ public sealed class StyleTools
         IReadOnlyList<ModelNode> models;
         if (libraryId is not null)
         {
-            var library = _libraries.Libraries.FirstOrDefault(l => l.Id == libraryId);
-            if (library is null)
-                return new ToolError($"No loaded library with id '{libraryId}'. Call list_libraries.");
-            models = library.ModelIds
+            var (library, error) = EntityResolver.ResolveLibrary(_libraries, libraryId);
+            if (error is not null)
+                return error;
+            models = library!.ModelIds
                 .Select(id => _libraries.GetModelById(id))
                 .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
                 .Cast<ModelNode>()
