@@ -71,26 +71,32 @@ public sealed class GuidanceTools
             """,
 
         ["style"] = """
-            Style / quality checking (opt-in):
-            - get_style_settings returns the current rule toggles (all default off). Flip the ones you
-              want and pass the whole object as 'settings' to a check tool to re-check with new rules.
-            - check_style(source, settings): stateless, for a snippet. Reference-validation and icon
-              rules need a loaded library and are inert here.
-            - check_class(classId, settings) / check_library(libraryId?, settings): check loaded models;
-              results are stored and appear in list_issues.
-            - list_issues aggregates parse errors (available at load) plus style/spell violations from
-              any check that has run. Filter by severity / source / classId.
+            Style / quality checking (opt-in). Rules are PER-REPOSITORY:
+            - Settings live in each repository's .mlqt/settings.json (the same file MLQT uses), loaded by
+              load_repository. get_style_settings(repositoryId?) reads them; set_style_settings(settings,
+              repositoryId?) updates the rule toggles + spell languages and writes them back to
+              .mlqt/settings.json. repositoryId is optional when one repo is loaded.
+            - check_class(classId, settings?) / check_library(libraryId?, settings?): by default use the
+              repository's settings; pass a 'settings' object to override for one run. Results are stored
+              and appear in list_issues.
+            - check_style(source, settings?): stateless snippet check. Reference/icon rules need a loaded
+              library and are inert here.
+            - list_issues aggregates parse errors (available at load) plus style/spell violations from any
+              check that has run. Filter by severity / source / classId.
             """,
 
         ["spelling"] = """
             Spell checking of description and Documentation prose:
+            - The dictionary language(s) come from the repository's settings (SpellCheckLanguages, default
+              en_US/en_GB). Change them with set_style_settings (see the 'style' topic); non-bundled
+              languages must be imported as Hunspell dictionaries.
             - spell_check(classId | source): list misspelled words with line numbers. Covers class and
               component descriptions and Documentation info/revisions.
-            - spelling_suggestions(word): ranked corrections from the bundled en_US/en_GB dictionaries
-              plus your custom dictionary.
+            - spelling_suggestions(word, repositoryId?): ranked corrections using the repository's
+              configured language(s) plus your custom dictionary.
             - correct_spelling(classId, oldWord, newWord): whole-word, case-sensitive replacement across
-              the file's prose (HTML tags, hrefs and code/pre blocks are preserved). By default it
-              writes the file to disk and refreshes the graph; pass preview=true to just see the result.
+              the file's prose (HTML tags, hrefs and code/pre blocks are preserved). By default it writes
+              the file to disk and refreshes the graph; pass preview=true to just see the result.
             """,
 
         ["formatting"] = """

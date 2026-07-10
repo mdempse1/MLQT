@@ -22,6 +22,8 @@ public sealed class TestHost : IDisposable
     public ExternalResourceService Resources { get; }
     public SessionState Session { get; }
     public InMemorySettingsService Settings { get; }
+    public CustomDictionaryService CustomDictionary { get; }
+    public DictionaryManagerService DictionaryManager { get; }
 
     public TestHost()
     {
@@ -30,9 +32,9 @@ public sealed class TestHost : IDisposable
         FileMonitoring = new FileMonitoringService();
         Repositories = new RepositoryService(Libraries, Settings, FileMonitoring);
         CodeReview = new CodeReviewService();
-        var customDict = new CustomDictionaryService();
-        var dictMgr = new DictionaryManagerService();
-        StyleChecking = new StyleCheckingService(Libraries, Repositories, Settings, customDict, dictMgr, CodeReview);
+        CustomDictionary = new CustomDictionaryService();
+        DictionaryManager = new DictionaryManagerService();
+        StyleChecking = new StyleCheckingService(Libraries, Repositories, Settings, CustomDictionary, DictionaryManager, CodeReview);
         Impact = new ImpactAnalysisService();
         Resources = new ExternalResourceService();
         Session = new SessionState();

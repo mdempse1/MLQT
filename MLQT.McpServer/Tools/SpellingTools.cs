@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaGraph;
 using ModelicaParser.SpellChecking;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;
 
@@ -10,37 +12,40 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// Spell checking of Modelica description/Documentation prose, spelling suggestions, and applying a
-/// correction. correct_spelling writes the updated file to disk and refreshes the graph unless
-/// preview is set. Typical workflow: spell_check → spelling_suggestions → correct_spelling.
+/// correction. The spell-check dictionary languages come from the repository's .mlqt/settings.json
+/// (set via set_style_settings). correct_spelling writes the updated file to disk and refreshes the
+/// graph unless preview is set. Typical workflow: spell_check → spelling_suggestions → correct_spelling.
 /// </summary>
 [McpServerToolType]
 public sealed class SpellingTools
 {
     private readonly ILibraryDataService _libraries;
-    private readonly IStyleCheckingService _styleChecking;
+    private readonly IRepositoryService _repositories;
+    private readonly ICustomDictionaryService _customDictionary;
+    private readonly IDictionaryManagerService _dictionaryManager;
 
-    public SpellingTools(ILibraryDataService libraries, IStyleCheckingService styleChecking)
+    public SpellingTools(
+        ILibraryDataService libraries,
+        IRepositoryService repositories,
+        ICustomDictionaryService customDictionary,
+        IDictionaryManagerService dictionaryManager)
     {
         _libraries = libraries;
-        _styleChecking = styleChecking;
+        _repositories = repositories;
+        _customDictionary = customDictionary;
+        _dictionaryManager = dictionaryManager;
     }
 
     [McpServerTool(Name = "spell_check")]
-    [Description("Spell-check the description and Documentation prose of a loaded class (or of an " +
-                "arbitrary source snippet) and return the misspellings as violations (word + line). " +
-                "Provide exactly one of class_id or source. Then use spelling_suggestions for fixes and " +
-                "correct_spelling to apply them.")]
+    [Description("Spell-check the description and Documentation prose of a loaded class (or an arbitrary " +
+                "source snippet) and return the misspellings as violations (word + line). The dictionary " +
+                "language(s) come from the relevant repository's settings (default en_US/en_GB). Provide " +
+                "exactly one of class_id or source. Then use spelling_suggestions and correct_spelling.")]
     public object SpellCheck(
         [Description("Fully-qualified class id to spell-check.")] string? classId = null,
         [Description("Arbitrary Modelica source to spell-check instead of a loaded class.")]
         string? source = null)
     {
-        var settings = new ModelicaGraph.StyleCheckingSettings
-        {
-            SpellCheckDescription = true,
-            SpellCheckDocumentation = true,
-        };
-
         if (!string.IsNullOrWhiteSpace(classId))
         {
             var node = _libraries.GetModelById(classId);
@@ -49,34 +54,50 @@ public sealed class SpellingTools
             if (node.IsParseFailurePlaceholder)
                 return new ToolError($"Class '{classId}' failed to parse and cannot be spell-checked.");
 
-            var violations = StyleCheckRunner.Run(node, settings, _libraries.CombinedGraph, _styleChecking);
-            return ToViolationList(violations);
+            var settings = SpellSettings(LanguagesForClass(classId));
+            var context = StyleCheckContext.Build(settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager);
+            return ToViolationList(StyleCheckRunner.Run(node, settings, context));
         }
 
         if (!string.IsNullOrWhiteSpace(source))
         {
-            var violations = StyleCheckRunner.RunStateless(source, settings, _styleChecking);
-            return ToViolationList(violations);
+            var settings = SpellSettings(SingleRepoLanguages());
+            var context = StyleCheckContext.BuildStateless(settings, _customDictionary, _dictionaryManager);
+            return ToViolationList(StyleCheckRunner.RunStateless(source, settings, context));
         }
 
         return new ToolError("Provide either class_id or source.");
     }
 
     [McpServerTool(Name = "spelling_suggestions")]
-    [Description("Get spelling suggestions for a single word from the spell checker (bundled en_US/en_GB " +
-                "dictionaries plus the user's custom dictionary), and whether the word is already " +
-                "considered correct.")]
+    [Description("Get spelling suggestions for a single word and whether it is already considered " +
+                "correct. Uses the dictionary language(s) configured for the repository (default " +
+                "en_US/en_GB) plus the user's custom dictionary.")]
     public object SpellingSuggestions(
-        [Description("The (possibly misspelled) word to get suggestions for.")] string word)
+        [Description("The (possibly misspelled) word to get suggestions for.")] string word,
+        [Description("Optional repository id (GUID) or name to pick the dictionary language. Omit when a " +
+                     "single repository is loaded.")]
+        string? repositoryId = null)
     {
         if (string.IsNullOrWhiteSpace(word))
             return new ToolError("word must be a non-empty string.");
 
-        var checker = _styleChecking.EnsureSpellChecker();
+        IReadOnlyList<string>? languages;
+        if (repositoryId is not null)
+        {
+            var (repo, error) = EntityResolver.ResolveRepository(_repositories, repositoryId);
+            if (error is not null)
+                return error;
+            languages = repo!.StyleSettings?.SpellCheckLanguages;
+        }
+        else
+        {
+            languages = SingleRepoLanguages();
+        }
+
+        var checker = SpellCheckerFactory.Build(languages, _customDictionary, _dictionaryManager);
         var isCorrect = checker.IsCorrect(word);
-        var suggestions = isCorrect
-            ? Array.Empty<string>()
-            : checker.Suggest(word).ToArray();
+        var suggestions = isCorrect ? Array.Empty<string>() : checker.Suggest(word).ToArray();
         return new SpellSuggestionsResult(word, isCorrect, suggestions);
     }
 
@@ -152,6 +173,26 @@ public sealed class SpellingTools
 
         return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: true, PreviewOnly: false, rendered);
     }
+
+    private static StyleCheckingSettings SpellSettings(IReadOnlyList<string>? languages)
+    {
+        var settings = new StyleCheckingSettings { SpellCheckDescription = true, SpellCheckDocumentation = true };
+        if (languages is { Count: > 0 })
+            settings.SpellCheckLanguages = languages.ToList();
+        return settings;
+    }
+
+    private IReadOnlyList<string>? LanguagesForClass(string classId)
+    {
+        var library = _libraries.Libraries.FirstOrDefault(l => l.ModelIds.Contains(classId));
+        var repo = library?.RepositoryId is { } rid ? _repositories.GetRepository(rid) : null;
+        return repo?.StyleSettings?.SpellCheckLanguages;
+    }
+
+    private IReadOnlyList<string>? SingleRepoLanguages()
+        => _repositories.Repositories.Count == 1
+            ? _repositories.Repositories[0].StyleSettings?.SpellCheckLanguages
+            : null;
 
     private static object ToViolationList(IReadOnlyList<ModelicaParser.DataTypes.LogMessage> violations) =>
         violations

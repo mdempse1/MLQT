@@ -3,11 +3,11 @@ using ModelicaGraph;
 namespace MLQT.McpServer.Dtos;
 
 /// <summary>
-/// The set of style/spell rules to apply, exposed as a flat object of on/off toggles. Every rule
-/// defaults to OFF (matching StyleCheckingSettings), so a check runs exactly the rules you enable.
-/// Use get_style_settings to see the current values, modify, and pass the whole object back to a
-/// check tool to re-check with different rules. The nested naming-convention configuration is not
-/// exposed here; FollowNamingConvention uses the default convention.
+/// The set of style/spell rules to apply, exposed as a flat object of on/off toggles plus the
+/// spell-check dictionary languages. Every rule defaults to OFF. Use get_style_settings to read the
+/// current values (from the repository's .mlqt/settings.json), modify, and pass back to
+/// set_style_settings (to persist) or a check tool (for a one-off run). The nested naming-convention
+/// configuration is not exposed here and is preserved untouched when you save.
 /// </summary>
 public sealed class StyleSettingsInput
 {
@@ -29,28 +29,44 @@ public sealed class StyleSettingsInput
     public bool SpellCheckDocumentation { get; init; }
     public bool ValidateModelReferences { get; init; }
 
-    public StyleCheckingSettings ToSettings() => new()
+    /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
+    /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
+    /// empty on save, the existing languages are kept.</summary>
+    public IReadOnlyList<string>? SpellCheckLanguages { get; init; }
+
+    /// <summary>Copies the rule toggles (and the spell languages, when provided) onto an existing
+    /// settings object, leaving all other fields (naming convention, SVN branch dirs, excluded
+    /// models, commit rules) untouched. This is the merge used when persisting.</summary>
+    public void ApplyTo(StyleCheckingSettings s)
     {
-        ImportStatementsFirst = ImportStatementsFirst,
-        ComponentsBeforeClasses = ComponentsBeforeClasses,
-        OneOfEachSection = OneOfEachSection,
-        DontMixEquationAndAlgorithm = DontMixEquationAndAlgorithm,
-        DontMixConnections = DontMixConnections,
-        InitialEQAlgoFirst = InitialEQAlgoFirst,
-        InitialEQAlgoLast = InitialEQAlgoLast,
-        ClassHasDescription = ClassHasDescription,
-        ClassHasDocumentationInfo = ClassHasDocumentationInfo,
-        ClassHasDocumentationRevisions = ClassHasDocumentationRevisions,
-        ClassHasIcon = ClassHasIcon,
-        ParameterHasDescription = ParameterHasDescription,
-        ConstantHasDescription = ConstantHasDescription,
-        FollowNamingConvention = FollowNamingConvention,
-        SpellCheckDescription = SpellCheckDescription,
-        SpellCheckDocumentation = SpellCheckDocumentation,
-        ValidateModelReferences = ValidateModelReferences,
-        // SpellCheckLanguages left at its default (en_US, en_GB); the spell checker built via the
-        // service interface uses the bundled dictionaries regardless.
-    };
+        s.ImportStatementsFirst = ImportStatementsFirst;
+        s.ComponentsBeforeClasses = ComponentsBeforeClasses;
+        s.OneOfEachSection = OneOfEachSection;
+        s.DontMixEquationAndAlgorithm = DontMixEquationAndAlgorithm;
+        s.DontMixConnections = DontMixConnections;
+        s.InitialEQAlgoFirst = InitialEQAlgoFirst;
+        s.InitialEQAlgoLast = InitialEQAlgoLast;
+        s.ClassHasDescription = ClassHasDescription;
+        s.ClassHasDocumentationInfo = ClassHasDocumentationInfo;
+        s.ClassHasDocumentationRevisions = ClassHasDocumentationRevisions;
+        s.ClassHasIcon = ClassHasIcon;
+        s.ParameterHasDescription = ParameterHasDescription;
+        s.ConstantHasDescription = ConstantHasDescription;
+        s.FollowNamingConvention = FollowNamingConvention;
+        s.SpellCheckDescription = SpellCheckDescription;
+        s.SpellCheckDocumentation = SpellCheckDocumentation;
+        s.ValidateModelReferences = ValidateModelReferences;
+        if (SpellCheckLanguages is { Count: > 0 })
+            s.SpellCheckLanguages = SpellCheckLanguages.ToList();
+    }
+
+    /// <summary>A fresh, full settings object from this input (default naming/SVN config).</summary>
+    public StyleCheckingSettings ToSettings()
+    {
+        var s = new StyleCheckingSettings();
+        ApplyTo(s);
+        return s;
+    }
 
     public static StyleSettingsInput From(StyleCheckingSettings s) => new()
     {
@@ -71,8 +87,23 @@ public sealed class StyleSettingsInput
         SpellCheckDescription = s.SpellCheckDescription,
         SpellCheckDocumentation = s.SpellCheckDocumentation,
         ValidateModelReferences = s.ValidateModelReferences,
+        SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
     };
 }
+
+public sealed record StyleSettingsResult(
+    string? RepositoryId,
+    string? Repository,
+    string Source,
+    StyleSettingsInput Settings);
+
+public sealed record SetStyleSettingsResult(
+    string RepositoryId,
+    string Repository,
+    bool Persisted,
+    string? Path,
+    string? Note,
+    StyleSettingsInput Settings);
 
 public sealed record StyleViolationDto(
     string ModelName,

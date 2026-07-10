@@ -5,8 +5,10 @@ namespace MLQT.McpServer.Tests;
 
 public class QualityToolsTests
 {
-    private static StyleTools Style(TestHost h) => new(h.Libraries, h.StyleChecking, h.CodeReview, h.Settings);
-    private static SpellingTools Spelling(TestHost h) => new(h.Libraries, h.StyleChecking);
+    private static StyleTools Style(TestHost h)
+        => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager);
+    private static SpellingTools Spelling(TestHost h)
+        => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager);
     private static FormattingTools Formatting(TestHost h) => new(h.Libraries);
 
     private static void LoadSingle(TestHost h, string file, string content)
@@ -15,12 +17,12 @@ public class QualityToolsTests
     // ----- style -----
 
     [Fact]
-    public async Task GetStyleSettings_DefaultsOff()
+    public void GetStyleSettings_DefaultsOff_WhenNoRepository()
     {
         using var host = new TestHost();
-        var settings = await Style(host).GetStyleSettings();
-        Assert.False(settings.ClassHasDescription);
-        Assert.False(settings.SpellCheckDescription);
+        var res = ToolAssert.Ok<StyleSettingsResult>(Style(host).GetStyleSettings());
+        Assert.False(res.Settings.ClassHasDescription);
+        Assert.False(res.Settings.SpellCheckDescription);
     }
 
     [Fact]
@@ -128,6 +130,25 @@ public class QualityToolsTests
         Assert.Contains(list, v => v.Summary.Contains("postion"));
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck());
+    }
+
+    [Fact]
+    public void SpellCheck_ByClassId_FindsMisspelling()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "P.mo", "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;");
+        var res = Spelling(host).SpellCheck(classId: "P");
+        var list = Assert.IsAssignableFrom<IReadOnlyList<StyleViolationDto>>(res);
+        Assert.Contains(list, v => v.Summary.Contains("postion"));
+
+        Assert.IsType<ToolError>(Spelling(host).SpellCheck(classId: "Nope"));
+    }
+
+    [Fact]
+    public void SpellingSuggestions_UnknownRepository_Errors()
+    {
+        using var host = new TestHost();
+        Assert.IsType<ToolError>(Spelling(host).SpellingSuggestions("postion", repositoryId: "nope"));
     }
 
     [Fact]

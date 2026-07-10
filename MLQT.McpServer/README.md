@@ -50,7 +50,7 @@ Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 | Session / library | `load_repository`, `load_library`, `list_libraries`, `list_repositories`, `discover_libraries`, `unload_library` |
 | Class query | `get_class_info`, `get_class_source`, `list_classes`, `search_classes`, `get_package_tree` |
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
-| Code quality | `get_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |
+| Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |
 | Spelling | `spell_check`, `spelling_suggestions`, `correct_spelling` |
 | Formatting | `format_code`, `format_class` |
 | External resources | `get_class_resources`, `find_resource_usages`, `get_resource_warnings` |

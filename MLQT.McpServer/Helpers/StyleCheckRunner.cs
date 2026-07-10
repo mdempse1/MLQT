@@ -7,18 +7,23 @@ using MLQT.Services.Interfaces;
 namespace MLQT.McpServer.Helpers;
 
 /// <summary>
-/// Runs the style/spell checking pipeline with the same contextual inputs the MLQT background
-/// worker uses (known model ids/names for reference validation and spell-check context, a spell
-/// checker when spelling rules are on, and a base-class icon callback for icon inheritance).
+/// The contextual inputs the style/spell pipeline needs, built ONCE per check operation (rather
+/// than per model): known model ids/names for reference validation and spell-check context, a spell
+/// checker for the chosen languages, and a base-class icon callback for icon inheritance.
 /// </summary>
-internal static class StyleCheckRunner
+internal sealed class StyleCheckContext
 {
-    /// <summary>Check one loaded model, wiring graph-derived context.</summary>
-    public static List<LogMessage> Run(
-        ModelNode node,
+    public IReadOnlySet<string>? KnownModelIds { get; private init; }
+    public IReadOnlySet<string>? KnownModelNames { get; private init; }
+    public SpellChecker? SpellChecker { get; private init; }
+    public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
+
+    /// <summary>Context for checking loaded models against a graph.</summary>
+    public static StyleCheckContext Build(
         StyleCheckingSettings settings,
         DirectedGraph graph,
-        IStyleCheckingService styleService)
+        ICustomDictionaryService customDictionary,
+        IDictionaryManagerService dictionaryManager)
     {
         IReadOnlySet<string>? knownModelIds = null;
         if (settings.ValidateModelReferences)
@@ -28,43 +33,55 @@ internal static class StyleCheckRunner
         IReadOnlySet<string>? knownModelNames = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
         {
-            // Public EnsureSpellChecker() uses the default bundled dictionaries (en_US/en_GB) plus the
-            // user's custom dictionary. Language selection is not settable via the service interface.
-            spellChecker = styleService.EnsureSpellChecker();
+            spellChecker = SpellCheckerFactory.Build(settings.SpellCheckLanguages, customDictionary, dictionaryManager);
             knownModelNames = graph.ModelNodes
                 .Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
-        var baseClassHasIcon = settings.ClassHasIcon
-            ? StyleChecking.CreateBaseClassHasIconCallback(graph)
-            : null;
+        return new StyleCheckContext
+        {
+            KnownModelIds = knownModelIds,
+            KnownModelNames = knownModelNames,
+            SpellChecker = spellChecker,
+            BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
+        };
+    }
 
+    /// <summary>Context for checking an arbitrary snippet (no graph): only a spell checker applies.</summary>
+    public static StyleCheckContext BuildStateless(
+        StyleCheckingSettings settings,
+        ICustomDictionaryService customDictionary,
+        IDictionaryManagerService dictionaryManager)
+    {
+        SpellChecker? spellChecker = null;
+        if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
+            spellChecker = SpellCheckerFactory.Build(settings.SpellCheckLanguages, customDictionary, dictionaryManager);
+
+        return new StyleCheckContext { SpellChecker = spellChecker };
+    }
+}
+
+/// <summary>Runs the style/spell checking pipeline using a pre-built <see cref="StyleCheckContext"/>.</summary>
+internal static class StyleCheckRunner
+{
+    public static List<LogMessage> Run(ModelNode node, StyleCheckingSettings settings, StyleCheckContext context)
+    {
         var violations = StyleChecking.RunStyleChecking(
-            node.Definition, settings, node.Id, knownModelIds, spellChecker, knownModelNames,
+            node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: baseClassHasIcon);
+            baseClassHasIcon: context.BaseClassHasIcon);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return violations;
     }
 
-    /// <summary>Check an arbitrary source snippet with no loaded graph. Reference validation and
-    /// icon-inheritance cannot run without a graph; spelling and structural rules still apply.</summary>
-    public static List<LogMessage> RunStateless(
-        string source,
-        StyleCheckingSettings settings,
-        IStyleCheckingService styleService)
+    public static List<LogMessage> RunStateless(string source, StyleCheckingSettings settings, StyleCheckContext context)
     {
         var definition = new ModelDefinition("Snippet", source);
-
-        SpellChecker? spellChecker = null;
-        if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-            spellChecker = styleService.EnsureSpellChecker();
-
         return StyleChecking.RunStyleChecking(
             definition, settings, fullModelId: string.Empty,
-            knownModelIds: null, spellChecker: spellChecker, knownModelNames: null,
+            knownModelIds: null, spellChecker: context.SpellChecker, knownModelNames: null,
             isExcludedFromFormatting: false, baseClassHasIcon: null);
     }
 }
