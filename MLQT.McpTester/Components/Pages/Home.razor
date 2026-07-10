@@ -58,6 +58,37 @@
 
 @if (Mcp.IsConnected)
 {
+    <!-- Server info & instructions (from the initialize response) -->
+    <MudExpansionPanels Class="mb-4" Elevation="1">
+        <MudExpansionPanel Expanded="true">
+            <TitleContent>
+                <div class="d-flex align-center" style="gap:8px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                    <MudText Typo="Typo.subtitle1">
+                        Server: @(Mcp.ServerName ?? "?")@(string.IsNullOrEmpty(Mcp.ServerVersion) ? "" : $" v{Mcp.ServerVersion}")
+                    </MudText>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                @if (string.IsNullOrWhiteSpace(Mcp.ServerInstructions))
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        This server returned no instructions on connect.
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Instructions the server sent to describe itself (the text a client/LLM sees on connect):
+                    </MudText>
+                    <MudPaper Outlined="true" Class="pa-3 mt-1" Style="overflow-x:auto;">
+                        <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-size:0.8rem;">@Mcp.ServerInstructions</pre>
+                    </MudPaper>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
     <MudGrid Spacing="3">
         <!-- Tool list -->
         <MudItem xs="12" md="4">

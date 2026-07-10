@@ -20,7 +20,8 @@ dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
 1. **Command** — path to the MCP server executable. The **Use MLQT server** button fills in the
    built `MLQT.McpServer.exe` path; build `MLQT.McpServer` first so it exists.
 2. Optionally set space-separated **Arguments** and a **Working directory**.
-3. **Connect** — launches the server over stdio and lists its tools.
+3. **Connect** — launches the server over stdio, shows the server's name/version and any **instructions**
+   it returned on connect (the text a client/LLM sees describing what the server does), and lists its tools.
 4. Pick a tool. A form is generated from its input schema:
    - booleans → switch, enums → dropdown, arrays/objects → multiline (enter JSON), everything else → text.
    - required fields are marked `*`; leave optional fields blank to use the server's defaults.

@@ -15,6 +15,12 @@ public sealed class McpClientService : IAsyncDisposable
     public string? Command { get; private set; }
     public IList<McpClientTool> Tools { get; private set; } = new List<McpClientTool>();
 
+    /// <summary>The server's name/version and the instructions it returned in the initialize response
+    /// (the text a client/LLM sees on connect describing what the server does).</summary>
+    public string? ServerName { get; private set; }
+    public string? ServerVersion { get; private set; }
+    public string? ServerInstructions { get; private set; }
+
     /// <summary>Connect to (launch) a stdio MCP server. Replaces any existing connection.</summary>
     public async Task ConnectAsync(string command, string[] arguments, string? workingDirectory, CancellationToken ct = default)
     {
@@ -33,6 +39,9 @@ public sealed class McpClientService : IAsyncDisposable
         _client = await McpClient.CreateAsync(transport, cancellationToken: ct);
         Tools = await _client.ListToolsAsync(cancellationToken: ct);
         Command = command;
+        ServerName = _client.ServerInfo?.Name;
+        ServerVersion = _client.ServerInfo?.Version;
+        ServerInstructions = _client.ServerInstructions;
     }
 
     /// <summary>Call a tool by name with the given arguments.</summary>
@@ -53,6 +62,9 @@ public sealed class McpClientService : IAsyncDisposable
         }
         Tools = new List<McpClientTool>();
         Command = null;
+        ServerName = null;
+        ServerVersion = null;
+        ServerInstructions = null;
     }
 
     public async ValueTask DisposeAsync() => await DisconnectAsync();
