@@ -16,6 +16,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **MLQT** - .NET MAUI application
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
 - **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
+- **MLQT.McpTester** - MAUI Blazor (Windows) desktop app for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration

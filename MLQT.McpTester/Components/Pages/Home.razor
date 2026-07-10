@@ -1,0 +1,304 @@
+@page "/"
+@using System.Text
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using ModelContextProtocol.Client
+@using ModelContextProtocol.Protocol
+@inject McpClientService Mcp
+@implements IDisposable
+
+<PageTitle>MCP Server Tester</PageTitle>
+
+<!-- Connection -->
+<MudCard Elevation="1" Class="mb-4">
+    <MudCardContent>
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Server connection</MudText>
+        <MudTextField @bind-Value="_command" Label="Command (executable path)" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Class="mb-2" />
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="7">
+                <MudTextField @bind-Value="_argsText" Label="Arguments (space-separated, optional)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="5">
+                <MudTextField @bind-Value="_workingDir" Label="Working directory (optional)"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex align-center mt-3" style="gap:8px;">
+            @if (!Mcp.IsConnected)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="Connect" Disabled="_connecting">Connect</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
+                           OnClick="Disconnect">Disconnect</MudButton>
+            }
+            <MudButton Variant="Variant.Text" OnClick="FillMlqtServer" Disabled="_connecting">Use MLQT server</MudButton>
+            @if (_connecting)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                <MudText Typo="Typo.body2">Launching server…</MudText>
+            }
+            @if (Mcp.IsConnected)
+            {
+                <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">
+                    Connected · @Mcp.Tools.Count tools
+                </MudChip>
+            }
+        </div>
+        @if (_connectError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3" Dense="true">@_connectError</MudAlert>
+        }
+    </MudCardContent>
+</MudCard>
+
+@if (Mcp.IsConnected)
+{
+    <MudGrid Spacing="3">
+        <!-- Tool list -->
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="1">
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Tools (@Mcp.Tools.Count)</MudText>
+                    <MudStack Spacing="0">
+                        @foreach (var tool in Mcp.Tools)
+                        {
+                            var selected = _selectedTool?.Name == tool.Name;
+                            <MudButton FullWidth="true" Class="justify-start"
+                                       Variant="@(selected ? Variant.Filled : Variant.Text)"
+                                       Color="@(selected ? Color.Primary : Color.Default)"
+                                       OnClick="@(() => SelectTool(tool))">
+                                @tool.Name
+                            </MudButton>
+                        }
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Selected tool: params + call + result -->
+        <MudItem xs="12" md="8">
+            @if (_selectedTool is null)
+            {
+                <MudPaper Class="pa-6" Elevation="0" Outlined="true">
+                    <MudText Typo="Typo.body1" Class="mud-text-secondary">Select a tool to call it.</MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudCard Elevation="1" Class="mb-3">
+                    <MudCardContent>
+                        <MudText Typo="Typo.h6">@_selectedTool.Name</MudText>
+                        @if (!string.IsNullOrWhiteSpace(_selectedTool.Description))
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">@_selectedTool.Description</MudText>
+                        }
+
+                        @if (_params.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">This tool takes no arguments.</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var p in _params)
+                            {
+                                <div class="mb-3">
+                                    @if (p.IsBoolean)
+                                    {
+                                        <MudSwitch @bind-Value="p.BoolValue" Color="Color.Primary" Label="@FieldLabel(p)" />
+                                    }
+                                    else if (p.IsEnum)
+                                    {
+                                        <MudSelect T="string" @bind-Value="p.StringValue" Label="@FieldLabel(p)"
+                                                   Dense="true" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            @foreach (var opt in p.EnumValues!)
+                                            {
+                                                <MudSelectItem Value="@opt">@opt</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    }
+                                    else
+                                    {
+                                        <MudTextField @bind-Value="p.StringValue" Label="@FieldLabel(p)"
+                                                      Lines="@(p.IsMultiline ? 3 : 1)" Variant="Variant.Outlined"
+                                                      Margin="Margin.Dense"
+                                                      Placeholder="@(p.IsMultiline ? "JSON value" : null)" />
+                                    }
+                                    @if (!string.IsNullOrEmpty(p.Description))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@p.Description</MudText>
+                                    }
+                                </div>
+                            }
+                        }
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                                   StartIcon="@Icons.Material.Filled.Send" OnClick="Call" Disabled="_calling">
+                            Call tool
+                        </MudButton>
+                        @if (_calling)
+                        {
+                            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="ml-3" />
+                        }
+                        @if (_callError is not null)
+                        {
+                            <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true">@_callError</MudAlert>
+                        }
+                    </MudCardContent>
+                </MudCard>
+
+                @if (_resultText is not null)
+                {
+                    <MudCard Elevation="1">
+                        <MudCardContent>
+                            <div class="d-flex align-center mb-2" style="gap:8px;">
+                                <MudText Typo="Typo.subtitle1">Result</MudText>
+                                @if (_isError)
+                                {
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small">isError</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small">ok</MudChip>
+                                }
+                            </div>
+                            <MudPaper Outlined="true" Class="pa-3" Style="overflow-x:auto;">
+                                <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-size:0.8rem;">@_resultText</pre>
+                            </MudPaper>
+                        </MudCardContent>
+                    </MudCard>
+                }
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private const string MlqtServerPath =
+        @"C:\Projects\MLQT\MLQT.McpServer\bin\Debug\net10.0\MLQT.McpServer.exe";
+
+    private string _command = MlqtServerPath;
+    private string _argsText = "";
+    private string _workingDir = "";
+
+    private bool _connecting;
+    private bool _calling;
+    private string? _connectError;
+    private string? _callError;
+
+    private McpClientTool? _selectedTool;
+    private List<ToolParam> _params = new();
+    private string? _resultText;
+    private bool _isError;
+
+    private void FillMlqtServer() => _command = MlqtServerPath;
+
+    private async Task Connect()
+    {
+        _connecting = true;
+        _connectError = null;
+        _selectedTool = null;
+        _params = new();
+        _resultText = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var args = string.IsNullOrWhiteSpace(_argsText)
+                ? Array.Empty<string>()
+                : _argsText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            await Mcp.ConnectAsync(_command, args, string.IsNullOrWhiteSpace(_workingDir) ? null : _workingDir);
+        }
+        catch (Exception ex)
+        {
+            _connectError = ex.Message;
+        }
+        finally
+        {
+            _connecting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task Disconnect()
+    {
+        await Mcp.DisconnectAsync();
+        _selectedTool = null;
+        _params = new();
+        _resultText = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectTool(McpClientTool tool)
+    {
+        _selectedTool = tool;
+        _params = ToolSchema.Parse(tool.JsonSchema);
+        _resultText = null;
+        _callError = null;
+    }
+
+    private async Task Call()
+    {
+        if (_selectedTool is null) return;
+        _calling = true;
+        _callError = null;
+        _resultText = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var args = ToolSchema.BuildArguments(_params);
+            var result = await Mcp.CallToolAsync(_selectedTool.Name, args);
+            _isError = result.IsError ?? false;
+            _resultText = RenderResult(result);
+        }
+        catch (Exception ex)
+        {
+            _callError = ex.Message;
+        }
+        finally
+        {
+            _calling = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string FieldLabel(ToolParam p)
+        => $"{p.Name}{(p.Required ? " *" : "")} ({p.Type})";
+
+    private static string RenderResult(CallToolResult result)
+    {
+        var sb = new StringBuilder();
+        foreach (var block in result.Content)
+        {
+            if (block is TextContentBlock text)
+                sb.AppendLine(PrettyJson(text.Text));
+            else
+                sb.AppendLine($"[{block.Type} content]");
+        }
+        if (result.StructuredContent is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null } sc)
+        {
+            sb.AppendLine();
+            sb.AppendLine("// structuredContent:");
+            sb.AppendLine(JsonSerializer.Serialize(sc, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string PrettyJson(string text)
+    {
+        try
+        {
+            var node = JsonNode.Parse(text);
+            return node?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? text;
+        }
+        catch
+        {
+            return text;
+        }
+    }
+
+    public void Dispose() => _ = Mcp.DisconnectAsync();
+}
