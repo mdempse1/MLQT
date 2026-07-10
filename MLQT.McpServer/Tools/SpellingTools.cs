@@ -4,6 +4,7 @@ using ModelicaGraph;
 using ModelicaParser.SpellChecking;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;
@@ -23,17 +24,23 @@ public sealed class SpellingTools
     private readonly IRepositoryService _repositories;
     private readonly ICustomDictionaryService _customDictionary;
     private readonly IDictionaryManagerService _dictionaryManager;
+    private readonly IExternalResourceService _resources;
+    private readonly SessionState _session;
 
     public SpellingTools(
         ILibraryDataService libraries,
         IRepositoryService repositories,
         ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager)
+        IDictionaryManagerService dictionaryManager,
+        IExternalResourceService resources,
+        SessionState session)
     {
         _libraries = libraries;
         _repositories = repositories;
         _customDictionary = customDictionary;
         _dictionaryManager = dictionaryManager;
+        _resources = resources;
+        _session = session;
     }
 
     [McpServerTool(Name = "spell_check")]
@@ -169,7 +176,8 @@ public sealed class SpellingTools
 
         await File.WriteAllTextAsync(ctx.FilePath, rendered);
         // Re-parse the file from disk so all its model nodes are rebuilt from the saved content.
-        await _libraries.ReloadFileAsync(ctx.FilePath);
+        var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
         return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: true, PreviewOnly: false, rendered);
     }

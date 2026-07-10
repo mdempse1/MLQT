@@ -150,6 +150,14 @@ public sealed record SpellSuggestionsResult(
     bool IsCorrect,
     IReadOnlyList<string> Suggestions);
 
+public sealed record UpdateClassSourceResult(
+    string ClassId,
+    string? FilePath,
+    bool PreviewOnly,
+    bool Changed,
+    int AffectedModelCount,
+    string? NewFileContent);
+
 public sealed record CorrectSpellingResult(
     string ClassId,
     string? FilePath,

@@ -52,6 +52,7 @@ Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
 | Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |
 | Spelling | `spell_check`, `spelling_suggestions`, `correct_spelling` |
+| Editing | `update_class_source` |
 | Formatting | `format_code`, `format_class` |
 | External resources | `get_class_resources`, `find_resource_usages`, `get_resource_warnings` |
 | Modelica-aware VCS | `get_changed_classes`, `analyze_change_impact` |

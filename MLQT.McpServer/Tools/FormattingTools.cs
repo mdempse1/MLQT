@@ -5,6 +5,7 @@ using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
 using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;
 
@@ -19,8 +20,15 @@ namespace MLQT.McpServer.Tools;
 public sealed class FormattingTools
 {
     private readonly ILibraryDataService _libraries;
+    private readonly IExternalResourceService _resources;
+    private readonly SessionState _session;
 
-    public FormattingTools(ILibraryDataService libraries) => _libraries = libraries;
+    public FormattingTools(ILibraryDataService libraries, IExternalResourceService resources, SessionState session)
+    {
+        _libraries = libraries;
+        _resources = resources;
+        _session = session;
+    }
 
     [McpServerTool(Name = "format_code")]
     [Description("Format one or more COMPLETE Modelica class definitions and return the formatted text " +
@@ -144,7 +152,8 @@ public sealed class FormattingTools
         if (changed)
         {
             await File.WriteAllTextAsync(ctx.FilePath, rendered);
-            await _libraries.ReloadFileAsync(ctx.FilePath);
+            var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
+            await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
         }
 
         return new FormatClassResult(classId, PreviewOnly: false, Changed: changed, ctx.FilePath, rendered);

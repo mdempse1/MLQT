@@ -8,8 +8,8 @@ public class QualityToolsTests
     private static StyleTools Style(TestHost h)
         => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager);
     private static SpellingTools Spelling(TestHost h)
-        => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager);
-    private static FormattingTools Formatting(TestHost h) => new(h.Libraries);
+        => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Resources, h.Session);
+    private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Resources, h.Session);
 
     private static void LoadSingle(TestHost h, string file, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(file, content)).GetAwaiter().GetResult();

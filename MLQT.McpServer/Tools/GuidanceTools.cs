@@ -56,6 +56,11 @@ public sealed class GuidanceTools
 
             Fix a spelling mistake:
               spell_check -> spelling_suggestions -> correct_spelling.
+
+            Edit a class and re-check it:
+              get_class_source (read) -> update_class_source (write the new source, same class name;
+              validated + verbatim) -> optionally format_class -> check_class + spell_check (re-check just
+              that class).
             """,
 
         ["dependencies"] = """
@@ -68,6 +73,9 @@ public sealed class GuidanceTools
               class(es) — the complete blast radius, with the immediate source that pulled each in.
             - Empty results carry a dependenciesAnalyzed flag: false means "not analyzed yet",
               true means "genuinely none".
+            - After analyze_dependencies has run, the editing tools (update_class_source, format_class,
+              correct_spelling) incrementally refresh the dependency graph for the files they change, so
+              these queries stay current after an edit without a full re-analysis.
             """,
 
         ["style"] = """

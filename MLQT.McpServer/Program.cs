@@ -58,8 +58,9 @@ const string serverInstructions =
       each repository's .mlqt/settings.json (read with get_style_settings, change with set_style_settings).
     - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided — use your
       own CLI. The two VCS tools here map file changes to Modelica classes, which the CLI cannot do.
-    - Tools that transform code: format_code and check_style are stateless; format_class and
-      correct_spelling update the graph and write the .mo file (unless preview:true).
+    - Tools that transform code: format_code and check_style are stateless; update_class_source (replace a
+      class's body in place — same name), format_class and correct_spelling update the graph and write the
+      .mo file (unless preview:true), and incrementally refresh dependencies.
 
     Call get_guidance (optionally with a topic: workflows, dependencies, style, spelling, formatting,
     vcs, resources) for detailed, task-oriented recipes.
