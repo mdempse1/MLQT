@@ -9,6 +9,7 @@
     <Project Path="ModelicaGraph/ModelicaGraph.csproj" />
     <Project Path="MLQT.Services/MLQT.Services.csproj" />
     <Project Path="MLQT.Services.Tests/MLQT.Services.Tests.csproj" />
+    <Project Path="MLQT.McpServer/MLQT.McpServer.csproj" />
     <Project Path="OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj" />
     <Project Path="OpenModelicaInterface/OpenModelicaInterface.csproj" />
     <Project Path="RevisionControl.Tests/RevisionControl.Tests.csproj" />
