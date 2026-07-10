@@ -33,6 +33,9 @@ builder.Services.AddSingleton<IDictionaryManagerService, DictionaryManagerServic
 builder.Services.AddSingleton<IImpactAnalysisService, ImpactAnalysisService>();
 builder.Services.AddSingleton<IExternalResourceService, ExternalResourceService>();
 
+// Tracks whether the opt-in analysis passes have run this session (see DependencyTools).
+builder.Services.AddSingleton<MLQT.McpServer.Services.SessionState>();
+
 // --- MCP server over stdio, tools discovered by attribute from this assembly ---
 builder.Services
     .AddMcpServer()
