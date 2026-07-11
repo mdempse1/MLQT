@@ -151,6 +151,9 @@ public sealed class FormattingTools
         var changed = original is null || NormalizeEol(original) != NormalizeEol(rendered);
         if (changed)
         {
+            if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)
+                return readOnly;
+
             await File.WriteAllTextAsync(ctx.FilePath, rendered);
             var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
             await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);

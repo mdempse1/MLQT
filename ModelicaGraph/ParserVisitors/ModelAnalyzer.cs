@@ -357,7 +357,7 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private void ResolveAndAddDependency(string reference)
     {
-        var resolvedId = ResolveReference(reference);
+        var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);
         if (resolvedId != null && resolvedId != _modelId)
         {
             var referencedModel = _graph.GetNode<ModelNode>(resolvedId);
@@ -368,73 +368,11 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         }
     }
 
-    private string? ResolveReference(string reference)
-    {
-        if (string.IsNullOrWhiteSpace(reference) || IsBuiltInType(reference))
-            return null;
-
-        if (_graph.GetNode<ModelNode>(reference) != null)
-            return reference;
-
-        foreach (var import in _imports)
-        {
-            if (!string.IsNullOrEmpty(import.Alias) && reference.StartsWith(import.Alias))
-            {
-                var resolved = reference.Replace(import.Alias, import.QualifiedName);
-                if (_graph.GetNode<ModelNode>(resolved) != null)
-                    return resolved;
-            }
-        }
-
-        foreach (var import in _imports.Where(i => i.IsWildcard))
-        {
-            var candidate = $"{import.QualifiedName}.{reference}";
-            if (_graph.GetNode<ModelNode>(candidate) != null)
-                return candidate;
-        }
-
-        if (_modelId.Contains('.'))
-        {
-            var parts = _modelId.Split('.');
-            for (int i = parts.Length - 1; i >= 1; i--)
-            {
-                var packagePath = string.Join(".", parts.Take(i));
-                var candidate = $"{packagePath}.{reference}";
-                if (_graph.GetNode<ModelNode>(candidate) != null)
-                    return candidate;
-            }
-        }
-
-        return null;
-    }
-
     private string GetQualifiedName(modelicaParser.NameContext context)
-    {
-        return context.GetText().Trim();
-    }
+        => ReferenceResolver.GetQualifiedName(context);
 
     private string GetComponentReferenceName(modelicaParser.Component_referenceContext context)
-    {
-        return context.GetText().Split('(')[0].Trim();
-    }
-
-    private bool IsBuiltInType(string name)
-    {
-        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Real", "Integer", "Boolean", "String",
-            "StateSelect", "AssertionLevel",
-            "time", "der", "pre", "edge", "change", "reinit",
-            "sample", "initial", "terminal", "noEvent",
-            "smooth", "terminate", "abs", "sign", "sqrt",
-            "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-            "sinh", "cosh", "tanh", "exp", "log", "log10",
-            "min", "max", "sum", "product"
-        };
-
-        var firstPart = name.Split('.')[0];
-        return builtInTypes.Contains(firstPart);
-    }
+        => ReferenceResolver.GetComponentReferenceName(context);
 
     #endregion
 
@@ -661,11 +599,4 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     }
 
     #endregion
-
-    private class ImportInfo
-    {
-        public string? Alias { get; set; }
-        public required string QualifiedName { get; set; }
-        public bool IsWildcard { get; set; }
-    }
 }

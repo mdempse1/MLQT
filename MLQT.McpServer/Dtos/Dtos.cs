@@ -57,7 +57,8 @@ public sealed record ClassInfo(
     bool HasExperimentAnnotation,
     bool CanBeStoredStandalone,
     bool HasParserErrors,
-    bool HasFatalParseFailure);
+    bool HasFatalParseFailure,
+    bool? Writable);
 
 public sealed record ClassSourceResult(
     string Id,

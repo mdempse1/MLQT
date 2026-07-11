@@ -52,15 +52,23 @@ const string serverInstructions =
     - Class ids are fully-qualified dotted names, e.g. Modelica.Blocks.Continuous.Integrator; use
       search_classes to find one. Library and repository ids are the GUIDs from list_libraries /
       list_repositories, but their names (e.g. "Modelica") also work.
+    - To learn a class without reading its source, prefer the compact "views": get_class_interface (its
+      public parameters, connectors and, for functions, the signature), list_class_elements (every
+      declaration), and get_class_documentation (its prose). validate_class_references flags referenced
+      types that do not resolve. These need only a loaded library.
     - Analysis is opt-in. get_dependencies, find_usages, analyze_impact, the external-resource tools
       and analyze_change_impact all require analyze_dependencies to have been run first (it can be slow
       on a large library). Style checking is opt-in via check_class / check_library; the rules come from
       each repository's .mlqt/settings.json (read with get_style_settings, change with set_style_settings).
     - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided — use your
       own CLI. The two VCS tools here map file changes to Modelica classes, which the CLI cannot do.
-    - Tools that transform code: format_code and check_style are stateless; update_class_source (replace a
-      class's body in place — same name), format_class and correct_spelling update the graph and write the
-      .mo file (unless preview:true), and incrementally refresh dependencies.
+    - Authoring tools that change code on disk (all support preview:true and refresh dependencies):
+      create_class (add a class, placed standalone or nested), update_class_source (replace a class's body,
+      same name), rename_class (rename + rewrite every resolved reference), move_class (move to a new parent
+      + re-qualify references), delete_class (remove a class, reports dangling references). rename_class and
+      move_class need analyze_dependencies. format_code/check_style are stateless; format_class and
+      correct_spelling reformat/fix in place. Writes to read-only files (e.g. a reference library under
+      Program Files) are refused.
 
     Call get_guidance (optionally with a topic: workflows, dependencies, style, spelling, formatting,
     vcs, resources) for detailed, task-oriented recipes.

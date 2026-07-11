@@ -158,6 +158,50 @@ public sealed record UpdateClassSourceResult(
     int AffectedModelCount,
     string? NewFileContent);
 
+public sealed record CreateClassResult(
+    string NewClassId,
+    string FilePath,
+    string Storage,
+    bool PreviewOnly,
+    bool Created,
+    string? NewFileContent);
+
+public sealed record DeleteClassResult(
+    string DeletedClassId,
+    string FilePath,
+    string Storage,
+    bool PreviewOnly,
+    bool Deleted,
+    bool DependenciesChecked,
+    IReadOnlyList<string> DanglingReferences,
+    string? Note);
+
+public sealed record MoveClassResult(
+    string OldClassId,
+    string NewClassId,
+    string Storage,
+    bool PreviewOnly,
+    bool Moved,
+    int ReferencesRequalified,
+    int FilesChanged,
+    IReadOnlyList<string> BrokenReferencesInMovedClass,
+    string Note);
+
+public sealed record RenameFileChange(
+    string FilePath,
+    int Replacements,
+    string? NewContent);
+
+public sealed record RenameClassResult(
+    string OldClassId,
+    string NewClassId,
+    bool PreviewOnly,
+    bool Changed,
+    int FilesChanged,
+    int TotalReplacements,
+    IReadOnlyList<RenameFileChange> Changes,
+    string Note);
+
 public sealed record CorrectSpellingResult(
     string ClassId,
     string? FilePath,

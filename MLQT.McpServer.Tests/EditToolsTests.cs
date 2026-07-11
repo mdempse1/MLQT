@@ -42,14 +42,140 @@ public class EditToolsTests
     private static void LoadFile(TestHost h, string name, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(name, content)).GetAwaiter().GetResult();
 
+    // Two 'Widget' classes in sibling packages, each used by a local model — for precision tests.
+    private const string SameLeafPackage = """
+        within;
+        package Q "q"
+          package A
+            model Widget "a widget"
+              Real x;
+            end Widget;
+            model UserA
+              Widget w;
+            end UserA;
+          end A;
+          package B
+            model Widget "b widget"
+              Real y;
+            end Widget;
+            model UserB
+              Widget w;
+            end UserB;
+          end B;
+        end Q;
+        """;
+
     // Loads the P package (Base <- Middle) and runs dependency analysis.
     private static async Task<(EditTools edit, DependencyTools deps)> LoadAndAnalyze(TestHost host)
+        => await LoadDirAndAnalyze(host, DepPackage);
+
+    private static async Task<(EditTools edit, DependencyTools deps)> LoadDirAndAnalyze(TestHost host, string packageContent)
     {
-        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = DepPackage });
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = packageContent });
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
         var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
         await deps.AnalyzeDependencies();
         return (new EditTools(host.Libraries, host.Resources, host.Session), deps);
+    }
+
+    [Fact]
+    public async Task RenameClass_UpdatesDeclarationReferencesAndDependencies()
+    {
+        using var host = new TestHost();
+        var (edit, deps) = await LoadAndAnalyze(host);
+
+        var res = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("P.Base", "NewBase"));
+        Assert.True(res.Changed);
+        Assert.Equal("P.NewBase", res.NewClassId);
+
+        Assert.Null(host.Libraries.GetModelById("P.Base"));
+        Assert.NotNull(host.Libraries.GetModelById("P.NewBase"));
+
+        // The reference inside Middle was rewritten.
+        Assert.Contains("NewBase base1", host.Libraries.GetModelById("P.Middle")!.Definition.ModelicaCode);
+
+        // Dependency graph refreshed.
+        var used = ToolAssert.Ok<DependencyResult>(deps.GetDependencies("P.Middle"));
+        Assert.Contains(used.Items, i => i.Id == "P.NewBase");
+        Assert.DoesNotContain(used.Items, i => i.Id == "P.Base");
+    }
+
+    [Fact]
+    public async Task RenameClass_DoesNotTouchSameNamedUnrelatedClass()
+    {
+        using var host = new TestHost();
+        var (edit, _) = await LoadDirAndAnalyze(host, SameLeafPackage);
+
+        // Rename only Q.A.Widget -> Gadget. Q.B.Widget and B's usage must be untouched.
+        var res = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("Q.A.Widget", "Gadget"));
+        Assert.True(res.Changed);
+
+        Assert.NotNull(host.Libraries.GetModelById("Q.A.Gadget"));
+        Assert.Null(host.Libraries.GetModelById("Q.A.Widget"));
+        Assert.NotNull(host.Libraries.GetModelById("Q.B.Widget")); // sibling untouched
+
+        Assert.Contains("Gadget w", host.Libraries.GetModelById("Q.A.UserA")!.Definition.ModelicaCode);
+        Assert.Contains("Widget w", host.Libraries.GetModelById("Q.B.UserB")!.Definition.ModelicaCode);
+        Assert.DoesNotContain("Gadget", host.Libraries.GetModelById("Q.B.UserB")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public async Task RenameClass_ReadOnlyFile_Aborts()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = DepPackage });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        await deps.AnalyzeDependencies();
+
+        var path = Path.Combine(dir, "package.mo");
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            var err = ToolAssert.Error(await Edit(host).RenameClass("P.Base", "NewBase"));
+            Assert.Contains("read-only", err.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(host.Libraries.GetModelById("P.Base")); // unchanged
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public async Task RenameClass_RequiresAnalysis()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = DepPackage });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var err = ToolAssert.Error(await Edit(host).RenameClass("P.Base", "NewBase"));
+        Assert.Contains("analyze_dependencies", err.Error);
+    }
+
+    [Fact]
+    public async Task RenameClass_Validation()
+    {
+        using var host = new TestHost();
+        var (edit, _) = await LoadAndAnalyze(host);
+
+        Assert.IsType<ToolError>(await edit.RenameClass("P.Base", "1Bad"));   // invalid identifier
+        Assert.IsType<ToolError>(await edit.RenameClass("P.Base", "Middle")); // collides with P.Middle
+        Assert.IsType<ToolError>(await edit.RenameClass("P.Nope", "X"));      // not found
+    }
+
+    [Fact]
+    public async Task RenameClass_Preview_DoesNotWrite()
+    {
+        using var host = new TestHost();
+        var (edit, _) = await LoadAndAnalyze(host);
+
+        var res = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("P.Base", "NewBase", preview: true));
+        Assert.True(res.PreviewOnly);
+        Assert.True(res.Changes.Count >= 1);
+        Assert.All(res.Changes, c => Assert.NotNull(c.NewContent));
+        Assert.NotNull(host.Libraries.GetModelById("P.Base")); // not renamed on disk/graph
+        Assert.Null(host.Libraries.GetModelById("P.NewBase"));
     }
 
     [Fact]

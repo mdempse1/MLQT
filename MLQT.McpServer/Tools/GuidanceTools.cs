@@ -12,7 +12,7 @@ namespace MLQT.McpServer.Tools;
 public sealed class GuidanceTools
 {
     private static readonly IReadOnlyList<string> Topics =
-        ["overview", "workflows", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
+        ["overview", "workflows", "views", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
 
     private static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,7 +31,7 @@ public sealed class GuidanceTools
             - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided —
               use your normal CLI for those. The two VCS tools here add Modelica-awareness the CLI lacks.
 
-            Call get_guidance with a topic for recipes: workflows, dependencies, style, spelling,
+            Call get_guidance with a topic for recipes: workflows, views, dependencies, style, spelling,
             formatting, vcs, resources.
             """,
 
@@ -41,6 +41,11 @@ public sealed class GuidanceTools
             Explore a library:
               load_repository / load_library -> get_package_tree or list_classes / search_classes
               -> get_class_info -> get_class_source (include_annotations=false for compact structural code).
+
+            Understand how to USE a class without reading its source (cheap):
+              get_class_interface (parameters, connectors, function signature) and get_class_documentation
+              (prose). list_class_elements for the full declaration list. This is far smaller than
+              get_class_source — see the 'views' topic.
 
             Understand impact of changing a class:
               analyze_dependencies (once) -> find_usages (direct dependents) or
@@ -61,6 +66,39 @@ public sealed class GuidanceTools
               get_class_source (read) -> update_class_source (write the new source, same class name;
               validated + verbatim) -> optionally format_class -> check_class + spell_check (re-check just
               that class).
+
+            Rename a class (updates references too):
+              analyze_dependencies (once) -> rename_class(classId, newName) [preview first] -> the
+              declaration and every resolved reference are rewritten and dependencies refreshed. Precise:
+              a same-named unrelated class is not touched. Read-only files abort the rename.
+
+            Author a new class in your library:
+              get_class_interface on the classes you'll reference (learn their API) -> create_class(parentId,
+              source) -> check_class + spell_check + validate_class_references (validate) -> format_class.
+              A directory package gets a standalone .mo file; otherwise the class is nested.
+
+            Restructure a library:
+              analyze_dependencies (once) -> move_class(classId, newParentId) re-qualifies references to the
+              moved class (its own refs to former siblings are reported, not auto-fixed); delete_class(classId)
+              removes a class and reports what still references it. Use preview=true first.
+            """,
+
+        ["views"] = """
+            Class "views" — compact projections so you don't have to read full source. All need only a
+            loaded library (not analyze_dependencies):
+            - get_class_interface(classId): the PUBLIC interface — settable parameters (name/type/default/
+              description), connectors (with causality input/output and flow/stream), extends base classes,
+              and for a function its input/output signature. The best first call to learn how to USE a class.
+              A component counts as a connector if it has a causality or its type resolves to a loaded
+              connector class (type resolution is best-effort — load the type's library too).
+            - list_class_elements(classId, includeProtected?): every declaration in source order (components,
+              extends, imports, nested classes) with full detail. Public only unless includeProtected=true.
+            - get_class_documentation(classId, format=text|html): the class description plus the
+              Documentation(info/revisions) prose. text strips HTML; html returns it raw.
+            - validate_class_references(classId): lists referenced types (component types + extends) that do
+              not resolve to a loaded class — catches typos and missing dependencies after writing/editing.
+              Best-effort: it does not model names inherited via extends, so treat hits as candidates and
+              make sure referenced libraries are loaded.
             """,
 
         ["dependencies"] = """
@@ -73,9 +111,9 @@ public sealed class GuidanceTools
               class(es) — the complete blast radius, with the immediate source that pulled each in.
             - Empty results carry a dependenciesAnalyzed flag: false means "not analyzed yet",
               true means "genuinely none".
-            - After analyze_dependencies has run, the editing tools (update_class_source, format_class,
-              correct_spelling) incrementally refresh the dependency graph for the files they change, so
-              these queries stay current after an edit without a full re-analysis.
+            - After analyze_dependencies has run, the editing tools (update_class_source, rename_class,
+              format_class, correct_spelling) incrementally refresh the dependency graph for the files they
+              change, so these queries stay current after an edit without a full re-analysis.
             """,
 
         ["style"] = """
@@ -143,10 +181,10 @@ public sealed class GuidanceTools
     [McpServerTool(Name = "get_guidance")]
     [Description("Get guidance on how to use this server's tools effectively. Call with no topic for an " +
                 "overview and the list of topics, or a topic for focused recipes. Topics: overview, " +
-                "workflows, dependencies, style, spelling, formatting, vcs, resources.")]
+                "workflows, views, dependencies, style, spelling, formatting, vcs, resources.")]
     public object GetGuidance(
-        [Description("Optional topic. Omit for the overview. One of: overview, workflows, dependencies, " +
-                     "style, spelling, formatting, vcs, resources.")]
+        [Description("Optional topic. Omit for the overview. One of: overview, workflows, views, " +
+                     "dependencies, style, spelling, formatting, vcs, resources.")]
         string? topic = null)
     {
         var key = string.IsNullOrWhiteSpace(topic) ? "overview" : topic.Trim();

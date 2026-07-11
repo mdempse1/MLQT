@@ -42,6 +42,10 @@ public sealed class ClassQueryTools
         if (node.ContainingFileId is not null)
             filePath = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId)?.FilePath;
 
+        // Whether the class's file can actually be edited by this process (filesystem-inferred): false
+        // for reference libraries installed read-only (e.g. under Program Files). Null if unknown.
+        bool? writable = filePath is null ? null : FileWritability.IsWritable(filePath);
+
         return new ClassInfo(
             node.Id,
             node.Name,
@@ -59,7 +63,8 @@ public sealed class ClassQueryTools
             node.HasExperimentAnnotation,
             node.CanBeStoredStandalone,
             node.HasParserErrors,
-            node.HasFatalParseFailure);
+            node.HasFatalParseFailure,
+            writable);
     }
 
     [McpServerTool(Name = "get_class_source")]

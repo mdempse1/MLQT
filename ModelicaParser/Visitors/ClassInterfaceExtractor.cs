@@ -1,0 +1,250 @@
+using Antlr4.Runtime.Tree;
+using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
+
+namespace ModelicaParser.Visitors;
+
+/// <summary>
+/// Extracts the structural interface (elements) of a single Modelica class from its parse tree. Only
+/// the outermost class is walked; nested classes are listed as <see cref="ClassElementKind.Class"/>
+/// elements but not recursed into. The extraction is purely syntactic — it reports declared type text
+/// and prefixes and does no cross-class resolution (whether a type is a connector, whether an extends
+/// resolves, etc. is layered on top by callers that have the dependency graph).
+/// </summary>
+public static class ClassInterfaceExtractor
+{
+    /// <summary>Extract the interface of the first (outermost) class in a parsed stored_definition.</summary>
+    public static ClassInterface Extract(modelicaParser.Stored_definitionContext? stored)
+    {
+        var cls = stored?.class_definition()?.FirstOrDefault();
+        return cls is null ? new ClassInterface() : ExtractFromClass(cls);
+    }
+
+    /// <summary>Parse <paramref name="modelicaCode"/> and extract the first class's interface.</summary>
+    public static ClassInterface ExtractFromCode(string modelicaCode)
+        => Extract(ModelicaParserHelper.Parse(modelicaCode));
+
+    /// <summary>Extract the interface of a specific class definition context.</summary>
+    public static ClassInterface ExtractFromClass(modelicaParser.Class_definitionContext cls)
+    {
+        var elements = new List<ClassElement>();
+        var longSpec = cls.class_specifier()?.long_class_specifier();
+        string? description = null;
+
+        if (longSpec is not null)
+        {
+            description = ReadStringComment(longSpec.string_comment());
+            if (longSpec.composition() is { } composition)
+                CollectComposition(composition, elements);
+        }
+
+        return new ClassInterface { Description = description, Elements = elements };
+    }
+
+    private static void CollectComposition(modelicaParser.CompositionContext composition, List<ClassElement> elements)
+    {
+        // The first element_list is implicitly public; subsequent ones are introduced by a
+        // 'public'/'protected' keyword. Walk children in order so each list is tagged with its section.
+        if (composition.children is null)
+            return;
+
+        var isPublic = true;
+        foreach (var child in composition.children)
+        {
+            switch (child)
+            {
+                case ITerminalNode t when t.GetText() == "public":
+                    isPublic = true;
+                    break;
+                case ITerminalNode t when t.GetText() == "protected":
+                    isPublic = false;
+                    break;
+                case modelicaParser.Element_listContext list:
+                    foreach (var element in list.element())
+                        CollectElement(element, isPublic, elements);
+                    break;
+            }
+        }
+    }
+
+    private static void CollectElement(modelicaParser.ElementContext element, bool isPublic, List<ClassElement> elements)
+    {
+        var prefixes = ReadElementPrefixes(element);
+
+        if (element.import_clause() is { } import)
+        {
+            elements.Add(new ClassElement
+            {
+                Kind = ClassElementKind.Import,
+                Name = ReadImport(import),
+                IsPublic = isPublic,
+                Prefixes = prefixes,
+                Line = element.Start.Line
+            });
+        }
+        else if (element.extends_clause() is { } ext)
+        {
+            var baseType = ext.type_specifier()?.GetText()?.Trim() ?? string.Empty;
+            elements.Add(new ClassElement
+            {
+                Kind = ClassElementKind.Extends,
+                Name = baseType,
+                Type = baseType,
+                IsPublic = isPublic,
+                Prefixes = prefixes,
+                Line = element.Start.Line
+            });
+        }
+        else if (element.class_definition() is { } nested)
+        {
+            var spec = nested.class_specifier();
+            elements.Add(new ClassElement
+            {
+                Kind = ClassElementKind.Class,
+                Name = ClassName(spec),
+                ClassType = GetClassType(nested.class_prefixes()),
+                Description = ReadStringComment(spec?.long_class_specifier()?.string_comment()),
+                IsPublic = isPublic,
+                Prefixes = prefixes,
+                Line = element.Start.Line
+            });
+        }
+        else if (element.component_clause() is { } componentClause)
+        {
+            CollectComponents(componentClause, isPublic, prefixes, elements);
+        }
+    }
+
+    private static void CollectComponents(
+        modelicaParser.Component_clauseContext cc, bool isPublic, IReadOnlyList<string> prefixes, List<ClassElement> elements)
+    {
+        var (variability, causality, connection) = ReadTypePrefix(cc.type_prefix());
+        var type = cc.type_specifier()?.GetText()?.Trim();
+        var list = cc.component_list();
+        if (list is null)
+            return;
+
+        // One component_clause can declare several comma-separated components sharing the same type/prefix.
+        foreach (var decl in list.component_declaration())
+        {
+            var declaration = decl.declaration();
+            var name = declaration?.IDENT()?.GetText();
+            if (string.IsNullOrEmpty(name))
+                continue;
+
+            elements.Add(new ClassElement
+            {
+                Kind = ClassElementKind.Component,
+                Name = name,
+                Type = type,
+                Variability = variability,
+                Causality = causality,
+                Connection = connection,
+                DefaultValue = ReadModification(declaration!.modification()),
+                Description = ReadStringComment(decl.comment()?.string_comment()),
+                IsPublic = isPublic,
+                Prefixes = prefixes,
+                Line = decl.Start.Line
+            });
+        }
+    }
+
+    private static (string? variability, string? causality, string? connection) ReadTypePrefix(
+        modelicaParser.Type_prefixContext? tp)
+    {
+        var text = tp?.GetText();
+        if (string.IsNullOrEmpty(text))
+            return (null, null, null);
+
+        string? variability = text.Contains("discrete") ? "discrete"
+            : text.Contains("parameter") ? "parameter"
+            : text.Contains("constant") ? "constant"
+            : null;
+        string? causality = text.Contains("input") ? "input"
+            : text.Contains("output") ? "output"
+            : null;
+        string? connection = text.Contains("flow") ? "flow"
+            : text.Contains("stream") ? "stream"
+            : null;
+        return (variability, causality, connection);
+    }
+
+    private static string? ReadModification(modelicaParser.ModificationContext? mod)
+    {
+        if (mod is null)
+            return null;
+        var text = mod.GetText().Trim();
+        if (text.StartsWith(":=", StringComparison.Ordinal))
+            text = text[2..].Trim();
+        else if (text.StartsWith("=", StringComparison.Ordinal))
+            text = text[1..].Trim();
+        return text.Length == 0 ? null : text;
+    }
+
+    private static IReadOnlyList<string> ReadElementPrefixes(modelicaParser.ElementContext element)
+    {
+        List<string>? prefixes = null;
+        for (var i = 0; i < element.ChildCount; i++)
+        {
+            if (element.GetChild(i) is ITerminalNode t &&
+                t.GetText() is "replaceable" or "redeclare" or "final" or "inner" or "outer")
+            {
+                (prefixes ??= new List<string>()).Add(t.GetText());
+            }
+        }
+        return prefixes ?? (IReadOnlyList<string>)Array.Empty<string>();
+    }
+
+    private static string ReadImport(modelicaParser.Import_clauseContext import)
+    {
+        var name = import.name()?.GetText()?.Trim() ?? string.Empty;
+        if (import.IDENT() is { } alias)
+            return $"{alias.GetText()} = {name}";
+        if (import.import_list() is { } list)
+            return $"{name}.{{{list.GetText()}}}";
+
+        // Plain or wildcard ('name.*'); the '.*' is not a sub-rule, so detect a '*' terminal child.
+        for (var i = 0; i < import.ChildCount; i++)
+            if (import.GetChild(i) is ITerminalNode t && t.GetText().Contains('*'))
+                return name + ".*";
+        return name;
+    }
+
+    private static string ClassName(modelicaParser.Class_specifierContext? spec)
+    {
+        if (spec is null)
+            return string.Empty;
+        if (spec.long_class_specifier() is { } l && l.IDENT().Length > 0)
+            return l.IDENT(0).GetText();
+        if (spec.short_class_specifier() is { } s)
+            return s.IDENT().GetText();
+        if (spec.der_class_specifier() is { } d && d.IDENT().Length > 0)
+            return d.IDENT(0).GetText();
+        return string.Empty;
+    }
+
+    private static string? ReadStringComment(modelicaParser.String_commentContext? sc)
+    {
+        var strings = sc?.STRING();
+        if (strings is null || strings.Length == 0)
+            return null;
+        var joined = string.Concat(strings.Select(s => Unquote(s.GetText())));
+        return joined.Length == 0 ? null : joined;
+    }
+
+    private static string Unquote(string s)
+        => s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+
+    private static string GetClassType(modelicaParser.Class_prefixesContext? cp)
+    {
+        var text = cp?.GetText() ?? string.Empty;
+        if (text.Contains("model")) return "model";
+        if (text.Contains("function")) return "function";
+        if (text.Contains("block")) return "block";
+        if (text.Contains("connector")) return "connector";
+        if (text.Contains("record")) return "record";
+        if (text.Contains("type")) return "type";
+        if (text.Contains("package")) return "package";
+        return "class";
+    }
+}

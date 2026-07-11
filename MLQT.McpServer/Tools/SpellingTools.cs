@@ -174,6 +174,14 @@ public sealed class SpellingTools
             return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: false, PreviewOnly: true, rendered);
         }
 
+        if (FileWritability.RequireWritable(ctx.FilePath, "correct spelling in this file") is { } readOnly)
+        {
+            // Restore in-memory state so the graph stays consistent with what is on disk.
+            owner.Definition.ModelicaCode = originalCode;
+            owner.Definition.ParsedCode = originalParsed;
+            return readOnly;
+        }
+
         await File.WriteAllTextAsync(ctx.FilePath, rendered);
         // Re-parse the file from disk so all its model nodes are rebuilt from the saved content.
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
