@@ -89,10 +89,16 @@ public sealed class GuidanceTools
             - get_class_interface(classId): the PUBLIC interface — settable parameters (name/type/default/
               description), connectors (with causality input/output and flow/stream), extends base classes,
               and for a function its input/output signature. The best first call to learn how to USE a class.
+              Members INHERITED via extends are merged in and each marked with its base class in
+              inheritedFrom (e.g. Integrator's u/y connectors come from Interfaces.SISO) — you get the whole
+              picture without chasing base classes; pass include_inherited=false for own declarations only.
+              Parameter defaults reflect extends-clause modifications, so the value shown is the effective
+              one (extends Base(k = 10) reports k's default as 10, not the base's).
               A component counts as a connector if it has a causality or its type resolves to a loaded
-              connector class (type resolution is best-effort — load the type's library too).
-            - list_class_elements(classId, includeProtected?): every declaration in source order (components,
-              extends, imports, nested classes) with full detail. Public only unless includeProtected=true.
+              connector class (best-effort — load the type's library too).
+            - list_class_elements(classId, includeProtected?, includeInherited?): every element (components,
+              extends, imports, nested classes) with full detail; inherited members included by default and
+              marked with inheritedFrom. Public only unless includeProtected=true.
             - get_class_documentation(classId, format=text|html): the class description plus the
               Documentation(info/revisions) prose. text strips HTML; html returns it raw.
             - validate_class_references(classId): lists referenced types (component types + extends) that do

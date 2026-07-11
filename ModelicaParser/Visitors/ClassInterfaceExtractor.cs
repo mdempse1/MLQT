@@ -90,6 +90,7 @@ public static class ClassInterfaceExtractor
                 Kind = ClassElementKind.Extends,
                 Name = baseType,
                 Type = baseType,
+                Modifications = ExtractExtendsModifications(ext),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
                 Line = element.Start.Line
@@ -147,6 +148,46 @@ public static class ClassInterfaceExtractor
                 Line = decl.Start.Line
             });
         }
+    }
+
+    // The scalar modifications on an extends clause: extends Base(k = 5, T = 2) -> {k:5, T:2}. Nested
+    // modifications (e.g. sub(x = 5)) and redeclarations are not scalar defaults and are omitted.
+    private static IReadOnlyDictionary<string, string>? ExtractExtendsModifications(
+        modelicaParser.Extends_clauseContext ext)
+    {
+        var list = ext.class_or_inheritence_modification()?.argument_or_inheritence_list();
+        if (list is null)
+            return null;
+
+        Dictionary<string, string>? mods = null;
+        foreach (var arg in list.argument())
+        {
+            var em = arg.element_modification_or_replaceable()?.element_modification();
+            var name = em?.name()?.GetText();
+            if (string.IsNullOrEmpty(name))
+                continue;
+            var value = ScalarModificationValue(em!.modification());
+            if (value is null)
+                continue;
+            (mods ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
+        }
+        return mods;
+    }
+
+    private static string? ScalarModificationValue(modelicaParser.ModificationContext? mod)
+    {
+        if (mod is null)
+            return null;
+        var text = mod.GetText().Trim();
+        if (text.StartsWith("(", StringComparison.Ordinal)) // class_modification, not a scalar binding
+            return null;
+        if (text.StartsWith(":=", StringComparison.Ordinal))
+            text = text[2..].Trim();
+        else if (text.StartsWith("=", StringComparison.Ordinal))
+            text = text[1..].Trim();
+        else
+            return null;
+        return text.Length == 0 ? null : text;
     }
 
     private static (string? variability, string? causality, string? connection) ReadTypePrefix(

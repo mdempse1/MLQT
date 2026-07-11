@@ -56,6 +56,13 @@ public sealed record ClassElement
 
     /// <summary>1-based source line of the element within the parsed class code.</summary>
     public int Line { get; init; }
+
+    /// <summary>
+    /// For an <see cref="ClassElementKind.Extends"/> element: the scalar modifications applied to the base
+    /// class, e.g. <c>extends Base(k = 5)</c> yields {"k" =&gt; "5"}. These override inherited defaults.
+    /// Null when there are none. Non-scalar (nested) modifications are omitted.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Modifications { get; init; }
 }
 
 /// <summary>

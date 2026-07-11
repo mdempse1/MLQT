@@ -26,86 +26,98 @@ public sealed class ViewTools
     [Description("Get the public interface of a class — how to USE it without reading its source: its " +
                 "settable parameters (name/type/default/description), its connectors (with causality " +
                 "input/output and flow/stream), its extends (base classes), and, for a function, its " +
-                "input/output signature. Far smaller than get_class_source. A component is reported as a " +
-                "connector when it has a causality or its type resolves to a loaded connector class; type " +
-                "resolution is best-effort (see validate_class_references). Needs only a loaded library.")]
+                "input/output signature. Members INHERITED via extends are included by default (each marked " +
+                "with the base class it came from in inheritedFrom), so you get the complete picture without " +
+                "chasing base classes — set include_inherited=false for only what the class declares itself. " +
+                "Far smaller than get_class_source. A component is a connector when it has a causality or its " +
+                "type resolves to a loaded connector class. Needs only a loaded library.")]
     public object GetClassInterface(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
-        string classId)
+        string classId,
+        [Description("Include members inherited from base classes (default true).")]
+        bool includeInherited = true)
     {
         if (Load(classId, out var node, out var iface, out var error))
             return error!;
 
-        var imports = ImportNames(iface!);
         var isFunction = node!.ClassType == "function";
+        var merged = ClassElementResolver.Collect(_libraries, node, includeProtected: false, includeInherited);
 
-        var extends = iface!.Elements.Where(e => e.Kind == ClassElementKind.Extends).Select(e => e.Name).ToList();
+        var extends = merged.Where(m => m.Element.Kind == ClassElementKind.Extends)
+            .Select(m => m.Element.Name).ToList();
         var parameters = new List<ParameterView>();
         var connectors = new List<ConnectorView>();
         var members = new List<MemberView>();
 
-        foreach (var e in iface.Elements.Where(e => e.Kind == ClassElementKind.Component && e.IsPublic))
+        foreach (var m in merged.Where(m => m.Element.Kind == ClassElementKind.Component))
         {
+            var e = m.Element;
             // A function's causal components are its signature, reported separately below.
             if (isFunction && e.Causality is not null)
                 continue;
 
-            var typeNode = TypeResolver.Resolve(_libraries, node.Id, e.Type, imports);
+            // Resolve the type in the scope of the class that DECLARED the component (base or self).
+            var typeNode = TypeResolver.Resolve(_libraries, m.OwnerId, e.Type, m.OwnerImports);
             var typeIsConnector = typeNode?.ClassType == "connector";
             var isConnector = !isFunction && (e.Causality is not null || typeIsConnector);
 
             if (isConnector)
-                connectors.Add(new ConnectorView(e.Name, e.Type, e.Causality, e.Connection, typeIsConnector, e.Description));
+                connectors.Add(new ConnectorView(e.Name, e.Type, e.Causality, e.Connection, typeIsConnector, e.Description, m.InheritedFrom));
             else if (e.Variability is "parameter" or "constant")
-                parameters.Add(new ParameterView(e.Name, e.Type, e.Variability, e.DefaultValue, e.Description));
+                parameters.Add(new ParameterView(e.Name, e.Type, e.Variability, e.DefaultValue, e.Description, m.InheritedFrom));
             else
-                members.Add(new MemberView(e.Name, e.Type, e.Description));
+                members.Add(new MemberView(e.Name, e.Type, e.Description, m.InheritedFrom));
         }
 
         FunctionSignatureView? signature = null;
         if (isFunction)
         {
-            var comps = iface.Elements.Where(e => e.Kind == ClassElementKind.Component).ToList();
-            ParameterView ToArg(ClassElement e) => new(e.Name, e.Type, e.Variability, e.DefaultValue, e.Description);
+            ParameterView ToArg(ResolvedElement m) =>
+                new(m.Element.Name, m.Element.Type, m.Element.Variability, m.Element.DefaultValue, m.Element.Description, m.InheritedFrom);
+            var comps = merged.Where(m => m.Element.Kind == ClassElementKind.Component).ToList();
             signature = new FunctionSignatureView(
-                comps.Where(e => e.Causality == "input").Select(ToArg).ToList(),
-                comps.Where(e => e.Causality == "output").Select(ToArg).ToList());
+                comps.Where(m => m.Element.Causality == "input").Select(ToArg).ToList(),
+                comps.Where(m => m.Element.Causality == "output").Select(ToArg).ToList());
         }
 
         return new ClassInterfaceView(
-            node.Id, node.Name, node.ClassType, node.IsPartial, iface.Description,
+            node.Id, node.Name, node.ClassType, node.IsPartial, iface!.Description,
             extends, parameters, connectors, members, signature);
     }
 
     [McpServerTool(Name = "list_class_elements")]
-    [Description("List every declared element of a class in source order: components (with type, " +
-                "variability parameter/constant/discrete, causality input/output, flow/stream, default " +
-                "value, description), extends clauses, imports, and nested classes. By default only public " +
-                "elements are returned; set include_protected=true to also include protected ones. This is " +
-                "the granular data behind get_class_interface. Needs only a loaded library.")]
+    [Description("List the elements of a class: components (with type, variability parameter/constant/" +
+                "discrete, causality input/output, flow/stream, default value, description), extends " +
+                "clauses, imports, and nested classes. Members INHERITED via extends are included by " +
+                "default (each marked with its base class in inheritedFrom); set include_inherited=false " +
+                "for only the class's own declarations. By default only public elements are returned; set " +
+                "include_protected=true to also include protected ones. This is the granular data behind " +
+                "get_class_interface. Needs only a loaded library.")]
     public object ListClassElements(
         [Description("Fully-qualified class id.")] string classId,
         [Description("Include elements declared in protected sections. Default false.")]
-        bool includeProtected = false)
+        bool includeProtected = false,
+        [Description("Include elements inherited from base classes. Default true.")]
+        bool includeInherited = true)
     {
-        if (Load(classId, out var node, out var iface, out var error))
+        if (Load(classId, out var node, out _, out var error))
             return error!;
 
-        var elements = iface!.Elements
-            .Where(e => includeProtected || e.IsPublic)
-            .Select(e => new ClassElementView(
-                e.Kind.ToString().ToLowerInvariant(),
-                e.Name,
-                e.Type,
-                e.Variability,
-                e.Causality,
-                e.Connection,
-                e.IsPublic ? "public" : "protected",
-                e.DefaultValue,
-                e.Description,
-                e.ClassType,
-                e.Prefixes,
-                e.Line))
+        var elements = ClassElementResolver.Collect(_libraries, node!, includeProtected, includeInherited)
+            .Select(m => new ClassElementView(
+                m.Element.Kind.ToString().ToLowerInvariant(),
+                m.Element.Name,
+                m.Element.Type,
+                m.Element.Variability,
+                m.Element.Causality,
+                m.Element.Connection,
+                m.Element.IsPublic ? "public" : "protected",
+                m.Element.DefaultValue,
+                m.Element.Description,
+                m.Element.ClassType,
+                m.Element.Prefixes,
+                m.Element.Line,
+                m.InheritedFrom))
             .ToList();
 
         return new ClassElementsResult(node!.Id, elements.Count, elements);

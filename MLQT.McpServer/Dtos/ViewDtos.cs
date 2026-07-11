@@ -3,7 +3,9 @@ namespace MLQT.McpServer.Dtos;
 // DTOs for the "views" tools — token-efficient projections of a class so an agent can learn how to use
 // it (or what it contains) without reading its full source. See ViewTools.
 
-/// <summary>The public interface of a class: how to use it without reading its implementation.</summary>
+/// <summary>The public interface of a class: how to use it without reading its implementation. Parameters,
+/// connectors, components and the function signature include members inherited via extends (each marked
+/// with the base class it came from) unless include_inherited is false.</summary>
 public sealed record ClassInterfaceView(
     string Id,
     string Name,
@@ -16,13 +18,15 @@ public sealed record ClassInterfaceView(
     IReadOnlyList<MemberView> PublicComponents,
     FunctionSignatureView? FunctionSignature);
 
-/// <summary>A settable parameter/constant (or a function argument).</summary>
+/// <summary>A settable parameter/constant (or a function argument). InheritedFrom is the base class id
+/// it comes from, or null if declared in the class itself.</summary>
 public sealed record ParameterView(
     string Name,
     string? Type,
     string? Variability,
     string? Default,
-    string? Description);
+    string? Description,
+    string? InheritedFrom);
 
 /// <summary>A connector member (physical connector, or a causal signal port).</summary>
 public sealed record ConnectorView(
@@ -31,20 +35,23 @@ public sealed record ConnectorView(
     string? Causality,
     string? Connection,
     bool TypeIsConnector,
-    string? Description);
+    string? Description,
+    string? InheritedFrom);
 
 /// <summary>A public component that is neither a parameter nor a connector (e.g. a record field).</summary>
 public sealed record MemberView(
     string Name,
     string? Type,
-    string? Description);
+    string? Description,
+    string? InheritedFrom);
 
 /// <summary>A function's inputs and outputs, in declaration order.</summary>
 public sealed record FunctionSignatureView(
     IReadOnlyList<ParameterView> Inputs,
     IReadOnlyList<ParameterView> Outputs);
 
-/// <summary>One raw element from list_class_elements.</summary>
+/// <summary>One raw element from list_class_elements. InheritedFrom is the base class id it comes from,
+/// or null if declared in the class itself.</summary>
 public sealed record ClassElementView(
     string Kind,
     string Name,
@@ -57,7 +64,8 @@ public sealed record ClassElementView(
     string? Description,
     string? ClassType,
     IReadOnlyList<string> Prefixes,
-    int Line);
+    int Line,
+    string? InheritedFrom);
 
 /// <summary>Full element listing for a class.</summary>
 public sealed record ClassElementsResult(

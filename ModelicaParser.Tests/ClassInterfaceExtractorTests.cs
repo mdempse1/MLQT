@@ -138,6 +138,24 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
+    public void ExtendsModifications_ScalarCaptured_NestedOmitted()
+    {
+        var iface = Extract("model M\n  extends Base(k = 5, T = 2, sub(x = 1));\nend M;");
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.NotNull(ext.Modifications);
+        Assert.Equal("5", ext.Modifications!["k"]);
+        Assert.Equal("2", ext.Modifications["T"]);
+        Assert.False(ext.Modifications.ContainsKey("sub")); // nested modification is not a scalar default
+    }
+
+    [Fact]
+    public void ExtendsWithoutModifications_IsNull()
+    {
+        var iface = Extract("model M\n  extends Base;\nend M;");
+        Assert.Null(iface.Elements.Single(e => e.Kind == ClassElementKind.Extends).Modifications);
+    }
+
+    [Fact]
     public void ReplaceablePrefix_IsCaptured()
     {
         var iface = Extract("model M\n  replaceable model Medium = Modelica.Media.Water;\nend M;");

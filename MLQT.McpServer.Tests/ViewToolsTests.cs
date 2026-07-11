@@ -44,9 +44,40 @@ public class ViewToolsTests
         end P;
         """;
 
-    private static ViewTools Load(TestHost h)
+    // An Integrator-like hierarchy: a partial base Gain declares the parameter k and the connectors u/y,
+    // inherited by concrete blocks. Amplifier modifies k via its extends clause; Overridden redeclares k.
+    private const string InheritancePackage = """
+        within;
+        package I "i"
+          connector RealInput "in"
+            input Real signal;
+          end RealInput;
+          connector RealOutput "out"
+            output Real signal;
+          end RealOutput;
+          partial block Gain "gain block"
+            parameter Real k = 1 "gain";
+            RealInput u "the input";
+            RealOutput y "the output";
+          end Gain;
+          block Integrator "integrator"
+            extends Gain;
+          end Integrator;
+          block Amplifier "amplifier"
+            extends Gain(k = 10);
+          end Amplifier;
+          block Overridden "overridden"
+            extends Gain;
+            parameter Real k = 99 "own gain";
+          end Overridden;
+        end I;
+        """;
+
+    private static ViewTools Load(TestHost h) => LoadContent(h, Package);
+
+    private static ViewTools LoadContent(TestHost h, string content)
     {
-        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
+        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = content });
         h.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
         return new ViewTools(h.Libraries);
     }
@@ -76,6 +107,76 @@ public class ViewToolsTests
         // 'internal' is a plain public component (neither parameter nor connector).
         Assert.Contains(view.PublicComponents, m => m.Name == "internal");
         Assert.Null(view.FunctionSignature);
+
+        // 'b' is inherited from the P.Base base class.
+        Assert.Contains(view.PublicComponents, m => m.Name == "b" && m.InheritedFrom == "P.Base");
+    }
+
+    [Fact]
+    public void Interface_IncludesInheritedConnectorsAndParameters()
+    {
+        using var host = new TestHost();
+        var view = ToolAssert.Ok<ClassInterfaceView>(LoadContent(host, InheritancePackage).GetClassInterface("I.Integrator"));
+
+        // u, y and k are all declared in the base Gain, not in Integrator itself.
+        var u = view.Connectors.Single(c => c.Name == "u");
+        Assert.Equal("I.Gain", u.InheritedFrom);
+        Assert.True(u.TypeIsConnector);
+        Assert.Contains(view.Connectors, c => c.Name == "y" && c.InheritedFrom == "I.Gain");
+
+        var k = view.Parameters.Single(p => p.Name == "k");
+        Assert.Equal("I.Gain", k.InheritedFrom);
+        Assert.Equal("1", k.Default);
+    }
+
+    [Fact]
+    public void Interface_ExtendsModifierOverridesInheritedDefault()
+    {
+        using var host = new TestHost();
+        // Amplifier: extends Gain(k = 10) -> the effective default for the inherited k is 10, not the base's 1.
+        var view = ToolAssert.Ok<ClassInterfaceView>(LoadContent(host, InheritancePackage).GetClassInterface("I.Amplifier"));
+
+        var k = view.Parameters.Single(p => p.Name == "k");
+        Assert.Equal("10", k.Default);
+        Assert.Equal("I.Gain", k.InheritedFrom);
+    }
+
+    [Fact]
+    public void Interface_IncludeInheritedFalse_OwnOnly()
+    {
+        using var host = new TestHost();
+        var view = ToolAssert.Ok<ClassInterfaceView>(
+            LoadContent(host, InheritancePackage).GetClassInterface("I.Overridden", includeInherited: false));
+
+        Assert.Empty(view.Connectors);                        // u/y come from the base, now excluded
+        var k = view.Parameters.Single(p => p.Name == "k");   // own parameter remains
+        Assert.Equal("99", k.Default);
+        Assert.Null(k.InheritedFrom);
+    }
+
+    [Fact]
+    public void Interface_DerivedParameterShadowsInherited()
+    {
+        using var host = new TestHost();
+        // Overridden redeclares 'k' (=99), shadowing the inherited Gain.k (=1): exactly one k, the own one.
+        var view = ToolAssert.Ok<ClassInterfaceView>(LoadContent(host, InheritancePackage).GetClassInterface("I.Overridden"));
+        var k = view.Parameters.Single(p => p.Name == "k");
+        Assert.Null(k.InheritedFrom);
+        Assert.Equal("99", k.Default);
+    }
+
+    [Fact]
+    public void ListElements_IncludesInheritedWithOrigin()
+    {
+        using var host = new TestHost();
+        var tools = LoadContent(host, InheritancePackage);
+
+        var withInherited = ToolAssert.Ok<ClassElementsResult>(tools.ListClassElements("I.Overridden"));
+        Assert.Contains(withInherited.Elements, e => e.Name == "u" && e.InheritedFrom == "I.Gain");
+
+        var ownOnly = ToolAssert.Ok<ClassElementsResult>(tools.ListClassElements("I.Overridden", includeInherited: false));
+        Assert.DoesNotContain(ownOnly.Elements, e => e.Name == "u");
+        Assert.Contains(ownOnly.Elements, e => e.Name == "k" && e.InheritedFrom == null); // own parameter
     }
 
     [Fact]
