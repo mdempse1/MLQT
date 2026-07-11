@@ -37,7 +37,10 @@ public sealed class McpClientService : IAsyncDisposable
 
         var transport = new StdioClientTransport(options);
         _client = await McpClient.CreateAsync(transport, cancellationToken: ct);
-        Tools = await _client.ListToolsAsync(cancellationToken: ct);
+        var tools = await _client.ListToolsAsync(cancellationToken: ct);
+        // Present tools alphabetically by name so they are easy to find (the server returns them in
+        // discovery order, which is hard to scan).
+        Tools = tools.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase).ToList();
         Command = command;
         ServerName = _client.ServerInfo?.Name;
         ServerVersion = _client.ServerInfo?.Version;
