@@ -1,4 +1,6 @@
 using ModelicaGraph.DataTypes;
+using ModelicaParser.DataTypes;
+using ModelicaParser.Visitors;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.McpServer.Helpers;
@@ -58,6 +60,59 @@ internal static class TypeResolver
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Like <see cref="Resolve"/> but also resolves names inherited into scope through <c>extends</c>:
+    /// after trying the class's own scope, it tries each ancestor's scope (its package hierarchy, its
+    /// imports and its nested classes). Used by validation so an inherited type name is not wrongly
+    /// reported as unresolved. The dependency-analysis resolver is intentionally left unchanged.
+    /// </summary>
+    public static ModelNode? ResolveWithInheritance(
+        ILibraryDataService libraries, string classId, string? typeText, IReadOnlyList<string>? imports)
+    {
+        if (Resolve(libraries, classId, typeText, imports) is { } direct)
+            return direct;
+        if (string.IsNullOrWhiteSpace(typeText) || IsPredefined(typeText))
+            return null;
+
+        foreach (var (ancestorId, ancestorImports) in CollectAncestors(libraries, classId))
+            if (Resolve(libraries, ancestorId, typeText, ancestorImports) is { } viaAncestor)
+                return viaAncestor;
+        return null;
+    }
+
+    // The class's ancestors (via extends), each with its own imports, so a name can be resolved in the
+    // scope it is inherited from. Depth-guarded against cycles/diamonds.
+    private static List<(string Id, IReadOnlyList<string> Imports)> CollectAncestors(
+        ILibraryDataService libraries, string classId)
+    {
+        var result = new List<(string, IReadOnlyList<string>)>();
+        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+
+        void Walk(string id, int depth)
+        {
+            if (depth > 32)
+                return;
+            var tree = libraries.GetModelById(id)?.Definition.EnsureParsed();
+            if (tree is null)
+                return;
+            var iface = ClassInterfaceExtractor.Extract(tree);
+            var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
+            foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+            {
+                var baseNode = Resolve(libraries, id, ext.Type, imports);
+                if (baseNode is null || !visited.Add(baseNode.Id))
+                    continue;
+                var baseImports = ClassInterfaceExtractor.Extract(baseNode.Definition.EnsureParsed())
+                    .Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
+                result.Add((baseNode.Id, baseImports));
+                Walk(baseNode.Id, depth + 1);
+            }
+        }
+
+        Walk(classId, 0);
+        return result;
     }
 
     private static ModelNode? ResolveViaImport(ILibraryDataService libraries, string import, string name)

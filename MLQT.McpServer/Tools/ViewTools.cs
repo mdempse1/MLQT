@@ -146,13 +146,60 @@ public sealed class ViewTools
         return new ClassDocumentationResult(node.Id, asText ? "text" : "html", iface!.Description, info, revisions);
     }
 
+    [McpServerTool(Name = "get_class_behavior")]
+    [Description("Get the behavior a class declares itself: its top-level equations, connect() statements " +
+                "and algorithm statements. Unlike the interface views, inherited behavior is NOT merged in " +
+                "(equations reference their own class's scope) — instead basesWithBehavior lists the base " +
+                "classes that declare behavior, which you can query directly for the full picture. Read-only.")]
+    public object GetClassBehavior(
+        [Description("Fully-qualified class id.")] string classId)
+    {
+        if (Load(classId, out var node, out _, out var error))
+            return error!;
+
+        var behavior = BehaviorExtractor.ExtractFromCode(node!.Definition.ModelicaCode ?? string.Empty);
+        var connections = behavior.Connections.Select(c => new ConnectionView(c.PortA, c.PortB)).ToList();
+        return new ClassBehaviorResult(
+            classId, behavior.Equations, connections, behavior.Statements, CollectBasesWithBehavior(classId));
+    }
+
+    // Ancestors (via extends) whose own bodies declare equations, connections or statements.
+    private List<string> CollectBasesWithBehavior(string classId)
+    {
+        var result = new List<string>();
+        var visited = new HashSet<string>(StringComparer.Ordinal) { classId };
+
+        void Walk(string id, int depth)
+        {
+            if (depth > 32)
+                return;
+            var tree = _libraries.GetModelById(id)?.Definition.EnsureParsed();
+            if (tree is null)
+                return;
+            var iface = ClassInterfaceExtractor.Extract(tree);
+            var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
+            foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+            {
+                var baseNode = TypeResolver.Resolve(_libraries, id, ext.Type, imports);
+                if (baseNode is null || !visited.Add(baseNode.Id))
+                    continue;
+                if (BehaviorExtractor.ExtractFromCode(baseNode.Definition.ModelicaCode ?? string.Empty).HasAny)
+                    result.Add(baseNode.Id);
+                Walk(baseNode.Id, depth + 1);
+            }
+        }
+
+        Walk(classId, 0);
+        return result;
+    }
+
     [McpServerTool(Name = "validate_class_references")]
     [Description("Check that the types a class references (its component types and extends base classes) " +
                 "resolve to loaded classes, and report those that do not — useful after writing or editing " +
-                "a class to catch typos and missing dependencies. BEST-EFFORT: resolution uses exact, " +
-                "import, and package-relative lookup but does NOT model names inherited via extends, so a " +
-                "reported name may be a false positive (brought into scope by a base class) — treat the " +
-                "list as candidates. Load the referenced libraries too so their classes can resolve.")]
+                "a class to catch typos and missing dependencies. Resolution uses exact, import and " +
+                "package-relative lookup AND names inherited via extends (an inherited type is not flagged). " +
+                "Still best-effort for uncommon import forms, so load the referenced libraries so their " +
+                "classes can resolve before treating a name as genuinely undefined.")]
     public object ValidateClassReferences(
         [Description("Fully-qualified class id to validate.")] string classId)
     {
@@ -186,13 +233,13 @@ public sealed class ViewTools
                 continue;
 
             checkedCount++;
-            if (TypeResolver.Resolve(_libraries, node!.Id, type, imports) is null)
+            if (TypeResolver.ResolveWithInheritance(_libraries, node!.Id, type, imports) is null)
                 unresolved.Add(new UnresolvedReference(type!.TrimStart('.').Trim(), kind, e.Line));
         }
 
-        const string note = "Best-effort: resolution does not model names inherited via extends or every " +
-                            "import form, so a listed reference may be a false positive. Ensure the " +
-                            "referenced libraries are loaded before treating a name as genuinely undefined.";
+        const string note = "Resolution covers the class's own scope plus names inherited via extends. It " +
+                            "is still best-effort for uncommon import forms, so ensure the referenced " +
+                            "libraries are loaded before treating a name as genuinely undefined.";
         return new ReferenceValidationResult(node!.Id, checkedCount, unresolved.Count, unresolved, note);
     }
 

@@ -106,6 +106,38 @@ public class MoveClassTests
     }
 
     [Fact]
+    public async Task Move_DirectoryPackage_RelocatesFolderAndRequalifies()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            // Root.A.Sub is a directory package (Root/A/Sub/). Root.B is an empty directory package.
+            // Root.User references A.Sub.Widget. Move Root.A.Sub -> Root.B.
+            ["package.mo"] = "within;\npackage Root\n  model User\n    Root.A.Sub.Widget w;\n  end User;\nend Root;",
+            ["package.order"] = "A\nB\nUser\n",
+            ["A/package.mo"] = "within Root;\npackage A\nend A;",
+            ["A/package.order"] = "Sub\n",
+            ["A/Sub/package.mo"] = "within Root.A;\npackage Sub\n  model Widget\n    Real x;\n  end Widget;\nend Sub;",
+            ["A/Sub/package.order"] = "Widget\n",
+            ["B/package.mo"] = "within Root;\npackage B\nend B;"
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        await deps.AnalyzeDependencies();
+
+        var res = ToolAssert.Ok<MoveClassResult>(
+            await new EditTools(host.Libraries, host.Resources, host.Session).MoveClass("Root.A.Sub", "Root.B"));
+        Assert.True(res.Moved);
+        Assert.Equal("Root.B.Sub", res.NewClassId);
+
+        Assert.False(Directory.Exists(Path.Combine(dir, "A", "Sub")));
+        Assert.True(Directory.Exists(Path.Combine(dir, "B", "Sub")));
+        Assert.Null(host.Libraries.GetModelById("Root.A.Sub.Widget"));
+        Assert.NotNull(host.Libraries.GetModelById("Root.B.Sub.Widget"));
+        Assert.Contains("Root.B.Sub.Widget", host.Libraries.GetModelById("Root.User")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
     public async Task Move_Preview_DoesNotWrite()
     {
         using var host = new TestHost();

@@ -77,12 +77,35 @@ public class DeleteClassTests
     }
 
     [Fact]
-    public async Task Delete_DirectoryPackage_Refused()
+    public async Task Delete_DirectoryPackage_RemovesFolderAndReportsDangling()
     {
         using var host = new TestHost();
-        LoadPackageWithStandalone(host);
-        var err = ToolAssert.Error(await Edit(host).DeleteClass("P"));
-        Assert.Contains("directory package", err.Error);
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage Root\n  model User\n    Sub.Widget w;\n  end User;\nend Root;",
+            ["package.order"] = "Sub\nUser\n",
+            ["Sub/package.mo"] = "within Root;\npackage Sub\n  model Widget\n    Real x;\n  end Widget;\nend Sub;",
+            ["Sub/package.order"] = "Widget\n"
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        await deps.AnalyzeDependencies();
+
+        var subDir = Path.Combine(dir, "Sub");
+        Assert.NotNull(host.Libraries.GetModelById("Root.Sub.Widget"));
+
+        var preview = ToolAssert.Ok<DeleteClassResult>(await Edit(host).DeleteClass("Root.Sub", preview: true));
+        Assert.Equal("directory-package", preview.Storage);
+        Assert.Contains("Root.User", preview.DanglingReferences);
+        Assert.True(Directory.Exists(subDir)); // preview didn't delete
+
+        var res = ToolAssert.Ok<DeleteClassResult>(await Edit(host).DeleteClass("Root.Sub"));
+        Assert.True(res.Deleted);
+        Assert.False(Directory.Exists(subDir));
+        Assert.Null(host.Libraries.GetModelById("Root.Sub"));
+        Assert.Null(host.Libraries.GetModelById("Root.Sub.Widget"));
+        Assert.NotNull(host.Libraries.GetModelById("Root.User")); // external referencer remains (now dangling)
+        Assert.DoesNotContain("Sub", File.ReadAllLines(Path.Combine(dir, "package.order")));
     }
 
     [Fact]

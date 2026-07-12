@@ -243,6 +243,60 @@ public class ViewToolsTests
     }
 
     [Fact]
+    public void Validate_InheritedNestedType_NotFlagged()
+    {
+        const string pkg = """
+            within;
+            package V "v"
+              partial model Base
+                type Voltage = Real;
+                Voltage v;
+              end Base;
+              model Derived
+                extends Base;
+                Voltage v2;
+                Nonexistent n;
+              end Derived;
+            end V;
+            """;
+        using var host = new TestHost();
+        var view = LoadContent(host, pkg);
+
+        var res = ToolAssert.Ok<ReferenceValidationResult>(view.ValidateClassReferences("V.Derived"));
+        // 'Voltage' is inherited from Base (its nested type) -> not flagged; only 'Nonexistent' is unresolved.
+        Assert.DoesNotContain(res.Unresolved, u => u.Name == "Voltage");
+        Assert.Contains(res.Unresolved, u => u.Name == "Nonexistent");
+    }
+
+    [Fact]
+    public void Behavior_OwnOnly_PlusBasesPointer()
+    {
+        const string pkg = """
+            within;
+            package B "b"
+              partial model Base
+                Real e;
+              equation
+                e = 1;
+              end Base;
+              model Der
+                extends Base;
+                Real d;
+              equation
+                d = 2*time;
+              end Der;
+            end B;
+            """;
+        using var host = new TestHost();
+        var view = LoadContent(host, pkg);
+
+        var res = ToolAssert.Ok<ClassBehaviorResult>(view.GetClassBehavior("B.Der"));
+        Assert.Contains("d = 2*time", res.Equations);
+        Assert.DoesNotContain(res.Equations, e => e.Contains("e = 1")); // inherited behavior NOT merged
+        Assert.Contains("B.Base", res.BasesWithBehavior);               // pointer to the base instead
+    }
+
+    [Fact]
     public void Views_MissingClass_Error()
     {
         using var host = new TestHost();

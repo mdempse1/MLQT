@@ -47,13 +47,16 @@ Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 | Group | Tools |
 |-------|-------|
 | Meta | `get_guidance`, `server_info` |
-| Session / library | `load_repository`, `load_library`, `list_libraries`, `list_repositories`, `discover_libraries`, `unload_library` |
+| Session / library | `load_repository`, `load_library`, `list_libraries`, `list_repositories`, `discover_libraries`, `reload`, `unload_library` |
 | Class query | `get_class_info`, `get_class_source`, `list_classes`, `search_classes`, `get_package_tree` |
-| Class views | `get_class_interface`, `list_class_elements`, `get_class_documentation`, `validate_class_references` |
+| Class views | `get_class_interface`, `list_class_elements`, `get_class_documentation`, `get_class_behavior`, `validate_class_references` |
+| Search | `search_text`, `search_by_interface` |
+| Diagram | `get_diagram_layout`, `set_component_placement` |
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
 | Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |
 | Spelling | `spell_check`, `spelling_suggestions`, `correct_spelling` |
-| Editing | `create_class`, `update_class_source`, `rename_class`, `move_class`, `delete_class` |
+| Editing (class) | `create_class`, `update_class_source`, `rename_class`, `move_class`, `delete_class` |
+| Editing (elements) | `add_component`, `remove_component`, `set_component_modifier`, `add_extends`, `add_import`, `add_equation`, `add_statement`, `add_connection`, `remove_connection`, `list_connections`, `batch_edit` |
 | Formatting | `format_code`, `format_class` |
 | External resources | `get_class_resources`, `find_resource_usages`, `get_resource_warnings` |
 | Modelica-aware VCS | `get_changed_classes`, `analyze_change_impact` |

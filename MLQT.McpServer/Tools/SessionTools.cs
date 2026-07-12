@@ -2,6 +2,7 @@ using System.ComponentModel;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
@@ -9,19 +10,25 @@ namespace MLQT.McpServer.Tools;
 
 /// <summary>
 /// Session and library management tools: load repositories and libraries into the in-memory
-/// graph, enumerate what is loaded, and unload. Almost every other tool requires a library to be
-/// loaded first, so these are the entry point.
+/// graph, enumerate what is loaded, reload from disk, and unload. Almost every other tool requires a
+/// library to be loaded first, so these are the entry point.
 /// </summary>
 [McpServerToolType]
 public sealed class SessionTools
 {
     private readonly ILibraryDataService _libraries;
     private readonly IRepositoryService _repositories;
+    private readonly IExternalResourceService _resources;
+    private readonly SessionState _session;
 
-    public SessionTools(ILibraryDataService libraries, IRepositoryService repositories)
+    public SessionTools(
+        ILibraryDataService libraries, IRepositoryService repositories,
+        IExternalResourceService resources, SessionState session)
     {
         _libraries = libraries;
         _repositories = repositories;
+        _resources = resources;
+        _session = session;
     }
 
     [McpServerTool(Name = "load_repository")]
@@ -163,6 +170,94 @@ public sealed class SessionTools
         _libraries.RemoveLibrary(match!.Id);
         return new { success = true, unloadedLibraryId = match.Id, name = match.Name };
     }
+
+    [McpServerTool(Name = "reload")]
+    [Description("Re-read Modelica source from disk into the in-memory graph, for when files have changed " +
+                "outside this server (a manual edit, a VCS pull/checkout, or another tool). With no target, " +
+                "reloads everything currently loaded. With a target, reload just that: a .mo file path, or a " +
+                "library/repository by id or name. Reloading a library or repository (or everything) resets " +
+                "opt-in analysis, so re-run analyze_dependencies afterwards; reloading a single file keeps " +
+                "the dependency graph current incrementally.")]
+    public async Task<object> Reload(
+        [Description("Optional: a .mo file path, or a library/repository id or name. Omit to reload everything.")]
+        string? target = null)
+    {
+        // Single file.
+        if (!string.IsNullOrWhiteSpace(target) &&
+            target.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+        {
+            var affected = await _libraries.ReloadFileAsync(target);
+            await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+            return new ReloadResult("file", new[] { Path.GetFileName(target) }, affected.Count, null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(target))
+        {
+            var (repo, _) = EntityResolver.ResolveRepository(_repositories, target);
+            if (repo is not null)
+            {
+                await _repositories.RefreshRepositoryAsync(repo.Id);
+                ResetAnalysis();
+                var libs = _libraries.Libraries.Where(l => l.RepositoryId == repo.Id).Select(l => l.Name).ToList();
+                return new ReloadResult("repository", libs, 0, AnalysisResetNote);
+            }
+
+            var (lib, _) = EntityResolver.ResolveLibrary(_libraries, target);
+            if (lib is not null)
+            {
+                await ReloadLibraryAsync(lib);
+                ResetAnalysis();
+                return new ReloadResult("library", new[] { lib.Name }, 0, AnalysisResetNote);
+            }
+
+            return new ToolError(
+                $"'{target}' is not a loaded .mo file, library or repository. Pass a .mo file path, a library " +
+                "or repository name/id, or omit the argument to reload everything.");
+        }
+
+        // Reload everything: repositories first, then directly-loaded libraries.
+        var reloaded = new List<string>();
+        foreach (var repoId in _repositories.Repositories.Select(r => r.Id).ToList())
+        {
+            await _repositories.RefreshRepositoryAsync(repoId);
+            reloaded.AddRange(_libraries.Libraries.Where(l => l.RepositoryId == repoId).Select(l => l.Name));
+        }
+        foreach (var lib in _libraries.Libraries.Where(l => l.RepositoryId is null).ToList())
+        {
+            reloaded.Add(lib.Name);
+            await ReloadLibraryAsync(lib);
+        }
+        ResetAnalysis();
+        return new ReloadResult("all", reloaded.Distinct().ToList(), 0, AnalysisResetNote);
+    }
+
+    private async Task ReloadLibraryAsync(LoadedLibrary library)
+    {
+        // Repository-backed libraries are refreshed through the repository (re-discovers add/removed files).
+        if (library.RepositoryId is { } repoId && _repositories.GetRepository(repoId) is not null)
+        {
+            await _repositories.RefreshRepositoryAsync(repoId);
+            return;
+        }
+
+        // Directly-loaded library: rebuild it from its source path (handles added/removed/edited files).
+        var path = library.SourcePath;
+        _libraries.RemoveLibrary(library.Id);
+        if (library.SourceType == LibrarySourceType.File)
+            await _libraries.AddLibraryFromFileAsync(path);
+        else
+            await _libraries.AddLibraryFromDirectoryAsync(path);
+    }
+
+    private void ResetAnalysis()
+    {
+        _session.DependenciesAnalyzed = false;
+        _session.ResourcesAnalyzed = false;
+    }
+
+    private const string AnalysisResetNote =
+        "Opt-in analysis was reset by the reload — run analyze_dependencies again before using dependency, " +
+        "impact or external-resource tools.";
 
     private static LibrarySummary ToSummary(LoadedLibrary l) => new(
         l.Id, l.Name, l.SourceType.ToString(), l.SourcePath,

@@ -258,11 +258,12 @@ public sealed class EditTools
 
     [McpServerTool(Name = "delete_class")]
     [Description("Delete a loaded class and its .mo storage: a standalone class's file is removed (and its " +
-                "package.order entry), a nested class is cut out of its containing package.mo. Deleting a " +
-                "whole directory package is not supported. If analyze_dependencies has run, the classes that " +
-                "still reference the deleted class are reported as dangling references (they are NOT " +
-                "auto-updated — fix or remove them). Writes are refused on read-only files. Set preview=true " +
-                "to see what would be deleted and what would dangle.")]
+                "package.order entry), a nested class is cut out of its containing package.mo, and a " +
+                "directory package's whole folder is deleted recursively. If analyze_dependencies has run, " +
+                "classes that still reference the deleted class (or, for a package, any of its members) are " +
+                "reported as dangling references (they are NOT auto-updated — fix or remove them). Writes " +
+                "are refused on read-only files. Set preview=true to see what would be deleted and what " +
+                "would dangle — recommended for a package.")]
     public async Task<object> DeleteClass(
         [Description("Fully-qualified id of the class to delete.")] string classId,
         [Description("Report what would be deleted (and what would dangle) without deleting. Default false.")]
@@ -278,7 +279,7 @@ public sealed class EditTools
 
         var isFileOwner = ctx.FileOwner.Id == classId;
         if (isFileOwner && string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
-            return new ToolError($"'{classId}' is a directory package. Deleting a whole package directory is not supported — delete its classes individually, or remove the library.");
+            return await DeleteDirectoryPackageAsync(classId, node, ctx, preview);
 
         var graph = _libraries.CombinedGraph;
         var depsChecked = _session.DependenciesAnalyzed;
@@ -341,11 +342,11 @@ public sealed class EditTools
                 "storage and re-qualifying references to it (and its nested classes) across the loaded " +
                 "files. Requires analyze_dependencies. The class is placed under the target the same way " +
                 "create_class chooses (standalone file in a directory package, else nested). References that " +
-                "resolve to the class are rewritten to the new fully-qualified name. LIMITATION: the moved " +
-                "class's OWN references to its former siblings are not re-qualified (they may no longer be in " +
-                "scope) — any that no longer resolve are reported in brokenReferencesInMovedClass for you to " +
-                "fix. Moving a whole directory package is not supported. Writes are refused on read-only " +
-                "files. Prefer preview=true first.")]
+                "resolve to the class are rewritten to the new fully-qualified name. A whole directory " +
+                "package can also be moved (into another directory package): its folder is relocated and " +
+                "its subtree re-qualified. LIMITATION (single class): the moved class's OWN references to its " +
+                "former siblings are not re-qualified — any that no longer resolve are reported in " +
+                "brokenReferencesInMovedClass. Writes are refused on read-only files. Prefer preview=true first.")]
     public async Task<object> MoveClass(
         [Description("Fully-qualified id of the class to move.")] string classId,
         [Description("Fully-qualified id of the destination parent package.")] string newParentId,
@@ -380,7 +381,7 @@ public sealed class EditTools
             return new ToolError("Could not locate the source or destination file.");
         if (srcCtx.FileOwner.Id == classId &&
             string.Equals(Path.GetFileName(srcCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
-            return new ToolError($"'{classId}' is a directory package; moving a whole package directory is not supported.");
+            return await MoveDirectoryPackageAsync(classId, node, newParentId, newId, srcCtx, preview);
 
         // Old -> new id map for the class and all its descendants (their ids all change with the move).
         var descendants = _libraries.GetAllModels().Select(m => m.Id)
@@ -474,6 +475,320 @@ public sealed class EditTools
             : "Moved and references re-qualified. Verify with a model checker.";
         return new MoveClassResult(classId, newId, storageKind, PreviewOnly: false, Moved: true,
             requalCount, allWritePaths.Count, brokenAfter, note);
+    }
+
+    // Move a whole directory package under a new parent (a directory package): re-qualify references to
+    // its subtree, rewrite the moved files' within clauses, relocate the folder, and update both
+    // package.orders. The leaf name is unchanged, so no declaration rename.
+    private async Task<object> MoveDirectoryPackageAsync(
+        string classId, ModelNode node, string newParentId, string newId,
+        ModelFilePersistence.FileOwnerContext ctx, bool preview)
+    {
+        var oldLeaf = node.Name;
+        var oldParent = node.ParentModelName;
+        if (string.IsNullOrEmpty(oldParent))
+            return new ToolError("Moving a top-level package is not supported. Rename it or restructure manually.");
+
+        var tgtCtx = ModelFilePersistence.ResolveFileOwner(_libraries, newParentId);
+        if (tgtCtx is null || tgtCtx.FileOwner.Id != newParentId ||
+            !string.Equals(Path.GetFileName(tgtCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"Destination '{newParentId}' must be a directory package to hold a moved package directory.");
+
+        var graph = _libraries.CombinedGraph;
+        var dir = Path.GetDirectoryName(ctx.FilePath)!;
+        var oldParentDir = Path.GetDirectoryName(dir)!;
+        var newParentDir = Path.GetDirectoryName(tgtCtx.FilePath)!;
+        var newDir = Path.Combine(newParentDir, oldLeaf);
+        if (Directory.Exists(newDir))
+            return new ToolError($"A directory '{newDir}' already exists at the destination.");
+
+        var descendants = Descendants(classId);
+        var targetSet = new HashSet<string>(descendants, StringComparer.Ordinal);
+        string MapId(string oldId) => newId + oldId[classId.Length..];
+        var subtreeFiles = new HashSet<string>(SubtreeFilePaths(descendants), StringComparer.OrdinalIgnoreCase);
+
+        var refPaths = new HashSet<string>(subtreeFiles, StringComparer.OrdinalIgnoreCase);
+        foreach (var d in descendants)
+            foreach (var dep in graph.GetModelUsedBy(d))
+            {
+                var p = dep.ContainingFileId is null ? null : graph.GetNode<FileNode>(dep.ContainingFileId)?.FilePath;
+                if (!string.IsNullOrEmpty(p) && File.Exists(p))
+                    refPaths.Add(p);
+            }
+
+        var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var requalCount = 0;
+        foreach (var path in refPaths)
+        {
+            var text = await File.ReadAllTextAsync(path);
+            var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
+            var locator = new ReferenceLocator(graph, targetSet);
+            locator.Visit(tree);
+            if (locator.Sites.Count > 0)
+            {
+                var edits = locator.Sites.Select(s => (s.StartIndex, s.StopIndex, MapId(s.TargetId))).ToList();
+                text = ApplyReplacements(text, edits);
+                requalCount += edits.Count;
+            }
+            // Rewriting the oldParent prefix fixes both the package.mo's own 'within oldParent;' and every
+            // descendant's 'within oldParent.leaf...;' (which becomes newParent.leaf... = newId...).
+            if (subtreeFiles.Contains(path))
+                text = RewriteWithinPrefix(text, oldParent, newParentId);
+            changed[path] = text;
+        }
+
+        foreach (var (path, content) in changed)
+        {
+            var (_, errs) = ModelicaParserHelper.ParseWithErrors(content);
+            if (errs.Count > 0)
+                return new ToolError($"Moving would leave '{path}' unparseable ({DescribeErrors(errs)}). Nothing was changed.");
+        }
+
+        var note = $"Moved package directory '{oldLeaf}' from '{oldParent}' to '{newParentId}', re-qualifying " +
+                   $"{requalCount} reference(s). Verify with a model checker.";
+        if (preview)
+            return new MoveClassResult(classId, newId, "directory-package", PreviewOnly: true, Moved: false,
+                requalCount, changed.Count, Array.Empty<string>(), note);
+
+        if (FileWritability.PreflightWritable(changed.Keys, $"move package '{classId}'") is { } readOnly)
+            return readOnly;
+
+        Directory.Move(dir, newDir);
+
+        var oldPaths = new List<string>();
+        var newPaths = new List<string>();
+        foreach (var (path, content) in changed)
+        {
+            var target = subtreeFiles.Contains(path) ? newDir + path[dir.Length..] : path;
+            await File.WriteAllTextAsync(target, content);
+            if (subtreeFiles.Contains(path)) { oldPaths.Add(path); newPaths.Add(target); }
+            else newPaths.Add(path);
+        }
+
+        RemoveFromPackageOrder(oldParentDir, oldLeaf);
+        AppendToPackageOrder(newParentDir, oldLeaf);
+
+        var affected = new List<string>();
+        foreach (var p in oldPaths) affected.AddRange(await _libraries.ReloadFileAsync(p));
+        foreach (var p in newPaths) affected.AddRange(await _libraries.ReloadFileAsync(p));
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+
+        return new MoveClassResult(classId, newId, "directory-package", PreviewOnly: false, Moved: true,
+            requalCount, changed.Count, Array.Empty<string>(), note);
+    }
+
+    // Rename a whole directory package: re-qualify references to it and its subtree, rewrite the descendant
+    // files' within clauses and the package's declaration, rename the folder, and update package.order.
+    private async Task<object> RenameDirectoryPackageAsync(
+        string classId, string newId, string oldLeaf, string newLeaf,
+        ModelFilePersistence.FileOwnerContext ctx, bool preview)
+    {
+        var graph = _libraries.CombinedGraph;
+        var dir = Path.GetDirectoryName(ctx.FilePath)!;
+        var parentDir = Path.GetDirectoryName(dir)!;
+        var newDir = Path.Combine(parentDir, newLeaf);
+        if (Directory.Exists(newDir))
+            return new ToolError($"A directory '{newDir}' already exists. Choose a different name.");
+
+        var descendants = Descendants(classId);
+        var targetSet = new HashSet<string>(descendants, StringComparer.Ordinal);
+        string MapId(string oldId) => newId + oldId[classId.Length..];
+        var subtreeFiles = new HashSet<string>(SubtreeFilePaths(descendants), StringComparer.OrdinalIgnoreCase);
+
+        // Every file that references the subtree (external + internal), by file id -> path.
+        var refPaths = new HashSet<string>(subtreeFiles, StringComparer.OrdinalIgnoreCase);
+        foreach (var d in descendants)
+            foreach (var dep in graph.GetModelUsedBy(d))
+            {
+                var p = dep.ContainingFileId is null ? null : graph.GetNode<FileNode>(dep.ContainingFileId)?.FilePath;
+                if (!string.IsNullOrEmpty(p) && File.Exists(p))
+                    refPaths.Add(p);
+            }
+
+        // Build the new content of every changed file: re-qualify references, then (for subtree files)
+        // rewrite the within clause, and for the package's own package.mo rename the declaration.
+        var changed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var requalCount = 0;
+        foreach (var path in refPaths)
+        {
+            var text = await File.ReadAllTextAsync(path);
+            var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
+            var locator = new ReferenceLocator(graph, targetSet);
+            locator.Visit(tree);
+            if (locator.Sites.Count > 0)
+            {
+                var edits = locator.Sites.Select(s => (s.StartIndex, s.StopIndex, MapId(s.TargetId))).ToList();
+                text = ApplyReplacements(text, edits);
+                requalCount += edits.Count;
+            }
+
+            if (subtreeFiles.Contains(path))
+            {
+                text = RewriteWithinPrefix(text, classId, newId);
+                if (string.Equals(path, ctx.FilePath, StringComparison.OrdinalIgnoreCase))
+                    text = RenameDefinitionTokens(text, classId, newLeaf, graph);
+            }
+
+            changed[path] = text;
+        }
+
+        // Parse-check every result before touching disk.
+        foreach (var (path, content) in changed)
+        {
+            var (_, errs) = ModelicaParserHelper.ParseWithErrors(content);
+            if (errs.Count > 0)
+                return new ToolError($"Renaming would leave '{path}' unparseable ({DescribeErrors(errs)}). Nothing was changed.");
+        }
+
+        var note = $"Renamed the package directory '{Path.GetFileName(dir)}' -> '{newLeaf}' and re-qualified " +
+                   $"{requalCount} reference(s). Verify with a model checker.";
+        if (preview)
+        {
+            var previews = changed.Select(kv => new RenameFileChange(kv.Key, 0, kv.Value)).ToList();
+            return new RenameClassResult(classId, newId, PreviewOnly: true, Changed: false, changed.Count, requalCount, previews, note);
+        }
+
+        if (FileWritability.PreflightWritable(changed.Keys, $"rename package '{classId}'") is { } readOnly)
+            return readOnly;
+
+        Directory.Move(dir, newDir);
+
+        // Write each file's new content (subtree files now live under newDir).
+        var oldPaths = new List<string>();
+        var newPaths = new List<string>();
+        foreach (var (path, content) in changed)
+        {
+            var target = subtreeFiles.Contains(path) ? newDir + path[dir.Length..] : path;
+            await File.WriteAllTextAsync(target, content);
+            if (subtreeFiles.Contains(path)) { oldPaths.Add(path); newPaths.Add(target); }
+            else newPaths.Add(path);
+        }
+
+        RenameInPackageOrder(parentDir, oldLeaf, newLeaf);
+
+        var affected = new List<string>();
+        foreach (var p in oldPaths) affected.AddRange(await _libraries.ReloadFileAsync(p)); // gone -> remove old ids
+        foreach (var p in newPaths) affected.AddRange(await _libraries.ReloadFileAsync(p)); // add/update
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+
+        var changes = changed.Keys.Select(p => new RenameFileChange(p, 0, null)).ToList();
+        return new RenameClassResult(classId, newId, PreviewOnly: false, Changed: true, changed.Count, requalCount, changes, note);
+    }
+
+    // Rewrite the leading 'within <name>;' clause: if <name> is oldPrefix or under it, swap that prefix.
+    private static string RewriteWithinPrefix(string text, string oldPrefix, string newPrefix)
+    {
+        var m = Regex.Match(text, @"within\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;");
+        if (!m.Success)
+            return text;
+        var name = m.Groups[1].Value;
+        if (name != oldPrefix && !name.StartsWith(oldPrefix + ".", StringComparison.Ordinal))
+            return text;
+        var replacement = newPrefix + name[oldPrefix.Length..];
+        var g = m.Groups[1];
+        return text[..g.Index] + replacement + text[(g.Index + name.Length)..];
+    }
+
+    // Rename a class's own declaration name tokens (package X ... end X) to newLeaf.
+    private static string RenameDefinitionTokens(string text, string classId, string newLeaf, DirectedGraph graph)
+    {
+        var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
+        var locator = new ReferenceLocator(graph, new[] { classId });
+        locator.Visit(tree);
+        var def = locator.Definitions.FirstOrDefault(d => d.Id == classId);
+        if (def is null)
+            return text;
+        var spans = def.NameTokens.Select(t => (t.StartIndex, t.StopIndex)).ToList();
+        return ApplySpans(text, spans, newLeaf);
+    }
+
+    private static void RenameInPackageOrder(string directory, string oldName, string newName)
+    {
+        var path = Path.Combine(directory, "package.order");
+        if (!File.Exists(path))
+            return;
+        var lines = File.ReadAllLines(path, Encoding.Latin1)
+            .Select(l => string.Equals(l.Trim(), oldName, StringComparison.Ordinal) ? newName : l)
+            .ToList();
+        File.WriteAllLines(path, lines, Encoding.Latin1);
+    }
+
+    // Delete a whole directory package: its directory (recursively), its parent's package.order entry, and
+    // all its models from the graph. Reports references from OUTSIDE the subtree as dangling.
+    private async Task<object> DeleteDirectoryPackageAsync(
+        string classId, ModelNode node, ModelFilePersistence.FileOwnerContext ctx, bool preview)
+    {
+        var dir = Path.GetDirectoryName(ctx.FilePath)!;
+        var parentDir = Path.GetDirectoryName(dir)!;
+        var descendants = Descendants(classId);
+        var subtreeFiles = SubtreeFilePaths(descendants);
+
+        var depsChecked = _session.DependenciesAnalyzed;
+        var dangling = depsChecked ? ExternalDangling(classId, descendants) : new List<string>();
+        var note = depsChecked
+            ? (dangling.Count > 0
+                ? $"{dangling.Count} class(es) outside '{classId}' still reference it (or its members) and will " +
+                  "not resolve after deletion — update or remove them."
+                : null)
+            : "Dependencies were not analyzed, so external references were not checked. Run analyze_dependencies first.";
+
+        if (preview)
+            return new DeleteClassResult(classId, dir, "directory-package", PreviewOnly: true, Deleted: false, depsChecked, dangling, note);
+
+        if (FileWritability.PreflightWritable(subtreeFiles, $"delete package '{classId}'") is { } readOnly)
+            return readOnly;
+
+        try
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not delete the package directory '{dir}': {ex.Message}. Nothing was changed.");
+        }
+
+        RemoveFromPackageOrder(parentDir, node.Name);
+
+        var affected = new List<string>();
+        foreach (var path in subtreeFiles)
+            affected.AddRange(await _libraries.ReloadFileAsync(path)); // file is gone -> its models are removed
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+
+        return new DeleteClassResult(classId, dir, "directory-package", PreviewOnly: false, Deleted: true, depsChecked, dangling, note);
+    }
+
+    // The class and every descendant (its whole subtree).
+    private List<string> Descendants(string classId) => _libraries.GetAllModels()
+        .Select(m => m.Id)
+        .Where(id => id == classId || id.StartsWith(classId + ".", StringComparison.Ordinal))
+        .ToList();
+
+    // Distinct source files that hold the subtree's models.
+    private List<string> SubtreeFilePaths(IEnumerable<string> ids)
+    {
+        var graph = _libraries.CombinedGraph;
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in ids)
+        {
+            var fileId = _libraries.GetModelById(id)?.ContainingFileId;
+            var path = fileId is null ? null : graph.GetNode<FileNode>(fileId)?.FilePath;
+            if (!string.IsNullOrEmpty(path))
+                paths.Add(path);
+        }
+        return paths.ToList();
+    }
+
+    // References to any subtree member from OUTSIDE the subtree.
+    private List<string> ExternalDangling(string classId, IReadOnlyCollection<string> descendants)
+    {
+        var graph = _libraries.CombinedGraph;
+        var inside = new HashSet<string>(descendants, StringComparer.Ordinal);
+        var external = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var id in descendants)
+            foreach (var user in graph.GetModelUsedBy(id))
+                if (!inside.Contains(user.Id))
+                    external.Add(user.Id);
+        return external.ToList();
     }
 
     // Removes a class from disk (delete its standalone file, or cut it from its containing package.mo).
@@ -577,10 +892,11 @@ public sealed class EditTools
                 "PRECISE rename: it resolves each reference the same way dependency analysis does and " +
                 "rewrites only the exact identifier tokens that refer to this class (the declaration plus " +
                 "qualified/relative/imported uses) — NOT textual name matches, so a same-named unrelated " +
-                "class is never touched. Each changed file is re-parsed; if any would no longer parse, " +
-                "nothing is written. Set preview=true to see the planned per-file changes first. Note: deep " +
-                "member accesses like Pkg.OldName.someConstant are not rewritten (consistent with " +
-                "dependency analysis) — review those.")]
+                "class is never touched. A whole directory package can be renamed too: its folder is renamed, " +
+                "its subtree's ids re-qualified, and package.order updated. Each changed file is re-parsed; " +
+                "if any would no longer parse, nothing is written. Set preview=true to see the planned " +
+                "per-file changes first. Note: deep member accesses like Pkg.OldName.someConstant are not " +
+                "rewritten (consistent with dependency analysis) — review those.")]
     public async Task<object> RenameClass(
         [Description("Fully-qualified id of the class to rename, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -609,6 +925,11 @@ public sealed class EditTools
         if (!_session.DependenciesAnalyzed)
             return ToolDiagnostics.NotAnalyzed(_libraries,
                 "renaming a class (referencing files are located via the dependency graph)");
+
+        var dirCtx = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
+        if (dirCtx is not null && dirCtx.FileOwner.Id == classId &&
+            string.Equals(Path.GetFileName(dirCtx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
+            return await RenameDirectoryPackageAsync(classId, newId, oldLeaf, newName, dirCtx, preview);
 
         var graph = _libraries.CombinedGraph;
 

@@ -27,7 +27,7 @@ public class SessionAndClassToolsTests
     private static string LoadPackage(TestHost host, out SessionTools session)
     {
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
-        session = new SessionTools(host.Libraries, host.Repositories);
+        session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
         var result = session.LoadLibrary(dir).GetAwaiter().GetResult();
         ToolAssert.Ok<LibrarySummary>(result);
         return dir;
@@ -38,7 +38,7 @@ public class SessionAndClassToolsTests
     {
         using var host = new TestHost();
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(dir));
 
@@ -53,7 +53,7 @@ public class SessionAndClassToolsTests
     {
         using var host = new TestHost();
         var path = host.WriteMoFile("Thing.mo", "model Thing \"t\"\n  Real x;\nequation\n x=1;\nend Thing;");
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(path));
         Assert.Equal("File", summary.SourceType);
@@ -64,7 +64,7 @@ public class SessionAndClassToolsTests
     {
         using var host = new TestHost();
         var emptyDir = host.NewTempDir();
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var err = ToolAssert.Error(await session.LoadLibrary(emptyDir));
         Assert.Contains("No Modelica models", err.Error);
@@ -75,7 +75,7 @@ public class SessionAndClassToolsTests
     public async Task LoadLibrary_BadPath_ReturnsError()
     {
         using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var result = await session.LoadLibrary(Path.Combine(Path.GetTempPath(), "does-not-exist-xyz"));
         Assert.Contains("not found", ToolAssert.Error(result).Error);
@@ -123,7 +123,7 @@ public class SessionAndClassToolsTests
     {
         using var host = new TestHost();
         var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot));
         Assert.True(result.Success);
@@ -140,7 +140,7 @@ public class SessionAndClassToolsTests
     {
         using var host = new TestHost();
         var repoRoot = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
 
         var result = ToolAssert.Ok<LoadRepositoryResult>(await session.LoadRepository(repoRoot, loadLibraries: false));
         Assert.Empty(result.LoadedLibraries);
@@ -154,7 +154,7 @@ public class SessionAndClassToolsTests
     public void ListRepositories_EmptyInitially()
     {
         using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
         Assert.Empty(session.ListRepositories());
     }
 
@@ -162,7 +162,7 @@ public class SessionAndClassToolsTests
     public async Task DiscoverLibraries_UnknownRepo_Errors()
     {
         using var host = new TestHost();
-        var session = new SessionTools(host.Libraries, host.Repositories);
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
         var result = await session.DiscoverLibraries("no-such-repo");
         Assert.IsType<ToolError>(result);
     }

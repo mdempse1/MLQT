@@ -187,6 +187,40 @@ public sealed record MoveClassResult(
     IReadOnlyList<string> BrokenReferencesInMovedClass,
     string Note);
 
+/// <summary>One operation in a batch_edit. Op names the surgical edit; the other fields carry its
+/// arguments (only those relevant to the chosen Op are used).</summary>
+public sealed class BatchOperation
+{
+    public string Op { get; set; } = string.Empty;
+    public string ClassId { get; set; } = string.Empty;
+    public string? Type { get; set; }
+    public string? Name { get; set; }
+    public string? Modifier { get; set; }
+    public string? Description { get; set; }
+    public string? BaseType { get; set; }
+    public string? Import { get; set; }
+    public string? Equation { get; set; }
+    public string? Statement { get; set; }
+    public string? PortA { get; set; }
+    public string? PortB { get; set; }
+}
+
+public sealed record BatchFileChange(string FilePath, string? NewContent);
+
+public sealed record BatchEditResult(
+    bool PreviewOnly,
+    int OperationsApplied,
+    IReadOnlyList<BatchFileChange> Files);
+
+public sealed record StructureEditResult(
+    string ClassId,
+    string FilePath,
+    bool PreviewOnly,
+    bool Changed,
+    int AffectedModelCount,
+    string? NewFileContent,
+    string? Note);
+
 public sealed record RenameFileChange(
     string FilePath,
     int Replacements,

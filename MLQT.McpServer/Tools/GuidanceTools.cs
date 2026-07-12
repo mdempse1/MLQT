@@ -42,6 +42,11 @@ public sealed class GuidanceTools
               load_repository / load_library -> get_package_tree or list_classes / search_classes
               -> get_class_info -> get_class_source (include_annotations=false for compact structural code).
 
+            Find a class when you don't know its name:
+              search_classes (by id substring), search_text (by description/documentation prose, e.g.
+              'PID controller'), or search_by_interface (by shape: class type, has connectors/parameters,
+              simulatable via an experiment annotation).
+
             Understand how to USE a class without reading its source (cheap):
               get_class_interface (parameters, connectors, function signature) and get_class_documentation
               (prose). list_class_elements for the full declaration list. This is far smaller than
@@ -77,6 +82,17 @@ public sealed class GuidanceTools
               source) -> check_class + spell_check + validate_class_references (validate) -> format_class.
               A directory package gets a standalone .mo file; otherwise the class is nested.
 
+            Build up a model incrementally (surgical edits — no need to resend the whole class):
+              create_class -> add_component (instantiate parts, e.g. a source and an integrator) ->
+              add_connection(model, 'source1.y', 'integrator1.u') [refuses incompatible connectors] ->
+              set_component_modifier to set parameters -> add_equation/add_statement for behaviour ->
+              list_connections to review. Also add_extends / add_import / remove_component / remove_connection.
+              Each edit is parse-checked and refreshes dependencies; use preview=true to see the result first.
+              To build a whole model in one shot, pass the same operations to batch_edit — they apply
+              atomically (all-or-nothing) and later ops see earlier ones (add components then connect them).
+              Give components positions with set_component_placement so the diagram is usable
+              (get_diagram_layout shows the current arrangement); there is no auto-layout.
+
             Restructure a library:
               analyze_dependencies (once) -> move_class(classId, newParentId) re-qualifies references to the
               moved class (its own refs to former siblings are reported, not auto-fixed); delete_class(classId)
@@ -101,6 +117,9 @@ public sealed class GuidanceTools
               marked with inheritedFrom. Public only unless includeProtected=true.
             - get_class_documentation(classId, format=text|html): the class description plus the
               Documentation(info/revisions) prose. text strips HTML; html returns it raw.
+            - get_class_behavior(classId): the class's OWN equations, connect() statements and algorithm
+              statements. Inherited behaviour is NOT merged (unlike members) — basesWithBehavior points to
+              the base classes that declare behaviour, query those directly for the full picture.
             - validate_class_references(classId): lists referenced types (component types + extends) that do
               not resolve to a loaded class — catches typos and missing dependencies after writing/editing.
               Best-effort: it does not model names inherited via extends, so treat hits as candidates and

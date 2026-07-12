@@ -87,6 +87,46 @@ public sealed record UnresolvedReference(
     string Kind,
     int Line);
 
+/// <summary>A class matched by search_text, with where it matched and a short snippet.</summary>
+public sealed record TextSearchItem(string Id, string Name, string ClassType, string MatchedIn, string Snippet);
+
+public sealed record TextSearchResult(int Total, int Count, IReadOnlyList<TextSearchItem> Items);
+
+/// <summary>A class matched by search_by_interface, with its parameter/connector counts.</summary>
+public sealed record InterfaceSearchItem(
+    string Id, string Name, string ClassType, int ParameterCount, int ConnectorCount, bool HasExperiment);
+
+public sealed record InterfaceSearchResult(int Total, int Count, IReadOnlyList<InterfaceSearchItem> Items);
+
+/// <summary>A component's diagram placement: its bounding extent [x1,y1,x2,y2] and optional rotation.</summary>
+public sealed record DiagramComponent(string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation);
+
+/// <summary>The diagram layout of a class: its components' placements plus its connections.</summary>
+public sealed record DiagramLayoutResult(
+    string ClassId,
+    IReadOnlyList<DiagramComponent> Components,
+    IReadOnlyList<ConnectionView> Connections);
+
+/// <summary>A connect(a, b) equation.</summary>
+public sealed record ConnectionView(string PortA, string PortB);
+
+/// <summary>The connections in a class: its own, plus base classes that themselves contain connections
+/// (behavior is not merged — query those bases directly to see their connections).</summary>
+public sealed record ConnectionsResult(
+    string ClassId,
+    IReadOnlyList<ConnectionView> Connections,
+    IReadOnlyList<string> BasesWithConnections);
+
+/// <summary>The behavior a class declares itself, plus base classes that declare behavior (not merged —
+/// query those base classes to see theirs). Members are merged in the interface views, but behavior is
+/// left in its declaring class.</summary>
+public sealed record ClassBehaviorResult(
+    string ClassId,
+    IReadOnlyList<string> Equations,
+    IReadOnlyList<ConnectionView> Connections,
+    IReadOnlyList<string> Statements,
+    IReadOnlyList<string> BasesWithBehavior);
+
 /// <summary>Result of validate_class_references.</summary>
 public sealed record ReferenceValidationResult(
     string Id,

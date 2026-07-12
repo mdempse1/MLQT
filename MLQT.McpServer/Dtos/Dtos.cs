@@ -40,6 +40,13 @@ public sealed record LoadRepositoryResult(
     IReadOnlyList<LibrarySummary> LoadedLibraries,
     IReadOnlyList<string> Warnings);
 
+/// <summary>Result of the reload tool: what scope was re-read from disk.</summary>
+public sealed record ReloadResult(
+    string Scope,
+    IReadOnlyList<string> ReloadedLibraries,
+    int AffectedModelCount,
+    string? Note);
+
 public sealed record ClassInfo(
     string Id,
     string Name,

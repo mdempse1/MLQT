@@ -63,12 +63,15 @@ const string serverInstructions =
     - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided — use your
       own CLI. The two VCS tools here map file changes to Modelica classes, which the CLI cannot do.
     - Authoring tools that change code on disk (all support preview:true and refresh dependencies):
-      create_class (add a class, placed standalone or nested), update_class_source (replace a class's body,
-      same name), rename_class (rename + rewrite every resolved reference), move_class (move to a new parent
-      + re-qualify references), delete_class (remove a class, reports dangling references). rename_class and
-      move_class need analyze_dependencies. format_code/check_style are stateless; format_class and
-      correct_spelling reformat/fix in place. Writes to read-only files (e.g. a reference library under
-      Program Files) are refused.
+      * Whole-class: create_class (add a class, placed standalone or nested), update_class_source (replace a
+        class's body, same name), rename_class (rename + rewrite every resolved reference), move_class (move
+        to a new parent + re-qualify references), delete_class (remove a class, reports dangling references).
+      * Element-level (surgical, no need to resend the whole class): add_component / remove_component /
+        set_component_modifier, add_extends, add_import, add_equation, add_statement (algorithm),
+        add_connection / remove_connection / list_connections. add_connection refuses incompatible connectors.
+      rename_class and move_class need analyze_dependencies. format_code/check_style are stateless;
+      format_class and correct_spelling reformat/fix in place. Writes to read-only files (e.g. a reference
+      library under Program Files) are refused.
 
     Call get_guidance (optionally with a topic: workflows, dependencies, style, spelling, formatting,
     vcs, resources) for detailed, task-oriented recipes.

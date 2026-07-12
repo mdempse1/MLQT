@@ -120,6 +120,43 @@ public class EditToolsTests
     }
 
     [Fact]
+    public async Task RenameClass_DirectoryPackage_RenamesFolderAndRequalifies()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            // Root has a directory subpackage Sub (with Widget + a nested User referencing it), and a
+            // top-level User2 that references Sub.Widget by qualified name.
+            ["package.mo"] = "within;\npackage Root\n  model User2\n    Root.Sub.Widget w;\n  end User2;\nend Root;",
+            ["package.order"] = "Sub\nUser2\n",
+            ["Sub/package.mo"] = "within Root;\npackage Sub\n  model Widget\n    Real x;\n  end Widget;\n  model Local\n    Widget w;\n  end Local;\nend Sub;",
+            ["Sub/package.order"] = "Widget\nLocal\n"
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        await deps.AnalyzeDependencies();
+
+        var res = ToolAssert.Ok<RenameClassResult>(await Edit(host).RenameClass("Root.Sub", "Components"));
+        Assert.True(res.Changed);
+        Assert.Equal("Root.Components", res.NewClassId);
+
+        // Folder renamed.
+        Assert.False(Directory.Exists(Path.Combine(dir, "Sub")));
+        Assert.True(Directory.Exists(Path.Combine(dir, "Components")));
+
+        // Ids remapped.
+        Assert.Null(host.Libraries.GetModelById("Root.Sub.Widget"));
+        Assert.NotNull(host.Libraries.GetModelById("Root.Components.Widget"));
+        Assert.NotNull(host.Libraries.GetModelById("Root.Components.Local"));
+
+        // External qualified reference re-qualified.
+        Assert.Contains("Root.Components.Widget", host.Libraries.GetModelById("Root.User2")!.Definition.ModelicaCode);
+        // package.order entry renamed.
+        Assert.Contains("Components", File.ReadAllLines(Path.Combine(dir, "package.order")));
+        Assert.DoesNotContain("Sub", File.ReadAllLines(Path.Combine(dir, "package.order")));
+    }
+
+    [Fact]
     public async Task RenameClass_ReadOnlyFile_Aborts()
     {
         using var host = new TestHost();
