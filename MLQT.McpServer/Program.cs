@@ -69,6 +69,9 @@ const string serverInstructions =
       * Element-level (surgical, no need to resend the whole class): add_component / remove_component /
         set_component_modifier, add_extends, add_import, add_equation, add_statement (algorithm),
         add_connection / remove_connection / list_connections. add_connection refuses incompatible connectors.
+        The add_* tools take an optional comment (a // line above the element).
+      * Documentation: set_class_description, set_component_description (the "..." strings) and
+        set_class_documentation (the Documentation(info/revisions) HTML); read with get_class_documentation.
       rename_class and move_class need analyze_dependencies. format_code/check_style are stateless;
       format_class and correct_spelling reformat/fix in place. Writes to read-only files (e.g. a reference
       library under Program Files) are refused.

@@ -46,6 +46,7 @@ public sealed class StructureEditTools
         [Description("Optional modifier text, e.g. '(k = 2)' or '= 5'. A bare value like '5' is treated as '= 5'.")]
         string? modifier = null,
         [Description("Optional description string.")] string? description = null,
+        [Description("Optional // comment line to place above the component.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(type))
@@ -62,8 +63,8 @@ public sealed class StructureEditTools
 
         var nameWithMod = name + FormatModifier(modifier);
         var desc = string.IsNullOrEmpty(description) ? string.Empty : $" \"{description.Replace("\"", "\\\"")}\"";
-        var declaration = $"{type.Trim()} {nameWithMod}{desc};";
-        var newClassCode = InsertElement(ctx.ClassCode, ctx.Layout, declaration, atTop: false);
+        var line = WithComment($"{type.Trim()} {nameWithMod}{desc};", comment, ctx.Layout.Indent);
+        var newClassCode = InsertElement(ctx.ClassCode, ctx.Layout, line, atTop: false);
 
         // Best-effort note if the type does not resolve to a loaded class (still allowed — may be added later).
         string? note = null;
@@ -222,6 +223,7 @@ public sealed class StructureEditTools
     public async Task<object> AddEquation(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("The equation, e.g. 'y = k*x' (no trailing ';').")] string equation,
+        [Description("Optional // comment line to place above the equation.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(equation))
@@ -230,7 +232,7 @@ public sealed class StructureEditTools
         if (error is not null)
             return error;
 
-        var line = EnsureSemicolon(equation);
+        var line = WithComment(EnsureSemicolon(equation), comment, ctx!.Layout.Indent);
         var newClassCode = InsertIntoSection(ctx!.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add equation to '{classId}'"));
@@ -243,6 +245,7 @@ public sealed class StructureEditTools
     public async Task<object> AddStatement(
         [Description("Fully-qualified id of the class/function.")] string classId,
         [Description("The statement, e.g. 'y := k*x' (no trailing ';').")] string statement,
+        [Description("Optional // comment line to place above the statement.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(statement))
@@ -251,7 +254,7 @@ public sealed class StructureEditTools
         if (error is not null)
             return error;
 
-        var line = EnsureSemicolon(statement);
+        var line = WithComment(EnsureSemicolon(statement), comment, ctx!.Layout.Indent);
         var newClassCode = InsertIntoSection(ctx!.ClassCode, ctx.Layout.AlgorithmAppendOffset, "algorithm", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add statement to '{classId}'"));
@@ -268,6 +271,7 @@ public sealed class StructureEditTools
         [Description("Fully-qualified id of the class to add the connection to.")] string classId,
         [Description("One port, e.g. 'sine1.y' or a connector on the class like 'u'.")] string portA,
         [Description("The other port, e.g. 'integrator1.u'.")] string portB,
+        [Description("Optional // comment line to place above the connection.")] string? comment = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(portA) || string.IsNullOrWhiteSpace(portB))
@@ -300,8 +304,8 @@ public sealed class StructureEditTools
                     "otherwise be the same shape).");
         }
 
-        var line = $"connect({a}, {b});";
-        var newClassCode = InsertIntoSection(ctx!.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
+        var line = WithComment($"connect({a}, {b});", comment, ctx!.Layout.Indent);
+        var newClassCode = InsertIntoSection(ctx.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
         var note = notes.Count > 0 ? string.Join(" ", notes) : null;
         return ToResult(classId, note, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add connection to '{classId}'"));
@@ -443,6 +447,15 @@ public sealed class StructureEditTools
         return t.EndsWith(";", StringComparison.Ordinal) ? t : t + ";";
     }
 
+    // Prepend a single-line // comment above 'line' (indented to match), or return 'line' unchanged.
+    private static string WithComment(string line, string? comment, string indent)
+    {
+        if (string.IsNullOrWhiteSpace(comment))
+            return line;
+        var oneLine = comment.Replace("\r", " ").Replace("\n", " ").Trim();
+        return $"// {oneLine}\n{indent}{line}";
+    }
+
     [McpServerTool(Name = "batch_edit")]
     [Description("Apply a sequence of surgical edits ATOMICALLY — all succeed or none do. Ideal for " +
                 "building a whole model in one shot: e.g. add several components then connect them. Each " +
@@ -506,14 +519,14 @@ public sealed class StructureEditTools
 
     private Task<object> Dispatch(BatchOperation op) => op.Op switch
     {
-        "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description),
+        "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description, op.Comment),
         "remove_component" => RemoveComponent(op.ClassId, op.Name ?? string.Empty),
         "set_component_modifier" => SetComponentModifier(op.ClassId, op.Name ?? string.Empty, op.Modifier ?? string.Empty),
         "add_extends" => AddExtends(op.ClassId, op.BaseType ?? string.Empty, op.Modifier),
         "add_import" => AddImport(op.ClassId, op.Import ?? string.Empty),
-        "add_equation" => AddEquation(op.ClassId, op.Equation ?? string.Empty),
-        "add_statement" => AddStatement(op.ClassId, op.Statement ?? string.Empty),
-        "add_connection" => AddConnection(op.ClassId, op.PortA ?? string.Empty, op.PortB ?? string.Empty),
+        "add_equation" => AddEquation(op.ClassId, op.Equation ?? string.Empty, op.Comment),
+        "add_statement" => AddStatement(op.ClassId, op.Statement ?? string.Empty, op.Comment),
+        "add_connection" => AddConnection(op.ClassId, op.PortA ?? string.Empty, op.PortB ?? string.Empty, op.Comment),
         "remove_connection" => RemoveConnection(op.ClassId, op.PortA ?? string.Empty, op.PortB ?? string.Empty),
         _ => Task.FromResult<object>(new ToolError($"Unknown operation '{op.Op}'."))
     };

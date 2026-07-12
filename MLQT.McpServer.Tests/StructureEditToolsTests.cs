@@ -59,6 +59,17 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public async Task AddComponent_WithComment_AddsCommentLine()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(
+            await Load(host).AddComponent("P.A", "Real", "y", description: "out", comment: "the output signal"));
+        var src = Source(host, "P.A");
+        Assert.Contains("// the output signal", src);
+        Assert.Contains("Real y \"out\";", src);
+    }
+
+    [Fact]
     public async Task AddComponent_ParenModifier()
     {
         using var host = new TestHost();

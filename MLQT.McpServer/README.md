@@ -51,6 +51,7 @@ Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 | Class query | `get_class_info`, `get_class_source`, `list_classes`, `search_classes`, `get_package_tree` |
 | Class views | `get_class_interface`, `list_class_elements`, `get_class_documentation`, `get_class_behavior`, `validate_class_references` |
 | Search | `search_text`, `search_by_interface` |
+| Documentation | `set_class_description`, `set_component_description`, `set_class_documentation` (read with `get_class_documentation`) |
 | Diagram | `get_diagram_layout`, `set_component_placement` |
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
 | Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |

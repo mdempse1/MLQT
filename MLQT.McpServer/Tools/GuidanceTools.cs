@@ -92,6 +92,10 @@ public sealed class GuidanceTools
               atomically (all-or-nothing) and later ops see earlier ones (add components then connect them).
               Give components positions with set_component_placement so the diagram is usable
               (get_diagram_layout shows the current arrangement); there is no auto-layout.
+              Document as you go: description strings come from create_class source, add_component's
+              description, or set_class_description / set_component_description; set the rich HTML help with
+              set_class_documentation; the add_* tools take an optional comment to place a // note above the
+              element.
 
             Restructure a library:
               analyze_dependencies (once) -> move_class(classId, newParentId) re-qualifies references to the

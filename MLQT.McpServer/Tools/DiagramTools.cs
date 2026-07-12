@@ -112,7 +112,7 @@ public sealed class DiagramTools
     // Set the Placement on a component, returning the new class code, or null if the component is absent.
     private static string? SetPlacement(string classCode, string componentName, int x1, int y1, int x2, int y2, int rotation)
     {
-        var decl = FindComponentDeclaration(classCode, componentName);
+        var decl = ModelicaNav.FindComponent(classCode, componentName);
         if (decl is null)
             return null;
 
@@ -138,27 +138,6 @@ public sealed class DiagramTools
         // No annotation at all: add one after the declaration (before the terminating ';').
         var end = decl.Stop.StopIndex + 1;
         return classCode[..end] + " annotation (" + placement + ")" + classCode[end..];
-    }
-
-    private static modelicaParser.Component_declarationContext? FindComponentDeclaration(string classCode, string name)
-    {
-        var composition = ModelicaParserHelper.Parse(classCode)
-            ?.class_definition()?.FirstOrDefault()
-            ?.class_specifier()?.long_class_specifier()?.composition();
-        if (composition?.element_list() is not { } lists)
-            return null;
-
-        foreach (var list in lists)
-            foreach (var element in list.element())
-            {
-                var componentList = element.component_clause()?.component_list();
-                if (componentList is null)
-                    continue;
-                foreach (var decl in componentList.component_declaration())
-                    if (decl.declaration()?.IDENT()?.GetText() == name)
-                        return decl;
-            }
-        return null;
     }
 
     private static modelicaParser.ArgumentContext? FindPlacementArgument(modelicaParser.AnnotationContext annotation)

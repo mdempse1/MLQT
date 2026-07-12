@@ -203,6 +203,7 @@ public sealed class BatchOperation
     public string? Statement { get; set; }
     public string? PortA { get; set; }
     public string? PortB { get; set; }
+    public string? Comment { get; set; }
 }
 
 public sealed record BatchFileChange(string FilePath, string? NewContent);
