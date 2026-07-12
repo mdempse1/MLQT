@@ -64,6 +64,7 @@ public sealed record ClassElementView(
     string? Description,
     string? ClassType,
     IReadOnlyList<string> Prefixes,
+    IReadOnlyList<string> LeadingComments,
     int Line,
     string? InheritedFrom);
 
@@ -120,11 +121,14 @@ public sealed record ConnectionsResult(
 /// <summary>The behavior a class declares itself, plus base classes that declare behavior (not merged —
 /// query those base classes to see theirs). Members are merged in the interface views, but behavior is
 /// left in its declaring class.</summary>
+/// <summary>An equation or statement plus any // or /* */ comments written immediately before it.</summary>
+public sealed record BehaviorLineView(string Text, IReadOnlyList<string> LeadingComments);
+
 public sealed record ClassBehaviorResult(
     string ClassId,
-    IReadOnlyList<string> Equations,
+    IReadOnlyList<BehaviorLineView> Equations,
     IReadOnlyList<ConnectionView> Connections,
-    IReadOnlyList<string> Statements,
+    IReadOnlyList<BehaviorLineView> Statements,
     IReadOnlyList<string> BasesWithBehavior);
 
 /// <summary>Result of validate_class_references.</summary>

@@ -19,9 +19,9 @@ public static class BehaviorExtractor
         if (composition?.children is null)
             return ClassBehavior.Empty;
 
-        var equations = new List<string>();
+        var equations = new List<BehaviorLine>();
         var connections = new List<ConnectionPair>();
-        var statements = new List<string>();
+        var statements = new List<BehaviorLine>();
         var hasEquation = false;
         var hasAlgorithm = false;
 
@@ -31,8 +31,14 @@ public static class BehaviorExtractor
             {
                 case modelicaParser.Equation_sectionContext eq:
                     hasEquation = true;
+                    List<string>? eqPending = null;
                     foreach (var eoc in eq.equation_or_comment())
                     {
+                        if (eoc.c_comment() is { } eqComment)
+                        {
+                            (eqPending ??= new List<string>()).Add(eqComment.GetText().Trim());
+                            continue;
+                        }
                         var equation = eoc.equation();
                         if (equation is null)
                             continue;
@@ -43,18 +49,30 @@ public static class BehaviorExtractor
                         }
                         else
                         {
-                            equations.Add(Slice(classCode, equation.Start.StartIndex, equation.Stop.StopIndex));
+                            equations.Add(new BehaviorLine(
+                                Slice(classCode, equation.Start.StartIndex, equation.Stop.StopIndex),
+                                eqPending ?? (IReadOnlyList<string>)Array.Empty<string>()));
                         }
+                        eqPending = null;
                     }
                     break;
 
                 case modelicaParser.Algorithm_sectionContext alg:
                     hasAlgorithm = true;
+                    List<string>? algPending = null;
                     foreach (var soc in alg.statement_or_comment())
                     {
+                        if (soc.c_comment() is { } algComment)
+                        {
+                            (algPending ??= new List<string>()).Add(algComment.GetText().Trim());
+                            continue;
+                        }
                         var statement = soc.statement();
                         if (statement is not null)
-                            statements.Add(Slice(classCode, statement.Start.StartIndex, statement.Stop.StopIndex));
+                            statements.Add(new BehaviorLine(
+                                Slice(classCode, statement.Start.StartIndex, statement.Stop.StopIndex),
+                                algPending ?? (IReadOnlyList<string>)Array.Empty<string>()));
+                        algPending = null;
                     }
                     break;
             }

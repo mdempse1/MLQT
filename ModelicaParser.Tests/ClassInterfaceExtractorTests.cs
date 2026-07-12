@@ -171,6 +171,16 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
+    public void LeadingComments_AttachToFollowingElement()
+    {
+        var iface = Extract(
+            "model M\n  // the gain parameter\n  /* block */\n  parameter Real k = 1;\n  Real x;\nend M;");
+        var k = iface.Elements.Single(e => e.Name == "k");
+        Assert.Equal(new[] { "// the gain parameter", "/* block */" }, k.LeadingComments);
+        Assert.Empty(iface.Elements.Single(e => e.Name == "x").LeadingComments);
+    }
+
+    [Fact]
     public void EmptyOrNonClass_YieldsEmptyInterface()
     {
         Assert.Empty(Extract("// just a comment").Elements);

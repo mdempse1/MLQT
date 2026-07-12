@@ -91,8 +91,9 @@ public sealed class ViewTools
                 "clauses, imports, and nested classes. Members INHERITED via extends are included by " +
                 "default (each marked with its base class in inheritedFrom); set include_inherited=false " +
                 "for only the class's own declarations. By default only public elements are returned; set " +
-                "include_protected=true to also include protected ones. This is the granular data behind " +
-                "get_class_interface. Needs only a loaded library.")]
+                "include_protected=true to also include protected ones. Each element also carries any " +
+                "leadingComments (the // or /* */ comments written just above it). This is the granular " +
+                "data behind get_class_interface. Needs only a loaded library.")]
     public object ListClassElements(
         [Description("Fully-qualified class id.")] string classId,
         [Description("Include elements declared in protected sections. Default false.")]
@@ -116,6 +117,7 @@ public sealed class ViewTools
                 m.Element.Description,
                 m.Element.ClassType,
                 m.Element.Prefixes,
+                m.Element.LeadingComments,
                 m.Element.Line,
                 m.InheritedFrom))
             .ToList();
@@ -148,9 +150,10 @@ public sealed class ViewTools
 
     [McpServerTool(Name = "get_class_behavior")]
     [Description("Get the behavior a class declares itself: its top-level equations, connect() statements " +
-                "and algorithm statements. Unlike the interface views, inherited behavior is NOT merged in " +
-                "(equations reference their own class's scope) — instead basesWithBehavior lists the base " +
-                "classes that declare behavior, which you can query directly for the full picture. Read-only.")]
+                "and algorithm statements (each equation/statement carries any leadingComments written " +
+                "above it). Unlike the interface views, inherited behavior is NOT merged in (equations " +
+                "reference their own class's scope) — instead basesWithBehavior lists the base classes that " +
+                "declare behavior, which you can query directly for the full picture. Read-only.")]
     public object GetClassBehavior(
         [Description("Fully-qualified class id.")] string classId)
     {
@@ -159,8 +162,13 @@ public sealed class ViewTools
 
         var behavior = BehaviorExtractor.ExtractFromCode(node!.Definition.ModelicaCode ?? string.Empty);
         var connections = behavior.Connections.Select(c => new ConnectionView(c.PortA, c.PortB)).ToList();
+        BehaviorLineView ToLine(ModelicaParser.DataTypes.BehaviorLine l) => new(l.Text, l.LeadingComments);
         return new ClassBehaviorResult(
-            classId, behavior.Equations, connections, behavior.Statements, CollectBasesWithBehavior(classId));
+            classId,
+            behavior.Equations.Select(ToLine).ToList(),
+            connections,
+            behavior.Statements.Select(ToLine).ToList(),
+            CollectBasesWithBehavior(classId));
     }
 
     // Ancestors (via extends) whose own bodies declare equations, connections or statements.

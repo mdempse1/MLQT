@@ -166,6 +166,26 @@ public class ViewToolsTests
     }
 
     [Fact]
+    public void ListElements_SurfacesLeadingComments()
+    {
+        const string pkg = """
+            within;
+            package K "k"
+              model M
+                // gain used by the controller
+                parameter Real k = 1;
+                Real x;
+              end M;
+            end K;
+            """;
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<ClassElementsResult>(LoadContent(host, pkg).ListClassElements("K.M"));
+        var k = res.Elements.Single(e => e.Name == "k");
+        Assert.Contains("// gain used by the controller", k.LeadingComments);
+        Assert.Empty(res.Elements.Single(e => e.Name == "x").LeadingComments);
+    }
+
+    [Fact]
     public void ListElements_IncludesInheritedWithOrigin()
     {
         using var host = new TestHost();
@@ -291,9 +311,9 @@ public class ViewToolsTests
         var view = LoadContent(host, pkg);
 
         var res = ToolAssert.Ok<ClassBehaviorResult>(view.GetClassBehavior("B.Der"));
-        Assert.Contains("d = 2*time", res.Equations);
-        Assert.DoesNotContain(res.Equations, e => e.Contains("e = 1")); // inherited behavior NOT merged
-        Assert.Contains("B.Base", res.BasesWithBehavior);               // pointer to the base instead
+        Assert.Contains(res.Equations, e => e.Text == "d = 2*time");
+        Assert.DoesNotContain(res.Equations, e => e.Text.Contains("e = 1")); // inherited behavior NOT merged
+        Assert.Contains("B.Base", res.BasesWithBehavior);                    // pointer to the base instead
     }
 
     [Fact]

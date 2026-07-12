@@ -54,6 +54,9 @@ public sealed record ClassElement
     /// <summary>Element prefixes present: replaceable, redeclare, final, inner, outer.</summary>
     public IReadOnlyList<string> Prefixes { get; init; } = Array.Empty<string>();
 
+    /// <summary>The // and /* */ comments written immediately before this element (in source order).</summary>
+    public IReadOnlyList<string> LeadingComments { get; init; } = Array.Empty<string>();
+
     /// <summary>1-based source line of the element within the parsed class code.</summary>
     public int Line { get; init; }
 

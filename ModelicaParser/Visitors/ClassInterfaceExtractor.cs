@@ -60,8 +60,36 @@ public static class ClassInterfaceExtractor
                     isPublic = false;
                     break;
                 case modelicaParser.Element_listContext list:
-                    foreach (var element in list.element())
-                        CollectElement(element, isPublic, elements);
+                    CollectElementList(list, isPublic, elements);
+                    break;
+            }
+        }
+    }
+
+    // Walk an element_list's children (element_list : (c_comment | element ';')*), so // and /* */
+    // comments are captured and attached to the element they precede (as the renderer treats them).
+    private static void CollectElementList(modelicaParser.Element_listContext list, bool isPublic, List<ClassElement> elements)
+    {
+        if (list.children is null)
+            return;
+
+        List<string>? pending = null;
+        foreach (var child in list.children)
+        {
+            switch (child)
+            {
+                case modelicaParser.C_commentContext comment:
+                    (pending ??= new List<string>()).Add(comment.GetText().Trim());
+                    break;
+
+                case modelicaParser.ElementContext element:
+                    var before = elements.Count;
+                    CollectElement(element, isPublic, elements);
+                    if (pending is not null && elements.Count > before)
+                    {
+                        elements[before] = elements[before] with { LeadingComments = pending };
+                        pending = null;
+                    }
                     break;
             }
         }
