@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -80,9 +81,33 @@ const string serverInstructions =
     vcs, resources) for detailed, task-oriented recipes.
     """;
 
+// Records every tool call (name, args, duration, error) so tool usage can be reviewed. Writes to
+// %LocalAppData%/MLQT/mcp-tool-usage.jsonl (override with MLQT_MCP_TOOL_LOG; "off" to disable).
+var toolUsageLogger = new ToolUsageLogger();
+builder.Services.AddSingleton(toolUsageLogger);
+
 builder.Services
     .AddMcpServer(options => options.ServerInstructions = serverInstructions)
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly()
+    .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
+    {
+        var toolName = context.Params?.Name ?? "(unknown)";
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var result = await next(context, cancellationToken);
+            toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, result.IsError ?? false);
+            return result;
+        }
+        catch
+        {
+            toolUsageLogger.Record(toolName, context.Params?.Arguments, stopwatch.ElapsedMilliseconds, isError: true);
+            throw;
+        }
+    }));
+
+if (toolUsageLogger.LogPath is { } logPath)
+    await Console.Error.WriteLineAsync($"[mcp] tool-usage log: {logPath}");
 
 await builder.Build().RunAsync();

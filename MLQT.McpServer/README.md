@@ -26,6 +26,11 @@ executable, e.g. in a client config:
 Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 `%LocalAppData%/MLQT/mcp-settings.json`.
 
+**Tool-usage log.** Every tool call is recorded (name, arguments, duration, error) as one JSON object
+per line in `%LocalAppData%/MLQT/mcp-tool-usage.jsonl` — handy for reviewing how an agent uses the
+server (e.g. views vs. full source). Override the path with the `MLQT_MCP_TOOL_LOG` environment
+variable, or set it to `off` to disable.
+
 ## Key concepts
 
 - **Load first.** Almost every tool operates on an in-memory graph. Use `load_repository` (a Git/SVN
