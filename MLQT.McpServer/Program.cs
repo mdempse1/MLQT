@@ -93,6 +93,13 @@ const string serverInstructions =
 var toolUsageLogger = new ToolUsageLogger();
 builder.Services.AddSingleton(toolUsageLogger);
 
+// Map of tool name -> which parameters are boolean/numeric, built by reflecting the tool method
+// signatures. Used by the request filter below to coerce scalars that LLM clients commonly send as JSON
+// strings ("standalone":"true", "count":"5") into the JSON type the parameter expects. Doing it here —
+// rather than via a JSON converter — keeps each tool's input schema precise (a bool still advertises
+// "type":"boolean"); a custom converter would make the schema exporter drop the type.
+var toolScalarParameters = ToolArgumentCoercion.BuildParameterMap(System.Reflection.Assembly.GetExecutingAssembly());
+
 builder.Services
     .AddMcpServer(options => options.ServerInstructions = serverInstructions)
     .WithStdioServerTransport()
@@ -100,6 +107,14 @@ builder.Services
     .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
     {
         var toolName = context.Params?.Name ?? "(unknown)";
+
+        // Coerce string-encoded booleans/numbers ("true", "5") to their JSON type before the SDK binds
+        // the arguments, so an LLM that quotes a scalar gets the intended behaviour instead of an opaque
+        // invocation error. Type-directed by the tool's own signature, so real string parameters are safe.
+        if (context.Params is { Name: { } name, Arguments: { } args } &&
+            toolScalarParameters.TryGetValue(name, out var scalars))
+            context.Params.Arguments = ToolArgumentCoercion.Coerce(args, scalars);
+
         var stopwatch = Stopwatch.StartNew();
         try
         {

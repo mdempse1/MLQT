@@ -31,6 +31,12 @@ per line in `%LocalAppData%/MLQT/mcp-tool-usage.jsonl` — handy for reviewing h
 server (e.g. views vs. full source). Override the path with the `MLQT_MCP_TOOL_LOG` environment
 variable, or set it to `off` to disable.
 
+**Lenient scalar arguments.** Some clients/LLMs send boolean and numeric tool arguments as JSON strings
+(e.g. `"standalone":"true"`, `"count":"5"`). A request filter coerces these to the JSON type the
+parameter actually declares before the argument is bound, so a quoted scalar behaves the same as the
+bare value instead of failing with an opaque "An error occurred invoking '<tool>'". The coercion is
+directed by each tool's method signature, so a parameter that is genuinely a string is never altered.
+
 ## Key concepts
 
 - **Load first.** Almost every tool operates on an in-memory graph. Use `load_repository` (a Git/SVN
