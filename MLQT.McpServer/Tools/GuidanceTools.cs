@@ -161,6 +161,11 @@ public sealed class GuidanceTools
 
             Element-level (surgical — change one thing without resending the class):
             - add_component / remove_component / set_component_modifier (components, parameters, connectors).
+              add_component covers the full declaration: visibility='protected' (a protected section is
+              created if absent); prefix for keywords like 'parameter', 'constant', 'replaceable', 'final',
+              'inner'/'outer', 'flow'/'stream' (space-separated in Modelica order); constrainedBy for a
+              replaceable's constraining clause; condition for a conditional 'if <expr>' component. Pass the
+              Modelica keywords you already know — the tool just places the declaration correctly.
             - add_extends / add_import.
             - add_equation / add_statement (algorithm section).
             - add_connection(classId, portA, portB) / remove_connection / list_connections. add_connection

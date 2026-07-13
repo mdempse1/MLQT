@@ -25,6 +25,7 @@ public static class ClassBodyLocator
 
         int? publicListEnd = null;
         int? firstPublicElement = null;
+        int? protectedListEnd = null;
         int? lastEquationEnd = null;
         int? lastAlgorithmEnd = null;
         int? trailingAnnotationStart = null;
@@ -53,6 +54,10 @@ public static class ClassBodyLocator
                     {
                         publicListEnd = list.Stop.StopIndex + 1; // after the last element's ';'
                         firstPublicElement ??= list.element()[0].Start.StartIndex;
+                    }
+                    else if (!isPublic && list.element().Length > 0 && list.Stop is not null)
+                    {
+                        protectedListEnd = list.Stop.StopIndex + 1; // append target for a protected element
                     }
                     break;
 
@@ -85,6 +90,7 @@ public static class ClassBodyLocator
             Found: true,
             PublicAppendOffset: publicListEnd ?? insertBoundary,
             FirstPublicElementOffset: firstPublicElement,
+            ProtectedAppendOffset: protectedListEnd,
             EquationAppendOffset: lastEquationEnd,
             AlgorithmAppendOffset: lastAlgorithmEnd,
             BodyEndOffset: insertBoundary,

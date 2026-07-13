@@ -42,6 +42,103 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public async Task AddComponent_Protected_CreatesProtectedSection()
+    {
+        using var host = new TestHost();
+        // P.A has only public 'Real x;' — a protected component must create a new protected section.
+        ToolAssert.Ok<StructureEditResult>(
+            await Load(host).AddComponent("P.A", "Real", "helper", visibility: "protected"));
+        var src = Source(host, "P.A");
+        Assert.Contains("protected", src);
+        Assert.Contains("Real helper;", src);
+        // The protected section (and its element) come after the public 'Real x;'.
+        Assert.True(src.IndexOf("Real x;", StringComparison.Ordinal) < src.IndexOf("protected", StringComparison.Ordinal));
+        Assert.True(src.IndexOf("protected", StringComparison.Ordinal) < src.IndexOf("Real helper;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddComponent_Protected_AppendsToExistingSection()
+    {
+        const string pkg = """
+            within;
+            package Q "q"
+              model A "a"
+                Real x;
+              protected
+                Real p1;
+              end A;
+            end Q;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("Q.A", "Real", "p2", visibility: "protected"));
+        var src = host.Libraries.GetModelById("Q.A")!.Definition.ModelicaCode!;
+        // Only one protected keyword — p2 joined the existing section after p1.
+        Assert.Single(Regex.Matches(src, @"\bprotected\b"));
+        Assert.True(src.IndexOf("Real p1;", StringComparison.Ordinal) < src.IndexOf("Real p2;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddComponent_Prefix_ParameterAndReplaceable()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        ToolAssert.Ok<StructureEditResult>(
+            await tools.AddComponent("P.A", "Real", "gain", modifier: "= 2", prefix: "parameter", description: "the gain"));
+        Assert.Contains("parameter Real gain = 2 \"the gain\";", Source(host, "P.A"));
+
+        ToolAssert.Ok<StructureEditResult>(
+            await tools.AddComponent("P.A", "P.M", "blk", prefix: "replaceable parameter"));
+        Assert.Contains("replaceable parameter P.M blk;", Source(host, "P.A"));
+    }
+
+    [Fact]
+    public async Task AddComponent_Replaceable_WithConstrainingClause()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(await Load(host).AddComponent(
+            "P.A", "P.M", "medium", prefix: "replaceable", constrainedBy: "P.M", description: "the medium"));
+        Assert.Contains("replaceable P.M medium constrainedby P.M \"the medium\";", Source(host, "P.A"));
+    }
+
+    [Fact]
+    public async Task AddComponent_ConditionalComponent()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(
+            await Load(host).AddComponent("P.A", "Real", "port", condition: "useHeatPort"));
+        Assert.Contains("Real port if useHeatPort;", Source(host, "P.A"));
+    }
+
+    [Fact]
+    public async Task AddComponent_InvalidPrefix_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await Load(host).AddComponent("P.A", "Real", "y", prefix: "Modelica.Blocks.Sine"));
+        Assert.Contains("not a valid component prefix", err.Error);
+    }
+
+    [Fact]
+    public async Task AddComponent_ConstrainedByWithoutReplaceable_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(
+            await Load(host).AddComponent("P.A", "P.M", "m", prefix: "parameter", constrainedBy: "P.M"));
+        Assert.Contains("replaceable", err.Error);
+    }
+
+    [Fact]
+    public async Task AddComponent_InvalidVisibility_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await Load(host).AddComponent("P.A", "Real", "y", visibility: "private"));
+        Assert.Contains("public", err.Error);
+    }
+
+    [Fact]
     public async Task AddComponent_DuplicateName_Rejected()
     {
         using var host = new TestHost();

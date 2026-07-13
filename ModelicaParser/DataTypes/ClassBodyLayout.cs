@@ -30,6 +30,7 @@ public sealed record ClassBodyLayout(
     bool Found,
     int PublicAppendOffset,       // insert a new element (component/import/extends) here
     int? FirstPublicElementOffset,// start of the first public element (for top inserts like extends/import)
+    int? ProtectedAppendOffset,   // append to the protected section here, or null if there is none
     int? EquationAppendOffset,    // append an equation here, or null if there is no equation section
     int? AlgorithmAppendOffset,   // append a statement here, or null if there is no algorithm section
     int BodyEndOffset,            // offset of the class's closing 'end' (create new sections before it)
@@ -38,5 +39,5 @@ public sealed record ClassBodyLayout(
     IReadOnlyList<ClassBodyConnection> Connections)
 {
     public static ClassBodyLayout NotFound { get; } =
-        new(false, 0, null, null, null, 0, "  ", Array.Empty<ClassBodyComponent>(), Array.Empty<ClassBodyConnection>());
+        new(false, 0, null, null, null, null, 0, "  ", Array.Empty<ClassBodyComponent>(), Array.Empty<ClassBodyConnection>());
 }

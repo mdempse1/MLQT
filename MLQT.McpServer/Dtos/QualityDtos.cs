@@ -204,6 +204,10 @@ public sealed class BatchOperation
     public string? PortA { get; set; }
     public string? PortB { get; set; }
     public string? Comment { get; set; }
+    public string? Visibility { get; set; }
+    public string? Prefix { get; set; }
+    public string? ConstrainedBy { get; set; }
+    public string? Condition { get; set; }
 }
 
 public sealed record BatchFileChange(string FilePath, string? NewContent);

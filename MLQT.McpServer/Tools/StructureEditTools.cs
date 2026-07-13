@@ -31,13 +31,26 @@ public sealed class StructureEditTools
         _session = session;
     }
 
+    // The legal Modelica declaration prefixes for a component, in any combination the language allows. Used
+    // to catch a mistyped prefix (or a type accidentally placed in the prefix field) with a clear error.
+    private static readonly HashSet<string> ComponentPrefixKeywords = new(StringComparer.Ordinal)
+    {
+        "redeclare", "final", "inner", "outer", "replaceable",
+        "flow", "stream", "discrete", "parameter", "constant", "input", "output",
+    };
+
     [McpServerTool(Name = "add_component")]
     [Description("Add a component (a variable, parameter or connector instance) to a class, e.g. a " +
                 "'Modelica.Blocks.Continuous.Integrator integrator1(k = 2)'. Provide the component's type " +
                 "(a class id), a name, and optionally a modifier and a description. The modifier is a " +
                 "comma-separated list like 'k = 2, T = 10' (wrapped automatically as name(k = 2, T = 10)); " +
-                "use '= 5' for a plain binding value. Inserted into the class's public section. Fails if a " +
-                "component with that name already exists or the result would not parse. Preview available.")]
+                "use '= 5' for a plain binding value. Use visibility='protected' for a protected component " +
+                "(a protected section is created if the class has none). Use prefix for Modelica keywords " +
+                "such as 'parameter', 'constant', 'replaceable', 'final', 'inner'/'outer', 'flow'/'stream' " +
+                "(space-separated, in Modelica order, e.g. 'replaceable parameter'). constrainedBy adds a " +
+                "'constrainedby' clause (only with a replaceable prefix); condition makes the component " +
+                "conditional ('if <expr>'). Fails if the name already exists or the result would not parse. " +
+                "Preview available.")]
     public async Task<object> AddComponent(
         [Description("Fully-qualified id of the class to add the component to.")] string classId,
         [Description("The component's type — a class id (e.g. 'Modelica.Blocks.Continuous.Integrator') or a " +
@@ -50,12 +63,44 @@ public sealed class StructureEditTools
         string? modifier = null,
         [Description("Optional description string.")] string? description = null,
         [Description("Optional // comment line to place above the component.")] string? comment = null,
+        [Description("'public' (default) or 'protected' — which section to place the component in.")]
+        string visibility = "public",
+        [Description("Optional declaration prefix keyword(s), space-separated in Modelica order, emitted " +
+                     "verbatim before the type. E.g. 'parameter', 'constant', 'replaceable', 'final', " +
+                     "'inner', 'outer', 'flow', 'stream', 'replaceable parameter'. Do NOT put the type here.")]
+        string? prefix = null,
+        [Description("Optional constraining clause for a replaceable component, e.g. " +
+                     "'Modelica.Media.Interfaces.PartialMedium' — emitted as 'constrainedby <value>'. Only " +
+                     "valid when prefix contains 'replaceable'.")]
+        string? constrainedBy = null,
+        [Description("Optional condition making the component conditional, e.g. 'useHeatPort' — emitted as " +
+                     "'if <value>'.")]
+        string? condition = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(type))
             return new ToolError("type is required (a class id or built-in type).");
         if (string.IsNullOrWhiteSpace(name) || !IdentifierRegex.IsMatch(name))
             return new ToolError($"name '{name}' is not a valid Modelica identifier.");
+
+        var isProtected = string.Equals(visibility?.Trim(), "protected", StringComparison.OrdinalIgnoreCase);
+        if (!isProtected && !string.IsNullOrWhiteSpace(visibility) &&
+            !string.Equals(visibility.Trim(), "public", StringComparison.OrdinalIgnoreCase))
+            return new ToolError($"visibility must be 'public' or 'protected', not '{visibility}'.");
+
+        // Validate the prefix keywords so a typo (or a type dropped into the prefix field) fails clearly.
+        var prefixTokens = (prefix ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var token in prefixTokens)
+            if (!ComponentPrefixKeywords.Contains(token))
+                return new ToolError(
+                    $"'{token}' is not a valid component prefix. Allowed (space-separated, in Modelica order): " +
+                    "redeclare, final, inner, outer, replaceable, flow, stream, discrete, parameter, constant, " +
+                    "input, output. The type goes in 'type', not 'prefix'.");
+
+        var isReplaceable = prefixTokens.Contains("replaceable");
+        if (!string.IsNullOrWhiteSpace(constrainedBy) && !isReplaceable)
+            return new ToolError("constrainedBy (a constraining clause) is only valid for a replaceable " +
+                                 "component — add 'replaceable' to prefix.");
 
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
@@ -64,10 +109,14 @@ public sealed class StructureEditTools
         if (ctx!.Layout.Components.Any(c => string.Equals(c.Name, name, StringComparison.Ordinal)))
             return new ToolError($"'{classId}' already has a component named '{name}'. Use set_component_modifier or remove_component first.");
 
+        // Assemble in grammar order: [prefix ]Type name[(mod)][ if cond][ constrainedby X][ "desc"];
+        var prefixText = prefixTokens.Length > 0 ? string.Join(' ', prefixTokens) + " " : string.Empty;
         var nameWithMod = name + FormatModifier(modifier);
+        var cond = string.IsNullOrWhiteSpace(condition) ? string.Empty : $" if {condition.Trim()}";
+        var constraint = string.IsNullOrWhiteSpace(constrainedBy) ? string.Empty : $" constrainedby {constrainedBy.Trim()}";
         var desc = string.IsNullOrEmpty(description) ? string.Empty : $" \"{description.Replace("\"", "\\\"")}\"";
-        var line = WithComment($"{type.Trim()} {nameWithMod}{desc};", comment, ctx.Layout.Indent);
-        var newClassCode = InsertElement(ctx.ClassCode, ctx.Layout, line, atTop: false);
+        var line = WithComment($"{prefixText}{type.Trim()} {nameWithMod}{cond}{constraint}{desc};", comment, ctx.Layout.Indent);
+        var newClassCode = InsertComponentElement(ctx.ClassCode, ctx.Layout, line, isProtected);
 
         // Best-effort note if the type does not resolve to a loaded class (still allowed — may be added later).
         string? note = null;
@@ -419,6 +468,21 @@ public sealed class StructureEditTools
         return InsertBeforeEnd(code, layout.BodyEndOffset, $"{layout.Indent}{line}");
     }
 
+    // Insert a component element into the public or protected section, creating a protected section when
+    // one is requested but does not yet exist (placed after the public elements, before any equations).
+    private static string InsertComponentElement(string code, ClassBodyLayout layout, string line, bool isProtected)
+    {
+        if (!isProtected)
+            return InsertElement(code, layout, line, atTop: false);
+
+        var indent = layout.Indent;
+        if (layout.ProtectedAppendOffset is int off) // append into the existing protected section
+            return code.Insert(off, $"\n{indent}{line}");
+        if (layout.FirstPublicElementOffset is not null) // new protected section after the public elements
+            return code.Insert(layout.PublicAppendOffset, $"\nprotected\n{indent}{line}");
+        return InsertBeforeEnd(code, layout.BodyEndOffset, $"protected\n{indent}{line}"); // class has no elements yet
+    }
+
     // Append 'line' (which ends in ';') to an existing section, or create the section before the class end.
     private static string InsertIntoSection(string code, int? appendOffset, string keyword, string line, string indent, int bodyEnd)
     {
@@ -528,7 +592,7 @@ public sealed class StructureEditTools
 
     private Task<object> Dispatch(BatchOperation op) => op.Op switch
     {
-        "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description, op.Comment),
+        "add_component" => AddComponent(op.ClassId, op.Type ?? string.Empty, op.Name ?? string.Empty, op.Modifier, op.Description, op.Comment, op.Visibility ?? "public", op.Prefix, op.ConstrainedBy, op.Condition),
         "remove_component" => RemoveComponent(op.ClassId, op.Name ?? string.Empty),
         "set_component_modifier" => SetComponentModifier(op.ClassId, op.Name ?? string.Empty, op.Modifier ?? string.Empty),
         "add_extends" => AddExtends(op.ClassId, op.BaseType ?? string.Empty, op.Modifier),
