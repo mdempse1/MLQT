@@ -39,6 +39,14 @@ public sealed class StructureEditTools
         "flow", "stream", "discrete", "parameter", "constant", "input", "output",
     };
 
+    // Modelica restricted-class rules: which class kinds may legally contain each kind of element. A class
+    // kind is one of model/block/class/connector/record/function/package/type (ModelNode.ClassType).
+    // Equations and connect() are only allowed in a model, block or (unrestricted) class; algorithm
+    // statements additionally in a function; a package may hold only classes and constants; a type has no
+    // body elements. These stop the surgical tools from producing structurally-illegal classes.
+    private static readonly HashSet<string> EquationClassKinds = new(StringComparer.Ordinal) { "model", "block", "class" };
+    private static readonly HashSet<string> AlgorithmClassKinds = new(StringComparer.Ordinal) { "model", "block", "class", "function" };
+
     [McpServerTool(Name = "add_component")]
     [Description("Add a component (a variable, parameter or connector instance) to a class, e.g. a " +
                 "'Modelica.Blocks.Continuous.Integrator integrator1(k = 2)'. Provide the component's type " +
@@ -49,7 +57,8 @@ public sealed class StructureEditTools
                 "such as 'parameter', 'constant', 'replaceable', 'final', 'inner'/'outer', 'flow'/'stream' " +
                 "(space-separated, in Modelica order, e.g. 'replaceable parameter'). constrainedBy adds a " +
                 "'constrainedby' clause (only with a replaceable prefix); condition makes the component " +
-                "conditional ('if <expr>'). Fails if the name already exists or the result would not parse. " +
+                "conditional ('if <expr>'). A package accepts only constants (use prefix='constant'); a type " +
+                "has no components. Fails if the name already exists or the result would not parse. " +
                 "Preview available.")]
     public async Task<object> AddComponent(
         [Description("Fully-qualified id of the class to add the component to.")] string classId,
@@ -98,6 +107,7 @@ public sealed class StructureEditTools
                     "input, output. The type goes in 'type', not 'prefix'.");
 
         var isReplaceable = prefixTokens.Contains("replaceable");
+        var isConstant = prefixTokens.Contains("constant");
         if (!string.IsNullOrWhiteSpace(constrainedBy) && !isReplaceable)
             return new ToolError("constrainedBy (a constraining clause) is only valid for a replaceable " +
                                  "component — add 'replaceable' to prefix.");
@@ -108,6 +118,13 @@ public sealed class StructureEditTools
 
         if (ctx!.Layout.Components.Any(c => string.Equals(c.Name, name, StringComparison.Ordinal)))
             return new ToolError($"'{classId}' already has a component named '{name}'. Use set_component_modifier or remove_component first.");
+
+        // Restricted-class rules for components: a type has no body; a package may hold only constants.
+        if (ctx.Node.ClassType == "type")
+            return new ToolError("A type cannot contain component declarations.");
+        if (ctx.Node.ClassType == "package" && !isConstant)
+            return new ToolError("A package may only contain classes and constants — a component added to a " +
+                                 "package must be a constant (add 'constant' to prefix).");
 
         // Assemble in grammar order: [prefix ]Type name[(mod)][ if cond][ constrainedby X][ "desc"];
         var prefixText = prefixTokens.Length > 0 ? string.Join(' ', prefixTokens) + " " : string.Empty;
@@ -276,8 +293,10 @@ public sealed class StructureEditTools
 
     [McpServerTool(Name = "add_equation")]
     [Description("Add an equation to a class's equation section (creating the section if needed), e.g. " +
-                "'y = k*x' or 'der(x) = u'. Do not include the trailing ';'. Fails if the result would not " +
-                "parse. For connections use add_connection; for algorithm statements use add_statement.")]
+                "'y = k*x' or 'der(x) = u'. Do not include the trailing ';'. Only valid in a model, block or " +
+                "class (a package, record, connector, function or type cannot contain equations). Fails if " +
+                "the result would not parse. For connections use add_connection; for algorithm statements " +
+                "use add_statement.")]
     public async Task<object> AddEquation(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("The equation, e.g. 'y = k*x' (no trailing ';').")] string equation,
@@ -290,16 +309,21 @@ public sealed class StructureEditTools
         if (error is not null)
             return error;
 
-        var line = WithComment(EnsureSemicolon(equation), comment, ctx!.Layout.Indent);
-        var newClassCode = InsertIntoSection(ctx!.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
+        if (!EquationClassKinds.Contains(ctx!.Node.ClassType))
+            return new ToolError($"A {ctx.Node.ClassType} cannot contain an equation section — equations are " +
+                                 "only valid in a model, block or class.");
+
+        var line = WithComment(EnsureSemicolon(equation), comment, ctx.Layout.Indent);
+        var newClassCode = InsertIntoSection(ctx.ClassCode, ctx.Layout.EquationAppendOffset, "equation", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add equation to '{classId}'"));
     }
 
     [McpServerTool(Name = "add_statement")]
     [Description("Add a statement to a class/function's algorithm section (creating the section if " +
-                "needed), e.g. 'y := k*x'. Do not include the trailing ';'. Fails if the result would not " +
-                "parse.")]
+                "needed), e.g. 'y := k*x'. Do not include the trailing ';'. Only valid in a model, block, " +
+                "class or function (a package, record, connector or type cannot contain an algorithm). " +
+                "Fails if the result would not parse.")]
     public async Task<object> AddStatement(
         [Description("Fully-qualified id of the class/function.")] string classId,
         [Description("The statement, e.g. 'y := k*x' (no trailing ';').")] string statement,
@@ -312,8 +336,12 @@ public sealed class StructureEditTools
         if (error is not null)
             return error;
 
-        var line = WithComment(EnsureSemicolon(statement), comment, ctx!.Layout.Indent);
-        var newClassCode = InsertIntoSection(ctx!.ClassCode, ctx.Layout.AlgorithmAppendOffset, "algorithm", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
+        if (!AlgorithmClassKinds.Contains(ctx!.Node.ClassType))
+            return new ToolError($"A {ctx.Node.ClassType} cannot contain an algorithm section — statements are " +
+                                 "only valid in a model, block, class or function.");
+
+        var line = WithComment(EnsureSemicolon(statement), comment, ctx.Layout.Indent);
+        var newClassCode = InsertIntoSection(ctx.ClassCode, ctx.Layout.AlgorithmAppendOffset, "algorithm", line, ctx.Layout.Indent, ctx.Layout.BodyEndOffset);
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"add statement to '{classId}'"));
     }
@@ -323,8 +351,9 @@ public sealed class StructureEditTools
                 "Ports are component references (a connector on the class, or component.connector). Both " +
                 "ports must exist and resolve to connectors, and their connector types must be compatible " +
                 "(RealOutput to RealInput is fine; a signal port to a physical Pin is refused). If a type " +
-                "cannot be resolved the compatibility check is skipped with a note. Fails if a port is " +
-                "missing/not a connector, the connectors are incompatible, or the result would not parse.")]
+                "cannot be resolved the compatibility check is skipped with a note. Only valid in a model, " +
+                "block or class. Fails if a port is missing/not a connector, the connectors are " +
+                "incompatible, or the result would not parse.")]
     public async Task<object> AddConnection(
         [Description("Fully-qualified id of the class to add the connection to.")] string classId,
         [Description("One port, e.g. 'sine1.y' or a connector on the class like 'u'.")] string portA,
@@ -338,6 +367,10 @@ public sealed class StructureEditTools
         var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
         if (error is not null)
             return error;
+
+        if (!EquationClassKinds.Contains(ctx!.Node.ClassType))
+            return new ToolError($"A {ctx.Node.ClassType} cannot contain a connection — connect() equations " +
+                                 "are only valid in a model, block or class.");
 
         var a = portA.Trim();
         var b = portB.Trim();

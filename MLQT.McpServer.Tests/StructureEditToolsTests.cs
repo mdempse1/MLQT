@@ -138,6 +138,129 @@ public class StructureEditToolsTests
         Assert.Contains("public", err.Error);
     }
 
+    // --- Restricted-class legality checks for the add_* tools ---
+
+    private const string KindsPackage = """
+        within;
+        package K "kinds"
+          package Sub "a subpackage"
+            constant Real g = 9.81;
+          end Sub;
+          connector Flange "a connector"
+            Real s;
+          end Flange;
+          record Data "a record"
+            Real value;
+          end Data;
+          function f "a function"
+            input Real u;
+            output Real y;
+          algorithm
+            y := u;
+          end f;
+          model M "a model"
+            Real x;
+          end M;
+        end K;
+        """;
+
+    private static StructureEditTools LoadKinds(TestHost h)
+    {
+        var dir = h.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = KindsPackage });
+        h.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        return new StructureEditTools(h.Libraries, h.Resources, h.Session);
+    }
+
+    [Fact]
+    public async Task AddEquation_ToPackage_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await LoadKinds(host).AddEquation("K.Sub", "g = 9.81"));
+        Assert.Contains("package cannot contain an equation", err.Error);
+    }
+
+    [Fact]
+    public async Task AddEquation_ToConnector_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await LoadKinds(host).AddEquation("K.Flange", "s = 0"));
+        Assert.Contains("cannot contain an equation", err.Error);
+    }
+
+    [Fact]
+    public async Task AddEquation_ToModel_Allowed()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(await LoadKinds(host).AddEquation("K.M", "x = 1"));
+    }
+
+    [Fact]
+    public async Task AddStatement_ToPackage_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await LoadKinds(host).AddStatement("K.Sub", "g := 9.81"));
+        Assert.Contains("cannot contain an algorithm", err.Error);
+    }
+
+    [Fact]
+    public async Task AddStatement_ToFunction_Allowed()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(await LoadKinds(host).AddStatement("K.f", "y := 2*u"));
+    }
+
+    [Fact]
+    public async Task AddStatement_ToRecord_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await LoadKinds(host).AddStatement("K.Data", "value := 0"));
+        Assert.Contains("cannot contain an algorithm", err.Error);
+    }
+
+    [Fact]
+    public async Task AddConnection_ToPackage_Rejected()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await LoadKinds(host).AddConnection("K.Sub", "a", "b"));
+        Assert.Contains("cannot contain a connection", err.Error);
+    }
+
+    [Fact]
+    public async Task AddComponent_ToPackage_RequiresConstant()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        // A plain component is refused...
+        var err = ToolAssert.Error(await tools.AddComponent("K.Sub", "Real", "h", modifier: "= 1"));
+        Assert.Contains("must be a constant", err.Error);
+        // ...but a constant is allowed.
+        ToolAssert.Ok<StructureEditResult>(
+            await tools.AddComponent("K.Sub", "Real", "h", modifier: "= 1", prefix: "constant"));
+        Assert.Contains("constant Real h = 1;", host.Libraries.GetModelById("K.Sub")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task AddComponent_ToConnectorAndRecord_Allowed()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.Flange", "Real", "e", prefix: "flow"));
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.Data", "Real", "extra"));
+    }
+
+    [Fact]
+    public async Task AddComponent_ToPackage_Batch_Rejected()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        var ops = new List<BatchOperation>
+        {
+            new() { Op = "add_component", ClassId = "K.Sub", Type = "Real", Name = "bad", Modifier = "= 1" },
+        };
+        var err = ToolAssert.Error(await tools.BatchEdit(ops));
+        Assert.Contains("must be a constant", err.Error);
+    }
+
     [Fact]
     public async Task AddComponent_DuplicateName_Rejected()
     {
