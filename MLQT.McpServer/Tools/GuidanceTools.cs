@@ -12,7 +12,7 @@ namespace MLQT.McpServer.Tools;
 public sealed class GuidanceTools
 {
     private static readonly IReadOnlyList<string> Topics =
-        ["overview", "workflows", "views", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
+        ["overview", "workflows", "views", "editing", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
 
     private static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,8 +31,8 @@ public sealed class GuidanceTools
             - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided —
               use your normal CLI for those. The two VCS tools here add Modelica-awareness the CLI lacks.
 
-            Call get_guidance with a topic for recipes: workflows, views, dependencies, style, spelling,
-            formatting, vcs, resources.
+            Call get_guidance with a topic for recipes: workflows, views, editing, dependencies, style,
+            spelling, formatting, vcs, resources.
             """,
 
         ["workflows"] = """
@@ -130,6 +130,52 @@ public sealed class GuidanceTools
               make sure referenced libraries are loaded.
             """,
 
+        ["editing"] = """
+            Editing Modelica on disk. EVERY editing tool: writes the .mo file, parse-checks the result and
+            makes NO change if it would not parse, refuses read-only files (e.g. a reference library under
+            Program Files), refreshes dependencies, and supports preview=true to see the result first.
+
+            Whole-class:
+            - create_class(parentId, source): add a class from complete source; a directory package gets a
+              standalone .mo file, otherwise it is nested (force with standalone true/false).
+            - update_class_source(classId, newSource): replace a class's body verbatim, SAME name (to
+              rename, use rename_class). Not reformatted — run format_class after if you want.
+            - rename_class(classId, newName): rename the class AND rewrite every resolved reference; precise
+              (a same-named unrelated class is untouched); whole directory packages too. Needs
+              analyze_dependencies.
+            - move_class(classId, newParentId): move to a new parent and re-qualify references (whole
+              directory packages too). Needs analyze_dependencies. The moved class's own references to
+              former siblings are reported, not auto-fixed.
+            - delete_class(classId): remove a class (or a whole directory package) and report what still
+              references it.
+
+            Element-level (surgical — change one thing without resending the class):
+            - add_component / remove_component / set_component_modifier (components, parameters, connectors).
+            - add_extends / add_import.
+            - add_equation / add_statement (algorithm section).
+            - add_connection(classId, portA, portB) / remove_connection / list_connections. add_connection
+              resolves both ports' connector types and REFUSES incompatible ones (RealOutput->RealInput is
+              fine; a signal port to a physical Pin is not).
+            - The add_* tools take an optional comment placed as a // line above the element.
+
+            Build a whole model atomically:
+            - batch_edit(operations[]): apply a sequence of the surgical ops all-or-nothing; later ops see
+              earlier ones (add components, then connect them). Any failure rolls the whole batch back.
+
+            Documentation & comments:
+            - set_class_description / set_component_description (the "..." strings), set_class_documentation
+              (Documentation(info/revisions) HTML; read with get_class_documentation). Descriptions and //
+              comments also survive create_class/update_class_source verbatim and appear in the views.
+
+            Diagram layout:
+            - set_component_placement(classId, name, x1,y1,x2,y2, rotation?) positions a component;
+              get_diagram_layout shows the arrangement. No auto-layout — set placements explicitly.
+
+            After an external change (a manual edit or VCS pull), reload(target?) re-reads from disk. Then
+            validate: check_class + spell_check + validate_class_references. Type/unit/equation-balance and
+            simulation are out of scope here — use a Modelica compiler/simulation tool for those.
+            """,
+
         ["dependencies"] = """
             Dependency, usage and impact:
             - Run analyze_dependencies ONCE after loading (opt-in; parses everything). Re-run after
@@ -140,9 +186,9 @@ public sealed class GuidanceTools
               class(es) — the complete blast radius, with the immediate source that pulled each in.
             - Empty results carry a dependenciesAnalyzed flag: false means "not analyzed yet",
               true means "genuinely none".
-            - After analyze_dependencies has run, the editing tools (update_class_source, rename_class,
-              format_class, correct_spelling) incrementally refresh the dependency graph for the files they
-              change, so these queries stay current after an edit without a full re-analysis.
+            - After analyze_dependencies has run, all the editing tools (see the 'editing' topic)
+              incrementally refresh the dependency graph for the files they change, so these queries stay
+              current after an edit without a full re-analysis.
             """,
 
         ["style"] = """
@@ -210,9 +256,9 @@ public sealed class GuidanceTools
     [McpServerTool(Name = "get_guidance")]
     [Description("Get guidance on how to use this server's tools effectively. Call with no topic for an " +
                 "overview and the list of topics, or a topic for focused recipes. Topics: overview, " +
-                "workflows, views, dependencies, style, spelling, formatting, vcs, resources.")]
+                "workflows, views, editing, dependencies, style, spelling, formatting, vcs, resources.")]
     public object GetGuidance(
-        [Description("Optional topic. Omit for the overview. One of: overview, workflows, views, " +
+        [Description("Optional topic. Omit for the overview. One of: overview, workflows, views, editing, " +
                      "dependencies, style, spelling, formatting, vcs, resources.")]
         string? topic = null)
     {

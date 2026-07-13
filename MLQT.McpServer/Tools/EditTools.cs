@@ -42,9 +42,9 @@ public sealed class EditTools
                 "file to disk and refresh the graph (so check_class / spell_check / get_class_source / the " +
                 "dependency tools see the change). new_source must be ONE complete, syntactically valid " +
                 "class definition (e.g. 'model X ... end X;'); it is written verbatim — NOT reformatted, so " +
-                "run format_class afterwards if you want. The class name must stay the same: renaming or " +
-                "moving a class is not supported yet (it would need to rewrite references too). Set " +
-                "preview=true to get the resulting file text without writing.")]
+                "run format_class afterwards if you want. The class name must stay the same — to rename or " +
+                "move a class (rewriting references too) use rename_class / move_class. Set preview=true to " +
+                "get the resulting file text without writing.")]
     public async Task<object> UpdateClassSource(
         [Description("Fully-qualified class id to replace, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -75,8 +75,8 @@ public sealed class EditTools
         if (!string.Equals(topLevel[0].Name, node.Name, StringComparison.Ordinal))
             return new ToolError(
                 $"new_source renames the class from '{node.Name}' to '{topLevel[0].Name}'. update_class_source " +
-                "only replaces a class's body in place — renaming (which must also update references elsewhere) " +
-                "is not supported yet. Keep the class name the same.");
+                "only replaces a class's body in place — to rename it (updating references too) use " +
+                "rename_class. Keep the class name the same here.");
 
         var ctx = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
         if (ctx is null)

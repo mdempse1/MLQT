@@ -50,13 +50,15 @@ const string serverInstructions =
     - Load first. Call load_repository (a Git/SVN working copy or a directory of libraries) or
       load_library (one library directory containing package.mo, or a single .mo file). Almost every
       other tool operates on the loaded in-memory graph; list_libraries shows what is loaded.
-    - Class ids are fully-qualified dotted names, e.g. Modelica.Blocks.Continuous.Integrator; use
-      search_classes to find one. Library and repository ids are the GUIDs from list_libraries /
+    - Class ids are fully-qualified dotted names, e.g. Modelica.Blocks.Continuous.Integrator. Find one by
+      name with search_classes, by documentation prose with search_text, or by shape with
+      search_by_interface. Library and repository ids are the GUIDs from list_libraries /
       list_repositories, but their names (e.g. "Modelica") also work.
     - To learn a class without reading its source, prefer the compact "views": get_class_interface (its
-      public parameters, connectors and, for functions, the signature), list_class_elements (every
-      declaration), and get_class_documentation (its prose). validate_class_references flags referenced
-      types that do not resolve. These need only a loaded library.
+      public parameters, connectors and, for functions, the signature — with inherited members merged in),
+      list_class_elements (every declaration), get_class_documentation (its prose) and get_class_behavior
+      (its equations/connections). validate_class_references flags referenced types that do not resolve.
+      These need only a loaded library.
     - Analysis is opt-in. get_dependencies, find_usages, analyze_impact, the external-resource tools
       and analyze_change_impact all require analyze_dependencies to have been run first (it can be slow
       on a large library). Style checking is opt-in via check_class / check_library; the rules come from
@@ -73,12 +75,15 @@ const string serverInstructions =
         The add_* tools take an optional comment (a // line above the element).
       * Documentation: set_class_description, set_component_description (the "..." strings) and
         set_class_documentation (the Documentation(info/revisions) HTML); read with get_class_documentation.
-      rename_class and move_class need analyze_dependencies. format_code/check_style are stateless;
-      format_class and correct_spelling reformat/fix in place. Writes to read-only files (e.g. a reference
-      library under Program Files) are refused.
+      batch_edit applies a sequence of the element-level ops atomically; set_component_placement positions
+      components in the diagram. rename_class and move_class (which also handle whole directory packages)
+      need analyze_dependencies. format_code/check_style are stateless; format_class and correct_spelling
+      reformat/fix in place. Writes to read-only files (e.g. a reference library under Program Files) are
+      refused. After an external change (a manual edit or VCS pull), reload re-reads from disk.
 
-    Call get_guidance (optionally with a topic: workflows, dependencies, style, spelling, formatting,
-    vcs, resources) for detailed, task-oriented recipes.
+    Call get_guidance (optionally with a topic: workflows, views, editing, dependencies, style, spelling,
+    formatting, vcs, resources) for detailed, task-oriented recipes. The 'editing' topic covers all the
+    tools that change code.
     """;
 
 // Records every tool call (name, args, duration, error) so tool usage can be reviewed. Writes to
