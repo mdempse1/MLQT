@@ -57,9 +57,11 @@ public sealed class StructureEditTools
                 "such as 'parameter', 'constant', 'replaceable', 'final', 'inner'/'outer', 'flow'/'stream' " +
                 "(space-separated, in Modelica order, e.g. 'replaceable parameter'). constrainedBy adds a " +
                 "'constrainedby' clause (only with a replaceable prefix); condition makes the component " +
-                "conditional ('if <expr>'). A package accepts only constants (use prefix='constant'); a type " +
-                "has no components. Fails if the name already exists or the result would not parse. " +
-                "Preview available.")]
+                "conditional ('if <expr>'). Restricted-class rules are enforced: a package accepts only " +
+                "constants; a type has no components; a function's public components must be input/output " +
+                "(locals go in protected); a record takes only public data (no protected/flow/stream/input/" +
+                "output); a block's connectors must be causal. Fails if the name already exists or the result " +
+                "would not parse. Preview available.")]
     public async Task<object> AddComponent(
         [Description("Fully-qualified id of the class to add the component to.")] string classId,
         [Description("The component's type — a class id (e.g. 'Modelica.Blocks.Continuous.Integrator') or a " +
@@ -108,6 +110,8 @@ public sealed class StructureEditTools
 
         var isReplaceable = prefixTokens.Contains("replaceable");
         var isConstant = prefixTokens.Contains("constant");
+        var hasCausality = prefixTokens.Contains("input") || prefixTokens.Contains("output");
+        var hasConnection = prefixTokens.Contains("flow") || prefixTokens.Contains("stream");
         if (!string.IsNullOrWhiteSpace(constrainedBy) && !isReplaceable)
             return new ToolError("constrainedBy (a constraining clause) is only valid for a replaceable " +
                                  "component — add 'replaceable' to prefix.");
@@ -125,6 +129,26 @@ public sealed class StructureEditTools
         if (ctx.Node.ClassType == "package" && !isConstant)
             return new ToolError("A package may only contain classes and constants — a component added to a " +
                                  "package must be a constant (add 'constant' to prefix).");
+
+        // A function's public components must be its inputs/outputs; protected components are locals.
+        if (ctx.Node.ClassType == "function" && !isProtected && !hasCausality)
+            return new ToolError("A public component of a function must be an input or an output (add 'input' " +
+                                 "or 'output' to prefix); make it protected for a local variable.");
+
+        // A record holds only public data: no protected section, and no causality/connection prefixes.
+        if (ctx.Node.ClassType == "record")
+        {
+            if (isProtected)
+                return new ToolError("A record has no protected section — all record members are public.");
+            if (hasCausality || hasConnection)
+                return new ToolError("A record component cannot have an input, output, flow or stream prefix.");
+        }
+
+        // A block's connector components must be causal: every variable of the connector is input/output.
+        if (ctx.Node.ClassType == "block" && AcausalConnectorVariable(classId, type.Trim()) is { } acausalVar)
+            return new ToolError($"A block's connectors must be causal, but the connector '{type.Trim()}' has " +
+                                 $"the acausal variable '{acausalVar}'. Use a signal connector (e.g. RealInput/" +
+                                 "RealOutput), give the variable an input/output prefix, or make the class a model.");
 
         // Assemble in grammar order: [prefix ]Type name[(mod)][ if cond][ constrainedby X][ "desc"];
         var prefixText = prefixTokens.Length > 0 ? string.Join(' ', prefixTokens) + " " : string.Empty;
@@ -499,6 +523,22 @@ public sealed class StructureEditTools
         if (layout.FirstPublicElementOffset is not null) // has elements: append after the last one
             return code.Insert(layout.PublicAppendOffset, $"\n{layout.Indent}{line}");
         return InsertBeforeEnd(code, layout.BodyEndOffset, $"{layout.Indent}{line}");
+    }
+
+    // For the block restricted-class rule: if 'type' resolves to a connector that has an acausal variable
+    // (one with neither an input nor an output prefix), returns that variable's name; otherwise null. Only
+    // composite connectors carry named variables — an alias connector (e.g. RealInput = input Real) has
+    // none, so it passes. When the type does not resolve (e.g. its library is not loaded) the rule cannot
+    // be applied and null is returned (add_component already notes the unresolved type separately).
+    private string? AcausalConnectorVariable(string classId, string type)
+    {
+        var typeNode = TypeResolver.Resolve(_libraries, classId, type, null);
+        if (typeNode is null || typeNode.ClassType != "connector")
+            return null;
+        return ClassElementResolver
+            .Collect(_libraries, typeNode, includeProtected: false, includeInherited: true)
+            .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
+                                 string.IsNullOrEmpty(m.Element.Causality))?.Element.Name;
     }
 
     // Insert a component element into the public or protected section, creating a protected section when

@@ -166,6 +166,11 @@ public sealed class GuidanceTools
               'inner'/'outer', 'flow'/'stream' (space-separated in Modelica order); constrainedBy for a
               replaceable's constraining clause; condition for a conditional 'if <expr>' component. Pass the
               Modelica keywords you already know — the tool just places the declaration correctly.
+              Restricted-class rules are enforced across the add_* tools: equations/connect() only in a
+              model/block/class; algorithm statements also in a function; a package holds only constants; a
+              function's public components must be input/output (locals go in protected); a record takes only
+              public data; a block's connectors must be causal (RealInput/RealOutput, not acausal physical
+              connectors). The tool refuses an illegal addition with a message saying what is allowed.
             - add_extends / add_import.
             - add_equation / add_statement (algorithm section).
             - add_connection(classId, portA, portB) / remove_connection / list_connections. add_connection

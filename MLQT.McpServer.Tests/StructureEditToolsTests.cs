@@ -146,9 +146,14 @@ public class StructureEditToolsTests
           package Sub "a subpackage"
             constant Real g = 9.81;
           end Sub;
-          connector Flange "a connector"
+          connector Flange "an acausal connector"
             Real s;
+            flow Real f;
           end Flange;
+          connector Causal "a causal connector"
+            input Real a;
+            output Real b;
+          end Causal;
           record Data "a record"
             Real value;
           end Data;
@@ -161,6 +166,9 @@ public class StructureEditToolsTests
           model M "a model"
             Real x;
           end M;
+          block B "a block"
+            Real x;
+          end B;
         end K;
         """;
 
@@ -246,6 +254,64 @@ public class StructureEditToolsTests
         var tools = LoadKinds(host);
         ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.Flange", "Real", "e", prefix: "flow"));
         ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.Data", "Real", "extra"));
+    }
+
+    // --- Semantic restricted-class rules (causality / visibility of components) ---
+
+    [Fact]
+    public async Task AddComponent_ToFunction_PublicMustBeCausal()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        // A plain public component is refused...
+        var err = ToolAssert.Error(await tools.AddComponent("K.f", "Real", "z"));
+        Assert.Contains("input or an output", err.Error);
+        // ...an input/output is fine...
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.f", "Real", "z", prefix: "output"));
+        // ...and a protected local is fine.
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.f", "Real", "tmp", visibility: "protected"));
+    }
+
+    [Fact]
+    public async Task AddComponent_ToRecord_NoProtectedOrConnectorPrefix()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        var protErr = ToolAssert.Error(await tools.AddComponent("K.Data", "Real", "p", visibility: "protected"));
+        Assert.Contains("no protected section", protErr.Error);
+        var flowErr = ToolAssert.Error(await tools.AddComponent("K.Data", "Real", "q", prefix: "flow"));
+        Assert.Contains("flow", flowErr.Error);
+    }
+
+    [Fact]
+    public async Task AddComponent_ToBlock_AcausalConnectorRejected()
+    {
+        using var host = new TestHost();
+        // K.Flange is acausal (has 'Real s;' / 'flow Real f;') — illegal as a connector in a block.
+        var err = ToolAssert.Error(await LoadKinds(host).AddComponent("K.B", "K.Flange", "port"));
+        Assert.Contains("must be causal", err.Error);
+    }
+
+    [Fact]
+    public async Task AddComponent_ToBlock_CausalConnectorAndPlainVariableAllowed()
+    {
+        using var host = new TestHost();
+        var tools = LoadKinds(host);
+        // A causal connector is fine...
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.B", "K.Causal", "port"));
+        // ...and a plain (non-connector) variable is unrestricted in a block.
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("K.B", "Real", "gain"));
+    }
+
+    [Fact]
+    public async Task AddComponent_ToBlock_UnresolvedConnectorType_NotBlocked()
+    {
+        using var host = new TestHost();
+        // The type is unknown (MSL not loaded), so the causality rule cannot be applied — the component is
+        // still added, with a note about the unresolved type rather than a spurious causality refusal.
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await LoadKinds(host).AddComponent("K.B", "Modelica.Blocks.Interfaces.RealInput", "u"));
+        Assert.Contains("does not resolve", res.Note);
     }
 
     [Fact]
