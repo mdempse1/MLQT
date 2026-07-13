@@ -144,15 +144,24 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "load_library")]
-    [Description("Load a single Modelica library directly (not via a repository): either a directory " +
-                "containing a package.mo file, or a single .mo file. Returns the loaded library summary. " +
-                "For a repository root containing several libraries, use load_repository instead.")]
+    [Description("Load a single Modelica library directly (not via a repository): pass either the library " +
+                "directory (containing package.mo), the path to its package.mo, or a single standalone .mo " +
+                "file. Pointing at a package.mo loads the WHOLE library (its directory, including standalone " +
+                "child .mo files), not just that one file. Returns the loaded library summary. For a " +
+                "repository root containing several libraries, use load_repository instead.")]
     public async Task<object> LoadLibrary(
-        [Description("Absolute path to a library directory (with package.mo) or a single .mo file.")]
+        [Description("Absolute path to a library directory, its package.mo, or a single standalone .mo file.")]
         string path)
     {
         LoadedLibrary library;
-        if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+        if (File.Exists(path) && string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase))
+        {
+            // A package.mo IS the root of a directory package: load the whole library (its directory), not
+            // just that one file — otherwise standalone child .mo files are missed. Callers routinely point
+            // load_library at ".../MyLib/package.mo" meaning "load MyLib".
+            library = await _libraries.AddLibraryFromDirectoryAsync(Path.GetDirectoryName(path)!);
+        }
+        else if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
         {
             library = await _libraries.AddLibraryFromFileAsync(path);
         }

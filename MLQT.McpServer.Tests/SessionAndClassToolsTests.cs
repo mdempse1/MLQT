@@ -49,6 +49,29 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
+    public async Task LoadLibrary_FromPackageMoPath_LoadsWholeLibrary()
+    {
+        using var host = new TestHost();
+        // A directory package: package.mo defines the library (with one nested class), and Extra is a
+        // standalone child .mo file — only picked up when the whole directory is loaded.
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage MyLib \"l\"\n  model Inner \"i\"\n    Real z;\n  end Inner;\nend MyLib;",
+            ["Extra.mo"] = "within MyLib;\nmodel Extra \"e\"\n  Real x;\nend Extra;",
+            ["package.order"] = "Inner\nExtra\n",
+        });
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        // Pointing at the package.mo file loads the whole library, not just that file.
+        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(Path.Combine(dir, "package.mo")));
+
+        Assert.Equal("MyLib", summary.Name);
+        Assert.Equal("Directory", summary.SourceType);
+        Assert.NotNull(host.Libraries.GetModelById("MyLib.Inner"));
+        Assert.NotNull(host.Libraries.GetModelById("MyLib.Extra")); // the standalone child was included
+    }
+
+    [Fact]
     public async Task LoadLibrary_FromSingleFile_Loads()
     {
         using var host = new TestHost();
