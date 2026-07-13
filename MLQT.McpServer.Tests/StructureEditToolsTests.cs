@@ -572,6 +572,75 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public async Task Connection_DrawsAndRefreshesLine_WhenComponentsPositioned()
+    {
+        using var host = new TestHost();
+        var edit = LoadConn(host);
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        // Connect before positioning: no line can be drawn yet.
+        ToolAssert.Ok<StructureEditResult>(await edit.AddConnection("C.Sys", "source1.y", "sink1.u"));
+        Assert.DoesNotContain("Line(", host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
+
+        // Positioning the first component alone still can't draw the line (the other has no placement)...
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "source1", -10, -10, 10, 10));
+        Assert.DoesNotContain("Line(", host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
+
+        // ...positioning the second draws it: straight centre-to-centre, coloured as a signal line.
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "sink1", 40, -10, 60, 10));
+        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
+        Assert.Contains("connect(source1.y, sink1.u) annotation (Line(points={{0,0},{50,0}}, color={0,0,127}))", src);
+
+        // Moving a component refreshes the (2-point) line to track its new centre.
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "source1", 90, -10, 110, 10));
+        src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
+        Assert.Contains("Line(points={{100,0},{50,0}}, color={0,0,127})", src);
+    }
+
+    [Fact]
+    public async Task AddConnection_BothPositioned_DrawsLineImmediately()
+    {
+        using var host = new TestHost();
+        var edit = LoadConn(host);
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+        await diagram.SetComponentPlacement("C.Sys", "source1", -10, -10, 10, 10);
+        await diagram.SetComponentPlacement("C.Sys", "sink1", 40, -10, 60, 10);
+
+        ToolAssert.Ok<StructureEditResult>(await edit.AddConnection("C.Sys", "source1.y", "sink1.u"));
+        Assert.Contains("annotation (Line(points={{0,0},{50,0}}, color={0,0,127}))",
+            host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
+    }
+
+    [Fact]
+    public async Task Connection_LeavesHandRoutedMultiPointLineAlone()
+    {
+        // A connect with a routed 3-point line must not be flattened when a component is repositioned.
+        const string pkg = """
+            within;
+            package C "c"
+              connector RealInput = input Real;
+              connector RealOutput = output Real;
+              block Source RealOutput y; end Source;
+              block Sink RealInput u; end Sink;
+              model Sys
+                Source source1 annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+                Sink sink1 annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+              equation
+                connect(source1.y, sink1.u) annotation (Line(points={{10,0},{25,20},{40,0}}, color={0,0,127}));
+              end Sys;
+            end C;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        await diagram.SetComponentPlacement("C.Sys", "source1", 90, -10, 110, 10);
+        var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
+        Assert.Contains("points={{10,0},{25,20},{40,0}}", src); // the routed line is preserved
+    }
+
+    [Fact]
     public async Task AddConnection_OutputToInput_Allowed()
     {
         using var host = new TestHost();

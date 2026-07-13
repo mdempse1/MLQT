@@ -109,6 +109,8 @@ public sealed class GuidanceTools
               Each edit is parse-checked and refreshes dependencies; use preview=true to see the result first.
               To build a whole model in one shot, pass the same operations to batch_edit — they apply
               atomically (all-or-nothing) and later ops see earlier ones (add components then connect them).
+              For a usable diagram, set_component_placement each component; once both ends of a connection
+              are placed its diagram line is drawn (and refreshed if a component moves) automatically.
               Give components positions with set_component_placement so the diagram is usable
               (get_diagram_layout shows the current arrangement); there is no auto-layout.
               Document as you go: description strings come from create_class source, add_component's

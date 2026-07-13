@@ -68,8 +68,10 @@ public sealed class DiagramTools
     [Description("Set (or replace) a component's diagram Placement so it appears at a given position. " +
                 "Provide the component name and its bounding extent x1,y1,x2,y2 (diagram units, e.g. " +
                 "-10,-10,10,10) and an optional rotation. Adds a Placement annotation if the component has " +
-                "none, or replaces the existing one. Fails if the component doesn't exist or the result " +
-                "would not parse. Set preview=true to see the file text.")]
+                "none, or replaces the existing one. Any connection to this component whose other end is " +
+                "also placed automatically gets (or has refreshed) a straight diagram Line, so positioned " +
+                "components appear wired up — no separate call needed. Fails if the component doesn't exist " +
+                "or the result would not parse. Set preview=true to see the file text.")]
     public async Task<object> SetComponentPlacement(
         [Description("Fully-qualified class id containing the component.")] string classId,
         [Description("The component's name.")] string componentName,
@@ -87,6 +89,10 @@ public sealed class DiagramTools
         var newClassCode = SetPlacement(ctx!.ClassCode, componentName, x1, y1, x2, y2, rotation);
         if (newClassCode is null)
             return new ToolError($"'{classId}' has no component named '{componentName}'.");
+
+        // Now that this component is positioned, add/refresh the diagram lines of connections to it (and any
+        // other connection whose endpoints are both placed) so it appears wired up without a further call.
+        newClassCode = ConnectionLineAnnotator.Annotate(_libraries, classId, newClassCode);
 
         var result = await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"set placement in '{classId}'");
