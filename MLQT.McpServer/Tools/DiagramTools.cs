@@ -69,9 +69,10 @@ public sealed class DiagramTools
                 "Provide the component name and its bounding extent x1,y1,x2,y2 (diagram units, e.g. " +
                 "-10,-10,10,10) and an optional rotation. Adds a Placement annotation if the component has " +
                 "none, or replaces the existing one. Any connection to this component whose other end is " +
-                "also placed automatically gets (or has refreshed) a straight diagram Line, so positioned " +
-                "components appear wired up — no separate call needed. Fails if the component doesn't exist " +
-                "or the result would not parse. Set preview=true to see the file text.")]
+                "also placed automatically gets (or has refreshed) an orthogonal diagram Line routed between " +
+                "the connector positions, so positioned components appear wired up — no separate call " +
+                "needed. Fails if the component doesn't exist or the result would not parse. Set " +
+                "preview=true to see the file text.")]
     public async Task<object> SetComponentPlacement(
         [Description("Fully-qualified class id containing the component.")] string classId,
         [Description("The component's name.")] string componentName,

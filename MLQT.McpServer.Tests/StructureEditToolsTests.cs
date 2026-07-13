@@ -571,6 +571,22 @@ public class StructureEditToolsTests
         return new StructureEditTools(h.Libraries, h.Resources, h.Session);
     }
 
+    // Parse the points of the (single) connection Line in a class body.
+    private static List<(int X, int Y)> LinePoints(string src)
+    {
+        var line = Regex.Match(src, @"Line\(points=\{(.*?)\}\)");
+        Assert.True(line.Success, "no Line annotation found");
+        return Regex.Matches(line.Groups[1].Value, @"\{(-?\d+),(-?\d+)\}")
+            .Select(m => (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value))).ToList();
+    }
+
+    private static void AssertOrthogonal(IReadOnlyList<(int X, int Y)> pts)
+    {
+        for (var i = 1; i < pts.Count; i++)
+            Assert.True(pts[i].X == pts[i - 1].X || pts[i].Y == pts[i - 1].Y,
+                $"segment {pts[i - 1]}->{pts[i]} is diagonal");
+    }
+
     [Fact]
     public async Task Connection_DrawsAndRefreshesLine_WhenComponentsPositioned()
     {
@@ -586,15 +602,55 @@ public class StructureEditToolsTests
         ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "source1", -10, -10, 10, 10));
         Assert.DoesNotContain("Line(", host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
 
-        // ...positioning the second draws it: straight centre-to-centre, coloured as a signal line.
+        // ...positioning the second draws it: from the output (right edge, x=10) to the input (left edge,
+        // x=40), a straight signal-coloured line between the connector positions.
         ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "sink1", 40, -10, 60, 10));
         var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.Contains("connect(source1.y, sink1.u) annotation (Line(points={{0,0},{50,0}}, color={0,0,127}))", src);
+        Assert.Contains("connect(source1.y, sink1.u) annotation (Line(points={{10,0},{40,0}}, color={0,0,127}))", src);
 
-        // Moving a component refreshes the (2-point) line to track its new centre.
-        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "source1", 90, -10, 110, 10));
-        src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.Contains("Line(points={{100,0},{50,0}}, color={0,0,127})", src);
+        // Moving source1 below sink1 refreshes the line to a clean orthogonal route that starts at the
+        // output connector and ends at the input connector.
+        ToolAssert.Ok<StructureEditResult>(await diagram.SetComponentPlacement("C.Sys", "source1", -10, -110, 10, -90));
+        var pts = LinePoints(host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
+        Assert.Equal((10, -100), pts[0]);   // output connector (right edge of the moved component)
+        Assert.Equal((40, 0), pts[^1]);     // input connector (left edge of sink1)
+        AssertOrthogonal(pts);
+    }
+
+    [Fact]
+    public async Task Connection_UsesConnectorPlacementAndEdgeDirection()
+    {
+        // Plant's connector 'c' is positioned on the TOP edge of its icon (y=+100). The line must end at
+        // that mapped position (top edge of the placed component), not the component centre or a causal edge.
+        const string pkg = """
+            within;
+            package P "p"
+              connector RealInput = input Real;
+              connector RealOutput = output Real;
+              block Src RealOutput y; end Src;
+              block Plant
+                RealInput c annotation (Placement(transformation(extent={{-10,90},{10,110}})));
+              end Plant;
+              model Sys
+                Src src1;
+                Plant p1;
+              end Sys;
+            end P;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var edit = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+        var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        await diagram.SetComponentPlacement("P.Sys", "src1", -30, -10, -10, 10);
+        await diagram.SetComponentPlacement("P.Sys", "p1", -10, -10, 10, 10);
+        ToolAssert.Ok<StructureEditResult>(await edit.AddConnection("P.Sys", "src1.y", "p1.c"));
+
+        var pts = LinePoints(host.Libraries.GetModelById("P.Sys")!.Definition.ModelicaCode!);
+        Assert.Equal((-10, 0), pts[0]);  // Src output on its right edge
+        Assert.Equal((0, 10), pts[^1]);  // Plant input mapped from icon top edge to the component's top
+        AssertOrthogonal(pts);
     }
 
     [Fact]
@@ -607,14 +663,15 @@ public class StructureEditToolsTests
         await diagram.SetComponentPlacement("C.Sys", "sink1", 40, -10, 60, 10);
 
         ToolAssert.Ok<StructureEditResult>(await edit.AddConnection("C.Sys", "source1.y", "sink1.u"));
-        Assert.Contains("annotation (Line(points={{0,0},{50,0}}, color={0,0,127}))",
+        Assert.Contains("annotation (Line(points={{10,0},{40,0}}, color={0,0,127}))",
             host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!);
     }
 
     [Fact]
-    public async Task Connection_LeavesHandRoutedMultiPointLineAlone()
+    public async Task Connection_RegeneratesLineToCurrentRoute_OnMove()
     {
-        // A connect with a routed 3-point line must not be flattened when a component is repositioned.
+        // Lines are tool-managed: moving a component re-routes its connection (the connector positions
+        // change), replacing whatever was there. The route is orthogonal and ends at the connectors.
         const string pkg = """
             within;
             package C "c"
@@ -635,9 +692,13 @@ public class StructureEditToolsTests
         await host.Libraries.AddLibraryFromDirectoryAsync(dir);
         var diagram = new DiagramTools(host.Libraries, host.Resources, host.Session);
 
-        await diagram.SetComponentPlacement("C.Sys", "source1", 90, -10, 110, 10);
+        await diagram.SetComponentPlacement("C.Sys", "source1", -10, -110, 10, -90);
         var src = host.Libraries.GetModelById("C.Sys")!.Definition.ModelicaCode!;
-        Assert.Contains("points={{10,0},{25,20},{40,0}}", src); // the routed line is preserved
+        Assert.DoesNotContain("{25,20}", src); // the stale hand-drawn midpoint is gone
+        var pts = LinePoints(src);
+        Assert.Equal((10, -100), pts[0]);
+        Assert.Equal((40, 0), pts[^1]);
+        AssertOrthogonal(pts);
     }
 
     [Fact]

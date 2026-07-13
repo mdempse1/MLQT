@@ -376,9 +376,10 @@ public sealed class StructureEditTools
                 "ports must exist and resolve to connectors, and their connector types must be compatible " +
                 "(RealOutput to RealInput is fine; a signal port to a physical Pin is refused). If a type " +
                 "cannot be resolved the compatibility check is skipped with a note. Only valid in a model, " +
-                "block or class. If both connected components already have a Placement, a straight diagram " +
-                "Line (coloured by connector type) is added automatically so the connection is drawn. Fails " +
-                "if a port is missing/not a connector, the connectors are incompatible, or would not parse.")]
+                "block or class. If both connected components already have a Placement, a diagram Line is " +
+                "added automatically — routed orthogonally between the two connector positions, leaving each " +
+                "on its edge, and coloured by connector type. Fails if a port is missing/not a connector, " +
+                "the connectors are incompatible, or would not parse.")]
     public async Task<object> AddConnection(
         [Description("Fully-qualified id of the class to add the connection to.")] string classId,
         [Description("One port, e.g. 'sine1.y' or a connector on the class like 'u'.")] string portA,
