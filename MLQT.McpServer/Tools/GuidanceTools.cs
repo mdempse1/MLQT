@@ -17,7 +17,8 @@ public sealed class GuidanceTools
     private static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
     {
         ["overview"] = """
-            MLQT MCP server — manage and analyse Modelica libraries under revision control.
+            MLQT MCP server — author, check, format and analyse Modelica code. Its focus is editing and
+            quality of the .mo files; generic Git/SVN work is left to your own CLI.
 
             Core concepts:
             - Load first. Almost every tool operates on an in-memory graph. Use load_repository for a

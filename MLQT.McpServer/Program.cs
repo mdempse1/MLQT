@@ -42,9 +42,12 @@ builder.Services.AddSingleton<MLQT.McpServer.Services.SessionState>();
 // what the server does and the key workflow. get_guidance gives fuller, on-demand recipes.
 const string serverInstructions =
     """
-    MLQT manages Modelica libraries held in Git/SVN revision control. Use it to load libraries, browse
-    and read classes, analyse dependencies and the impact of changes, check style and spelling, and
-    format code.
+    MLQT is a server for authoring, checking and formatting Modelica code. Use it to read and understand
+    classes, edit them (create, modify, refactor), check them (style, spelling, references, connector
+    compatibility), format them, and analyse dependencies and the impact of a change — working directly
+    on the .mo files of a loaded library. The library may live in a Git/SVN working copy or a plain
+    directory; generic version-control (commit, log, push, branch) is delegated to your own CLI (the two
+    VCS tools here only add the Modelica-awareness a CLI lacks — mapping a diff to the classes it changed).
 
     Getting started:
     - Load first. Call load_repository (a Git/SVN working copy or a directory of libraries) or
@@ -63,8 +66,6 @@ const string serverInstructions =
       and analyze_change_impact all require analyze_dependencies to have been run first (it can be slow
       on a large library). Style checking is opt-in via check_class / check_library; the rules come from
       each repository's .mlqt/settings.json (read with get_style_settings, change with set_style_settings).
-    - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided — use your
-      own CLI. The two VCS tools here map file changes to Modelica classes, which the CLI cannot do.
     - Authoring tools that change code on disk (all support preview:true and refresh dependencies):
       * Whole-class: create_class (add a class, placed standalone or nested), update_class_source (replace a
         class's body, same name), rename_class (rename + rewrite every resolved reference), move_class (move
