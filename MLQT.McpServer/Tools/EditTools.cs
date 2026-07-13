@@ -119,10 +119,12 @@ public sealed class EditTools
     [Description("Create a new class inside a loaded parent class/package from complete Modelica source, " +
                 "place it on disk, and load it. Provide just the class definition (no 'within' clause). " +
                 "Storage: for a directory package parent, a standalone class is written as its own .mo file " +
-                "in the package directory (and added to package.order); otherwise it is nested into the " +
-                "parent's package.mo. Pass standalone=true/false to force, or omit to choose automatically " +
-                "(standalone when the parent is a directory package and the class has no replaceable/" +
-                "redeclare/inner/outer prefix). Fails if the class already exists or the source has syntax " +
+                "in the package directory (and added to package.order) — and a standalone sub-package is " +
+                "written as its own directory package (folder + package.mo) so its members can also be one " +
+                "per file; otherwise it is nested into the parent's package.mo. Pass standalone=true/false " +
+                "to force, or omit to choose automatically (standalone when the parent is a directory " +
+                "package and the class has no replaceable/redeclare/inner/outer prefix). Fails if the class " +
+                "already exists or the source has syntax " +
                 "errors; writes are refused on read-only files. Set preview=true to see the file that would " +
                 "be written.")]
     public async Task<object> CreateClass(
@@ -186,21 +188,34 @@ public sealed class EditTools
             useStandalone = parentIsDirectoryPackage && standaloneAble;
         }
 
+        // A package stored standalone becomes a directory package (its own folder + package.mo) rather than
+        // a single .mo file, so classes added to it can in turn be stored one-per-file all the way down.
+        var isPackage = string.Equals(topLevel[0].ClassType, "package", StringComparison.Ordinal);
+        var packageMembers = isPackage
+            ? models.Where(m => m.IsNested && string.Equals(m.ParentModelName, className, StringComparison.Ordinal))
+                    .Select(m => m.Name).ToList()
+            : new List<string>();
+
         return useStandalone
-            ? await CreateStandaloneAsync(newId, className, source, ctx.FilePath, preview)
+            ? await CreateStandaloneAsync(newId, className, source, ctx.FilePath, isPackage, packageMembers, preview)
             : await CreateNestedAsync(newId, className, source, parent, ctx, parentIsDirectoryPackage, preview);
     }
 
     private async Task<object> CreateStandaloneAsync(
-        string newId, string className, string source, string packageMoPath, bool preview)
+        string newId, string className, string source, string packageMoPath, bool isPackage,
+        IReadOnlyList<string> packageMembers, bool preview)
     {
         var dir = Path.GetDirectoryName(packageMoPath)!;
         var parentId = newId[..newId.LastIndexOf('.')];
+        var content = $"within {parentId};\n{source.TrimEnd()}\n";
+
+        if (isPackage)
+            return await CreateStandalonePackageAsync(newId, className, content, dir, packageMoPath, packageMembers, preview);
+
         var newFilePath = Path.Combine(dir, className + ".mo");
         if (File.Exists(newFilePath))
             return new ToolError($"A file already exists at '{newFilePath}'.");
 
-        var content = $"within {parentId};\n{source.TrimEnd()}\n";
         if (preview)
             return new CreateClassResult(newId, newFilePath, "standalone", PreviewOnly: true, Created: false, content);
 
@@ -212,6 +227,35 @@ public sealed class EditTools
         var affected = await _libraries.ReloadFileAsync(newFilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
         return new CreateClassResult(newId, newFilePath, "standalone", PreviewOnly: false, Created: true, null);
+    }
+
+    // Create a sub-package as a directory package: <parentDir>/<Name>/package.mo (+ its own package.order),
+    // registered in the parent's package.order. This keeps the one-class-per-file structure recursive.
+    private async Task<object> CreateStandalonePackageAsync(
+        string newId, string className, string content, string parentDir, string parentPackageMoPath,
+        IReadOnlyList<string> packageMembers, bool preview)
+    {
+        var packageDir = Path.Combine(parentDir, className);
+        var newPackageMo = Path.Combine(packageDir, "package.mo");
+        if (Directory.Exists(packageDir))
+            return new ToolError($"A directory already exists at '{packageDir}'.");
+
+        if (preview)
+            return new CreateClassResult(newId, newPackageMo, "directory-package", PreviewOnly: true, Created: false, content);
+
+        // The new package.mo lives in a not-yet-created folder, so writability is judged from the parent's
+        // package.mo (whether we can write into the parent directory at all).
+        if (FileWritability.PreflightWritable(new[] { parentPackageMoPath }, $"create package '{newId}'") is { } readOnly)
+            return readOnly;
+
+        Directory.CreateDirectory(packageDir);
+        await File.WriteAllTextAsync(newPackageMo, content);
+        await File.WriteAllTextAsync(Path.Combine(packageDir, "package.order"),
+            packageMembers.Count > 0 ? string.Join("\n", packageMembers) + "\n" : string.Empty);
+        AppendToPackageOrder(parentDir, className); // register the package in its parent's package.order
+        var affected = await _libraries.ReloadFileAsync(newPackageMo);
+        await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+        return new CreateClassResult(newId, newPackageMo, "directory-package", PreviewOnly: false, Created: true, null);
     }
 
     private async Task<object> CreateNestedAsync(

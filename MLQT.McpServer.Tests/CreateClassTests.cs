@@ -56,6 +56,59 @@ public class CreateClassTests
     }
 
     [Fact]
+    public async Task Create_StandalonePackage_BecomesDirectoryPackage_AndNestsOneClassPerFile()
+    {
+        using var host = new TestHost();
+        var dir = LoadDirectoryPackage(host);
+
+        // A sub-package is stored as its own directory package (folder + package.mo + package.order)...
+        var pkg = ToolAssert.Ok<CreateClassResult>(
+            await Edit(host).CreateClass("P", "package Sub \"a subpackage\"\nend Sub;"));
+        Assert.Equal("directory-package", pkg.Storage);
+        var subDir = Path.Combine(dir, "Sub");
+        Assert.True(File.Exists(Path.Combine(subDir, "package.mo")));
+        Assert.True(File.Exists(Path.Combine(subDir, "package.order")));
+        Assert.Contains("within P;", File.ReadAllText(Path.Combine(subDir, "package.mo")));
+        // ...and registered in the parent's package.order.
+        Assert.Contains("Sub", File.ReadAllLines(Path.Combine(dir, "package.order")));
+
+        // A class added to the sub-package is now one-per-file (standalone), not nested in Sub/package.mo.
+        var m = ToolAssert.Ok<CreateClassResult>(
+            await Edit(host).CreateClass("P.Sub", "model M\n  Real x;\nend M;"));
+        Assert.Equal("standalone", m.Storage);
+        Assert.True(File.Exists(Path.Combine(subDir, "M.mo")));
+        Assert.DoesNotContain("model M", File.ReadAllText(Path.Combine(subDir, "package.mo")));
+        Assert.Contains("M", File.ReadAllLines(Path.Combine(subDir, "package.order")));
+
+        Assert.Equal("P.Sub", host.Libraries.GetModelById("P.Sub.M")!.ParentModelName);
+    }
+
+    [Fact]
+    public async Task Create_StandalonePackage_Preview_WritesNothing()
+    {
+        using var host = new TestHost();
+        var dir = LoadDirectoryPackage(host);
+        var res = ToolAssert.Ok<CreateClassResult>(
+            await Edit(host).CreateClass("P", "package Sub\nend Sub;", preview: true));
+        Assert.True(res.PreviewOnly);
+        Assert.Equal("directory-package", res.Storage);
+        Assert.False(Directory.Exists(Path.Combine(dir, "Sub")));
+        Assert.Null(host.Libraries.GetModelById("P.Sub"));
+    }
+
+    [Fact]
+    public async Task Create_NestedPackage_Forced_StaysInPackageMo()
+    {
+        using var host = new TestHost();
+        var dir = LoadDirectoryPackage(host);
+        var res = ToolAssert.Ok<CreateClassResult>(
+            await Edit(host).CreateClass("P", "package Sub\nend Sub;", standalone: false));
+        Assert.Equal("nested", res.Storage);
+        Assert.False(Directory.Exists(Path.Combine(dir, "Sub")));
+        Assert.Contains("package Sub", File.ReadAllText(Path.Combine(dir, "package.mo")));
+    }
+
+    [Fact]
     public async Task Create_Nested_InsertsIntoPackageMo()
     {
         using var host = new TestHost();

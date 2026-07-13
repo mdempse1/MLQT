@@ -81,7 +81,10 @@ public sealed class GuidanceTools
             Start a new library/project:
               create_library(name, directory) writes an empty top-level library on disk (package.mo +
               package.order) and loads it -> add classes with create_class(name, source) -> add nested
-              packages the same way (create_class with a 'package ... end ...;' source).
+              packages the same way (create_class with a 'package ... end ...;' source). Storage defaults to
+              one class per file: a class becomes its own .mo file and a sub-package becomes its own
+              directory package (folder + package.mo), so the structure stays one-per-file all the way down.
+              Classes that cannot be standalone (a replaceable/redeclare/inner/outer prefix) are nested.
 
             Author a new class in your library:
               get_class_interface on the classes you'll reference (learn their API) -> create_class(parentId,
