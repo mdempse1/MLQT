@@ -79,6 +79,45 @@ public class StructureEditToolsTests
     }
 
     [Fact]
+    public async Task AddComponent_ModifierList_WrappedInParens()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+
+        // A single bare modifier is wrapped: k=2 -> m2(k=2)
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("P.A", "P.M", "m2", modifier: "k=2"));
+        Assert.Contains("P.M m2(k=2);", Source(host, "P.A"));
+
+        // A comma-separated list is wrapped: k=2, r=34 -> m3(k=2, r=34)
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("P.A", "P.M", "m3", modifier: "k=2, r=34"));
+        Assert.Contains("P.M m3(k=2, r=34);", Source(host, "P.A"));
+
+        // A lone value is still a binding.
+        ToolAssert.Ok<StructureEditResult>(await tools.AddComponent("P.A", "Real", "v", modifier: "5"));
+        Assert.Contains("Real v = 5;", Source(host, "P.A"));
+    }
+
+    [Fact]
+    public async Task SetComponentModifier_List_WrapsInParens()
+    {
+        using var host = new TestHost();
+        // M has 'parameter Real k = 1' — set a modifier list on it via a component that has a modifier slot.
+        await Load(host).AddComponent("P.A", "P.M", "inst");
+        ToolAssert.Ok<StructureEditResult>(
+            await new StructureEditTools(host.Libraries, host.Resources, host.Session)
+                .SetComponentModifier("P.A", "inst", "k=2, r=34"));
+        Assert.Contains("P.M inst(k=2, r=34);", Source(host, "P.A"));
+    }
+
+    [Fact]
+    public async Task AddExtends_ModifierList_WrappedInParens()
+    {
+        using var host = new TestHost();
+        ToolAssert.Ok<StructureEditResult>(await Load(host).AddExtends("P.A", "P.M", modifier: "k=4, r=5"));
+        Assert.Contains("extends P.M(k=4, r=5);", Source(host, "P.A"));
+    }
+
+    [Fact]
     public async Task RemoveComponent_SoleOnLine()
     {
         using var host = new TestHost();

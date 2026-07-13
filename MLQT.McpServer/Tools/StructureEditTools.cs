@@ -34,16 +34,19 @@ public sealed class StructureEditTools
     [McpServerTool(Name = "add_component")]
     [Description("Add a component (a variable, parameter or connector instance) to a class, e.g. a " +
                 "'Modelica.Blocks.Continuous.Integrator integrator1(k = 2)'. Provide the component's type " +
-                "(a class id), a name, and optionally a modifier (e.g. '(k = 2)' or '= 5') and a " +
-                "description. Inserted into the class's public section. Fails if a component with that name " +
-                "already exists or the result would not parse. Set preview=true to see the file text.")]
+                "(a class id), a name, and optionally a modifier and a description. The modifier is a " +
+                "comma-separated list like 'k = 2, T = 10' (wrapped automatically as name(k = 2, T = 10)); " +
+                "use '= 5' for a plain binding value. Inserted into the class's public section. Fails if a " +
+                "component with that name already exists or the result would not parse. Preview available.")]
     public async Task<object> AddComponent(
         [Description("Fully-qualified id of the class to add the component to.")] string classId,
         [Description("The component's type — a class id (e.g. 'Modelica.Blocks.Continuous.Integrator') or a " +
                      "built-in like 'Real'.")]
         string type,
         [Description("The component's name (a valid Modelica identifier).")] string name,
-        [Description("Optional modifier text, e.g. '(k = 2)' or '= 5'. A bare value like '5' is treated as '= 5'.")]
+        [Description("Optional modifier(s): a comma-separated list like 'k = 2, T = 10' (becomes " +
+                     "name(k = 2, T = 10)); or a binding like '= 5'; or an already-parenthesised group " +
+                     "'(k = 2)'. A lone value like '5' is treated as '= 5'.")]
         string? modifier = null,
         [Description("Optional description string.")] string? description = null,
         [Description("Optional // comment line to place above the component.")] string? comment = null,
@@ -126,13 +129,15 @@ public sealed class StructureEditTools
 
     [McpServerTool(Name = "set_component_modifier")]
     [Description("Set (or clear) a component's modifier/binding, e.g. change 'integrator1' to " +
-                "'integrator1(k = 2)' or set a parameter's value with '= 5'. Pass an empty modifier to " +
-                "remove an existing one. Fails if no such component exists or the result would not parse. " +
-                "Set preview=true to see the file text.")]
+                "'integrator1(k = 2)' or set a parameter's value with '= 5'. The modifier is a " +
+                "comma-separated list like 'k = 2, T = 10' (wrapped as name(k = 2, T = 10)), a binding like " +
+                "'= 5', or a parenthesised group '(k = 2)'. Pass an empty modifier to remove an existing " +
+                "one. Fails if no such component exists or the result would not parse. Preview available.")]
     public async Task<object> SetComponentModifier(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("The name of the component to modify.")] string name,
-        [Description("The new modifier text, e.g. '(k = 2)' or '= 5'. Empty string clears the modifier.")]
+        [Description("The new modifier: a list like 'k = 2, T = 10', a binding '= 5', or '(k = 2)'. " +
+                     "Empty string clears the modifier.")]
         string modifier,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
@@ -168,12 +173,13 @@ public sealed class StructureEditTools
 
     [McpServerTool(Name = "add_extends")]
     [Description("Add an 'extends' (inheritance) clause to a class, e.g. 'extends " +
-                "Modelica.Blocks.Interfaces.SISO'. Optionally pass a modifier like '(k = 2)' to set " +
-                "inherited defaults. Inserted at the top of the class. Fails if the result would not parse.")]
+                "Modelica.Blocks.Interfaces.SISO'. Optionally set inherited defaults with a modifier — a " +
+                "comma-separated list like 'k = 2, T = 10' (wrapped as (k = 2, T = 10)) or an already- " +
+                "parenthesised group. Inserted at the top of the class. Fails if the result would not parse.")]
     public async Task<object> AddExtends(
         [Description("Fully-qualified id of the class.")] string classId,
         [Description("The base class to extend (a class id).")] string baseType,
-        [Description("Optional modifier in paren form, e.g. '(k = 2)'.")] string? modifier = null,
+        [Description("Optional modifier(s), e.g. 'k = 2, T = 10' or '(k = 2)'.")] string? modifier = null,
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(baseType))
@@ -182,7 +188,10 @@ public sealed class StructureEditTools
         if (error is not null)
             return error;
 
-        var mod = string.IsNullOrWhiteSpace(modifier) ? string.Empty : modifier.Trim();
+        var trimmedMod = modifier?.Trim();
+        var mod = string.IsNullOrEmpty(trimmedMod)
+            ? string.Empty
+            : (trimmedMod.StartsWith("(", StringComparison.Ordinal) ? trimmedMod : "(" + trimmedMod + ")");
         var line = $"extends {baseType.Trim()}{mod};";
         var newClassCode = InsertElement(ctx!.ClassCode, ctx.Layout, line, atTop: true);
 
@@ -546,8 +555,11 @@ public sealed class StructureEditTools
             await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
     }
 
-    // Normalise a modifier: '(...)' stays as-is (no leading space); a binding keeps/gets a leading '= '.
-    // A bare value like '5' becomes '= 5'. Empty/whitespace yields "".
+    // Normalise the modifier field into the text that follows a component name:
+    //   'k=2, r=34'  -> '(k=2, r=34)'   a modifier list is wrapped in parentheses
+    //   '(k=2)'      -> '(k=2)'          an explicit modifier group is used as-is
+    //   '= 5' / ':=' -> ' = 5'           an explicit binding is kept (with a leading space)
+    //   '5'          -> ' = 5'           a bare value becomes a binding
     private static string FormatModifier(string? modifier)
     {
         var m = modifier?.Trim();
@@ -557,7 +569,9 @@ public sealed class StructureEditTools
             return m;
         if (m.StartsWith(":=", StringComparison.Ordinal) || m.StartsWith("=", StringComparison.Ordinal))
             return " " + m;
-        return " = " + m;
+        if (m.Contains('='))
+            return "(" + m + ")"; // one or more 'name=value' modifiers -> (…)
+        return " = " + m;         // a lone value is a binding
     }
 
     private static object ToResult(string classId, string? note, object editOutcome)
