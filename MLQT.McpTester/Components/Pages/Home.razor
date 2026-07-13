@@ -140,7 +140,12 @@
                                 <div class="mb-3">
                                     @if (p.IsBoolean)
                                     {
-                                        <MudSwitch @bind-Value="p.BoolValue" Color="Color.Primary" Label="@FieldLabel(p)" />
+                                        <MudSelect T="string" @bind-Value="p.BoolChoice" Label="@FieldLabel(p)"
+                                                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            <MudSelectItem Value="@("")">(default)</MudSelectItem>
+                                            <MudSelectItem Value="@("true")">true</MudSelectItem>
+                                            <MudSelectItem Value="@("false")">false</MudSelectItem>
+                                        </MudSelect>
                                     }
                                     else if (p.IsEnum)
                                     {

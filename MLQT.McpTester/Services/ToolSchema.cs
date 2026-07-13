@@ -14,7 +14,19 @@ public sealed class ToolParam
 
     // Bound values (string for everything except booleans).
     public string StringValue { get; set; } = "";
-    public bool BoolValue { get; set; }
+
+    // Boolean value: null means "unset" so the parameter is omitted and the server applies its own
+    // default. This matters for tri-state bool? parameters (e.g. create_class's 'standalone', where
+    // unset = auto-choose, true = force standalone, false = force nested) — always sending false would
+    // silently override the server's automatic choice.
+    public bool? BoolValue { get; set; }
+
+    /// <summary>Three-way binding for the boolean selector: "" (unset/default), "true" or "false".</summary>
+    public string BoolChoice
+    {
+        get => BoolValue is null ? "" : (BoolValue.Value ? "true" : "false");
+        set => BoolValue = value switch { "true" => true, "false" => false, _ => null };
+    }
 
     public bool IsBoolean => Type == "boolean";
     public bool IsEnum => EnumValues is { Count: > 0 };
@@ -81,7 +93,11 @@ public static class ToolSchema
         {
             if (p.IsBoolean)
             {
-                args[p.Name] = p.BoolValue;
+                if (p.BoolValue is bool b)
+                    args[p.Name] = b;
+                else if (p.Required)
+                    throw new FormatException($"'{p.Name}' is required.");
+                // optional & unset -> omit so the server applies its own default
                 continue;
             }
 

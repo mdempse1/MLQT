@@ -23,8 +23,12 @@ dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
 3. **Connect** — launches the server over stdio, shows the server's name/version and any **instructions**
    it returned on connect (the text a client/LLM sees describing what the server does), and lists its tools.
 4. Pick a tool. A form is generated from its input schema:
-   - booleans → switch, enums → dropdown, arrays/objects → multiline (enter JSON), everything else → text.
-   - required fields are marked `*`; leave optional fields blank to use the server's defaults.
+   - booleans → three-way dropdown ((default) / true / false), enums → dropdown, arrays/objects →
+     multiline (enter JSON), everything else → text.
+   - required fields are marked `*`; leave optional fields blank (and booleans on **(default)**) to use
+     the server's defaults. Leaving a boolean on (default) omits it entirely, which matters for tri-state
+     `boolean|null` parameters (e.g. `create_class`'s `standalone`) where sending `false` is not the same
+     as omitting it.
 5. **Call tool** — the result (text content, pretty-printed if JSON, plus any `structuredContent`)
    is shown, with an `ok` / `isError` badge.
 
