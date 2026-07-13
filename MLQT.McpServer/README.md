@@ -52,7 +52,7 @@ variable, or set it to `off` to disable.
 | Group | Tools |
 |-------|-------|
 | Meta | `get_guidance`, `server_info` |
-| Session / library | `load_repository`, `load_library`, `list_libraries`, `list_repositories`, `discover_libraries`, `reload`, `unload_library` |
+| Session / library | `create_library`, `load_repository`, `load_library`, `list_libraries`, `list_repositories`, `discover_libraries`, `reload`, `unload_library` |
 | Class query | `get_class_info`, `get_class_source`, `list_classes`, `search_classes`, `get_package_tree` |
 | Class views | `get_class_interface`, `list_class_elements`, `get_class_documentation`, `get_class_behavior`, `validate_class_references` |
 | Search | `search_text`, `search_by_interface` |

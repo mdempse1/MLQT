@@ -47,6 +47,16 @@ public sealed record ReloadResult(
     int AffectedModelCount,
     string? Note);
 
+/// <summary>Result of create_library: the new top-level library's name, on-disk path and whether it was
+/// loaded into the session (with its id).</summary>
+public sealed record CreateLibraryResult(
+    string Name,
+    string Path,
+    string? LibraryId,
+    bool Loaded,
+    bool PreviewOnly,
+    string? PackageContent);
+
 public sealed record ClassInfo(
     string Id,
     string Name,

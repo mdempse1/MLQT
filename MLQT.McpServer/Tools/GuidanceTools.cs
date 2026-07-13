@@ -78,6 +78,11 @@ public sealed class GuidanceTools
               declaration and every resolved reference are rewritten and dependencies refreshed. Precise:
               a same-named unrelated class is not touched. Read-only files abort the rename.
 
+            Start a new library/project:
+              create_library(name, directory) writes an empty top-level library on disk (package.mo +
+              package.order) and loads it -> add classes with create_class(name, source) -> add nested
+              packages the same way (create_class with a 'package ... end ...;' source).
+
             Author a new class in your library:
               get_class_interface on the classes you'll reference (learn their API) -> create_class(parentId,
               source) -> check_class + spell_check + validate_class_references (validate) -> format_class.
@@ -135,6 +140,10 @@ public sealed class GuidanceTools
             Editing Modelica on disk. EVERY editing tool: writes the .mo file, parse-checks the result and
             makes NO change if it would not parse, refuses read-only files (e.g. a reference library under
             Program Files), refreshes dependencies, and supports preview=true to see the result first.
+
+            Start a project:
+            - create_library(name, directory): write and load a new, empty top-level library on disk (the
+              first step of a new project). Then add classes with create_class.
 
             Whole-class:
             - create_class(parentId, source): add a class from complete source; a directory package gets a

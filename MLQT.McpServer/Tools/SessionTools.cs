@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -9,13 +10,15 @@ using MLQT.Services.Interfaces;
 namespace MLQT.McpServer.Tools;
 
 /// <summary>
-/// Session and library management tools: load repositories and libraries into the in-memory
-/// graph, enumerate what is loaded, reload from disk, and unload. Almost every other tool requires a
-/// library to be loaded first, so these are the entry point.
+/// Session and library management tools: create a new library, load repositories and libraries into the
+/// in-memory graph, enumerate what is loaded, reload from disk, and unload. Almost every other tool
+/// requires a library to be loaded first, so these are the entry point.
 /// </summary>
 [McpServerToolType]
 public sealed class SessionTools
 {
+    private static readonly Regex IdentifierRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
     private readonly ILibraryDataService _libraries;
     private readonly IRepositoryService _repositories;
     private readonly IExternalResourceService _resources;
@@ -81,6 +84,63 @@ public sealed class SessionTools
         return new LoadRepositoryResult(
             true, repo.Id, repo.Name, repo.VcsType.ToString(), null,
             discovered, loaded, warnings);
+    }
+
+    [McpServerTool(Name = "create_library")]
+    [Description("Create a brand-new, empty top-level Modelica library on disk — the first step of a new " +
+                "project. Writes a directory named after the library, containing a package.mo (a top-level " +
+                "'package Name ... end Name;') and an empty package.order, then loads it so you can add " +
+                "classes with create_class. Provide the library name (a Modelica identifier) and the " +
+                "directory to create it in (the library folder is created inside it, and missing parent " +
+                "folders are created). Optionally a description and a version. Fails if the target folder " +
+                "already exists. Set preview=true to see the package.mo without writing anything.")]
+    public async Task<object> CreateLibrary(
+        [Description("The library (top-level package) name — a valid Modelica identifier, e.g. 'MyLibrary'.")]
+        string name,
+        [Description("Absolute path to the folder to create the library in; a subfolder named after the " +
+                     "library is created inside it (parent folders are created if missing).")]
+        string directory,
+        [Description("Optional one-line description for the library.")] string? description = null,
+        [Description("Optional version string for the package's version annotation, e.g. '1.0.0'.")]
+        string? version = null,
+        [Description("Load the new library into the session after creating it (default true).")]
+        bool loadIntoSession = true,
+        [Description("Return the package.mo that would be written without creating anything. Default false.")]
+        bool preview = false)
+    {
+        if (string.IsNullOrWhiteSpace(name) || !IdentifierRegex.IsMatch(name))
+            return new ToolError($"name '{name}' is not a valid Modelica identifier (letters/digits/_, not starting with a digit).");
+        if (string.IsNullOrWhiteSpace(directory))
+            return new ToolError("directory is required (an absolute path to create the library folder in).");
+
+        var libraryDir = Path.Combine(directory, name);
+        if (Directory.Exists(libraryDir))
+            return new ToolError($"A folder already exists at '{libraryDir}'. Choose a different name or location.");
+
+        var desc = string.IsNullOrEmpty(description) ? string.Empty : $" \"{description.Replace("\"", "\\\"")}\"";
+        var annotation = string.IsNullOrEmpty(version) ? string.Empty : $"  annotation (version=\"{version}\");\n";
+        var packageContent = $"within;\npackage {name}{desc}\n{annotation}end {name};\n";
+
+        if (preview)
+            return new CreateLibraryResult(name, libraryDir, null, Loaded: false, PreviewOnly: true, packageContent);
+
+        try
+        {
+            Directory.CreateDirectory(libraryDir);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not create the library folder '{libraryDir}': {ex.Message}.");
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), packageContent);
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), string.Empty);
+
+        if (!loadIntoSession)
+            return new CreateLibraryResult(name, libraryDir, null, Loaded: false, PreviewOnly: false, null);
+
+        var library = await _libraries.AddLibraryFromDirectoryAsync(libraryDir);
+        return new CreateLibraryResult(name, libraryDir, library.Id, Loaded: true, PreviewOnly: false, null);
     }
 
     [McpServerTool(Name = "load_library")]

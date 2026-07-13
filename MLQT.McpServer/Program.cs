@@ -51,8 +51,9 @@ const string serverInstructions =
 
     Getting started:
     - Load first. Call load_repository (a Git/SVN working copy or a directory of libraries) or
-      load_library (one library directory containing package.mo, or a single .mo file). Almost every
-      other tool operates on the loaded in-memory graph; list_libraries shows what is loaded.
+      load_library (one library directory containing package.mo, or a single .mo file). To START a NEW
+      project, create_library writes and loads an empty top-level library on disk. Almost every other
+      tool operates on the loaded in-memory graph; list_libraries shows what is loaded.
     - Class ids are fully-qualified dotted names, e.g. Modelica.Blocks.Continuous.Integrator. Find one by
       name with search_classes, by documentation prose with search_text, or by shape with
       search_by_interface. Library and repository ids are the GUIDs from list_libraries /
