@@ -328,7 +328,25 @@ public sealed class SessionTools
         "Opt-in analysis was reset by the reload — run analyze_dependencies again before using dependency, " +
         "impact or external-resource tools.";
 
-    private static LibrarySummary ToSummary(LoadedLibrary l) => new(
+    private LibrarySummary ToSummary(LoadedLibrary l) => new(
         l.Id, l.Name, l.SourceType.ToString(), l.SourcePath,
-        l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision);
+        l.ModelIds.Count, l.TopLevelModelIds.Count, l.RepositoryId, l.Revision,
+        DeclaredDependencies(l));
+
+    // The library's declared dependencies (its top-level package's `uses(...)` annotation), so the caller
+    // knows what else to load — most importantly the Modelica Standard Library, at the right version.
+    private IReadOnlyList<LibraryDependency> DeclaredDependencies(LoadedLibrary l)
+    {
+        var deps = new List<LibraryDependency>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var topId in l.TopLevelModelIds)
+        {
+            if (_libraries.GetModelById(topId)?.Uses is not { } uses)
+                continue;
+            foreach (var (name, version) in uses)
+                if (seen.Add(name))
+                    deps.Add(new LibraryDependency(name, string.IsNullOrEmpty(version) ? null : version));
+        }
+        return deps;
+    }
 }

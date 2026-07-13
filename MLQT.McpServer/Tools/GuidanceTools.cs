@@ -91,6 +91,16 @@ public sealed class GuidanceTools
               source) -> check_class + spell_check + validate_class_references (validate) -> format_class.
               A directory package gets a standalone .mo file; otherwise the class is nested.
 
+            Study the library's idioms BEFORE assembling a model. Incrementally wiring up primitives is
+            easy but often the wrong altitude: a good library usually provides higher-level, aggregate
+            components that are the intended, more efficient building blocks (e.g. MSL MultiBody offers
+            analytic assembly joints for closed kinematic loops instead of hand-wiring individual joints).
+            Find them: search_classes / search_by_interface for candidates, read example models in the
+            library (search_text over documentation, then get_class_behavior / get_class_documentation on
+            the examples) to see which components the library itself uses for the problem you are modelling,
+            and prefer those over composing low-level parts. (This requires the dependency libraries to be
+            loaded — see the load instructions.)
+
             Build up a model incrementally (surgical edits — no need to resend the whole class):
               create_class -> add_component (instantiate parts, e.g. a source and an integrator) ->
               add_connection(model, 'source1.y', 'integrator1.u') [refuses incompatible connectors] ->

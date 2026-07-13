@@ -49,6 +49,25 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
+    public async Task LoadLibrary_SurfacesDeclaredDependencies()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] =
+                "within;\npackage Dep \"d\"\n  model M\n    Real x;\n  end M;\n" +
+                "  annotation (uses(Modelica(version=\"4.0.0\")));\nend Dep;",
+        });
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+
+        var summary = ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(dir));
+
+        var msl = Assert.Single(summary.Dependencies);
+        Assert.Equal("Modelica", msl.Name);
+        Assert.Equal("4.0.0", msl.Version);
+    }
+
+    [Fact]
     public async Task LoadLibrary_FromPackageMoPath_LoadsWholeLibrary()
     {
         using var host = new TestHost();

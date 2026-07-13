@@ -12,7 +12,14 @@ public sealed record LibrarySummary(
     int ModelCount,
     int TopLevelModelCount,
     string? RepositoryId,
-    string? Revision);
+    string? Revision,
+    // Libraries this one declares it depends on (from its `uses(...)` annotation), with the version it was
+    // written against. Load these too (they are NOT loaded automatically) so type references resolve and
+    // the views / validation / connector checks work across the whole model. Empty if none are declared.
+    IReadOnlyList<LibraryDependency> Dependencies);
+
+/// <summary>A dependency a library declares via its <c>uses</c> annotation, e.g. Modelica 4.0.0.</summary>
+public sealed record LibraryDependency(string Name, string? Version);
 
 public sealed record RepositorySummary(
     string Id,

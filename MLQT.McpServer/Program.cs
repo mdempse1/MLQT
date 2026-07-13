@@ -54,6 +54,14 @@ const string serverInstructions =
       load_library (one library directory containing package.mo, or a single .mo file). To START a NEW
       project, create_library writes and loads an empty top-level library on disk. Almost every other
       tool operates on the loaded in-memory graph; list_libraries shows what is loaded.
+    - Load the dependencies too. Nearly every library builds on the Modelica Standard Library (MSL), and
+      most reference others. Loading a library does NOT load its dependencies — but its load summary lists
+      them (from its `uses` annotation) with the version it expects. Load each one (load_library /
+      load_repository); ask the user for the path if you cannot find it, since the required MSL version
+      varies by project. This is what makes MLQT worth using: with dependencies loaded, search, the views,
+      validate_class_references and the connector/type checks resolve types across the whole model and you
+      can reason about real components. WITHOUT them, types do not resolve and you are reduced to reading
+      raw text — do not settle for that; load the dependency instead.
     - Class ids are fully-qualified dotted names, e.g. Modelica.Blocks.Continuous.Integrator. Find one by
       name with search_classes, by documentation prose with search_text, or by shape with
       search_by_interface. Library and repository ids are the GUIDs from list_libraries /
