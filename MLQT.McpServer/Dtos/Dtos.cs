@@ -102,6 +102,21 @@ public sealed record ClassListResult(
     int Count,
     IReadOnlyList<ClassListItem> Items);
 
+/// <summary>A search hit enriched with the class's description and a short documentation snippet, so the
+/// caller can judge relevance (e.g. "use this for kinematic loops") without a follow-up call per result.</summary>
+public sealed record ClassSearchItem(
+    string Id,
+    string Name,
+    string ClassType,
+    string? ParentModelName,
+    string? Description,
+    string? DocSnippet);
+
+public sealed record ClassSearchResult(
+    int Total,
+    int Count,
+    IReadOnlyList<ClassSearchItem> Items);
+
 public sealed record PackageTreeNode(
     string Id,
     string Name,

@@ -315,10 +315,30 @@ public class SessionAndClassToolsTests
         LoadPackage(host, out _);
         var query = new ClassQueryTools(host.Libraries);
 
-        var res = ToolAssert.Ok<ClassListResult>(query.SearchClasses("Base"));
-        Assert.Contains(res.Items, i => i.Id == "TestLib.Base");
+        var res = ToolAssert.Ok<ClassSearchResult>(query.SearchClasses("Base"));
+        var baseHit = Assert.Single(res.Items, i => i.Id == "TestLib.Base");
+        Assert.Equal("Base model", baseHit.Description); // description surfaced
 
         Assert.IsType<ToolError>(query.SearchClasses("  "));
+    }
+
+    [Fact]
+    public void SearchClasses_IncludesDocumentationSnippet()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] =
+                "within;\npackage Lib \"l\"\n  model Widget \"a widget\"\n    Real x;\n" +
+                "    annotation (Documentation(info=\"<html><p>Use this for <b>closed loops</b>.</p></html>\"));\n" +
+                "  end Widget;\nend Lib;",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var query = new ClassQueryTools(host.Libraries);
+
+        var hit = Assert.Single(ToolAssert.Ok<ClassSearchResult>(query.SearchClasses("Widget")).Items);
+        Assert.Equal("a widget", hit.Description);
+        Assert.Equal("Use this for closed loops.", hit.DocSnippet); // HTML stripped, whitespace collapsed
     }
 
     [Fact]

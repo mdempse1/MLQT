@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.Helpers;
@@ -160,8 +161,10 @@ public sealed class ClassQueryTools
     [McpServerTool(Name = "search_classes")]
     [Description("Find classes whose fully-qualified id contains the given text (case-insensitive). " +
                 "Matches on the id, so 'Integrator' finds 'Modelica.Blocks.Continuous.Integrator'. " +
-                "Results are ordered with exact leaf-name matches first, then by id. Use for locating a " +
-                "class when you don't know its full path.")]
+                "Results are ordered with exact leaf-name matches first, then by id, and each carries the " +
+                "class's description and a short documentation snippet so you can judge relevance (e.g. which " +
+                "joint to use for a kinematic loop) without opening each one. Use for locating a class when " +
+                "you don't know its full path.")]
     public object SearchClasses(
         [Description("Substring to search for within class ids (case-insensitive).")] string query,
         [Description("Max results to return (default 50, max 1000).")] int limit = 50)
@@ -182,10 +185,41 @@ public sealed class ClassQueryTools
             .OrderByDescending(m => string.Equals(m.Name, query, StringComparison.OrdinalIgnoreCase))
             .ThenBy(m => m.Id, StringComparer.Ordinal)
             .Take(limit)
-            .Select(m => new ClassListItem(m.Id, m.Name, m.ClassType, m.ParentModelName))
+            .Select(m =>
+            {
+                var (description, snippet) = DescriptionAndSnippet(m);
+                return new ClassSearchItem(m.Id, m.Name, m.ClassType, m.ParentModelName, description, snippet);
+            })
             .ToList();
 
-        return new ClassListResult(total, 0, page.Count, page);
+        return new ClassSearchResult(total, page.Count, page);
+    }
+
+    // The class's one-line description plus a short plain-text snippet of its Documentation(info) HTML, so
+    // a search hit conveys what the class is for. Uses the cached parse tree; empty parts come back null.
+    private static (string? Description, string? Snippet) DescriptionAndSnippet(ModelNode node)
+    {
+        var tree = node.Definition.EnsureParsed();
+        if (tree is null)
+            return (null, null);
+
+        var description = ClassInterfaceExtractor.Extract(tree).Description;
+        var (info, _) = DocumentationExtractor.Extract(tree);
+        return (Trimmed(description), Snippet(info));
+    }
+
+    private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string? Snippet(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return null;
+        var text = System.Net.WebUtility.HtmlDecode(Regex.Replace(html, "<[^>]+>", " "));
+        text = Regex.Replace(text, @"\s+", " ");
+        text = Regex.Replace(text, @"\s+([.,;:!?])", "$1").Trim(); // no space before punctuation
+        if (text.Length == 0)
+            return null;
+        return text.Length > 200 ? text[..200].TrimEnd() + "…" : text;
     }
 
     [McpServerTool(Name = "get_package_tree")]
