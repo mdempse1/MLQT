@@ -43,7 +43,9 @@ internal static class ConnectorCompatibility
 
             var typeNode = TypeResolver.Resolve(libraries, member.OwnerId, member.Element.Type, member.OwnerImports);
             if (typeNode is null)
-                return new PortResolution(null, null, $"could not resolve the type of '{segments[i]}' in '{portRef}'");
+                return new PortResolution(null, null,
+                    $"the type '{member.Element.Type}' of '{segments[i]}' does not resolve to a loaded class — " +
+                    "check the name or load its library (e.g. the Modelica Standard Library)");
 
             if (i == segments.Length - 1)
                 return new PortResolution(typeNode, null, null);

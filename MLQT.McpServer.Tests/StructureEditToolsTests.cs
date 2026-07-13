@@ -313,6 +313,44 @@ public class StructureEditToolsTests
         Assert.Contains("nope", err.Error);
     }
 
+    // Regression: a class with a trailing class annotation and no equation section. The new equation
+    // section must be inserted BEFORE the annotation (the grammar requires it to be last), otherwise the
+    // result does not parse. Also verifies the unresolved-type note is actionable (mentions loading a library).
+    [Fact]
+    public async Task AddConnection_NoEquationSection_BeforeTrailingAnnotation_Parses()
+    {
+        const string pkg =
+            """
+            within;
+            package MyLib "test library"
+              model Class1 "test class"
+              Modelica.Blocks.Continuous.Integrator int(k=2) "an integrator";
+              Modelica.Blocks.Interfaces.RealInput u;
+            annotation (Documentation(info="does something"));
+             end Class1;
+            end MyLib;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new StructureEditTools(host.Libraries, host.Resources, host.Session);
+
+        // MSL is not loaded, so the port types cannot be resolved — the connection is still added.
+        var res = ToolAssert.Ok<StructureEditResult>(await tools.AddConnection("MyLib.Class1", "u", "int.u"));
+        Assert.True(res.Changed);
+
+        var src = host.Libraries.GetModelById("MyLib.Class1")!.Definition.ModelicaCode!;
+        Assert.Contains("equation", src);
+        Assert.Contains("connect(u, int.u);", src);
+        // The equation section precedes the class annotation (which stays last).
+        Assert.True(src.IndexOf("connect(u, int.u);", StringComparison.Ordinal)
+                    < src.IndexOf("annotation (Documentation", StringComparison.Ordinal));
+        // The note tells the LLM what to do: load the library that defines the unresolved type.
+        Assert.NotNull(res.Note);
+        Assert.Contains("load its library", res.Note);
+        Assert.Contains("Modelica.Blocks.Continuous.Integrator", res.Note);
+    }
+
     [Fact]
     public async Task Batch_BuildsModel_Atomically()
     {

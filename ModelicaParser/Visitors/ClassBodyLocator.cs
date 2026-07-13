@@ -27,6 +27,7 @@ public static class ClassBodyLocator
         int? firstPublicElement = null;
         int? lastEquationEnd = null;
         int? lastAlgorithmEnd = null;
+        int? trailingAnnotationStart = null;
         var components = new List<ClassBodyComponent>();
         var connections = new List<ClassBodyConnection>();
 
@@ -65,16 +66,28 @@ public static class ClassBodyLocator
                     if (alg.Stop is not null)
                         lastAlgorithmEnd = alg.Stop.StopIndex + 1;
                     break;
+
+                // The trailing class annotation is a direct child of composition after the first
+                // element_list; a leading annotation appears before it (and the external-clause
+                // annotation is nested, not a direct child).
+                case modelicaParser.AnnotationContext ann when sawFirstList:
+                    trailingAnnotationStart = ann.Start.StartIndex;
+                    break;
             }
         }
 
+        // New elements and new equation/algorithm sections must be inserted before the class annotation,
+        // which the grammar requires to be the last thing in the composition. When one is present, the
+        // insertion boundary is its start, not the 'end' keyword (inserting after it would not parse).
+        var insertBoundary = trailingAnnotationStart is int annStart && annStart < bodyEnd ? annStart : bodyEnd;
+
         return new ClassBodyLayout(
             Found: true,
-            PublicAppendOffset: publicListEnd ?? bodyEnd,
+            PublicAppendOffset: publicListEnd ?? insertBoundary,
             FirstPublicElementOffset: firstPublicElement,
             EquationAppendOffset: lastEquationEnd,
             AlgorithmAppendOffset: lastAlgorithmEnd,
-            BodyEndOffset: bodyEnd,
+            BodyEndOffset: insertBoundary,
             Indent: indent,
             Components: components,
             Connections: connections);

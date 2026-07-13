@@ -329,7 +329,7 @@ public sealed class StructureEditTools
             return new ToolError($"Port '{port}': {res.Error}");
         if (res.Note is not null)
         {
-            notes.Add($"Note: {res.Note} — connector compatibility not verified.");
+            notes.Add($"Note: {res.Note}; connector compatibility for port '{port}' was not verified.");
             return null;
         }
         if (res.Connector is { } c && c.ClassType != "connector")
