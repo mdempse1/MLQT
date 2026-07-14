@@ -23,7 +23,7 @@ Modelica has several kinds of classes, each with a specific purpose. MLQT shows 
 | **record** | A data container with named fields but no equations. | Leaf nodes in the tree. |
 | **connector** | Defines an interface for connecting components (e.g., electrical pin, fluid port). | Leaf nodes. Important for connection analysis. |
 | **type** | A type alias or constrained type (e.g., `type Voltage = Real(unit="V")`). | Leaf nodes. |
-| **operator record** | A record with operator overloading. | Less common. Leaf nodes. |
+| **class** | The generic, unrestricted class kind (used when no more specific keyword applies). | Less common. |
 
 ## Package Structure
 

@@ -161,7 +161,7 @@ The dialog has the following fields and sections:
 |-------|-------------|
 | **Name** | A display name for the repository (editable) |
 | **VCS Type** | The detected version control type — Git, SVN, or Local (read-only) |
-| **Local Path** | The local directory path where the repository is located (editable) |
+| **Library Path** | The local directory path where the library is located (editable) |
 
 ### Settings Sections
 
@@ -205,6 +205,9 @@ Use the toggle button in the left panel toolbar to switch between:
 - [Settings Reference](settings-reference.md) — All settings explained, formatting rules implications, and where settings are stored
 - [UI Customization](ui-customization.md) — Themes, custom colors, and syntax highlighting
 - [External Tool Integration](external-tools.md) — Configuring Dymola and OpenModelica for model checking
+
+### Automation
+- [MCP Server (AI Agent Access)](mcp-server.md) — Let an AI agent read, author, check and format Modelica code through MLQT's Model Context Protocol server
 
 ### Reference
 - [Modelica Concepts](modelica-concepts.md) — Brief primer on Modelica language concepts relevant to MLQT

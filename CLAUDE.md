@@ -260,6 +260,7 @@ User-facing documentation is in `Documentation/`:
 | `file-monitoring.md` | Change detection, debouncing, refresh button |
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
+| `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
 | `troubleshooting.md` | Common issues, FAQ |
 
 ## Documentation Maintenance

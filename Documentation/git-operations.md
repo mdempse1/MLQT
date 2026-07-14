@@ -86,12 +86,9 @@ If the repository setting **Require an issue number as part of the commit messag
 
 The dialog shows all files with uncommitted changes. Each file has a checkbox — you can select which files to include in this commit. The commit button shows the count of selected files (e.g., "Commit (5 files)").
 
-### Out-of-Date Handling
+### Commits Are Local
 
-If your working copy is behind the remote (someone else pushed since your last update), MLQT automatically:
-1. Detects the out-of-date condition
-2. Updates your working copy
-3. Retries the commit
+A Git commit is a purely local operation — it records your staged changes in the local repository and always succeeds regardless of what has happened on the remote. There is no "out-of-date" check when committing (unlike SVN). If your branch has fallen behind the remote, that only matters when you **push**: fetch/pull (and rebase or merge if needed) to bring your branch up to date, then push. See [Pushing](#pushing).
 
 ### After Committing
 
