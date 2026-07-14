@@ -79,6 +79,28 @@ public class EditToolsTests
     }
 
     [Fact]
+    public async Task RenameClass_WithCrlfFile_RewritesCorrectly()
+    {
+        using var host = new TestHost();
+        // A file on disk with explicit CRLF line endings. Rename reads the file and applies parse-tree
+        // offsets (which index LF-normalized text); without normalizing the read content the rewrite is
+        // shifted by the stripped '\r' characters and the result fails to parse.
+        var crlf = "within;\r\npackage P \"p\"\r\n  model Base \"b\"\r\n    Real x;\r\n  end Base;\r\n" +
+                   "  model Middle \"m\"\r\n    Base base1 \"a base\";\r\n  end Middle;\r\nend P;\r\n";
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = crlf });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var deps = new DependencyTools(host.Libraries, host.Impact, host.Resources, host.Session);
+        await deps.AnalyzeDependencies();
+        var edit = new EditTools(host.Libraries, host.Resources, host.Session);
+
+        var res = ToolAssert.Ok<RenameClassResult>(await edit.RenameClass("P.Base", "NewBase"));
+        Assert.True(res.Changed);
+        Assert.NotNull(host.Libraries.GetModelById("P.NewBase"));
+        Assert.Null(host.Libraries.GetModelById("P.Base"));
+        Assert.Contains("NewBase base1", host.Libraries.GetModelById("P.Middle")!.Definition.ModelicaCode);
+    }
+
+    [Fact]
     public async Task RenameClass_UpdatesDeclarationReferencesAndDependencies()
     {
         using var host = new TestHost();

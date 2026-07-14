@@ -48,6 +48,16 @@ public class BehaviorExtractorTests
     }
 
     [Fact]
+    public void HandlesCrlfLineEndings()
+    {
+        // Explicit CRLF: the parser normalizes line endings internally, so the sliced text must too,
+        // otherwise every equation slice is shifted by the stripped '\r' characters.
+        const string code = "model M\r\n  Real x;\r\n  RealInput u;\r\nequation\r\n  x = 2*u;\r\nend M;";
+        var b = BehaviorExtractor.ExtractFromCode(code);
+        Assert.Contains(b.Equations, e => e.Text == "x = 2*u");
+    }
+
+    [Fact]
     public void NoBehavior_IsEmpty()
     {
         var b = BehaviorExtractor.ExtractFromCode("model M\n  Real x;\nend M;");

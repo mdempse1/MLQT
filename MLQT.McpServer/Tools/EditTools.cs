@@ -455,7 +455,9 @@ public sealed class EditTools
         var requalCount = 0;
         foreach (var path in refPaths)
         {
-            var text = await File.ReadAllTextAsync(path);
+            // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
+            // so span-based reference edits align even when the file on disk uses CRLF.
+            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -564,7 +566,9 @@ public sealed class EditTools
         var requalCount = 0;
         foreach (var path in refPaths)
         {
-            var text = await File.ReadAllTextAsync(path);
+            // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
+            // so span-based reference edits align even when the file on disk uses CRLF.
+            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -655,7 +659,9 @@ public sealed class EditTools
         var requalCount = 0;
         foreach (var path in refPaths)
         {
-            var text = await File.ReadAllTextAsync(path);
+            // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
+            // so span-based reference edits align even when the file on disk uses CRLF.
+            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -998,7 +1004,9 @@ public sealed class EditTools
         var planned = new List<(string path, string newContent, int count)>();
         foreach (var path in paths)
         {
-            var text = await File.ReadAllTextAsync(path);
+            // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
+            // so span-based reference edits align even when the file on disk uses CRLF.
+            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
 
             var locator = new ReferenceLocator(graph, new[] { classId });

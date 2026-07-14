@@ -13,6 +13,10 @@ public static class BehaviorExtractor
 {
     public static ClassBehavior ExtractFromCode(string classCode)
     {
+        // Parse normalizes line endings internally, so the parse-tree offsets index LF-normalized text.
+        // Normalize here too, so the source we slice (below) uses the same offsets — otherwise CRLF input
+        // shifts every slice by the number of stripped '\r' characters.
+        classCode = ModelicaParserHelper.NormalizeLineEndings(classCode);
         var composition = ModelicaParserHelper.Parse(classCode)
             ?.class_definition()?.FirstOrDefault()
             ?.class_specifier()?.long_class_specifier()?.composition();
