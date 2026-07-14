@@ -44,10 +44,10 @@ The analysis is transitive: if Model A depends on Model B, and Model B depends o
 
 ### Edges
 
-Directed edges (arrows) in the graph show the direction of dependency:
+Directed edges (arrows) in the graph show the direction of impact:
 
-- An edge from Model A to Model B means "Model A depends on Model B"
-- Following the arrows from an impacted (orange) node leads back toward the selected (green) node(s) that caused the impact
+- An edge from Model A to Model B means "Model B depends on Model A" — so a change to A affects B
+- Arrows point **from** the selected (green) node(s) outward **toward** the impacted (orange) nodes that would be affected by a change
 
 ## Interacting with the Graph
 
@@ -79,7 +79,7 @@ The **Layout** dropdown in the top-right area of the graph lets you switch betwe
 | **Hierarchy (Left→Right)** | Same as above but oriented horizontally. |
 | **Tree** | Breadth-first tree layout. Good for small to medium graphs. |
 | **KLay** | KLay layered layout. Produces clean hierarchical arrangements. |
-| **Concentric** | Arranges nodes in concentric circles with selected models in the center. |
+| **Concentric** | Arranges nodes in concentric circles with the most-connected nodes (highest degree) in the center. |
 | **fCoSE (Force-Directed)** | Force-directed layout that tries to minimize edge crossings. Good for seeing clusters. |
 | **Spread** | Spreads nodes evenly across the available space. Good for dense graphs. |
 | **CoSE** | Compound Spring Embedder — another force-directed layout. This is the default. |

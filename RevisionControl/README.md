@@ -299,7 +299,7 @@ public class HgRevisionControlSystem : IRevisionControlSystem
     public bool IsValidRepository(string repositoryPath) { /* ... */ }
     public string? GetCurrentRevision(string repositoryPath) { /* ... */ }
     public bool CheckoutRevision(string repositoryPath, string revision, string outputPath) { /* ... */ }
-    // ... implement all 19 interface methods
+    // ... implement all IRevisionControlSystem members (see the interface for the full set)
 }
 ```
 

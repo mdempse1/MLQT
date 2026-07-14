@@ -397,6 +397,13 @@
                 <ChildContent>Setup file system monitors</ChildContent>
             </MudListItem>
         </MudList>
+        @if (_startupHadLoadWarning)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                A repository could not be loaded (see the notification) — its path may have moved or been
+                deleted. Continue to the app and fix or remove it in Settings &gt; Repositories.
+            </MudAlert>
+        }
         @if (_step3deferred || _step4deferred || _step5deferred)
         {
             <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
@@ -404,6 +411,13 @@
                            OnClick="RunAllDeferredFromDialogAsync" Disabled="_runningDeferredStep">Run All</MudButton>
                 <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Default" Disabled="_runningDeferredStep"
                            OnClick="CloseStartupDialog">Close</MudButton>
+            </MudStack>
+        }
+        else if (_startupHadLoadWarning)
+        {
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                <MudButton Variant="Variant.Filled" Size="Size.Small" Color="Color.Primary"
+                           OnClick="CloseStartupDialog">Continue to app</MudButton>
             </MudStack>
         }
     </DialogContent>
@@ -458,6 +472,9 @@
     private int _pendingChangesCount = 0;
     private bool _isRefreshing = false;
     private bool _startupProcessRunning = false;
+    // Set when one or more repositories failed to load, so the startup dialog offers a "Continue to
+    // app" escape hatch (the user needs to reach Settings to fix/remove the offending repository).
+    private bool _startupHadLoadWarning = false;
     private bool _fullFormatRunning = false;
     private string _fullFormatStatusMessage = "Applying code formatting rules, please wait...";
     private static readonly DialogOptions _nonClosableDialogOptions = new() { CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -615,6 +632,7 @@
 
             // Show startup progress dialog now that project selection is done
             _startupProcessRunning = true;
+            _startupHadLoadWarning = false;
             _step1running = true;
             _step1color = Color.Success;
             await InvokeAsync(StateHasChanged);
@@ -625,6 +643,18 @@
             var project = RepositoryService.GetActiveProject();
             _currentProjectName = project!.Name;
             LogProcessEnd("MainLayout", "Loading repositories and libraries");
+
+            // Surface any repositories that could not be loaded (e.g. their path no longer exists) as a
+            // notification, and reveal the "Continue to app" escape hatch immediately so the user isn't
+            // trapped behind the modal while the rest of the (possibly long) startup continues.
+            var loadWarnings = RepositoryService.LastLoadWarnings;
+            if (loadWarnings.Count > 0)
+            {
+                _startupHadLoadWarning = true;
+                foreach (var warning in loadWarnings)
+                    await InvokeAsync(() => Snackbar.Add(warning, Severity.Warning));
+                await InvokeAsync(StateHasChanged);
+            }
 
             // Compact the LOH after loading — ExtractModels creates a full ANTLR parse tree
             // per file (all files in parallel) which fragments the LOH significantly.
@@ -1843,6 +1873,7 @@
     private void CloseStartupDialog()
     {
         _startupProcessRunning = false;
+        _startupHadLoadWarning = false;
         _step3deferred = false;
         _step4deferred = false;
         _step5deferred = false;

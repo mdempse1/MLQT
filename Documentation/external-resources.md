@@ -132,7 +132,7 @@ Below the resource header, a table lists every model that references the selecte
 | Column | Description |
 |--------|-------------|
 | **Model** | The fully qualified Modelica path of the model that references this resource |
-| **Reference Type** | How the model references the resource — `LoadResource`, `UriReference`, `LoadSelector`, `ExternalInclude`, `ExternalLibrary`, `ExternalIncludeDirectory`, `ExternalLibraryDirectory`, or `ExternalSourceDirectory` |
+| **Reference Type** | How the model references the resource — `LoadResource`, `LoadResourceParameter` (a parameter whose default value is a `loadResource()` call), `UriReference`, `LoadSelector`, `ExternalInclude`, `ExternalLibrary`, `ExternalIncludeDirectory`, `ExternalLibraryDirectory`, or `ExternalSourceDirectory` |
 
 Click on a row in this table to navigate to that model — the Code Review tab will show the model's code, and the left panel tree will scroll to and highlight the model.
 

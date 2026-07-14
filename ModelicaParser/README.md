@@ -42,7 +42,7 @@ All analysis is implemented as visitors over the parse tree:
 ### Basic Parsing
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Helpers;
 
 // Parse from string
 var parseTree = ModelicaParserHelper.Parse(@"
@@ -65,7 +65,8 @@ var (tree, tokenStream) = ModelicaParserHelper.ParseWithTokens(modelicaCode);
 ### Extracting Model Definitions
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Helpers;
+using ModelicaParser.DataTypes;
 
 // Extract all models from source code
 var models = ModelicaParserHelper.ExtractModels(modelicaCode);
@@ -96,7 +97,8 @@ The `ModelInfo` class provides:
 ### Code Formatting with ModelicaRenderer
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Helpers;
+using ModelicaParser.Visitors;
 
 var (parseTree, tokenStream) = ModelicaParserHelper.ParseWithTokens(modelicaCode);
 
@@ -130,7 +132,8 @@ renderer.Visit(parseTree);
 ### Icon Extraction and SVG Rendering
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Visitors;
+using ModelicaParser.Icons;
 
 string modelicaCode = @"
 model MyModel
@@ -162,7 +165,8 @@ Supported graphics primitives: `Rectangle`, `Ellipse`, `Line`, `Polygon`, `Text`
 ### External Resource Extraction
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Helpers;
+using ModelicaParser.Visitors;
 
 var parseTree = ModelicaParserHelper.Parse(modelicaCode);
 var extractor = new ExternalResourceExtractor();
@@ -196,12 +200,15 @@ Detected reference types:
 All style rules extend `VisitorWithModelNameTracking` and populate a `RuleViolations` list:
 
 ```csharp
-using ModelicaParser;
+using ModelicaParser.Helpers;
+using ModelicaParser.StyleRules;
 
 var parseTree = ModelicaParserHelper.Parse(modelicaCode);
 
-// Check that annotations are at the end of class definitions
-var rule = new AnnotationAtEnd(basePackage: "MyLibrary");
+// Check that classes carry the required annotations (Documentation info/revisions, Icon)
+var rule = new CheckClassAnnotations(
+    checkDocumentationInfo: true, checkDocumentationRevisions: true, checkIcon: true,
+    basePackage: "MyLibrary");
 rule.Visit(parseTree);
 
 foreach (var violation in rule.RuleViolations)
@@ -215,13 +222,13 @@ All style rule visitors extend `VisitorWithModelNameTracking`, which provides mo
 - Style rule visitors only check the **outermost class definition** in the parse tree.
 - Nested class definitions are skipped when the depth exceeds 1, because each nested class has its own `ModelNode` in the graph and is checked independently.
 - This prevents duplicate violations when a parent package's code includes nested class source code.
-- The `_classDepth` counter tracks nesting level; only depth == 1 (the first `class_definition` encountered) is visited. Deeper definitions return immediately without invoking rule logic.
+- The nesting-level counter is used to skip deeper class definitions (depth > 1) — **except** non-standalone classes (those with a `replaceable`/`redeclare`/`inner`/`outer` prefix), which are stored in their parent and so are still visited in place.
 
 Available style rules:
 
 | Rule | Description |
 |------|-------------|
-| `AnnotationAtEnd` | Class annotation must be the last element |
+| `CheckClassAnnotations` | Classes must have the required annotations (Documentation info/revisions, Icon) |
 | `CheckClassDescriptionStrings` | Classes must have description strings |
 | `ExtendsClausesAtTop` | Extends clauses should appear at the top |
 | `ImportStatementsFirst` | Import statements should come first |

@@ -187,7 +187,7 @@ end TestModel;
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_ReturnsTopLevelModels()
+    public async Task GetTopLevelModelsAsync_ReturnsTopLevelModels()
     {
         var service = new LibraryDataService();
         await service.AddLibraryFromFileAsync("test.mo", @"
@@ -196,14 +196,14 @@ package TestPackage
 end TestPackage;
 ");
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
         Assert.Single(items);
-        Assert.Equal("TestPackage", items.First().Value?.Name);
+        Assert.Equal("TestPackage", items.First().Name);
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_ReturnsChildModels()
+    public async Task GetChildModelsAsync_ReturnsChildModels()
     {
         var service = new LibraryDataService();
         await service.AddLibraryFromFileAsync("test.mo", @"
@@ -212,20 +212,20 @@ package TestPackage
 end TestPackage;
 ");
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Single(children);
-        Assert.Equal("InnerModel", children.First().Value?.Name);
+        Assert.Equal("InnerModel", children.First().Name);
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_WithNullParent_ReturnsTopLevel()
+    public async Task GetChildModelsAsync_WithNullParent_ReturnsTopLevel()
     {
         var service = new LibraryDataService();
         await service.AddLibraryFromFileAsync("test.mo", "model Test end Test;");
 
-        var items = await service.GetChildTreeItemsAsync(null);
+        var items = await service.GetChildModelsAsync(null);
 
         Assert.Single(items);
     }
@@ -449,14 +449,14 @@ end TestPackage;
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_WithUnknownParent_ReturnsEmpty()
+    public async Task GetChildModelsAsync_WithUnknownParent_ReturnsEmpty()
     {
         var service = new LibraryDataService();
         await service.AddLibraryFromFileAsync("test.mo", "model Test end Test;");
 
         // Use a model node not part of any library
         var orphanModel = new ModelicaGraph.DataTypes.ModelNode("Orphan", "Orphan");
-        var items = await service.GetChildTreeItemsAsync(orphanModel);
+        var items = await service.GetChildModelsAsync(orphanModel);
 
         Assert.Empty(items);
     }
@@ -560,7 +560,7 @@ end TestPackage;
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_WithPackageOrder_SortsChildren()
+    public async Task GetChildModelsAsync_WithPackageOrder_SortsChildren()
     {
         var service = new LibraryDataService();
         var modelicaCode = @"
@@ -580,11 +580,11 @@ end TestPackage;
             packageNode.PackageOrder = new[] { "ModelC", "ModelB", "ModelA" };
         }
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Equal(3, children.Count);
-        Assert.Equal("ModelC", children.ElementAt(0).Value?.Name);
+        Assert.Equal("ModelC", children.ElementAt(0).Name);
     }
 
     // ============================================================================
@@ -592,7 +592,7 @@ end TestPackage;
     // ============================================================================
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_WithNestedChildrenOrder_SortsBySourceOrder()
+    public async Task GetChildModelsAsync_WithNestedChildrenOrder_SortsBySourceOrder()
     {
         var service = new LibraryDataService();
         var modelicaCode = @"
@@ -613,17 +613,17 @@ end TestPackage;
             packageNode.NestedChildrenOrder = new[] { "ModelC", "ModelA", "ModelB" };
         }
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Equal(3, children.Count);
-        Assert.Equal("ModelC", children.ElementAt(0).Value?.Name);
-        Assert.Equal("ModelA", children.ElementAt(1).Value?.Name);
-        Assert.Equal("ModelB", children.ElementAt(2).Value?.Name);
+        Assert.Equal("ModelC", children.ElementAt(0).Name);
+        Assert.Equal("ModelA", children.ElementAt(1).Name);
+        Assert.Equal("ModelB", children.ElementAt(2).Name);
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_PartialPackageOrder_RemainingAppended()
+    public async Task GetChildModelsAsync_PartialPackageOrder_RemainingAppended()
     {
         var service = new LibraryDataService();
         var modelicaCode = @"
@@ -643,15 +643,15 @@ end TestPackage;
             packageNode.PackageOrder = new[] { "ModelC" };
         }
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Equal(3, children.Count);
-        Assert.Equal("ModelC", children.ElementAt(0).Value?.Name);
+        Assert.Equal("ModelC", children.ElementAt(0).Name);
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_PackageOrderWithNonExistentNames_Ignored()
+    public async Task GetChildModelsAsync_PackageOrderWithNonExistentNames_Ignored()
     {
         var service = new LibraryDataService();
         var modelicaCode = @"
@@ -669,16 +669,16 @@ end TestPackage;
             packageNode.PackageOrder = new[] { "NonExistent", "ModelB", "ModelA" };
         }
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Equal(2, children.Count);
-        Assert.Equal("ModelB", children.ElementAt(0).Value?.Name);
-        Assert.Equal("ModelA", children.ElementAt(1).Value?.Name);
+        Assert.Equal("ModelB", children.ElementAt(0).Name);
+        Assert.Equal("ModelA", children.ElementAt(1).Name);
     }
 
     [Fact]
-    public async Task GetChildTreeItemsAsync_NoOrder_ReturnsChildrenUnsorted()
+    public async Task GetChildModelsAsync_NoOrder_ReturnsChildrenUnsorted()
     {
         var service = new LibraryDataService();
         var modelicaCode = @"
@@ -697,8 +697,8 @@ end TestPackage;
             packageNode.NestedChildrenOrder = null;
         }
 
-        var topLevel = (await service.GetTopLevelTreeItemsAsync()).First();
-        var children = await service.GetChildTreeItemsAsync(topLevel.Value);
+        var topLevel = (await service.GetTopLevelModelsAsync()).First();
+        var children = await service.GetChildModelsAsync(topLevel);
 
         Assert.Equal(2, children.Count);
     }
@@ -708,7 +708,7 @@ end TestPackage;
     // ============================================================================
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_FunctionType_HasFunctionsIcon()
+    public async Task GetTopLevelModelsAsync_FunctionType_HasFunctionClassType()
     {
         var service = new LibraryDataService();
         var code = """
@@ -721,70 +721,70 @@ end TestPackage;
             """;
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
         var item = items.First();
-        Assert.Equal(MudBlazor.Icons.Material.Filled.Functions, item.Icon);
+        Assert.Equal("function", item.ClassType);
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_BlockType_HasViewModuleIcon()
+    public async Task GetTopLevelModelsAsync_BlockType_HasBlockClassType()
     {
         var service = new LibraryDataService();
         var code = "block TestBlock Real x; end TestBlock;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(MudBlazor.Icons.Material.Filled.ViewModule, items.First().Icon);
+        Assert.Equal("block", items.First().ClassType);
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_ConnectorType_HasPowerIcon()
+    public async Task GetTopLevelModelsAsync_ConnectorType_HasConnectorClassType()
     {
         var service = new LibraryDataService();
         var code = "connector TestConnector Real x; end TestConnector;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(MudBlazor.Icons.Material.Filled.Power, items.First().Icon);
+        Assert.Equal("connector", items.First().ClassType);
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_RecordType_HasDataObjectIcon()
+    public async Task GetTopLevelModelsAsync_RecordType_HasRecordClassType()
     {
         var service = new LibraryDataService();
         var code = "record TestRecord Real x; end TestRecord;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(MudBlazor.Icons.Material.Filled.DataObject, items.First().Icon);
+        Assert.Equal("record", items.First().ClassType);
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_PackageType_HasFolderOpenIcon()
+    public async Task GetTopLevelModelsAsync_PackageType_HasPackageClassType()
     {
         var service = new LibraryDataService();
         var code = "package TestPkg end TestPkg;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(MudBlazor.Icons.Material.Filled.FolderOpen, items.First().Icon);
+        Assert.Equal("package", items.First().ClassType);
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_ModelType_HasModelTrainingIcon()
+    public async Task GetTopLevelModelsAsync_ModelType_HasModelClassType()
     {
         var service = new LibraryDataService();
         var code = "model TestModel Real x; end TestModel;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(MudBlazor.Icons.Material.Filled.ModelTraining, items.First().Icon);
+        Assert.Equal("model", items.First().ClassType);
     }
 
     // ============================================================================
@@ -792,7 +792,7 @@ end TestPackage;
     // ============================================================================
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_PackageWithChildren_IsExpandable()
+    public async Task GetTopLevelModelsAsync_PackageWithChildren_IsExpandable()
     {
         var service = new LibraryDataService();
         var code = @"
@@ -802,21 +802,21 @@ end TestPackage;
 ";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.True(items.First().Expandable);
+        Assert.True(service.ModelHasChildren(items.First().Id));
     }
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_LeafModel_NotExpandable()
+    public async Task GetTopLevelModelsAsync_LeafModel_NotExpandable()
     {
         var service = new LibraryDataService();
         var code = "model LeafModel Real x; end LeafModel;";
         await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.False(items.First().Expandable);
+        Assert.False(service.ModelHasChildren(items.First().Id));
     }
 
     // ============================================================================
@@ -824,15 +824,15 @@ end TestPackage;
     // ============================================================================
 
     [Fact]
-    public async Task GetTopLevelTreeItemsAsync_SetsLibraryIdOnModelNode()
+    public async Task GetTopLevelModelsAsync_SetsLibraryIdOnModelNode()
     {
         var service = new LibraryDataService();
         var code = "model TestModel Real x; end TestModel;";
         var library = await service.AddLibraryFromFileAsync("test.mo", code);
 
-        var items = await service.GetTopLevelTreeItemsAsync();
+        var items = await service.GetTopLevelModelsAsync();
 
-        Assert.Equal(library.Id, items.First().Value?.LibraryId);
+        Assert.Equal(library.Id, items.First().LibraryId);
     }
 
     // ============================================================================

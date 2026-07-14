@@ -11,8 +11,10 @@ Formatting behavior is controlled by the **Apply formatting rules** toggle in ea
 | **One of each section** | Ensures each section type (declarations, equations, algorithms) appears at most once |
 | **Import statements first** | Moves import statements to the top of the model |
 | **Components before classes** | Sorts component declarations before nested class definitions |
-| **Initial equation/algorithm first** | Positions initial equation/algorithm blocks at the start |
-| **Initial equation/algorithm last** | Positions initial equation/algorithm blocks at the end |
+
+These three settings are the only ones that change layout during formatting. When **One of each section** is enabled the formatter always emits initial-equation and initial-algorithm blocks before the regular sections.
+
+> **Note:** The *Initial equation/algorithm first* and *Initial equation/algorithm last* options are **style-checking rules**, not formatting transforms — they only detect and report violations (see [Settings Reference](settings-reference.md)). Enabling them does not cause the formatter to move initial blocks.
 
 If **Apply formatting rules** is disabled for a repository, MLQT will not modify any files in that repository during formatting operations.
 

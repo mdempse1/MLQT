@@ -40,6 +40,7 @@ These interfaces are implemented by the MAUI host project:
 |-----------|---------|
 | `ISettingsService` | Persistent key-value settings storage |
 | `IFilePickerService` | File and folder selection dialogs |
+| `IPowerManagementService` | Prevents system sleep during long operations |
 
 ## Usage
 
@@ -59,8 +60,8 @@ DirectedGraph graph = libraryDataService.CombinedGraph;
 ModelNode? model = libraryDataService.GetModelById("MyLibrary.MyModel");
 
 // Get tree data for the UI
-var topItems = await libraryDataService.GetTopLevelTreeItemsAsync();
-var children = await libraryDataService.GetChildTreeItemsAsync(parentNode);
+var topItems = await libraryDataService.GetTopLevelModelsAsync();
+var children = await libraryDataService.GetChildModelsAsync(parentNode);
 
 // Reload a changed file
 List<string> updatedModelIds = await libraryDataService.ReloadFileAsync("Models.mo");
@@ -356,8 +357,11 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ## Dependencies
 
 **NuGet Packages:**
-- MudBlazor 9.0.0
 - NLog 6.1.0
+
+This project is UI-agnostic (no Blazor/MudBlazor dependency). The library tree data is returned as
+`ModelNode` lists (`GetTopLevelModelsAsync` / `GetChildModelsAsync` / `ModelHasChildren`); the UI layer
+(`MLQT.Shared`) wraps them into MudBlazor `TreeItemData`.
 
 **Project References:**
 - DymolaInterface

@@ -63,10 +63,8 @@ The factory reads configuration from the `DymolaSettings` class stored in `Setti
 public class DymolaSettings
 {
     public string DymolaPath { get; set; } = string.Empty;
-    public string HostAddress { get; set; } = "127.0.0.1";
+    public string HostAddress { get; } = "127.0.0.1";   // get-only
     public int PortNumber { get; set; } = 8082;
-    public string CommandLineArguments { get; set; } = string.Empty;
-    public string CheckModelCommand { get; set; } = "checkModel(\"<MODELNAME>\");";
 }
 ```
 

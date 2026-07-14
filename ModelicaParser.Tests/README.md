@@ -1,10 +1,10 @@
 # ModelicaParser.Tests
 
-This project contains comprehensive unit tests for the ModelicaParser library, with a focus on testing the `ModelicaSyntaxVisitor` class.
+This project contains comprehensive unit tests for the ModelicaParser library, with a focus on testing the `ModelicaRenderer` class.
 
 ## Test Structure
 
-### ModelicaSyntaxVisitorTests
+### ModelicaRendererTests
 
 The main test class contains tests organized into the following categories:
 
@@ -53,7 +53,7 @@ dotnet test
 
 Run specific test category:
 ```bash
-dotnet test --filter "FullyQualifiedName~ModelicaSyntaxVisitorTests"
+dotnet test --filter "FullyQualifiedName~ModelicaRendererTests"
 ```
 
 Run with detailed output:
@@ -67,7 +67,7 @@ dotnet test --logger "console;verbosity=detailed"
 
 The main helper method that:
 1. Parses the input Modelica code (wrapped in a model/function/block for valid syntax)
-2. Visits the parse tree with ModelicaSyntaxVisitor
+2. Visits the parse tree with ModelicaRenderer
 3. Removes trailing empty lines from the output
 4. Checks a specific line index against the expected formatted output
 

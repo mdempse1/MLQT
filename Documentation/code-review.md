@@ -41,7 +41,7 @@ When you select a model whose file has uncommitted VCS changes (Git or SVN), the
 The diff view:
 - Fetches the file content at HEAD (the last committed version)
 - Extracts the specific model's code from both versions
-- Renders both through the Modelica formatter for consistent display
+- Compares the raw Modelica source of each version (syntax highlighting is applied for readability, but the text is not run through the formatter)
 - Displays added lines, removed lines, and unchanged context
 
 ![Screenshot: The Code Review tab in side-by-side diff mode showing a model with changes. The left side should show the HEAD version and the right side the working copy, with added lines highlighted in green and removed lines in red.](Images/code-review-3.png)
@@ -50,6 +50,7 @@ The diff view:
 
 | Button | Icon | Description |
 |--------|------|-------------|
+| **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the issues table with the results. Always available. |
 | **Exclude from Formatting** | FormatClear | Toggles formatting exclusion for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes, the file is reverted first to undo any prior formatting. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. |
 | **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, etc.) can be verbose — hiding them lets you focus on the functional code. This toggle also affects the diff view. |
 | **Check using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools. |
@@ -113,7 +114,7 @@ The issues table provides two filtering mechanisms:
 
 - **Click a row** to navigate to the model containing that issue. The code viewer updates to show that model's code.
 - If the issue has **additional details**, clicking the row opens an **Issue Details dialog** showing the full summary, severity, line number, and detailed description.
-- In the Issue Details dialog, click **Resolve** to remove the issue from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the issue.
+- In the Issue Details dialog, click **Resolve** to remove the issue from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the issue. For a spelling violation the dialog also offers **Add to Dictionary**, which adds the flagged word to your custom dictionary so it is no longer reported.
 
 ![Screenshot: The Issue Details dialog showing an issue with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 

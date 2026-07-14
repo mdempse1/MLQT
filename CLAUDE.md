@@ -15,6 +15,8 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **MLQT.Shared** - Shared Blazor components, pages, layouts, services
 - **MLQT** - .NET MAUI application
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
+- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
+- **MLQT.McpTester** - MAUI Blazor (Windows) desktop app for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
@@ -155,7 +157,7 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 **Key subsystems:**
 - **ModelicaParserHelper** - Parsing and model extraction
 - **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules
-- **IconExtractor / IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG
+- **IconExtractor** (`Visitors/`) / **IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG
 - **ExternalResourceExtractor** (`Visitors/`) - Extract resource references from parse trees
 - **StyleRules** (`StyleRules/`) - Style rule visitors (extends `VisitorWithModelNameTracking` base class). Visitors only check the outermost class — nested class definitions are skipped because each has its own `ModelNode` and is checked independently
 - **SpellChecking** (`SpellChecking/`) - Hunspell-based spell checker, text extraction, and embedded dictionaries
@@ -174,7 +176,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 
 **Key Classes:**
 - `DirectedGraph` - Main graph structure with node/edge management
-- `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`), queries models (`GetModelsFromFile`, `GetModelByName`)
+- `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
 - `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule violations) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
 
@@ -202,8 +204,9 @@ External resources (data files, C libraries, images) are tracked as graph nodes:
 - **ResourceDirectoryNode** - Directories from `IncludeDirectory`, `LibraryDirectory`, `SourceDirectory` annotations
 - **ResourceEdge** - Links models to resources with metadata (RawPath, ReferenceType, ParameterName)
 
-**Reference Types:**
+**Reference Types:** (`ResourceReferenceType` enum)
 - `LoadResource` - `Modelica.Utilities.Files.loadResource()` calls
+- `LoadResourceParameter` - a parameter whose default value is a `loadResource()` call
 - `UriReference` - `modelica://` URIs in documentation/Bitmap
 - `LoadSelector` - Parameters with `loadSelector` annotation
 - `ExternalInclude/Library/IncludeDirectory/LibraryDirectory/SourceDirectory` - External function annotations
@@ -258,6 +261,7 @@ User-facing documentation is in `Documentation/`:
 | `file-monitoring.md` | Change detection, debouncing, refresh button |
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
+| `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
 | `troubleshooting.md` | Common issues, FAQ |
 
 ## Documentation Maintenance

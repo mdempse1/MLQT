@@ -31,6 +31,7 @@ MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep
 - **Code Formatting** — Auto-format Modelica source with configurable rules (section ordering, imports first, annotation placement, etc.)
 - **Dymola Integration** — Check and simulate models via Dymola's HTTP JSON-RPC interface
 - **OpenModelica Integration** — Check and simulate models via OMC's ZeroMQ interface
+- **AI Agent Access (MCP)** — A headless Model Context Protocol server exposes MLQT's Modelica capabilities as tools an AI agent (e.g. Claude) can call to read, author, check and format Modelica code; see the [MCP Server guide](Documentation/mcp-server.md)
 
 ## Project Structure
 
@@ -46,6 +47,8 @@ This repository contains the open-source components of MLQT:
 | [RevisionControl](RevisionControl/) | Unified Git and SVN interface with workspace management |
 | [DymolaInterface](DymolaInterface/) | .NET client for Dymola's HTTP JSON-RPC API |
 | [OpenModelicaInterface](OpenModelicaInterface/) | .NET client for OpenModelica Compiler (OMC) via ZeroMQ |
+| [MLQT.McpServer](MLQT.McpServer/) | Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools for AI agents; reuses the service layer without MAUI |
+| [MLQT.McpTester](MLQT.McpTester/) | Desktop app for manually testing any stdio MCP server — connect, list tools, auto-generate parameter forms, call, and view results |
 
 Each project has a README with detailed API documentation and user documentation is available in [Documentation](Documentation/) folder with a [Getting Started Guide](Documentation/getting-started.md)
 
@@ -102,6 +105,7 @@ dotnet test ModelicaParser.Tests
 dotnet test ModelicaGraph.Tests
 dotnet test RevisionControl.Tests
 dotnet test MLQT.Services.Tests
+dotnet test MLQT.McpServer.Tests
 ```
 
 ## Continuous Integration
@@ -147,6 +151,8 @@ MLQT (MAUI host)
 ```
 
 All business logic lives in service classes with interfaces, registered as singletons in dependency injection. The UI communicates with services via events — no direct coupling between components.
+
+Because the business logic is decoupled from the UI, the same service layer also backs a second, headless host — the **MCP server** (`MLQT.McpServer`), which reuses `MLQT.Services`, `ModelicaGraph`, `ModelicaParser` and `RevisionControl` to expose MLQT's capabilities to AI agents over stdio. See the [MCP Server guide](Documentation/mcp-server.md).
 
 ## Using the Libraries Independently
 
