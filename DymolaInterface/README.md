@@ -131,7 +131,7 @@ await dymola.SetVariableAsync("myVariable", 42.0);
 
 ### Process Management
 - `StartDymolaProcessAsync()` - Start Dymola process
-- `StopDymolaProcess()` - Stop Dymola process
+- `StopDymolaProcessAsync()` - Stop Dymola process
 - `IsOfflineMode()` - Check if in offline mode
 - `SetOfflineMode(bool)` - Enable/disable offline mode
 
@@ -157,8 +157,8 @@ await dymola.SetVariableAsync("myVariable", 42.0);
 - `ClearAsync(fast)` - Clear Dymola workspace
 - `SaveLogAsync(logfile)` - Save log to file
 - `GetLastResultFileNameAsync()` - Get result file name
-- `DymolaVersion()` - Get Dymola version string
-- `DymolaVersionNumber()` - Get Dymola version number
+- `DymolaVersionAsync()` - Get Dymola version string
+- `DymolaVersionNumberAsync()` - Get Dymola version number
 
 ## Enumerations
 
@@ -226,7 +226,7 @@ The `HttpClient` is thread-safe, but the Dymola instance itself may not support 
 
 ## Dependencies
 
-- **Microsoft.Extensions.DependencyInjection** (v10.0.2) - DI container for factory pattern
+- **Microsoft.Extensions.DependencyInjection** (v10.0.9) - DI container for factory pattern
 
 ## License
 

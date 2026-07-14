@@ -65,16 +65,18 @@ Console.WriteLine($"Result file: {result.ResultFile}");
 ```csharp
 using OpenModelicaInterface;
 
-// Auto-detect OpenModelica installation
-var factory = OpenModelicaInterfaceFactory.TryCreate();
-if (factory == null)
+// Auto-detect the OpenModelica installation
+var settings = OpenModelicaSettings.TryAutoDetect();
+if (settings == null)
 {
     Console.WriteLine("OpenModelica not found");
     return;
 }
 
-// Create and start interface
-using var omc = await factory.CreateAndStartAsync();
+// Create and start the interface
+var factory = new OpenModelicaInterfaceFactory();
+factory.UpdateSettings(settings);
+using var omc = await factory.GetOrCreateAsync();
 
 // Use the interface
 var version = await omc.GetVersionAsync();
@@ -94,8 +96,9 @@ var settings = new OpenModelicaSettings
     DefaultNumberOfIntervals = 1000
 };
 
-var factory = new OpenModelicaInterfaceFactory(settings);
-using var omc = await factory.CreateAndStartAsync();
+var factory = new OpenModelicaInterfaceFactory();
+factory.UpdateSettings(settings);
+using var omc = await factory.GetOrCreateAsync();
 
 // Modelica library already loaded due to AutoLoadModelicaLibrary = true
 var classes = await omc.GetClassNamesAsync();
@@ -130,7 +133,6 @@ The library automatically handles response parsing based on the expected return 
 #### Version Information
 
 - `GetVersionAsync()` - Returns OpenModelica version string (e.g., "1.26.0")
-- `GetVersionNumberAsync()` - Returns version as double (e.g., 1.26)
 
 #### Model Loading
 
@@ -248,8 +250,8 @@ if (!File.Exists(omcPath))
 Or use auto-detection:
 
 ```csharp
-var factory = OpenModelicaInterfaceFactory.TryCreate();
-if (factory == null)
+var settings = OpenModelicaSettings.TryAutoDetect();
+if (settings == null)
 {
     Console.WriteLine("Could not auto-detect OpenModelica installation");
 }
@@ -315,7 +317,7 @@ await omc2.LoadModelAsync("ModelicaServices");
 ## Dependencies
 
 - **.NET 10.0** - Target framework
-- **NetMQ 4.0.1.13** - ZeroMQ implementation for .NET
+- **NetMQ 4.0.4.2** - ZeroMQ implementation for .NET
 - **System.Text.Json** - For JSON parsing (built-in)
 - **System.Diagnostics.Process** - For OMC process management (built-in)
 

@@ -73,8 +73,7 @@ The UI is built using MudBlazor for Material Design components.
 ```csharp
 public class AppSettings
 {
-    public UISettings UI { get; set; }                              // Dark mode, theme
-    public EditorSettings Editor { get; set; }                      // Font, tab size, line numbers
+    public UISettings UI { get; set; }                              // Theme, custom colors, mode
     public SyntaxHighlightingSettings SyntaxHighlighting { get; set; } // Color scheme
     public DymolaSettings Dymola { get; set; }                     // Dymola connection config
     public OpenModelicaSettings OpenModelica { get; set; }         // OMC path config
@@ -87,8 +86,8 @@ Predefined syntax themes are available:
 ```csharp
 var lightTheme = SyntaxHighlightingSettings.GetLightTheme();
 var darkTheme = SyntaxHighlightingSettings.GetDarkTheme();
-var dymolaTheme = SyntaxHighlightingSettings.GetDymolaTheme();
-var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme();
+var dymolaTheme = SyntaxHighlightingSettings.GetDymolaTheme(darkMode: false);
+var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 ```
 
 ### Pages
@@ -111,8 +110,8 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme();
 | `BranchSelector.razor` | Branch selection and management widget |
 | `ChangeReview.razor` | Review uncommitted file changes |
 | `ColorPicker.razor` | Color selection for syntax highlighting |
-| `SettingsUI.razor` | UI preference controls (dark mode, theme) |
-| `SettingsSyntaxHighlighting.razor` | Syntax color configuration |
+| `SettingsUI.razor` | UI preference controls (theme, custom colors, and syntax-highlighting color scheme) |
+| `NamingStyleSelect.razor` | Naming-style dropdown used by the style-checking settings |
 | `SettingsStyleChecking.razor` | Style rule toggles, spell check settings, language dictionaries, custom dictionary management |
 | `SettingsExternalTools.razor` | Dymola/OpenModelica configuration |
 | `SettingsRepositories.razor` | Repository management |

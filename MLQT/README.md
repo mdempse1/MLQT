@@ -21,6 +21,7 @@ Services that require native platform APIs are implemented here:
 |---------|-----------|---------|
 | `FilePickerService` | `IFilePickerService` | Native file/folder selection dialogs via MAUI APIs |
 | `SettingsService` | `ISettingsService` | Persistent settings via MAUI Preferences API |
+| `PowerManagementService` | `IPowerManagementService` | Prevents the system from sleeping during long operations |
 
 ### Service Registration (MauiProgram.cs)
 
@@ -30,6 +31,7 @@ All application services are registered in `MauiProgram.CreateMauiApp()`:
 // Platform services
 services.AddSingleton<IFilePickerService, FilePickerService>();
 services.AddSingleton<ISettingsService, SettingsService>();
+services.AddSingleton<IPowerManagementService, PowerManagementService>();
 
 // Application state
 services.AddSingleton<AppState>();
@@ -42,6 +44,8 @@ services.AddSingleton<ICodeReviewService, CodeReviewService>();
 services.AddSingleton<IStyleCheckingService, StyleCheckingService>();
 services.AddSingleton<IImpactAnalysisService, ImpactAnalysisService>();
 services.AddSingleton<IExternalResourceService, ExternalResourceService>();
+services.AddSingleton<ICustomDictionaryService, CustomDictionaryService>();
+services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();
 
 // Simulation tool factories
 services.AddSingleton<IDymolaInterfaceFactory, DymolaInterfaceFactory>();
@@ -63,8 +67,9 @@ MLQT/
 ├── MainPage.xaml         # BlazorWebView host page
 ├── MauiProgram.cs        # DI configuration and app builder
 ├── Services/
-│   ├── FilePickerService.cs    # MAUI file picker implementation
-│   └── SettingsService.cs      # MAUI preferences implementation
+│   ├── FilePickerService.cs        # MAUI file picker implementation
+│   ├── SettingsService.cs          # MAUI preferences implementation
+│   └── PowerManagementService.cs   # Prevents system sleep during long operations
 └── wwwroot/              # Static web assets
 ```
 

@@ -10,6 +10,8 @@ This test project contains unit and integration tests for the OpenModelicaInterf
 - **SimulationTests** - Model simulation and checking tests
 - **LibraryTests** - Library and model management tests
 - **ModelExplorationTests** - Model exploration and introspection tests
+- **InterfaceFactoryTests** - `OpenModelicaInterfaceFactory` lifecycle (create / reset / settings)
+- **CultureInvarianceTests** - Numeric formatting is culture-invariant
 
 **IMPORTANT**: All tests run **sequentially** (not in parallel) and share a single OMC instance. This is achieved using xUnit's collection fixture feature.
 
@@ -22,7 +24,7 @@ This test project contains unit and integration tests for the OpenModelicaInterf
    - If installed elsewhere, update the `OMC_PATH` constant in `OpenModelicaFixture.cs`
    - Download from: https://openmodelica.org/download/
 
-2. **.NET 9.0 SDK** or later
+2. **.NET 10.0 SDK** or later
 
 ### OpenModelica Configuration
 
@@ -289,7 +291,7 @@ public class MyTests
 
 ### Why Sequential Execution?
 
-Unlike DymolaInterface which uses ports (limiting to one instance per port), OpenModelicaInterface uses process-based communication. However, we still use sequential execution because:
+OpenModelicaInterface talks to OMC over ZeroMQ on a configurable port (default 13027), so instances are effectively limited to one per port. We use sequential execution because:
 
 - **Consistent test results**: Tests don't interfere with each other
 - **Faster execution**: OMC starts once, not per test
@@ -301,11 +303,11 @@ Unlike DymolaInterface which uses ports (limiting to one instance per port), Ope
 | Feature | DymolaInterface.Tests | OpenModelicaInterface.Tests |
 |---------|----------------------|----------------------------|
 | **Process Management** | External (manual start) | Automatic (fixture starts) |
-| **Port Configuration** | Required (8082) | Not needed (process-based) |
+| **Port Configuration** | Required (8082) | Required (default 13027) |
 | **Startup Time** | ~15 seconds | ~1 second |
-| **Communication** | HTTP JSON-RPC | stdin/stdout text |
+| **Communication** | HTTP JSON-RPC | ZeroMQ (NetMQ REQ/REP) |
 | **Response Parsing** | Consistent JSON | Mixed formats |
-| **Number of Tests** | 29 tests | 40+ tests |
+| **Number of Tests** | ~190 tests | ~45 tests |
 
 ## Contributing
 

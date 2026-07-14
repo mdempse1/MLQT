@@ -4,15 +4,18 @@ Comprehensive test suite for the DymolaInterface library.
 
 ## Overview
 
-This test project contains unit and integration tests for the DymolaInterface library, organized into the following test classes:
+This test project has two groups of tests (see [TESTS_OVERVIEW.md](TESTS_OVERVIEW.md) for the full class list and counts):
+
+**Integration tests** — require a running Dymola:
 
 - **DymolaInterfaceTests** - Basic functionality and connection tests
 - **SimulationTests** - Model simulation and checking tests
-- **PlottingTests** - Plotting and visualization tests
 - **CommandTests** - Command execution and variable manipulation tests
 - **LibraryTests** - Library and model management tests
 
-**IMPORTANT**: All tests run **sequentially** (not in parallel) and share a single Dymola instance to avoid port conflicts. This is achieved using xUnit's collection fixture feature.
+**Wire-format / unit tests** — the `WireFormat*` classes plus `HelperTypeTests`, `InterfaceFactoryTests` and `CultureInvarianceTests` run against a fake HTTP handler (`Fakes/`) and need **no** Dymola install. Plotting is exercised here by `WireFormatPlotTests`.
+
+**IMPORTANT**: The integration tests run **sequentially** (not in parallel) and share a single Dymola instance (via the `DymolaFixture` collection fixture) to avoid port conflicts. The wire-format/unit tests do not use the fixture and run without Dymola.
 
 ## Prerequisites
 
@@ -22,7 +25,7 @@ This test project contains unit and integration tests for the DymolaInterface li
    - Must be installed at: `C:\Program Files\Dymola 2025x Refresh 1\bin64\Dymola.exe`
    - If installed elsewhere, update the `DYMOLA_PATH` constant in each test class
 
-2. **.NET 9.0 SDK** or later
+2. **.NET 10.0 SDK** or later
 
 ### Dymola Configuration
 
@@ -56,7 +59,7 @@ dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj
 dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "FullyQualifiedName~SimulationTests"
 
 # Run only plotting tests
-dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "FullyQualifiedName~PlottingTests"
+dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "FullyQualifiedName~WireFormatPlotTests"
 
 # Run only command tests
 dotnet test DymolaInterface.Tests/DymolaInterface.Tests.csproj --filter "FullyQualifiedName~CommandTests"
@@ -125,9 +128,9 @@ public async Task SimulateModelAsync_WithValidModel_ReturnsTrue()
 }
 ```
 
-### PlottingTests
+### WireFormatPlotTests
 
-Tests plotting and visualization:
+Tests the wire-format encoding of plotting and visualization requests (no Dymola required):
 - Single and multiple variable plots
 - Custom colors and line patterns
 - Plot export to image files

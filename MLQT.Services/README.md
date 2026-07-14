@@ -40,6 +40,7 @@ These interfaces are implemented by the MAUI host project:
 |-----------|---------|
 | `ISettingsService` | Persistent key-value settings storage |
 | `IFilePickerService` | File and folder selection dialogs |
+| `IPowerManagementService` | Prevents system sleep during long operations |
 
 ## Usage
 
@@ -59,8 +60,8 @@ DirectedGraph graph = libraryDataService.CombinedGraph;
 ModelNode? model = libraryDataService.GetModelById("MyLibrary.MyModel");
 
 // Get tree data for the UI
-var topItems = await libraryDataService.GetTopLevelTreeItemsAsync();
-var children = await libraryDataService.GetChildTreeItemsAsync(parentNode);
+var topItems = await libraryDataService.GetTopLevelModelsAsync();
+var children = await libraryDataService.GetChildModelsAsync(parentNode);
 
 // Reload a changed file
 List<string> updatedModelIds = await libraryDataService.ReloadFileAsync("Models.mo");

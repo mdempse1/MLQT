@@ -2,21 +2,34 @@
 
 ## Test Summary
 
-The DymolaInterface.Tests project contains **23 unit and integration tests** organized into **4 test classes**:
+The DymolaInterface.Tests project contains roughly **190 tests** across two groups. (Exact counts drift as tests are added; the figures below are approximate.)
 
-| Test Class | Tests | Description |
+**Integration tests** — require a running Dymola and share one instance via `DymolaFixture`:
+
+| Test Class | ~Tests | Description |
 |------------|-------|-------------|
-| **DymolaInterfaceTests** | 7 | Basic connection, initialization, and offline mode tests |
-| **SimulationTests** | 10 | Model simulation, checking, and translation tests |
-| **PlottingTests** | 5 | Plotting and visualization tests |
-| **CommandTests** | 5 | Command execution and file operation tests |
+| **DymolaInterfaceTests** | 6 | Basic connection, initialization, and offline mode tests |
+| **SimulationTests** | 7 | Model simulation, checking, and translation tests |
+| **CommandTests** | 7 | Command execution and file operation tests |
 | **LibraryTests** | 4 | Library and model management tests |
 
-**Total: 31 tests**
+**Wire-format and unit tests** — run against a fake HTTP handler (`Fakes/`), so they need **no** Dymola install:
+
+| Test Class | ~Tests | Description |
+|------------|-------|-------------|
+| **WireFormatCoreTests** | 38 | JSON-RPC request/response wire-format encoding |
+| **WireFormatPlotTests** | 30 | Plot/export request encoding |
+| **WireFormatModelTests** | 28 | Model command encoding |
+| **WireFormatTrajectoryTests** | 15 | Trajectory result parsing |
+| **WireFormatSimulationTests** | 10 | Simulation request encoding |
+| **WireFormatAnimationTests** | 8 | Animation request encoding |
+| **HelperTypeTests** | 22 | Helper/DTO type behavior |
+| **InterfaceFactoryTests** | 9 | `DymolaInterfaceFactory` lifecycle |
+| **CultureInvarianceTests** | 3 | Numeric formatting is culture-invariant |
 
 ## Test Categories
 
-### 1. DymolaInterfaceTests (7 tests)
+### 1. DymolaInterfaceTests
 
 Tests core functionality without requiring Dymola simulation:
 
@@ -29,7 +42,7 @@ Tests core functionality without requiring Dymola simulation:
 - `DymolaVersion_WhenConnected_ReturnsVersionString` - Validates version retrieval
 - `DymolaVersionNumber_WhenConnected_ReturnsVersionNumber` - Validates version number
 
-### 2. SimulationTests (10 tests)
+### 2. SimulationTests
 
 Tests model simulation and checking capabilities:
 
@@ -43,17 +56,14 @@ Tests model simulation and checking capabilities:
 - `GetLastErrorLogAsync_AfterFailedSimulation_ReturnsErrorLog` - Detailed error log
 - `ClearAsync_ClearsWorkspace` - Workspace clearing
 
-### 3. PlottingTests (5 tests)
+### 3. Wire-format suites (no Dymola required)
 
-Tests plotting and visualization:
+Plotting and the bulk of the request/response encoding are covered by the fake-backed
+`WireFormat*` classes (e.g. **WireFormatPlotTests** for plot/export encoding), plus
+`HelperTypeTests`, `InterfaceFactoryTests` and `CultureInvarianceTests`. These use the
+fakes in `Fakes/` and need no Dymola install. See the [Test Summary](#test-summary).
 
-- `PlotAsync_WithSingleVariable_ReturnsTrue` - Single variable plotting
-- `PlotAsync_WithMultipleVariables_ReturnsTrue` - Multi-variable plotting
-- `PlotAsync_WithCustomColors_ReturnsTrue` - Custom color configuration
-- `PlotAsync_WithLinePatterns_ReturnsTrue` - Line pattern styling
-- `ExportPlotAsImageAsync_WithValidPath_ReturnsTrue` - Plot export to PNG
-
-### 4. CommandTests (5 tests)
+### 4. CommandTests
 
 Tests command execution and manipulation:
 
@@ -63,7 +73,7 @@ Tests command execution and manipulation:
 - `AddModelicaPathAsync_WithValidPath_ReturnsTrue` - Modelica path management
 - `SaveLogAsync_WithValidPath_CreatesLogFile` - Log file creation
 
-### 5. LibraryTests (4 tests)
+### 5. LibraryTests
 
 Tests library and model management:
 
@@ -81,7 +91,7 @@ Tests library and model management:
    C:\Program Files\Dymola 2025x Refresh 1\bin64\Dymola.exe
    ```
 
-2. **.NET 9.0 SDK** or later
+2. **.NET 10.0 SDK** or later
 
 ### Run All Tests
 
@@ -99,7 +109,7 @@ dotnet test --filter "FullyQualifiedName~DymolaInterfaceTests"
 dotnet test --filter "FullyQualifiedName~SimulationTests"
 
 # Plotting tests
-dotnet test --filter "FullyQualifiedName~PlottingTests"
+dotnet test --filter "FullyQualifiedName~WireFormatPlotTests"
 
 # Command tests
 dotnet test --filter "FullyQualifiedName~CommandTests"
@@ -127,8 +137,8 @@ The tests cover the following DymolaInterface methods:
 - ✅ `StartDymolaProcessAsync()`
 - ✅ `IsOfflineMode()`
 - ✅ `SetOfflineMode()`
-- ✅ `DymolaVersion()`
-- ✅ `DymolaVersionNumber()`
+- ✅ `DymolaVersionAsync()`
+- ✅ `DymolaVersionNumberAsync()`
 - ✅ `ExitAsync()`
 
 ### Simulation

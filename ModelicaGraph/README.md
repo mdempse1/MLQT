@@ -47,10 +47,8 @@ using ModelicaGraph;
 
 var graph = new DirectedGraph();
 
-// Load a single Modelica file (parses and extracts all models)
-List<string> modelIds = GraphBuilder.LoadModelicaFile(graph, "Models.mo");
-
-// Load from string content
+// Load a Modelica file — the path identifies the file, its content is parsed for models.
+// (The content is not stored on the graph; re-read it from disk when needed.)
 List<string> modelIds = GraphBuilder.LoadModelicaFile(graph, "Models.mo", modelicaCode);
 
 // Load multiple files
@@ -77,14 +75,9 @@ var dependents = graph.GetModelUsedBy("modelId");
 // Get all models in a file
 var modelsInFile = graph.GetModelsInFile("fileId");
 
-// Get models from a file by path
-var models = GraphBuilder.GetModelsFromFile(graph, "Models.mo");
-
-// Find a model by name
-var model = GraphBuilder.GetModelByName(graph, "MyLibrary.MyModel");
-
-// Get a dependency tree
-var tree = graph.GetDependencyTree("modelId");
+// Dependency queries (by fully-qualified model id)
+var dependencies = graph.GetUsedModels("MyLibrary.MyModel"); // models this one depends on
+var dependents = graph.GetModelUsedBy("MyLibrary.MyModel");  // models that depend on this one
 
 // Get all file nodes, model nodes, resource nodes
 IEnumerable<FileNode> files = graph.FileNodes;
@@ -153,23 +146,24 @@ var settings = new StyleCheckingSettings
     ApplyFormattingRules = true,
     ImportStatementsFirst = true,
     OneOfEachSection = true,
-    AnnotationAtEnd = true,
+    ComponentsBeforeClasses = true,
     ClassHasDescription = true,
     ParameterHasDescription = true,
     SpellCheckLanguages = ["en_US"],
     ValidateModelReferences = true
 };
 
-// Run style checks on a model definition
-var violations = await StyleChecking.RunStyleCheckingAsync(
-    modelDefinition, settings, basePackage: "MyLibrary");
+// Run style checks on a model definition. RunStyleChecking is synchronous and
+// returns a List<LogMessage>; the model is identified by its fullModelId.
+List<LogMessage> violations = StyleChecking.RunStyleChecking(
+    modelDefinition, settings, fullModelId: "MyLibrary.MyModel");
 
 // Run style checks on a model excluded from formatting
 // When isExcludedFromFormatting is true, formatting-related rules are skipped:
 // ImportStatementsFirst, InitialEQAlgoFirst/Last, OneOfEachSection,
 // DontMixEquationAndAlgorithm, DontMixConnections
-var violations = await StyleChecking.RunStyleCheckingAsync(
-    modelDefinition, settings, basePackage: "MyLibrary",
+violations = StyleChecking.RunStyleChecking(
+    modelDefinition, settings, fullModelId: "MyLibrary.MyModel",
     isExcludedFromFormatting: true);
 
 foreach (var violation in violations)
@@ -178,17 +172,20 @@ foreach (var violation in violations)
 
 ### Traversing Dependencies
 
-```csharp
-var tree = graph.GetDependencyTree("model1");
+Walk the dependency relationships directly with the graph's query methods (there is no
+pre-built tree object — recurse over `GetUsedModels` / `GetModelUsedBy` yourself):
 
-void PrintTree(TreeNode<IGraphNode> node, int indent = 0)
+```csharp
+void PrintDependencies(string modelId, int indent = 0, HashSet<string>? seen = null)
 {
-    Console.WriteLine(new string(' ', indent * 2) + node.Value.Name);
-    foreach (var child in node.Children)
-        PrintTree(child, indent + 1);
+    seen ??= new HashSet<string>();
+    if (!seen.Add(modelId)) return; // guard against cycles
+    Console.WriteLine(new string(' ', indent * 2) + modelId);
+    foreach (var dep in graph.GetUsedModels(modelId))
+        PrintDependencies(dep.Id, indent + 1, seen);
 }
 
-PrintTree(tree);
+PrintDependencies("MyLibrary.MyModel");
 ```
 
 ### Building a Graph Manually
@@ -242,12 +239,11 @@ GraphNode (abstract base)
     └── ResourceDirectoryNode - ResolvedPath, DirectoryExists, ContainedFileIds
 
 DirectedGraph           - Node/edge management, relationship queries
-GraphBuilder (static)   - File loading, dependency analysis, model queries
+GraphBuilder (static)   - File loading and dependency analysis (model queries live on DirectedGraph)
 StyleChecking (static)  - Style rule execution
 StyleCheckingSettings   - Configurable rule toggles and additional settings
 ModelDefinition         - Name, ModelicaCode, ParsedCode
 ResourceEdge            - ModelId, ResourceNodeId, RawPath, ReferenceType
-TreeNode<T>             - Generic tree structure for traversals
 LibraryInfo             - Library metadata (name, path, root package)
 ```
 
