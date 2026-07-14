@@ -217,6 +217,31 @@
         }
     }
 
+    /// <summary>
+    /// Restores the UI and syntax highlighting settings to their defaults,
+    /// persists them, applies the theme immediately, and refreshes the UI.
+    /// </summary>
+    public async Task ResetToDefaultsAsync()
+    {
+        try
+        {
+            _settings.UI = new UISettings();
+            _settings.SyntaxHighlighting = new SyntaxHighlightingSettings();
+            _customUIStyles = _settings.UI.Theme == Theme.Custom;
+            _customSyntaxStyles = _settings.SyntaxHighlighting.ThemeName == "Custom";
+
+            await SettingsService.SetAsync("UI", _settings.UI);
+            await SettingsService.SetAsync("SyntaxHighlighting", _settings.SyntaxHighlighting);
+
+            NavState.ThemeChanged(_settings.UI);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error resetting settings: {ex.Message}");
+        }
+    }
+
     private async Task ApplyPresetUITheme(string themeName)
     {
         switch (themeName)

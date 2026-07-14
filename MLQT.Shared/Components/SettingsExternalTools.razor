@@ -111,6 +111,29 @@
         }
     }
 
+    /// <summary>
+    /// Restores the external tool settings to their defaults, persists them, and refreshes the UI.
+    /// </summary>
+    public async Task ResetToDefaultsAsync()
+    {
+        try
+        {
+            _settings.Dymola = new DymolaSettings();
+            _settings.OpenModelica = new OpenModelicaSettings();
+            _showDymolaWarning = false;
+            _showOpenModelicaWarning = false;
+
+            await SettingsService.SetAsync("Dymola", _settings.Dymola);
+            await SettingsService.SetAsync("OpenModelica", _settings.OpenModelica);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error resetting settings: {ex.Message}");
+        }
+    }
+
     private async Task BrowseForDymolaFolder()
     {
         try
