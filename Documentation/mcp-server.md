@@ -4,6 +4,8 @@ MLQT ships a headless [Model Context Protocol](https://modelcontextprotocol.io) 
 
 Where the desktop app is for a person working interactively, the MCP server is for an AI agent working on your behalf. The two are complementary: the server operates on the `.mo` files of a loaded library, whether that library lives in a Git/SVN working copy or a plain directory.
 
+The MCP server tells the AI agent:
+
 > The MCP server is about **authoring, checking and formatting Modelica code**. Generic version control (commit, log, push, branch) is intentionally delegated to your own Git/SVN CLI or to the MLQT desktop app — the server provides only the two VCS tools that add Modelica-awareness a plain CLI lacks (mapping a diff to the classes it changed).
 
 ## Prerequisites
@@ -13,7 +15,7 @@ Where the desktop app is for a person working interactively, the MCP server is f
 | **.NET 10 SDK** | The server is a .NET 10 console application. |
 | **An MCP client** | Any MCP-capable client that launches servers over stdio — e.g. Claude Desktop, or the bundled [MLQT.McpTester](#testing-a-server-manually-mcptester). |
 
-The server has no dependency on MAUI, Dymola or OpenModelica; model checking with external tools is intentionally not exposed (use the desktop app for that).
+The server has no dependency on MAUI, Dymola or OpenModelica; model checking with external tools is intentionally not exposed (use the desktop app for that).  Use a separate MCP server for your chosen Modelica tool to fully close the loop and simulate what this MCP builds.
 
 ## Building and registering the server
 
@@ -23,13 +25,25 @@ Build it once so the executable exists:
 dotnet build MLQT.McpServer/MLQT.McpServer.csproj
 ```
 
-The server speaks MCP over **stdio**. Register it with your client by pointing at the built executable. For Claude Desktop, add it to the `mcpServers` section of the client configuration:
+The server speaks MCP over **stdio**. Register it with your client by pointing at the built executable. For Claude Desktop, add it to the `mcpServers` section of the client configuration.  `path_to_mlqt_project_source` is the path to where you have checked out the Git repository on your machine.
 
 ```json
 {
   "mcpServers": {
     "mlqt": {
-      "command": "C:/Projects/MLQT/MLQT.McpServer/bin/Debug/net10.0/MLQT.McpServer.exe"
+      "command": "C:/path_to_mlqt_project_source/MLQT.McpServer/bin/Debug/net10.0/MLQT.McpServer.exe"
+    }
+  }
+}
+```
+
+If you are using the Release zip file from Github, then the path to configure the McpServer is different due to the structure of the zip file. `path_to_mlqt_mcp_server_release` is the path to where you have extracted the zip file on your machine.
+
+```json
+{
+  "mcpServers": {
+    "mlqt": {
+      "command": "C:/path_to_mlqt_mcp_server_release/MLQT.McpServer.exe"
     }
   }
 }
@@ -49,7 +63,7 @@ The server returns a short set of instructions to the client on connect, and a `
 
 3. **Learn classes from compact "views" rather than raw source.** `get_class_interface` (public parameters, connectors and, for functions, the signature — with inherited members merged in), `list_class_elements`, `get_class_documentation` and `get_class_behavior` (equations/connections) give an agent what it needs without reading the whole file. `search_classes` also returns each hit's description and a short documentation snippet so the agent can pick the right class — often a higher-level *aggregate* component the library provides — without opening each candidate.
 
-4. **Analysis is opt-in.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large library). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules.
+4. **Analysis is opt-in.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules.
 
 5. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
