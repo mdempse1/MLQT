@@ -1,12 +1,14 @@
 # MLQT — Modelica Library Quality Toolkit
 
-MLQT is an open-source desktop application and set of libraries for managing, analyzing, and reviewing [Modelica](https://modelica.org/) libraries stored in version control systems (Git or SVN).
+MLQT is an open-source desktop application and set of libraries for managing, analyzing, and reviewing [Modelica](https://modelica.org/) libraries stored in version control systems (Git or SVN).  The project also provides an MCP server focused on creating and editing Modelica models and libraries.
 
 ## Origin
 
-MLQT started from a familiar frustration: every time a Modelica tool saved a file, it would introduce a flurry of whitespace and formatting changes that cluttered commits, obscured the real edits in diffs, and made code review painful. The original goal was simple — put a layer between Modelica tools and the repository that applied consistent formatting to every `.mo` file before it was committed, so that Git and SVN diffs showed meaningful changes rather than stylistic churn. Formatting rules are stored in the repository itself so everyone on the team applies the same rules.
+MLQT started from a familiar frustration: every time a Modelica tool saved a file, it would introduce a flurry of whitespace and formatting changes that cluttered commits, obscured the real edits in diffs, and made code review painful. The original goal was simple — create a Modelica aware SVN and Git interface.  MLQT puts a layer between Modelica tools and the version control system that applies consistent formatting to every `.mo` file before it was committed, so that Git and SVN diffs showed meaningful changes rather than stylistic churn. Formatting rules are stored in the repository itself so everyone on the team applies the same rules.
 
 From that starting point, MLQT grew into a broader set of tools for working with Modelica code. The same parser that powers the formatter also drives configurable style checking, dependency impact analysis, and external resource tracking, alongside integrations with Dymola and OpenModelica for model checking.
+
+With the dramatic improvements in AI agent capabilities to support Modelica modelling the project has now added an MCP server focused on Modelica model creation and editing.  The goal is to make the LLM more efficient when working with Modelica models by providing more focused information.  For example, using this MCP server, if an LLM wanted to understand the public interface to the Modelica.Blocks.Continuous.Integrator it would have to read the whole Continuous.mo file which is almost 59000 tokens.  Using this MCP server it could call get_class_interface and the returned information is <600 tokens
 
 ## What Is MLQT?
 
@@ -20,6 +22,8 @@ Modelica is an object-oriented language for modeling complex physical systems (m
 - Track external resources (data files, C libraries, images) referenced by models
 
 MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep using whichever editor you prefer; MLQT sits between the editor and the repository, filtering out the formatting noise so commits contain only meaningful changes.
+
+The MCP server provides powerful and surgical Modelica editing tools that any AI agent that supports the MCP standard can utilise.  To fully close the loop and empower your AI agent to simulate and verify models, you will also need an MCP server for your Modelica simulation tool of choice.
 
 ## Key Features
 
