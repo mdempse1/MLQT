@@ -478,6 +478,86 @@ end System;");
     }
 
     [Fact]
+    public void AnalyzeCode_NestedClassReferences_NotAttributedToEnclosingPackage()
+    {
+        // Arrange: a package stored in one file whose nested example instantiates Integrator.
+        // The package itself does not use Integrator — only its nested member does.
+        var graph = new DirectedGraph();
+        var integrator = new ModelNode("Lib.Continuous.Integrator", "Integrator",
+            "block Integrator\n  Real y;\nend Integrator;");
+        var examples = new ModelNode("Lib.Examples", "Examples",
+            @"package Examples
+  model Demo
+    Lib.Continuous.Integrator i;
+  end Demo;
+end Examples;");
+
+        graph.AddNode(integrator);
+        graph.AddNode(examples);
+
+        // Act: analyse the enclosing package node (as AnalyzeDependenciesAsync does per node).
+        var analyzer = new ModelAnalyzer("Lib.Examples", graph);
+        var parseTree = ModelicaParserHelper.Parse(examples.Definition.ModelicaCode);
+        analyzer.Visit(parseTree);
+
+        // Assert: the reference living inside the nested Demo model is NOT pinned onto the package.
+        Assert.DoesNotContain("Lib.Continuous.Integrator", analyzer.ReferencedModels);
+        Assert.Empty(analyzer.ReferencedModels);
+    }
+
+    [Fact]
+    public void AnalyzeCode_NestedClass_AnalysedAsOwnNode_DetectsDependency()
+    {
+        // Arrange: analysing the nested member directly (its own ModelNode) still finds its dependency.
+        var graph = new DirectedGraph();
+        var integrator = new ModelNode("Lib.Continuous.Integrator", "Integrator",
+            "block Integrator\n  Real y;\nend Integrator;");
+        var demo = new ModelNode("Lib.Examples.Demo", "Demo",
+            "model Demo\n  Lib.Continuous.Integrator i;\nend Demo;");
+
+        graph.AddNode(integrator);
+        graph.AddNode(demo);
+
+        // Act
+        var analyzer = new ModelAnalyzer("Lib.Examples.Demo", graph);
+        var parseTree = ModelicaParserHelper.Parse(demo.Definition.ModelicaCode);
+        analyzer.Visit(parseTree);
+
+        // Assert
+        Assert.Contains("Lib.Continuous.Integrator", analyzer.ReferencedModels);
+    }
+
+    [Fact]
+    public void AnalyzeCode_OutermostClassOwnReferences_StillDetected_WithNestedClassesPresent()
+    {
+        // Arrange: the package's own body references Base (via extends), and it also nests a class that
+        // references Other. Only the package's own reference (Base) should be recorded.
+        var graph = new DirectedGraph();
+        var baseNode = new ModelNode("Base", "Base", "model Base\nend Base;");
+        var other = new ModelNode("Other", "Other", "model Other\nend Other;");
+        var pkg = new ModelNode("Pkg", "Pkg",
+            @"package Pkg
+  extends Base;
+  model Inner
+    Other o;
+  end Inner;
+end Pkg;");
+
+        graph.AddNode(baseNode);
+        graph.AddNode(other);
+        graph.AddNode(pkg);
+
+        // Act
+        var analyzer = new ModelAnalyzer("Pkg", graph);
+        var parseTree = ModelicaParserHelper.Parse(pkg.Definition.ModelicaCode);
+        analyzer.Visit(parseTree);
+
+        // Assert
+        Assert.Contains("Base", analyzer.ReferencedModels);
+        Assert.DoesNotContain("Other", analyzer.ReferencedModels);
+    }
+
+    [Fact]
     public void AnalyzeCode_WithArrayTypeSpecifier_DetectsDependency()
     {
         // Arrange

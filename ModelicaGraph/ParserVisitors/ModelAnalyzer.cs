@@ -24,6 +24,11 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     private readonly HashSet<string> _referencedModels = new();
     private readonly List<ImportInfo> _imports = new();
 
+    // Depth of class_definition nesting within the node currently being analysed. The node's own
+    // (outermost) class is depth 1; any nested class definition is depth >= 2. Dependencies are only
+    // recorded at depth 1 — see ResolveAndAddDependency.
+    private int _classDepth;
+
     // --- External resource state (from ExternalResourceExtractor) ---
     private static readonly Dictionary<string, ResourceReferenceType> ExternalAnnotationKeys = new(StringComparer.Ordinal)
     {
@@ -62,6 +67,28 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     }
 
     #region Dependency Analysis (from DependencyAnalyzer)
+
+    /// <summary>
+    /// Track class-definition nesting depth. A package/class stored in a single file carries the full
+    /// source of its nested classes, so this node's parse tree contains those nested class definitions.
+    /// Each nested class has its own <see cref="ModelNode"/> and is analysed independently, so we must
+    /// NOT attribute their references to this (enclosing) node — otherwise a package appears to "use"
+    /// everything its members do (e.g. an Examples package would depend on every class its examples
+    /// instantiate). We still descend into nested classes here so external-resource and loadSelector
+    /// extraction continue to run; only dependency recording is gated on depth (see ResolveAndAddDependency).
+    /// </summary>
+    public override object? VisitClass_definition([NotNull] modelicaParser.Class_definitionContext context)
+    {
+        _classDepth++;
+        try
+        {
+            return base.VisitClass_definition(context);
+        }
+        finally
+        {
+            _classDepth--;
+        }
+    }
 
     /// <summary>
     /// Visit import clauses to build the import list for dependency resolution.
@@ -357,6 +384,12 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private void ResolveAndAddDependency(string reference)
     {
+        // Only record references that appear in this node's own (outermost) class body. References
+        // inside nested class definitions belong to those classes' own ModelNodes, which are analysed
+        // separately — attributing them here would pollute the enclosing node's dependency edges.
+        if (_classDepth > 1)
+            return;
+
         var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);
         if (resolvedId != null && resolvedId != _modelId)
         {
