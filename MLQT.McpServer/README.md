@@ -26,10 +26,12 @@ executable, e.g. in a client config:
 Logs go to **stderr**; stdout carries the JSON-RPC protocol. Settings persist to
 `%LocalAppData%/MLQT/mcp-settings.json`.
 
-**Tool-usage log.** Every tool call is recorded (name, arguments, duration, error) as one JSON object
-per line in `%LocalAppData%/MLQT/mcp-tool-usage.jsonl` — handy for reviewing how an agent uses the
-server (e.g. views vs. full source). Override the path with the `MLQT_MCP_TOOL_LOG` environment
-variable, or set it to `off` to disable.
+**Tool-usage log.** Optionally records every tool call (name, arguments, duration, error) as one JSON
+object per line in `%LocalAppData%/MLQT/mcp-tool-usage.jsonl` — handy for reviewing how an agent uses the
+server (e.g. views vs. full source). It is **off by default**; enable it by creating an (empty) file named
+`mcp-tool-logging.enabled` in `%LocalAppData%/MLQT` (the same folder as the log files), then restart the
+server. The `MLQT_MCP_TOOL_LOG` environment variable overrides the marker file: set it to a path to force
+logging on at that path, or to `off` to force it off.
 
 **Lenient scalar arguments.** Some clients/LLMs send boolean and numeric tool arguments as JSON strings
 (e.g. `"standalone":"true"`, `"count":"5"`). A request filter coerces these to the JSON type the

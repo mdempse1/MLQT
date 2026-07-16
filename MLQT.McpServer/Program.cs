@@ -96,8 +96,10 @@ const string serverInstructions =
     tools that change code.
     """;
 
-// Records every tool call (name, args, duration, error) so tool usage can be reviewed. Writes to
-// %LocalAppData%/MLQT/mcp-tool-usage.jsonl (override with MLQT_MCP_TOOL_LOG; "off" to disable).
+// Records every tool call (name, args, duration, error) so tool usage can be reviewed. Off by default;
+// enabled by creating a marker file (mcp-tool-logging.enabled) in %LocalAppData%/MLQT, which writes to
+// %LocalAppData%/MLQT/mcp-tool-usage.jsonl. MLQT_MCP_TOOL_LOG overrides: a path forces it on, "off" forces
+// it off.
 var toolUsageLogger = new ToolUsageLogger();
 builder.Services.AddSingleton(toolUsageLogger);
 
@@ -139,5 +141,8 @@ builder.Services
 
 if (toolUsageLogger.LogPath is { } logPath)
     await Console.Error.WriteLineAsync($"[mcp] tool-usage log: {logPath}");
+else
+    await Console.Error.WriteLineAsync(
+        $"[mcp] tool-usage logging is off; create the file '{toolUsageLogger.EnableMarkerPath}' to enable it.");
 
 await builder.Build().RunAsync();
