@@ -55,17 +55,16 @@ public static class ReferenceResolver
                 return candidate;
         }
 
-        // Relative lookup up the owner's package hierarchy.
-        if (ownerModelId.Contains('.'))
+        // Relative lookup, innermost scope outwards: the owner's own scope first — a class may
+        // declare nested classes, and those shadow same-named classes in any enclosing scope — then
+        // out through the enclosing package hierarchy.
+        var parts = ownerModelId.Split('.');
+        for (var i = parts.Length; i >= 1; i--)
         {
-            var parts = ownerModelId.Split('.');
-            for (var i = parts.Length - 1; i >= 1; i--)
-            {
-                var packagePath = string.Join(".", parts.Take(i));
-                var candidate = $"{packagePath}.{reference}";
-                if (graph.GetNode<ModelNode>(candidate) != null)
-                    return candidate;
-            }
+            var scopePath = string.Join(".", parts.Take(i));
+            var candidate = $"{scopePath}.{reference}";
+            if (graph.GetNode<ModelNode>(candidate) != null)
+                return candidate;
         }
 
         return null;

@@ -577,4 +577,53 @@ end Pkg;");
         // Assert
         Assert.Contains("Component", analyzer.ReferencedModels);
     }
+
+    [Fact]
+    public void AnalyzeCode_NestedClassShadowingOuterName_ResolvesToOwnScope()
+    {
+        // Arrange: both Outer and Outer.Inner declare a nested class called PointMass. Inner's
+        // components typed "PointMass" must bind to Inner's own PointMass, not the outer one.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("Lib.Body", "Body", "model Body\n  Real m;\nend Body;"));
+        graph.AddNode(new ModelNode("Lib.Outer.PointMass", "PointMass", "model PointMass = Lib.Mass;"));
+        graph.AddNode(new ModelNode("Lib.Outer.Inner.PointMass", "PointMass", "model PointMass = Lib.Body;"));
+        var inner = new ModelNode("Lib.Outer.Inner", "Inner",
+            @"model Inner
+  model PointMass = Lib.Body;
+  PointMass pointMass1;
+end Inner;");
+        graph.AddNode(inner);
+
+        // Act
+        var analyzer = new ModelAnalyzer("Lib.Outer.Inner", graph);
+        analyzer.Visit(ModelicaParserHelper.Parse(inner.Definition.ModelicaCode));
+
+        // Assert: binds to its own nested class, which shadows the identically named outer one.
+        Assert.Contains("Lib.Outer.Inner.PointMass", analyzer.ReferencedModels);
+        Assert.DoesNotContain("Lib.Outer.PointMass", analyzer.ReferencedModels);
+    }
+
+    [Fact]
+    public void AnalyzeCode_ComponentTypedByOwnNestedClass_IsResolved()
+    {
+        // Arrange: the type of pointMass1 is a nested class declared by the model itself. Nothing in
+        // an enclosing package is called PointMass, so only an own-scope lookup can resolve it — and
+        // it must, or the nested class's own dependents become unreachable from the reverse edges.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("Lib.Parts.PointMass", "PointMass", "model PointMass\n  Real m;\nend PointMass;"));
+        graph.AddNode(new ModelNode("Lib.Examples.Demo.PointMass", "PointMass", "model PointMass = Lib.Parts.PointMass(m=1);"));
+        var demo = new ModelNode("Lib.Examples.Demo", "Demo",
+            @"model Demo
+  model PointMass = Lib.Parts.PointMass(m=1);
+  PointMass pointMass1;
+end Demo;");
+        graph.AddNode(demo);
+
+        // Act
+        var analyzer = new ModelAnalyzer("Lib.Examples.Demo", graph);
+        analyzer.Visit(ModelicaParserHelper.Parse(demo.Definition.ModelicaCode));
+
+        // Assert
+        Assert.Contains("Lib.Examples.Demo.PointMass", analyzer.ReferencedModels);
+    }
 }
