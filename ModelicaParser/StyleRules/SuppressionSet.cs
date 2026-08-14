@@ -46,6 +46,9 @@ public sealed class SuppressionSet
     /// <summary>True if the class opted out of formatting/reordering (<c>preserveOrder</c> / <c>format=false</c>).</summary>
     public bool PreservesFormatting(string modelId) => _preserveFormatting.Contains(modelId);
 
+    /// <summary>True if any class in the extracted definition opted out of formatting/reordering.</summary>
+    public bool HasFormattingOptOut => _preserveFormatting.Count > 0;
+
     // A token matches a rule id if it equals it, equals it minus the "MLQT." prefix
     // (so "Naming.Convention" and "MLQT.Naming.Convention" both work), or is the wildcard "*".
     private static bool Matches(HashSet<string> tokens, string ruleId)

@@ -113,6 +113,23 @@ public class ModelicaPackageSaverTests : IDisposable
     }
 
     [Fact]
+    public void SaveLibraryToDirectoryWithResult_PreservesFormatting_ForMlqtFormatFalseAnnotation()
+    {
+        // Distinctive indentation the formatter would normally normalise.
+        var code = "within;\nmodel Foo\n        Real x;\n  annotation(__MLQT(format=false));\nend Foo;";
+        var graph = CreateGraphWithSingleModel("Foo", code);
+        var outputDir = CreateTempDirectory();
+
+        // Save WITH formatting flags on — the __MLQT(format=false) annotation must keep it verbatim.
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, new HashSet<string> { "Foo" }, outputDir,
+            showAnnotations: true, oneOfEachSection: true, importsFirst: true, componentsBeforeClasses: true);
+
+        var written = File.ReadAllText(result.ModelIdToFilePath["Foo"]);
+        Assert.Contains("        Real x;", written); // 8-space indent preserved => not reformatted
+    }
+
+    [Fact]
     public void SaveLibraryToDirectoryWithResult_OnlyIncludesModelsInSet()
     {
         var packageCode = "within;\npackage TestPackage\nend TestPackage;";

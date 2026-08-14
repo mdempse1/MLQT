@@ -46,10 +46,23 @@ public class ModelicaPackageSaver
         // (parse trees will be released during rendering in Phase 3)
         var shortClassIds = new HashSet<string>();
         var preComputedElementNames = new Dictionary<string, List<string>>();
+        var formatPreserved = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in allModels)
         {
             if (IsShortClassDefinition(model))
                 shortClassIds.Add(model.Id);
+
+            // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
+            // the model's original text (no reformatting/reordering). The cheap string pre-check
+            // avoids a visitor pass on the vast majority of models that have no __MLQT annotation.
+            if (model.Definition.ModelicaCode?.Contains("__MLQT", StringComparison.Ordinal) == true
+                && model.Definition.ParsedCode is { } parsedForSuppression)
+            {
+                var suppressionExtractor = new ModelicaParser.StyleRules.MlqtSuppressionExtractor();
+                suppressionExtractor.VisitStored_definition(parsedForSuppression);
+                if (suppressionExtractor.Build().HasFormattingOptOut)
+                    formatPreserved.Add(model.Id);
+            }
 
             // Pre-compute element names for packages without a stored package.order
             if (model.PackageOrder == null && model.Definition.ParsedCode != null
@@ -64,11 +77,13 @@ public class ModelicaPackageSaver
         // PHASE 3: Pre-render all models in parallel
         // Parse trees are released immediately after each model is rendered to avoid
         // having all parse trees and all rendered strings coexist in memory.
-        var excludedSet = excludedModelIds != null && excludedModelIds.Count > 0
-            ? new HashSet<string>(excludedModelIds, StringComparer.Ordinal)
-            : null;
+        var excludedSet = new HashSet<string>(StringComparer.Ordinal);
+        if (excludedModelIds != null)
+            excludedSet.UnionWith(excludedModelIds);
+        excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
+        var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
         var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            oneOfEachSection, importsFirst, componentsBeforeClasses, excludedSet);
+            oneOfEachSection, importsFirst, componentsBeforeClasses, excludedOrNull);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
