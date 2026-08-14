@@ -200,6 +200,19 @@ mlqt check /path/to/MyLibrary --baseline .mlqt/baseline.json \
 `--touched-debt fail` those also fail the gate (default `warn` reports them without failing). Works
 with Git and SVN — run it from inside the working copy.
 
+**What `<ref>` should be** differs by VCS:
+
+- **Git** — a branch, tag, or commit: `--changed-from main`, `--changed-from origin/main`,
+  `--changed-from HEAD~1`.
+- **SVN** — a **revision, not a branch name** (SVN branches are directories, not revisions, so a
+  branch name is rejected with `could not resolve revision`). Pass either:
+  - a **revision number** — `--changed-from 4567` (changes since that revision), or
+  - a **keyword** — `BASE` (only your *uncommitted* local changes), or `HEAD` / `PREV` / `COMMITTED`.
+
+  For a pre-commit gate use `--changed-from BASE`; to compare against a baseline revision (e.g. where
+  a release was branched), pass that revision number. (Comparing to another SVN *branch* is not
+  supported yet.)
+
 MLQT prints a diagnostic note so you can see what the diff detected:
 
 ```
@@ -298,7 +311,7 @@ absolute paths are used as-is.
 | Lots of `MLQT.Reference.ModelReferences` findings | Dependencies (MSL, etc.) aren't loaded, so external `modelica://` refs look broken. Turn `ValidateModelReferences` off for now. |
 | Spelling flags valid domain terms | Build a custom dictionary — see [spell-checking.md](spell-checking.md). |
 | `error: '<path>' is not inside a Git or SVN working copy` | `--changed-from` needs to run inside the VCS working copy. |
-| `error: could not resolve revision '<ref>'` | The `--changed-from` ref doesn't exist locally (wrong branch name, or it's only `origin/<ref>`). Check `git rev-parse --verify <ref>`; try `origin/main`, `master`, or `HEAD~1`. |
+| `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
 | Only new findings show, no touched debt | The note says `0 model(s) changed` — the ref found no changes (it may already contain your change). Diff against a ref *behind* it. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
