@@ -303,6 +303,18 @@ absolute paths are used as-is.
 
 ---
 
+## Known limitations
+
+- **Line numbers are relative to each model's definition, not the file.** For a model nested in a
+  multi-model file (e.g. a `package.mo`), a finding's line number counts from the start of that
+  model's own definition, not from the top of the file. This is fine when you fix issues in a
+  Modelica tool (which navigates by model/class, so a line *within the model* is what you want), and
+  reports now show the model each finding belongs to. It does mean the line won't line up with the
+  raw file — most relevant for SARIF/GitHub code-scanning annotations, which are file-line based. A
+  future change may map finding lines to file-absolute positions; revisit if SARIF annotations need
+  to point at exact file lines.
+- **Dependencies aren't loaded** — see `ValidateModelReferences` above.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
