@@ -1,10 +1,24 @@
 # Design Note — Phase 5: In-source suppression (`__MLQT` annotations)
 
-> **Status: design / not yet implemented.** Phase 5 of the locked roadmap
-> ([roadmap.md](roadmap.md)). Turns the Phase 1 no-op `IFindingSuppressor` seam
-> ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md)) into real
-> suppression, implementing the mechanism agreed in
+> **Status: headless/CI parts IMPLEMENTED (5a + 5b-checker); desktop parts remaining.**
+> Phase 5 of the locked roadmap ([roadmap.md](roadmap.md)). Turns the Phase 1 no-op
+> `IFindingSuppressor` seam ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md))
+> into real suppression, implementing the mechanism agreed in
 > [design-ci-quality-gate.md](design-ci-quality-gate.md) ("In-source suppression").
+>
+> **Done:**
+> - **5a** — `MlqtSuppressionExtractor` + `SuppressionSet` read `__MLQT(suppress=…)` class/component
+>   directives; `RunStyleCheckingFindings` drops suppressed findings (`honorSuppressions`); the
+>   placeholder `IFindingSuppressor` is removed; CLI `--no-suppress` audit mode. (All suites green.)
+> - **5b (checker side)** — `preserveOrder=true` / `format=false` at the class level suppresses the
+>   ordering/formatting rules (the declaration-order case), via the extractor adding the
+>   formatting-family rule ids to the class suppress set.
+>
+> **Remaining (desktop / authoring — separate subsystems):**
+> - **5b (renderer side)** — the desktop formatting pipeline (`ModelicaRenderer` /
+>   `ModelicaPackageSaver` / `MainLayout`) honouring `__MLQT(format=false/preserveOrder)` so it does
+>   not reorder those classes — the in-source successor to `FormattingExcludedModels`.
+> - **5c** — MCP `suppress_rule` tool + GUI "suppress here" authoring action.
 
 ## Purpose
 

@@ -309,6 +309,31 @@ absolute paths are used as-is.
 
 ---
 
+## Suppressing intentional findings
+
+Some violations are deliberate — most notably a **declaration order that matters** for a Modelica
+tool's nonlinear-system heuristics. Waive a rule in the source with a **`__MLQT` vendor annotation**
+(these survive reformatting, unlike comments, and are ignored by Dymola/OpenModelica):
+
+```modelica
+model Foo
+  parameter Real R "Resistance" annotation(__MLQT(suppress="Naming.Convention"));   // one component
+  // ...
+  annotation(__MLQT(suppress="Doc.ClassDescription", reason="Legacy public API"));  // the whole class
+end Foo;
+```
+
+- `suppress` is a comma-separated list of rule ids; **`*`** waives all rules. A rule id may be written
+  in full (`MLQT.Naming.Convention`) or short (`Naming.Convention`).
+- Class-level annotations waive the rule for the whole class; component-level annotations only for
+  that component.
+- **`preserveOrder=true`** (or `format=false`) on a class waives the ordering/formatting rules —
+  the in-source way to mark an order-sensitive class. Include a `reason`.
+- Suppressed findings are **never emitted** — they don't appear in reports, don't enter the baseline,
+  and don't gate. This is different from the baseline: a suppression is a *permanent, intentional*
+  waiver; the baseline is *temporary debt*.
+- Run `mlqt check … --no-suppress` to **audit** — it ignores the annotations and reports everything.
+
 ## Known limitations
 
 - **Line numbers are relative to each model's definition, not the file.** For a model nested in a

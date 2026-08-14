@@ -63,15 +63,32 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
                         AddTokens(component, ParseList(value));
                         break;
                     case "preserveOrder":
-                        if (IsTrue(value)) _preserveFormatting.Add(CurrentModelName);
+                        if (component is null && IsTrue(value)) MarkPreserveFormatting();
                         break;
                     case "format":
-                        if (IsFalse(value)) _preserveFormatting.Add(CurrentModelName);
+                        if (component is null && IsFalse(value)) MarkPreserveFormatting();
                         break;
                 }
             }
         }
     }
+
+    // `preserveOrder=true` / `format=false` at the class level: record it for the formatter (so the
+    // renderer can skip reordering — see Phase 5b), and suppress the ordering/formatting rules so the
+    // checker doesn't flag the deliberate layout.
+    private void MarkPreserveFormatting()
+    {
+        _preserveFormatting.Add(CurrentModelName);
+        AddTokens(component: null, FormattingRuleIds);
+    }
+
+    private static readonly string[] FormattingRuleIds =
+    [
+        RuleIds.ImportStatementsFirst, RuleIds.ExtendsAtTop,
+        RuleIds.InitialEqAlgoFirst, RuleIds.InitialEqAlgoLast,
+        RuleIds.OneOfEachSection, RuleIds.DontMixEquationAndAlgorithm,
+        RuleIds.DontMixConnections
+    ];
 
     private void AddTokens(string? component, IEnumerable<string> tokens)
     {

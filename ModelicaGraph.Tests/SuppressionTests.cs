@@ -93,6 +93,20 @@ public class SuppressionTests
     }
 
     [Fact]
+    public void PreserveOrder_SuppressesOrderingRules()
+    {
+        // An import after a component would normally flag ImportStatementsFirst; preserveOrder waives it.
+        var code = """
+            model TestModel
+              Real x;
+              import Modelica.Units.SI;
+              annotation(__MLQT(preserveOrder=true, reason="order affects the nonlinear system"));
+            end TestModel;
+            """;
+        Assert.Empty(Check(code, new StyleCheckingSettings { ImportStatementsFirst = true }));
+    }
+
+    [Fact]
     public void NoSuppress_IgnoresAnnotations()
     {
         var code = """
