@@ -117,7 +117,8 @@ public class CheckModelReferences : VisitorWithModelNameTracking
             {
                 if (!_knownModelIds.Contains(pathPart))
                 {
-                    AddViolation(startLine + newlineCount, $"Broken model reference: {uri} — the model '{pathPart}' was not found in the loaded libraries");
+                    AddViolation(startLine + newlineCount, $"Broken model reference: {uri} — the model '{pathPart}' was not found in the loaded libraries",
+                        RuleIds.ModelReferences, discriminator: pathPart);
                 }
             }
 

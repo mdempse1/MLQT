@@ -139,12 +139,14 @@ public class PublicParametersAndConstantsHaveDescription : VisitorWithModelNameT
                     descriptionString = descriptionString.Replace("\"", "");
                     if (descriptionString.Trim().Length == 0)
                     {
-                        AddViolation(lineNumber, $"Public {variableType} {variableName} has an empty string as a description");
+                        AddViolation(lineNumber, $"Public {variableType} {variableName} has an empty string as a description",
+                            _isParameter ? RuleIds.ParameterDescription : RuleIds.ConstantDescription, variableName);
                     }
                 }
                 else
                 {
-                    AddViolation(lineNumber, $"Public {variableType} {variableName} must have a description");
+                    AddViolation(lineNumber, $"Public {variableType} {variableName} must have a description",
+                        _isParameter ? RuleIds.ParameterDescription : RuleIds.ConstantDescription, variableName);
                 }
             }
             //This can never be reached because description is NEVER null

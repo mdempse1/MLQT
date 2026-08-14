@@ -176,7 +176,8 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
                 };
                 var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
                 AddViolation(lineNumber,
-                    $"{char.ToUpper(category[0])}{category[1..]} name '{name}' should be {FormatStyleName(style)}{suffix} ({visibility} {category})");
+                    $"{char.ToUpper(category[0])}{category[1..]} name '{name}' should be {FormatStyleName(style)}{suffix} ({visibility} {category})",
+                    RuleIds.NamingConvention, name);
             }
         }
 
@@ -199,7 +200,8 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
         {
             var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
             AddViolation(lineNumber,
-                $"Class name '{className}' should be {FormatStyleName(style)}{suffix} ({classType})");
+                $"Class name '{className}' should be {FormatStyleName(style)}{suffix} ({classType})",
+                RuleIds.NamingConvention);
         }
     }
 

@@ -46,7 +46,8 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             if (_initialFirst && _foundOtherElement.Peek())
             {
                 AddViolation(context.Start.Line,
-                    "The initial equation section should appear before the equation/algorithm section");
+                    "The initial equation section should appear before the equation/algorithm section",
+                    RuleIds.InitialEqAlgoFirst);
             }
         }
         else
@@ -54,7 +55,8 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             if (_initialLast && _foundInitialSection.Peek())
             {
                 AddViolation(context.Start.Line,
-                    "The initial equation section should appear after the equation/algorithm section");
+                    "The initial equation section should appear after the equation/algorithm section",
+                    RuleIds.InitialEqAlgoLast);
             }
             SetFoundOther();
         }
@@ -69,7 +71,8 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             if (_initialFirst && _foundOtherElement.Peek())
             {
                 AddViolation(context.Start.Line,
-                    "The initial algorithm section should appear before the equation/algorithm section");
+                    "The initial algorithm section should appear before the equation/algorithm section",
+                    RuleIds.InitialEqAlgoFirst);
             }
         }
         else
@@ -77,7 +80,8 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             if (_initialLast && _foundInitialSection.Peek())
             {
                 AddViolation(context.Start.Line,
-                    "The initial algorithm section should appear after the equation/algorithm section");
+                    "The initial algorithm section should appear after the equation/algorithm section",
+                    RuleIds.InitialEqAlgoLast);
             }
             SetFoundOther();
         }

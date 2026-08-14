@@ -44,7 +44,8 @@ public class ExtendsClausesAtTop : VisitorWithModelNameTracking
             if (_foundExtends && !_extendsFirst)
             {
                 AddViolation(context.Start.Line,
-                    "This class does not have its import statements before its extends clauses");
+                    "This class does not have its import statements before its extends clauses",
+                    RuleIds.ExtendsAtTop);
             }
         }
         else if (context.extends_clause() != null)
@@ -53,7 +54,8 @@ public class ExtendsClausesAtTop : VisitorWithModelNameTracking
             if (_foundOtherElement.Peek())
             {
                 AddViolation(context.Start.Line,
-                    "This class does not have its extends clauses at the top of the class");
+                    "This class does not have its extends clauses at the top of the class",
+                    RuleIds.ExtendsAtTop);
             }
         }
         else

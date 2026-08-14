@@ -1,3 +1,7 @@
+using System.Text.Json.Serialization;
+using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
+
 namespace ModelicaGraph;
 
 public class StyleCheckingSettings
@@ -6,15 +10,69 @@ public class StyleCheckingSettings
     public bool CommitRequiresIssueNumber { get; set; } = false;
     public bool IssueNumberAtEnd { get; set; } = false;
 
-    // Code formatting settings
+    // Code formatting settings (formatter flags — NOT style-check rules; consumed by ModelicaRenderer)
     public bool ApplyFormattingRules { get; set; } = false;
-    public bool ImportStatementsFirst { get; set; } = false;
     public bool ComponentsBeforeClasses { get; set; } = false;
-    public bool OneOfEachSection { get; set; } = false;
-    public bool DontMixEquationAndAlgorithm { get; set; } = false;
-    public bool DontMixConnections { get; set; } = false;
-    public bool InitialEQAlgoFirst { get; set; } = false;
-    public bool InitialEQAlgoLast { get; set; } = false;
+
+    // ---------------------------------------------------------------------------------------------
+    // Per-rule severity map (the source of truth for rule enablement/severity).
+    //
+    // The named bool properties below are backward-compatible facades over this map: enabling a rule
+    // stores its "when enabled" severity (see RuleCatalog), disabling removes it. A rule id absent
+    // from the map is disabled, matching the historical default of `= false`.
+    //
+    // The map itself is not serialized in Phase 1 — persistence stays bool-based (see the facades),
+    // so `.mlqt/settings.json` is unchanged and cross-compatible. A later phase that adds per-rule
+    // severity editing and custom rules will introduce a serialized form.
+    // ---------------------------------------------------------------------------------------------
+    [JsonIgnore]
+    public Dictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Resolves the configured severity for a rule id (Off when disabled/absent).</summary>
+    public RuleSeverity SeverityFor(string ruleId)
+        => RuleSeverities.TryGetValue(ruleId, out var s) ? s : RuleSeverity.Off;
+
+    private bool IsRuleEnabled(string ruleId) => SeverityFor(ruleId) != RuleSeverity.Off;
+
+    private void SetRuleEnabled(string ruleId, bool enabled)
+    {
+        if (enabled)
+            RuleSeverities[ruleId] = RuleCatalog.DefaultSeverityFor(ruleId);
+        else
+            RuleSeverities.Remove(ruleId);
+    }
+
+    // Code formatting style rules
+    public bool ImportStatementsFirst
+    {
+        get => IsRuleEnabled(RuleIds.ImportStatementsFirst);
+        set => SetRuleEnabled(RuleIds.ImportStatementsFirst, value);
+    }
+    public bool OneOfEachSection
+    {
+        get => IsRuleEnabled(RuleIds.OneOfEachSection);
+        set => SetRuleEnabled(RuleIds.OneOfEachSection, value);
+    }
+    public bool DontMixEquationAndAlgorithm
+    {
+        get => IsRuleEnabled(RuleIds.DontMixEquationAndAlgorithm);
+        set => SetRuleEnabled(RuleIds.DontMixEquationAndAlgorithm, value);
+    }
+    public bool DontMixConnections
+    {
+        get => IsRuleEnabled(RuleIds.DontMixConnections);
+        set => SetRuleEnabled(RuleIds.DontMixConnections, value);
+    }
+    public bool InitialEQAlgoFirst
+    {
+        get => IsRuleEnabled(RuleIds.InitialEqAlgoFirst);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoFirst, value);
+    }
+    public bool InitialEQAlgoLast
+    {
+        get => IsRuleEnabled(RuleIds.InitialEqAlgoLast);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoLast, value);
+    }
 
     // Models excluded from formatting (by fully qualified model ID)
     public List<string> FormattingExcludedModels { get; set; } = new();
@@ -23,18 +81,54 @@ public class StyleCheckingSettings
         => FormattingExcludedModels.Contains(modelId, StringComparer.Ordinal);
 
     // Style guidelines
-    public bool ClassHasDescription { get; set; } = false;
-    public bool ClassHasDocumentationInfo { get; set; } = false;
-    public bool ClassHasDocumentationRevisions { get; set; } = false;
-    public bool ClassHasIcon { get; set; } = false;
-    public bool ParameterHasDescription { get; set; } = false;
-    public bool ConstantHasDescription { get; set; } = false;
+    public bool ClassHasDescription
+    {
+        get => IsRuleEnabled(RuleIds.ClassDescription);
+        set => SetRuleEnabled(RuleIds.ClassDescription, value);
+    }
+    public bool ClassHasDocumentationInfo
+    {
+        get => IsRuleEnabled(RuleIds.ClassDocumentationInfo);
+        set => SetRuleEnabled(RuleIds.ClassDocumentationInfo, value);
+    }
+    public bool ClassHasDocumentationRevisions
+    {
+        get => IsRuleEnabled(RuleIds.ClassDocumentationRevisions);
+        set => SetRuleEnabled(RuleIds.ClassDocumentationRevisions, value);
+    }
+    public bool ClassHasIcon
+    {
+        get => IsRuleEnabled(RuleIds.ClassIcon);
+        set => SetRuleEnabled(RuleIds.ClassIcon, value);
+    }
+    public bool ParameterHasDescription
+    {
+        get => IsRuleEnabled(RuleIds.ParameterDescription);
+        set => SetRuleEnabled(RuleIds.ParameterDescription, value);
+    }
+    public bool ConstantHasDescription
+    {
+        get => IsRuleEnabled(RuleIds.ConstantDescription);
+        set => SetRuleEnabled(RuleIds.ConstantDescription, value);
+    }
 
-    public bool FollowNamingConvention { get; set; } = false;
+    public bool FollowNamingConvention
+    {
+        get => IsRuleEnabled(RuleIds.NamingConvention);
+        set => SetRuleEnabled(RuleIds.NamingConvention, value);
+    }
     public NamingConventionSettings NamingConvention { get; set; } = new();
 
-    public bool SpellCheckDescription { get; set; } = false;
-    public bool SpellCheckDocumentation { get; set; } = false;
+    public bool SpellCheckDescription
+    {
+        get => IsRuleEnabled(RuleIds.SpellingDescription);
+        set => SetRuleEnabled(RuleIds.SpellingDescription, value);
+    }
+    public bool SpellCheckDocumentation
+    {
+        get => IsRuleEnabled(RuleIds.SpellingDocumentation);
+        set => SetRuleEnabled(RuleIds.SpellingDocumentation, value);
+    }
 
     /// <summary>
     /// Language codes for spell checking dictionaries (e.g. "en_US", "en_GB").
@@ -44,7 +138,11 @@ public class StyleCheckingSettings
     public List<string> SpellCheckLanguages { get; set; } = ["en_US", "en_GB"];
 
     // Reference validation
-    public bool ValidateModelReferences { get; set; } = false;
+    public bool ValidateModelReferences
+    {
+        get => IsRuleEnabled(RuleIds.ModelReferences);
+        set => SetRuleEnabled(RuleIds.ModelReferences, value);
+    }
 
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,

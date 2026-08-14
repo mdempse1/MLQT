@@ -56,11 +56,11 @@ public class CheckClassAnnotations : VisitorWithModelNameTracking
 
         int line = context.Start.Line;
         if (_checkDocumentationInfo && !hasDocInfo)
-            AddViolation(line, "The class is missing Documentation info");
+            AddViolation(line, "The class is missing Documentation info", RuleIds.ClassDocumentationInfo);
         if (_checkDocumentationRevisions && !hasDocRevisions)
-            AddViolation(line, "The class is missing Documentation revisions");
+            AddViolation(line, "The class is missing Documentation revisions", RuleIds.ClassDocumentationRevisions);
         if (_checkIcon && !hasIcon)
-            AddViolation(line, "The class is missing an Icon annotation");
+            AddViolation(line, "The class is missing an Icon annotation", RuleIds.ClassIcon);
 
         return base.VisitComposition(context);
     }

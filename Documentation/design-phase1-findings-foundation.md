@@ -1,8 +1,20 @@
 # Design Note — Phase 1: Findings Foundation
 
-> **Status: design / not yet implemented.** Phase 1 of the locked roadmap
+> **Status: IMPLEMENTED** (behaviour-preserving; all suites green — ModelicaParser 1426,
+> ModelicaGraph 464, Services 519, MCP 240). Phase 1 of the locked roadmap
 > ([roadmap.md](roadmap.md)). Prerequisite for the CI quality gate
 > ([design-ci-quality-gate.md](design-ci-quality-gate.md)) and every later analysis phase.
+>
+> **Deviations from the original sketch, decided during implementation:**
+> - The `List<Finding>` entry point is a **new method** `StyleChecking.RunStyleCheckingFindings`;
+>   `RunStyleChecking` stays a thin `List<LogMessage>` projection over it, so all existing
+>   callers/tests are untouched.
+> - `RuleSeverities` is **`[JsonIgnore]` — a runtime projection**, not serialized. Persistence
+>   stays bool-based (unchanged `.mlqt/settings.json`), so old files migrate automatically via the
+>   facade setters and no `[OnDeserialized]` reconciliation is needed. The serialized map is
+>   deferred to Phase 4, where per-rule severity editing actually needs it.
+> - The base visitor keeps `RuleViolations` (projected `List<LogMessage>`) for the 14 existing
+>   visitor-level test files, and adds `Findings` (`IReadOnlyList<Finding>`) as the real accumulator.
 
 ## Purpose
 
@@ -218,8 +230,9 @@ Why this option (vs. a full dictionary cut, or bool+parallel-map):
 
 Notes: all default to `Warning` to reproduce today's single `"Style warning"` level.
 `FollowNamingConvention` stays one rule id in Phase 1 (matches its single toggle); splitting into
-Class/Parameter/Constant/Variable sub-ids is a later option. `ComponentsBeforeClasses` is a **dead
-setting** (no visitor) — not registered. `ApplyFormattingRules` is a formatter flag, not a check.
+Class/Parameter/Constant/Variable sub-ids is a later option. `ComponentsBeforeClasses` and
+`ApplyFormattingRules` are **formatter flags, not check rules** (consumed by `ModelicaRenderer`,
+not `RunStyleChecking`) — they stay plain `bool`s and are **not** part of the rule-severity map.
 
 ## Roadmap seams established in Phase 1
 

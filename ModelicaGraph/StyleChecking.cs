@@ -14,13 +14,9 @@ public static class StyleChecking
 {
 
     /// <summary>
-    /// Applies the style checks to a model
-    /// </summary>
-    /// <param name="_currentModel">The model to check</param>
-    /// <param name="settings">Style checking settings</param>
-    /// <param name="fullModelId">The fully qualified model ID (e.g., "MyPackage.MySubPackage.MyModel")</param>
-    /// <summary>
-    /// Applies the style checks to a model (synchronous version for parallel processing).
+    /// Applies the style checks to a model and returns the results as legacy
+    /// <see cref="LogMessage"/>s. Thin projection over <see cref="RunStyleCheckingFindings"/> kept
+    /// for existing consumers (GUI, MCP) — new code should prefer the structured findings.
     /// </summary>
     /// <param name="_currentModel">The model to check</param>
     /// <param name="settings">Style checking settings</param>
@@ -34,17 +30,40 @@ public static class StyleChecking
         IReadOnlySet<string>? knownModelNames = null,
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null)
+        => RunStyleCheckingFindings(_currentModel, settings, fullModelId, knownModelIds, spellChecker,
+                knownModelNames, isExcludedFromFormatting, baseClassHasIcon)
+            .Select(f => f.ToLogMessage())
+            .ToList();
+
+    /// <summary>
+    /// Applies the style checks to a model and returns structured <see cref="Finding"/>s carrying
+    /// rule id, severity, element identity, and a reformat-stable fingerprint. Foundation entry
+    /// point for the CI pipeline, baseline/ratchet, and dashboard.
+    /// </summary>
+    /// <param name="_currentModel">The model to check</param>
+    /// <param name="settings">Style checking settings</param>
+    /// <param name="fullModelId">The fully qualified model ID (e.g., "MyPackage.MySubPackage.MyModel")</param>
+    public static List<Finding> RunStyleCheckingFindings(
+        ModelDefinition _currentModel,
+        StyleCheckingSettings settings,
+        string fullModelId = "",
+        IReadOnlySet<string>? knownModelIds = null,
+        SpellChecker? spellChecker = null,
+        IReadOnlySet<string>? knownModelNames = null,
+        bool isExcludedFromFormatting = false,
+        Func<string, string, bool>? baseClassHasIcon = null,
+        IFindingSuppressor? suppressor = null)
     {
-        List<LogMessage> violations = new();
+        List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
 
         // Skip parsing entirely if no style rules are enabled
         if (!settings.HasAnyStyleRuleEnabled)
-            return violations;
+            return findings;
 
         var parsedCode = _currentModel.EnsureParsed();
         if (parsedCode == null)
-            return violations;
+            return findings;
 
         // Calculate the base package (everything except the last component of fullModelId)
         // This is used when the code doesn't have a within clause
@@ -62,7 +81,7 @@ public static class StyleChecking
         {
             var visitor = new PublicParametersAndConstantsHaveDescription(settings.ParameterHasDescription, settings.ConstantHasDescription, basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         // Skip formatting-related style rules for models excluded from formatting
         if (!isExcludedFromFormatting)
@@ -71,36 +90,36 @@ public static class StyleChecking
             {
                 var visitor = new ImportStatementsFirst(settings.ImportStatementsFirst, basePackage);
                 visitor.VisitStored_definition(parsedCode);
-                violations.AddRange(visitor.RuleViolations);
+                findings.AddRange(visitor.Findings);
 
                 var visitor2 = new ExtendsClausesAtTop(false, basePackage);
                 visitor2.VisitStored_definition(parsedCode);
-                violations.AddRange(visitor2.RuleViolations);
+                findings.AddRange(visitor2.Findings);
             }
             if (settings.InitialEQAlgoFirst || settings.InitialEQAlgoLast)
             {
                 var visitor = new InitialEquationFirst(settings.InitialEQAlgoFirst, settings.InitialEQAlgoLast, basePackage);
                 visitor.VisitStored_definition(parsedCode);
-                violations.AddRange(visitor.RuleViolations);
+                findings.AddRange(visitor.Findings);
             }
             if (settings.OneOfEachSection || settings.DontMixEquationAndAlgorithm)
             {
                 var visitor = new OneOfEachSection(settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, !settings.DontMixEquationAndAlgorithm, basePackage);
                 visitor.VisitStored_definition(parsedCode);
-                violations.AddRange(visitor.RuleViolations);
+                findings.AddRange(visitor.Findings);
             }
             if (settings.DontMixConnections)
             {
                 var visitor = new MixConnectionsAndEquations(basePackage);
                 visitor.VisitStored_definition(parsedCode);
-                violations.AddRange(visitor.RuleViolations);
+                findings.AddRange(visitor.Findings);
             }
         }
         if (settings.ClassHasDescription)
         {
             var visitor = new CheckClassDescriptionStrings(basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         if (settings.ClassHasDocumentationInfo || settings.ClassHasDocumentationRevisions || settings.ClassHasIcon)
         {
@@ -108,34 +127,48 @@ public static class StyleChecking
                 settings.ClassHasDocumentationInfo, settings.ClassHasDocumentationRevisions,
                 settings.ClassHasIcon, basePackage, baseClassHasIcon);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         if (settings.ValidateModelReferences && knownModelIds != null)
         {
             var visitor = new CheckModelReferences(knownModelIds, basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         if (settings.SpellCheckDescription && spellChecker != null)
         {
             var visitor = new SpellCheckDescriptions(spellChecker, knownModelNames, basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         if (settings.SpellCheckDocumentation && spellChecker != null)
         {
             var visitor = new SpellCheckDocumentation(spellChecker, knownModelNames, basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
         if (settings.FollowNamingConvention)
         {
             var config = settings.NamingConvention.ToConfig();
             var visitor = new FollowNamingConvention(config, basePackage);
             visitor.VisitStored_definition(parsedCode);
-            violations.AddRange(visitor.RuleViolations);
+            findings.AddRange(visitor.Findings);
         }
-        return violations;
+
+        // Stamp the configured severity on each finding (visitors emit at the default level).
+        // A finding only exists because its rule ran, so a resolved severity of Off (e.g. the
+        // ExtendsAtTop rule, which is coupled to ImportStatementsFirst rather than independently
+        // toggled) falls back to the rule's default enabled severity.
+        for (int i = 0; i < findings.Count; i++)
+        {
+            var sev = settings.SeverityFor(findings[i].RuleId);
+            if (sev == RuleSeverity.Off)
+                sev = RuleCatalog.DefaultSeverityFor(findings[i].RuleId);
+            findings[i] = findings[i] with { Severity = sev };
+        }
+
+        // Route through the suppression seam (no-op in Phase 1; the __MLQT hook lands later).
+        return (suppressor ?? NoOpFindingSuppressor.Instance).Apply(findings).ToList();
     }
 
     /// <summary>

@@ -82,7 +82,7 @@ public class OneOfEachSection : VisitorWithModelNameTracking
     {
         if (tracker.PublicSection == 1 && _onePublicSection)
         {
-            AddViolation(context.Start.Line, "This class contains more than 1 public section");
+            AddViolation(context.Start.Line, "This class contains more than 1 public section", RuleIds.OneOfEachSection);
         }
     }
 
@@ -90,7 +90,7 @@ public class OneOfEachSection : VisitorWithModelNameTracking
     {
         if (tracker.ProtectedSection == 1 && _oneProtectedSection)
         {
-            AddViolation(context.Start.Line, "This class contains more than 1 protected section");
+            AddViolation(context.Start.Line, "This class contains more than 1 protected section", RuleIds.OneOfEachSection);
         }
     }
 
@@ -100,11 +100,11 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         {
             if (tracker.InitialEquationSection == 1 && _oneInitialEquationSection)
             {
-                AddViolation(context.Start.Line, "This class contains more than 1 initial equation section");
+                AddViolation(context.Start.Line, "This class contains more than 1 initial equation section", RuleIds.OneOfEachSection);
             }
             if (tracker.InitialAlgorithmSection == 1 && !_allowEquationAndAlgorithm)
             {
-                AddViolation(context.Start.Line, "This class contains both an initial algorithm and an initial equation section");
+                AddViolation(context.Start.Line, "This class contains both an initial algorithm and an initial equation section", RuleIds.DontMixEquationAndAlgorithm);
             }
             tracker.InitialEquationSection++;
         }
@@ -112,11 +112,11 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         {
             if (tracker.EquationSection == 1 && _oneEquationSection)
             {
-                AddViolation(context.Start.Line, "This class contains more than 1 equation section");
+                AddViolation(context.Start.Line, "This class contains more than 1 equation section", RuleIds.OneOfEachSection);
             }
             if (tracker.AlgorithmSection == 1 && !_allowEquationAndAlgorithm)
             {
-                AddViolation(context.Start.Line, "This class contains both an algorithm and an equation section");
+                AddViolation(context.Start.Line, "This class contains both an algorithm and an equation section", RuleIds.DontMixEquationAndAlgorithm);
             }
             tracker.EquationSection++;
         }
@@ -128,11 +128,11 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         {
             if (tracker.InitialAlgorithmSection == 1 && _oneInitialEquationSection)
             {
-                AddViolation(context.Start.Line, "This class contains more than 1 initial algorithm section");
+                AddViolation(context.Start.Line, "This class contains more than 1 initial algorithm section", RuleIds.OneOfEachSection);
             }
             if (tracker.InitialEquationSection == 1 && !_allowEquationAndAlgorithm)
             {
-                AddViolation(context.Start.Line, "This class contains both an initial algorithm and an initial equation section");
+                AddViolation(context.Start.Line, "This class contains both an initial algorithm and an initial equation section", RuleIds.DontMixEquationAndAlgorithm);
             }
             tracker.InitialAlgorithmSection++;
         }
@@ -140,11 +140,11 @@ public class OneOfEachSection : VisitorWithModelNameTracking
         {
             if (tracker.AlgorithmSection == 1 && _oneEquationSection)
             {
-                AddViolation(context.Start.Line, "This class contains more than 1 algorithm section");
+                AddViolation(context.Start.Line, "This class contains more than 1 algorithm section", RuleIds.OneOfEachSection);
             }
             if (tracker.EquationSection == 1 && !_allowEquationAndAlgorithm)
             {
-                AddViolation(context.Start.Line, "This class contains both an algorithm and an equation section");
+                AddViolation(context.Start.Line, "This class contains both an algorithm and an equation section", RuleIds.DontMixEquationAndAlgorithm);
             }
             tracker.AlgorithmSection++;
         }
