@@ -197,6 +197,7 @@ across all workstreams:
    **Implementation plan:** [design-phase4-ci-ergonomics.md](design-phase4-ci-ergonomics.md).
 5. **Suppression (`__MLQT` annotations)** — with GUI + MCP authoring actions. Lands before
    the analysis wave generates intentional-exception cases (declaration-order case).
+   **Implementation plan:** [design-phase5-suppression.md](design-phase5-suppression.md).
 6. **Wave-1 analyses + dashboard** — unused elements/classes, duplicate/shadowing, `uses`
    hygiene, `package.order` consistency, missing-units; plus the metrics dashboard/burndown.
    The debt-ledger content that makes the ratchet compelling.
