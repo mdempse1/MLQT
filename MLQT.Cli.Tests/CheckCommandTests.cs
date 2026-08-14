@@ -317,13 +317,30 @@ public class CheckCommandTests
             "model TestModel\n  parameter Real x = 1.0;\n  // touched\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
         // Touched-debt in a changed model: fail policy gates, warn policy does not.
-        var failCode = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
-            "--changed-from", baseRev, "--touched-debt", "fail", "--fail-on", "warning", "--no-color").code;
-        Assert.Equal(1, failCode);
+        var fail = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "fail", "--fail-on", "warning", "--no-color");
+        Assert.Equal(1, fail.code);
+        Assert.Contains("model(s) changed since", fail.stderr); // the diagnostic note
 
         var warnCode = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "warn", "--fail-on", "warning", "--no-color").code;
         Assert.Equal(0, warnCode);
+    }
+
+    [Fact]
+    public void ChangedFrom_UnresolvableRef_ErrorsExitTwo()
+    {
+        using var lib = DefaultFixture();
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        Run("baseline", "create", lib.Path);
+
+        var (code, _, stderr) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", "no-such-branch");
+        Assert.Equal(2, code);
+        Assert.Contains("could not resolve revision", stderr);
     }
 
     // ---- Phase 4: severities + CI formats ------------------------------------------------------

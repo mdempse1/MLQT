@@ -41,6 +41,9 @@ internal static class CheckRunner
                 stderr.WriteLine($"error: {changed.Error}");
                 return ExitCodes.Error;
             }
+            stderr.WriteLine(
+                $"note: {changed.ChangedFileCount} changed .mo file(s), " +
+                $"{changed.ChangedModelIds.Count} model(s) changed since {opts.ChangedFrom}");
             changedModelIds = changed.ChangedModelIds;
         }
 

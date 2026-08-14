@@ -200,6 +200,17 @@ mlqt check /path/to/MyLibrary --baseline .mlqt/baseline.json \
 `--touched-debt fail` those also fail the gate (default `warn` reports them without failing). Works
 with Git and SVN — run it from inside the working copy.
 
+MLQT prints a diagnostic note so you can see what the diff detected:
+
+```
+note: 3 changed .mo file(s), 5 model(s) changed since main
+```
+
+If `<ref>` can't be resolved (e.g. your checkout has `master`, or only `origin/main`, not a local
+`main`), the command **errors** rather than silently treating nothing as changed. If the note shows
+`0 model(s) changed`, the ref probably already contains your change — diff against a ref that is
+*behind* it (`--changed-from HEAD~1`, `origin/main`, …).
+
 ---
 
 ## 7. Wire it into CI
@@ -287,5 +298,7 @@ absolute paths are used as-is.
 | Lots of `MLQT.Reference.ModelReferences` findings | Dependencies (MSL, etc.) aren't loaded, so external `modelica://` refs look broken. Turn `ValidateModelReferences` off for now. |
 | Spelling flags valid domain terms | Build a custom dictionary — see [spell-checking.md](spell-checking.md). |
 | `error: '<path>' is not inside a Git or SVN working copy` | `--changed-from` needs to run inside the VCS working copy. |
+| `error: could not resolve revision '<ref>'` | The `--changed-from` ref doesn't exist locally (wrong branch name, or it's only `origin/<ref>`). Check `git rev-parse --verify <ref>`; try `origin/main`, `master`, or `HEAD~1`. |
+| Only new findings show, no touched debt | The note says `0 model(s) changed` — the ref found no changes (it may already contain your change). Diff against a ref *behind* it. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

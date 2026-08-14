@@ -3,7 +3,11 @@ using RevisionControl.Interfaces;
 
 namespace MLQT.Services.Checking;
 
-public sealed record ChangedModelResult(bool Ok, IReadOnlySet<string> ChangedModelIds, string? Error);
+public sealed record ChangedModelResult(
+    bool Ok,
+    IReadOnlySet<string> ChangedModelIds,
+    int ChangedFileCount,
+    string? Error);
 
 /// <summary>
 /// Determines which models a change touched, for the baseline ratchet's touched-debt escalation.
@@ -39,7 +43,11 @@ public static class ChangedModelResolver
         }
 
         if (vcs is null || root is null)
-            return new ChangedModelResult(false, Empty, $"'{libraryPath}' is not inside a Git or SVN working copy");
+            return Failed($"'{libraryPath}' is not inside a Git or SVN working copy");
+
+        // Fail loudly on an unresolvable ref rather than silently treating nothing as changed.
+        if (vcs.ResolveRevision(root, sinceRevision) is null)
+            return Failed($"could not resolve revision '{sinceRevision}' in {root}");
 
         IReadOnlyList<string> changedPaths;
         try
@@ -48,8 +56,12 @@ public static class ChangedModelResolver
         }
         catch (Exception ex)
         {
-            return new ChangedModelResult(false, Empty, $"could not diff against '{sinceRevision}': {ex.Message}");
+            return Failed($"could not diff against '{sinceRevision}': {ex.Message}");
         }
+
+        var changedMoFiles = changedPaths
+            .Where(p => p.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         // file(normalized) -> model ids
         var fileToModels = new Dictionary<string, List<string>>(PathComparer);
@@ -62,16 +74,16 @@ public static class ChangedModelResolver
         }
 
         var changedModels = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var path in changedPaths)
+        foreach (var path in changedMoFiles)
         {
-            if (!path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                continue;
             if (fileToModels.TryGetValue(NormalizePath(path), out var models))
                 changedModels.UnionWith(models);
         }
 
-        return new ChangedModelResult(true, changedModels, null);
+        return new ChangedModelResult(true, changedModels, changedMoFiles.Count, null);
     }
+
+    private static ChangedModelResult Failed(string error) => new(false, Empty, 0, error);
 
     private static string NormalizePath(string path) => Path.GetFullPath(path);
 
