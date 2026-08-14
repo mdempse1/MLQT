@@ -443,6 +443,20 @@ public class CheckCommandTests
         Assert.Equal(0, checkCode); // both libraries' findings are accepted
     }
 
+    [Fact]
+    public void Console_MultiModelFile_ShowsEachModel()
+    {
+        // One file, two models — the console must show which model each violation belongs to.
+        using var lib = new TempLibrary()
+            .WithModel("Two.mo",
+                "package P\n  model A\n    parameter Real x = 1.0;\n  end A;\n\n  model B\n    parameter Real y = 2.0;\n  end B;\nend P;")
+            .WithSettings(ParamDescriptionSettings);
+
+        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+        Assert.Contains("P.A", stdout);
+        Assert.Contains("P.B", stdout);
+    }
+
     // ---- relative paths resolve against the library/repo, not the CWD --------------------------
 
     [Fact]

@@ -114,7 +114,8 @@ mlqt check ./MyLibrary --baseline .mlqt/baseline.json --changed-from main \
 
 ## Output formats
 
-- **console** — human-readable, grouped by file, with a per-severity summary.
+- **console** — human-readable, grouped by model (each model header shows its file), with a
+  per-severity summary.
 - **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, a `summary` (new /
   accepted / touched counts), and a `findings` array. Each finding includes its `Fingerprint`, `Status`
   (`New`/`AcceptedDebt`/`TouchedDebt`), and `File`.

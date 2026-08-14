@@ -20,18 +20,18 @@ internal sealed class JUnitFindingFormatter : IFindingFormatter
         var testcases = actionable.Select(c =>
         {
             var f = c.Finding;
-            var classname = report.FileFor(f) ?? f.ModelId;
+            var file = report.FileFor(f);
             var name = f.ElementPath is null
                 ? $"{f.RuleId} (line {f.LineNumber})"
                 : $"{f.RuleId}:{f.ElementPath} (line {f.LineNumber})";
 
             return new XElement("testcase",
-                new XAttribute("classname", classname),
+                new XAttribute("classname", f.ModelId), // the model is the "class" — groups findings by model in the CI test UI
                 new XAttribute("name", name),
                 new XElement("failure",
                     new XAttribute("message", f.Message),
                     new XAttribute("type", c.Status == FindingStatus.TouchedDebt ? $"{f.RuleId} (touched debt)" : f.RuleId),
-                    new XText($"{f.ModelId} line {f.LineNumber}: {f.Message}")));
+                    new XText($"{f.ModelId}{(file is null ? "" : $" ({file})")} line {f.LineNumber}: {f.Message}")));
         });
 
         var suite = new XElement("testsuite",
