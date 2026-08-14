@@ -13,9 +13,12 @@ internal sealed class MarkdownFindingFormatter : IFindingFormatter
         var newCount = report.CountOfStatus(FindingStatus.New);
         var touched = report.CountOfStatus(FindingStatus.TouchedDebt);
         var accepted = report.CountOfStatus(FindingStatus.AcceptedDebt);
+        var fixedCount = report.FixedEntries.Count;
         var gate = report.GatePassed ? "passed" : "failed";
 
-        sb.AppendLine($"## MLQT check — {newCount} new, {touched} touched, {accepted} accepted (gate: {gate})");
+        sb.AppendLine(
+            $"## MLQT check — {newCount} new, {touched} touched, {accepted} accepted, " +
+            $"{fixedCount} fixed (gate: {gate})");
         sb.AppendLine();
 
         var actionable = report.Findings
@@ -25,17 +28,29 @@ internal sealed class MarkdownFindingFormatter : IFindingFormatter
         if (actionable.Count == 0)
         {
             sb.AppendLine("No new findings.");
-            return sb.ToString();
+        }
+        else
+        {
+            sb.AppendLine("| Severity | Status | Rule | Model | Line | Message |");
+            sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
+            foreach (var c in actionable)
+            {
+                var f = c.Finding;
+                sb.AppendLine(
+                    $"| {f.Severity.ToString().ToLowerInvariant()} | {c.Status} | {f.RuleId} | " +
+                    $"{Cell(f.ModelId)} | {f.LineNumber} | {Cell(f.Message)} |");
+            }
         }
 
-        sb.AppendLine("| Severity | Status | Rule | Model | Line | Message |");
-        sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
-        foreach (var c in actionable)
+        if (fixedCount > 0)
         {
-            var f = c.Finding;
-            sb.AppendLine(
-                $"| {f.Severity.ToString().ToLowerInvariant()} | {c.Status} | {f.RuleId} | " +
-                $"{Cell(f.ModelId)} | {f.LineNumber} | {Cell(f.Message)} |");
+            sb.AppendLine();
+            sb.AppendLine($"**Fixed in changed models ({fixedCount}):**");
+            sb.AppendLine();
+            foreach (var e in report.FixedEntries
+                         .OrderBy(e => e.Model, StringComparer.Ordinal)
+                         .ThenBy(e => e.RuleId, StringComparer.Ordinal))
+                sb.AppendLine($"- {e.RuleId} — {Cell(e.Model)}: {Cell(e.Message)}");
         }
 
         return sb.ToString();

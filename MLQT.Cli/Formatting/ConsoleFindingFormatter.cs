@@ -49,8 +49,22 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
         else
             AppendGrouped(sb, report, actionable, showStatus: true);
 
+        var fixedCount = report.FixedEntries.Count;
+        if (fixedCount > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Fixed in changed models ({fixedCount}):");
+            foreach (var e in report.FixedEntries
+                         .OrderBy(e => e.Model, StringComparer.Ordinal)
+                         .ThenBy(e => e.RuleId, StringComparer.Ordinal))
+                sb.AppendLine($"  {e.Model}  {e.RuleId}: {e.Message}");
+            sb.AppendLine();
+        }
+
+        var fixedText = fixedCount > 0 ? $", {fixedCount} fixed" : string.Empty;
         sb.AppendLine(
-            $"{newCount} new, {touched} touched-debt, {accepted} accepted (baseline) across {report.ModelsChecked} model(s).");
+            $"{newCount} new, {touched} touched-debt, {accepted} accepted (baseline){fixedText} " +
+            $"across {report.ModelsChecked} model(s).");
         return sb.ToString();
     }
 

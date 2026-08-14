@@ -49,8 +49,19 @@ internal static class CheckRunner
 
         var classified = FindingClassifier.Classify(load.Findings, baseline, changedModelIds);
         var gateFailureCount = classified.Count(c => FailsGate(c, opts));
+
+        // Fixed = baseline findings in a changed model that are no longer present (positive feedback).
+        IReadOnlyList<BaselineEntry> fixedEntries = [];
+        if (baseline is not null && changedModelIds is not null)
+        {
+            fixedEntries = baseline.StaleEntries(load.Findings)
+                .Where(e => changedModelIds.Contains(e.Model))
+                .ToList();
+        }
+
         var report = new CheckReport(
-            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile, baseline is not null, gateFailureCount);
+            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile,
+            baseline is not null, gateFailureCount, fixedEntries);
 
         IFindingFormatter formatter = opts.Format switch
         {

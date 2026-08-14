@@ -224,6 +224,12 @@ If `<ref>` can't be resolved (e.g. your checkout has `master`, or only `origin/m
 `0 model(s) changed`, the ref probably already contains your change — diff against a ref that is
 *behind* it (`--changed-from HEAD~1`, `origin/main`, …).
 
+With `--changed-from`, the report also lists issues you've **fixed** — baseline findings in changed
+models that are no longer present — as positive feedback, so you can see progress even while issues
+remain. Fixed issues appear in a "Fixed in changed models" section, in a `fixed` count in the
+console/markdown summary, in the JSON `fixed` array, and as a `mlqt.findings.fixed` TeamCity
+statistic (another burndown line).
+
 ---
 
 ## 7. Wire it into CI

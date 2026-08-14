@@ -343,6 +343,35 @@ public class CheckCommandTests
         Assert.Contains("could not resolve revision", stderr);
     }
 
+    [Fact]
+    public void ChangedFrom_ReportsFixedIssuesInChangedModels()
+    {
+        using var lib = DefaultFixture(); // TestModel with undescribed `x`
+
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        var baseRev = repo.Head.Tip.Sha;
+
+        Run("baseline", "create", lib.Path); // baselines the `x` finding
+
+        // Fix x (add a description) — the finding disappears, and the model was touched.
+        lib.WithModel("TestModel.mo",
+            "model TestModel\n  parameter Real x = 1.0 \"described now\";\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
+
+        var (_, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--no-color");
+        Assert.Contains("Fixed in changed models", stdout);
+        Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
+        Assert.Contains("1 fixed", stdout);
+
+        var (_, json, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--format", "json");
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(1, doc.RootElement.GetProperty("summary").GetProperty("fixed").GetInt32());
+        Assert.Equal(1, doc.RootElement.GetProperty("fixed").GetArrayLength());
+    }
+
     // ---- Phase 4: severities + CI formats ------------------------------------------------------
 
     private const string ErrorSeveritySettings =

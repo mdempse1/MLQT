@@ -10,7 +10,8 @@ internal sealed record CheckReport(
     IReadOnlyList<ClassifiedFinding> Findings,
     IReadOnlyDictionary<string, string> ModelToFile,
     bool HasBaseline,
-    int GateFailureCount)
+    int GateFailureCount,
+    IReadOnlyList<BaselineEntry> FixedEntries)
 {
     /// <summary>The source file for a finding's model, or null if unknown.</summary>
     public string? FileFor(Finding f) => ModelToFile.TryGetValue(f.ModelId, out var p) ? p : null;

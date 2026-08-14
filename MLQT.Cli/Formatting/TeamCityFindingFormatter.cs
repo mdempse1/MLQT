@@ -17,6 +17,7 @@ internal sealed class TeamCityFindingFormatter : IFindingFormatter
         sb.AppendLine($"##teamcity[buildStatisticValue key='mlqt.findings.new' value='{report.CountOfStatus(FindingStatus.New)}']");
         sb.AppendLine($"##teamcity[buildStatisticValue key='mlqt.findings.acceptedDebt' value='{report.CountOfStatus(FindingStatus.AcceptedDebt)}']");
         sb.AppendLine($"##teamcity[buildStatisticValue key='mlqt.findings.touchedDebt' value='{report.CountOfStatus(FindingStatus.TouchedDebt)}']");
+        sb.AppendLine($"##teamcity[buildStatisticValue key='mlqt.findings.fixed' value='{report.FixedEntries.Count}']");
 
         foreach (var c in report.Findings.Where(x => x.Status != FindingStatus.AcceptedDebt))
         {

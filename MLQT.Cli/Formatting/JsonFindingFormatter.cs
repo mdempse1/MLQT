@@ -26,8 +26,12 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
             {
                 @new = report.CountOfStatus(FindingStatus.New),
                 acceptedDebt = report.CountOfStatus(FindingStatus.AcceptedDebt),
-                touchedDebt = report.CountOfStatus(FindingStatus.TouchedDebt)
+                touchedDebt = report.CountOfStatus(FindingStatus.TouchedDebt),
+                @fixed = report.FixedEntries.Count
             },
+            @fixed = report.FixedEntries
+                .Select(e => new FixedJson(e.RuleId, e.Model, e.Element, e.Message, e.Fingerprint))
+                .ToList(),
             findings = report.Findings.Select(c => new FindingJson(
                 c.Finding.RuleId,
                 c.Finding.Severity.ToString(),
@@ -45,4 +49,7 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
     private sealed record FindingJson(
         string RuleId, string Severity, string Status, string Model, string? Element,
         int Line, string Message, string Fingerprint, string? File);
+
+    private sealed record FixedJson(
+        string RuleId, string Model, string? Element, string Message, string Fingerprint);
 }
