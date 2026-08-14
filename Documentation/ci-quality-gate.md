@@ -272,7 +272,10 @@ mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <
 ```
 
 `--config` defaults to `<library-path>/.mlqt/settings.json`; `--baseline` for the `baseline` commands
-defaults to `<library-path>/.mlqt/baseline.json`.
+defaults to `<library-path>/.mlqt/baseline.json`. A **relative** `--config`/`--baseline` value is
+resolved against the library/repository path (not the current directory), so
+`--baseline .mlqt/baseline.json` finds `<repo>/.mlqt/baseline.json` from any working directory;
+absolute paths are used as-is.
 
 ---
 

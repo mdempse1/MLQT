@@ -15,14 +15,15 @@ internal static class CheckRunner
         Baseline? baseline = null;
         if (opts.BaselinePath is not null)
         {
-            if (!File.Exists(opts.BaselinePath))
+            var baselinePath = RepoPath.Resolve(opts.LibraryPath, opts.BaselinePath);
+            if (!File.Exists(baselinePath))
             {
-                stderr.WriteLine($"error: baseline not found: {opts.BaselinePath}");
+                stderr.WriteLine($"error: baseline not found: {baselinePath}");
                 return ExitCodes.Error;
             }
             try
             {
-                baseline = Baseline.Load(opts.BaselinePath);
+                baseline = Baseline.Load(baselinePath);
             }
             catch (Exception ex)
             {

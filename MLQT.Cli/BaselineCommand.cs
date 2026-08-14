@@ -9,9 +9,12 @@ internal sealed record BaselineOptions
     public string? ConfigPath { get; init; }
     public bool Force { get; init; }
 
-    /// <summary>The baseline file to operate on — explicit, or <c>&lt;lib&gt;/.mlqt/baseline.json</c>.</summary>
+    /// <summary>The baseline file to operate on — explicit (resolved against the library path when
+    /// relative), or the default <c>&lt;lib&gt;/.mlqt/baseline.json</c>.</summary>
     public string ResolvedBaselinePath =>
-        BaselinePath ?? Path.Combine(LibraryPath, ".mlqt", "baseline.json");
+        BaselinePath is not null
+            ? RepoPath.Resolve(LibraryPath, BaselinePath)
+            : Path.Combine(LibraryPath, ".mlqt", "baseline.json");
 
     public static bool TryParse(IReadOnlyList<string> args, out BaselineOptions? options, out string? error)
     {

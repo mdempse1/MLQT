@@ -11,7 +11,9 @@ internal static class SettingsResolver
     /// </summary>
     public static StyleCheckingSettings Resolve(string libraryPath, string? configPath, out string source)
     {
-        var path = configPath ?? Path.Combine(libraryPath, ".mlqt", "settings.json");
+        var path = configPath is not null
+            ? RepoPath.Resolve(libraryPath, configPath)
+            : Path.Combine(libraryPath, ".mlqt", "settings.json");
 
         if (File.Exists(path))
         {
@@ -23,7 +25,7 @@ internal static class SettingsResolver
         }
 
         if (configPath is not null)
-            throw new FileNotFoundException($"config file not found: '{configPath}'");
+            throw new FileNotFoundException($"config file not found: '{path}'");
 
         source = "built-in defaults";
         return new StyleCheckingSettings();

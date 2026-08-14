@@ -425,4 +425,47 @@ public class CheckCommandTests
         var (checkCode, _, _) = Run("check", repo.Path, "--baseline", baselinePath, "--fail-on", "warning", "--no-color");
         Assert.Equal(0, checkCode); // both libraries' findings are accepted
     }
+
+    // ---- relative paths resolve against the library/repo, not the CWD --------------------------
+
+    [Fact]
+    public void RelativeBaselinePath_ResolvesAgainstLibraryPath()
+    {
+        using var lib = DefaultFixture();
+        Assert.Equal(0, Run("baseline", "create", lib.Path).code); // writes <lib>/.mlqt/baseline.json
+
+        // A relative --baseline must resolve against lib.Path, not the test runner's CWD.
+        var (code, stdout, _) = Run("check", lib.Path, "--baseline", ".mlqt/baseline.json",
+            "--fail-on", "warning", "--no-color");
+        Assert.Equal(0, code); // found it → the existing finding is accepted debt
+        Assert.Contains("accepted", stdout);
+    }
+
+    [Fact]
+    public void RelativeConfigPath_ResolvesAgainstLibraryPath()
+    {
+        using var lib = new TempLibrary().WithModel("TestModel.mo", ModelWithOneUndescribedParam);
+        File.WriteAllText(System.IO.Path.Combine(lib.Path, "myconfig.json"), ParamDescriptionSettings);
+
+        var (_, stdout, _) = Run("check", lib.Path, "--config", "myconfig.json", "--no-color");
+        Assert.Contains("MLQT.Doc.ParameterDescription", stdout); // config found relative to lib → rule ran
+    }
+
+    [Fact]
+    public void BaselineCreate_RelativePath_ResolvesAgainstLibraryPath()
+    {
+        using var lib = DefaultFixture();
+        Assert.Equal(0, Run("baseline", "create", lib.Path, "--baseline", "custom/base.json").code);
+        Assert.True(File.Exists(System.IO.Path.Combine(lib.Path, "custom", "base.json")));
+    }
+
+    [Fact]
+    public void AbsoluteBaselinePath_StillWorks()
+    {
+        using var lib = DefaultFixture();
+        var abs = System.IO.Path.Combine(lib.Path, "abs-baseline.json");
+        Assert.Equal(0, Run("baseline", "create", lib.Path, "--baseline", abs).code);
+        Assert.True(File.Exists(abs));
+        Assert.Equal(0, Run("check", lib.Path, "--baseline", abs, "--fail-on", "warning", "--no-color").code);
+    }
 }
