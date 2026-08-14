@@ -36,6 +36,20 @@ public class LogMessage
     /// </summary>
     public string Source { get; set; } = "";
 
+    /// <summary>
+    /// For a style-check message, the structured rule id (e.g. "MLQT.Documentation.ParameterDescription")
+    /// carried over from the originating <see cref="Finding"/>; <c>null</c> for other sources. Lets the UI
+    /// offer a "suppress this rule here" action without re-deriving the rule.
+    /// </summary>
+    public string? RuleId { get; set; }
+
+    /// <summary>
+    /// For a style-check message, the element within the model the finding is about (e.g. a component
+    /// name), or <c>null</c> for a class-level finding. Carried over from the originating
+    /// <see cref="Finding"/>; used to scope a suppression to a single component.
+    /// </summary>
+    public string? ElementPath { get; set; }
+
     public LogMessage(string modelName, string severity, int lineNumber, string summary, string details = "")
     {
         ModelName = modelName;

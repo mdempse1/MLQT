@@ -51,5 +51,10 @@ public sealed record Finding
     /// <c>"StyleChecking"</c> source, empty details).
     /// </summary>
     public LogMessage ToLogMessage() =>
-        new(ModelId, "Style warning", LineNumber, Message) { Source = "StyleChecking" };
+        new(ModelId, "Style warning", LineNumber, Message)
+        {
+            Source = "StyleChecking",
+            RuleId = RuleId,
+            ElementPath = ElementPath,
+        };
 }

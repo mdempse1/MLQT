@@ -5,6 +5,7 @@
 @using OpenModelicaInterface
 @using RevisionControl
 @using ModelicaParser.SpellChecking
+@using ModelicaParser.StyleRules
 
 @inject AppState NavState
 @inject ILibraryDataService LibraryDataService
@@ -247,6 +248,12 @@
             @if (IsSpellingViolation(_currentIssue))
             {
                 <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="AddToDictionary" Class="px-10">Add to Dictionary
+                </MudButton>
+            }
+            @if (CanSuppressRule(_currentIssue))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SuppressCurrentIssueRule"
+                           Disabled="_suppressing" StartIcon="@Icons.Material.Filled.RuleFolder" Class="px-10">Suppress
                 </MudButton>
             }
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResolveIssue" Class="px-10">Resolve
@@ -1493,6 +1500,160 @@ document.head.appendChild(style);
             CodeReviewService.RemoveLogMessage(_currentIssue);
         _issueDetailsVisible = false;
         StateHasChanged();
+    }
+
+    private bool _suppressing;
+
+    // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
+    // Spelling findings are excluded — they have their own dictionary/ignore workflow, and blanket
+    // suppression of the spelling rule is rarely what the user wants there.
+    private static bool CanSuppressRule(LogMessage? issue)
+        => issue is { Source: "StyleChecking" } && !string.IsNullOrEmpty(issue.RuleId) && !IsSpellingViolation(issue);
+
+    /// <summary>
+    /// Waive the current issue's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the
+    /// class (or the finding's component) and saving the file — the same in-source suppression the CLI
+    /// and MCP server honour. Persists through the single-file save path used by spelling corrections.
+    /// </summary>
+    private async Task SuppressCurrentIssueRule()
+    {
+        var issue = _currentIssue;
+        if (issue is null || string.IsNullOrEmpty(issue.RuleId))
+            return;
+
+        var targetNode = LibraryDataService.GetModelById(issue.ModelName);
+        if (targetNode is null)
+        {
+            Snackbar.Add("Cannot locate the model to suppress the rule in.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        var graph = LibraryDataService.CombinedGraph;
+        var fileId = targetNode.ContainingFileId;
+        var fileNode = string.IsNullOrEmpty(fileId) ? null : graph.GetNode<FileNode>(fileId);
+        if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath))
+        {
+            Snackbar.Add("Cannot locate the file on disk to edit.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        // Scope to the component when the finding names a simple one; otherwise waive it for the class.
+        var component = issue.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
+
+        var classCode = targetNode.Definition.ModelicaCode ?? "";
+        if (!MlqtSuppressionWriter.TryAddSuppression(classCode, component, issue.RuleId!, null, out var newClassCode, out var writeError))
+        {
+            // A component target that can't be located (e.g. an inherited element) falls back to
+            // suppressing at the class level so the action still succeeds.
+            if (component is null ||
+                !MlqtSuppressionWriter.TryAddSuppression(classCode, null, issue.RuleId!, null, out newClassCode, out writeError))
+            {
+                Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
+                return;
+            }
+            component = null;
+        }
+
+        // Splice the modified class body back into its file owner, whose ModelicaCode is the whole-file
+        // slice that gets rendered and written. When the target IS the file owner they are the same.
+        var fileOwner = graph.GetModelsInFile(fileId!).FirstOrDefault(m =>
+                string.IsNullOrEmpty(m.ParentModelName)
+                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId)
+            ?? targetNode;
+
+        string newOwnerCode;
+        if (fileOwner.Id == targetNode.Id)
+        {
+            newOwnerCode = newClassCode;
+        }
+        else
+        {
+            var ownerCode = fileOwner.Definition.ModelicaCode ?? "";
+            var idx = ownerCode.IndexOf(classCode, StringComparison.Ordinal);
+            if (idx < 0 || ownerCode.IndexOf(classCode, idx + classCode.Length, StringComparison.Ordinal) >= 0)
+            {
+                Snackbar.Add("Could not uniquely locate the class within its file; reload the library and retry.",
+                    MudBlazor.Severity.Warning);
+                return;
+            }
+            newOwnerCode = ownerCode[..idx] + newClassCode + ownerCode[(idx + classCode.Length)..];
+        }
+
+        _suppressing = true;
+        try
+        {
+            // Never persist broken code.
+            var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(newOwnerCode);
+            if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
+            {
+                Snackbar.Add("Suppression was not applied: the result failed to parse.", MudBlazor.Severity.Error);
+                return;
+            }
+
+            // Render the whole file via the saver (same formatting as format-on-save).
+            fileOwner.Definition.ModelicaCode = newOwnerCode;
+            fileOwner.Definition.ParsedCode = null;
+            var rendered = ModelicaPackageSaver.RenderFileOwnerModel(
+                fileOwner,
+                _settings.StyleChecking.OneOfEachSection,
+                _settings.StyleChecking.ImportStatementsFirst,
+                _settings.StyleChecking.ComponentsBeforeClasses);
+
+            var filePath = fileNode.FilePath;
+            var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(fileOwner.Id));
+            var repository = string.IsNullOrEmpty(library?.RepositoryId)
+                ? null : RepositoryService.GetRepository(library.RepositoryId);
+            var repoId = repository?.Id;
+            var monitoredRoot = repository?.VcsRootPath;
+            bool monitorPaused = false;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(repoId))
+                {
+                    FileMonitoringService.StopMonitoring(repoId);
+                    monitorPaused = true;
+                }
+                await Task.Run(() => File.WriteAllText(filePath, rendered));
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to write suppression to {filePath}", ex);
+                Snackbar.Add($"Failed to save suppression: {ex.Message}", MudBlazor.Severity.Error);
+                if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+                    FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+                return;
+            }
+
+            // Re-parse the file from disk so all model nodes are rebuilt from the saved content.
+            var affected = await LibraryDataService.ReloadFileAsync(filePath);
+            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+            {
+                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+                FileMonitoringService.NotifyFileActivity(repoId!);
+            }
+
+            NavState.ModelContentChanged(affected);
+            _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
+
+            // Drop the now-waived finding(s) for this rule on this model — a re-check would not report
+            // them. Scoped to the target model (a class-level waiver doesn't affect sibling classes) and,
+            // for a component waiver, to that component.
+            CodeReviewService.RemoveLogMessagesByPredicate(m =>
+                m.ModelName == issue.ModelName && m.RuleId == issue.RuleId
+                && (component is null || m.ElementPath == component));
+
+            _issueDetailsVisible = false;
+            OnModelSelected();   // re-render with the annotated content and refresh VCS status
+            Snackbar.Add(
+                $"Suppressed rule '{issue.RuleId}'{(component is null ? "" : $" on '{component}'")}.",
+                MudBlazor.Severity.Success);
+        }
+        finally
+        {
+            _suppressing = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void OnIssuesScopeChanged(bool value) {
