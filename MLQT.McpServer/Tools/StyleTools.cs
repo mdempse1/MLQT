@@ -6,6 +6,7 @@ using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 

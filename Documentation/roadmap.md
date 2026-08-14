@@ -188,6 +188,7 @@ across all workstreams:
    [design-phase1-findings-foundation.md](design-phase1-findings-foundation.md).
 2. **Headless CLI MVP** — `mlqt check` reusing the service layer; console + exit code +
    JUnit + JSON; `dotnet tool`. Linux/macOS **headless** starts here, running existing rules.
+   **Implementation plan:** [design-phase2-cli.md](design-phase2-cli.md).
 3. **Baseline / ratchet** — `baseline create/update/prune`, new-vs-accepted classification,
    changed-model warn-by-default. The adoption unlock for legacy libraries.
 4. **CI ergonomics** — SARIF, TeamCity service messages + debt-trend statistics, markdown

@@ -5,6 +5,7 @@ using ModelicaParser.SpellChecking;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
+using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using MLQT.Services.Interfaces;

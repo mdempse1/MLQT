@@ -1,7 +1,7 @@
 using ModelicaParser.SpellChecking;
 using MLQT.Services.Interfaces;
 
-namespace MLQT.McpServer.Helpers;
+namespace MLQT.Services.Checking;
 
 /// <summary>
 /// Builds a <see cref="SpellChecker"/> for a chosen set of dictionary languages, mirroring
@@ -10,7 +10,7 @@ namespace MLQT.McpServer.Helpers;
 /// This is what lets the spell-check language actually take effect (the service interface only
 /// exposes the default-language checker).
 /// </summary>
-internal static class SpellCheckerFactory
+public static class SpellCheckerFactory
 {
     public static SpellChecker Build(
         IEnumerable<string>? languages,

@@ -17,6 +17,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
 - **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
 - **MLQT.McpTester** - MAUI Blazor (Windows) desktop app for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
+- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt check` CLI (packaged as a `dotnet tool`) that style-checks a Modelica library and emits console/JSON/JUnit output with CI exit codes. Reuses the shared check pipeline in `MLQT.Services/Checking/`. See `Documentation/cli.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
@@ -262,6 +263,7 @@ User-facing documentation is in `Documentation/`:
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
 | `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
+| `cli.md` | Headless `mlqt check` CLI: install, options, formats (console/JSON/JUnit), exit codes, CI usage |
 | `troubleshooting.md` | Common issues, FAQ |
 
 ## Documentation Maintenance
