@@ -44,8 +44,25 @@ dotnet tool install --tool-path ./tools --add-source ./nupkg MLQT.Cli
 ./tools/mlqt check /path/to/MyLibrary
 ```
 
-Requires the .NET 10 runtime. Point `mlqt` at the library **root** — a package directory (the folder
-containing `package.mo`), a flat folder of `.mo` files, or a single `.mo` file.
+### Which one should I use?
+
+All three run **identical code** — the difference is only distribution and ergonomics:
+
+- `dotnet run` builds and runs from the source tree in place. It needs the repository present and
+  rebuilds each time. Best for a **quick local trial while you're in the repo**.
+- `dotnet pack` wraps the build output into a single versioned NuGet package (`.nupkg`);
+  `dotnet tool install` extracts it into a per-user tool store and puts an **`mlqt` command on your
+  PATH**, decoupled from the repo. Best when you want to **run against many libraries** or on a
+  **machine/CI agent that doesn't have the source**. The `--tool-path ./tools` variant keeps the
+  install in a throwaway folder with no global state — the CI sweet spot.
+
+Note that `dotnet tool` is **framework-dependent** either way: it is not a self-contained or
+single-file binary, so the .NET 10 runtime must be installed. (Standalone per-OS binaries are a
+separate, later packaging concern.) For local testing on your own machine you can skip packing
+entirely and just use `dotnet run`.
+
+Point `mlqt` at the library **root** — a package directory (the folder containing `package.mo`), a
+flat folder of `.mo` files, or a single `.mo` file.
 
 ---
 
