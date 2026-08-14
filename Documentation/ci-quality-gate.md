@@ -61,8 +61,18 @@ single-file binary, so the .NET 10 runtime must be installed. (Standalone per-OS
 separate, later packaging concern.) For local testing on your own machine you can skip packing
 entirely and just use `dotnet run`.
 
-Point `mlqt` at the library **root** — a package directory (the folder containing `package.mo`), a
-flat folder of `.mo` files, or a single `.mo` file.
+### Point it at your repository root
+
+`mlqt check <path>` discovers and checks **every** Modelica library under the path, the same way the
+MLQT desktop app treats a repository:
+
+- if the path has a `package.mo`, it is a single library (its sub-packages are included);
+- otherwise, each immediate sub-directory with a `package.mo` is a library, plus any loose top-level
+  `.mo` files.
+
+So you normally point it at the **repository root** and check the whole thing in one run — whether the
+repo is a single library or several side by side. A single `<root>/.mlqt/settings.json` and
+`<root>/.mlqt/baseline.json` apply to the whole repository (again, matching the desktop app).
 
 ---
 

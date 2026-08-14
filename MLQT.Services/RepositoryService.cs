@@ -316,52 +316,40 @@ public class RepositoryService : IRepositoryService
 
         await Task.Run(() =>
         {
-            // Check top-level for package.mo
-            var topLevelPackage = Path.Combine(basePath, "package.mo");
-            if (File.Exists(topLevelPackage))
+            // The "what counts as a library" rules are shared with the CLI via LibraryDiscovery so
+            // the two can't drift; enrich each discovered path with its name and repo-relative path.
+            foreach (var fullPath in LibraryDiscovery.DiscoverLibraryPaths(basePath))
             {
-                var libraryName = ExtractLibraryName(topLevelPackage);
+                var isFile = File.Exists(fullPath) && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase);
+                var packageMoPath = isFile ? fullPath : Path.Combine(fullPath, "package.mo");
+                var libraryName = ExtractLibraryName(packageMoPath);
+
+                string relativePath;
+                string fallbackName;
+                if (string.Equals(fullPath, basePath, StringComparison.Ordinal))
+                {
+                    relativePath = "";
+                    fallbackName = Path.GetFileName(basePath);
+                }
+                else if (isFile)
+                {
+                    var fileName = Path.GetFileName(fullPath);
+                    relativePath = fileName;
+                    fallbackName = fileName.Replace(".mo", "");
+                }
+                else
+                {
+                    var dirName = Path.GetFileName(fullPath);
+                    relativePath = dirName;
+                    fallbackName = dirName;
+                }
+
                 libraries.Add(new DiscoveredLibraryInfo
                 {
-                    RelativePath = "",
-                    LibraryName = libraryName ?? Path.GetFileName(basePath),
-                    FullPath = basePath
+                    RelativePath = relativePath,
+                    LibraryName = libraryName ?? fallbackName,
+                    FullPath = fullPath
                 });
-            }
-            else 
-            {
-                // Check immediate subdirectories only if the top-level directory didn't contain a package.mo file
-                foreach (var subDir in Directory.GetDirectories(basePath))
-                {
-                    // Skip hidden directories (like .git, .svn)
-                    var dirName = Path.GetFileName(subDir);
-                    if (dirName.StartsWith("."))
-                        continue;
-
-                    var packagePath = Path.Combine(subDir, "package.mo");
-                    if (File.Exists(packagePath))
-                    {
-                        var libraryName = ExtractLibraryName(packagePath);
-                        libraries.Add(new DiscoveredLibraryInfo
-                        {
-                            RelativePath = dirName,
-                            LibraryName = libraryName ?? dirName,
-                            FullPath = subDir
-                        });
-                    }
-                }
-                //There might also be some models stored here
-                foreach (var file in Directory.GetFiles(basePath, "*.mo", SearchOption.TopDirectoryOnly))
-                {
-                    var fileName = Path.GetFileName(file);
-                    var libraryName = ExtractLibraryName(file);
-                    libraries.Add(new DiscoveredLibraryInfo
-                    {
-                        RelativePath = fileName,
-                        LibraryName = libraryName ?? fileName.Replace(".mo",""),
-                        FullPath = file
-                    });
-                }
             }
         });
 

@@ -47,26 +47,44 @@ internal static class CheckPipeline
         if (!settings.HasAnyStyleRuleEnabled)
             stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
 
-        var libraryData = new LibraryDataService();
-        LoadedLibrary library;
-        try
+        // Load every library in the repository (matching the UI: one .mlqt/settings.json at the
+        // repository root applies to all libraries found under it).
+        var libraryPaths = LibraryDiscovery.DiscoverLibraryPaths(libraryPath);
+        if (libraryPaths.Count == 0)
         {
-            library = isDir
-                ? await libraryData.AddLibraryFromDirectoryAsync(libraryPath)
-                : await libraryData.AddLibraryFromFileAsync(libraryPath);
-        }
-        catch (Exception ex)
-        {
-            stderr.WriteLine($"error: failed to load library: {ex.Message}");
+            stderr.WriteLine(
+                $"error: no Modelica libraries found under {libraryPath} " +
+                "(expected a package.mo, sub-package directories, or .mo files)");
             return LoadResult.Failed(ExitCodes.Error);
         }
 
+        var libraryData = new LibraryDataService();
+        var models = new List<ModelNode>();
+        var seenModelIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var path in libraryPaths)
+        {
+            LoadedLibrary library;
+            try
+            {
+                library = await libraryData.AddLibraryFromDirectoryAsync(path);
+            }
+            catch (Exception ex)
+            {
+                stderr.WriteLine($"warning: failed to load '{path}': {ex.Message}");
+                continue;
+            }
+
+            foreach (var id in library.ModelIds)
+            {
+                if (!seenModelIds.Add(id))
+                    continue;
+                var model = libraryData.GetModelById(id);
+                if (model is not null && !model.IsParseFailurePlaceholder)
+                    models.Add(model);
+            }
+        }
+
         var graph = libraryData.CombinedGraph;
-        var models = library.ModelIds
-            .Select(libraryData.GetModelById)
-            .Where(m => m is not null && !m!.IsParseFailurePlaceholder)
-            .Cast<ModelNode>()
-            .ToList();
 
         var customDictionary = new CustomDictionaryService();
         var dictionaryManager = new DictionaryManagerService();

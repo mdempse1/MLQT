@@ -37,6 +37,14 @@ public class CheckCommandTests
             return this;
         }
 
+        public TempLibrary WithFile(string relativePath, string content)
+        {
+            var full = System.IO.Path.Combine(Path, relativePath);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, content);
+            return this;
+        }
+
         public void Dispose()
         {
             try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
@@ -389,5 +397,32 @@ public class CheckCommandTests
         Assert.Contains("## MLQT check", stdout);
         Assert.Contains("| Severity | Status | Rule | Model | Line | Message |", stdout);
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
+    }
+
+    // ---- repo-wide loading ---------------------------------------------------------------------
+
+    [Fact]
+    public void RepoWithMultipleLibraries_ChecksAll_WithOneSettingsAndBaseline()
+    {
+        using var repo = new TempLibrary()
+            .WithFile("LibA/package.mo", "package LibA\n  model MA\n    parameter Real a = 1.0;\n  end MA;\nend LibA;")
+            .WithFile("LibB/package.mo", "package LibB\n  model MB\n    parameter Real b = 2.0;\n  end MB;\nend LibB;")
+            .WithSettings(ParamDescriptionSettings); // one .mlqt/settings.json at the repo root
+
+        var (_, stdout, _) = Run("check", repo.Path, "--format", "json");
+        using var doc = JsonDocument.Parse(stdout);
+        var models = doc.RootElement.GetProperty("findings").EnumerateArray()
+            .Select(f => f.GetProperty("Model").GetString())
+            .ToList();
+        Assert.Contains(models, m => m is not null && m.EndsWith(".MA"));
+        Assert.Contains(models, m => m is not null && m.EndsWith(".MB"));
+
+        // One baseline at the repo root covers both libraries.
+        Assert.Equal(0, Run("baseline", "create", repo.Path).code);
+        var baselinePath = System.IO.Path.Combine(repo.Path, ".mlqt", "baseline.json");
+        Assert.True(File.Exists(baselinePath));
+
+        var (checkCode, _, _) = Run("check", repo.Path, "--baseline", baselinePath, "--fail-on", "warning", "--no-color");
+        Assert.Equal(0, checkCode); // both libraries' findings are accepted
     }
 }
