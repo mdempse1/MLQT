@@ -44,13 +44,17 @@ internal static class CheckRunner
         }
 
         var classified = FindingClassifier.Classify(load.Findings, baseline, changedModelIds);
+        var gateFailureCount = classified.Count(c => FailsGate(c, opts));
         var report = new CheckReport(
-            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile, baseline is not null);
+            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile, baseline is not null, gateFailureCount);
 
         IFindingFormatter formatter = opts.Format switch
         {
             OutputFormat.Json => new JsonFindingFormatter(),
             OutputFormat.JUnit => new JUnitFindingFormatter(),
+            OutputFormat.Sarif => new SarifFindingFormatter(),
+            OutputFormat.TeamCity => new TeamCityFindingFormatter(),
+            OutputFormat.Markdown => new MarkdownFindingFormatter(),
             _ => new ConsoleFindingFormatter(
                 useColor: !opts.NoColor && opts.OutPath is null && !Console.IsOutputRedirected)
         };
@@ -75,8 +79,7 @@ internal static class CheckRunner
                 await stdout.WriteLineAsync();
         }
 
-        var failCount = classified.Count(c => FailsGate(c, opts));
-        return failCount > 0 ? ExitCodes.GateFailed : ExitCodes.Ok;
+        return report.GatePassed ? ExitCodes.Ok : ExitCodes.GateFailed;
     }
 
     private static bool FailsGate(ClassifiedFinding c, CheckOptions opts)

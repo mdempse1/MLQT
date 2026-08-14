@@ -194,6 +194,7 @@ across all workstreams:
    **Implementation plan:** [design-phase3-baseline.md](design-phase3-baseline.md).
 4. **CI ergonomics** — SARIF, TeamCity service messages + debt-trend statistics, markdown
    summary. Lights up the first customer's TeamCity.
+   **Implementation plan:** [design-phase4-ci-ergonomics.md](design-phase4-ci-ergonomics.md).
 5. **Suppression (`__MLQT` annotations)** — with GUI + MCP authoring actions. Lands before
    the analysis wave generates intentional-exception cases (declaration-order case).
 6. **Wave-1 analyses + dashboard** — unused elements/classes, duplicate/shadowing, `uses`

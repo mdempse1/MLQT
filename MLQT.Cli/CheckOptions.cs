@@ -1,6 +1,6 @@
 namespace MLQT.Cli;
 
-internal enum OutputFormat { Console, Json, JUnit }
+internal enum OutputFormat { Console, Json, JUnit, Sarif, TeamCity, Markdown }
 
 internal enum FailOnLevel { Off, Warning, Error }
 
@@ -137,6 +137,9 @@ internal sealed record CheckOptions
             case "console": format = OutputFormat.Console; return true;
             case "json": format = OutputFormat.Json; return true;
             case "junit": format = OutputFormat.JUnit; return true;
+            case "sarif": format = OutputFormat.Sarif; return true;
+            case "teamcity": format = OutputFormat.TeamCity; return true;
+            case "markdown": format = OutputFormat.Markdown; return true;
             default: format = OutputFormat.Console; return false;
         }
     }

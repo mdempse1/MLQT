@@ -317,4 +317,77 @@ public class CheckCommandTests
             "--changed-from", baseRev, "--touched-debt", "warn", "--fail-on", "warning", "--no-color").code;
         Assert.Equal(0, warnCode);
     }
+
+    // ---- Phase 4: severities + CI formats ------------------------------------------------------
+
+    private const string ErrorSeveritySettings =
+        """{ "ParameterHasDescription": true, "RuleSeverities": { "MLQT.Doc.ParameterDescription": "Error" } }""";
+
+    private static TempLibrary ErrorSeverityFixture() =>
+        new TempLibrary().WithModel("TestModel.mo", ModelWithOneUndescribedParam).WithSettings(ErrorSeveritySettings);
+
+    [Fact]
+    public void ErrorSeverity_FailsGateAtError()
+    {
+        using var lib = ErrorSeverityFixture();
+        var (code, _, _) = Run("check", lib.Path, "--fail-on", "error", "--no-color");
+        Assert.Equal(1, code); // the rule is configured as an error in .mlqt/settings.json
+    }
+
+    [Fact]
+    public void Sarif_IsValid_WithLevelBaselineStateAndFingerprint()
+    {
+        using var lib = DefaultFixture();
+        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif");
+
+        using var doc = JsonDocument.Parse(stdout);
+        var root = doc.RootElement;
+        Assert.Equal("2.1.0", root.GetProperty("version").GetString());
+
+        var result = root.GetProperty("runs")[0].GetProperty("results")[0];
+        Assert.Equal("MLQT.Doc.ParameterDescription", result.GetProperty("ruleId").GetString());
+        Assert.Equal("warning", result.GetProperty("level").GetString());
+        Assert.Equal("new", result.GetProperty("baselineState").GetString());
+        Assert.True(result.GetProperty("partialFingerprints").TryGetProperty("mlqt/v1", out _));
+        Assert.Equal("TestModel.mo", result
+            .GetProperty("locations")[0].GetProperty("physicalLocation")
+            .GetProperty("artifactLocation").GetProperty("uri").GetString());
+    }
+
+    [Fact]
+    public void Sarif_ErrorSeverity_MapsToErrorLevel()
+    {
+        using var lib = ErrorSeverityFixture();
+        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif");
+        using var doc = JsonDocument.Parse(stdout);
+        Assert.Equal("error", doc.RootElement.GetProperty("runs")[0]
+            .GetProperty("results")[0].GetProperty("level").GetString());
+    }
+
+    [Fact]
+    public void TeamCity_EmitsStatisticsAndBuildProblemOnFailure()
+    {
+        using var lib = DefaultFixture();
+        var (_, stdout, _) = Run("check", lib.Path, "--format", "teamcity", "--fail-on", "warning");
+        Assert.Contains("buildStatisticValue key='mlqt.findings.new' value='1'", stdout);
+        Assert.Contains("buildProblem", stdout);
+    }
+
+    [Fact]
+    public void TeamCity_NoBuildProblem_WhenGatePasses()
+    {
+        using var lib = DefaultFixture(); // one warning finding
+        var (_, stdout, _) = Run("check", lib.Path, "--format", "teamcity", "--fail-on", "error");
+        Assert.DoesNotContain("buildProblem", stdout);
+    }
+
+    [Fact]
+    public void Markdown_HasHeaderAndTable()
+    {
+        using var lib = DefaultFixture();
+        var (_, stdout, _) = Run("check", lib.Path, "--format", "markdown");
+        Assert.Contains("## MLQT check", stdout);
+        Assert.Contains("| Severity | Status | Rule | Model | Line | Message |", stdout);
+        Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
+    }
 }

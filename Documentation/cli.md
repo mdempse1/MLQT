@@ -55,6 +55,19 @@ The rules that run are controlled by a `StyleCheckingSettings` JSON file — the
 desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no rules are enabled and
 no findings are produced. See [settings-reference.md](settings-reference.md).
 
+**Per-rule severity.** Enabled rules default to `Warning`. To make a rule fail the gate at
+`--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
+
+```json
+{
+  "ClassHasDescription": true,
+  "ParameterHasDescription": true,
+  "RuleSeverities": { "MLQT.Doc.ClassDescription": "Error" }
+}
+```
+
+Values are `Off`, `Info`, `Warning`, or `Error`. The map wins over the on/off booleans.
+
 ## Baseline / ratchet
 
 A large existing library usually has many findings that no one will fix all at once. A **baseline**
@@ -98,11 +111,18 @@ mlqt check ./MyLibrary --baseline .mlqt/baseline.json --changed-from main \
 ## Output formats
 
 - **console** — human-readable, grouped by file, with a per-severity summary.
-- **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, and a `findings`
-  array. Each finding includes its `Fingerprint` (a stable, reformat-independent identity).
-- **junit** — JUnit XML where each finding is a failing test case. This makes findings appear in the
-  native test-report UI of most CI systems (TeamCity, Jenkins, GitLab, Azure DevOps) with no extra
-  integration — point the CI's test-report step at the file.
+- **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, a `summary` (new /
+  accepted / touched counts), and a `findings` array. Each finding includes its `Fingerprint`, `Status`
+  (`New`/`AcceptedDebt`/`TouchedDebt`), and `File`.
+- **junit** — JUnit XML where each actionable finding is a failing test case. Renders in the native
+  test-report UI of most CI systems (TeamCity, Jenkins, GitLab, Azure DevOps) with no extra integration.
+- **sarif** — SARIF 2.1.0 for GitHub code scanning / Azure DevOps. `level` reflects the rule's
+  configured severity, `baselineState` marks new vs unchanged, and `partialFingerprints` lets viewers
+  match results across runs.
+- **teamcity** — TeamCity service messages: `buildStatisticValue` lines (so TeamCity graphs the
+  baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
+  gate fails.
+- **markdown** — a PR-comment-ready summary table (counts, gate result, actionable findings).
 
 ### CI examples
 

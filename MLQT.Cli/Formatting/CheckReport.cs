@@ -9,7 +9,8 @@ internal sealed record CheckReport(
     int ModelsChecked,
     IReadOnlyList<ClassifiedFinding> Findings,
     IReadOnlyDictionary<string, string> ModelToFile,
-    bool HasBaseline)
+    bool HasBaseline,
+    int GateFailureCount)
 {
     /// <summary>The source file for a finding's model, or null if unknown.</summary>
     public string? FileFor(Finding f) => ModelToFile.TryGetValue(f.ModelId, out var p) ? p : null;
@@ -17,6 +18,8 @@ internal sealed record CheckReport(
     public int CountOfSeverity(RuleSeverity severity) => Findings.Count(c => c.Finding.Severity == severity);
 
     public int CountOfStatus(FindingStatus status) => Findings.Count(c => c.Status == status);
+
+    public bool GatePassed => GateFailureCount == 0;
 }
 
 internal interface IFindingFormatter

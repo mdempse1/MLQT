@@ -51,7 +51,7 @@ internal static class CliEntry
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
           --baseline <path>             Classify findings against a baseline (new vs accepted debt)
           --touched-debt warn|fail|ignore  Existing debt in a changed model (default: warn)
-          --format console|json|junit   Output format (default: console)
+          --format <fmt>                console|json|junit|sarif|teamcity|markdown (default: console)
           --out <file>                  Write output to a file instead of stdout
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output

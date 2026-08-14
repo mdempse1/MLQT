@@ -76,12 +76,35 @@ public class FindingsFoundationTests
     }
 
     [Fact]
-    public void RuleSeveritiesMap_IsNotSerialized()
+    public void RuleSeveritiesMap_IsSerialized()
     {
-        // Phase 1 keeps persistence bool-based; the map is a runtime projection.
+        // Phase 4 persists the map as the authoritative store.
         var s = new StyleCheckingSettings { ClassHasIcon = true };
         var json = JsonSerializer.Serialize(s);
-        Assert.DoesNotContain("RuleSeverities", json);
+        Assert.Contains("RuleSeverities", json);
+        Assert.Contains(RuleIds.ClassIcon, json);
+    }
+
+    [Fact]
+    public void ExplicitErrorSeverity_RoundTrips()
+    {
+        var s = new StyleCheckingSettings();
+        s.RuleSeverities[RuleIds.ClassIcon] = RuleSeverity.Error;
+
+        var back = JsonSerializer.Deserialize<StyleCheckingSettings>(JsonSerializer.Serialize(s))!;
+
+        Assert.Equal(RuleSeverity.Error, back.SeverityFor(RuleIds.ClassIcon));
+        Assert.True(back.ClassHasIcon); // the bool facade reflects "enabled"
+    }
+
+    [Theory]
+    [InlineData("""{ "ClassHasIcon": true, "RuleSeverities": { "MLQT.Doc.ClassIcon": "Error" } }""")]
+    [InlineData("""{ "RuleSeverities": { "MLQT.Doc.ClassIcon": "Error" }, "ClassHasIcon": true }""")]
+    public void ExplicitMapSeverity_NotClobberedByBoolFacade_EitherOrder(string json)
+    {
+        // The map must win regardless of JSON property order.
+        var s = JsonSerializer.Deserialize<StyleCheckingSettings>(json)!;
+        Assert.Equal(RuleSeverity.Error, s.SeverityFor(RuleIds.ClassIcon));
     }
 
     // ---- RunStyleCheckingFindings --------------------------------------------------------------

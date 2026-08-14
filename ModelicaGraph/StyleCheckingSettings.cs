@@ -21,11 +21,15 @@ public class StyleCheckingSettings
     // stores its "when enabled" severity (see RuleCatalog), disabling removes it. A rule id absent
     // from the map is disabled, matching the historical default of `= false`.
     //
-    // The map itself is not serialized in Phase 1 — persistence stays bool-based (see the facades),
-    // so `.mlqt/settings.json` is unchanged and cross-compatible. A later phase that adds per-rule
-    // severity editing and custom rules will introduce a serialized form.
+    // The map is serialized as the authoritative store (Phase 4). The bool facades are kept for
+    // backward compatibility: an old `.mlqt/settings.json` (bools only) still loads, and the setters
+    // populate the map. Reconciliation is order-independent — enabling a rule only sets its default
+    // severity when the map has no entry yet, so an explicit `RuleSeverities` value (e.g. "Error")
+    // is never clobbered by a bool facade regardless of JSON property order.
     // ---------------------------------------------------------------------------------------------
-    [JsonIgnore]
+    // Populate (merge into) the existing dictionary on deserialize rather than replacing it, so
+    // bool-derived entries and explicit map entries combine instead of one clobbering the other.
+    [JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
     public Dictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Resolves the configured severity for a rule id (Off when disabled/absent).</summary>
@@ -37,9 +41,16 @@ public class StyleCheckingSettings
     private void SetRuleEnabled(string ruleId, bool enabled)
     {
         if (enabled)
-            RuleSeverities[ruleId] = RuleCatalog.DefaultSeverityFor(ruleId);
+        {
+            // Don't overwrite an explicit severity (e.g. Error) — only seed the default when absent.
+            // This keeps bool/map reconciliation order-independent during deserialization.
+            if (!RuleSeverities.ContainsKey(ruleId))
+                RuleSeverities[ruleId] = RuleCatalog.DefaultSeverityFor(ruleId);
+        }
         else
+        {
             RuleSeverities.Remove(ruleId);
+        }
     }
 
     // Code formatting style rules
