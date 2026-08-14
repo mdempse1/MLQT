@@ -112,6 +112,19 @@ public interface IRevisionControlSystem
     List<VcsChangedFile> GetChangedFiles(string repositoryPath, string revision);
 
     /// <summary>
+    /// Gets the absolute paths of files changed between <paramref name="sinceRevision"/> and the
+    /// current working state (both committed and uncommitted changes). Deleted files are excluded
+    /// (they can no longer be checked). Used to scope the "changed models" for the baseline
+    /// ratchet's touched-debt escalation.
+    /// For Git: diffs the ref's tree against the working directory + index.
+    /// For SVN: <c>svn diff --summarize -r &lt;rev&gt;</c> against the working copy.
+    /// </summary>
+    /// <param name="repositoryPath">Path to the repository or working copy</param>
+    /// <param name="sinceRevision">The revision to diff against (branch, tag, hash, or number)</param>
+    /// <returns>Absolute paths of changed files, or an empty list if retrieval failed</returns>
+    IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision);
+
+    /// <summary>
     /// Updates the working copy to the latest version from the remote.
     /// For Git: Fetches from origin and pulls changes for the current branch.
     /// For SVN: Updates to HEAD.

@@ -4,6 +4,8 @@ internal enum OutputFormat { Console, Json, JUnit }
 
 internal enum FailOnLevel { Off, Warning, Error }
 
+internal enum TouchedDebtPolicy { Warn, Fail, Ignore }
+
 /// <summary>Parsed options for the `check` command.</summary>
 internal sealed record CheckOptions
 {
@@ -14,14 +16,24 @@ internal sealed record CheckOptions
     public FailOnLevel FailOn { get; init; } = FailOnLevel.Error;
     public bool NoColor { get; init; }
 
+    /// <summary>Baseline file to classify findings against (new vs accepted debt). Null = no baseline.</summary>
+    public string? BaselinePath { get; init; }
+
+    /// <summary>How to treat pre-existing (baseline) findings in a model the change touched.</summary>
+    public TouchedDebtPolicy TouchedDebt { get; init; } = TouchedDebtPolicy.Warn;
+
+    /// <summary>VCS ref to diff against for changed-model detection (touched-debt). Null = disabled.</summary>
+    public string? ChangedFrom { get; init; }
+
     public static bool TryParse(IReadOnlyList<string> args, out CheckOptions? options, out string? error)
     {
         options = null;
         error = null;
 
-        string? path = null, config = null, outPath = null;
+        string? path = null, config = null, outPath = null, baseline = null, changedFrom = null;
         var format = OutputFormat.Console;
         var failOn = FailOnLevel.Error;
+        var touchedDebt = TouchedDebtPolicy.Warn;
         var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is not null;
 
         for (var i = 0; i < args.Count; i++)
@@ -34,6 +46,9 @@ internal sealed record CheckOptions
                     break;
                 case "--out":
                     if (!Next(args, ref i, out outPath, out error)) return false;
+                    break;
+                case "--baseline":
+                    if (!Next(args, ref i, out baseline, out error)) return false;
                     break;
                 case "--no-color":
                     noColor = true;
@@ -54,10 +69,17 @@ internal sealed record CheckOptions
                         return false;
                     }
                     break;
-                case "--baseline":
+                case "--touched-debt":
+                    if (!Next(args, ref i, out var td, out error)) return false;
+                    if (!TryParseTouchedDebt(td!, out touchedDebt))
+                    {
+                        error = $"invalid --touched-debt '{td}' (expected warn|fail|ignore)";
+                        return false;
+                    }
+                    break;
                 case "--changed-from":
-                    error = $"{arg} is not supported yet (planned for a later release)";
-                    return false;
+                    if (!Next(args, ref i, out changedFrom, out error)) return false;
+                    break;
                 default:
                     if (arg.StartsWith('-'))
                     {
@@ -87,7 +109,10 @@ internal sealed record CheckOptions
             Format = format,
             OutPath = outPath,
             FailOn = failOn,
-            NoColor = noColor
+            NoColor = noColor,
+            BaselinePath = baseline,
+            TouchedDebt = touchedDebt,
+            ChangedFrom = changedFrom
         };
         return true;
     }
@@ -124,6 +149,17 @@ internal sealed record CheckOptions
             case "warning": level = FailOnLevel.Warning; return true;
             case "error": level = FailOnLevel.Error; return true;
             default: level = FailOnLevel.Error; return false;
+        }
+    }
+
+    private static bool TryParseTouchedDebt(string s, out TouchedDebtPolicy policy)
+    {
+        switch (s.ToLowerInvariant())
+        {
+            case "warn": policy = TouchedDebtPolicy.Warn; return true;
+            case "fail": policy = TouchedDebtPolicy.Fail; return true;
+            case "ignore": policy = TouchedDebtPolicy.Ignore; return true;
+            default: policy = TouchedDebtPolicy.Warn; return false;
         }
     }
 }

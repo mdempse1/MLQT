@@ -28,6 +28,9 @@ of `.mo` files) or a single `.mo` file.
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--config <path>` | Settings file to use | `<library-path>/.mlqt/settings.json`, else built-in defaults |
+| `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
+| `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
+| `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched | `warn` |
 | `--format console\|json\|junit` | Output format | `console` |
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
@@ -51,6 +54,46 @@ strict gate, or `--fail-on off` to never fail.
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
 desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no rules are enabled and
 no findings are produced. See [settings-reference.md](settings-reference.md).
+
+## Baseline / ratchet
+
+A large existing library usually has many findings that no one will fix all at once. A **baseline**
+records the current findings as *accepted debt* so CI fails only on **new** issues.
+
+```bash
+mlqt baseline create <library-path>     # snapshot current findings -> <library-path>/.mlqt/baseline.json
+mlqt baseline update <library-path>     # regenerate the baseline
+mlqt baseline prune  <library-path>     # drop entries whose findings are now fixed
+```
+
+`create`/`update`/`prune` accept `--baseline <path>` (default `<library-path>/.mlqt/baseline.json`)
+and `--config <path>`; `create` refuses to overwrite an existing file unless `--force` is given.
+**Commit `.mlqt/baseline.json` to the repository** — it is a reviewable debt ledger, and its size
+shrinking over time is your burndown.
+
+Then gate on new issues only:
+
+```bash
+# Fail on NEW warnings; tolerate everything in the baseline
+mlqt check <library-path> --baseline .mlqt/baseline.json --fail-on warning
+```
+
+Findings are classified as **new** (not in the baseline → gated), **accepted debt** (in the baseline,
+unchanged model → never fails), or **touched debt** (in the baseline, but in a model this change
+modified). The baseline uses a reformat-stable fingerprint, so reformatting a model does not turn its
+accepted debt into new findings.
+
+### Changed-model escalation (the "boy-scout rule")
+
+With `--changed-from <ref>`, existing debt in a model the change touched becomes **touched debt**.
+By default it is reported but does not fail (`--touched-debt warn`); use `--touched-debt fail` to
+require cleanup of pre-existing issues in files you edit. Works with Git and SVN.
+
+```bash
+# Fail on new issues, and on pre-existing issues in models changed since main
+mlqt check ./MyLibrary --baseline .mlqt/baseline.json --changed-from main \
+      --touched-debt fail --fail-on warning
+```
 
 ## Output formats
 

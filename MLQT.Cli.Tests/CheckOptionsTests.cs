@@ -54,12 +54,23 @@ public class CheckOptionsTests
     public void OptionMissingValue_Fails()
         => Assert.False(CheckOptions.TryParse(["lib", "--config"], out _, out _));
 
-    [Theory]
-    [InlineData("--baseline")]
-    [InlineData("--changed-from")]
-    public void ReservedOptions_FailWithNotSupported(string flag)
+    [Fact]
+    public void ChangedFrom_Parses()
     {
-        Assert.False(CheckOptions.TryParse(["lib", flag, "x"], out _, out var err));
-        Assert.Contains("not supported", err);
+        Assert.True(CheckOptions.TryParse(["lib", "--changed-from", "main"], out var o, out _));
+        Assert.Equal("main", o!.ChangedFrom);
     }
+
+    [Fact]
+    public void Baseline_And_TouchedDebt_Parse()
+    {
+        Assert.True(CheckOptions.TryParse(
+            ["lib", "--baseline", "bl.json", "--touched-debt", "fail"], out var o, out _));
+        Assert.Equal("bl.json", o!.BaselinePath);
+        Assert.Equal(TouchedDebtPolicy.Fail, o.TouchedDebt);
+    }
+
+    [Fact]
+    public void TouchedDebt_Invalid_Fails()
+        => Assert.False(CheckOptions.TryParse(["lib", "--touched-debt", "nope"], out _, out _));
 }

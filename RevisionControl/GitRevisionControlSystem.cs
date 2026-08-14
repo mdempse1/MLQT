@@ -526,6 +526,41 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         return changedFiles;
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
+    {
+        var result = new List<string>();
+
+        try
+        {
+            using var repo = new Repository(repositoryPath);
+            var since = ResolveToCommit(repo, sinceRevision);
+            if (since == null)
+                return result;
+
+            // Diff the ref's tree against the current working state (staged + unstaged), so we
+            // capture everything changed on this branch since the ref, committed or not.
+            var changes = repo.Diff.Compare<TreeChanges>(
+                since.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+
+            var root = repo.Info.WorkingDirectory;
+            foreach (var change in changes)
+            {
+                if (change.Status == ChangeKind.Deleted)
+                    continue; // a deleted file can't be checked
+
+                var relative = change.Path.Replace('/', Path.DirectorySeparatorChar);
+                result.Add(Path.GetFullPath(Path.Combine(root, relative)));
+            }
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetChangedFilePathsSince", ex);
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Cleans a workspace by reverting all changes and removing untracked files.
     /// </summary>

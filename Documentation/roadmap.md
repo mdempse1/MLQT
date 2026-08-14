@@ -191,6 +191,7 @@ across all workstreams:
    **Implementation plan:** [design-phase2-cli.md](design-phase2-cli.md).
 3. **Baseline / ratchet** — `baseline create/update/prune`, new-vs-accepted classification,
    changed-model warn-by-default. The adoption unlock for legacy libraries.
+   **Implementation plan:** [design-phase3-baseline.md](design-phase3-baseline.md).
 4. **CI ergonomics** — SARIF, TeamCity service messages + debt-trend statistics, markdown
    summary. Lights up the first customer's TeamCity.
 5. **Suppression (`__MLQT` annotations)** — with GUI + MCP authoring actions. Lands before

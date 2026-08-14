@@ -1,80 +1,51 @@
-using ModelicaGraph;
-using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
-using MLQT.Services;
 using MLQT.Services.Checking;
-using MLQT.Services.DataTypes;
 
 namespace MLQT.Cli;
 
-/// <summary>Loads a Modelica library, runs the findings pipeline, formats, and computes the exit code.</summary>
+/// <summary>Runs `check`: load + findings, classify against a baseline, format, compute exit code.</summary>
 internal static class CheckRunner
 {
     public static async Task<int> RunAsync(CheckOptions opts, TextWriter stdout, TextWriter stderr)
     {
-        var isDir = Directory.Exists(opts.LibraryPath);
-        var isMoFile = File.Exists(opts.LibraryPath) &&
-                       opts.LibraryPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase);
-        if (!isDir && !isMoFile)
+        var load = await CheckPipeline.LoadAndCheckAsync(opts.LibraryPath, opts.ConfigPath, stderr);
+        if (!load.Ok)
+            return load.ExitCode;
+
+        Baseline? baseline = null;
+        if (opts.BaselinePath is not null)
         {
-            stderr.WriteLine($"error: library path not found: {opts.LibraryPath}");
-            return ExitCodes.Error;
+            if (!File.Exists(opts.BaselinePath))
+            {
+                stderr.WriteLine($"error: baseline not found: {opts.BaselinePath}");
+                return ExitCodes.Error;
+            }
+            try
+            {
+                baseline = Baseline.Load(opts.BaselinePath);
+            }
+            catch (Exception ex)
+            {
+                stderr.WriteLine($"error: could not read baseline: {ex.Message}");
+                return ExitCodes.Error;
+            }
         }
 
-        StyleCheckingSettings settings;
-        try
+        IReadOnlySet<string>? changedModelIds = null;
+        if (opts.ChangedFrom is not null)
         {
-            settings = SettingsResolver.Resolve(opts.LibraryPath, opts.ConfigPath, out var source);
-            stderr.WriteLine($"note: settings from {source}");
-        }
-        catch (Exception ex)
-        {
-            stderr.WriteLine($"error: {ex.Message}");
-            return ExitCodes.Error;
-        }
-
-        if (!settings.HasAnyStyleRuleEnabled)
-            stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
-
-        var libraryData = new LibraryDataService();
-        LoadedLibrary library;
-        try
-        {
-            library = isDir
-                ? await libraryData.AddLibraryFromDirectoryAsync(opts.LibraryPath)
-                : await libraryData.AddLibraryFromFileAsync(opts.LibraryPath);
-        }
-        catch (Exception ex)
-        {
-            stderr.WriteLine($"error: failed to load library: {ex.Message}");
-            return ExitCodes.Error;
+            var changed = ChangedModelResolver.Resolve(opts.LibraryPath, opts.ChangedFrom, load.ModelToFile);
+            if (!changed.Ok)
+            {
+                stderr.WriteLine($"error: {changed.Error}");
+                return ExitCodes.Error;
+            }
+            changedModelIds = changed.ChangedModelIds;
         }
 
-        var graph = libraryData.CombinedGraph;
-        var models = library.ModelIds
-            .Select(libraryData.GetModelById)
-            .Where(m => m is not null && !m!.IsParseFailurePlaceholder)
-            .Cast<ModelNode>()
-            .ToList();
-
-        var customDictionary = new CustomDictionaryService();
-        var dictionaryManager = new DictionaryManagerService();
-
-        var findings = LibraryCheckSession
-            .Check(graph, models, settings, customDictionary, dictionaryManager)
-            .OrderBy(f => f.ModelId, StringComparer.Ordinal)
-            .ThenBy(f => f.LineNumber)
-            .ThenBy(f => f.RuleId, StringComparer.Ordinal)
-            .ThenBy(f => f.ElementPath ?? string.Empty, StringComparer.Ordinal)
-            .ToList();
-
-        // Build the model id -> source file map for the file/classname fields.
-        var modelToFile = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var file in graph.FileNodes)
-            foreach (var model in graph.GetModelsInFile(file.Id))
-                modelToFile[model.Id] = file.FilePath;
-
-        var report = new CheckReport(opts.LibraryPath, models.Count, findings, modelToFile);
+        var classified = FindingClassifier.Classify(load.Findings, baseline, changedModelIds);
+        var report = new CheckReport(
+            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile, baseline is not null);
 
         IFindingFormatter formatter = opts.Format switch
         {
@@ -104,11 +75,23 @@ internal static class CheckRunner
                 await stdout.WriteLineAsync();
         }
 
-        var failCount = opts.FailOn == FailOnLevel.Off
-            ? 0
-            : findings.Count(f => (int)f.Severity >= (int)ThresholdFor(opts.FailOn));
-
+        var failCount = classified.Count(c => FailsGate(c, opts));
         return failCount > 0 ? ExitCodes.GateFailed : ExitCodes.Ok;
+    }
+
+    private static bool FailsGate(ClassifiedFinding c, CheckOptions opts)
+    {
+        if (opts.FailOn == FailOnLevel.Off)
+            return false;
+        if ((int)c.Finding.Severity < (int)ThresholdFor(opts.FailOn))
+            return false;
+
+        return c.Status switch
+        {
+            FindingStatus.New => true,
+            FindingStatus.TouchedDebt => opts.TouchedDebt == TouchedDebtPolicy.Fail,
+            _ => false // AcceptedDebt never fails the gate
+        };
     }
 
     private static RuleSeverity ThresholdFor(FailOnLevel level) => level switch

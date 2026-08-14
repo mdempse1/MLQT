@@ -1,19 +1,25 @@
 using System.Xml.Linq;
+using MLQT.Services.Checking;
 
 namespace MLQT.Cli;
 
 /// <summary>
-/// JUnit XML: each finding is emitted as a failing test case, so any CI test-report UI
-/// (TeamCity, Jenkins, GitLab, Azure) renders the findings natively with no custom integration.
+/// JUnit XML: each actionable finding (new, or touched debt) is emitted as a failing test case, so
+/// any CI test-report UI (TeamCity, Jenkins, GitLab, Azure) renders findings natively with no custom
+/// integration. Accepted debt is omitted, so a green build means "no new debt."
 /// </summary>
 internal sealed class JUnitFindingFormatter : IFindingFormatter
 {
     public string Format(CheckReport report)
     {
-        var count = report.Findings.Count;
+        var actionable = report.Findings
+            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+            .ToList();
+        var count = actionable.Count;
 
-        var testcases = report.Findings.Select(f =>
+        var testcases = actionable.Select(c =>
         {
+            var f = c.Finding;
             var classname = report.FileFor(f) ?? f.ModelId;
             var name = f.ElementPath is null
                 ? $"{f.RuleId} (line {f.LineNumber})"
@@ -24,7 +30,7 @@ internal sealed class JUnitFindingFormatter : IFindingFormatter
                 new XAttribute("name", name),
                 new XElement("failure",
                     new XAttribute("message", f.Message),
-                    new XAttribute("type", f.RuleId),
+                    new XAttribute("type", c.Status == FindingStatus.TouchedDebt ? $"{f.RuleId} (touched debt)" : f.RuleId),
                     new XText($"{f.ModelId} line {f.LineNumber}: {f.Message}")));
         });
 

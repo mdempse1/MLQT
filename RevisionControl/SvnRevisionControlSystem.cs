@@ -788,6 +788,42 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         return changedFiles;
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
+    {
+        var result = new List<string>();
+
+        try
+        {
+            // `svn diff --summarize -r <rev> <wc>` compares the revision to the working copy
+            // (including local modifications). --xml gives absolute working-copy paths.
+            var res = SvnCli.Run("diff", "--summarize", "--xml", "-r", sinceRevision, repositoryPath);
+            if (!res.Success)
+            {
+                RevisionControlLogger.Error("GetChangedFilePathsSince",
+                    new SvnCliException("diff", res.ExitCode, res.StdErr));
+                return result;
+            }
+
+            var doc = XDocument.Parse(res.StdOut);
+            foreach (var path in doc.Descendants("path"))
+            {
+                if ((path.Attribute("item")?.Value ?? "") == "deleted")
+                    continue; // a deleted file can't be checked
+
+                var value = path.Value?.Trim();
+                if (!string.IsNullOrEmpty(value))
+                    result.Add(Path.GetFullPath(value));
+            }
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetChangedFilePathsSince", ex);
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Gets the list of available branches by inspecting the standard branch paths.
     /// </summary>

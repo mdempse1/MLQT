@@ -30,6 +30,9 @@ internal static class CliEntry
                 }
                 return await CheckRunner.RunAsync(opts!, stdout, stderr);
 
+            case "baseline":
+                return await BaselineCommand.RunAsync(args[1..], stdout, stderr);
+
             default:
                 stderr.WriteLine($"error: unknown command '{args[0]}'");
                 stderr.WriteLine(Usage);
@@ -42,16 +45,23 @@ internal static class CliEntry
 
         Usage:
           mlqt check <library-path> [options]
+          mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <path>] [--force]
 
-        Options:
+        check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
+          --baseline <path>             Classify findings against a baseline (new vs accepted debt)
+          --touched-debt warn|fail|ignore  Existing debt in a changed model (default: warn)
           --format console|json|junit   Output format (default: console)
           --out <file>                  Write output to a file instead of stdout
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output
           -h, --help                    Show this help
 
-        Exit codes: 0 = passed, 1 = findings at/above --fail-on, 2 = usage/load error
+        baseline: create/update snapshot current findings to <library-path>/.mlqt/baseline.json
+                  (or --baseline <path>); prune drops entries whose findings are now fixed.
+
+        Exit codes: 0 = passed, 1 = findings at/above --fail-on (new; touched debt if --touched-debt fail),
+                    2 = usage/load error
         """;
 }
 

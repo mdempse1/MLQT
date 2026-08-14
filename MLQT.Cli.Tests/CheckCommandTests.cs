@@ -186,4 +186,135 @@ public class CheckCommandTests
         var (code, _, _) = Run("frobnicate");
         Assert.Equal(2, code);
     }
+
+    // ---- baseline / ratchet --------------------------------------------------------------------
+
+    private const string ModelWithNewAndBaselinedParam = """
+        model TestModel
+          parameter Real x = 1.0;
+          parameter Real z = 3.0;
+        end TestModel;
+        """;
+
+    private static string BaselinePathIn(TempLibrary lib) =>
+        System.IO.Path.Combine(lib.Path, ".mlqt", "baseline.json");
+
+    [Fact]
+    public void BaselineCreate_ThenCheck_AcceptsExistingDebt()
+    {
+        using var lib = DefaultFixture();
+        var (createCode, createOut, _) = Run("baseline", "create", lib.Path);
+        Assert.Equal(0, createCode);
+        Assert.True(File.Exists(BaselinePathIn(lib)));
+        Assert.Contains("Wrote 1", createOut);
+
+        // The pre-existing finding is now accepted debt — even a strict warning gate passes.
+        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        Assert.Equal(0, code);
+        Assert.Contains("accepted", stdout);
+    }
+
+    [Fact]
+    public void NewFindingAfterBaseline_FailsAtWarning()
+    {
+        using var lib = DefaultFixture();
+        Run("baseline", "create", lib.Path); // baselines the undescribed `x`
+
+        // Introduce a new undescribed parameter `z`; `x` stays accepted debt.
+        lib.WithModel("TestModel.mo", ModelWithNewAndBaselinedParam);
+
+        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        Assert.Equal(1, code);
+        Assert.Contains("new", stdout);
+        Assert.Contains("parameter z", stdout);
+    }
+
+    [Fact]
+    public void BaselineCreate_RefusesOverwriteWithoutForce()
+    {
+        using var lib = DefaultFixture();
+        Run("baseline", "create", lib.Path);
+
+        var (code, _, stderr) = Run("baseline", "create", lib.Path);
+        Assert.Equal(2, code);
+        Assert.Contains("already exists", stderr);
+
+        Assert.Equal(0, Run("baseline", "create", lib.Path, "--force").code);
+    }
+
+    [Fact]
+    public void BaselinePrune_RemovesFixedEntry()
+    {
+        using var lib = DefaultFixture();
+        Run("baseline", "create", lib.Path);
+
+        // Fix the finding by describing x → its baseline entry becomes stale.
+        lib.WithModel("TestModel.mo", "model TestModel\n  parameter Real x = 1.0 \"now described\";\nend TestModel;");
+
+        var (code, stdout, _) = Run("baseline", "prune", lib.Path);
+        Assert.Equal(0, code);
+        Assert.Contains("Pruned 1", stdout);
+    }
+
+    [Fact]
+    public void CheckWithBaseline_Json_HasStatusAndSummary()
+    {
+        using var lib = DefaultFixture();
+        Run("baseline", "create", lib.Path);
+
+        var (_, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--format", "json");
+        using var doc = JsonDocument.Parse(stdout);
+        Assert.True(doc.RootElement.GetProperty("hasBaseline").GetBoolean());
+        Assert.Equal("AcceptedDebt", doc.RootElement.GetProperty("findings")[0].GetProperty("Status").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("summary").GetProperty("acceptedDebt").GetInt32());
+    }
+
+    [Fact]
+    public void Reformatting_KeepsFindingAccepted()
+    {
+        using var lib = DefaultFixture();
+        Run("baseline", "create", lib.Path);
+
+        // Reformat: add blank lines so the finding's line number shifts, semantics unchanged.
+        lib.WithModel("TestModel.mo",
+            "model TestModel\n\n\n  parameter Real x = 1.0;\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
+
+        var (code, _, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        Assert.Equal(0, code); // fingerprint excludes line number → still accepted
+    }
+
+    [Fact]
+    public void CheckWithMissingBaselineFile_ExitsTwo()
+    {
+        using var lib = DefaultFixture();
+        var (code, _, stderr) = Run("check", lib.Path, "--baseline", System.IO.Path.Combine(lib.Path, "nope.json"));
+        Assert.Equal(2, code);
+        Assert.Contains("baseline not found", stderr);
+    }
+
+    [Fact]
+    public void ChangedFrom_EscalatesTouchedDebt()
+    {
+        using var lib = DefaultFixture(); // model with undescribed `x`
+
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        var baseRev = repo.Head.Tip.Sha;
+
+        Run("baseline", "create", lib.Path);                // `x` becomes accepted debt
+        lib.WithModel("TestModel.mo",                       // touch the model (comment added)
+            "model TestModel\n  parameter Real x = 1.0;\n  // touched\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
+
+        // Touched-debt in a changed model: fail policy gates, warn policy does not.
+        var failCode = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "fail", "--fail-on", "warning", "--no-color").code;
+        Assert.Equal(1, failCode);
+
+        var warnCode = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "warn", "--fail-on", "warning", "--no-color").code;
+        Assert.Equal(0, warnCode);
+    }
 }

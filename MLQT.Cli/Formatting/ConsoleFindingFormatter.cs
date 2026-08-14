@@ -1,5 +1,6 @@
 using System.Text;
 using ModelicaParser.DataTypes;
+using MLQT.Services.Checking;
 
 namespace MLQT.Cli;
 
@@ -8,7 +9,10 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
 {
     private const char Esc = (char)27; // ANSI escape
 
-    public string Format(CheckReport report)
+    public string Format(CheckReport report) =>
+        report.HasBaseline ? FormatWithBaseline(report) : FormatPlain(report);
+
+    private string FormatPlain(CheckReport report)
     {
         var sb = new StringBuilder();
 
@@ -18,24 +22,60 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
             return sb.ToString();
         }
 
-        foreach (var group in report.Findings
-                     .GroupBy(f => report.FileFor(f) ?? f.ModelId)
-                     .OrderBy(g => g.Key, StringComparer.Ordinal))
-        {
-            sb.AppendLine(group.Key);
-            foreach (var f in group)
-                sb.AppendLine($"  {Severity(f.Severity)} {f.RuleId} (line {f.LineNumber}): {f.Message}");
-            sb.AppendLine();
-        }
+        AppendGrouped(sb, report, report.Findings, showStatus: false);
 
-        var errors = report.CountOf(RuleSeverity.Error);
-        var warnings = report.CountOf(RuleSeverity.Warning);
-        var infos = report.CountOf(RuleSeverity.Info);
+        var errors = report.CountOfSeverity(RuleSeverity.Error);
+        var warnings = report.CountOfSeverity(RuleSeverity.Warning);
+        var infos = report.CountOfSeverity(RuleSeverity.Info);
         sb.AppendLine(
             $"{report.Findings.Count} finding(s): {errors} error(s), {warnings} warning(s), {infos} info " +
             $"across {report.ModelsChecked} model(s).");
         return sb.ToString();
     }
+
+    private string FormatWithBaseline(CheckReport report)
+    {
+        var sb = new StringBuilder();
+
+        var actionable = report.Findings
+            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+            .ToList();
+        var accepted = report.CountOfStatus(FindingStatus.AcceptedDebt);
+        var newCount = report.CountOfStatus(FindingStatus.New);
+        var touched = report.CountOfStatus(FindingStatus.TouchedDebt);
+
+        if (actionable.Count == 0)
+            sb.AppendLine($"No new findings ({accepted} accepted from baseline) in {report.ModelsChecked} model(s).");
+        else
+            AppendGrouped(sb, report, actionable, showStatus: true);
+
+        sb.AppendLine(
+            $"{newCount} new, {touched} touched-debt, {accepted} accepted (baseline) across {report.ModelsChecked} model(s).");
+        return sb.ToString();
+    }
+
+    private void AppendGrouped(StringBuilder sb, CheckReport report, IReadOnlyList<ClassifiedFinding> items, bool showStatus)
+    {
+        foreach (var group in items
+                     .GroupBy(c => report.FileFor(c.Finding) ?? c.Finding.ModelId)
+                     .OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            sb.AppendLine(group.Key);
+            foreach (var c in group)
+            {
+                var status = showStatus ? StatusTag(c.Status) + " " : string.Empty;
+                sb.AppendLine($"  {status}{Severity(c.Finding.Severity)} {c.Finding.RuleId} (line {c.Finding.LineNumber}): {c.Finding.Message}");
+            }
+            sb.AppendLine();
+        }
+    }
+
+    private static string StatusTag(FindingStatus status) => status switch
+    {
+        FindingStatus.New => "[new]",
+        FindingStatus.TouchedDebt => "[touched]",
+        _ => "[accepted]"
+    };
 
     private string Severity(RuleSeverity severity)
     {
