@@ -263,7 +263,8 @@ User-facing documentation is in `Documentation/`:
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
 | `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
-| `cli.md` | Headless `mlqt check` CLI: install, options, formats (console/JSON/JUnit), exit codes, CI usage |
+| `cli.md` | Headless `mlqt check` CLI: install, options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown), baseline/ratchet, exit codes |
+| `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new issues, wire into TeamCity/GitHub |
 | `troubleshooting.md` | Common issues, FAQ |
 
 ## Documentation Maintenance

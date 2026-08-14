@@ -4,6 +4,10 @@ A headless, cross-platform command-line tool that style-checks a Modelica librar
 findings. It runs the same checks as the MLQT desktop app, with no UI and no MAUI dependency, so it
 works on Windows, Linux, and macOS and is suited to CI pipelines.
 
+> For a step-by-step guide to setting up the CI quality gate on a real library (enable rules,
+> baseline existing debt, gate on new issues, wire into TeamCity/GitHub), see
+> [ci-quality-gate.md](ci-quality-gate.md). This page is the option reference.
+
 ## Install
 
 Packaged as a .NET tool:
