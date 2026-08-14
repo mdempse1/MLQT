@@ -1,6 +1,6 @@
 # Design Note — Phase 5: In-source suppression (`__MLQT` annotations)
 
-> **Status: headless/CI parts IMPLEMENTED (5a + 5b-checker); desktop parts remaining.**
+> **Status: COMPLETE (5a, 5b, 5c all implemented; all suites green).**
 > Phase 5 of the locked roadmap ([roadmap.md](roadmap.md)). Turns the Phase 1 no-op
 > `IFindingSuppressor` seam ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md))
 > into real suppression, implementing the mechanism agreed in
@@ -9,16 +9,17 @@
 > **Done:**
 > - **5a** — `MlqtSuppressionExtractor` + `SuppressionSet` read `__MLQT(suppress=…)` class/component
 >   directives; `RunStyleCheckingFindings` drops suppressed findings (`honorSuppressions`); the
->   placeholder `IFindingSuppressor` is removed; CLI `--no-suppress` audit mode. (All suites green.)
+>   placeholder `IFindingSuppressor` is removed; CLI `--no-suppress` audit mode.
 > - **5b (checker side)** — `preserveOrder=true` / `format=false` at the class level suppresses the
 >   ordering/formatting rules (the declaration-order case), via the extractor adding the
 >   formatting-family rule ids to the class suppress set.
->
-> **Remaining (desktop / authoring — separate subsystems):**
-> - **5b (renderer side)** — the desktop formatting pipeline (`ModelicaRenderer` /
->   `ModelicaPackageSaver` / `MainLayout`) honouring `__MLQT(format=false/preserveOrder)` so it does
->   not reorder those classes — the in-source successor to `FormattingExcludedModels`.
-> - **5c** — MCP `suppress_rule` tool + GUI "suppress here" authoring action.
+> - **5b (renderer side)** — `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` treats a class
+>   carrying `__MLQT(format=false/preserveOrder)` as format-excluded (rendered raw), unioning it with
+>   the explicit `excludedModelIds` set — the in-source successor to `FormattingExcludedModels`.
+> - **5c** — `MlqtSuppressionWriter` (adds/merges the `__MLQT(suppress=…)` annotation onto a class or
+>   component via parse-tree splicing); MCP `suppress_rule` tool (over the `ClassBodyEditor` path); and
+>   the Code Review **Suppress** action (carries `RuleId`/`ElementPath` through `LogMessage`, writes the
+>   annotation, saves via the single-file render/reload path).
 
 ## Purpose
 

@@ -81,7 +81,7 @@ The server exposes 60+ tools. The full list is in [MLQT.McpServer/README.md](../
 | **Documentation** | Set description strings and the `Documentation(info/revisions)` HTML |
 | **Diagram** | Read and set component `Placement`; connection lines are drawn automatically (below) |
 | **Dependencies & impact** | Analyse dependencies, find usages, assess the impact of a change |
-| **Code quality** | Read/set style settings, run style checks, list issues |
+| **Code quality** | Read/set style settings, run style checks, list issues, and suppress a rule in source (`suppress_rule`) |
 | **Spelling** | Spell-check and correct descriptions and documentation |
 | **Formatting** | Format a class in place or format a snippet statelessly |
 | **External resources** | List resources a class references and report resource warnings |

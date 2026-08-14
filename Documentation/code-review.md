@@ -118,6 +118,16 @@ The issues table provides two filtering mechanisms:
 
 ![Screenshot: The Issue Details dialog showing an issue with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 
+#### Suppressing a Rule
+
+For a style-rule issue (anything other than a spelling violation), the Issue Details dialog also offers **Suppress**. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
+
+- MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the issue is about a specific component, onto that component.
+- The annotation is scoped to the element the issue is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class (but not for sibling classes in the same file).
+- The file is re-formatted and **saved to disk immediately**, then re-parsed, and the resolved issue is removed. If the result would fail to parse, the change is aborted and the file is left unchanged.
+
+Because the waiver lives in the source, it survives re-formatting and is honoured everywhere findings are produced — the desktop app, the [`mlqt check` CLI](cli.md), and the [MCP server](mcp-server.md). This is the same suppression mechanism a reviewer or agent can apply headlessly; see the CI walk-through's suppression section in [CI Quality Gate](ci-quality-gate.md). `__MLQT` is a spec-sanctioned vendor annotation, so Dymola and OpenModelica ignore it.
+
 ### Spelling Violations
 
 Spelling violations from the spell checker (issues starting with "Misspelled word") are handled differently from other issues. Clicking a spelling violation navigates to the model and scrolls the code viewer so the misspelled word is brought into view, **highlighted inline** with a wavy red underline. To act on the word, **right-click the underlined word** in the code viewer.

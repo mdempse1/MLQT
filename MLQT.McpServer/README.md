@@ -67,7 +67,7 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 | Documentation | `set_class_description`, `set_component_description`, `set_class_documentation` (read with `get_class_documentation`) |
 | Diagram | `get_diagram_layout`, `set_component_placement` |
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
-| Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues` |
+| Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_issues`, `suppress_rule` |
 | Spelling | `spell_check`, `spelling_suggestions`, `correct_spelling` |
 | Editing (class) | `create_class`, `update_class_source`, `rename_class`, `move_class`, `delete_class` |
 | Editing (elements) | `add_component`, `remove_component`, `set_component_modifier`, `add_extends`, `add_import`, `add_equation`, `add_statement`, `add_connection`, `remove_connection`, `list_connections`, `batch_edit` |
