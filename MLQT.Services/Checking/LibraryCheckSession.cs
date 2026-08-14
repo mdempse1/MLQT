@@ -1,7 +1,6 @@
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
-using ModelicaParser.StyleRules;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
@@ -22,7 +21,7 @@ public static class LibraryCheckSession
         StyleCheckingSettings settings,
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
-        IFindingSuppressor? suppressor = null)
+        bool honorSuppressions = true)
     {
         if (!settings.HasAnyStyleRuleEnabled)
             return [];
@@ -38,7 +37,7 @@ public static class LibraryCheckSession
 
             try
             {
-                foreach (var finding in StyleCheckRunner.RunFindings(node, settings, context, suppressor))
+                foreach (var finding in StyleCheckRunner.RunFindings(node, settings, context, honorSuppressions))
                     all.Add(finding);
             }
             catch

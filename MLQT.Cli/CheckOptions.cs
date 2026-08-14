@@ -25,6 +25,9 @@ internal sealed record CheckOptions
     /// <summary>VCS ref to diff against for changed-model detection (touched-debt). Null = disabled.</summary>
     public string? ChangedFrom { get; init; }
 
+    /// <summary>Audit mode: ignore __MLQT suppression annotations and report everything.</summary>
+    public bool NoSuppress { get; init; }
+
     public static bool TryParse(IReadOnlyList<string> args, out CheckOptions? options, out string? error)
     {
         options = null;
@@ -35,6 +38,7 @@ internal sealed record CheckOptions
         var failOn = FailOnLevel.Error;
         var touchedDebt = TouchedDebtPolicy.Warn;
         var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is not null;
+        var noSuppress = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -52,6 +56,9 @@ internal sealed record CheckOptions
                     break;
                 case "--no-color":
                     noColor = true;
+                    break;
+                case "--no-suppress":
+                    noSuppress = true;
                     break;
                 case "--format":
                     if (!Next(args, ref i, out var fmt, out error)) return false;
@@ -112,7 +119,8 @@ internal sealed record CheckOptions
             NoColor = noColor,
             BaselinePath = baseline,
             TouchedDebt = touchedDebt,
-            ChangedFrom = changedFrom
+            ChangedFrom = changedFrom,
+            NoSuppress = noSuppress
         };
         return true;
     }

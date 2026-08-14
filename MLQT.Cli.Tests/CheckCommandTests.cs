@@ -473,6 +473,21 @@ public class CheckCommandTests
     }
 
     [Fact]
+    public void Suppression_HidesFinding_AndNoSuppressRevealsIt()
+    {
+        using var lib = new TempLibrary()
+            .WithModel("TestModel.mo",
+                "model TestModel\n  parameter Real x = 1.0 annotation(__MLQT(suppress=\"Doc.ParameterDescription\"));\nend TestModel;")
+            .WithSettings(ParamDescriptionSettings);
+
+        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+        Assert.Contains("No findings", stdout); // the only finding is suppressed
+
+        var (_, auditOut, _) = Run("check", lib.Path, "--no-suppress", "--no-color");
+        Assert.Contains("MLQT.Doc.ParameterDescription", auditOut); // audit mode reveals it
+    }
+
+    [Fact]
     public void Console_MultiModelFile_ShowsEachModel()
     {
         // One file, two models — the console must show which model each violation belongs to.

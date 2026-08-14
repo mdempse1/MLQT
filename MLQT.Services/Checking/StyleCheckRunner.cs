@@ -1,7 +1,6 @@
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
-using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Checking;
 
@@ -11,12 +10,12 @@ public static class StyleCheckRunner
     /// <summary>Runs the checks for one model and returns structured findings.</summary>
     public static List<Finding> RunFindings(
         ModelNode node, StyleCheckingSettings settings, StyleCheckContext context,
-        IFindingSuppressor? suppressor = null)
+        bool honorSuppressions = true)
     {
         var findings = StyleChecking.RunStyleCheckingFindings(
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: context.BaseClassHasIcon, suppressor: suppressor);
+            baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return findings;

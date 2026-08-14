@@ -52,7 +52,7 @@ public static class StyleChecking
         IReadOnlySet<string>? knownModelNames = null,
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null,
-        IFindingSuppressor? suppressor = null)
+        bool honorSuppressions = true)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -167,8 +167,17 @@ public static class StyleChecking
             findings[i] = findings[i] with { Severity = sev };
         }
 
-        // Route through the suppression seam (no-op in Phase 1; the __MLQT hook lands later).
-        return (suppressor ?? NoOpFindingSuppressor.Instance).Apply(findings).ToList();
+        // Drop findings the author has intentionally waived via __MLQT annotations.
+        if (honorSuppressions && findings.Count > 0)
+        {
+            var extractor = new MlqtSuppressionExtractor(basePackage);
+            extractor.VisitStored_definition(parsedCode);
+            var suppressions = extractor.Build();
+            if (!suppressions.IsEmpty)
+                findings = findings.Where(f => !suppressions.IsSuppressed(f)).ToList();
+        }
+
+        return findings;
     }
 
     /// <summary>

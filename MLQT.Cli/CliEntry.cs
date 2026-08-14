@@ -55,6 +55,7 @@ internal static class CliEntry
           --out <file>                  Write output to a file instead of stdout
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output
+          --no-suppress                 Ignore __MLQT suppression annotations (audit)
           -h, --help                    Show this help
 
         baseline: create/update snapshot current findings to <library-path>/.mlqt/baseline.json

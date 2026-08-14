@@ -8,7 +8,8 @@ internal static class CheckRunner
 {
     public static async Task<int> RunAsync(CheckOptions opts, TextWriter stdout, TextWriter stderr)
     {
-        var load = await CheckPipeline.LoadAndCheckAsync(opts.LibraryPath, opts.ConfigPath, stderr);
+        var load = await CheckPipeline.LoadAndCheckAsync(
+            opts.LibraryPath, opts.ConfigPath, stderr, honorSuppressions: !opts.NoSuppress);
         if (!load.Ok)
             return load.ExitCode;
 

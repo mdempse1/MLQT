@@ -150,13 +150,4 @@ public class RuleCatalogTests
         }
     }
 
-    [Fact]
-    public void NoOpSuppressor_ReturnsFindingsUnchanged()
-    {
-        var findings = new List<Finding>
-        {
-            new() { RuleId = "R", ModelId = "M", Message = "m" }
-        };
-        Assert.Same(findings, NoOpFindingSuppressor.Instance.Apply(findings));
-    }
 }

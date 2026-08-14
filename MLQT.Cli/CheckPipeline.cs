@@ -21,7 +21,8 @@ internal sealed record LoadResult(
 /// <summary>Shared load + check pipeline used by both `check` and the `baseline` commands.</summary>
 internal static class CheckPipeline
 {
-    public static async Task<LoadResult> LoadAndCheckAsync(string libraryPath, string? configPath, TextWriter stderr)
+    public static async Task<LoadResult> LoadAndCheckAsync(
+        string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true)
     {
         var isDir = Directory.Exists(libraryPath);
         var isMoFile = File.Exists(libraryPath) &&
@@ -90,7 +91,7 @@ internal static class CheckPipeline
         var dictionaryManager = new DictionaryManagerService();
 
         var findings = LibraryCheckSession
-            .Check(graph, models, settings, customDictionary, dictionaryManager)
+            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)
