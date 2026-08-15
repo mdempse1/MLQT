@@ -622,8 +622,10 @@ else if (Repository != null)
         // warning icon bubbles up the tree and the user can find the problem model.
         RefreshDescendantParserErrors();
 
-        // Restore expansion state for previously expanded nodes
-        RestoreExpansionState(TreeItems);
+        // Restore expansion state for previously expanded nodes, materialising their children so the
+        // rebuilt tree renders a consistent expanded state (icon + children) rather than an "expanded"
+        // node with null children that MudTreeView won't auto-load after a programmatic rebuild.
+        await RestoreExpansionStateAsync(TreeItems);
     }
 
     /// <summary>
@@ -683,6 +685,34 @@ else if (Repository != null)
             {
                 RestoreExpansionState(item.Children);
             }
+        }
+    }
+
+    /// <summary>
+    /// Like <see cref="RestoreExpansionState"/>, but for a programmatic tree rebuild it also
+    /// materialises the children of each expanded node (loading them on demand if the rebuilt item
+    /// has none). MudTreeView will not auto-invoke its <c>ServerData</c> for a node that is already
+    /// marked <c>Expanded</c> when the tree is replaced wholesale, so without this a previously
+    /// expanded package renders with the expanded icon but no children until it is clicked — and the
+    /// click then collapses it. Pre-loading the children keeps the icon and the rendered rows in sync.
+    /// </summary>
+    private async Task RestoreExpansionStateAsync(IEnumerable<ITreeItemData<ModelNode>> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Value == null || !_expandedNodeIds.Contains(item.Value.Id))
+                continue;
+
+            item.Expanded = true;
+
+            if (item.Children == null && item.Expandable)
+            {
+                var children = await LoadServerData(item.Value);
+                item.Children = children.Cast<ITreeItemData<ModelNode>>().ToList();
+            }
+
+            if (item.Children != null)
+                await RestoreExpansionStateAsync(item.Children);
         }
     }
 
