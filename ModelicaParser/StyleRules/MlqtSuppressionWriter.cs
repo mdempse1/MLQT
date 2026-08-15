@@ -86,9 +86,16 @@ public static class MlqtSuppressionWriter
             if (MlqtArgsStart is { } mlqtAt)
                 return code[..mlqtAt] + $"suppress=\"{ruleId}\", " + code[mlqtAt..];
 
-            // Existing annotation without __MLQT → add __MLQT as a new argument.
+            // Existing annotation without __MLQT → add __MLQT as a new argument. When the annotation is
+            // laid out multi-line (the first argument sits on its own indented line), put __MLQT on its
+            // own line with the same indentation; otherwise keep it inline.
             if (AnnotationArgsStart is { } annAt)
-                return code[..annAt] + Directive(ruleId, reason) + ", " + code[annAt..];
+            {
+                var lineStart = code.LastIndexOf('\n', annAt - 1) + 1;
+                var indent = code[lineStart..annAt];
+                var separator = indent.Length > 0 && indent.All(char.IsWhiteSpace) ? ",\n" + indent : ", ";
+                return code[..annAt] + Directive(ruleId, reason) + separator + code[annAt..];
+            }
 
             // No annotation on the target → create one.
             return Inline

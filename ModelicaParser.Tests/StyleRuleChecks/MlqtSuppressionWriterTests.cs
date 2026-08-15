@@ -64,6 +64,29 @@ public class MlqtSuppressionWriterTests
     }
 
     [Fact]
+    public void AddsMlqtToMultiLineAnnotation_OnItsOwnLine()
+    {
+        // A multi-line annotation: __MLQT should go on its own line, matching the existing indentation,
+        // rather than sharing a line with the first existing argument.
+        var code = "model Foo\n  Real x;\n  annotation (\n    Documentation(info=\"<html></html>\"));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, null, "Doc.ClassDocumentationRevisions", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        Assert.Contains("__MLQT(suppress=\"Doc.ClassDocumentationRevisions\"),\n    Documentation(info=", outCode);
+    }
+
+    [Fact]
+    public void AddsMlqtToInlineAnnotation_StaysInline()
+    {
+        var code = "model Foo\n  Real x;\n  annotation(Documentation(info=\"<html></html>\"));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, null, "Doc.ClassDocumentationRevisions", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        Assert.Contains("__MLQT(suppress=\"Doc.ClassDocumentationRevisions\"), Documentation(info=", outCode);
+        Assert.DoesNotContain("\n", outCode.Split("annotation(")[1].Split("Documentation")[0]); // no newline inserted inline
+    }
+
+    [Fact]
     public void AddsSuppressToExistingMlqtWithoutSuppress()
     {
         var code = "model Foo\n  Real x;\n  annotation(__MLQT(preserveOrder=true));\nend Foo;";
