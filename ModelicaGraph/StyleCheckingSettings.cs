@@ -171,6 +171,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.MissingUnit);
         set => SetRuleEnabled(RuleIds.MissingUnit, value);
     }
+    public bool CheckUnusedImports
+    {
+        get => IsRuleEnabled(RuleIds.UnusedImport);
+        set => SetRuleEnabled(RuleIds.UnusedImport, value);
+    }
 
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,

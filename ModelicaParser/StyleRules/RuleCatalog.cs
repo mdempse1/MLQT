@@ -56,6 +56,7 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.DuplicateDeclaration, "No duplicate declarations", "Correctness", RuleSeverity.Error, "A name must not be declared more than once in the same class."),
             new RuleDefinition(RuleIds.DuplicateImport, "No duplicate imports", "Correctness", RuleSeverity.Warning, "The same name must not be imported more than once in a class."),
             new RuleDefinition(RuleIds.MissingUnit, "Real declares a unit", "Units", RuleSeverity.Warning, "A plain Real variable or parameter should declare a unit (or use an SI type that does)."),
+            new RuleDefinition(RuleIds.UnusedImport, "No unused imports", "Unused", RuleSeverity.Warning, "An import must be referenced in the class that declares it."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);
