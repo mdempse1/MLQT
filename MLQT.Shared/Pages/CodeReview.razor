@@ -152,6 +152,7 @@
                     <MudTh>Description</MudTh>
                     <MudTh>Line Number</MudTh>
                     <MudTh>Type</MudTh>
+                    <MudTh Style="width:1px;"></MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Model" Style="text-align: left; vertical-align:top;" Class="compact-table">
@@ -162,6 +163,18 @@
                         @context.LineNumber</MudTd>
                     <MudTd DataLabel="Type" Style="text-align: left; vertical-align:top;" Class="compact-table">
                         @context.Severity</MudTd>
+                    <MudTd DataLabel="" Style="text-align: center; vertical-align:top;" Class="compact-table">
+                        @if (CanSuppressRule(context))
+                        {
+                            <div @onclick:stopPropagation="true">
+                                <MudTooltip Text="Suppress this rule here (writes a __MLQT annotation into the source)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small"
+                                        Color="Color.Default" Disabled="_suppressing"
+                                        OnClick="@(() => SuppressRuleForIssue(context))" aria-label="Suppress this rule" />
+                                </MudTooltip>
+                            </div>
+                        }
+                    </MudTd>
                 </RowTemplate>
                 <PagerContent>
                     <MudTablePager HideRowsPerPage="true" PageSizeOptions="new int[] { 5, 10, 25, 50, int.MaxValue }" />
@@ -252,7 +265,7 @@
             }
             @if (CanSuppressRule(_currentIssue))
             {
-                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SuppressCurrentIssueRule"
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SuppressRuleForIssue(_currentIssue))"
                            Disabled="_suppressing" StartIcon="@Icons.Material.Filled.RuleFolder" Class="px-10">Suppress
                 </MudButton>
             }
@@ -1515,10 +1528,9 @@ document.head.appendChild(style);
     /// class (or the finding's component) and saving the file — the same in-source suppression the CLI
     /// and MCP server honour. Persists through the single-file save path used by spelling corrections.
     /// </summary>
-    private async Task SuppressCurrentIssueRule()
+    private async Task SuppressRuleForIssue(LogMessage? issue)
     {
-        var issue = _currentIssue;
-        if (issue is null || string.IsNullOrEmpty(issue.RuleId))
+        if (issue is null || string.IsNullOrEmpty(issue.RuleId) || _suppressing)
             return;
 
         var targetNode = LibraryDataService.GetModelById(issue.ModelName);
