@@ -120,7 +120,7 @@ The issues table provides two filtering mechanisms:
 
 #### Suppressing a Rule
 
-For a style-rule issue (anything other than a spelling violation), the Issue Details dialog also offers **Suppress**. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
+Each style-rule issue row (anything other than a spelling violation) has a **Suppress** button at the end of the row; the same action also appears in the Issue Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
 
 - MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the issue is about a specific component, onto that component.
 - The annotation is scoped to the element the issue is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class (but not for sibling classes in the same file).
