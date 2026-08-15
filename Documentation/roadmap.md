@@ -201,6 +201,7 @@ across all workstreams:
 6. **Wave-1 analyses + dashboard** — unused elements/classes, duplicate/shadowing, `uses`
    hygiene, `package.order` consistency, missing-units; plus the metrics dashboard/burndown.
    The debt-ledger content that makes the ratchet compelling.
+   **Implementation plan:** [design-phase6-analyses-dashboard.md](design-phase6-analyses-dashboard.md).
 7. **Desktop host migration (Photino, retire MAUI)** — delivers the **Linux UI**. Pull the
    WebKitGTK interop spike *early* to de-risk; then host + platform-service ports, validated
    Windows-parity → Linux → macOS.
