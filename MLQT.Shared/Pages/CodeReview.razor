@@ -1583,9 +1583,10 @@ document.head.appendChild(style);
             string fileContent;
             try
             {
-                // Normalise exactly as the parser does, so the writer's parse-tree offsets line up with
-                // the string we splice into (disk files are often CRLF; the parser works in LF).
-                fileContent = ModelicaParserHelper.PreprocessCode(await Task.Run(() => File.ReadAllText(filePath)));
+                // Read the raw file so we can make a minimal edit that preserves its existing line
+                // endings — the annotation is spliced in without rewriting the whole file (which would
+                // otherwise show as hundreds of unrelated line-ending changes on a CRLF library).
+                fileContent = await Task.Run(() => File.ReadAllText(filePath));
             }
             catch (Exception ex)
             {
@@ -1594,12 +1595,12 @@ document.head.appendChild(style);
                 return;
             }
 
-            if (!MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, component, issue.RuleId!, null, out var newContent, out var writeError))
+            if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, issue.RuleId!, null, out var newContent, out var writeError))
             {
                 // A component target that can't be located (e.g. an inherited element) falls back to
                 // suppressing at the class level so the action still succeeds.
                 if (component is null ||
-                    !MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, null, issue.RuleId!, null, out newContent, out writeError))
+                    !MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, null, issue.RuleId!, null, out newContent, out writeError))
                 {
                     Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
                     return;

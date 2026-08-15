@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
-using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -84,14 +83,15 @@ public sealed class SuppressionTools
         string fileContent;
         try
         {
-            fileContent = ModelicaParserHelper.PreprocessCode(await File.ReadAllTextAsync(owner.FilePath));
+            // Read raw so the write is a minimal edit that keeps the file's existing line endings.
+            fileContent = await File.ReadAllTextAsync(owner.FilePath);
         }
         catch (Exception ex)
         {
             return new ToolError($"Could not read '{owner.FilePath}': {ex.Message}");
         }
 
-        if (!MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, component, ruleId, reason, out var newFileContent, out var writeError))
+        if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, ruleId, reason, out var newFileContent, out var writeError))
             return new ToolError(writeError ?? "Could not add the suppression annotation.");
 
         // A rule id that no catalog rule matches is allowed (custom rules, the wildcard), but flag it so a

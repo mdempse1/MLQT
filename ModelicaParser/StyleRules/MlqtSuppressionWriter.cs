@@ -25,6 +25,29 @@ public static class MlqtSuppressionWriter
         => TryAddSuppression(classCode, classPath: null, component, ruleId, reason, out newCode, out error);
 
     /// <summary>
+    /// Suppress <paramref name="ruleId"/> on a class within a whole <em>file's</em> text, preserving the
+    /// file's existing line endings and trailing content so the on-disk change is minimal — only the
+    /// inserted annotation, not a whole-file line-ending/trailing rewrite. Use this when writing back to
+    /// a source file (the editing splice itself works in LF, then the original CRLF/LF style is restored).
+    /// </summary>
+    public static bool TryAddSuppressionToFile(
+        string fileContent, string[]? classPath, string? component, string ruleId, string? reason,
+        out string newContent, out string? error)
+    {
+        newContent = fileContent;
+
+        // Edit in LF (the parser and the splice offsets work in LF), then restore the file's style.
+        var usedCrlf = fileContent.Contains("\r\n");
+        var lf = fileContent.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        if (!TryAddSuppression(lf, classPath, component, ruleId, reason, out var newLf, out error))
+            return false;
+
+        newContent = usedCrlf ? newLf.Replace("\n", "\r\n") : newLf;
+        return true;
+    }
+
+    /// <summary>
     /// Suppress <paramref name="ruleId"/> on a class located by <paramref name="classPath"/> within
     /// <paramref name="sourceCode"/> (each segment names a nested class, relative to the outermost
     /// class; <c>null</c>/empty targets the outermost class itself), or on that class's

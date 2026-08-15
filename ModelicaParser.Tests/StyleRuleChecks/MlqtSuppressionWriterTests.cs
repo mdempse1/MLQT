@@ -183,6 +183,33 @@ public class MlqtSuppressionWriterTests
     }
 
     [Fact]
+    public void ToFile_PreservesCrlfLineEndings_AndOnlyAddsTheAnnotation()
+    {
+        var code = "within Foo;\r\nmodel Bar\r\n  Real x;\r\nend Bar;\r\n";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppressionToFile(code, null, null, "MLQT.Doc.ClassDescription", null, out var outCode, out _));
+
+        Assert.Contains("__MLQT(suppress=\"MLQT.Doc.ClassDescription\")", outCode);
+        Assert.True(Parses(outCode));
+        // Every line ending stays CRLF: after removing CRLF pairs there is no stray LF.
+        Assert.DoesNotContain("\n", outCode.Replace("\r\n", ""));
+        // Original lines are untouched (no whole-file rewrite).
+        Assert.Contains("within Foo;\r\n", outCode);
+        Assert.Contains("  Real x;\r\n", outCode);
+        Assert.Contains("end Bar;\r\n", outCode);
+    }
+
+    [Fact]
+    public void ToFile_PreservesLfLineEndings()
+    {
+        var code = "within Foo;\nmodel Bar\n  Real x;\nend Bar;\n";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppressionToFile(code, null, null, "R", null, out var outCode, out _));
+
+        Assert.DoesNotContain("\r", outCode); // no CRLF introduced into an LF file
+        Assert.Contains("__MLQT", outCode);
+        Assert.True(Parses(outCode));
+    }
+
+    [Fact]
     public void ClassPath_NotFound_ReturnsError()
     {
         var code = "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";
