@@ -28,4 +28,5 @@ public static class RuleIds
     // Wave-1 analyses (Phase 6). Disabled by default like every rule; a library opts in.
     public const string DuplicateDeclaration = "MLQT.Duplicate.Declaration";
     public const string DuplicateImport = "MLQT.Duplicate.Import";
+    public const string MissingUnit = "MLQT.Units.MissingUnit";
 }

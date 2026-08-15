@@ -43,4 +43,22 @@ public class AnalysisRulesTests
         var code = "model TestModel\n  Real a;\n  Real a;\nend TestModel;";
         Assert.Empty(Check(code, new StyleCheckingSettings()));   // no rules enabled → pipeline skipped
     }
+
+    [Fact]
+    public void MissingUnit_FlowsThrough_WithWarningSeverity()
+    {
+        var settings = new StyleCheckingSettings { CheckMissingUnits = true };
+        var f = Assert.Single(Check("model TestModel\n  Real x;\nend TestModel;", settings),
+            x => x.RuleId == RuleIds.MissingUnit);
+        Assert.Equal(RuleSeverity.Warning, f.Severity);
+        Assert.Equal("x", f.ElementPath);
+    }
+
+    [Fact]
+    public void MissingUnit_HonoursMlqtSuppression()
+    {
+        var settings = new StyleCheckingSettings { CheckMissingUnits = true };
+        var code = "model TestModel\n  Real x annotation(__MLQT(suppress=\"MLQT.Units.MissingUnit\"));\nend TestModel;";
+        Assert.DoesNotContain(Check(code, settings), x => x.RuleId == RuleIds.MissingUnit);
+    }
 }

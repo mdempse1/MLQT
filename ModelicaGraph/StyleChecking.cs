@@ -160,6 +160,12 @@ public static class StyleChecking
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);
         }
+        if (settings.CheckMissingUnits)
+        {
+            var visitor = new MissingUnits(basePackage);
+            visitor.VisitStored_definition(parsedCode);
+            findings.AddRange(visitor.Findings);
+        }
 
         // Stamp the configured severity on each finding (visitors emit at the default level).
         // A finding only exists because its rule ran, so a resolved severity of Off (e.g. the

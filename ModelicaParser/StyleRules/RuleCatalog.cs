@@ -55,6 +55,7 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.NamingConvention, "Follows naming convention", "Naming", RuleSeverity.Warning, "Class and element names must follow the configured naming convention."),
             new RuleDefinition(RuleIds.DuplicateDeclaration, "No duplicate declarations", "Correctness", RuleSeverity.Error, "A name must not be declared more than once in the same class."),
             new RuleDefinition(RuleIds.DuplicateImport, "No duplicate imports", "Correctness", RuleSeverity.Warning, "The same name must not be imported more than once in a class."),
+            new RuleDefinition(RuleIds.MissingUnit, "Real declares a unit", "Units", RuleSeverity.Warning, "A plain Real variable or parameter should declare a unit (or use an SI type that does)."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);
