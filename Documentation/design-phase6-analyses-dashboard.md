@@ -201,7 +201,7 @@ chain — build an "ultimate predefined base + effective attributes" helper on t
 so absence at the declaration site can be intentional; treat a type whose chain already fixes `unit`
 as covered. Skip `Integer`/`Boolean`/`String`/`enumeration`. Cheap, huge burndown content.
 
-## Metrics dashboard  *(Phase 6d)*
+## Metrics dashboard  *(Phase 6e)*
 
 A new **tab** (the app is single-page): `MLQT.Shared/Pages/MetricsDashboard.razor` rendered as a
 `MudTabPanel` in `MainLayout.razor:298-311` (icon `BarChart`). Backed by a new singleton
@@ -234,7 +234,7 @@ marker, subscribed in `MainLayout.OnInitializedAsync`. On big libraries it defer
 as an MCP `get_metrics` tool and a CLI `mlqt metrics` summary (or a `--metrics` addition to the check
 report) with zero GUI dependency — same three-surface reuse the checks get.
 
-## Coverage trend / burndown  *(Phase 6e — last, optional)*
+## Coverage trend / burndown  *(Phase 6f — last, optional)*
 
 The dashboard's payoff is watching coverage climb. Trend needs **persisted snapshots** — nothing
 stores history today. Add a lightweight snapshot writer (`.mlqt/metrics-history.json`: timestamp +
@@ -265,12 +265,24 @@ like every rule) — a library opts in per `.mlqt/settings.json`.
 
 ## Settings UI
 
-Twelve new rules is a lot of hand-written `MudSwitch`es. Add them grouped under a new **"Analysis"**
-`MudExpansionPanel` in `SettingsRepositories.razor` (with the bool facades + change-detection fields
-each rule needs). **Recommended ergonomics improvement** (optional, pays off now that rule count is
-climbing): replace the hand-written switches with a **data-driven list generated from
-`RuleCatalog.BuiltIn` grouped by `Category`** — one loop instead of N switches, and future rules need
-no `.razor` edit. This also sets up the per-rule Off/Warn/Error selector deferred from Phase 4.
+Adding twelve rules as hand-written `MudSwitch`es — each needing its own switch *and* a field in
+`StyleSettingsChanged` (miss the latter and persistence/re-check silently break) — is the sprawl this
+phase must avoid. **Decision: this phase replaces the hand-written rule toggles with a data-driven
+list generated from `RuleCatalog.BuiltIn` grouped by `Category`, and does it *before* the analyses
+land** so the twelve new rules cost zero `.razor` edits rather than twelve throwaway switches (see
+sub-phase 6b). One loop renders the toggles; adding a rule later needs no UI change. This is the
+per-rule-severity editor foreshadowed in roadmap §4 (and deferred from Phase 4), so the same control
+grows from an on/off switch to an Off/Warn/Error selector over the `RuleSeverities` map.
+
+Scope to get right when migrating:
+- **Change-detection** moves from field-by-field bool comparison to comparing the `RuleSeverities`
+  map (and the handful of non-rule formatter flags that stay as their own switches).
+- **Coupled / non-toggle rules** must be handled: `ExtendsAtTop` has no independent switch (it rides
+  `ImportStatementsFirst`), and `ComponentsBeforeClasses` / `ApplyFormattingRules` are formatter flags,
+  not catalog rules — the data-driven list must render only independently-toggleable rules and leave
+  those where they are.
+- **Existing rule toggles migrate too**, so the settings page isn't a mix of data-driven and
+  hand-written switches. This is the main reason it's a distinct sub-phase rather than a footnote.
 
 ## Ordered work breakdown (each sub-phase compiles + tests green)
 
@@ -281,18 +293,26 @@ no `.razor` edit. This also sets up the per-rule Off/Warn/Error selector deferre
   (recommended) or add the per-model walk in the runner. Ensure the CLI/MCP check path runs
   dependency analysis when a graph rule is enabled. New `RuleIds`/`RuleCatalog` category scaffolding.
   *No user-visible rule yet — pure seam, tested with a trivial stub analyzer.*
-- **6b — Per-class analyses.** Unused-element (with the leaf-class guard via `StyleCheckContext`),
-  duplicate-declaration/-import, missing-units (Real + SI resolution). Six files each per the recipe;
-  `ModelicaParser` visitors must keep the assembly **>95%** covered.
-- **6c — Graph analyses.** Unused-class, inherited-member shadowing, `uses` hygiene, `package.order`
+- **6b — Data-driven rule settings UI.** Replace the hand-written rule switches in
+  `SettingsRepositories.razor` with a list generated from `RuleCatalog.BuiltIn` grouped by `Category`;
+  move change-detection to a `RuleSeverities`-map comparison; keep the formatter flags
+  (`ComponentsBeforeClasses`, `ApplyFormattingRules`) and coupled rules (`ExtendsAtTop`) handled
+  correctly. Done *before* the analyses so their twelve rule ids surface automatically. No new rules
+  here — a refactor that must leave the current toggles behaving identically (guard with a
+  settings round-trip test).
+- **6c — Per-class analyses.** Unused-element (with the leaf-class guard via `StyleCheckContext`),
+  duplicate-declaration/-import, missing-units (Real + SI resolution). Per the recipe (now without the
+  `.razor` step, thanks to 6b); `ModelicaParser` visitors must keep the assembly **>95%** covered.
+- **6d — Graph analyses.** Unused-class, inherited-member shadowing, `uses` hygiene, `package.order`
   consistency — each an `IGraphAnalyzer`. `ModelicaGraph` **>80%**.
-- **6d — Metrics dashboard.** `IMetricsAnalysisService` + `MetricsDashboard.razor` tab + coverage
+- **6e — Metrics dashboard.** `IMetricsAnalysisService` + `MetricsDashboard.razor` tab + coverage
   dedicated pass + `MudChart`; deferred-mode `AppState` wiring; MCP `get_metrics` + CLI metrics reuse.
-- **6e — Coverage trend.** Snapshot persistence + `MudTimeSeriesChart`. Optional/last.
+- **6f — Coverage trend.** Snapshot persistence + `MudTimeSeriesChart`. Optional/last.
 
-Recommended order is 6a → 6b/6c (either order; 6b is lower-risk, ship first for early burndown) →
-6d → 6e. 6d depends only on 6a's graph access, not on the analyses, so it can proceed in parallel
-once the substrate lands.
+Recommended order is 6a → 6b → 6c/6d (either order; 6c is lower-risk, ship first for early burndown) →
+6e → 6f. 6b lands before the analyses so their rules appear in the data-driven list rather than as
+throwaway switches. 6e depends only on 6a's graph access, not on the analyses, so it can proceed in
+parallel once the substrate lands.
 
 ## Tests
 
@@ -329,8 +349,11 @@ once the substrate lands.
 - **Risk — unused-element false positives** on extended classes and public interface components —
   the single most trust-sensitive analysis. Ship it *conservative* (protected/local/leaf only,
   public components excluded); widen only with evidence. Better under-reporting than a flood.
-- **Risk — settings-UI sprawl.** Twelve manual switches + change-detection fields is error-prone;
-  the data-driven `RuleCatalog` list is the recommended mitigation and future-proofs rule growth.
+- **Decision — settings-UI sprawl → data-driven list (sub-phase 6b, committed).** Rather than add
+  twelve manual switches + change-detection fields, the rule toggles become a `RuleCatalog`-driven
+  list, landed before the analyses so their rules cost no UI work. The migration risk is contained to
+  `SettingsRepositories.razor` + its change-detection, guarded by a settings round-trip test; coupled
+  rules (`ExtendsAtTop`) and formatter flags stay handled as today.
 - **Decision — coverage via a dedicated pass, not finding-scraping.** Robust denominator,
-  independent of enablement/deferred state; trend persistence is separated into 6e because it alone
+  independent of enablement/deferred state; trend persistence is separated into 6f because it alone
   needs a history file.
