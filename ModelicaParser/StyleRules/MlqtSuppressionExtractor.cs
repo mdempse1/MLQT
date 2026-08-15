@@ -70,7 +70,7 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
             {
                 var m = innerArg.element_modification_or_replaceable()?.element_modification();
                 var key = m?.name()?.GetText();
-                if (key is null) continue;
+                if (m is null || key is null) continue;
 
                 var value = m.modification()?.modification_expression()?.GetText();
                 switch (key)

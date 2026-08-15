@@ -27,10 +27,9 @@ public class MissingUnits : VisitorWithModelNameTracking
 
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)
     {
-        if (_isReal)
+        if (_isReal && context.declaration() is { } declaration)
         {
-            var declaration = context.declaration();
-            var name = declaration?.IDENT()?.GetText();
+            var name = declaration.IDENT()?.GetText();
             if (name is not null && !HasUnitAttribute(declaration))
                 AddViolation(context.Start.Line, $"Real {StripQuotes(name)} does not declare a unit",
                     RuleIds.MissingUnit, StripQuotes(name));
