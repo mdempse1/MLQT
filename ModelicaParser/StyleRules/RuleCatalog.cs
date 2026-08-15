@@ -53,6 +53,8 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.SpellingDescription, "Spelling in descriptions", "Spelling", RuleSeverity.Warning, "Description strings must be free of spelling mistakes."),
             new RuleDefinition(RuleIds.SpellingDocumentation, "Spelling in documentation", "Spelling", RuleSeverity.Warning, "Documentation strings must be free of spelling mistakes."),
             new RuleDefinition(RuleIds.NamingConvention, "Follows naming convention", "Naming", RuleSeverity.Warning, "Class and element names must follow the configured naming convention."),
+            new RuleDefinition(RuleIds.DuplicateDeclaration, "No duplicate declarations", "Correctness", RuleSeverity.Error, "A name must not be declared more than once in the same class."),
+            new RuleDefinition(RuleIds.DuplicateImport, "No duplicate imports", "Correctness", RuleSeverity.Warning, "The same name must not be imported more than once in a class."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);

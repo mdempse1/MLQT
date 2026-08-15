@@ -24,4 +24,8 @@ public static class RuleIds
     public const string SpellingDescription = "MLQT.Spelling.Description";
     public const string SpellingDocumentation = "MLQT.Spelling.Documentation";
     public const string NamingConvention = "MLQT.Naming.Convention";
+
+    // Wave-1 analyses (Phase 6). Disabled by default like every rule; a library opts in.
+    public const string DuplicateDeclaration = "MLQT.Duplicate.Declaration";
+    public const string DuplicateImport = "MLQT.Duplicate.Import";
 }

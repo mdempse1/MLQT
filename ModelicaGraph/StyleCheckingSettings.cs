@@ -155,6 +155,18 @@ public class StyleCheckingSettings
         set => SetRuleEnabled(RuleIds.ModelReferences, value);
     }
 
+    // Wave-1 analyses (Phase 6)
+    public bool CheckDuplicateDeclarations
+    {
+        get => IsRuleEnabled(RuleIds.DuplicateDeclaration);
+        set => SetRuleEnabled(RuleIds.DuplicateDeclaration, value);
+    }
+    public bool CheckDuplicateImports
+    {
+        get => IsRuleEnabled(RuleIds.DuplicateImport);
+        set => SetRuleEnabled(RuleIds.DuplicateImport, value);
+    }
+
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,
     /// and creating new branches. The first entry is treated as the trunk equivalent.
@@ -164,17 +176,9 @@ public class StyleCheckingSettings
 
     /// <summary>
     /// Returns true if any style checking rule is enabled that would produce violations.
-    /// Used to skip the entire style checking pipeline when no rules are active.
+    /// Used to skip the entire style checking pipeline when no rules are active. Map-driven so new
+    /// rules are counted automatically (the severity map holds only enabled rules; formatter flags
+    /// such as ApplyFormattingRules/ComponentsBeforeClasses are plain bools and never appear here).
     /// </summary>
-    public bool HasAnyStyleRuleEnabled =>
-        ParameterHasDescription || ConstantHasDescription ||
-        ImportStatementsFirst ||
-        InitialEQAlgoFirst || InitialEQAlgoLast ||
-        OneOfEachSection || DontMixEquationAndAlgorithm ||
-        DontMixConnections ||
-        ClassHasDescription || ClassHasDocumentationInfo ||
-        ClassHasDocumentationRevisions || ClassHasIcon ||
-        FollowNamingConvention ||
-        ValidateModelReferences ||
-        SpellCheckDescription || SpellCheckDocumentation;
+    public bool HasAnyStyleRuleEnabled => RuleSeverities.Values.Any(s => s != RuleSeverity.Off);
 }
