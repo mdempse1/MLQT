@@ -1,11 +1,24 @@
 # Design Note — Phase 6: Wave-1 analyses + metrics dashboard
 
-> **Status: PLANNED.** Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
+> **Status: IN PROGRESS.** Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
 > dashboard). Builds on the findings foundation ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md)),
 > the baseline/ratchet ([design-phase3-baseline.md](design-phase3-baseline.md)), and suppression
 > ([design-phase5-suppression.md](design-phase5-suppression.md)) — all shipped. This is the phase
 > that generates the *debt-ledger content* which makes the ratchet compelling: six new static
 > analyses plus the metrics/burndown surface that visualises the debt coming down.
+>
+> **Done so far:**
+> - Rule scaffolding + `HasAnyStyleRuleEnabled` made map-driven (new rules counted automatically).
+> - **Per-class analyses (the substrate-free subset of 6c):** duplicate declaration/import
+>   (`MLQT.Duplicate.Declaration`/`Import`), missing-units presence (`MLQT.Units.MissingUnit`,
+>   plain `Real` only), unused imports (`MLQT.Unused.Import`). Each is a `VisitorWithModelNameTracking`
+>   wired into `RunStyleCheckingFindings`, so it inherits severity/fingerprint/`__MLQT` suppression and
+>   every output format; verified end-to-end via `mlqt check`. All disabled by default.
+>
+> **Remaining:** unused parameters/constants/protected components (needs the leaf-class graph guard);
+> the `IGraphAnalyzer` substrate + resolver promotion (6a); the graph analyses (6d: unused-class,
+> shadowing, `uses` hygiene, `package.order`); the data-driven settings UI (6b); the metrics
+> dashboard (6e); coverage trend (6f). SI-typed missing-unit resolution is a later increment.
 
 ## Purpose
 
