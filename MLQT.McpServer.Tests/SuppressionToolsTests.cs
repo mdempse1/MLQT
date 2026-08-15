@@ -56,7 +56,56 @@ public class SuppressionToolsTests
     {
         using var host = new TestHost();
         var err = ToolAssert.Error(await Load(host).SuppressRule("P.M", "MLQT.X", component: "nope"));
-        Assert.Contains("no component named 'nope'", err.Error);
+        Assert.Contains("'nope'", err.Error);
+        Assert.Contains("not found", err.Error);
+    }
+
+    [Fact]
+    public async Task SuppressRule_ShortClassType_WritesAnnotation()
+    {
+        const string pkg = """
+            within;
+            package P "p"
+              type Len = Real(unit="m");
+              model M "m"
+                Real x;
+              end M;
+            end P;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new SuppressionTools(host.Libraries, host.Resources, host.Session);
+
+        // A `type` is a short class definition with no body — this used to fail to locate a class body.
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await tools.SuppressRule("P.Len", "MLQT.Units.MissingUnit", preview: true));
+        Assert.Contains("type Len = Real(unit=\"m\") annotation(__MLQT(suppress=\"MLQT.Units.MissingUnit\"))", res.NewFileContent);
+    }
+
+    [Fact]
+    public async Task SuppressRule_NestedClass_WritesOntoThatClass()
+    {
+        const string pkg = """
+            within;
+            package P "p"
+              model Inner "inner"
+                Real x;
+              end Inner;
+            end P;
+            """;
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = pkg });
+        await host.Libraries.AddLibraryFromDirectoryAsync(dir);
+        var tools = new SuppressionTools(host.Libraries, host.Resources, host.Session);
+
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await tools.SuppressRule("P.Inner", "MLQT.Doc.ClassDescription", preview: true));
+        var content = res.NewFileContent!;
+        var innerStart = content.IndexOf("model Inner", StringComparison.Ordinal);
+        var innerEnd = content.IndexOf("end Inner", StringComparison.Ordinal);
+        var mlqtAt = content.IndexOf("__MLQT", StringComparison.Ordinal);
+        Assert.InRange(mlqtAt, innerStart, innerEnd); // on Inner, not the package
     }
 
     [Fact]

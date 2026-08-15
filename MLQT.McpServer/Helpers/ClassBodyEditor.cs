@@ -67,22 +67,35 @@ internal static class ClassBodyEditor
             newOwnerCode = ReplaceFirst(ctx.OwnerCode, ctx.ClassCode, newClassCode);
         }
 
-        var fileContent = PrependWithinClause(newOwnerCode, ctx.FileOwner.ParentModelName);
+        return await PersistOwnerAsync(libraries, resources, session, ctx.FileOwner, ctx.FilePath, newOwnerCode, preview, operation);
+    }
+
+    /// <summary>
+    /// Persist a transformed *file-owner* body (the whole-file slice): re-add the within clause,
+    /// parse-check, preview/writability-gate, write, reload and refresh. Used by edits that produce a
+    /// new owner body directly (e.g. suppress_rule, which places an annotation onto a class located by
+    /// name path within the owner rather than splicing a class slice).
+    /// </summary>
+    public static async Task<object> PersistOwnerAsync(
+        ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
+        ModelNode fileOwner, string filePath, string newOwnerCode, bool preview, string operation)
+    {
+        var fileContent = PrependWithinClause(newOwnerCode, fileOwner.ParentModelName);
 
         var (_, errors) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errors.Count > 0)
-            return new ToolError($"The edit would make '{ctx.FilePath}' unparseable ({DescribeErrors(errors)}). Nothing was changed.");
+            return new ToolError($"The edit would make '{filePath}' unparseable ({DescribeErrors(errors)}). Nothing was changed.");
 
         if (preview)
-            return new ClassEditResult(ctx.FilePath, PreviewOnly: true, AffectedCount: 0, fileContent);
+            return new ClassEditResult(filePath, PreviewOnly: true, AffectedCount: 0, fileContent);
 
-        if (FileWritability.RequireWritable(ctx.FilePath, operation) is { } readOnly)
+        if (FileWritability.RequireWritable(filePath, operation) is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(ctx.FilePath, fileContent);
-        var affected = await libraries.ReloadFileAsync(ctx.FilePath);
+        await File.WriteAllTextAsync(filePath, fileContent);
+        var affected = await libraries.ReloadFileAsync(filePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, libraries, resources, session);
-        return new ClassEditResult(ctx.FilePath, PreviewOnly: false, affected.Count, null);
+        return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);
     }
 
     private static string PrependWithinClause(string ownerCode, string? parentModelName)

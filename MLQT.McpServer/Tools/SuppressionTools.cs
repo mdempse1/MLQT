@@ -57,15 +57,30 @@ public sealed class SuppressionTools
             return new ToolError("ruleId is required — the rule to suppress, e.g. 'MLQT.Documentation.ParameterDescription' or '*'.");
         ruleId = ruleId.Trim();
 
-        var (ctx, error) = ClassBodyEditor.Open(_libraries, classId);
-        if (error is not null)
-            return error;
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse and cannot be edited.");
 
-        if (component is not null &&
-            !ctx!.Layout.Components.Any(c => string.Equals(c.Name, component, StringComparison.Ordinal)))
-            return new ToolError($"'{classId}' has no component named '{component}'.");
+        var owner = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
+        if (owner is null)
+            return new ToolError($"Could not locate the source file for '{classId}'.");
 
-        if (!MlqtSuppressionWriter.TryAddSuppression(ctx!.ClassCode, component, ruleId, reason, out var newClassCode, out var writeError))
+        // Place the annotation onto the target class within the file owner's whole-file slice, located
+        // by name path (no substring matching) — robust for a nested class whose stored slice is not a
+        // verbatim substring of the file, and for a short-class `type` definition.
+        string[]? classPath = null;
+        if (!string.Equals(owner.FileOwner.Id, node.Id, StringComparison.Ordinal))
+        {
+            var prefix = owner.FileOwner.Id + ".";
+            if (!node.Id.StartsWith(prefix, StringComparison.Ordinal))
+                return new ToolError($"Could not locate '{classId}' within '{owner.FilePath}'.");
+            classPath = node.Id[prefix.Length..].Split('.');
+        }
+
+        var ownerCode = owner.FileOwner.Definition.ModelicaCode ?? string.Empty;
+        if (!MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, component, ruleId, reason, out var newOwnerCode, out var writeError))
             return new ToolError(writeError ?? "Could not add the suppression annotation.");
 
         // A rule id that no catalog rule matches is allowed (custom rules, the wildcard), but flag it so a
@@ -74,8 +89,8 @@ public sealed class SuppressionTools
         if (ruleId != "*" && !RuleCatalog.IsKnown(ruleId) && !RuleCatalog.IsKnown("MLQT." + ruleId))
             note = $"Note: '{ruleId}' is not a known built-in rule id — check the id from the finding if you did not intend a custom rule.";
 
-        var outcome = await ClassBodyEditor.ApplyAsync(
-            _libraries, _resources, _session, ctx, newClassCode, preview,
+        var outcome = await ClassBodyEditor.PersistOwnerAsync(
+            _libraries, _resources, _session, owner.FileOwner, owner.FilePath, newOwnerCode, preview,
             component is null ? $"suppress '{ruleId}' on '{classId}'" : $"suppress '{ruleId}' on '{classId}.{component}'");
 
         if (outcome is ToolError)

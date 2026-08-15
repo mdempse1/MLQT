@@ -1552,43 +1552,41 @@ document.head.appendChild(style);
         // Scope to the component when the finding names a simple one; otherwise waive it for the class.
         var component = issue.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
 
-        var classCode = targetNode.Definition.ModelicaCode ?? "";
-        if (!MlqtSuppressionWriter.TryAddSuppression(classCode, component, issue.RuleId!, null, out var newClassCode, out var writeError))
+        // Resolve the file owner: the topmost ancestor of the target class stored in this file. Its
+        // ModelicaCode is the whole-file slice that gets rendered and written. The annotation is placed
+        // directly onto the target class within that slice, located by name path — no substring
+        // matching, so it is robust when a nested class's stored slice is not a verbatim substring of
+        // the file (e.g. re-indented on extraction), and it works for short-class `type` definitions.
+        var fileOwner = graph.GetModelsInFile(fileId!)
+            .Where(m => targetNode.Id == m.Id || targetNode.Id.StartsWith(m.Id + ".", StringComparison.Ordinal))
+            .OrderBy(m => m.Id.Length)
+            .FirstOrDefault() ?? targetNode;
+
+        string[]? classPath = null;
+        if (fileOwner.Id != targetNode.Id)
+        {
+            var prefix = fileOwner.Id + ".";
+            if (!targetNode.Id.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                Snackbar.Add("Could not locate the class within its file; reload the library and retry.",
+                    MudBlazor.Severity.Warning);
+                return;
+            }
+            classPath = targetNode.Id[prefix.Length..].Split('.');
+        }
+
+        var ownerCode = fileOwner.Definition.ModelicaCode ?? "";
+        if (!MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, component, issue.RuleId!, null, out var newOwnerCode, out var writeError))
         {
             // A component target that can't be located (e.g. an inherited element) falls back to
             // suppressing at the class level so the action still succeeds.
             if (component is null ||
-                !MlqtSuppressionWriter.TryAddSuppression(classCode, null, issue.RuleId!, null, out newClassCode, out writeError))
+                !MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, null, issue.RuleId!, null, out newOwnerCode, out writeError))
             {
                 Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
                 return;
             }
             component = null;
-        }
-
-        // Splice the modified class body back into its file owner, whose ModelicaCode is the whole-file
-        // slice that gets rendered and written. When the target IS the file owner they are the same.
-        var fileOwner = graph.GetModelsInFile(fileId!).FirstOrDefault(m =>
-                string.IsNullOrEmpty(m.ParentModelName)
-                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId)
-            ?? targetNode;
-
-        string newOwnerCode;
-        if (fileOwner.Id == targetNode.Id)
-        {
-            newOwnerCode = newClassCode;
-        }
-        else
-        {
-            var ownerCode = fileOwner.Definition.ModelicaCode ?? "";
-            var idx = ownerCode.IndexOf(classCode, StringComparison.Ordinal);
-            if (idx < 0 || ownerCode.IndexOf(classCode, idx + classCode.Length, StringComparison.Ordinal) >= 0)
-            {
-                Snackbar.Add("Could not uniquely locate the class within its file; reload the library and retry.",
-                    MudBlazor.Severity.Warning);
-                return;
-            }
-            newOwnerCode = ownerCode[..idx] + newClassCode + ownerCode[(idx + classCode.Length)..];
         }
 
         _suppressing = true;

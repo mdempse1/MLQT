@@ -26,6 +26,22 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
         return base.VisitComposition(context);
     }
 
+    // Short/der class definitions (e.g. `type Length = Real(unit="m")`) have no composition — their
+    // class-level annotation lives in the trailing comment. Read it as a class-level directive.
+    public override object? VisitShort_class_specifier([NotNull] modelicaParser.Short_class_specifierContext context)
+    {
+        if (context.comment()?.annotation() is { } annotation)
+            ReadMlqt(annotation, component: null);
+        return base.VisitShort_class_specifier(context);
+    }
+
+    public override object? VisitDer_class_specifier([NotNull] modelicaParser.Der_class_specifierContext context)
+    {
+        if (context.comment()?.annotation() is { } annotation)
+            ReadMlqt(annotation, component: null);
+        return base.VisitDer_class_specifier(context);
+    }
+
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)
     {
         var name = context.declaration()?.IDENT()?.GetText();

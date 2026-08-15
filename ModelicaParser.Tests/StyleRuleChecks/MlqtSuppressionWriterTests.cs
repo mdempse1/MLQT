@@ -81,4 +81,72 @@ public class MlqtSuppressionWriterTests
         Assert.False(MlqtSuppressionWriter.TryAddSuppression(code, "Nonexistent", "R", null, out _, out var error));
         Assert.Contains("not found", error);
     }
+
+    [Fact]
+    public void ShortClass_CreatesAnnotation_ThatSuppresses()
+    {
+        // A `type` is a short class specifier with no composition — the annotation goes in its comment.
+        var code = "type Len = Real(unit=\"m\") \"a length\";";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, null, "MLQT.Units.MissingUnit", null, out var outCode, out _));
+
+        Assert.Contains("annotation(__MLQT(suppress=\"MLQT.Units.MissingUnit\"))", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(Suppresses(outCode, "Len", null, "MLQT.Units.MissingUnit"));
+    }
+
+    [Fact]
+    public void ShortClass_NoComment_CreatesAnnotation()
+    {
+        var code = "type Len = Real;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, null, "MLQT.Units.MissingUnit", null, out var outCode, out _));
+
+        Assert.Contains("__MLQT(suppress=\"MLQT.Units.MissingUnit\")", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(Suppresses(outCode, "Len", null, "MLQT.Units.MissingUnit"));
+    }
+
+    [Fact]
+    public void NestedShortClass_ViaClassPath_TargetsThatClass()
+    {
+        var code = "package P\n  type Len = Real(unit=\"m\");\n  model M\n    Real y;\n  end M;\nend P;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "Len" }, null, "MLQT.Units.MissingUnit", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        var lenLine = outCode.Split('\n').Single(l => l.Contains("type Len"));
+        Assert.Contains("__MLQT(suppress=\"MLQT.Units.MissingUnit\")", lenLine); // waiver on Len, not the package
+        Assert.DoesNotContain("__MLQT", outCode.Split('\n').Single(l => l.Contains("model M")));
+    }
+
+    [Fact]
+    public void NestedLongClass_ViaClassPath_TargetsThatClass()
+    {
+        // The Modelica.Blocks.Continuous.Integrator case: a class nested in a package.mo file.
+        var code = "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "Inner" }, null, "MLQT.Doc.ClassDescription", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        var innerStart = outCode.IndexOf("model Inner", StringComparison.Ordinal);
+        var innerEnd = outCode.IndexOf("end Inner", StringComparison.Ordinal);
+        var mlqtAt = outCode.IndexOf("__MLQT", StringComparison.Ordinal);
+        Assert.InRange(mlqtAt, innerStart, innerEnd); // inside Inner, before its 'end'
+    }
+
+    [Fact]
+    public void ComponentInNestedClass_ViaClassPath()
+    {
+        var code = "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "Inner" }, "x", "MLQT.Units.MissingUnit", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        var xLine = outCode.Split('\n').Single(l => l.Contains("Real x"));
+        Assert.Contains("annotation(__MLQT(suppress=\"MLQT.Units.MissingUnit\"))", xLine);
+    }
+
+    [Fact]
+    public void ClassPath_NotFound_ReturnsError()
+    {
+        var code = "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";
+        Assert.False(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "Missing" }, null, "R", null, out _, out var error));
+        Assert.Contains("could not locate the class 'Missing'", error);
+    }
 }
