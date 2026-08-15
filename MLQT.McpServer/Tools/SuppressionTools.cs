@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -67,9 +68,10 @@ public sealed class SuppressionTools
         if (owner is null)
             return new ToolError($"Could not locate the source file for '{classId}'.");
 
-        // Place the annotation onto the target class within the file owner's whole-file slice, located
-        // by name path (no substring matching) — robust for a nested class whose stored slice is not a
-        // verbatim substring of the file, and for a short-class `type` definition.
+        // Path from the file's top class to the target class. We edit the on-disk file text (the ground
+        // truth, always holding the full nested structure), located by name path — robust for a nested
+        // class and a short-class `type`, and safe when the package node's stored code is a formatting
+        // "shell" that omits nested standalone classes.
         string[]? classPath = null;
         if (!string.Equals(owner.FileOwner.Id, node.Id, StringComparison.Ordinal))
         {
@@ -79,8 +81,17 @@ public sealed class SuppressionTools
             classPath = node.Id[prefix.Length..].Split('.');
         }
 
-        var ownerCode = owner.FileOwner.Definition.ModelicaCode ?? string.Empty;
-        if (!MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, component, ruleId, reason, out var newOwnerCode, out var writeError))
+        string fileContent;
+        try
+        {
+            fileContent = ModelicaParserHelper.PreprocessCode(await File.ReadAllTextAsync(owner.FilePath));
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not read '{owner.FilePath}': {ex.Message}");
+        }
+
+        if (!MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, component, ruleId, reason, out var newFileContent, out var writeError))
             return new ToolError(writeError ?? "Could not add the suppression annotation.");
 
         // A rule id that no catalog rule matches is allowed (custom rules, the wildcard), but flag it so a
@@ -89,8 +100,8 @@ public sealed class SuppressionTools
         if (ruleId != "*" && !RuleCatalog.IsKnown(ruleId) && !RuleCatalog.IsKnown("MLQT." + ruleId))
             note = $"Note: '{ruleId}' is not a known built-in rule id — check the id from the finding if you did not intend a custom rule.";
 
-        var outcome = await ClassBodyEditor.PersistOwnerAsync(
-            _libraries, _resources, _session, owner.FileOwner, owner.FilePath, newOwnerCode, preview,
+        var outcome = await ClassBodyEditor.PersistFileContentAsync(
+            _libraries, _resources, _session, owner.FilePath, newFileContent, preview,
             component is null ? $"suppress '{ruleId}' on '{classId}'" : $"suppress '{ruleId}' on '{classId}.{component}'");
 
         if (outcome is ToolError)

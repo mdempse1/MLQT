@@ -143,6 +143,23 @@ public class MlqtSuppressionWriterTests
     }
 
     [Fact]
+    public void DeeplyNestedShortClass_ViaClassPath()
+    {
+        // Mirrors Modelica.Units.SI.Molarity: type nested two packages deep, with sibling packages.
+        var code = "package Units \"u\"\n" +
+                   "  package UsersGuide \"g\"\n    class G end G;\n  end UsersGuide;\n" +
+                   "  package SI \"s\"\n    type Angle = Real(final unit=\"rad\");\n" +
+                   "    type Molarity = Real(final quantity=\"Molarity\", final unit=\"mol/m3\", min=0);\n" +
+                   "  end SI;\nend Units;";
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "SI", "Molarity" }, null, "MLQT.Units.MissingUnit", null, out var outCode, out var err), err);
+
+        Assert.True(Parses(outCode));
+        var molarityLine = outCode.Split('\n').Single(l => l.Contains("type Molarity"));
+        Assert.Contains("__MLQT(suppress=\"MLQT.Units.MissingUnit\")", molarityLine);
+        Assert.DoesNotContain("__MLQT", outCode.Split('\n').Single(l => l.Contains("type Angle")));
+    }
+
+    [Fact]
     public void ClassPath_NotFound_ReturnsError()
     {
         var code = "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";

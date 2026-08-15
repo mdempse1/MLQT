@@ -1551,12 +1551,14 @@ document.head.appendChild(style);
 
         // Scope to the component when the finding names a simple one; otherwise waive it for the class.
         var component = issue.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
+        var filePath = fileNode.FilePath;
 
-        // Resolve the file owner: the topmost ancestor of the target class stored in this file. Its
-        // ModelicaCode is the whole-file slice that gets rendered and written. The annotation is placed
-        // directly onto the target class within that slice, located by name path — no substring
-        // matching, so it is robust when a nested class's stored slice is not a verbatim substring of
-        // the file (e.g. re-indented on extraction), and it works for short-class `type` definitions.
+        // Path from the file's top class to the target class. The annotation is placed onto the target
+        // class within the on-disk file text — the ground truth, which always holds the full nested
+        // structure. We deliberately do NOT edit the in-memory class slice: a package node's stored
+        // ModelicaCode can be a formatting "shell" that omits nested standalone classes, so a nested
+        // type (e.g. Modelica.Units.SI.Molarity) would not be found there. Locating by name path also
+        // avoids any substring matching and works for short-class `type` definitions.
         var fileOwner = graph.GetModelsInFile(fileId!)
             .Where(m => targetNode.Id == m.Id || targetNode.Id.StartsWith(m.Id + ".", StringComparison.Ordinal))
             .OrderBy(m => m.Id.Length)
@@ -1575,41 +1577,44 @@ document.head.appendChild(style);
             classPath = targetNode.Id[prefix.Length..].Split('.');
         }
 
-        var ownerCode = fileOwner.Definition.ModelicaCode ?? "";
-        if (!MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, component, issue.RuleId!, null, out var newOwnerCode, out var writeError))
-        {
-            // A component target that can't be located (e.g. an inherited element) falls back to
-            // suppressing at the class level so the action still succeeds.
-            if (component is null ||
-                !MlqtSuppressionWriter.TryAddSuppression(ownerCode, classPath, null, issue.RuleId!, null, out newOwnerCode, out writeError))
-            {
-                Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
-                return;
-            }
-            component = null;
-        }
-
         _suppressing = true;
         try
         {
+            string fileContent;
+            try
+            {
+                // Normalise exactly as the parser does, so the writer's parse-tree offsets line up with
+                // the string we splice into (disk files are often CRLF; the parser works in LF).
+                fileContent = ModelicaParserHelper.PreprocessCode(await Task.Run(() => File.ReadAllText(filePath)));
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Error("CodeReview", $"Failed to read {filePath} for suppression", ex);
+                Snackbar.Add($"Failed to read the file: {ex.Message}", MudBlazor.Severity.Error);
+                return;
+            }
+
+            if (!MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, component, issue.RuleId!, null, out var newContent, out var writeError))
+            {
+                // A component target that can't be located (e.g. an inherited element) falls back to
+                // suppressing at the class level so the action still succeeds.
+                if (component is null ||
+                    !MlqtSuppressionWriter.TryAddSuppression(fileContent, classPath, null, issue.RuleId!, null, out newContent, out writeError))
+                {
+                    Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
+                    return;
+                }
+                component = null;
+            }
+
             // Never persist broken code.
-            var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(newOwnerCode);
+            var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(newContent);
             if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
             {
                 Snackbar.Add("Suppression was not applied: the result failed to parse.", MudBlazor.Severity.Error);
                 return;
             }
 
-            // Render the whole file via the saver (same formatting as format-on-save).
-            fileOwner.Definition.ModelicaCode = newOwnerCode;
-            fileOwner.Definition.ParsedCode = null;
-            var rendered = ModelicaPackageSaver.RenderFileOwnerModel(
-                fileOwner,
-                _settings.StyleChecking.OneOfEachSection,
-                _settings.StyleChecking.ImportStatementsFirst,
-                _settings.StyleChecking.ComponentsBeforeClasses);
-
-            var filePath = fileNode.FilePath;
             var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(fileOwner.Id));
             var repository = string.IsNullOrEmpty(library?.RepositoryId)
                 ? null : RepositoryService.GetRepository(library.RepositoryId);
@@ -1624,7 +1629,7 @@ document.head.appendChild(style);
                     FileMonitoringService.StopMonitoring(repoId);
                     monitorPaused = true;
                 }
-                await Task.Run(() => File.WriteAllText(filePath, rendered));
+                await Task.Run(() => File.WriteAllText(filePath, newContent));
             }
             catch (Exception ex)
             {

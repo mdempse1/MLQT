@@ -98,6 +98,33 @@ internal static class ClassBodyEditor
         return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);
     }
 
+    /// <summary>
+    /// Persist a complete file's new content (already carrying its within clause) directly: parse-check,
+    /// preview/writability-gate, write, reload and refresh. Used by edits made against the on-disk file
+    /// text rather than an in-memory class slice — the file is the ground truth and always holds the full
+    /// nested structure, whereas a package node's stored <c>ModelicaCode</c> can be a formatting "shell"
+    /// that omits nested standalone classes.
+    /// </summary>
+    public static async Task<object> PersistFileContentAsync(
+        ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
+        string filePath, string newFileContent, bool preview, string operation)
+    {
+        var (_, errors) = ModelicaParserHelper.ParseWithErrors(newFileContent);
+        if (errors.Count > 0)
+            return new ToolError($"The edit would make '{filePath}' unparseable ({DescribeErrors(errors)}). Nothing was changed.");
+
+        if (preview)
+            return new ClassEditResult(filePath, PreviewOnly: true, AffectedCount: 0, newFileContent);
+
+        if (FileWritability.RequireWritable(filePath, operation) is { } readOnly)
+            return readOnly;
+
+        await File.WriteAllTextAsync(filePath, newFileContent);
+        var affected = await libraries.ReloadFileAsync(filePath);
+        await GraphRefresh.RefreshAfterEditAsync(affected, libraries, resources, session);
+        return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);
+    }
+
     private static string PrependWithinClause(string ownerCode, string? parentModelName)
     {
         if (ownerCode.StartsWith("within", StringComparison.Ordinal))
