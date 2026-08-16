@@ -7,11 +7,13 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public sealed record MetricsSnapshot(
     DateTime TimestampUtc,
+    string? Scope,
     int TotalClasses,
     Dictionary<string, double> Coverage)
 {
-    /// <summary>Build a snapshot from a computed <see cref="LibraryMetrics"/> at the given time.</summary>
-    public static MetricsSnapshot From(LibraryMetrics metrics, DateTime timestampUtc)
-        => new(timestampUtc, metrics.TotalClasses,
+    /// <summary>Build a snapshot from a computed <see cref="LibraryMetrics"/> for a scope (a package id
+    /// like "Modelica.Blocks", or "" for all loaded libraries) at the given time.</summary>
+    public static MetricsSnapshot From(LibraryMetrics metrics, string scope, DateTime timestampUtc)
+        => new(timestampUtc, scope ?? string.Empty, metrics.TotalClasses,
             metrics.Coverage.ToDictionary(c => c.Dimension, c => c.Percent, StringComparer.Ordinal));
 }

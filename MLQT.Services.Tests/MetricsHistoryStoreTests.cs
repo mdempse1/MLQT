@@ -18,7 +18,7 @@ public class MetricsHistoryStoreTests : IDisposable
     }
 
     private static MetricsSnapshot Snap(DateTime t, double desc)
-        => new(t, 10, new Dictionary<string, double> { ["Description"] = desc });
+        => new(t, "All", 10, new Dictionary<string, double> { ["Description"] = desc });
 
     [Fact]
     public void Load_MissingFile_ReturnsEmpty()
@@ -48,7 +48,8 @@ public class MetricsHistoryStoreTests : IDisposable
     {
         var metrics = new LibraryMetrics(5, new Dictionary<string, int>(), 0,
             new[] { new CoverageMetric("Description", 3, 4) });   // 75%
-        var snap = MetricsSnapshot.From(metrics, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var snap = MetricsSnapshot.From(metrics, "Modelica.Blocks", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.Equal("Modelica.Blocks", snap.Scope);
         Assert.Equal(5, snap.TotalClasses);
         Assert.Equal(75.0, snap.Coverage["Description"]);
     }
