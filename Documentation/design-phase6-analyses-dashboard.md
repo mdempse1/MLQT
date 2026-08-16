@@ -12,13 +12,21 @@
 > - **Per-class analyses (the substrate-free subset of 6c):** duplicate declaration/import
 >   (`MLQT.Duplicate.Declaration`/`Import`), missing-units presence (`MLQT.Units.MissingUnit`,
 >   plain `Real` only), unused imports (`MLQT.Unused.Import`). Each is a `VisitorWithModelNameTracking`
->   wired into `RunStyleCheckingFindings`, so it inherits severity/fingerprint/`__MLQT` suppression and
->   every output format; verified end-to-end via `mlqt check`. All disabled by default.
+>   wired into `RunStyleCheckingFindings`.
+> - **Graph-analyzer seam (6a):** `IGraphAnalyzer` + `GraphAnalysisContext` + `GraphAnalysisRunner`
+>   (severity stamping + per-model `__MLQT` suppression), wired into `LibraryCheckSession` after the
+>   per-model pass. No-op until analyzers register, so zero effect on existing runs.
+> - **Graph analysis `MLQT.Structure.PackageOrder` (6d):** stale/missing package.order entries; needs
+>   no dependency analysis.
 >
-> **Remaining:** unused parameters/constants/protected components (needs the leaf-class graph guard);
-> the `IGraphAnalyzer` substrate + resolver promotion (6a); the graph analyses (6d: unused-class,
-> shadowing, `uses` hygiene, `package.order`); the data-driven settings UI (6b); the metrics
-> dashboard (6e); coverage trend (6f). SI-typed missing-unit resolution is a later increment.
+> All the above are disabled by default, inherit severity/fingerprint/suppression/every output format,
+> and are verified end-to-end via `mlqt check`.
+>
+> **Remaining:** the **dependency-analysis prerequisite** (the check path doesn't run
+> `AnalyzeDependenciesAsync`, so `UsedModelIds`/`UsedByModelIds` are empty) — this blocks `uses`
+> hygiene, unused-class, and unused parameters/constants/protected (the leaf-class "is-extended"
+> guard); resolver promotion + inherited-member shadowing; SI-typed missing-unit resolution; the
+> data-driven settings UI (6b); the metrics dashboard (6e); coverage trend (6f).
 
 ## Purpose
 
