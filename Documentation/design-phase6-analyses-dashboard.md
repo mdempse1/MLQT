@@ -23,6 +23,14 @@
 >   `MLQT.Structure.UsesUndeclared`/`UsesDeclaredUnused` (uses-hygiene, conservative both ways);
 >   `MLQT.Unused.Class` (protected dead code — high-confidence subset).
 >
+> **Shared resolver + shadowing (6d):** `TypeResolver`/`ClassElementResolver` promoted out of
+> `MLQT.McpServer` into `ModelicaGraph/Analysis` (now on `DirectedGraph`; 248 MCP tests confirm the
+> resolution behaviour is unchanged). That unblocked (a) `ShadowingAnalyzer`
+> (`MLQT.Shadowing.InheritedMember` — silent shadows of inherited members, `redeclare` exempt), and
+> (b) inherited-icon counting in the metrics (icons via `extends Modelica.Icons.*` now count). Still
+> pending on the resolver: SI-aware unit coverage (needs an "ultimate predefined base + effective
+> unit" walk of short-class type aliases).
+>
 > **Metrics dashboard (6e)** is in: `MetricsCalculator` (pure, tested) computes class counts by kind,
 > component count, and coverage % (description/icon/parameter-description/unit) as a dedicated
 > structural pass; `MetricsDashboard.razor` adds a Metrics tab rendering coverage as progress bars +
