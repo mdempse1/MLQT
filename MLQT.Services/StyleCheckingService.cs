@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.SpellChecking;
@@ -383,11 +384,64 @@ public class StyleCheckingService : IStyleCheckingService
         {
             OnProgressChanged?.Invoke(false);
             _ = Task.Run(() => ProcessQueueAsync());
+            // Whole-graph analyses run alongside the per-model workers and deliver through the same
+            // violation buffer. Additive: if this fails or is slow it never affects per-class checking.
+            _ = Task.Run(() => RunGraphAnalyses(repositories));
         }
         else
         {
             // All repositories were skipped — signal completion immediately
             OnProgressChanged?.Invoke(true);
+        }
+    }
+
+    /// <summary>
+    /// Runs the whole-graph analyses (package.order, uses hygiene, unused classes) per repository and
+    /// buffers their findings for delivery. Dependency-requiring analyzers only produce findings once
+    /// dependency analysis has populated the graph edges (detected here); package.order needs none.
+    /// </summary>
+    private void RunGraphAnalyses(IReadOnlyList<Repository> repositories)
+    {
+        try
+        {
+            var graph = _libraryDataService.CombinedGraph;
+            var emitted = false;
+
+            foreach (var repository in repositories)
+            {
+                var settings = repository.StyleSettings;
+                if (settings is null)
+                    continue;
+                // Nothing to do unless a graph rule is enabled for this repository.
+                if (!GraphAnalysisRunner.BuiltIn.Any(a => a.RuleIds.Any(settings.IsRuleEnabled)))
+                    continue;
+
+                var models = _libraryDataService.Libraries
+                    .Where(l => l.RepositoryId == repository.Id)
+                    .SelectMany(l => l.ModelIds)
+                    .Select(id => graph.GetNode<ModelNode>(id))
+                    .Where(m => m is not null && !m.IsParseFailurePlaceholder)
+                    .Cast<ModelNode>()
+                    .ToList();
+                if (models.Count == 0)
+                    continue;
+
+                var dependenciesAnalyzed = models.Any(m => m.UsedByModelIds.Count > 0 || m.UsedModelIds.Count > 0);
+                var context = new GraphAnalysisContext(graph, settings, models, dependenciesAnalyzed);
+                var findings = GraphAnalysisRunner.Run(context);
+                if (findings.Count > 0)
+                {
+                    ViolationsFound(this, findings.Select(f => f.ToLogMessage()).ToList());
+                    emitted = true;
+                }
+            }
+
+            if (emitted)
+                FlushPendingViolations();
+        }
+        catch (Exception ex)
+        {
+            Error("StyleCheckingService", "Graph analyses failed", ex);
         }
     }
 
