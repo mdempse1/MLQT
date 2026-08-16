@@ -7,26 +7,31 @@
 > that generates the *debt-ledger content* which makes the ratchet compelling: six new static
 > analyses plus the metrics/burndown surface that visualises the debt coming down.
 >
-> **Done so far:**
+> **Done so far** (all disabled by default; inherit severity/fingerprint/`__MLQT` suppression/every
+> output format; CLI-verified end-to-end):
 > - Rule scaffolding + `HasAnyStyleRuleEnabled` made map-driven (new rules counted automatically).
-> - **Per-class analyses (the substrate-free subset of 6c):** duplicate declaration/import
->   (`MLQT.Duplicate.Declaration`/`Import`), missing-units presence (`MLQT.Units.MissingUnit`,
->   plain `Real` only), unused imports (`MLQT.Unused.Import`). Each is a `VisitorWithModelNameTracking`
->   wired into `RunStyleCheckingFindings`.
-> - **Graph-analyzer seam (6a):** `IGraphAnalyzer` + `GraphAnalysisContext` + `GraphAnalysisRunner`
->   (severity stamping + per-model `__MLQT` suppression), wired into `LibraryCheckSession` after the
->   per-model pass. No-op until analyzers register, so zero effect on existing runs.
-> - **Graph analysis `MLQT.Structure.PackageOrder` (6d):** stale/missing package.order entries; needs
->   no dependency analysis.
+> - **Per-class analyses:** duplicate declaration/import (`MLQT.Duplicate.Declaration`/`Import`),
+>   missing-units presence (`MLQT.Units.MissingUnit`, plain `Real`), unused imports
+>   (`MLQT.Unused.Import`). `VisitorWithModelNameTracking`s wired into `RunStyleCheckingFindings` — so
+>   they work on **every** surface (GUI, CLI, MCP).
+> - **Graph-analyzer substrate (6a):** `IGraphAnalyzer` + `GraphAnalysisContext` + `GraphAnalysisRunner`
+>   (severity stamping, per-model `__MLQT` suppression, `NeedsDependencyAnalysis` gating), wired into
+>   `LibraryCheckSession`. The **dependency-analysis prerequisite** is handled: the CLI runs
+>   `AnalyzeDependenciesAsync` once when a dependency-requiring rule is enabled and passes
+>   `dependenciesAnalyzed`.
+> - **Graph analyses (6d):** `MLQT.Structure.PackageOrder` (stale/missing entries; no deps needed);
+>   `MLQT.Structure.UsesUndeclared`/`UsesDeclaredUnused` (uses-hygiene, conservative both ways);
+>   `MLQT.Unused.Class` (protected dead code — high-confidence subset).
 >
-> All the above are disabled by default, inherit severity/fingerprint/suppression/every output format,
-> and are verified end-to-end via `mlqt check`.
+> Graph analyses currently surface **only on the CLI** (`LibraryCheckSession`); the GUI/MCP style-check
+> paths are per-model, so wiring graph analyses there is a follow-on. Per-class analyses already work
+> everywhere.
 >
-> **Remaining:** the **dependency-analysis prerequisite** (the check path doesn't run
-> `AnalyzeDependenciesAsync`, so `UsedModelIds`/`UsedByModelIds` are empty) — this blocks `uses`
-> hygiene, unused-class, and unused parameters/constants/protected (the leaf-class "is-extended"
-> guard); resolver promotion + inherited-member shadowing; SI-typed missing-unit resolution; the
-> data-driven settings UI (6b); the metrics dashboard (6e); coverage trend (6f).
+> **Remaining:** unused parameters/constants/protected members (per-class, but needs an extends-aware
+> "is this class extended?" guard to avoid subclass-use false positives); resolver promotion +
+> inherited-member shadowing; the public/top-level "possibly unused API" Info case of unused-class;
+> SI-typed missing-unit resolution; graph analyses on the GUI/MCP paths; the data-driven settings UI
+> (6b); the metrics dashboard (6e); coverage trend (6f).
 
 ## Purpose
 
