@@ -43,8 +43,8 @@
                     </MudStack>
                 }
                 <MudText Typo="Typo.caption" Class="mt-1">
-                    True source state — in-source waivers do not raise it. <b>Own icon</b> counts a class's
-                    own <code>Icon</code> graphics (icons inherited via <code>extends</code> are not counted).
+                    True source state — in-source waivers do not raise it. <b>Icon</b> counts a class's own
+                    <code>Icon</code> graphics or one inherited via <code>extends</code>.
                     <b>Real vars w/ unit</b> covers plain <code>Real</code> declarations only; variables typed
                     with SI/quantity types carry their unit by definition and are not counted here.
                 </MudText>
@@ -89,7 +89,8 @@
         StateHasChanged();
         try
         {
-            _metrics = await Task.Run(() => MetricsCalculator.Compute(models));
+            var graph = LibraryDataService.CombinedGraph;
+            _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models));
         }
         finally
         {

@@ -10,6 +10,14 @@ public class MetricsCalculatorTests
     private static ModelNode Model(string id, string code, string classType = "model")
         => new(id, id, code) { ClassType = classType };
 
+    private static DirectedGraph BuildGraph(System.Collections.Generic.IEnumerable<ModelNode> models)
+    {
+        var graph = new DirectedGraph();
+        foreach (var m in models)
+            graph.AddNode(m);
+        return graph;
+    }
+
     private static CoverageMetric Cov(LibraryMetrics m, string dim) => m.Coverage.Single(c => c.Dimension == dim);
 
     [Fact]
@@ -21,7 +29,7 @@ public class MetricsCalculatorTests
             Model("B", "model B end B;", "model"),
             Model("P", "package P end P;", "package"),
         };
-        var metrics = MetricsCalculator.Compute(models);
+        var metrics = MetricsCalculator.Compute(BuildGraph(models), models);
 
         Assert.Equal(3, metrics.TotalClasses);
         Assert.Equal(2, metrics.ClassesByType["model"]);
@@ -36,7 +44,7 @@ public class MetricsCalculatorTests
             Model("A", "model A \"has one\" end A;"),
             Model("B", "model B end B;"),
         };
-        var d = Cov(MetricsCalculator.Compute(models), "Description");
+        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Description");
         Assert.Equal(1, d.Compliant);
         Assert.Equal(2, d.Eligible);
         Assert.Equal(50.0, d.Percent);
@@ -50,9 +58,21 @@ public class MetricsCalculatorTests
             Model("A", "model A\n  annotation(Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));\nend A;"),
             Model("B", "model B end B;"),
         };
-        var icon = Cov(MetricsCalculator.Compute(models), "Own icon");
+        var icon = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Icon");
         Assert.Equal(1, icon.Compliant);   // only A declares its own icon graphics
         Assert.Equal(2, icon.Eligible);
+    }
+
+    [Fact]
+    public void IconCoverage_CountsIconsInheritedViaExtends()
+    {
+        var models = new[]
+        {
+            Model("Base", "package Base\n  annotation(Icon(graphics={Rectangle(extent={{-1,-1},{1,1}})}));\nend Base;", "package"),
+            Model("M", "model M\n  extends Base;\nend M;"),
+        };
+        // Base has its own icon; M inherits it via extends → both count.
+        Assert.Equal(2, Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Icon").Compliant);
     }
 
     [Fact]
@@ -62,7 +82,7 @@ public class MetricsCalculatorTests
         {
             Model("A", "model A\n  parameter Real k = 1 \"gain\";\n  parameter Real t = 2;\nend A;"),
         };
-        var p = Cov(MetricsCalculator.Compute(models), "Parameter description");
+        var p = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Parameter description");
         Assert.Equal(2, p.Eligible);   // two public parameters
         Assert.Equal(1, p.Compliant);  // only k has a description
     }
@@ -74,7 +94,7 @@ public class MetricsCalculatorTests
         {
             Model("A", "model A\n  Real x(unit=\"m\");\n  Real y;\nend A;"),
         };
-        var u = Cov(MetricsCalculator.Compute(models), "Real vars w/ unit");
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Real vars w/ unit");
         Assert.Equal(2, u.Eligible);   // two Real components
         Assert.Equal(1, u.Compliant);  // only x has a unit
     }
@@ -84,13 +104,13 @@ public class MetricsCalculatorTests
     {
         var models = new[] { Model("A", "model A \"d\" end A;") };
         // No parameters at all → parameter-description coverage is vacuously 100%.
-        Assert.Equal(100.0, Cov(MetricsCalculator.Compute(models), "Parameter description").Percent);
+        Assert.Equal(100.0, Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Parameter description").Percent);
     }
 
     [Fact]
     public void CountsComponents()
     {
         var models = new[] { Model("A", "model A\n  Real x;\n  Real y;\n  parameter Real k = 1;\nend A;") };
-        Assert.Equal(3, MetricsCalculator.Compute(models).TotalComponents);
+        Assert.Equal(3, MetricsCalculator.Compute(BuildGraph(models), models).TotalComponents);
     }
 }

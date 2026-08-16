@@ -28,13 +28,16 @@ public sealed record LibraryMetrics(
 /// </summary>
 public static class MetricsCalculator
 {
-    public static LibraryMetrics Compute(IEnumerable<ModelNode> models)
+    public static LibraryMetrics Compute(DirectedGraph graph, IEnumerable<ModelNode> models)
     {
         var classes = models.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
         var total = classes.Count;
         var byType = classes
             .GroupBy(m => string.IsNullOrEmpty(m.ClassType) ? "unknown" : m.ClassType, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+        // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
+        var inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
 
         int withDescription = 0, withIcon = 0, components = 0;
         int paramTotal = 0, paramWithDesc = 0;
@@ -48,13 +51,16 @@ public static class MetricsCalculator
 
             try
             {
-                // A source-based icon check: does the class declare Icon graphics of its own? (Note:
-                // ModelNode.IconSvg is populated lazily on render, so it is not usable here. Icons
-                // inherited via `extends Modelica.Icons.*` are not counted — a later refinement.)
-                if (IconExtractor.ExtractIcon(tree) is not null)
-                    withIcon++;
-
                 var iface = ClassInterfaceExtractor.Extract(tree);
+
+                // Has an icon if it declares its own Icon graphics or inherits one via extends. (Note:
+                // ModelNode.IconSvg is populated lazily on render, so it is not usable here.)
+                var hasIcon = IconExtractor.ExtractIcon(tree) is not null;
+                if (!hasIcon && inheritedIcon is not null)
+                    hasIcon = iface.Elements.Any(e =>
+                        e.Kind == ClassElementKind.Extends && inheritedIcon(e.Type ?? string.Empty, model.Id));
+                if (hasIcon)
+                    withIcon++;
                 if (!string.IsNullOrWhiteSpace(iface.Description))
                     withDescription++;
 
@@ -96,7 +102,7 @@ public static class MetricsCalculator
         var coverage = new List<CoverageMetric>
         {
             new("Description", withDescription, total),
-            new("Own icon", withIcon, total),
+            new("Icon", withIcon, total),
             new("Parameter description", paramWithDesc, paramTotal),
             new("Real vars w/ unit", realWithUnit, realTotal),
         };
