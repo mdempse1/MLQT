@@ -43,7 +43,10 @@
                     </MudStack>
                 }
                 <MudText Typo="Typo.caption" Class="mt-1">
-                    Coverage reflects the true state of the source — in-source waivers do not raise it.
+                    True source state — in-source waivers do not raise it. <b>Own icon</b> counts a class's
+                    own <code>Icon</code> graphics (icons inherited via <code>extends</code> are not counted).
+                    <b>Real vars w/ unit</b> covers plain <code>Real</code> declarations only; variables typed
+                    with SI/quantity types carry their unit by definition and are not counted here.
                 </MudText>
             </MudItem>
 

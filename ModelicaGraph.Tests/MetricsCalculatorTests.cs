@@ -7,8 +7,8 @@ namespace ModelicaGraph.Tests;
 
 public class MetricsCalculatorTests
 {
-    private static ModelNode Model(string id, string code, string classType = "model", bool icon = false)
-        => new(id, id, code) { ClassType = classType, IconSvg = icon ? "<svg/>" : null };
+    private static ModelNode Model(string id, string code, string classType = "model")
+        => new(id, id, code) { ClassType = classType };
 
     private static CoverageMetric Cov(LibraryMetrics m, string dim) => m.Coverage.Single(c => c.Dimension == dim);
 
@@ -43,15 +43,15 @@ public class MetricsCalculatorTests
     }
 
     [Fact]
-    public void IconCoverage_UsesHasCustomIcon()
+    public void IconCoverage_DetectsIconAnnotationInSource()
     {
         var models = new[]
         {
-            Model("A", "model A end A;", icon: true),
-            Model("B", "model B end B;", icon: false),
+            Model("A", "model A\n  annotation(Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));\nend A;"),
+            Model("B", "model B end B;"),
         };
-        var icon = Cov(MetricsCalculator.Compute(models), "Icon");
-        Assert.Equal(1, icon.Compliant);
+        var icon = Cov(MetricsCalculator.Compute(models), "Own icon");
+        Assert.Equal(1, icon.Compliant);   // only A declares its own icon graphics
         Assert.Equal(2, icon.Eligible);
     }
 
@@ -74,7 +74,7 @@ public class MetricsCalculatorTests
         {
             Model("A", "model A\n  Real x(unit=\"m\");\n  Real y;\nend A;"),
         };
-        var u = Cov(MetricsCalculator.Compute(models), "Unit");
+        var u = Cov(MetricsCalculator.Compute(models), "Real vars w/ unit");
         Assert.Equal(2, u.Eligible);   // two Real components
         Assert.Equal(1, u.Compliant);  // only x has a unit
     }

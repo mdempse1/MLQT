@@ -42,15 +42,18 @@ public static class MetricsCalculator
 
         foreach (var model in classes)
         {
-            if (model.HasCustomIcon)
-                withIcon++;
-
             var tree = model.Definition.EnsureParsed();
             if (tree is null)
                 continue;
 
             try
             {
+                // A source-based icon check: does the class declare Icon graphics of its own? (Note:
+                // ModelNode.IconSvg is populated lazily on render, so it is not usable here. Icons
+                // inherited via `extends Modelica.Icons.*` are not counted — a later refinement.)
+                if (IconExtractor.ExtractIcon(tree) is not null)
+                    withIcon++;
+
                 var iface = ClassInterfaceExtractor.Extract(tree);
                 if (!string.IsNullOrWhiteSpace(iface.Description))
                     withDescription++;
@@ -93,9 +96,9 @@ public static class MetricsCalculator
         var coverage = new List<CoverageMetric>
         {
             new("Description", withDescription, total),
-            new("Icon", withIcon, total),
+            new("Own icon", withIcon, total),
             new("Parameter description", paramWithDesc, paramTotal),
-            new("Unit", realWithUnit, realTotal),
+            new("Real vars w/ unit", realWithUnit, realTotal),
         };
 
         return new LibraryMetrics(total, byType, components, coverage);
