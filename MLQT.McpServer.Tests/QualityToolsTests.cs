@@ -6,13 +6,31 @@ namespace MLQT.McpServer.Tests;
 public class QualityToolsTests
 {
     private static StyleTools Style(TestHost h)
-        => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager);
+        => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Session);
     private static SpellingTools Spelling(TestHost h)
         => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Resources, h.Session);
     private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Resources, h.Session);
 
     private static void LoadSingle(TestHost h, string file, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(file, content)).GetAwaiter().GetResult();
+
+    [Fact]
+    public void CheckLibrary_SurfacesGraphFindings_PackageOrder()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage P \"p\"\n  constant Real c = 1;\nend P;",
+            ["A.mo"] = "within P;\nmodel A \"a\"\nend A;",
+            ["package.order"] = "A\nGhost\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var result = Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckPackageOrder = true });
+
+        var cr = Assert.IsType<CheckResult>(result);
+        Assert.Contains(cr.Violations, v => v.Summary.Contains("Ghost"));   // stale package.order entry
+    }
 
     // ----- style -----
 

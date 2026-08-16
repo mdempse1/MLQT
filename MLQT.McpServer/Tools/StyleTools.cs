@@ -2,10 +2,12 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
@@ -28,19 +30,22 @@ public sealed class StyleTools
     private readonly IRepositoryService _repositories;
     private readonly ICustomDictionaryService _customDictionary;
     private readonly IDictionaryManagerService _dictionaryManager;
+    private readonly SessionState _session;
 
     public StyleTools(
         ILibraryDataService libraries,
         ICodeReviewService codeReview,
         IRepositoryService repositories,
         ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager)
+        IDictionaryManagerService dictionaryManager,
+        SessionState session)
     {
         _libraries = libraries;
         _codeReview = codeReview;
         _repositories = repositories;
         _customDictionary = customDictionary;
         _dictionaryManager = dictionaryManager;
+        _session = session;
     }
 
     [McpServerTool(Name = "get_style_settings")]
@@ -198,6 +203,12 @@ public sealed class StyleTools
                     foreach (var v in StyleCheckRunner.Run(node, effective, context))
                         all.Add(v);
                 });
+
+            // Whole-graph analyses (package.order, uses hygiene, unused classes). Dependency-requiring
+            // ones only run if analyze_dependencies was called first (else the runner skips them).
+            var graphContext = new GraphAnalysisContext(graph, effective, models, _session.DependenciesAnalyzed);
+            foreach (var finding in GraphAnalysisRunner.Run(graphContext))
+                all.Add(finding.ToLogMessage());
         }
 
         if (modelsChecked == 0)

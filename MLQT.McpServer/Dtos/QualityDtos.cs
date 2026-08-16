@@ -29,6 +29,17 @@ public sealed class StyleSettingsInput
     public bool SpellCheckDocumentation { get; init; }
     public bool ValidateModelReferences { get; init; }
 
+    // Wave-1 analyses (Phase 6). Structure/uses/unused-class are graph analyses; they only produce
+    // findings from check_library after analyze_dependencies has run (except package.order).
+    public bool CheckDuplicateDeclarations { get; init; }
+    public bool CheckDuplicateImports { get; init; }
+    public bool CheckMissingUnits { get; init; }
+    public bool CheckUnusedImports { get; init; }
+    public bool CheckPackageOrder { get; init; }
+    public bool CheckUsesUndeclared { get; init; }
+    public bool CheckUsesDeclaredUnused { get; init; }
+    public bool CheckUnusedClass { get; init; }
+
     /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
     /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
     /// empty on save, the existing languages are kept.</summary>
@@ -56,6 +67,14 @@ public sealed class StyleSettingsInput
         s.SpellCheckDescription = SpellCheckDescription;
         s.SpellCheckDocumentation = SpellCheckDocumentation;
         s.ValidateModelReferences = ValidateModelReferences;
+        s.CheckDuplicateDeclarations = CheckDuplicateDeclarations;
+        s.CheckDuplicateImports = CheckDuplicateImports;
+        s.CheckMissingUnits = CheckMissingUnits;
+        s.CheckUnusedImports = CheckUnusedImports;
+        s.CheckPackageOrder = CheckPackageOrder;
+        s.CheckUsesUndeclared = CheckUsesUndeclared;
+        s.CheckUsesDeclaredUnused = CheckUsesDeclaredUnused;
+        s.CheckUnusedClass = CheckUnusedClass;
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
     }
@@ -87,6 +106,14 @@ public sealed class StyleSettingsInput
         SpellCheckDescription = s.SpellCheckDescription,
         SpellCheckDocumentation = s.SpellCheckDocumentation,
         ValidateModelReferences = s.ValidateModelReferences,
+        CheckDuplicateDeclarations = s.CheckDuplicateDeclarations,
+        CheckDuplicateImports = s.CheckDuplicateImports,
+        CheckMissingUnits = s.CheckMissingUnits,
+        CheckUnusedImports = s.CheckUnusedImports,
+        CheckPackageOrder = s.CheckPackageOrder,
+        CheckUsesUndeclared = s.CheckUsesUndeclared,
+        CheckUsesDeclaredUnused = s.CheckUsesDeclaredUnused,
+        CheckUnusedClass = s.CheckUnusedClass,
         SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
     };
 }

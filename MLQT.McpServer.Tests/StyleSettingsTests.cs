@@ -21,7 +21,7 @@ public class StyleSettingsTests
         var dir = host.WriteLibraryDir(new Dictionary<string, string> { ["TestLib/package.mo"] = Package });
         var res = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
         await host.Repositories.LoadLibrariesAsync(res.Repository!.Id);
-        var style = new StyleTools(host.Libraries, host.CodeReview, host.Repositories, host.CustomDictionary, host.DictionaryManager);
+        var style = new StyleTools(host.Libraries, host.CodeReview, host.Repositories, host.CustomDictionary, host.DictionaryManager, host.Session);
         return (style, res.Repository.Id, res.Repository.LocalPath);
     }
 
@@ -84,7 +84,7 @@ public class StyleSettingsTests
     public void SetStyleSettings_NoRepository_GuidesToLoadRepository()
     {
         using var host = new TestHost();
-        var style = new StyleTools(host.Libraries, host.CodeReview, host.Repositories, host.CustomDictionary, host.DictionaryManager);
+        var style = new StyleTools(host.Libraries, host.CodeReview, host.Repositories, host.CustomDictionary, host.DictionaryManager, host.Session);
 
         var err = ToolAssert.Error(style.SetStyleSettings(new StyleSettingsInput { ClassHasDescription = true })
             .GetAwaiter().GetResult());
