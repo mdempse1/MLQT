@@ -44,9 +44,9 @@
                 }
                 <MudText Typo="Typo.caption" Class="mt-1">
                     True source state — in-source waivers do not raise it. <b>Icon</b> counts a class's own
-                    <code>Icon</code> graphics or one inherited via <code>extends</code>.
-                    <b>Real vars w/ unit</b> covers plain <code>Real</code> declarations only; variables typed
-                    with SI/quantity types carry their unit by definition and are not counted here.
+                    <code>Icon</code> graphics or one inherited via <code>extends</code>. <b>Unit</b> counts
+                    every Real-derived variable (plain <code>Real</code> and SI/quantity types) as united
+                    when its type fixes a unit or it declares one inline.
                 </MudText>
             </MudItem>
 

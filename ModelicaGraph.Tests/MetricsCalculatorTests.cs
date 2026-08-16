@@ -88,15 +88,65 @@ public class MetricsCalculatorTests
     }
 
     [Fact]
-    public void UnitCoverage_CountsRealsWithUnit()
+    public void UnitCoverage_PlainReals_InlineUnit()
     {
         var models = new[]
         {
             Model("A", "model A\n  Real x(unit=\"m\");\n  Real y;\nend A;"),
         };
-        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Real vars w/ unit");
-        Assert.Equal(2, u.Eligible);   // two Real components
-        Assert.Equal(1, u.Compliant);  // only x has a unit
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Unit");
+        Assert.Equal(2, u.Eligible);   // two Real-derived components
+        Assert.Equal(1, u.Compliant);  // only x declares a unit
+    }
+
+    [Fact]
+    public void UnitCoverage_SiTypedVariable_CountsAsUnited()
+    {
+        // Length carries a unit via its alias, so a Length variable is united even without unit=.
+        var models = new[]
+        {
+            Model("Length", "type Length = Real(final quantity=\"Length\", final unit=\"m\");", "type"),
+            Model("A", "model A\n  Length len;\n  Real bare;\nend A;"),
+        };
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Unit");
+        Assert.Equal(2, u.Eligible);   // Length var + plain Real (Length's own decl is a type, not a component)
+        Assert.Equal(1, u.Compliant);  // the Length var is united; the bare Real is not
+    }
+
+    [Fact]
+    public void UnitCoverage_AliasChain_ResolvesToRealUnit()
+    {
+        var models = new[]
+        {
+            Model("Length", "type Length = Real(final unit=\"m\");", "type"),
+            Model("Distance", "type Distance = Length;", "type"),
+            Model("A", "model A\n  Distance d;\nend A;"),
+        };
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Unit");
+        Assert.Equal(1, u.Eligible);   // the Distance variable
+        Assert.Equal(1, u.Compliant);  // Distance -> Length -> Real(unit) → united
+    }
+
+    [Fact]
+    public void UnitCoverage_IntegerAndBoolean_NotEligible()
+    {
+        var models = new[] { Model("A", "model A\n  Integer n;\n  Boolean b;\nend A;") };
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Unit");
+        Assert.Equal(0, u.Eligible);   // neither is a Real-derived quantity
+    }
+
+    [Fact]
+    public void UnitCoverage_ConnectorTypedVariable_NotEligible()
+    {
+        // A signal connector is Real-derived but is an interface, not a physical scalar → excluded.
+        var models = new[]
+        {
+            Model("RealInput", "connector RealInput = input Real;", "connector"),
+            Model("A", "model A\n  RealInput u;\n  Real x(unit=\"m\");\nend A;"),
+        };
+        var u = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Unit");
+        Assert.Equal(1, u.Eligible);   // only x; the RealInput connector is excluded
+        Assert.Equal(1, u.Compliant);
     }
 
     [Fact]

@@ -43,6 +43,9 @@ public static class MetricsCalculator
         int paramTotal = 0, paramWithDesc = 0;
         int realTotal = 0, realWithUnit = 0;
 
+        // Memoises the (is-Real-derived, has-unit) verdict per resolved type class across the run.
+        var unitCache = new Dictionary<string, (bool, bool)>(StringComparer.Ordinal);
+
         foreach (var model in classes)
         {
             var tree = model.Definition.EnsureParsed();
@@ -64,7 +67,15 @@ public static class MetricsCalculator
                 if (!string.IsNullOrWhiteSpace(iface.Description))
                     withDescription++;
 
-                var modelReals = 0;
+                var imports = iface.Elements
+                    .Where(e => e.Kind == ClassElementKind.Import)
+                    .Select(e => e.Name)
+                    .ToList();
+
+                // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity
+                // types that ultimately alias Real). A component is "united" if its type chain fixes a
+                // unit (SI types) or it writes an inline unit (plain Real, handled via MissingUnits).
+                var plainReals = 0;
                 foreach (var element in iface.Elements)
                 {
                     if (element.Kind != ClassElementKind.Component)
@@ -76,17 +87,23 @@ public static class MetricsCalculator
                         if (!string.IsNullOrWhiteSpace(element.Description))
                             paramWithDesc++;
                     }
-                    if (element.Type == "Real")
-                        modelReals++;
+
+                    var (isReal, typeHasUnit) = UnitResolver.Resolve(graph, model.Id, element.Type, imports, unitCache);
+                    if (!isReal)
+                        continue;
+                    realTotal++;
+                    if ((element.Type ?? string.Empty).TrimStart('.').Trim() == "Real")
+                        plainReals++;              // unit decided by the inline modifier (below)
+                    else if (typeHasUnit)
+                        realWithUnit++;            // an SI/quantity type that fixes a unit
                 }
 
-                if (modelReals > 0)
+                if (plainReals > 0)
                 {
                     var unitVisitor = new MissingUnits();
                     unitVisitor.VisitStored_definition(tree);
                     var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
-                    realTotal += modelReals;
-                    realWithUnit += Math.Clamp(modelReals - missing, 0, modelReals);
+                    realWithUnit += Math.Clamp(plainReals - missing, 0, plainReals);
                 }
             }
             catch
@@ -104,7 +121,7 @@ public static class MetricsCalculator
             new("Description", withDescription, total),
             new("Icon", withIcon, total),
             new("Parameter description", paramWithDesc, paramTotal),
-            new("Real vars w/ unit", realWithUnit, realTotal),
+            new("Unit", realWithUnit, realTotal),
         };
 
         return new LibraryMetrics(total, byType, components, coverage);
