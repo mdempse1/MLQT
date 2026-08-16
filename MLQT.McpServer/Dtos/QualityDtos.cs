@@ -39,6 +39,7 @@ public sealed class StyleSettingsInput
     public bool CheckUsesUndeclared { get; init; }
     public bool CheckUsesDeclaredUnused { get; init; }
     public bool CheckUnusedClass { get; init; }
+    public bool CheckShadowing { get; init; }
 
     /// <summary>Spell-check dictionary language codes, e.g. ["en_US", "en_GB"]. Bundled codes are
     /// en_US and en_GB; other codes must have been imported as Hunspell dictionaries. When null or
@@ -75,6 +76,7 @@ public sealed class StyleSettingsInput
         s.CheckUsesUndeclared = CheckUsesUndeclared;
         s.CheckUsesDeclaredUnused = CheckUsesDeclaredUnused;
         s.CheckUnusedClass = CheckUnusedClass;
+        s.CheckShadowing = CheckShadowing;
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
     }
@@ -114,6 +116,7 @@ public sealed class StyleSettingsInput
         CheckUsesUndeclared = s.CheckUsesUndeclared,
         CheckUsesDeclaredUnused = s.CheckUsesDeclaredUnused,
         CheckUnusedClass = s.CheckUnusedClass,
+        CheckShadowing = s.CheckShadowing,
         SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
     };
 }

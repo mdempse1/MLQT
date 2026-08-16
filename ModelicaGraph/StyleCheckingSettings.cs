@@ -200,6 +200,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.UnusedClass);
         set => SetRuleEnabled(RuleIds.UnusedClass, value);
     }
+    public bool CheckShadowing
+    {
+        get => IsRuleEnabled(RuleIds.ShadowingInheritedMember);
+        set => SetRuleEnabled(RuleIds.ShadowingInheritedMember, value);
+    }
 
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,

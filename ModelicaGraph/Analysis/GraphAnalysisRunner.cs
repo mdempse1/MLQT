@@ -19,6 +19,7 @@ public static class GraphAnalysisRunner
         new PackageOrderAnalyzer(),
         new UsesHygieneAnalyzer(),
         new UnusedClassAnalyzer(),
+        new ShadowingAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)
