@@ -1,0 +1,108 @@
+@using ModelicaGraph.Analysis
+@implements IDisposable
+@inject ILibraryDataService LibraryDataService
+@inject AppState NavState
+
+<MudPaper Elevation="0" Class="pa-2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+        <MudText Typo="Typo.body1">Metrics</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   OnClick="Compute" Disabled="_loading" StartIcon="@Icons.Material.Filled.Refresh">
+            @(_metrics is null ? "Compute" : "Refresh")
+        </MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-3" />
+        <MudText Typo="Typo.body2">Analysing @(_modelCount) classes…</MudText>
+    }
+    else if (_metrics is null)
+    {
+        <MudText Typo="Typo.body1" Class="mt-3">
+            @(LibraryDataService.GetAllModels().Any()
+                ? "Click Compute to calculate metrics for the loaded libraries."
+                : "Load a library to see metrics.")
+        </MudText>
+    }
+    else
+    {
+        <MudGrid Spacing="2" Class="mt-1">
+            <MudItem xs="12" md="7">
+                <MudText Typo="Typo.body1" Class="mb-1">Documentation &amp; unit coverage</MudText>
+                @foreach (var c in _metrics.Coverage)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
+                        <MudText Typo="Typo.body2" Style="width:150px;">@c.Dimension</MudText>
+                        <MudProgressLinear Color="@CoverageColor(c.Percent)" Value="@c.Percent" Rounded="true"
+                                           Class="flex-grow-1 mx-2" Style="height:14px;" />
+                        <MudText Typo="Typo.body2" Style="width:120px; text-align:right;">
+                            @($"{c.Percent:0.#}%") <span style="opacity:0.6;">(@c.Compliant/@c.Eligible)</span>
+                        </MudText>
+                    </MudStack>
+                }
+                <MudText Typo="Typo.caption" Class="mt-1">
+                    Coverage reflects the true state of the source — in-source waivers do not raise it.
+                </MudText>
+            </MudItem>
+
+            <MudItem xs="12" md="5">
+                <MudText Typo="Typo.body1" Class="mb-1">Size</MudText>
+                <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Classes</td><td style="text-align:right;">@_metrics.TotalClasses</td></tr>
+                        <tr><td>Components</td><td style="text-align:right;">@_metrics.TotalComponents</td></tr>
+                        @foreach (var kv in _metrics.ClassesByType.OrderByDescending(k => k.Value))
+                        {
+                            <tr>
+                                <td style="padding-left:20px; opacity:0.75;">@kv.Key</td>
+                                <td style="text-align:right; opacity:0.75;">@kv.Value</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudItem>
+        </MudGrid>
+    }
+</MudPaper>
+
+@code {
+    private LibraryMetrics? _metrics;
+    private bool _loading;
+    private int _modelCount;
+
+    protected override void OnInitialized()
+    {
+        NavState.OnLibraryCleared += OnLibraryCleared;
+        base.OnInitialized();
+    }
+
+    private async Task Compute()
+    {
+        var models = LibraryDataService.GetAllModels().ToList();
+        _modelCount = models.Count;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _metrics = await Task.Run(() => MetricsCalculator.Compute(models));
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnLibraryCleared()
+    {
+        _metrics = null;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static Color CoverageColor(double percent)
+        => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
+
+    public void Dispose() => NavState.OnLibraryCleared -= OnLibraryCleared;
+}
