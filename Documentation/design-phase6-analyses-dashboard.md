@@ -23,6 +23,11 @@
 >   `MLQT.Structure.UsesUndeclared`/`UsesDeclaredUnused` (uses-hygiene, conservative both ways);
 >   `MLQT.Unused.Class` (protected dead code — high-confidence subset).
 >
+> **Metrics dashboard (6e)** is in: `MetricsCalculator` (pure, tested) computes class counts by kind,
+> component count, and coverage % (description/icon/parameter-description/unit) as a dedicated
+> structural pass; `MetricsDashboard.razor` adds a Metrics tab rendering coverage as progress bars +
+> a size table. Coverage trend/history (6f) is the remaining dashboard piece.
+>
 > Graph analyses now surface on all three surfaces: the **CLI** (`LibraryCheckSession`), **MCP**
 > `check_library` (`GraphAnalysisRunner`, honoring the session flag; rules exposed in `StyleSettingsInput`),
 > and the **GUI** — `StyleCheckingService` runs the graph analyses on a background task alongside the
