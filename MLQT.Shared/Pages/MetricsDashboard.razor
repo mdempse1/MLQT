@@ -135,6 +135,19 @@
             Coverage trend — <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
         </MudText>
         <div style="overflow-x:auto;">
+            @* Built as a MarkupString: SVG <text> collides with Razor's reserved <text> tag. *@
+            @((MarkupString)BuildTrendSvg())
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
+                @foreach (var sv in TrendLegend())
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:@sv.Color;"></span>
+                        <MudText Typo="Typo.caption">@sv.Dim</MudText>
+                    </MudStack>
+                }
+            </MudStack>
+        </div>
+        <div style="overflow-x:auto;">
             <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
                 <thead>
                     <tr>
@@ -161,7 +174,7 @@
                 </tbody>
             </MudSimpleTable>
         </div>
-        <MudText Typo="Typo.caption">Most recent first, for the selected scope. Snapshots are stored under %LocalAppData%/MLQT.</MudText>
+        <MudText Typo="Typo.caption">Line chart shows coverage % over time; the table lists exact values (most recent first) for the selected scope. Snapshots are stored under %LocalAppData%/MLQT.</MudText>
     }
     else if (_metrics is not null)
     {
@@ -183,6 +196,10 @@
 
     private List<(string Package, LibraryMetrics Metrics)> _summary = new();
     private List<string> _summaryDimensions = new();
+
+    // Line colours for the coverage-trend chart, one per dimension. Chosen to read on light and dark.
+    private static readonly string[] TrendPalette =
+        { "#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4" };
 
     protected override void OnInitialized()
     {
@@ -327,6 +344,55 @@
 
     private static Color CoverageColor(double percent)
         => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
+
+    private IEnumerable<(string Dim, string Color)> TrendLegend()
+        => _dimensions.Select((d, i) => (d, TrendPalette[i % TrendPalette.Length]));
+
+    // The coverage-trend chart as an inline SVG string. Built in code (not markup) because SVG's <text>
+    // element collides with Razor's reserved <text> control-flow tag. One polyline per dimension over the
+    // scoped snapshots; y is 0–100%, x is snapshot order. Colours/axis use MudBlazor CSS vars so it tracks
+    // the theme. Assumes _scopedHistory.Count >= 2 (its only caller guards this).
+    private string BuildTrendSvg()
+    {
+        const double w = 640, h = 240, padL = 34, padR = 12, padT = 10, padB = 26;
+        double plotW = w - padL - padR, plotH = h - padT - padB;
+        int n = _scopedHistory.Count;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        string F(double v) => v.ToString("0.#", ci);
+        double px(int i) => padL + (n == 1 ? 0 : (double)i / (n - 1) * plotW);
+        double py(double pct) => padT + (1 - Math.Clamp(pct, 0, 100) / 100.0) * plotH;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 640 240\" role=\"img\" aria-label=\"Coverage trend\" ")
+          .Append("style=\"width:100%;max-width:640px;height:auto;\">");
+
+        for (int g = 0; g <= 4; g++)
+        {
+            double y = padT + g / 4.0 * plotH;
+            int label = 100 - g * 25;
+            sb.Append($"<line x1=\"{F(padL)}\" y1=\"{F(y)}\" x2=\"{F(w - padR)}\" y2=\"{F(y)}\" stroke=\"var(--mud-palette-lines-default)\" stroke-width=\"0.5\"/>");
+            sb.Append($"<text x=\"{F(padL - 6)}\" y=\"{F(y + 3)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{label}</text>");
+        }
+
+        for (int idx = 0; idx < _dimensions.Count; idx++)
+        {
+            var dim = _dimensions[idx];
+            var color = TrendPalette[idx % TrendPalette.Length];
+            var points = string.Join(" ", _scopedHistory
+                .Select((s, i) => (s, i))
+                .Where(t => t.s.Coverage.ContainsKey(dim))
+                .Select(t => $"{F(px(t.i))},{F(py(t.s.Coverage[dim]))}"));
+            if (points.Length > 0)
+                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"1.5\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+        }
+
+        var first = _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
+        var last = _scopedHistory[^1].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
+        sb.Append($"<text x=\"{F(padL)}\" y=\"234\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{first}</text>");
+        sb.Append($"<text x=\"{F(w - padR)}\" y=\"234\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{last}</text>");
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
 
     public void Dispose() => NavState.OnLibraryCleared -= OnLibraryCleared;
 }
