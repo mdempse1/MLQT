@@ -33,4 +33,5 @@ public static class RuleIds
     public const string PackageOrder = "MLQT.Structure.PackageOrder";
     public const string UsesUndeclared = "MLQT.Structure.UsesUndeclared";
     public const string UsesDeclaredUnused = "MLQT.Structure.UsesDeclaredUnused";
+    public const string UnusedClass = "MLQT.Unused.Class";
 }

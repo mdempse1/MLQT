@@ -191,6 +191,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.UsesDeclaredUnused);
         set => SetRuleEnabled(RuleIds.UsesDeclaredUnused, value);
     }
+    public bool CheckUnusedClass
+    {
+        get => IsRuleEnabled(RuleIds.UnusedClass);
+        set => SetRuleEnabled(RuleIds.UnusedClass, value);
+    }
 
     /// <summary>
     /// SVN branch directory names used when listing branches, extracting the current branch,

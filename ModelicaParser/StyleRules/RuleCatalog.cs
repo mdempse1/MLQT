@@ -60,6 +60,7 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.PackageOrder, "package.order is consistent", "Structure", RuleSeverity.Warning, "package.order entries must match the package's classes/members, and every child class must be listed."),
             new RuleDefinition(RuleIds.UsesUndeclared, "Referenced libraries are declared", "Structure", RuleSeverity.Warning, "A library referenced by the code must be declared in the top-level uses(...) annotation."),
             new RuleDefinition(RuleIds.UsesDeclaredUnused, "No unused uses() dependencies", "Structure", RuleSeverity.Warning, "A library declared in uses(...) must actually be referenced by the code."),
+            new RuleDefinition(RuleIds.UnusedClass, "No unused protected classes", "Unused", RuleSeverity.Warning, "A protected nested class that nothing references is dead code."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);
