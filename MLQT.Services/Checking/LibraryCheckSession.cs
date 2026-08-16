@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using MLQT.Services.Interfaces;
@@ -26,11 +27,12 @@ public static class LibraryCheckSession
         if (!settings.HasAnyStyleRuleEnabled)
             return [];
 
+        var modelList = models as IReadOnlyList<ModelNode> ?? models.ToList();
         var context = StyleCheckContext.Build(settings, graph, customDictionary, dictionaryManager);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
-        Parallel.ForEach(models, options, node =>
+        Parallel.ForEach(modelList, options, node =>
         {
             if (node is null || node.IsParseFailurePlaceholder)
                 return;
@@ -46,6 +48,14 @@ public static class LibraryCheckSession
             }
         });
 
-        return all.ToList();
+        var results = all.ToList();
+
+        // Whole-graph analyses (Phase 6): run once over the checked model set and merge. A no-op until
+        // graph analyzers are registered and their rules enabled, so it never affects a per-class-only run.
+        var checkable = modelList.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
+        var graphContext = new GraphAnalysisContext(graph, settings, checkable);
+        results.AddRange(GraphAnalysisRunner.Run(graphContext, honorSuppressions));
+
+        return results;
     }
 }
