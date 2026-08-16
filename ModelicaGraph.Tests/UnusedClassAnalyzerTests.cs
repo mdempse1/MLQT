@@ -27,8 +27,10 @@ public class UnusedClassAnalyzerTests
     }
 
     private static List<Finding> Run(DirectedGraph graph, bool depAnalyzed = true)
+        => Run(graph, new StyleCheckingSettings { CheckUnusedClass = true }, depAnalyzed);
+
+    private static List<Finding> Run(DirectedGraph graph, StyleCheckingSettings settings, bool depAnalyzed = true)
     {
-        var settings = new StyleCheckingSettings { CheckUnusedClass = true };
         var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList(), depAnalyzed);
         return GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new UnusedClassAnalyzer() });
     }
@@ -51,6 +53,24 @@ public class UnusedClassAnalyzerTests
     {
         // A is public and has no usedBy, but public classes may be used by invisible downstream libraries.
         Assert.DoesNotContain(Run(Build()), x => x.ModelId == "P.A");
+    }
+
+    [Fact]
+    public void UnreferencedPublicClass_IsFlagged_WhenPublicRuleEnabled()
+    {
+        // A is public with no usedBy; the opt-in public rule flags it at Info.
+        var settings = new StyleCheckingSettings { CheckUnusedPublicClass = true };
+        var f = Assert.Single(Run(Build(), settings), x => x.RuleId == RuleIds.UnusedPublicClass);
+        Assert.Equal("P.A", f.ModelId);
+        Assert.Equal(RuleSeverity.Info, f.Severity);
+    }
+
+    [Fact]
+    public void PublicRuleEnabled_DoesNotFlagProtectedClass()
+    {
+        // With only the public rule on, the protected Helper must not surface under either id.
+        var settings = new StyleCheckingSettings { CheckUnusedPublicClass = true };
+        Assert.DoesNotContain(Run(Build(), settings), x => x.ModelId == "P.Helper");
     }
 
     [Fact]

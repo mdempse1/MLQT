@@ -211,6 +211,11 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.UnusedClass);
         set => SetRuleEnabled(RuleIds.UnusedClass, value);
     }
+    public bool CheckUnusedPublicClass
+    {
+        get => IsRuleEnabled(RuleIds.UnusedPublicClass);
+        set => SetRuleEnabled(RuleIds.UnusedPublicClass, value);
+    }
     public bool CheckShadowing
     {
         get => IsRuleEnabled(RuleIds.ShadowingInheritedMember);

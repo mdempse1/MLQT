@@ -39,6 +39,7 @@ public sealed class StyleSettingsInput
     public bool CheckUsesUndeclared { get; init; }
     public bool CheckUsesDeclaredUnused { get; init; }
     public bool CheckUnusedClass { get; init; }
+    public bool CheckUnusedPublicClass { get; init; }
     public bool CheckShadowing { get; init; }
     public bool CheckUnusedMembers { get; init; }
 
@@ -77,6 +78,7 @@ public sealed class StyleSettingsInput
         s.CheckUsesUndeclared = CheckUsesUndeclared;
         s.CheckUsesDeclaredUnused = CheckUsesDeclaredUnused;
         s.CheckUnusedClass = CheckUnusedClass;
+        s.CheckUnusedPublicClass = CheckUnusedPublicClass;
         s.CheckShadowing = CheckShadowing;
         s.CheckUnusedMembers = CheckUnusedMembers;
         if (SpellCheckLanguages is { Count: > 0 })
@@ -118,6 +120,7 @@ public sealed class StyleSettingsInput
         CheckUsesUndeclared = s.CheckUsesUndeclared,
         CheckUsesDeclaredUnused = s.CheckUsesDeclaredUnused,
         CheckUnusedClass = s.CheckUnusedClass,
+        CheckUnusedPublicClass = s.CheckUnusedPublicClass,
         CheckShadowing = s.CheckShadowing,
         CheckUnusedMembers = s.CheckUnusedMembers,
         SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),

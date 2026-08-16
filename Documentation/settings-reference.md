@@ -156,6 +156,7 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | GUI, CLI, MCP |
+| `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
 
@@ -179,6 +180,7 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckUsesUndeclared": true,
     "CheckUsesDeclaredUnused": true,
     "CheckUnusedClass": true,
+    "CheckUnusedPublicClass": true,
     "CheckShadowing": true,
     "CheckUnusedMembers": true
 }

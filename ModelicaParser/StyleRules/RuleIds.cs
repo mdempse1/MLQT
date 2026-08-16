@@ -34,6 +34,7 @@ public static class RuleIds
     public const string UsesUndeclared = "MLQT.Structure.UsesUndeclared";
     public const string UsesDeclaredUnused = "MLQT.Structure.UsesDeclaredUnused";
     public const string UnusedClass = "MLQT.Unused.Class";
+    public const string UnusedPublicClass = "MLQT.Unused.PublicClass";
     public const string ShadowingInheritedMember = "MLQT.Shadowing.InheritedMember";
     public const string UnusedMember = "MLQT.Unused.Member";
 }
