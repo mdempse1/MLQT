@@ -395,12 +395,21 @@ public class StyleCheckingService : IStyleCheckingService
         }
     }
 
+    // The rule ids owned by the whole-graph analyzers. Used to clear stale graph findings before an
+    // incremental re-run (they can attach to any model in the repo, not just the ones edited).
+    private static readonly HashSet<string> GraphRuleIds =
+        GraphAnalysisRunner.BuiltIn.SelectMany(a => a.RuleIds).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>
-    /// Runs the whole-graph analyses (package.order, uses hygiene, unused classes) per repository and
-    /// buffers their findings for delivery. Dependency-requiring analyzers only produce findings once
-    /// dependency analysis has populated the graph edges (detected here); package.order needs none.
+    /// Runs the whole-graph analyses (package.order, uses hygiene, unused classes/members, shadowing)
+    /// per repository and buffers their findings for delivery. Dependency-requiring analyzers only
+    /// produce findings once dependency analysis has populated the graph edges (detected here);
+    /// package.order needs none. When <paramref name="removeStaleFirst"/> is set (incremental re-check),
+    /// prior graph findings for each repository are cleared before fresh ones are emitted, because a
+    /// graph finding can sit on a model the edit did not touch (e.g. a package.order finding on the
+    /// package node) and so would not be removed by the caller's per-model cleanup.
     /// </summary>
-    private void RunGraphAnalyses(IReadOnlyList<Repository> repositories)
+    private void RunGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst = false)
     {
         try
         {
@@ -425,6 +434,13 @@ public class StyleCheckingService : IStyleCheckingService
                     .ToList();
                 if (models.Count == 0)
                     continue;
+
+                if (removeStaleFirst)
+                {
+                    var repoModelIds = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+                    _codeReviewService.RemoveLogMessagesByPredicate(m =>
+                        m.RuleId is not null && GraphRuleIds.Contains(m.RuleId) && repoModelIds.Contains(m.ModelName));
+                }
 
                 var dependenciesAnalyzed = models.Any(m => m.UsedByModelIds.Count > 0 || m.UsedModelIds.Count > 0);
                 var context = new GraphAnalysisContext(graph, settings, models, dependenciesAnalyzed);
@@ -545,6 +561,18 @@ public class StyleCheckingService : IStyleCheckingService
 
             worker.StartProcessing();
         }
+
+        // Whole-graph analyses are repository-wide, not per-model, so re-run them for every repository
+        // touched by this incremental check — otherwise their findings (package.order, uses hygiene,
+        // unused, shadowing) would reflect the pre-edit graph until the next full load. Stale graph
+        // findings are cleared per repo inside the run. Fire-and-forget, alongside the per-model workers.
+        var affectedRepos = modelsByRepo.Keys
+            .Select(id => _repositoryService.Repositories.FirstOrDefault(r => r.Id == id))
+            .Where(r => r is not null)
+            .Cast<Repository>()
+            .ToList();
+        if (affectedRepos.Count > 0)
+            _ = Task.Run(() => RunGraphAnalyses(affectedRepos, removeStaleFirst: true));
 
         LogProcessStart("StyleCheckingService", $"Style checking {modelIdList.Count} model(s)");
         OnProgressChanged?.Invoke(false);

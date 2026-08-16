@@ -163,7 +163,8 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
 `analyze_dependencies` before `check_library`. In the GUI these rules produce findings once dependency
 analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
-per-class ones; note that an incremental re-check after an edit does not yet re-run the graph analyses.
+per-class ones and are re-run for the affected repository after an incremental re-check (e.g. following
+a VCS operation or a file edit), so they stay in step with the per-class findings.
 
 **Enabling them via JSON.** Add on/off toggles to `settings.json` (each enabled rule takes the default
 severity above) — equivalent to choosing the default severity in the dialog:
