@@ -36,9 +36,13 @@ public class StyleCheckingSettings
     public RuleSeverity SeverityFor(string ruleId)
         => RuleSeverities.TryGetValue(ruleId, out var s) ? s : RuleSeverity.Off;
 
-    private bool IsRuleEnabled(string ruleId) => SeverityFor(ruleId) != RuleSeverity.Off;
+    /// <summary>True if the rule is enabled (severity != Off). Public so a data-driven settings UI
+    /// can render a toggle per rule id from the catalog.</summary>
+    public bool IsRuleEnabled(string ruleId) => SeverityFor(ruleId) != RuleSeverity.Off;
 
-    private void SetRuleEnabled(string ruleId, bool enabled)
+    /// <summary>Enable a rule at its catalog default severity, or disable it. Public so a data-driven
+    /// settings UI can bind a toggle to a rule id.</summary>
+    public void SetRuleEnabled(string ruleId, bool enabled)
     {
         if (enabled)
         {

@@ -313,6 +313,20 @@
         <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
             Label="Spell check all documentation" />
 
+        <MudText Typo="Typo.body1" Class="mt-4">Static analysis</MudText>
+        <MudText Typo="Typo.caption" Class="mb-1">
+            Structural checks (all off by default). The graph checks (package.order, uses, unused classes)
+            currently apply via <code>mlqt check</code> and the MCP server; the rest also apply here.
+        </MudText>
+        @foreach (var rule in AnalysisRules)
+        {
+            <MudTooltip Text="@rule.Description" Placement="Placement.Right">
+                <MudSwitch T="bool" Value="@SelectedSettings.IsRuleEnabled(rule.Id)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleEnabled(rule.Id, v))"
+                    Color="Color.Primary" Size="Size.Small" Label="@rule.Title" />
+            </MudTooltip>
+        }
+
         @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
         {
             <MudText Typo="Typo.body1" Class="mt-4">SVN branch directories</MudText>
@@ -575,27 +589,36 @@
         StateHasChanged();
     }
 
+    // The rules shown in the data-driven "Static analysis" section: everything in the catalog that
+    // isn't one of the hand-written style/ordering/documentation/spelling/naming toggles above.
+    private static readonly HashSet<string> AnalysisCategories =
+        new(StringComparer.Ordinal) { "Correctness", "Units", "Unused", "Structure" };
+
+    private static readonly IReadOnlyList<RuleDefinition> AnalysisRules =
+        RuleCatalog.BuiltIn.Values
+            .Where(r => AnalysisCategories.Contains(r.Category))
+            .OrderBy(r => r.Category, StringComparer.Ordinal)
+            .ThenBy(r => r.Title, StringComparer.Ordinal)
+            .ToList();
+
+    // Compare the rule-severity maps (covers every rule toggle, hand-written or data-driven) plus the
+    // non-rule fields that aren't in the map (formatter flags, naming config, spell languages).
     private static bool StyleSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
+        !RuleSeveritiesEqual(old, @new) ||
         old.ApplyFormattingRules != @new.ApplyFormattingRules ||
-        old.ImportStatementsFirst != @new.ImportStatementsFirst ||
         old.ComponentsBeforeClasses != @new.ComponentsBeforeClasses ||
-        old.OneOfEachSection != @new.OneOfEachSection ||
-        old.DontMixEquationAndAlgorithm != @new.DontMixEquationAndAlgorithm ||
-        old.DontMixConnections != @new.DontMixConnections ||
-        old.InitialEQAlgoFirst != @new.InitialEQAlgoFirst ||
-        old.InitialEQAlgoLast != @new.InitialEQAlgoLast ||
-        old.ClassHasDescription != @new.ClassHasDescription ||
-        old.ClassHasDocumentationInfo != @new.ClassHasDocumentationInfo ||
-        old.ClassHasDocumentationRevisions != @new.ClassHasDocumentationRevisions ||
-        old.ClassHasIcon != @new.ClassHasIcon ||
-        old.ParameterHasDescription != @new.ParameterHasDescription ||
-        old.ConstantHasDescription != @new.ConstantHasDescription ||
-        old.FollowNamingConvention != @new.FollowNamingConvention ||
         !old.NamingConvention.Equals(@new.NamingConvention) ||
-        old.SpellCheckDescription != @new.SpellCheckDescription ||
-        old.SpellCheckDocumentation != @new.SpellCheckDocumentation ||
-        !old.SpellCheckLanguages.SequenceEqual(@new.SpellCheckLanguages) ||
-        old.ValidateModelReferences != @new.ValidateModelReferences;
+        !old.SpellCheckLanguages.SequenceEqual(@new.SpellCheckLanguages);
+
+    private static bool RuleSeveritiesEqual(StyleCheckingSettings old, StyleCheckingSettings @new)
+    {
+        if (old.RuleSeverities.Count != @new.RuleSeverities.Count)
+            return false;
+        foreach (var kv in old.RuleSeverities)
+            if (!@new.RuleSeverities.TryGetValue(kv.Key, out var s) || s != kv.Value)
+                return false;
+        return true;
+    }
 
     private static bool FormattingSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
         old.OneOfEachSection != @new.OneOfEachSection ||
