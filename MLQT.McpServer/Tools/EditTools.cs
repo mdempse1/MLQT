@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
@@ -929,7 +930,7 @@ public sealed class EditTools
             if (string.IsNullOrWhiteSpace(type) || TypeResolver.IsPredefined(type))
                 continue;
             var clean = type!.TrimStart('.').Trim();
-            if (TypeResolver.Resolve(_libraries, classNode.Id, type, imports) is null && !broken.Contains(clean))
+            if (TypeResolver.Resolve(_libraries.CombinedGraph, classNode.Id, type, imports) is null && !broken.Contains(clean))
                 broken.Add(clean);
         }
         return broken;

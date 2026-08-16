@@ -1,3 +1,4 @@
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
@@ -35,13 +36,13 @@ internal static class ConnectorCompatibility
                 return new PortResolution(null, null, $"could not resolve '{portRef}' (class '{currentId}' not loaded)");
 
             var member = ClassElementResolver
-                .Collect(libraries, owner, includeProtected: true, includeInherited: true)
+                .Collect(libraries.CombinedGraph, owner, includeProtected: true, includeInherited: true)
                 .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
                                      string.Equals(m.Element.Name, segments[i], StringComparison.Ordinal));
             if (member is null)
                 return new PortResolution(null, $"'{segments[i]}' is not a component of '{currentId}'.", null);
 
-            var typeNode = TypeResolver.Resolve(libraries, member.OwnerId, member.Element.Type, member.OwnerImports);
+            var typeNode = TypeResolver.Resolve(libraries.CombinedGraph, member.OwnerId, member.Element.Type, member.OwnerImports);
             if (typeNode is null)
                 return new PortResolution(null, null,
                     $"the type '{member.Element.Type}' of '{segments[i]}' does not resolve to a loaded class — " +
@@ -77,7 +78,7 @@ internal static class ConnectorCompatibility
         if (spec.long_class_specifier() is not null)
         {
             var members = ClassElementResolver
-                .Collect(libraries, connector, includeProtected: false, includeInherited: true)
+                .Collect(libraries.CombinedGraph, connector, includeProtected: false, includeInherited: true)
                 .Where(m => m.Element.Kind == ClassElementKind.Component)
                 .Select(m => $"{m.Element.Name}|{(m.Element.Connection == "flow" ? "flow" : "")}")
                 .OrderBy(s => s, StringComparer.Ordinal);

@@ -1,3 +1,4 @@
+using ModelicaGraph.Analysis;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaParser.DataTypes;
@@ -41,7 +42,7 @@ public sealed class ViewTools
             return error!;
 
         var isFunction = node!.ClassType == "function";
-        var merged = ClassElementResolver.Collect(_libraries, node, includeProtected: false, includeInherited);
+        var merged = ClassElementResolver.Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited);
 
         var extends = merged.Where(m => m.Element.Kind == ClassElementKind.Extends)
             .Select(m => m.Element.Name).ToList();
@@ -57,7 +58,7 @@ public sealed class ViewTools
                 continue;
 
             // Resolve the type in the scope of the class that DECLARED the component (base or self).
-            var typeNode = TypeResolver.Resolve(_libraries, m.OwnerId, e.Type, m.OwnerImports);
+            var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, m.OwnerId, e.Type, m.OwnerImports);
             var typeIsConnector = typeNode?.ClassType == "connector";
             var isConnector = !isFunction && (e.Causality is not null || typeIsConnector);
 
@@ -104,7 +105,7 @@ public sealed class ViewTools
         if (Load(classId, out var node, out _, out var error))
             return error!;
 
-        var elements = ClassElementResolver.Collect(_libraries, node!, includeProtected, includeInherited)
+        var elements = ClassElementResolver.Collect(_libraries.CombinedGraph, node!, includeProtected, includeInherited)
             .Select(m => new ClassElementView(
                 m.Element.Kind.ToString().ToLowerInvariant(),
                 m.Element.Name,
@@ -188,7 +189,7 @@ public sealed class ViewTools
             var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
             foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
             {
-                var baseNode = TypeResolver.Resolve(_libraries, id, ext.Type, imports);
+                var baseNode = TypeResolver.Resolve(_libraries.CombinedGraph, id, ext.Type, imports);
                 if (baseNode is null || !visited.Add(baseNode.Id))
                     continue;
                 if (BehaviorExtractor.ExtractFromCode(baseNode.Definition.ModelicaCode ?? string.Empty).HasAny)
@@ -241,7 +242,7 @@ public sealed class ViewTools
                 continue;
 
             checkedCount++;
-            if (TypeResolver.ResolveWithInheritance(_libraries, node!.Id, type, imports) is null)
+            if (TypeResolver.ResolveWithInheritance(_libraries.CombinedGraph, node!.Id, type, imports) is null)
                 unresolved.Add(new UnresolvedReference(type!.TrimStart('.').Trim(), kind, e.Line));
         }
 
