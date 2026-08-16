@@ -21,6 +21,10 @@
                 Save snapshot
             </MudButton>
         }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mr-2"
+                   OnClick="ComputeSummary" Disabled="_loading" StartIcon="@Icons.Material.Filled.TableChart">
+            Compare sub-libraries
+        </MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                    OnClick="Compute" Disabled="_loading" StartIcon="@Icons.Material.Filled.Refresh">
             @(_metrics is null ? "Compute" : "Refresh")
@@ -85,6 +89,46 @@
         </MudGrid>
     }
 
+    @if (_summary.Count > 0)
+    {
+        <MudText Typo="Typo.body1" Class="mt-4 mb-1">
+            Sub-library comparison — <b>@(string.IsNullOrEmpty(_scope) ? "loaded libraries" : _scope)</b>
+        </MudText>
+        <div style="overflow-x:auto;">
+            <MudSimpleTable Dense="true" Hover="true" Bordered="false" Striped="true" Elevation="0">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Package</th>
+                        <th style="text-align:right;">Classes</th>
+                        @foreach (var d in _summaryDimensions)
+                        {
+                            <th style="text-align:right;">@d</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _summary)
+                    {
+                        <tr>
+                            <td>
+                                <MudLink Typo="Typo.body2" Style="cursor:pointer;"
+                                         @onclick="@(() => OnScopeChanged(row.Package))">@ShortName(row.Package)</MudLink>
+                            </td>
+                            <td style="text-align:right;">@row.Metrics.TotalClasses</td>
+                            @foreach (var c in row.Metrics.Coverage)
+                            {
+                                <td style="text-align:right;">
+                                    <MudText Typo="Typo.body2" Inline="true" Color="@CoverageColor(c.Percent)">@($"{c.Percent:0}%")</MudText>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+        <MudText Typo="Typo.caption">Click a package to focus the whole dashboard on it.</MudText>
+    }
+
     @if (_scopedHistory.Count >= 2)
     {
         <MudText Typo="Typo.body1" Class="mt-4 mb-1">
@@ -137,6 +181,9 @@
     private List<MetricsSnapshot> _scopedHistory = new();
     private List<string> _dimensions = new();
 
+    private List<(string Package, LibraryMetrics Metrics)> _summary = new();
+    private List<string> _summaryDimensions = new();
+
     protected override void OnInitialized()
     {
         NavState.OnLibraryCleared += OnLibraryCleared;
@@ -160,6 +207,7 @@
     private async Task OnScopeChanged(string? scope)
     {
         _scope = scope ?? "";
+        _summary = new();   // stale relative to the new scope; user re-runs Compare to break it down
         RebuildTrend();
         if (_metrics is not null)
             await Compute();      // re-measure for the new scope
@@ -206,9 +254,74 @@
         }
     }
 
+    // Break the current scope into its direct sub-packages and measure each side by side, so a
+    // lead can compare across teams. Resolution still uses the full graph, so a sub-package that
+    // inherits icons/units from outside its own subtree still scores correctly.
+    private async Task ComputeSummary()
+    {
+        var all = LibraryDataService.GetAllModels().ToList();
+        var children = SubPackages(all.Where(m => m.ClassType == "package").Select(m => m.Id));
+        if (children.Count == 0)
+        {
+            Snackbar.Add("No sub-packages to compare in this scope.", Severity.Info);
+            return;
+        }
+        _modelCount = all.Count;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var graph = LibraryDataService.CombinedGraph;
+            _summary = await Task.Run(() => children.Select(pkg =>
+            {
+                var models = all.Where(m => m.Id == pkg
+                    || m.Id.StartsWith(pkg + ".", System.StringComparison.Ordinal)).ToList();
+                return (pkg, MetricsCalculator.Compute(graph, models));
+            }).ToList());
+            _summaryDimensions = _summary.Count > 0
+                ? _summary[0].Metrics.Coverage.Select(c => c.Dimension).ToList()
+                : new();
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // The direct child packages of the current scope. When no scope is set and a single root
+    // library is loaded (e.g. "Modelica"), drill one level into it so MSL breaks straight into its
+    // sub-libraries rather than showing a single root row.
+    private List<string> SubPackages(IEnumerable<string> packageIds)
+    {
+        var packages = packageIds.ToHashSet(System.StringComparer.Ordinal);
+        string parent;
+        if (!string.IsNullOrEmpty(_scope))
+        {
+            parent = _scope;
+        }
+        else
+        {
+            var roots = packages.Where(id => !id.Contains('.')).ToList();
+            parent = roots.Count == 1 ? roots[0] : "";
+        }
+        IEnumerable<string> children = parent.Length == 0
+            ? packages.Where(id => !id.Contains('.'))
+            : packages.Where(id => id.StartsWith(parent + ".", System.StringComparison.Ordinal)
+                                   && id.IndexOf('.', parent.Length + 1) < 0);
+        return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
+    }
+
+    private static string ShortName(string id)
+    {
+        var i = id.LastIndexOf('.');
+        return i < 0 ? id : id[(i + 1)..];
+    }
+
     private void OnLibraryCleared()
     {
         _metrics = null;
+        _summary = new();
         InvokeAsync(StateHasChanged);
     }
 
