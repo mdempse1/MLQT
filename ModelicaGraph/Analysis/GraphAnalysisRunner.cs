@@ -20,6 +20,7 @@ public static class GraphAnalysisRunner
         new UsesHygieneAnalyzer(),
         new UnusedClassAnalyzer(),
         new ShadowingAnalyzer(),
+        new UnusedMembersAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)
