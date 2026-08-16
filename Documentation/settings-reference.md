@@ -150,16 +150,16 @@ Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="�
 | `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
 | `MLQT.Units.MissingUnit` | Warning | A plain `Real` variable/parameter with no `unit` attribute (use an SI type or add `unit=`). Presence only, not dimensional analysis. SI-typed components are not flagged. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is never referenced in the class that declares it. | GUI, CLI, MCP |
-| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | CLI, MCP |
-| `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | CLI, MCP |
-| `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | CLI, MCP |
-| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | CLI, MCP |
+| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
+| `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
+| `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
+| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | GUI, CLI, MCP |
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
-`analyze_dependencies` before `check_library`. The graph rules (the bottom four) surface only through
-the CLI and MCP today — the GUI Code Review page shows the per-class rules (top four) but not yet the
-graph rules.
+`analyze_dependencies` before `check_library`. In the GUI these rules produce findings once dependency
+analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
+per-class ones; note that an incremental re-check after an edit does not yet re-run the graph analyses.
 
 **Enabling them.** Add on/off toggles to `settings.json` (each enabled rule takes the default severity
 above):

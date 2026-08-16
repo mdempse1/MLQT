@@ -23,10 +23,13 @@
 >   `MLQT.Structure.UsesUndeclared`/`UsesDeclaredUnused` (uses-hygiene, conservative both ways);
 >   `MLQT.Unused.Class` (protected dead code — high-confidence subset).
 >
-> Graph analyses surface on the **CLI** (`LibraryCheckSession`) and via **MCP** `check_library`
-> (`GraphAnalysisRunner`, honoring the session's dependency-analyzed flag); the eight new rules are
-> exposed in the MCP `StyleSettingsInput` DTO. The **GUI Code Review** path is still per-model, so it
-> shows the per-class analyses but not yet the graph ones — a follow-on.
+> Graph analyses now surface on all three surfaces: the **CLI** (`LibraryCheckSession`), **MCP**
+> `check_library` (`GraphAnalysisRunner`, honoring the session flag; rules exposed in `StyleSettingsInput`),
+> and the **GUI** — `StyleCheckingService` runs the graph analyses on a background task alongside the
+> per-model workers and delivers findings to Code Review. Data-driven **Static analysis** toggles (6b)
+> in repository settings render from `RuleCatalog`; change-detection is now `RuleSeverities`-map-based.
+> (Follow-ons: incremental GUI re-checks don't yet re-run graph analyses; existing hand-written style
+> toggles aren't yet migrated to the data-driven list.)
 >
 > **Remaining:** unused parameters/constants/protected members (per-class, but needs an extends-aware
 > "is this class extended?" guard to avoid subclass-use false positives); resolver promotion +

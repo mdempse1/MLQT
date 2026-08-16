@@ -315,8 +315,8 @@
 
         <MudText Typo="Typo.body1" Class="mt-4">Static analysis</MudText>
         <MudText Typo="Typo.caption" Class="mb-1">
-            Structural checks (all off by default). The graph checks (package.order, uses, unused classes)
-            currently apply via <code>mlqt check</code> and the MCP server; the rest also apply here.
+            Structural checks (all off by default). The uses and unused-class checks require dependency
+            analysis to have run; they appear in Code Review, and in <code>mlqt check</code> / the MCP server.
         </MudText>
         @foreach (var rule in AnalysisRules)
         {
