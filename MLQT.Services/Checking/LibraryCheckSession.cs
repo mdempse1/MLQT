@@ -22,7 +22,8 @@ public static class LibraryCheckSession
         StyleCheckingSettings settings,
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
-        bool honorSuppressions = true)
+        bool honorSuppressions = true,
+        bool dependenciesAnalyzed = false)
     {
         if (!settings.HasAnyStyleRuleEnabled)
             return [];
@@ -53,7 +54,7 @@ public static class LibraryCheckSession
         // Whole-graph analyses (Phase 6): run once over the checked model set and merge. A no-op until
         // graph analyzers are registered and their rules enabled, so it never affects a per-class-only run.
         var checkable = modelList.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
-        var graphContext = new GraphAnalysisContext(graph, settings, checkable);
+        var graphContext = new GraphAnalysisContext(graph, settings, checkable, dependenciesAnalyzed);
         results.AddRange(GraphAnalysisRunner.Run(graphContext, honorSuppressions));
 
         return results;

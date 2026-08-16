@@ -17,10 +17,20 @@ public static class GraphAnalysisRunner
     public static readonly IReadOnlyList<IGraphAnalyzer> BuiltIn = new IGraphAnalyzer[]
     {
         new PackageOrderAnalyzer(),
+        new UsesHygieneAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)
         => Run(context, BuiltIn, honorSuppressions);
+
+    /// <summary>
+    /// True if any enabled built-in analyzer needs dependency analysis. A caller that builds the graph
+    /// (the CLI, MCP) should run <c>GraphBuilder.AnalyzeDependenciesAsync</c> before checking when this
+    /// returns true, and pass <c>dependenciesAnalyzed: true</c>.
+    /// </summary>
+    public static bool RequiresDependencyAnalysis(StyleCheckingSettings settings)
+        => BuiltIn.Any(a => a.NeedsDependencyAnalysis
+            && a.RuleIds.Any(id => settings.SeverityFor(id) != RuleSeverity.Off));
 
     public static List<Finding> Run(
         GraphAnalysisContext context, IReadOnlyList<IGraphAnalyzer> analyzers, bool honorSuppressions = true)
@@ -28,8 +38,13 @@ public static class GraphAnalysisRunner
         var findings = new List<Finding>();
         foreach (var analyzer in analyzers)
         {
-            if (analyzer.RuleIds.Any(id => context.Settings.SeverityFor(id) != RuleSeverity.Off))
-                findings.AddRange(analyzer.Analyze(context));
+            if (!analyzer.RuleIds.Any(id => context.Settings.SeverityFor(id) != RuleSeverity.Off))
+                continue;
+            // A dependency-requiring analyzer must not run without the edges — that would flag
+            // everything as unreferenced. Skip it rather than emit false positives.
+            if (analyzer.NeedsDependencyAnalysis && !context.DependenciesAnalyzed)
+                continue;
+            findings.AddRange(analyzer.Analyze(context));
         }
 
         if (findings.Count == 0)

@@ -12,10 +12,20 @@ public sealed class GraphAnalysisContext
     public StyleCheckingSettings Settings { get; }
     public IReadOnlyList<ModelNode> Models { get; }
 
-    public GraphAnalysisContext(DirectedGraph graph, StyleCheckingSettings settings, IReadOnlyList<ModelNode> models)
+    /// <summary>
+    /// True when cross-model dependency analysis (<c>GraphBuilder.AnalyzeDependenciesAsync</c>) has run,
+    /// so <c>UsedModelIds</c>/<c>UsedByModelIds</c> are populated. Analyzers that need those edges must
+    /// not run when this is false — otherwise every model looks unreferenced (guaranteed false positives).
+    /// </summary>
+    public bool DependenciesAnalyzed { get; }
+
+    public GraphAnalysisContext(
+        DirectedGraph graph, StyleCheckingSettings settings, IReadOnlyList<ModelNode> models,
+        bool dependenciesAnalyzed = false)
     {
         Graph = graph;
         Settings = settings;
         Models = models;
+        DependenciesAnalyzed = dependenciesAnalyzed;
     }
 }

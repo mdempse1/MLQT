@@ -31,4 +31,6 @@ public static class RuleIds
     public const string MissingUnit = "MLQT.Units.MissingUnit";
     public const string UnusedImport = "MLQT.Unused.Import";
     public const string PackageOrder = "MLQT.Structure.PackageOrder";
+    public const string UsesUndeclared = "MLQT.Structure.UsesUndeclared";
+    public const string UsesDeclaredUnused = "MLQT.Structure.UsesDeclaredUnused";
 }
