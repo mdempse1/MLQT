@@ -155,6 +155,7 @@ Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="�
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
+| `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
@@ -175,7 +176,8 @@ above):
     "CheckUsesUndeclared": true,
     "CheckUsesDeclaredUnused": true,
     "CheckUnusedClass": true,
-    "CheckShadowing": true
+    "CheckShadowing": true,
+    "CheckUnusedMembers": true
 }
 ```
 

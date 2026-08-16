@@ -1,6 +1,13 @@
 # Design Note — Phase 6: Wave-1 analyses + metrics dashboard
 
-> **Status: IN PROGRESS.** Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
+> **Status: ESSENTIALLY COMPLETE.** All six Wave-1 analyses ship (duplicate decl/import, missing-units,
+> unused imports, unused protected members, unused classes, `uses` hygiene, `package.order`,
+> inherited-member shadowing), plus the graph-analyzer substrate, the shared resolver, the metrics
+> dashboard with SI-aware coverage + inherited icons, and a coverage-trend snapshot store — wired
+> through GUI, CLI and MCP. Remaining polish: the public/top-level "possibly unused API" Info case;
+> a line chart for the trend (MudBlazor 9.6 chart-API check); optional per-rule severity UI; migrating
+> the remaining hand-written style toggles to the data-driven list; graph analyses on incremental GUI
+> re-checks. Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
 > dashboard). Builds on the findings foundation ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md)),
 > the baseline/ratchet ([design-phase3-baseline.md](design-phase3-baseline.md)), and suppression
 > ([design-phase5-suppression.md](design-phase5-suppression.md)) — all shipped. This is the phase
