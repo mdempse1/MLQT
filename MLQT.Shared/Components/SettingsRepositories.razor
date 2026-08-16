@@ -147,6 +147,24 @@
         <MudText Typo="Typo.h6">Edit Repository Details</MudText>
     </TitleContent>
     <DialogContent>
+        @{
+            // A rule row: an Off/Info/Warning/Error selector plus a label. Used for the style-guideline
+            // and reference rules below (which keep their descriptive labels) and shares the severity
+            // model with the data-driven Static analysis section.
+            RenderFragment<(string Id, string Label)> severityRow = item =>
+                @<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
+                    <MudSelect T="RuleSeverity" Value="@SelectedSettings.SeverityFor(item.Id)"
+                        ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))"
+                        Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
+                        Typo="Typo.body1" Style="width:120px;" Class="mr-3">
+                        @foreach (var sev in RuleSeverityOptions)
+                        {
+                            <MudSelectItem T="RuleSeverity" Value="@sev">@sev</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudText Typo="Typo.body1">@item.Label</MudText>
+                </MudStack>;
+        }
         @if (_selectedItem.IsSettingsReadOnly)
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
@@ -168,25 +186,12 @@
         <MudSwitch @bind-Value="SelectedSettings.IssueNumberAtEnd" Color="Color.Primary" Size="Size.Small" Disabled="!SelectedSettings.CommitRequiresIssueNumber"
             Label="The issue number will be added before the commit message when disabled, after the commit message when enabled" />
         <MudText Typo="Typo.body1" Class="mt-4">Style guidelines</MudText>
-        <MudSwitch @bind-Value="SelectedSettings.ClassHasDescription" Color="Color.Primary" Size="Size.Small"
-            Label="Every class must have a description" />
-        <MudSwitch @bind-Value="SelectedSettings.ClassHasDocumentationInfo" Color="Color.Primary" Size="Size.Small"
-            Label="Every class must have documentation info" />
-        <MudSwitch @bind-Value="SelectedSettings.ClassHasDocumentationRevisions" Color="Color.Primary" Size="Size.Small"
-            Label="Every class must have a documentation revisions" />
-        <MudSwitch @bind-Value="SelectedSettings.ClassHasIcon" Color="Color.Primary" Size="Size.Small"
-            Label="Every class must have an icon" />
-        <MudSwitch @bind-Value="SelectedSettings.ParameterHasDescription" Color="Color.Primary" Size="Size.Small"
-            Label="Every public parameter must have a description" />
-        <MudSwitch @bind-Value="SelectedSettings.ConstantHasDescription" Color="Color.Primary" Size="Size.Small"
-            Label="Every public constant must have a description" />
+        @foreach (var item in StyleGuidelineRules)
+        {
+            @severityRow(item)
+        }
 
-        <MudSwitch @bind-Value="SelectedSettings.DontMixEquationAndAlgorithm" Color="Color.Primary" Size="Size.Small"
-            Label="A class may only have either an equation or algorithm section, not both" />
-        <MudSwitch @bind-Value="SelectedSettings.DontMixConnections" Color="Color.Primary" Size="Size.Small"
-            Label="Do not mix connections and equations in the same class" />
-
-        <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small"
+        <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small" Class="mt-2"
             Label="Check that the naming convention is followed" />
 
         @if (SelectedSettings.FollowNamingConvention)
@@ -305,8 +310,7 @@
             Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
 
         <MudText Typo="Typo.body1" Class="mt-4">Reference validation</MudText>
-        <MudSwitch @bind-Value="SelectedSettings.ValidateModelReferences" Color="Color.Primary" Size="Size.Small"
-            Label="Validate modelica:// model references point to existing models" />
+        @severityRow((RuleIds.ModelReferences, "Validate modelica:// model references point to existing models"))
 
         <MudText Typo="Typo.body1" Class="mt-4">Spell checking</MudText>
         <MudSwitch @bind-Value="SelectedSettings.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
@@ -624,6 +628,22 @@
     // Severity choices offered per rule, worst-last so the dropdown reads Off → Error.
     private static readonly RuleSeverity[] RuleSeverityOptions =
         { RuleSeverity.Off, RuleSeverity.Info, RuleSeverity.Warning, RuleSeverity.Error };
+
+    // Documentation/structure/reference rules that used to be hand-written on/off switches, now rendered
+    // through the shared severity control. Their descriptive labels are kept (clearer than the terse
+    // catalog titles); the ordering/formatting-coupled and naming/spell rules stay bespoke above/below
+    // because they interlock with the formatter or drive their own sub-panels.
+    private static readonly (string Id, string Label)[] StyleGuidelineRules =
+    {
+        (RuleIds.ClassDescription, "Every class must have a description"),
+        (RuleIds.ClassDocumentationInfo, "Every class must have documentation info"),
+        (RuleIds.ClassDocumentationRevisions, "Every class must have documentation revisions"),
+        (RuleIds.ClassIcon, "Every class must have an icon"),
+        (RuleIds.ParameterDescription, "Every public parameter must have a description"),
+        (RuleIds.ConstantDescription, "Every public constant must have a description"),
+        (RuleIds.DontMixEquationAndAlgorithm, "A class may only have either an equation or algorithm section, not both"),
+        (RuleIds.DontMixConnections, "Do not mix connections and equations in the same class"),
+    };
 
     // Compare the rule-severity maps (covers every rule toggle, hand-written or data-driven) plus the
     // non-rule fields that aren't in the map (formatter flags, naming config, spell languages).

@@ -69,6 +69,8 @@ For example, a repository that uses `main` instead of `trunk` and keeps release 
 
 Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, any violation is reported as an issue in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
 
+Each rule below has a per-rule severity selector — **Off / Info / Warning / Error** — rather than a plain on/off switch. **Off** disables it; **Error** fails the CI quality gate while **Warning**/**Info** are reported only. (The naming-convention check keeps a simple on/off switch because it drives its own settings panel.)
+
 Style guidelines are **passive** — they only report issues and never modify your code.
 
 | Setting | Default | Description |
