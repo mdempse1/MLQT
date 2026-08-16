@@ -138,6 +138,60 @@ The reference validator handles several edge cases found in real Modelica librar
 - **Hash fragments** — URIs with `#` fragments (e.g., `modelica://Model.Name#info`) are handled correctly, validating only the model path before the fragment
 - **Accurate line numbers** — Violations report the actual line within multi-line documentation strings where the broken reference appears, not the line where the annotation starts
 
+### Static Analysis Rules
+
+These rules find structural problems beyond the style/documentation checks above. They are **off by
+default** and are **not yet shown in the settings UI** — enable them in `settings.json` (see below).
+Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
+
+| Rule id | Default | Checks | Runs in |
+|---------|---------|--------|---------|
+| `MLQT.Duplicate.Declaration` | Error | A name declared more than once in the same class. | GUI, CLI, MCP |
+| `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
+| `MLQT.Units.MissingUnit` | Warning | A plain `Real` variable/parameter with no `unit` attribute (use an SI type or add `unit=`). Presence only, not dimensional analysis. SI-typed components are not flagged. | GUI, CLI, MCP |
+| `MLQT.Unused.Import` | Warning | An `import` whose name is never referenced in the class that declares it. | GUI, CLI, MCP |
+| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | CLI, MCP |
+| `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | CLI, MCP |
+| `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | CLI, MCP |
+| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | CLI, MCP |
+
+† **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
+enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
+`analyze_dependencies` before `check_library`. The graph rules (the bottom four) surface only through
+the CLI and MCP today — the GUI Code Review page shows the per-class rules (top four) but not yet the
+graph rules.
+
+**Enabling them.** Add on/off toggles to `settings.json` (each enabled rule takes the default severity
+above):
+
+```json
+{
+    "CheckDuplicateDeclarations": true,
+    "CheckDuplicateImports": true,
+    "CheckMissingUnits": true,
+    "CheckUnusedImports": true,
+    "CheckPackageOrder": true,
+    "CheckUsesUndeclared": true,
+    "CheckUsesDeclaredUnused": true,
+    "CheckUnusedClass": true
+}
+```
+
+Or set an explicit severity (`Off`/`Info`/`Warning`/`Error`) per rule with the id-keyed map — this
+also works for the built-in style rules:
+
+```json
+{
+    "RuleSeverities": {
+        "MLQT.Units.MissingUnit": "Error",
+        "MLQT.Unused.Class": "Info"
+    }
+}
+```
+
+A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
+(see [Code Review](code-review.md#suppressing-a-rule)).
+
 ### Spell Checking
 
 | Setting | Default | Description |
