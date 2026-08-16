@@ -1,6 +1,7 @@
 @using Nextended.Core.COM
 @using Nextended.Core.DeepClone
 @using ModelicaParser.StyleRules
+@using ModelicaParser.DataTypes
 @using ModelicaGraph
 @using static ModelicaParser.StyleRules.NamingConventionConfig
 
@@ -315,16 +316,35 @@
 
         <MudText Typo="Typo.body1" Class="mt-4">Static analysis</MudText>
         <MudText Typo="Typo.caption" Class="mb-1">
-            Structural checks (all off by default). The uses and unused-class checks require dependency
-            analysis to have run; they appear in Code Review, and in <code>mlqt check</code> / the MCP server.
+            Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI
+            quality gate, <b>Warning</b>/<b>Info</b> are reported only. The uses and unused-class checks
+            require dependency analysis to have run; they appear in Code Review, and in
+            <code>mlqt check</code> / the MCP server.
         </MudText>
+        @{
+            string? lastCategory = null;
+        }
         @foreach (var rule in AnalysisRules)
         {
-            <MudTooltip Text="@rule.Description" Placement="Placement.Right">
-                <MudSwitch T="bool" Value="@SelectedSettings.IsRuleEnabled(rule.Id)"
-                    ValueChanged="@(v => SelectedSettings.SetRuleEnabled(rule.Id, v))"
-                    Color="Color.Primary" Size="Size.Small" Label="@rule.Title" />
-            </MudTooltip>
+            @if (rule.Category != lastCategory)
+            {
+                lastCategory = rule.Category;
+                <MudText Typo="Typo.body2" Class="mt-2 mb-0" Style="opacity:0.7;">@rule.Category</MudText>
+            }
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
+                <MudSelect T="RuleSeverity" Value="@SelectedSettings.SeverityFor(rule.Id)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))"
+                    Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
+                    Typo="Typo.body1" Style="width:120px;" Class="mr-3">
+                    @foreach (var sev in RuleSeverityOptions)
+                    {
+                        <MudSelectItem T="RuleSeverity" Value="@sev">@sev</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTooltip Text="@rule.Description" Placement="Placement.Right">
+                    <MudText Typo="Typo.body1">@rule.Title</MudText>
+                </MudTooltip>
+            </MudStack>
         }
 
         @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
@@ -600,6 +620,10 @@
             .OrderBy(r => r.Category, StringComparer.Ordinal)
             .ThenBy(r => r.Title, StringComparer.Ordinal)
             .ToList();
+
+    // Severity choices offered per rule, worst-last so the dropdown reads Off → Error.
+    private static readonly RuleSeverity[] RuleSeverityOptions =
+        { RuleSeverity.Off, RuleSeverity.Info, RuleSeverity.Warning, RuleSeverity.Error };
 
     // Compare the rule-severity maps (covers every rule toggle, hand-written or data-driven) plus the
     // non-rule fields that aren't in the map (formatter flags, naming config, spell languages).

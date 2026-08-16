@@ -141,8 +141,10 @@ The reference validator handles several edge cases found in real Modelica librar
 ### Static Analysis Rules
 
 These rules find structural problems beyond the style/documentation checks above. They are **off by
-default** and are **not yet shown in the settings UI** — enable them in `settings.json` (see below).
-Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
+default**. Enable them in the **Static analysis** section of the Edit Repository Details dialog — each
+rule has a per-rule **Off / Info / Warning / Error** selector (grouped by category), where **Error**
+fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
+below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
 
 | Rule id | Default | Checks | Runs in |
 |---------|---------|--------|---------|
@@ -163,8 +165,8 @@ enabled (you'll see `note: running dependency analysis…`); via the MCP server,
 analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
 per-class ones; note that an incremental re-check after an edit does not yet re-run the graph analyses.
 
-**Enabling them.** Add on/off toggles to `settings.json` (each enabled rule takes the default severity
-above):
+**Enabling them via JSON.** Add on/off toggles to `settings.json` (each enabled rule takes the default
+severity above) — equivalent to choosing the default severity in the dialog:
 
 ```json
 {

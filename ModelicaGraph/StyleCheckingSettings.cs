@@ -57,6 +57,17 @@ public class StyleCheckingSettings
         }
     }
 
+    /// <summary>Set an explicit severity for a rule. <see cref="RuleSeverity.Off"/> disables it
+    /// (removes it from the map). Public so a data-driven settings UI can offer a per-rule
+    /// Off/Info/Warning/Error selector rather than a plain on/off toggle.</summary>
+    public void SetRuleSeverity(string ruleId, RuleSeverity severity)
+    {
+        if (severity == RuleSeverity.Off)
+            RuleSeverities.Remove(ruleId);
+        else
+            RuleSeverities[ruleId] = severity;
+    }
+
     // Code formatting style rules
     public bool ImportStatementsFirst
     {

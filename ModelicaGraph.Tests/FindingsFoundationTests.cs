@@ -39,6 +39,26 @@ public class FindingsFoundationTests
         Assert.False(s.RuleSeverities.ContainsKey(RuleIds.ClassIcon));
     }
 
+    [Fact]
+    public void SetRuleSeverity_SetsExplicitLevel_OffRemoves()
+    {
+        var s = new StyleCheckingSettings();
+
+        // An explicit Error is stored verbatim (not the catalog default of Warning).
+        s.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Error);
+        Assert.Equal(RuleSeverity.Error, s.SeverityFor(RuleIds.UnusedImport));
+        Assert.True(s.IsRuleEnabled(RuleIds.UnusedImport));
+
+        // Lowering to Info keeps it enabled at the new level.
+        s.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Info);
+        Assert.Equal(RuleSeverity.Info, s.SeverityFor(RuleIds.UnusedImport));
+
+        // Off disables and drops it from the map.
+        s.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Off);
+        Assert.Equal(RuleSeverity.Off, s.SeverityFor(RuleIds.UnusedImport));
+        Assert.False(s.RuleSeverities.ContainsKey(RuleIds.UnusedImport));
+    }
+
     // ---- JSON migration / round-trip -----------------------------------------------------------
 
     [Fact]
