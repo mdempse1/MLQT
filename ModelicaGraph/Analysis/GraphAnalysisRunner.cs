@@ -16,6 +16,7 @@ public static class GraphAnalysisRunner
     /// analysis is a no-op, so wiring it in is safe before any analyzer exists.</summary>
     public static readonly IReadOnlyList<IGraphAnalyzer> BuiltIn = new IGraphAnalyzer[]
     {
+        new PackageOrderAnalyzer(),
     };
 
     public static List<Finding> Run(GraphAnalysisContext context, bool honorSuppressions = true)

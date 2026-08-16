@@ -30,4 +30,5 @@ public static class RuleIds
     public const string DuplicateImport = "MLQT.Duplicate.Import";
     public const string MissingUnit = "MLQT.Units.MissingUnit";
     public const string UnusedImport = "MLQT.Unused.Import";
+    public const string PackageOrder = "MLQT.Structure.PackageOrder";
 }
