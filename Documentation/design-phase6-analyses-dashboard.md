@@ -4,10 +4,12 @@
 > unused imports, unused protected members, unused classes, `uses` hygiene, `package.order`,
 > inherited-member shadowing), plus the graph-analyzer substrate, the shared resolver, the metrics
 > dashboard with SI-aware coverage + inherited icons, and a coverage-trend snapshot store — wired
-> through GUI, CLI and MCP. Remaining polish: the public/top-level "possibly unused API" Info case;
-> a line chart for the trend (MudBlazor 9.6 chart-API check); optional per-rule severity UI; migrating
-> the remaining hand-written style toggles to the data-driven list; graph analyses on incremental GUI
-> re-checks. Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
+> through GUI, CLI and MCP. **All follow-on polish is now done** (2026-08-16): per-rule
+> Off/Info/Warning/Error severity selectors in the settings UI; the remaining hand-written style
+> toggles migrated onto that selector; the `MLQT.Unused.PublicClass` "possibly-unused public API" rule
+> (Info, opt-in); graph analyses re-run on incremental GUI re-checks; and the coverage trend rendered as
+> an inline-SVG line chart (alongside the exact-values table) plus per-library/sub-library scoping and a
+> sub-library comparison view. Phase 6 of the locked roadmap ([roadmap.md](roadmap.md) §2 Wave 1, §3
 > dashboard). Builds on the findings foundation ([design-phase1-findings-foundation.md](design-phase1-findings-foundation.md)),
 > the baseline/ratchet ([design-phase3-baseline.md](design-phase3-baseline.md)), and suppression
 > ([design-phase5-suppression.md](design-phase5-suppression.md)) — all shipped. This is the phase
