@@ -792,7 +792,7 @@
     private async void OnStyleCheckingProgressChanged(bool allComplete) {
         if (allComplete)
         {
-            await Task.Delay(800);                                // TEMP: let the final finding batch land
+            await Task.Delay(4000);                               // TEMP: let the final batch + graph analyses land
             await InvokeAsync(WriteFindingsByRuleDiagnostic);     // TEMP: dump GUI per-rule counts
             _step4running = false;
             _styleCheckRunning = false;
@@ -1742,6 +1742,14 @@
         return result;
     }
 
+    // True if any loaded repository has a style rule enabled that requires dependency analysis
+    // (e.g. unused-class, uses hygiene), so the graph analyses can produce their findings.
+    private bool AnyEnabledRuleNeedsDependencies()
+        => RepositoryService.Repositories
+            .Select(r => r.StyleSettings)
+            .Where(s => s is not null)
+            .Any(s => ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(s!));
+
     /// <summary>
     /// Runs deferred style checking. Called via AppState event from pages or startup dialog.
     /// </summary>
@@ -1758,6 +1766,13 @@
             }
             LogProcessStart("MainLayout", "Running deferred style checking");
             await InvokeAsync(() => Snackbar.Add("Running style checking...", Severity.Normal));
+
+            // Graph analyses (unused class, uses hygiene) need cross-model dependency edges. If a rule
+            // that requires them is enabled and dependency analysis hasn't run, run it first — otherwise
+            // those analysers are silently skipped here, making the GUI's finding set differ from the CLI
+            // (which always runs dependency analysis when a graph rule needs it).
+            if (!NavState.HasDependencyAnalysisRun && AnyEnabledRuleNeedsDependencies())
+                await RunDeferredDependenciesAsync();
 
             // Clear any existing style checking violations before re-running
             // (matches the pattern used by OnRepositorySettingsApplied and OnVcsFilesChanged)
