@@ -5,6 +5,8 @@
 @implements IDisposable
 @inject ILibraryDataService LibraryDataService
 @inject IRepositoryService RepositoryService
+@inject ICodeReviewService CodeReviewService
+@inject IStyleCheckingService StyleCheckingService
 @inject AppState NavState
 @inject ISnackbar Snackbar
 
@@ -64,6 +66,29 @@
                         </MudText>
                     </MudStack>
                 }
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-2 mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small" Color="Color.Error" />
+                    <MudText Typo="Typo.body1">Active rule violations:</MudText>
+                    @if (_violations is not null)
+                    {
+                        <MudText Typo="Typo.body1"><b>@_violations</b></MudText>
+                    }
+                    @if (_styleCheckRunning)
+                    {
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="ml-1" />
+                        <MudText Typo="Typo.caption">counting…</MudText>
+                    }
+                    else if (_violations is null)
+                    {
+                        <MudText Typo="Typo.body1"><b>—</b></MudText>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   OnClick="RunStyleChecking" Class="ml-1">Run style checking</MudButton>
+                    }
+                </MudStack>
+                <MudText Typo="Typo.caption" Class="mb-1">
+                    Findings still open after suppression — drops when a rule is fixed <b>or</b> deliberately
+                    suppressed. This is the measure that moves when the percentages barely do.
+                </MudText>
                 <MudText Typo="Typo.caption" Class="mt-1">
                     True source state — in-source waivers do not raise it. <b>Icon</b> counts a class's own
                     <code>Icon</code> graphics or one inherited via <code>extends</code>. <b>Unit</b> counts
@@ -146,11 +171,11 @@
             @* Built as a MarkupString: SVG <text> collides with Razor's reserved <text> tag. *@
             @((MarkupString)BuildTrendSvg())
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
-                @foreach (var sv in TrendLegend())
+                @foreach (var sv in TrendSeries())
                 {
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                         <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:@sv.Color;"></span>
-                        <MudText Typo="Typo.caption">@sv.Dim</MudText>
+                        <MudText Typo="Typo.caption">@sv.Label</MudText>
                     </MudStack>
                 }
             </MudStack>
@@ -165,6 +190,7 @@
                         {
                             <th style="text-align:right;">@d</th>
                         }
+                        <th style="text-align:right;">Violations</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -187,6 +213,7 @@
                                     }
                                 </td>
                             }
+                            <td style="text-align:right;">@(s.Violations.HasValue ? s.Violations.Value.ToString() : "—")</td>
                         </tr>
                     }
                 </tbody>
@@ -195,7 +222,7 @@
         <MudText Typo="Typo.caption">
             @if (_showCounts)
             {
-                <text><b>Outstanding counts</b> plot the number of issues still open per dimension (eligible − compliant) — for a large library these move well before the percentage does. Snapshots taken before counts were recorded are omitted from this view. </text>
+                <text><b>Outstanding counts</b> plot the number of issues still open per dimension (eligible − compliant), plus the total <b>Rule violations</b> line — for a large library these move well before the percentage does. Snapshots taken before counts were recorded are omitted from this view. </text>
             }
             else
             {
@@ -223,6 +250,12 @@
     private List<string> _dimensions = new();
     private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding issue count
 
+    private int? _violations;          // active (unsuppressed) rule findings in scope; null until known
+    private bool _styleCheckRunning;   // findings still streaming in from the background checker
+
+    // Distinct line colour for the "Rule violations" burndown series (kept out of TrendPalette).
+    private const string ViolationsColor = "#f44336";
+
     private List<(string Package, LibraryMetrics Metrics)> _summary = new();
     private List<string> _summaryDimensions = new();
 
@@ -241,6 +274,8 @@
     {
         NavState.OnLibraryCleared += OnLibraryCleared;
         LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
+        CodeReviewService.OnLogMessagesChanged += OnFindingsChanged;
+        StyleCheckingService.OnProgressChanged += OnStyleCheckProgress;
 
         // Restore the scope chosen earlier this session, but drop it if it no longer names a loaded
         // package (e.g. after switching to a different project/library).
@@ -253,6 +288,7 @@
         }
 
         _history = LoadAllHistory();
+        RecountViolations();   // from whatever findings the background checker has already delivered
 
         // Restore a still-valid cached result so navigating back is instant; otherwise first render
         // triggers an automatic compute.
@@ -273,6 +309,67 @@
         // flag set in OnInitialized — don't let it suppress the pending auto-compute.
         if (firstRender && _metrics is null && LibraryDataService.GetAllModels().Any())
             await Compute();
+    }
+
+    // Manual "Run style checking" button (shown when it has never run this session).
+    private void RunStyleChecking()
+    {
+        EnsureStyleCheckingStarted();
+        StateHasChanged();
+    }
+
+    // Findings arrive asynchronously from the background style checker; recount when they change.
+    private void OnFindingsChanged()
+    {
+        RecountViolations();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Style checking reports completion (done == true) once every repository has been checked.
+    private void OnStyleCheckProgress(bool done)
+    {
+        _styleCheckRunning = !done;
+        RecountViolations();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Count active (unsuppressed) style/analysis findings whose model falls within the current scope.
+    // Suppressed findings never reach CodeReviewService, so this drops when a rule is fixed OR suppressed.
+    private void RecountViolations()
+    {
+        if (!NavState.HasStyleCheckingRun && !_styleCheckRunning)
+        {
+            _violations = null;   // unknown until style checking has run at least once
+            return;
+        }
+        _violations = CountViolationsForScope(_scope);
+    }
+
+    private int CountViolationsForScope(string scope)
+        => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && InScope(m.ModelName, scope));
+
+    private int CountViolationsForModels(HashSet<string> modelIds)
+        => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
+
+    // A violation count is only worth recording once style checking has finished; while it is still
+    // streaming (or has never run) the number is partial, so store null rather than a misleading figure.
+    private int? ReliableViolations(int? current)
+        => (_styleCheckRunning || !NavState.HasStyleCheckingRun) ? (int?)null : current;
+
+    private static bool InScope(string modelId, string scope)
+        => string.IsNullOrEmpty(scope) || modelId == scope
+           || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
+
+    // Ensure style checking has run so the violation count is meaningful; if not, kick off the deferred
+    // run. Findings then stream in and update the count reactively via OnFindingsChanged.
+    private void EnsureStyleCheckingStarted()
+    {
+        if (NavState.HasStyleCheckingRun || _styleCheckRunning)
+            return;
+        if (!LibraryDataService.GetAllModels().Any())
+            return;
+        _styleCheckRunning = true;
+        _ = NavState.RunDeferredStyleCheckingAsync();
     }
 
     // A cheap fingerprint of the loaded library set; when it changes, cached metrics are stale.
@@ -328,7 +425,7 @@
                 var path = !string.IsNullOrEmpty(repoLocalPath)
                     ? MetricsHistoryStore.RepoPath(repoLocalPath)
                     : MetricsHistoryStore.DefaultPath;
-                MetricsHistoryStore.Append(path, MetricsSnapshot.From(_metrics, _scope, timestamp));
+                MetricsHistoryStore.Append(path, MetricsSnapshot.From(_metrics, _scope, timestamp, ReliableViolations(_violations)));
                 if (!string.IsNullOrEmpty(repoLocalPath)) sharedCount++; else anyPerUser = true;
             }
             else
@@ -347,7 +444,7 @@
                 {
                     // Single target: _metrics already covers exactly this group's models — reuse it.
                     var g = groups[0];
-                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(_metrics, "", timestamp));
+                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(_metrics, "", timestamp, ReliableViolations(_violations)));
                     if (g.Shared) sharedCount++; else anyPerUser = true;
                 }
                 else
@@ -355,12 +452,16 @@
                     _loading = true;
                     StateHasChanged();
                     var graph = LibraryDataService.CombinedGraph;
+                    var violationsReliable = !_styleCheckRunning && NavState.HasStyleCheckingRun;
                     await Task.Run(() =>
                     {
                         foreach (var g in groups)
                         {
                             var metrics = MetricsCalculator.Compute(graph, g.Models);
-                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(metrics, "", timestamp));
+                            int? v = violationsReliable
+                                ? CountViolationsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
+                                : (int?)null;
+                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(metrics, "", timestamp, v));
                         }
                     });
                     sharedCount = groups.Count(g => g.Shared);
@@ -384,6 +485,8 @@
             ? $"{sharedCount} repository .mlqt file(s) — commit them to share with reviewers"
             : "the per-user file (no repository-backed libraries)";
         Snackbar.Add($"Snapshot saved to {where}.", Severity.Success);
+        if (_styleCheckRunning || !NavState.HasStyleCheckingRun)
+            Snackbar.Add("Style checking hasn't finished — the violation count was left out of this snapshot. Save again once it completes.", Severity.Info);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -482,6 +585,9 @@
 
     private async Task Compute()
     {
+        EnsureStyleCheckingStarted();   // so the violation count is measured, running it if deferred
+        RecountViolations();
+
         var all = LibraryDataService.GetAllModels();
         var models = string.IsNullOrEmpty(_scope)
             ? all.ToList()
@@ -572,6 +678,8 @@
     {
         _metrics = null;
         _summary = new();
+        _violations = null;
+        _styleCheckRunning = false;
         _cacheMetrics = null;
         _cacheScope = null;
         _cacheSignature = null;
@@ -582,8 +690,23 @@
     private static Color CoverageColor(double percent)
         => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
 
-    private IEnumerable<(string Dim, string Color)> TrendLegend()
-        => _dimensions.Select((d, i) => (d, TrendPalette[i % TrendPalette.Length]));
+    // The lines drawn on the trend, shared by the chart and its legend: one per coverage dimension, plus
+    // a "Rule violations" line in count mode (it's a raw count with no percentage) when any snapshot in
+    // view recorded a violation total.
+    private List<(string Label, string Color, Func<MetricsSnapshot, double?> Value)> TrendSeries()
+    {
+        var series = new List<(string, string, Func<MetricsSnapshot, double?>)>();
+        for (int i = 0; i < _dimensions.Count; i++)
+        {
+            var dim = _dimensions[i];
+            var color = TrendPalette[i % TrendPalette.Length];
+            series.Add((dim, color, s => TrendValue(s, dim)));
+        }
+        if (_showCounts && _scopedHistory.Any(s => s.Violations.HasValue))
+            series.Add(("Rule violations", ViolationsColor,
+                s => s.Violations.HasValue ? s.Violations.Value : (double?)null));
+        return series;
+    }
 
     // The outstanding issue count for a dimension in a snapshot (eligible − compliant), or null when
     // that snapshot predates raw counts. Used by the "Outstanding counts" burndown view.
@@ -620,22 +743,22 @@
         string F(double v) => v.ToString("0.#", ci);
         double px(int i) => padL + (n == 1 ? 0 : (double)i / (n - 1) * plotW);
 
-        // Y scale: fixed 0–100 for %, or 0–niceMax(largest outstanding) for counts.
+        var series = TrendSeries();
+
+        // Y scale: fixed 0–100 for %, or 0–niceMax(largest plotted value, incl. violations) for counts.
+        const int gridSteps = 4;
         double yMax;
-        int gridSteps;
         if (_showCounts)
         {
-            var maxVal = _dimensions
-                .SelectMany(d => _scopedHistory.Select(s => TrendValue(s, d)))
+            var maxVal = series
+                .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
                 .Where(v => v.HasValue).Select(v => v!.Value)
                 .DefaultIfEmpty(0).Max();
             yMax = NiceMax(maxVal);
-            gridSteps = 4;
         }
         else
         {
             yMax = 100;
-            gridSteps = 4;
         }
         double py(double v) => padT + (1 - Math.Clamp(v, 0, yMax) / yMax) * plotH;
 
@@ -653,16 +776,17 @@
             sb.Append($"<text x=\"{F(padL - 6)}\" y=\"{F(y + 3)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{label}</text>");
         }
 
-        for (int idx = 0; idx < _dimensions.Count; idx++)
+        foreach (var sv in series)
         {
-            var dim = _dimensions[idx];
-            var color = TrendPalette[idx % TrendPalette.Length];
             var points = string.Join(" ", _scopedHistory
-                .Select((s, i) => (v: TrendValue(s, dim), i))
+                .Select((s, i) => (v: sv.Value(s), i))
                 .Where(t => t.v.HasValue)
                 .Select(t => $"{F(px(t.i))},{F(py(t.v!.Value))}"));
             if (points.Length > 0)
-                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"1.5\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+            {
+                var strokeWidth = sv.Color == ViolationsColor ? "2.2" : "1.5";
+                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+            }
         }
 
         var first = _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
@@ -677,5 +801,7 @@
     {
         NavState.OnLibraryCleared -= OnLibraryCleared;
         LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
+        CodeReviewService.OnLogMessagesChanged -= OnFindingsChanged;
+        StyleCheckingService.OnProgressChanged -= OnStyleCheckProgress;
     }
 }

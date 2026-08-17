@@ -59,4 +59,26 @@ public class MetricsSnapshotTests
         var only = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a }));
         Assert.Same(a, only);
     }
+
+    [Fact]
+    public void AggregateByTimestamp_SumsViolations_WhenAllPresent()
+    {
+        var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
+        var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, 5);
+
+        var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
+
+        Assert.Equal(15, combined.Violations);
+    }
+
+    [Fact]
+    public void AggregateByTimestamp_NullViolations_WhenAnyMissing()
+    {
+        var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
+        var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, null);
+
+        var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
+
+        Assert.Null(combined.Violations);
+    }
 }

@@ -16,14 +16,18 @@ public sealed record MetricsSnapshot(
     string? Scope,
     int TotalClasses,
     Dictionary<string, double> Coverage,
-    Dictionary<string, CoverageCount>? Counts = null)
+    Dictionary<string, CoverageCount>? Counts = null,
+    int? Violations = null)
 {
     /// <summary>Build a snapshot from a computed <see cref="LibraryMetrics"/> for a scope (a package id
-    /// like "Modelica.Blocks", or "" for a whole library / all loaded libraries) at the given time.</summary>
-    public static MetricsSnapshot From(LibraryMetrics metrics, string scope, DateTime timestampUtc)
+    /// like "Modelica.Blocks", or "" for a whole library / all loaded libraries) at the given time.
+    /// <paramref name="violations"/> is the number of active (unsuppressed) rule findings in scope, or
+    /// null when style checking has not been run so the count is unknown.</summary>
+    public static MetricsSnapshot From(LibraryMetrics metrics, string scope, DateTime timestampUtc, int? violations = null)
         => new(timestampUtc, scope ?? string.Empty, metrics.TotalClasses,
             metrics.Coverage.ToDictionary(c => c.Dimension, c => c.Percent, StringComparer.Ordinal),
-            metrics.Coverage.ToDictionary(c => c.Dimension, c => new CoverageCount(c.Compliant, c.Eligible), StringComparer.Ordinal));
+            metrics.Coverage.ToDictionary(c => c.Dimension, c => new CoverageCount(c.Compliant, c.Eligible), StringComparer.Ordinal),
+            violations);
 
     /// <summary>
     /// Collapse snapshots that share a timestamp into one combined snapshot each, summing class counts
@@ -45,6 +49,9 @@ public sealed record MetricsSnapshot(
             }
 
             var totalClasses = members.Sum(s => s.TotalClasses);
+            var violations = members.All(s => s.Violations.HasValue)
+                ? members.Sum(s => s.Violations!.Value)
+                : (int?)null;
             var dims = members.SelectMany(s => s.Coverage.Keys).Distinct(StringComparer.Ordinal);
             var coverage = new Dictionary<string, double>(StringComparer.Ordinal);
             var counts = new Dictionary<string, CoverageCount>(StringComparer.Ordinal);
@@ -71,7 +78,7 @@ public sealed record MetricsSnapshot(
             }
 
             result.Add(new MetricsSnapshot(group.Key, members[0].Scope, totalClasses, coverage,
-                exactForAll ? counts : null));
+                exactForAll ? counts : null, violations));
         }
 
         return result.OrderBy(s => s.TimestampUtc).ToList();
