@@ -87,4 +87,13 @@ public interface IStyleCheckingService
     /// <param name="graph">The graph containing the models.</param>
     Task CheckModelsAsync(IEnumerable<string> modelIds, DirectedGraph graph);
 
+    /// <summary>
+    /// Runs the whole-graph analyses (package.order, uses hygiene, unused class/member, shadowing) for
+    /// the given repositories and delivers their findings. Requires dependency analysis to have run for
+    /// the dependency-based analyzers to produce results. Any stale graph findings are cleared first, so
+    /// this is safe to call after a combined dependency+style pass that only ran the per-model rules.
+    /// </summary>
+    /// <param name="repositories">The repositories to analyse.</param>
+    void RunGraphAnalysesForRepositories(IReadOnlyList<Repository> repositories);
+
 }

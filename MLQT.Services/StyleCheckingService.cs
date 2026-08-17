@@ -409,6 +409,10 @@ public class StyleCheckingService : IStyleCheckingService
     /// graph finding can sit on a model the edit did not touch (e.g. a package.order finding on the
     /// package node) and so would not be removed by the caller's per-model cleanup.
     /// </summary>
+    /// <inheritdoc/>
+    public void RunGraphAnalysesForRepositories(IReadOnlyList<Repository> repositories)
+        => RunGraphAnalyses(repositories, removeStaleFirst: true);
+
     private void RunGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst = false)
     {
         try

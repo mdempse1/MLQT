@@ -73,16 +73,16 @@
                     {
                         <MudText Typo="Typo.body1"><b>@_violations</b></MudText>
                     }
-                    @if (_styleCheckRunning)
+                    @if (_analysisRunning)
                     {
                         <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="ml-1" />
-                        <MudText Typo="Typo.caption">counting…</MudText>
+                        <MudText Typo="Typo.caption">analysing…</MudText>
                     }
                     else if (_violations is null)
                     {
                         <MudText Typo="Typo.body1"><b>—</b></MudText>
                         <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                   OnClick="RunStyleChecking" Class="ml-1">Run style checking</MudButton>
+                                   OnClick="RunAnalysis" Class="ml-1">Run analysis</MudButton>
                     }
                 </MudStack>
                 <MudText Typo="Typo.caption" Class="mb-1">
@@ -251,7 +251,7 @@
     private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding issue count
 
     private int? _violations;          // active (unsuppressed) rule findings in scope; null until known
-    private bool _styleCheckRunning;   // findings still streaming in from the background checker
+    private bool _analysisRunning;   // dependency analysis / style checking still in progress
 
     // Distinct line colour for the "Rule violations" burndown series (kept out of TrendPalette).
     private const string ViolationsColor = "#f44336";
@@ -273,6 +273,7 @@
     protected override void OnInitialized()
     {
         NavState.OnLibraryCleared += OnLibraryCleared;
+        NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
         CodeReviewService.OnLogMessagesChanged += OnFindingsChanged;
         StyleCheckingService.OnProgressChanged += OnStyleCheckProgress;
@@ -311,14 +312,18 @@
             await Compute();
     }
 
-    // Manual "Run style checking" button (shown when it has never run this session).
-    private void RunStyleChecking()
+    // Manual "Run analysis" button (shown when analysis has never run this session).
+    private void RunAnalysis()
     {
-        EnsureStyleCheckingStarted();
+        EnsureAnalysisStarted();
         StateHasChanged();
     }
 
-    // Findings arrive asynchronously from the background style checker; recount when they change.
+    // A complete violation count needs dependency analysis (for the graph-based rules) AND style
+    // checking to have run — anything less is a partial picture.
+    private bool AnalysisComplete => NavState.HasDependencyAnalysisRun && NavState.HasStyleCheckingRun;
+
+    // Findings arrive asynchronously from the background analysis; recount when they change.
     private void OnFindingsChanged()
     {
         RecountViolations();
@@ -328,7 +333,17 @@
     // Style checking reports completion (done == true) once every repository has been checked.
     private void OnStyleCheckProgress(bool done)
     {
-        _styleCheckRunning = !done;
+        if (done && AnalysisComplete)
+            _analysisRunning = false;
+        RecountViolations();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Each deferred step (dependency analysis, style checking) reports completion here.
+    private void OnDeferredAnalysisCompleted()
+    {
+        if (AnalysisComplete)
+            _analysisRunning = false;
         RecountViolations();
         InvokeAsync(StateHasChanged);
     }
@@ -337,9 +352,9 @@
     // Suppressed findings never reach CodeReviewService, so this drops when a rule is fixed OR suppressed.
     private void RecountViolations()
     {
-        if (!NavState.HasStyleCheckingRun && !_styleCheckRunning)
+        if (!_analysisRunning && !AnalysisComplete)
         {
-            _violations = null;   // unknown until style checking has run at least once
+            _violations = null;   // unknown until analysis has run at least once
             return;
         }
         _violations = CountViolationsForScope(_scope);
@@ -351,25 +366,30 @@
     private int CountViolationsForModels(HashSet<string> modelIds)
         => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
 
-    // A violation count is only worth recording once style checking has finished; while it is still
-    // streaming (or has never run) the number is partial, so store null rather than a misleading figure.
+    // A violation count is only worth recording once the full analysis has finished; while it is still
+    // running (or has never run) the number is partial, so store null rather than a misleading figure.
     private int? ReliableViolations(int? current)
-        => (_styleCheckRunning || !NavState.HasStyleCheckingRun) ? (int?)null : current;
+        => (_analysisRunning || !AnalysisComplete) ? (int?)null : current;
 
     private static bool InScope(string modelId, string scope)
         => string.IsNullOrEmpty(scope) || modelId == scope
            || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
 
-    // Ensure style checking has run so the violation count is meaningful; if not, kick off the deferred
-    // run. Findings then stream in and update the count reactively via OnFindingsChanged.
-    private void EnsureStyleCheckingStarted()
+    // Ensure the full analysis has run so the violation count is complete: dependency analysis (for the
+    // graph-based rules) plus style checking. Kicks off whatever is missing; findings then stream in and
+    // update the count reactively. RunAllDeferredAnalysisAsync runs dependency analysis + style + graph
+    // analyses together; if dependencies are already done, only style checking is needed.
+    private void EnsureAnalysisStarted()
     {
-        if (NavState.HasStyleCheckingRun || _styleCheckRunning)
+        if (_analysisRunning || AnalysisComplete)
             return;
         if (!LibraryDataService.GetAllModels().Any())
             return;
-        _styleCheckRunning = true;
-        _ = NavState.RunDeferredStyleCheckingAsync();
+        _analysisRunning = true;
+        if (!NavState.HasDependencyAnalysisRun)
+            _ = NavState.RunAllDeferredAnalysisAsync();
+        else
+            _ = NavState.RunDeferredStyleCheckingAsync();
     }
 
     // A cheap fingerprint of the loaded library set; when it changes, cached metrics are stale.
@@ -452,7 +472,7 @@
                     _loading = true;
                     StateHasChanged();
                     var graph = LibraryDataService.CombinedGraph;
-                    var violationsReliable = !_styleCheckRunning && NavState.HasStyleCheckingRun;
+                    var violationsReliable = !_analysisRunning && AnalysisComplete;
                     await Task.Run(() =>
                     {
                         foreach (var g in groups)
@@ -485,8 +505,8 @@
             ? $"{sharedCount} repository .mlqt file(s) — commit them to share with reviewers"
             : "the per-user file (no repository-backed libraries)";
         Snackbar.Add($"Snapshot saved to {where}.", Severity.Success);
-        if (_styleCheckRunning || !NavState.HasStyleCheckingRun)
-            Snackbar.Add("Style checking hasn't finished — the violation count was left out of this snapshot. Save again once it completes.", Severity.Info);
+        if (_analysisRunning || !AnalysisComplete)
+            Snackbar.Add("Analysis hasn't finished — the violation count was left out of this snapshot. Save again once it completes.", Severity.Info);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -585,7 +605,7 @@
 
     private async Task Compute()
     {
-        EnsureStyleCheckingStarted();   // so the violation count is measured, running it if deferred
+        EnsureAnalysisStarted();   // run dependency analysis + style checking if needed for a full count
         RecountViolations();
 
         var all = LibraryDataService.GetAllModels();
@@ -679,7 +699,7 @@
         _metrics = null;
         _summary = new();
         _violations = null;
-        _styleCheckRunning = false;
+        _analysisRunning = false;
         _cacheMetrics = null;
         _cacheScope = null;
         _cacheSignature = null;
@@ -800,6 +820,7 @@
     public void Dispose()
     {
         NavState.OnLibraryCleared -= OnLibraryCleared;
+        NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
         LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
         CodeReviewService.OnLogMessagesChanged -= OnFindingsChanged;
         StyleCheckingService.OnProgressChanged -= OnStyleCheckProgress;

@@ -1664,6 +1664,12 @@
                 if (violationsList.Count > 0)
                     CodeReviewService.AddLogMessages(violationsList);
 
+                // The combined pass only runs the per-model rules. Dependency analysis has just
+                // finished, so run the whole-graph analyses (package.order, uses hygiene, unused
+                // class/member, shadowing) now too, otherwise those findings would be missing entirely
+                // from the deferred flow. Delivered via the service's violation pipeline.
+                await Task.Run(() => StyleCheckingService.RunGraphAnalysesForRepositories(RepositoryService.Repositories));
+
                 NavState.StyleCheckingCompleted();
                 _step4deferred = false;
                 _step4color = Color.Success;
