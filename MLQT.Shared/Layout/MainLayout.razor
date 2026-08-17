@@ -2028,6 +2028,13 @@
             var path = System.IO.Path.Combine(dir, "gui-findings-by-rule.txt");
             System.IO.File.WriteAllText(path, sb.ToString());
             Info("MainLayout", $"[TEMP] wrote GUI findings-by-rule to {path}");
+
+            // The model ids for the three rules that still differ from the CLI, to diff against cli-rule-detail.txt.
+            var detail = style
+                .Where(m => m.RuleId is "MLQT.Style.ExtendsAtTop" or "MLQT.Style.OneOfEachSection" or "MLQT.Unused.Class")
+                .Select(m => $"{m.RuleId}|{m.ModelName}|{m.LineNumber}")
+                .OrderBy(s => s, StringComparer.Ordinal);
+            System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "gui-rule-detail.txt"), detail);
         }
         catch (Exception ex)
         {

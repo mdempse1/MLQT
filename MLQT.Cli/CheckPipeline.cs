@@ -177,6 +177,21 @@ internal static class CheckPipeline
         foreach (var kv in settings.RuleSeverities.OrderBy(k => k.Key, StringComparer.Ordinal))
             stderr.WriteLine($"  {kv.Value,-8} {kv.Key}");
 
+        // Write the model ids for the three rules that still differ from the GUI, so the two can be diffed.
+        try
+        {
+            var detail = findings
+                .Where(f => f.RuleId is "MLQT.Style.ExtendsAtTop" or "MLQT.Style.OneOfEachSection" or "MLQT.Unused.Class")
+                .Select(f => $"{f.RuleId}|{f.ModelId}|{f.LineNumber}")
+                .OrderBy(s => s, StringComparer.Ordinal);
+            var dir = System.IO.Path.Combine(
+                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "MLQT");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "cli-rule-detail.txt"), detail);
+            stderr.WriteLine($"wrote cli-rule-detail.txt to {dir}");
+        }
+        catch { }
+
         stderr.WriteLine("=== END TEMP DIAGNOSTIC ===");
         stderr.WriteLine();
     }
