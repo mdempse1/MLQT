@@ -2035,6 +2035,16 @@
                 .Select(m => $"{m.RuleId}|{m.ModelName}|{m.LineNumber}")
                 .OrderBy(s => s, StringComparer.Ordinal);
             System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "gui-rule-detail.txt"), detail);
+
+            // Dump the actual stored source for one differing class to compare against the CLI.
+            var bs = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("Modelica.Clocked.BooleanSignals");
+            if (bs is not null)
+            {
+                var code = bs.Definition?.ModelicaCode ?? "";
+                var head = string.Join("\n", code.Split('\n').Take(8));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "gui-booleansignals.txt"),
+                    $"Id={bs.Id}\nStartLine={bs.StartLine}\ncodeLen={code.Length}\n--- first 8 lines ---\n{head}");
+            }
         }
         catch (Exception ex)
         {

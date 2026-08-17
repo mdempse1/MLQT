@@ -189,6 +189,16 @@ internal static class CheckPipeline
             System.IO.Directory.CreateDirectory(dir);
             System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "cli-rule-detail.txt"), detail);
             stderr.WriteLine($"wrote cli-rule-detail.txt to {dir}");
+
+            // Dump the actual stored source for one differing class to compare against the GUI.
+            var bs = models.FirstOrDefault(m => m.Id == "Modelica.Clocked.BooleanSignals");
+            if (bs is not null)
+            {
+                var code = bs.Definition?.ModelicaCode ?? "";
+                var head = string.Join("\n", code.Split('\n').Take(8));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "cli-booleansignals.txt"),
+                    $"Id={bs.Id}\nStartLine={bs.StartLine}\ncodeLen={code.Length}\n--- first 8 lines ---\n{head}");
+            }
         }
         catch { }
 
