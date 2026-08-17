@@ -200,6 +200,10 @@ public sealed class StyleTools
                 new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
                 node =>
                 {
+                    // Skip non-standalone classes (replaceable/redeclare/inner/outer), matching the GUI's
+                    // per-model style checking so the finding count is identical across GUI, CLI and MCP.
+                    if (!node.CanBeStoredStandalone)
+                        return;
                     foreach (var v in StyleCheckRunner.Run(node, effective, context))
                         all.Add(v);
                 });

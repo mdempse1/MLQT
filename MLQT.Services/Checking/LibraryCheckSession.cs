@@ -35,7 +35,11 @@ public static class LibraryCheckSession
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
         Parallel.ForEach(modelList, options, node =>
         {
-            if (node is null || node.IsParseFailurePlaceholder)
+            // Skip non-standalone classes (replaceable/redeclare/inner/outer prefixes). The GUI's
+            // per-model style checking (StyleCheckingWorker and the combined deferred pass) applies the
+            // same filter, so this keeps the CLI/MCP finding count identical to what a developer sees in
+            // the app — a CI gate must not fail on issues the GUI never surfaces.
+            if (node is null || node.IsParseFailurePlaceholder || !node.CanBeStoredStandalone)
                 return;
 
             try
