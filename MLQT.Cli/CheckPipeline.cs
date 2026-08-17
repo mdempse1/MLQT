@@ -108,11 +108,61 @@ internal static class CheckPipeline
             .ThenBy(f => f.ElementPath ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 
+        // ─── TEMPORARY DIAGNOSTIC ────────────────────────────────────────────────────────────────
+        // Report the findings that the CanBeStoredStandalone filter drops (classes with replaceable/
+        // redeclare/inner/outer prefixes), so the exclusion can be evaluated. Remove once decided.
+        ReportNonStandaloneDiagnostic(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions, stderr);
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+
         var modelToFile = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var file in graph.FileNodes)
             foreach (var model in graph.GetModelsInFile(file.Id))
                 modelToFile[model.Id] = file.FilePath;
 
         return new LoadResult(ExitCodes.Ok, findings, modelToFile, models.Count);
+    }
+
+    // TEMPORARY: breakdown of what the non-standalone (replaceable/redeclare/inner/outer) filter excludes.
+    private static void ReportNonStandaloneDiagnostic(
+        DirectedGraph graph, IReadOnlyList<ModelNode> models, StyleCheckingSettings settings,
+        CustomDictionaryService customDictionary, DictionaryManagerService dictionaryManager,
+        bool honorSuppressions, TextWriter stderr)
+    {
+        var nonStandalone = models.Where(m => !m.CanBeStoredStandalone && !m.IsParseFailurePlaceholder).ToList();
+        if (nonStandalone.Count == 0)
+            return;
+
+        var context = StyleCheckContext.Build(settings, graph, customDictionary, dictionaryManager);
+        var dropped = new List<Finding>();
+        foreach (var node in nonStandalone)
+        {
+            try { dropped.AddRange(StyleCheckRunner.RunFindings(node, settings, context, honorSuppressions)); }
+            catch { /* ignore per-model failures in the diagnostic */ }
+        }
+
+        stderr.WriteLine();
+        stderr.WriteLine("=== TEMP DIAGNOSTIC: findings dropped by the non-standalone (CanBeStoredStandalone) filter ===");
+        stderr.WriteLine($"non-standalone classes: {nonStandalone.Count}    findings on them (currently excluded): {dropped.Count}");
+
+        stderr.WriteLine("findings by rule:");
+        foreach (var g in dropped.GroupBy(f => f.RuleId).OrderByDescending(g => g.Count()))
+            stderr.WriteLine($"  {g.Count(),7}  {g.Key}");
+
+        stderr.WriteLine("non-standalone classes by type:");
+        foreach (var g in nonStandalone.GroupBy(m => string.IsNullOrEmpty(m.ClassType) ? "(unknown)" : m.ClassType)
+                     .OrderByDescending(g => g.Count()))
+            stderr.WriteLine($"  {g.Count(),7}  {g.Key}");
+
+        stderr.WriteLine("top excluded classes (by finding count, up to 30):");
+        foreach (var t in nonStandalone
+                     .Select(m => (m, count: dropped.Count(f => f.ModelId == m.Id)))
+                     .Where(t => t.count > 0)
+                     .OrderByDescending(t => t.count)
+                     .ThenBy(t => t.m.Id, StringComparer.Ordinal)
+                     .Take(30))
+            stderr.WriteLine($"  {t.count,4}  {t.m.Id}  [{t.m.ClassType}]");
+
+        stderr.WriteLine("=== END TEMP DIAGNOSTIC ===");
+        stderr.WriteLine();
     }
 }
