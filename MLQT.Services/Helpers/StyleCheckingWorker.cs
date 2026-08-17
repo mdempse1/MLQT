@@ -2,6 +2,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.SpellChecking;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using MLQT.Services.Checking;
 using System.Collections.Concurrent;
 
 namespace MLQT.Services.Helpers;
@@ -72,28 +73,10 @@ public class StyleCheckingWorker
                     modelIds.Add(modelId);
             }
 
-            // Build set of known model IDs for reference validation
-            IReadOnlySet<string>? knownModelIds = null;
-            if (_settings.ValidateModelReferences)
-            {
-                knownModelIds = _currentGraph.ModelNodes
-                    .Select(n => n.Id)
-                    .ToHashSet(StringComparer.Ordinal);
-            }
-
-            // Build set of known model names for spell checking context
-            IReadOnlySet<string>? knownModelNames = null;
-            if ((_settings.SpellCheckDescription || _settings.SpellCheckDocumentation) && _spellChecker != null)
-            {
-                knownModelNames = _currentGraph.ModelNodes
-                    .Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            }
-
-            // Create callback for inherited icon checking (uses graph to resolve base classes)
-            var baseClassHasIcon = _settings.ClassHasIcon
-                ? StyleChecking.CreateBaseClassHasIconCallback(_currentGraph)
-                : null;
+            // Build the per-check context (known ids/names, icon callback) through the shared
+            // StyleCheckContext so the GUI derives it identically to the CLI and MCP — reusing the
+            // service's cached spell checker rather than rebuilding one.
+            var context = StyleCheckContext.Build(_settings, _currentGraph, _spellChecker);
 
             // Process models in parallel with bounded concurrency
             var parallelOptions = new ParallelOptions
@@ -115,15 +98,12 @@ public class StyleCheckingWorker
                     // with the CLI/MCP (which check all classes). StyleRulesChecked still dedups re-checks.
                     if (node != null && !node.Definition.StyleRulesChecked)
                     {
-                        var violations = StyleChecking.RunStyleChecking(node.Definition, _settings, modelId, knownModelIds, _spellChecker, knownModelNames,
-                            isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId),
-                            baseClassHasIcon: baseClassHasIcon);
+                        // Same per-model entry point (StyleCheckRunner → RunStyleChecking) as the CLI/MCP;
+                        // it releases the parse tree after checking to bound memory.
+                        var violations = StyleCheckRunner.Run(node, _settings, context);
 
                         if (violations.Count > 0)
                             OnViolationFound?.Invoke(this, violations);
-
-                        // Release parse tree after checking to free memory
-                        node.Definition.ParsedCode = null;
                     }
                 }
                 catch

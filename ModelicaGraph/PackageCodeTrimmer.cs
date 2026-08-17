@@ -16,7 +16,10 @@ namespace ModelicaGraph;
 /// </summary>
 public static class PackageCodeTrimmer
 {
-    public static void TrimStandaloneChildren(DirectedGraph graph)
+    /// <summary>Trim the packages in <paramref name="graph"/>. When <paramref name="onlyModelIds"/> is
+    /// given, only packages in that set are trimmed (e.g. the models of a just-loaded library), so
+    /// repeated loads don't re-trim everything.</summary>
+    public static void TrimStandaloneChildren(DirectedGraph graph, IReadOnlySet<string>? onlyModelIds = null)
     {
         var allModels = graph.ModelNodes.ToList();
 
@@ -34,6 +37,7 @@ public static class PackageCodeTrimmer
 
         var packagesToTrim = allModels.Where(m =>
             m.ClassType == "package" &&
+            (onlyModelIds is null || onlyModelIds.Contains(m.Id)) &&
             childrenByParent.TryGetValue(m.Id, out var children) &&
             children.Any(c => c.CanBeStoredStandalone)).ToList();
         if (packagesToTrim.Count == 0)

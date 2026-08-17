@@ -26,7 +26,7 @@ public class QualityToolsTests
         });
         host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
 
-        var result = Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckPackageOrder = true });
+        var result = Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckPackageOrder = true }).GetAwaiter().GetResult();
 
         var cr = Assert.IsType<CheckResult>(result);
         Assert.Contains(cr.Violations, v => v.Summary.Contains("Ghost"));   // stale package.order entry
@@ -98,7 +98,7 @@ public class QualityToolsTests
     {
         using var host = new TestHost();
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
-        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }));
+        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult());
         Assert.True(res.ModelsChecked >= 1);
         Assert.True(res.ViolationCount >= 1);
     }
@@ -107,7 +107,33 @@ public class QualityToolsTests
     public void CheckLibrary_NothingLoaded_Errors()
     {
         using var host = new TestHost();
-        Assert.IsType<ToolError>(Style(host).CheckLibrary());
+        Assert.IsType<ToolError>(Style(host).CheckLibrary().GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public void CheckLibrary_AutoRunsDependencyAnalysis_WhenRuleRequiresIt()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
+        Assert.False(host.Session.DependenciesAnalyzed);
+
+        // The unused-class rule needs cross-model edges. check_library must run dependency analysis
+        // itself (as the GUI and CLI do) so its count includes those findings without an extra step.
+        Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckUnusedClass = true }).GetAwaiter().GetResult();
+
+        Assert.True(host.Session.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public void CheckLibrary_SkipsDependencyAnalysis_WhenNoRuleRequiresIt()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
+
+        // A plain style rule needs no dependency edges — the auto-run must stay off to keep it cheap.
+        Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult();
+
+        Assert.False(host.Session.DependenciesAnalyzed);
     }
 
     [Fact]

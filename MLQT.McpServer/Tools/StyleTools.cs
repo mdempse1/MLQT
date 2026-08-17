@@ -148,9 +148,10 @@ public sealed class StyleTools
     [Description("Run style/spell rules across all classes in a loaded library (or every loaded library " +
                 "if library_id is omitted) and return a summary plus the first 200 violations, all stored " +
                 "for list_issues. By default each library is checked with its own repository settings " +
-                "(.mlqt/settings.json); pass 'settings' to override for every class. Can be slow on a big " +
-                "library.")]
-    public object CheckLibrary(
+                "(.mlqt/settings.json); pass 'settings' to override for every class. If an enabled rule " +
+                "needs cross-model dependencies (e.g. unused-class), dependency analysis is run first " +
+                "automatically (matching the GUI and CLI). Can be slow on a big library.")]
+    public async Task<object> CheckLibrary(
         [Description("Optional: one library to check, by its id (GUID from list_libraries) or its name " +
                      "(e.g. 'Modelica'). Omit to check every loaded library. Not a class id.")]
         string? libraryId = null,
@@ -179,46 +180,75 @@ public sealed class StyleTools
         var checkedIds = new List<string>();
         var modelsChecked = 0;
 
-        foreach (var library in targets)
+        // Style-check the trimmed representation (packages without their standalone children, which have
+        // their own nodes) so the count matches the GUI and CLI — via the shared PackageCodeTrimmer so the
+        // rule can't drift. The trim mutates stored source, so snapshot the affected packages first and
+        // restore them in the finally: this session's edit/query tools rely on the full original source.
+        var targetModelIds = targets.SelectMany(l => l.ModelIds).ToHashSet(StringComparer.Ordinal);
+        var packageSnapshots = graph.ModelNodes
+            .Where(m => m.ClassType == "package" && targetModelIds.Contains(m.Id))
+            .ToDictionary(m => m.Id, m => (m.Definition.ModelicaCode, m.Definition.ParsedCode), StringComparer.Ordinal);
+        ModelicaGraph.PackageCodeTrimmer.TrimStandaloneChildren(graph, targetModelIds);
+
+        try
         {
-            var models = library.ModelIds
-                .Select(id => _libraries.GetModelById(id))
-                .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
-                .Cast<ModelNode>()
-                .ToList();
-            if (models.Count == 0)
-                continue;
+            // Auto-run dependency analysis when an enabled rule needs cross-model edges (e.g. unused-class),
+            // so the count matches the GUI and CLI, which both do this. Skipped when already analysed or when
+            // no such rule is enabled, keeping a plain style-check cheap.
+            if (!_session.DependenciesAnalyzed &&
+                targets.Any(l => GraphAnalysisRunner.RequiresDependencyAnalysis(explicitSettings ?? RepoSettingsForLibrary(l))))
+            {
+                await GraphBuilder.AnalyzeDependenciesAsync(graph);
+                _session.DependenciesAnalyzed = true;
+            }
 
-            // Each library is checked with its own repository settings unless an override was passed.
-            var effective = explicitSettings ?? RepoSettingsForLibrary(library);
-            var context = StyleCheckContext.Build(effective, graph, _customDictionary, _dictionaryManager);
-            modelsChecked += models.Count;
-            checkedIds.AddRange(models.Select(m => m.Id));
+            foreach (var library in targets)
+            {
+                var models = library.ModelIds
+                    .Select(id => _libraries.GetModelById(id))
+                    .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
+                    .Cast<ModelNode>()
+                    .ToList();
+                if (models.Count == 0)
+                    continue;
 
-            Parallel.ForEach(
-                models,
-                new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
-                node =>
-                {
-                    foreach (var v in StyleCheckRunner.Run(node, effective, context))
-                        all.Add(v);
-                });
+                // Each library is checked with its own repository settings unless an override was passed.
+                var effective = explicitSettings ?? RepoSettingsForLibrary(library);
+                modelsChecked += models.Count;
+                checkedIds.AddRange(models.Select(m => m.Id));
 
-            // Whole-graph analyses (package.order, uses hygiene, unused classes). Dependency-requiring
-            // ones only run if analyze_dependencies was called first (else the runner skips them).
-            var graphContext = new GraphAnalysisContext(graph, effective, models, _session.DependenciesAnalyzed);
-            foreach (var finding in GraphAnalysisRunner.Run(graphContext))
-                all.Add(finding.ToLogMessage());
+                // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
+                // the whole-graph analyses (package.order, uses hygiene, unused classes) can't drift between
+                // the tools. Dependency-requiring analyses only run if analyze_dependencies ran first.
+                var findings = LibraryCheckSession.Check(
+                    graph, models, effective, _customDictionary, _dictionaryManager,
+                    honorSuppressions: true, dependenciesAnalyzed: _session.DependenciesAnalyzed);
+                foreach (var finding in findings)
+                    all.Add(finding.ToLogMessage());
+            }
+
+            if (modelsChecked == 0)
+                return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
+
+            var violations = all.ToList();
+            _codeReview.RemoveLogMessagesForModels(checkedIds);
+            _codeReview.AddLogMessages(violations);
+
+            return ToCheckResult(violations, modelsChecked);
         }
-
-        if (modelsChecked == 0)
-            return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
-
-        var violations = all.ToList();
-        _codeReview.RemoveLogMessagesForModels(checkedIds);
-        _codeReview.AddLogMessages(violations);
-
-        return ToCheckResult(violations, modelsChecked);
+        finally
+        {
+            // Restore the full package source so edit/query tools keep working on the real files.
+            foreach (var kv in packageSnapshots)
+            {
+                var node = graph.GetNode<ModelNode>(kv.Key);
+                if (node is not null)
+                {
+                    node.Definition.ModelicaCode = kv.Value.ModelicaCode;
+                    node.Definition.ParsedCode = kv.Value.ParsedCode;
+                }
+            }
+        }
     }
 
     [McpServerTool(Name = "list_issues")]

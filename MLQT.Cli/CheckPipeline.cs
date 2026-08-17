@@ -113,101 +113,11 @@ internal static class CheckPipeline
             .ThenBy(f => f.ElementPath ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 
-        // ─── TEMPORARY DIAGNOSTIC ────────────────────────────────────────────────────────────────
-        // Per-rule breakdown of all findings (with a standalone/non-standalone split) plus the enabled
-        // rules, so the CLI totals can be compared rule-by-rule with the GUI. Remove once resolved.
-        ReportRuleDiagnostic(findings, models, settings, stderr);
-        // ─────────────────────────────────────────────────────────────────────────────────────────
-
         var modelToFile = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var file in graph.FileNodes)
             foreach (var model in graph.GetModelsInFile(file.Id))
                 modelToFile[model.Id] = file.FilePath;
 
         return new LoadResult(ExitCodes.Ok, findings, modelToFile, models.Count);
-    }
-
-    // TEMPORARY: per-rule breakdown of all findings, split by standalone vs non-standalone model, plus
-    // the enabled rules — so the CLI can be compared rule-by-rule with the GUI to locate any divergence.
-    private static void ReportRuleDiagnostic(
-        IReadOnlyList<Finding> findings, IReadOnlyList<ModelNode> models, StyleCheckingSettings settings,
-        TextWriter stderr)
-    {
-        var standaloneById = new Dictionary<string, bool>(StringComparer.Ordinal);
-        foreach (var m in models)
-            standaloneById[m.Id] = m.CanBeStoredStandalone;
-        var nonStandaloneModels = models.Count(m => !m.CanBeStoredStandalone);
-
-        // Duplicate detection: identical findings (same model+rule+line+element+discriminator).
-        var distinct = findings
-            .GroupBy(f => $"{f.ModelId}{f.RuleId}{f.LineNumber}{f.ElementPath}{f.Discriminator}")
-            .Count();
-        var dupeModelIds = findings
-            .GroupBy(f => f.ModelId ?? "")
-            .Where(g => g.Count() != g.Select(f => $"{f.RuleId}{f.LineNumber}{f.ElementPath}{f.Discriminator}").Distinct().Count())
-            .Select(g => g.Key)
-            .Take(15)
-            .ToList();
-
-        stderr.WriteLine();
-        stderr.WriteLine("=== TEMP DIAGNOSTIC: findings by rule (all models) ===");
-        stderr.WriteLine($"total findings: {findings.Count}    distinct findings: {distinct}    duplicates: {findings.Count - distinct}");
-        var distinctModelIds = models.Select(m => m.Id).Distinct(StringComparer.Ordinal).Count();
-        stderr.WriteLine($"models checked: {models.Count}  (distinct ids: {distinctModelIds}, " +
-                         $"standalone={models.Count - nonStandaloneModels}, non-standalone={nonStandaloneModels})");
-        if (dupeModelIds.Count > 0)
-            stderr.WriteLine("sample models with duplicate findings: " + string.Join(", ", dupeModelIds));
-
-        var dupesByRule = findings
-            .GroupBy(f => f.RuleId ?? "(none)")
-            .Select(g => (rule: g.Key, dup: g.Count() - g.Select(f => $"{f.ModelId}{f.LineNumber}{f.ElementPath}{f.Discriminator}").Distinct().Count()))
-            .Where(t => t.dup > 0)
-            .OrderByDescending(t => t.dup)
-            .ToList();
-        if (dupesByRule.Count > 0)
-        {
-            stderr.WriteLine("duplicates by rule:");
-            foreach (var t in dupesByRule)
-                stderr.WriteLine($"  {t.dup,6}  {t.rule}");
-        }
-        stderr.WriteLine($"  {"total",8} {"standln",8} {"non-std",8}  rule");
-        foreach (var g in findings.GroupBy(f => f.RuleId ?? "(none)").OrderByDescending(g => g.Count()))
-        {
-            var sa = g.Count(f => f.ModelId is not null && standaloneById.TryGetValue(f.ModelId, out var v) && v);
-            var nsa = g.Count() - sa;
-            stderr.WriteLine($"  {g.Count(),8} {sa,8} {nsa,8}  {g.Key}");
-        }
-
-        stderr.WriteLine("enabled rules (rule id → severity, from the resolved settings):");
-        foreach (var kv in settings.RuleSeverities.OrderBy(k => k.Key, StringComparer.Ordinal))
-            stderr.WriteLine($"  {kv.Value,-8} {kv.Key}");
-
-        // Write the model ids for the three rules that still differ from the GUI, so the two can be diffed.
-        try
-        {
-            var detail = findings
-                .Where(f => f.RuleId is "MLQT.Style.ExtendsAtTop" or "MLQT.Style.OneOfEachSection" or "MLQT.Unused.Class")
-                .Select(f => $"{f.RuleId}|{f.ModelId}|{f.LineNumber}")
-                .OrderBy(s => s, StringComparer.Ordinal);
-            var dir = System.IO.Path.Combine(
-                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "MLQT");
-            System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.WriteAllLines(System.IO.Path.Combine(dir, "cli-rule-detail.txt"), detail);
-            stderr.WriteLine($"wrote cli-rule-detail.txt to {dir}");
-
-            // Dump the actual stored source for one differing class to compare against the GUI.
-            var bs = models.FirstOrDefault(m => m.Id == "Modelica.Clocked.BooleanSignals");
-            if (bs is not null)
-            {
-                var code = bs.Definition?.ModelicaCode ?? "";
-                var head = string.Join("\n", code.Split('\n').Take(8));
-                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "cli-booleansignals.txt"),
-                    $"Id={bs.Id}\nStartLine={bs.StartLine}\ncodeLen={code.Length}\n--- first 8 lines ---\n{head}");
-            }
-        }
-        catch { }
-
-        stderr.WriteLine("=== END TEMP DIAGNOSTIC ===");
-        stderr.WriteLine();
     }
 }
