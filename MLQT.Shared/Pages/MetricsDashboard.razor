@@ -203,14 +203,54 @@
     private static readonly string[] TrendPalette =
         { "#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4" };
 
+    // Session cache of the last computed metrics, keyed by scope + a signature of the loaded libraries.
+    // Static so it survives the tab panel being recreated on navigation — returning to the tab restores
+    // the result instantly instead of recomputing, while a change to the libraries invalidates it.
+    private static string? _cacheScope;
+    private static string? _cacheSignature;
+    private static LibraryMetrics? _cacheMetrics;
+
     protected override void OnInitialized()
     {
         NavState.OnLibraryCleared += OnLibraryCleared;
         LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
+
+        // Restore the scope chosen earlier this session, but drop it if it no longer names a loaded
+        // package (e.g. after switching to a different project/library).
+        _scope = NavState.MetricsScope;
+        if (!string.IsNullOrEmpty(_scope) && !LibraryDataService.GetAllModels()
+                .Any(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)))
+        {
+            _scope = "";
+            NavState.MetricsScope = "";
+        }
+
         _history = LoadAllHistory();
+
+        // Restore a still-valid cached result so navigating back is instant; otherwise first render
+        // triggers an automatic compute.
+        if (_cacheMetrics is not null && _cacheScope == _scope && _cacheSignature == LibrarySignature())
+            _metrics = _cacheMetrics;
+        else if (LibraryDataService.GetAllModels().Any())
+            _loading = true;   // show the progress state right away for the pending auto-compute
+
         RebuildTrend();
         base.OnInitialized();
     }
+
+    // Compute metrics automatically when the tab first renders (unless a cached result was restored), so
+    // the Coverage page shows numbers for the selected scope without the user clicking Compute.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // First render can't overlap a running compute, so _loading here only reflects the placeholder
+        // flag set in OnInitialized — don't let it suppress the pending auto-compute.
+        if (firstRender && _metrics is null && LibraryDataService.GetAllModels().Any())
+            await Compute();
+    }
+
+    // A cheap fingerprint of the loaded library set; when it changes, cached metrics are stale.
+    private string LibrarySignature()
+        => string.Join("|", LibraryDataService.Libraries.Select(l => $"{l.Id}:{l.ModelIds.Count}"));
 
     // Reload the merged history when the set of loaded libraries/repositories changes, so a newly loaded
     // library's shared history appears without reopening the tab.
@@ -236,12 +276,10 @@
     private async Task OnScopeChanged(string? scope)
     {
         _scope = scope ?? "";
+        NavState.MetricsScope = _scope;   // remember for when the user returns to this tab
         _summary = new();   // stale relative to the new scope; user re-runs Compare to break it down
         RebuildTrend();
-        if (_metrics is not null)
-            await Compute();      // re-measure for the new scope
-        else
-            StateHasChanged();
+        await Compute();      // re-measure for the new scope
     }
 
     private async Task SaveSnapshot()
@@ -428,6 +466,9 @@
         {
             var graph = LibraryDataService.CombinedGraph;
             _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models));
+            _cacheScope = _scope;
+            _cacheSignature = LibrarySignature();
+            _cacheMetrics = _metrics;
         }
         finally
         {
@@ -504,6 +545,10 @@
     {
         _metrics = null;
         _summary = new();
+        _cacheMetrics = null;
+        _cacheScope = null;
+        _cacheSignature = null;
+        NavState.MetricsScope = string.Empty;   // the old scope may not exist in the next library
         InvokeAsync(StateHasChanged);
     }
 

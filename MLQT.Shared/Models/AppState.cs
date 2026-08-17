@@ -84,6 +84,13 @@ public class AppState
     public bool IsLibraryLoaded { get; private set; }
 
     /// <summary>
+    /// The scope (package id, or "" for all loaded libraries) selected on the Metrics/Coverage tab.
+    /// Held here so it survives the tab panel being recreated when the user navigates away and back.
+    /// Session-only — not persisted to disk.
+    /// </summary>
+    public string MetricsScope { get; set; } = string.Empty;
+
+    /// <summary>
     /// Event fired when a library is loaded.
     /// </summary>
     public event Action? OnLibraryLoaded;
