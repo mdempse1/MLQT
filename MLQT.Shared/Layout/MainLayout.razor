@@ -555,6 +555,10 @@
         RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated += OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged += OnStyleCheckingProgressChanged;
+        // Persist background style-checking violations here, in the always-mounted layout, rather than
+        // in the CodeReview page — otherwise violations are dropped whenever checking runs while the
+        // user is on another tab (e.g. Metrics auto-triggering it).
+        StyleCheckingService.OnViolationsFound += OnStyleViolationsFound;
 
         _ = Task.Run(async () => await RunStartUpAsync());
 
@@ -1948,7 +1952,14 @@
         RepositoryService.OnProjectChanged -= OnProjectChanged;
         RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated -= OnPendingChangesUpdated;
+        StyleCheckingService.OnProgressChanged -= OnStyleCheckingProgressChanged;
+        StyleCheckingService.OnViolationsFound -= OnStyleViolationsFound;
     }
+
+    // Route background style-checking violations into the persistent CodeReviewService. Lives in the
+    // layout (always mounted) so delivery never depends on which tab is currently open.
+    private void OnStyleViolationsFound(List<LogMessage> violations)
+        => InvokeAsync(() => CodeReviewService.AddLogMessages(violations));
 
     private async void OnRepositoriesChanged()
     {

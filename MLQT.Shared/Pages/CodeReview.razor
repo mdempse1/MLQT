@@ -379,7 +379,9 @@
         NavState.OnSaveSettings += OnSettingsSaved;
         NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged += OnLogMessagesChanged;
-        StyleCheckingService.OnViolationsFound += OnStyleViolationsFound;
+        // Note: background style-checking violations are added to CodeReviewService by MainLayout (the
+        // always-mounted layout), so they are captured even when this page isn't open. This page just
+        // reacts to OnLogMessagesChanged to refresh.
 
         // Subscribe to model checking service events
         DymolaCheckingService.OnProgressChanged += OnCheckProgressChanged;
@@ -416,15 +418,6 @@
         {
             await InvokeAsync(StateHasChanged);
         }
-    }
-
-    private async void OnStyleViolationsFound(List<LogMessage> violations)
-    {
-        await InvokeAsync(() =>
-        {
-            CodeReviewService.AddLogMessages(violations);
-            StateHasChanged();
-        });
     }
 
     private async void OnLogMessagesChanged()
@@ -548,7 +541,6 @@
         NavState.OnLibraryLoaded -= LibraryLoaded;
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
-        StyleCheckingService.OnViolationsFound -= OnStyleViolationsFound;
 
         // Unsubscribe from model checking service events
         DymolaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
