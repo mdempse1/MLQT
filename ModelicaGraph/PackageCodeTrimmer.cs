@@ -1,0 +1,115 @@
+using System.Collections.Concurrent;
+using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
+using ModelicaParser.Visitors;
+
+namespace ModelicaGraph;
+
+/// <summary>
+/// Trims each package's stored <c>ModelicaCode</c> to exclude its standalone child classes (which have
+/// their own graph nodes), freeing the duplicated inline source for large libraries. Shared by the GUI
+/// startup and the headless CLI/MCP so all paths style-check the same representation.
+///
+/// The trimmed source is stored WITHOUT a leading <c>within</c> clause: the <c>within</c> is only needed
+/// transiently to parse the class in isolation, and keeping it would shift every finding's line number
+/// by one relative to the original file (the number a user sees in their Modelica tool).
+/// </summary>
+public static class PackageCodeTrimmer
+{
+    public static void TrimStandaloneChildren(DirectedGraph graph)
+    {
+        var allModels = graph.ModelNodes.ToList();
+
+        var childrenByParent = new Dictionary<string, List<ModelNode>>(StringComparer.Ordinal);
+        foreach (var model in allModels)
+        {
+            var parentName = model.ParentModelName;
+            if (!string.IsNullOrEmpty(parentName))
+            {
+                if (!childrenByParent.TryGetValue(parentName, out var list))
+                    childrenByParent[parentName] = list = new List<ModelNode>();
+                list.Add(model);
+            }
+        }
+
+        var packagesToTrim = allModels.Where(m =>
+            m.ClassType == "package" &&
+            childrenByParent.TryGetValue(m.Id, out var children) &&
+            children.Any(c => c.CanBeStoredStandalone)).ToList();
+        if (packagesToTrim.Count == 0)
+            return;
+
+        Parallel.ForEach(packagesToTrim, model =>
+        {
+            try
+            {
+                var children = childrenByParent[model.Id];
+
+                // Build the set of standalone child names to exclude (same rule as ModelicaPackageSaver:
+                // a standalone class whose (case-insensitive) name is unique among the siblings).
+                var nameCounts = children
+                    .GroupBy(c => c.Definition.Name.ToLowerInvariant())
+                    .ToDictionary(g => g.Key, g => g.Count());
+
+                var standaloneNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var child in children)
+                {
+                    var lowerName = child.Definition.Name.ToLowerInvariant();
+                    if (child.CanBeStoredStandalone && nameCounts[lowerName] == 1 && lowerName != "package")
+                        standaloneNames.Add(child.Definition.Name);
+                }
+                if (standaloneNames.Count == 0)
+                    return;
+
+                var code = model.Definition.ModelicaCode;
+
+                // Prepend a within clause only so the class parses in isolation (required by the grammar
+                // for name resolution during rendering).
+                string codeToParse = code;
+                if (!code.StartsWith("within"))
+                {
+                    var parent = model.ParentModelName;
+                    codeToParse = !string.IsNullOrEmpty(parent)
+                        ? string.Concat("within ", parent, ";\n", code)
+                        : "within;\n" + code;
+                }
+
+                var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(codeToParse);
+                if (parseTree == null || errors.Count > 0)
+                    return;
+
+                // Short class definitions (X = Y) have no body to trim.
+                foreach (var classDef in parseTree.class_definition())
+                    if (classDef.class_specifier()?.short_class_specifier() != null)
+                        return;
+
+                var visitor = new ModelicaRenderer(
+                    renderForCodeEditor: false,
+                    showAnnotations: true,
+                    excludeClassDefinitions: false,
+                    tokenStream: null,
+                    classNamesToExclude: standaloneNames,
+                    oneOfEachSection: false,
+                    importsFirst: false,
+                    componentsBeforeClasses: false);
+                visitor.VisitStored_definition(parseTree);
+                var trimmedCode = string.Join("\n", visitor.Code);
+
+                // Drop the leading within line so stored line numbers align with the source file.
+                if (trimmedCode.StartsWith("within"))
+                {
+                    var nl = trimmedCode.IndexOf('\n');
+                    if (nl >= 0)
+                        trimmedCode = trimmedCode[(nl + 1)..];
+                }
+
+                model.Definition.ModelicaCode = trimmedCode;
+                model.Definition.ParsedCode = null; // release the parse tree
+            }
+            catch
+            {
+                // If trimming a model fails, keep the original — it's still valid.
+            }
+        });
+    }
+}

@@ -87,6 +87,11 @@ internal static class CheckPipeline
 
         var graph = libraryData.CombinedGraph;
 
+        // Match the GUI: trim each package's inline standalone children out of its stored source before
+        // checking (they have their own nodes), so the CLI checks the same representation the app does
+        // and reports the same findings with the same line numbers.
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
         // Some graph analyses (uses hygiene, unused classes) rely on cross-model dependency edges,
         // which the load path does not populate. Run dependency analysis once, only when such a rule
         // is enabled, so a plain style-check run doesn't pay for it.
