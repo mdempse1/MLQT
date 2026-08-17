@@ -792,6 +792,8 @@
     private async void OnStyleCheckingProgressChanged(bool allComplete) {
         if (allComplete)
         {
+            await Task.Delay(800);                                // TEMP: let the final finding batch land
+            await InvokeAsync(WriteFindingsByRuleDiagnostic);     // TEMP: dump GUI per-rule counts
             _step4running = false;
             _styleCheckRunning = false;
             //Check to see if there are pending deferred steps
@@ -1989,6 +1991,30 @@
     // layout (always mounted) so delivery never depends on which tab is currently open.
     private void OnStyleViolationsFound(List<LogMessage> violations)
         => InvokeAsync(() => CodeReviewService.AddLogMessages(violations));
+
+    // TEMPORARY: dump the GUI's per-rule style-finding counts to a file so they can be diffed against the
+    // CLI's diagnostic and locate exactly which rule accounts for the count difference. Remove once found.
+    private void WriteFindingsByRuleDiagnostic()
+    {
+        try
+        {
+            var style = CodeReviewService.LogMessages.Where(m => m.Source == "StyleChecking").ToList();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"total style findings (GUI): {style.Count}");
+            foreach (var g in style.GroupBy(m => m.RuleId ?? "(none)").OrderByDescending(g => g.Count()))
+                sb.AppendLine($"  {g.Count(),8}  {g.Key}");
+            var dir = System.IO.Path.Combine(
+                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "MLQT");
+            System.IO.Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, "gui-findings-by-rule.txt");
+            System.IO.File.WriteAllText(path, sb.ToString());
+            Info("MainLayout", $"[TEMP] wrote GUI findings-by-rule to {path}");
+        }
+        catch (Exception ex)
+        {
+            Warn("MainLayout", $"[TEMP] failed to write findings diagnostic: {ex.Message}");
+        }
+    }
 
     private async void OnRepositoriesChanged()
     {
