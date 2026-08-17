@@ -386,10 +386,14 @@
         if (!LibraryDataService.GetAllModels().Any())
             return;
         _analysisRunning = true;
+        // Offload to a background thread. The deferred analysis performs sync-over-async work (settings
+        // and custom-dictionary loads) before it reaches its own Task.Run, which would deadlock the
+        // Blazor renderer if it ran on the UI thread — the same reason the startup dialog wraps these
+        // calls in Task.Run.
         if (!NavState.HasDependencyAnalysisRun)
-            _ = NavState.RunAllDeferredAnalysisAsync();
+            _ = Task.Run(() => NavState.RunAllDeferredAnalysisAsync());
         else
-            _ = NavState.RunDeferredStyleCheckingAsync();
+            _ = Task.Run(() => NavState.RunDeferredStyleCheckingAsync());
     }
 
     // A cheap fingerprint of the loaded library set; when it changes, cached metrics are stale.
