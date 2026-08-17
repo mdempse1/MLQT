@@ -195,6 +195,17 @@ public static class StyleChecking
                 findings = findings.Where(f => !suppressions.IsSuppressed(f)).ToList();
         }
 
+        // Collapse exact-duplicate findings. Some visitors emit the same finding more than once — e.g. a
+        // word misspelled repeatedly in one documentation block, or a section flagged per occurrence — so
+        // the same (rule, element, discriminator, line) can appear twice. Each distinct issue counts once.
+        if (findings.Count > 1)
+        {
+            var seen = new HashSet<(string, string, string?, string?, int)>();
+            findings = findings
+                .Where(f => seen.Add((f.RuleId, f.ModelId, f.ElementPath, f.Discriminator, f.LineNumber)))
+                .ToList();
+        }
+
         return findings;
     }
 
