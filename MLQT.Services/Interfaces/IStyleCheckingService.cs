@@ -88,6 +88,14 @@ public interface IStyleCheckingService
     Task CheckModelsAsync(IEnumerable<string> modelIds, DirectedGraph graph);
 
     /// <summary>
+    /// Returns the spell checker configured for the given settings (matching the language dictionaries),
+    /// or null when spell checking is disabled. Lets callers build the same spell-checking context the
+    /// background workers use.
+    /// </summary>
+    /// <param name="settings">The style checking settings.</param>
+    SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings);
+
+    /// <summary>
     /// Runs the whole-graph analyses (package.order, uses hygiene, unused class/member, shadowing) for
     /// the given repositories and delivers their findings. Requires dependency analysis to have run for
     /// the dependency-based analyzers to produce results. Any stale graph findings are cleared first, so

@@ -1629,12 +1629,35 @@
                 if (allModelIds.Count > 0)
                     CodeReviewService.RemoveLogMessagesForModels(allModelIds);
 
+                // Build the same checking context the background worker uses (StyleCheckingWorker), so the
+                // combined pass yields the SAME violations. Without this, spelling, model-reference and
+                // inherited-icon rules were silently skipped here — making the combined count differ from
+                // the Code Review "run style check" (worker) count by hundreds of findings.
+                var graph = LibraryDataService.CombinedGraph;
+                var distinctSettings = modelToSettings.Values.Distinct().ToList();
+
+                IReadOnlySet<string>? knownModelIds = distinctSettings.Any(s => s.ValidateModelReferences)
+                    ? graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal)
+                    : null;
+                IReadOnlySet<string>? knownModelNames = distinctSettings.Any(s => s.SpellCheckDescription || s.SpellCheckDocumentation)
+                    ? graph.ModelNodes.Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : null;
+                var baseClassHasIcon = distinctSettings.Any(s => s.ClassHasIcon)
+                    ? StyleChecking.CreateBaseClassHasIconCallback(graph)
+                    : null;
+                var spellCheckerBySettings = distinctSettings
+                    .ToDictionary(s => s, s => StyleCheckingService.GetSpellCheckerIfNeeded(s));
+
                 postAnalysisAction = model =>
                 {
                     if (model.CanBeStoredStandalone && modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
                     {
+                        spellCheckerBySettings.TryGetValue(settings, out var spellChecker);
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
-                            isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id));
+                            knownModelIds, spellChecker, knownModelNames,
+                            isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id),
+                            baseClassHasIcon: baseClassHasIcon);
 
                         foreach (var v in violations)
                             combinedViolations.Add(v);

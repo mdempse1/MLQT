@@ -468,8 +468,10 @@ public class StyleCheckingService : IStyleCheckingService
     /// <summary>
     /// Returns the spell checker if spell checking is enabled in the given settings,
     /// ensuring it is created if needed with the correct language dictionaries.
+    /// Public so the deferred combined dependency+style pass can build the same spell-checking
+    /// context the background workers use, keeping violation counts consistent between the two paths.
     /// </summary>
-    private SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings)
+    public SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings)
     {
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
             return EnsureSpellChecker(settings.SpellCheckLanguages);
