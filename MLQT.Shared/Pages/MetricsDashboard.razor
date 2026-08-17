@@ -1,4 +1,5 @@
 @using ModelicaGraph.Analysis
+@using ModelicaGraph.DataTypes
 @using MLQT.Services.Helpers
 @using MudBlazor
 @implements IDisposable
@@ -175,7 +176,7 @@
                 </tbody>
             </MudSimpleTable>
         </div>
-        <MudText Typo="Typo.caption">Line chart shows coverage % over time; the table lists exact values (most recent first) for the selected scope. Snapshots are saved in the library's version-controlled <code>.mlqt/metrics-history.json</code> — commit it so reviewers share the same burndown.</MudText>
+        <MudText Typo="Typo.caption">Line chart shows coverage % over time; the table lists exact values (most recent first) for the selected scope. Snapshots are saved per library in each repository's version-controlled <code>.mlqt/metrics-history.json</code> — commit them so reviewers share the same burndown. The "all libraries" view aggregates the per-repository snapshots.</MudText>
     }
     else if (_metrics is not null)
     {
@@ -243,57 +244,120 @@
             StateHasChanged();
     }
 
-    private void SaveSnapshot()
+    private async Task SaveSnapshot()
     {
         if (_metrics is null)
             return;
 
-        var (path, shared, ambiguous) = ResolveSaveHistoryPath(_scope);
-        if (ambiguous || path is null)
-        {
-            Snackbar.Add("Pick a library (scope) to save a shared snapshot — a total across several loaded "
-                + "libraries has no single repository to store it in.", Severity.Warning);
-            return;
-        }
+        var timestamp = System.DateTime.UtcNow;
+        int sharedCount = 0;
+        bool anyPerUser = false;
 
-        var snapshot = MetricsSnapshot.From(_metrics, _scope, System.DateTime.UtcNow);
         try
         {
-            MetricsHistoryStore.Append(path, snapshot);
+            if (!string.IsNullOrEmpty(_scope))
+            {
+                // A scope belongs to exactly one library — its repository's shared file, or the per-user
+                // file for a library not loaded from a repository. _metrics already covers this scope.
+                var repoLocalPath = OwningRepositoryLocalPath(_scope);
+                var path = !string.IsNullOrEmpty(repoLocalPath)
+                    ? MetricsHistoryStore.RepoPath(repoLocalPath)
+                    : MetricsHistoryStore.DefaultPath;
+                MetricsHistoryStore.Append(path, MetricsSnapshot.From(_metrics, _scope, timestamp));
+                if (!string.IsNullOrEmpty(repoLocalPath)) sharedCount++; else anyPerUser = true;
+            }
+            else
+            {
+                // "All libraries": store a per-library snapshot in each repository's own shared file
+                // (and one per-user file for any non-repo libraries), so each travels with its library
+                // and RebuildTrend aggregates them on read — no combined blob in an arbitrary place.
+                var groups = StorageGroups();
+                if (groups.Count == 0)
+                {
+                    Snackbar.Add("Load a library first.", Severity.Info);
+                    return;
+                }
+
+                if (groups.Count == 1)
+                {
+                    // Single target: _metrics already covers exactly this group's models — reuse it.
+                    var g = groups[0];
+                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(_metrics, "", timestamp));
+                    if (g.Shared) sharedCount++; else anyPerUser = true;
+                }
+                else
+                {
+                    _loading = true;
+                    StateHasChanged();
+                    var graph = LibraryDataService.CombinedGraph;
+                    await Task.Run(() =>
+                    {
+                        foreach (var g in groups)
+                        {
+                            var metrics = MetricsCalculator.Compute(graph, g.Models);
+                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(metrics, "", timestamp));
+                        }
+                    });
+                    sharedCount = groups.Count(g => g.Shared);
+                    anyPerUser = groups.Any(g => !g.Shared);
+                }
+            }
         }
         catch (System.Exception ex)
         {
             Snackbar.Add($"Could not save snapshot: {ex.Message}", Severity.Error);
             return;
         }
+        finally
+        {
+            _loading = false;
+        }
 
         _history = LoadAllHistory();
         RebuildTrend();
-        Snackbar.Add(shared
-            ? "Snapshot saved to the library's .mlqt/metrics-history.json — commit it to share with reviewers."
-            : "Snapshot saved (per-user; this library isn't in a repository).", Severity.Success);
-        StateHasChanged();
+        var where = sharedCount > 0
+            ? $"{sharedCount} repository .mlqt file(s) — commit them to share with reviewers"
+            : "the per-user file (no repository-backed libraries)";
+        Snackbar.Add($"Snapshot saved to {where}.", Severity.Success);
+        await InvokeAsync(StateHasChanged);
     }
 
-    // Where a snapshot for this scope should be written. A repository-backed library uses its shared,
-    // version-controlled .mlqt file; a file/directory library uses the per-user file. An empty ("all
-    // libraries") scope with more than one repository loaded is a genuine cross-library total with no
-    // single home — reported as ambiguous so the user narrows to a library.
-    private (string? Path, bool Shared, bool Ambiguous) ResolveSaveHistoryPath(string scope)
+    // Every loaded library grouped by the history file it belongs to (a repository's shared .mlqt file,
+    // or the per-user file for non-repo libraries), with that group's model nodes for per-group metrics.
+    private List<(string Path, bool Shared, List<ModelNode> Models)> StorageGroups()
     {
-        var repoLocalPath = OwningRepositoryLocalPath(scope);
-        if (!string.IsNullOrEmpty(repoLocalPath))
-            return (MetricsHistoryStore.RepoPath(repoLocalPath), true, false);
+        var graph = LibraryDataService.CombinedGraph;
+        var byPath = new Dictionary<string, List<ModelNode>>(System.StringComparer.OrdinalIgnoreCase);
+        var sharedPaths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
-        var repoCount = LibraryDataService.Libraries
-            .Select(l => l.RepositoryId)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Distinct(System.StringComparer.Ordinal)
-            .Count();
-        if (string.IsNullOrEmpty(scope) && repoCount > 1)
-            return (null, false, true);
+        foreach (var lib in LibraryDataService.Libraries)
+        {
+            var repo = string.IsNullOrEmpty(lib.RepositoryId)
+                ? null
+                : RepositoryService.Repositories.FirstOrDefault(r => r.Id == lib.RepositoryId);
 
-        return (MetricsHistoryStore.DefaultPath, false, false);
+            string path;
+            if (repo is not null && !string.IsNullOrEmpty(repo.LocalPath))
+            {
+                path = MetricsHistoryStore.RepoPath(repo.LocalPath);
+                sharedPaths.Add(path);
+            }
+            else
+            {
+                path = MetricsHistoryStore.DefaultPath;
+            }
+
+            if (!byPath.TryGetValue(path, out var list))
+                byPath[path] = list = new List<ModelNode>();
+            foreach (var id in lib.ModelIds)
+            {
+                var node = graph.GetNode<ModelNode>(id);
+                if (node is not null)
+                    list.Add(node);
+            }
+        }
+
+        return byPath.Select(kv => (kv.Key, sharedPaths.Contains(kv.Key), kv.Value)).ToList();
     }
 
     // The local path of the repository whose library owns this scope, or null when there is none:
@@ -339,10 +403,15 @@
         return all.OrderBy(s => s.TimestampUtc).ToList();
     }
 
-    // The trend for the current scope: its snapshots, and the union of their coverage dimensions.
+    // The trend for the current scope: its snapshots, and the union of their coverage dimensions. For
+    // the "all libraries" scope, per-repository snapshots written together share a timestamp and are
+    // combined into one aggregate point (exactly, via their raw counts) so the trend reads as one line.
     private void RebuildTrend()
     {
-        _scopedHistory = _history.Where(s => (s.Scope ?? "") == _scope).ToList();
+        var matching = _history.Where(s => (s.Scope ?? "") == _scope).ToList();
+        if (string.IsNullOrEmpty(_scope))
+            matching = MetricsSnapshot.AggregateByTimestamp(matching);
+        _scopedHistory = matching.OrderBy(s => s.TimestampUtc).ToList();
         _dimensions = _scopedHistory.SelectMany(s => s.Coverage.Keys).Distinct().ToList();
     }
 

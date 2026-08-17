@@ -1,19 +1,79 @@
 namespace ModelicaGraph.Analysis;
 
+/// <summary>Raw compliant/eligible counts for one coverage dimension, kept alongside the percentage so
+/// snapshots from several repositories can be aggregated exactly (sum the counts, not average the
+/// percentages). Older snapshots predate this and carry no counts.</summary>
+public sealed record CoverageCount(int Compliant, int Eligible);
+
 /// <summary>
 /// A point-in-time record of the coverage numbers, for the debt-burndown trend. Stores the coverage
-/// percentages by dimension (not the raw compliant/eligible) so the history file stays small and
-/// stable. Timestamps are supplied by the caller (UTC) so the record itself is deterministic.
+/// percentages by dimension for display, plus the raw compliant/eligible <see cref="Counts"/> so a
+/// multi-repository "all libraries" view can combine per-repo snapshots exactly. Timestamps are
+/// supplied by the caller (UTC) so the record itself is deterministic.
 /// </summary>
 public sealed record MetricsSnapshot(
     DateTime TimestampUtc,
     string? Scope,
     int TotalClasses,
-    Dictionary<string, double> Coverage)
+    Dictionary<string, double> Coverage,
+    Dictionary<string, CoverageCount>? Counts = null)
 {
     /// <summary>Build a snapshot from a computed <see cref="LibraryMetrics"/> for a scope (a package id
-    /// like "Modelica.Blocks", or "" for all loaded libraries) at the given time.</summary>
+    /// like "Modelica.Blocks", or "" for a whole library / all loaded libraries) at the given time.</summary>
     public static MetricsSnapshot From(LibraryMetrics metrics, string scope, DateTime timestampUtc)
         => new(timestampUtc, scope ?? string.Empty, metrics.TotalClasses,
-            metrics.Coverage.ToDictionary(c => c.Dimension, c => c.Percent, StringComparer.Ordinal));
+            metrics.Coverage.ToDictionary(c => c.Dimension, c => c.Percent, StringComparer.Ordinal),
+            metrics.Coverage.ToDictionary(c => c.Dimension, c => new CoverageCount(c.Compliant, c.Eligible), StringComparer.Ordinal));
+
+    /// <summary>
+    /// Collapse snapshots that share a timestamp into one combined snapshot each, summing class counts
+    /// and — per dimension — the raw compliant/eligible counts to recompute an exact combined
+    /// percentage. When a contributing snapshot predates <see cref="Counts"/>, the dimension falls back
+    /// to a class-count-weighted average of the stored percentages. Used to aggregate the per-repository
+    /// snapshots written for an "all libraries" save into a single trend line. Returns oldest-first.
+    /// </summary>
+    public static List<MetricsSnapshot> AggregateByTimestamp(IEnumerable<MetricsSnapshot> snapshots)
+    {
+        var result = new List<MetricsSnapshot>();
+        foreach (var group in snapshots.GroupBy(s => s.TimestampUtc))
+        {
+            var members = group.ToList();
+            if (members.Count == 1)
+            {
+                result.Add(members[0]);
+                continue;
+            }
+
+            var totalClasses = members.Sum(s => s.TotalClasses);
+            var dims = members.SelectMany(s => s.Coverage.Keys).Distinct(StringComparer.Ordinal);
+            var coverage = new Dictionary<string, double>(StringComparer.Ordinal);
+            var counts = new Dictionary<string, CoverageCount>(StringComparer.Ordinal);
+            var exactForAll = true;
+
+            foreach (var dim in dims)
+            {
+                var contributors = members.Where(s => s.Coverage.ContainsKey(dim)).ToList();
+                if (contributors.All(s => s.Counts is not null && s.Counts.ContainsKey(dim)))
+                {
+                    var compliant = contributors.Sum(s => s.Counts![dim].Compliant);
+                    var eligible = contributors.Sum(s => s.Counts![dim].Eligible);
+                    counts[dim] = new CoverageCount(compliant, eligible);
+                    coverage[dim] = eligible == 0 ? 100.0 : Math.Round(100.0 * compliant / eligible, 1);
+                }
+                else
+                {
+                    exactForAll = false;
+                    double weight = contributors.Sum(s => s.TotalClasses);
+                    coverage[dim] = weight <= 0
+                        ? Math.Round(contributors.Average(s => s.Coverage[dim]), 1)
+                        : Math.Round(contributors.Sum(s => s.Coverage[dim] * s.TotalClasses) / weight, 1);
+                }
+            }
+
+            result.Add(new MetricsSnapshot(group.Key, members[0].Scope, totalClasses, coverage,
+                exactForAll ? counts : null));
+        }
+
+        return result.OrderBy(s => s.TimestampUtc).ToList();
+    }
 }
