@@ -133,10 +133,25 @@ internal static class CheckPipeline
             standaloneById[m.Id] = m.CanBeStoredStandalone;
         var nonStandaloneModels = models.Count(m => !m.CanBeStoredStandalone);
 
+        // Duplicate detection: identical findings (same model+rule+line+element+discriminator).
+        var distinct = findings
+            .GroupBy(f => $"{f.ModelId}{f.RuleId}{f.LineNumber}{f.ElementPath}{f.Discriminator}")
+            .Count();
+        var dupeModelIds = findings
+            .GroupBy(f => f.ModelId ?? "")
+            .Where(g => g.Count() != g.Select(f => $"{f.RuleId}{f.LineNumber}{f.ElementPath}{f.Discriminator}").Distinct().Count())
+            .Select(g => g.Key)
+            .Take(15)
+            .ToList();
+
         stderr.WriteLine();
         stderr.WriteLine("=== TEMP DIAGNOSTIC: findings by rule (all models) ===");
-        stderr.WriteLine($"total findings: {findings.Count}    models checked: {models.Count} " +
-                         $"(standalone={models.Count - nonStandaloneModels}, non-standalone={nonStandaloneModels})");
+        stderr.WriteLine($"total findings: {findings.Count}    distinct findings: {distinct}    duplicates: {findings.Count - distinct}");
+        var distinctModelIds = models.Select(m => m.Id).Distinct(StringComparer.Ordinal).Count();
+        stderr.WriteLine($"models checked: {models.Count}  (distinct ids: {distinctModelIds}, " +
+                         $"standalone={models.Count - nonStandaloneModels}, non-standalone={nonStandaloneModels})");
+        if (dupeModelIds.Count > 0)
+            stderr.WriteLine("sample models with duplicate findings: " + string.Join(", ", dupeModelIds));
         stderr.WriteLine($"  {"total",8} {"standln",8} {"non-std",8}  rule");
         foreach (var g in findings.GroupBy(f => f.RuleId ?? "(none)").OrderByDescending(g => g.Count()))
         {
