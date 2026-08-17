@@ -3,6 +3,7 @@
 @using MudBlazor
 @implements IDisposable
 @inject ILibraryDataService LibraryDataService
+@inject IRepositoryService RepositoryService
 @inject AppState NavState
 @inject ISnackbar Snackbar
 
@@ -174,7 +175,7 @@
                 </tbody>
             </MudSimpleTable>
         </div>
-        <MudText Typo="Typo.caption">Line chart shows coverage % over time; the table lists exact values (most recent first) for the selected scope. Snapshots are stored under %LocalAppData%/MLQT.</MudText>
+        <MudText Typo="Typo.caption">Line chart shows coverage % over time; the table lists exact values (most recent first) for the selected scope. Snapshots are saved in the library's version-controlled <code>.mlqt/metrics-history.json</code> — commit it so reviewers share the same burndown.</MudText>
     }
     else if (_metrics is not null)
     {
@@ -204,9 +205,19 @@
     protected override void OnInitialized()
     {
         NavState.OnLibraryCleared += OnLibraryCleared;
-        _history = MetricsHistoryStore.Load(MetricsHistoryStore.DefaultPath);
+        LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
+        _history = LoadAllHistory();
         RebuildTrend();
         base.OnInitialized();
+    }
+
+    // Reload the merged history when the set of loaded libraries/repositories changes, so a newly loaded
+    // library's shared history appears without reopening the tab.
+    private void OnLibrariesChanged()
+    {
+        _history = LoadAllHistory();
+        RebuildTrend();
+        InvokeAsync(StateHasChanged);
     }
 
     // Packages the user can scope to (matched against what they type). Capped so the list stays usable.
@@ -236,11 +247,96 @@
     {
         if (_metrics is null)
             return;
+
+        var (path, shared, ambiguous) = ResolveSaveHistoryPath(_scope);
+        if (ambiguous || path is null)
+        {
+            Snackbar.Add("Pick a library (scope) to save a shared snapshot — a total across several loaded "
+                + "libraries has no single repository to store it in.", Severity.Warning);
+            return;
+        }
+
         var snapshot = MetricsSnapshot.From(_metrics, _scope, System.DateTime.UtcNow);
-        _history = MetricsHistoryStore.Append(MetricsHistoryStore.DefaultPath, snapshot);
+        try
+        {
+            MetricsHistoryStore.Append(path, snapshot);
+        }
+        catch (System.Exception ex)
+        {
+            Snackbar.Add($"Could not save snapshot: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        _history = LoadAllHistory();
         RebuildTrend();
-        Snackbar.Add("Metrics snapshot saved.", Severity.Success);
+        Snackbar.Add(shared
+            ? "Snapshot saved to the library's .mlqt/metrics-history.json — commit it to share with reviewers."
+            : "Snapshot saved (per-user; this library isn't in a repository).", Severity.Success);
         StateHasChanged();
+    }
+
+    // Where a snapshot for this scope should be written. A repository-backed library uses its shared,
+    // version-controlled .mlqt file; a file/directory library uses the per-user file. An empty ("all
+    // libraries") scope with more than one repository loaded is a genuine cross-library total with no
+    // single home — reported as ambiguous so the user narrows to a library.
+    private (string? Path, bool Shared, bool Ambiguous) ResolveSaveHistoryPath(string scope)
+    {
+        var repoLocalPath = OwningRepositoryLocalPath(scope);
+        if (!string.IsNullOrEmpty(repoLocalPath))
+            return (MetricsHistoryStore.RepoPath(repoLocalPath), true, false);
+
+        var repoCount = LibraryDataService.Libraries
+            .Select(l => l.RepositoryId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(System.StringComparer.Ordinal)
+            .Count();
+        if (string.IsNullOrEmpty(scope) && repoCount > 1)
+            return (null, false, true);
+
+        return (MetricsHistoryStore.DefaultPath, false, false);
+    }
+
+    // The local path of the repository whose library owns this scope, or null when there is none:
+    // a non-empty scope resolves via the library that contains it; an empty scope resolves only when a
+    // single repository is loaded (otherwise it spans several).
+    private string? OwningRepositoryLocalPath(string scope)
+    {
+        string? repoId;
+        if (!string.IsNullOrEmpty(scope))
+        {
+            repoId = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(scope))?.RepositoryId;
+        }
+        else
+        {
+            var repoIds = LibraryDataService.Libraries
+                .Select(l => l.RepositoryId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(System.StringComparer.Ordinal)
+                .ToList();
+            repoId = repoIds.Count == 1 ? repoIds[0] : null;
+        }
+        if (string.IsNullOrEmpty(repoId))
+            return null;
+        return RepositoryService.Repositories.FirstOrDefault(r => r.Id == repoId)?.LocalPath;
+    }
+
+    // Merge every loaded repository's shared history with the per-user file (which covers file/directory
+    // libraries and any pre-existing snapshots). Each snapshot carries its own scope, so RebuildTrend's
+    // per-scope filter still applies; ordered by time so the chart/table read chronologically.
+    private List<MetricsSnapshot> LoadAllHistory()
+    {
+        var all = new List<MetricsSnapshot>();
+        var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var repo in RepositoryService.Repositories)
+        {
+            if (string.IsNullOrEmpty(repo.LocalPath))
+                continue;
+            var p = MetricsHistoryStore.RepoPath(repo.LocalPath);
+            if (seen.Add(p))
+                all.AddRange(MetricsHistoryStore.Load(p));
+        }
+        all.AddRange(MetricsHistoryStore.Load(MetricsHistoryStore.DefaultPath));
+        return all.OrderBy(s => s.TimestampUtc).ToList();
     }
 
     // The trend for the current scope: its snapshots, and the union of their coverage dimensions.
@@ -394,5 +490,9 @@
         return sb.ToString();
     }
 
-    public void Dispose() => NavState.OnLibraryCleared -= OnLibraryCleared;
+    public void Dispose()
+    {
+        NavState.OnLibraryCleared -= OnLibraryCleared;
+        LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
+    }
 }

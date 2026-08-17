@@ -25,6 +25,14 @@ public class MetricsHistoryStoreTests : IDisposable
         => Assert.Empty(MetricsHistoryStore.Load(_path));
 
     [Fact]
+    public void RepoPath_PointsAtSharedMlqtFile()
+    {
+        var p = MetricsHistoryStore.RepoPath(Path.Combine("C:", "libs", "MyLib"));
+        Assert.EndsWith(Path.Combine(".mlqt", "metrics-history.json"), p);
+        Assert.StartsWith(Path.Combine("C:", "libs", "MyLib"), p);
+    }
+
+    [Fact]
     public void Append_ThenLoad_RoundTrips()
     {
         MetricsHistoryStore.Append(_path, Snap(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), 40));
