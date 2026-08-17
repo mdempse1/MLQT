@@ -109,7 +109,11 @@ public class StyleCheckingWorker
                 try
                 {
                     var node = _currentGraph.GetNode<ModelNode>(modelId);
-                    if (node != null && !node.Definition.StyleRulesChecked && node.CanBeStoredStandalone)
+                    // Check every class, including non-standalone ones (replaceable/redeclare/inner/outer).
+                    // CanBeStoredStandalone is a file-storage flag resolved non-deterministically by parse
+                    // order, so filtering on it here made the GUI's finding set unstable and inconsistent
+                    // with the CLI/MCP (which check all classes). StyleRulesChecked still dedups re-checks.
+                    if (node != null && !node.Definition.StyleRulesChecked)
                     {
                         var violations = StyleChecking.RunStyleChecking(node.Definition, _settings, modelId, knownModelIds, _spellChecker, knownModelNames,
                             isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId),

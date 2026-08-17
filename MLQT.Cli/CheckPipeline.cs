@@ -152,6 +152,19 @@ internal static class CheckPipeline
                          $"standalone={models.Count - nonStandaloneModels}, non-standalone={nonStandaloneModels})");
         if (dupeModelIds.Count > 0)
             stderr.WriteLine("sample models with duplicate findings: " + string.Join(", ", dupeModelIds));
+
+        var dupesByRule = findings
+            .GroupBy(f => f.RuleId ?? "(none)")
+            .Select(g => (rule: g.Key, dup: g.Count() - g.Select(f => $"{f.ModelId}{f.LineNumber}{f.ElementPath}{f.Discriminator}").Distinct().Count()))
+            .Where(t => t.dup > 0)
+            .OrderByDescending(t => t.dup)
+            .ToList();
+        if (dupesByRule.Count > 0)
+        {
+            stderr.WriteLine("duplicates by rule:");
+            foreach (var t in dupesByRule)
+                stderr.WriteLine($"  {t.dup,6}  {t.rule}");
+        }
         stderr.WriteLine($"  {"total",8} {"standln",8} {"non-std",8}  rule");
         foreach (var g in findings.GroupBy(f => f.RuleId ?? "(none)").OrderByDescending(g => g.Count()))
         {

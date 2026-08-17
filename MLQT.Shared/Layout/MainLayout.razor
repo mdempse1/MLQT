@@ -1653,7 +1653,11 @@
 
                 postAnalysisAction = model =>
                 {
-                    if (model.CanBeStoredStandalone && modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
+                    // Check every class, including non-standalone ones — see StyleCheckingWorker: the
+                    // CanBeStoredStandalone flag is a non-deterministic file-storage property, not a
+                    // style-check gate, so filtering on it made GUI counts unstable and inconsistent with
+                    // the CLI/MCP. All paths now check all classes.
+                    if (modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
                     {
                         spellCheckerBySettings.TryGetValue(settings, out var spellChecker);
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
