@@ -1,4 +1,6 @@
+using ModelicaGraph;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using MLQT.Services.Checking;
 using Xunit;
 
@@ -70,6 +72,7 @@ public class BaselineTests
         var pruned = baseline.WithoutStale(current);
         Assert.Single(pruned.Entries);
         Assert.True(pruned.Contains(kept));
+
     }
 
     // --- provenance metadata --------------------------------------------------------------------
@@ -170,6 +173,135 @@ public class BaselineTests
             Assert.Equal(File.ReadAllText(a), File.ReadAllText(b));
         }
         finally { File.Delete(a); File.Delete(b); }
+    }
+
+    // --- rule-set drift -------------------------------------------------------------------------
+    // Both failure modes are silent: a rule enabled after baselining reports its pre-existing
+    // violations as NEW (a change looks like it caused a regression it did not), and a rule disabled
+    // since leaves entries that can never match again.
+
+    private static StyleCheckingSettings Rules(params string[] enabled)
+    {
+        var settings = new StyleCheckingSettings();
+        foreach (var id in enabled)
+            settings.SetRuleEnabled(id, true);
+        return settings;
+    }
+
+    private static Baseline BaselinedWith(StyleCheckingSettings settings)
+        => Baseline.FromFindings([F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None, settings);
+
+    [Fact]
+    public void SameRules_NoDrift()
+    {
+        var baseline = BaselinedWith(Rules(RuleIds.ClassDescription));
+
+        var drift = baseline.DriftFrom(Rules(RuleIds.ClassDescription));
+
+        Assert.True(drift.IsComparable);
+        Assert.False(drift.HasDrifted);
+        Assert.Empty(drift.Describe());
+    }
+
+    [Fact]
+    public void RuleEnabledSince_IsReported()
+    {
+        var baseline = BaselinedWith(Rules(RuleIds.ClassDescription));
+
+        var drift = baseline.DriftFrom(Rules(RuleIds.ClassDescription, RuleIds.ClassIcon));
+
+        Assert.True(drift.HasDrifted);
+        Assert.Equal([RuleIds.ClassIcon], drift.EnabledSince);
+        Assert.Empty(drift.DisabledSince);
+        Assert.Contains(drift.Describe(), l => l.Contains("enabled since") && l.Contains(RuleIds.ClassIcon));
+    }
+
+    [Fact]
+    public void RuleDisabledSince_IsReported()
+    {
+        var baseline = BaselinedWith(Rules(RuleIds.ClassDescription, RuleIds.ClassIcon));
+
+        var drift = baseline.DriftFrom(Rules(RuleIds.ClassDescription));
+
+        Assert.Equal([RuleIds.ClassIcon], drift.DisabledSince);
+        Assert.Empty(drift.EnabledSince);
+    }
+
+    [Fact]
+    public void SeverityChange_IsReported()
+    {
+        var was = Rules(RuleIds.ClassDescription);
+        var baseline = BaselinedWith(was);
+
+        var now = Rules(RuleIds.ClassDescription);
+        now.RuleSeverities[RuleIds.ClassDescription] = RuleSeverity.Error;
+        var drift = baseline.DriftFrom(now);
+
+        var changed = Assert.Single(drift.SeverityChanged);
+        Assert.Equal(RuleIds.ClassDescription, changed.RuleId);
+        Assert.Equal(RuleSeverity.Error, changed.Now);
+        Assert.Contains(drift.Describe(), l => l.Contains("severity changed"));
+    }
+
+    [Fact]
+    public void ChangedExclusions_AreReported()
+    {
+        // Un-excluding a library makes its findings appear as new, exactly like enabling a rule.
+        var was = Rules(RuleIds.ClassDescription);
+        was.ExcludedLibraries.Add("Tests");
+        var baseline = BaselinedWith(was);
+
+        var drift = baseline.DriftFrom(Rules(RuleIds.ClassDescription));
+
+        Assert.True(drift.ExclusionsChanged);
+        Assert.Contains(drift.Describe(), l => l.Contains("excluded libraries"));
+    }
+
+    [Fact]
+    public void BaselineWithoutRecordedRules_IsNotComparable()
+    {
+        // An older file cannot be compared, and guessing would be worse than staying quiet.
+        var baseline = Baseline.FromFindings([F("R", "M", "x")]);
+
+        var drift = baseline.DriftFrom(Rules(RuleIds.ClassDescription));
+
+        Assert.False(drift.IsComparable);
+        Assert.False(drift.HasDrifted);
+    }
+
+    [Fact]
+    public void RecordedRulesRoundTripThroughTheFile()
+    {
+        var path = TempPath();
+        try
+        {
+            var settings = Rules(RuleIds.ClassDescription);
+            settings.ExcludedLibraries.Add("Tests");
+            BaselinedWith(settings).Save(path);
+
+            var loaded = Baseline.Load(path);
+
+            Assert.NotNull(loaded.Rules);
+            Assert.Equal(RuleSeverity.Warning, loaded.Rules![RuleIds.ClassDescription]);
+            Assert.Equal(["Tests"], loaded.ExcludedLibraries!);
+            Assert.False(loaded.DriftFrom(settings).HasDrifted);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void OnlyEnabledRulesAreRecorded()
+    {
+        // A disabled rule is absent from the map, not stored as Off — otherwise every default would
+        // be written and the file would churn whenever the catalog grew.
+        var settings = Rules(RuleIds.ClassDescription);
+        settings.SetRuleEnabled(RuleIds.ClassIcon, true);
+        settings.SetRuleEnabled(RuleIds.ClassIcon, false);
+
+        var rules = BaselinedWith(settings).Rules!;
+
+        Assert.Contains(RuleIds.ClassDescription, rules.Keys);
+        Assert.DoesNotContain(RuleIds.ClassIcon, rules.Keys);
     }
 }
 

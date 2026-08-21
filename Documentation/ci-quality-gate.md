@@ -328,6 +328,10 @@ can also **add**:
   by accident. Review the resulting diff; the baseline growing should be visible in code review.
 - **Never run `update --force` from CI.** That turns the gate off one commit at a time. CI should only
   ever *read* the baseline.
+- **When you change which rules are enabled**, the next check warns that the baseline was generated
+  with a different rule set, and names what changed. Findings from a newly enabled rule are reported
+  as new until you accept them with `update --force` (or fix them). See
+  [cli.md](cli.md#rule-drift).
 
 ---
 

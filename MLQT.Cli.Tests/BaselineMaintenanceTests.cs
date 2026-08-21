@@ -38,6 +38,12 @@ public class BaselineMaintenanceTests
                 """{ "ParameterHasDescription": true }""");
         }
 
+        public TempLibrary WithSettings(string json)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, ".mlqt", "settings.json"), json);
+            return this;
+        }
+
         public TempLibrary WithModel(string content)
         {
             File.WriteAllText(System.IO.Path.Combine(Path, "Lib.mo"), content);
@@ -151,5 +157,96 @@ public class BaselineMaintenanceTests
             string.Join(",", json.Split('\n').Where(l => l.Contains("\"fingerprint\"")).Select(l => l.Trim()));
 
         Assert.Equal(Entries(pruned.BaselineText), Entries(updated.BaselineText));
+    }
+
+    // ---- rule-set drift -------------------------------------------------------------------------
+
+    [Fact]
+    public void Check_WarnsWhenARuleWasEnabledSinceTheBaseline()
+    {
+        // The silent failure this catches: the newly enabled rule's pre-existing violations are
+        // reported as new, so the change looks like it caused a regression it had nothing to do with.
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+
+        lib.WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""");
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Contains("different rule set", stderr);
+        Assert.Contains("enabled since: MLQT.Doc.ClassDescription", stderr);
+        Assert.Contains("baseline update --force", stderr);
+    }
+
+    [Fact]
+    public void Check_WarnsWhenARuleWasDisabledSinceTheBaseline()
+    {
+        using var lib = new TempLibrary()
+            .WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""")
+            .WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+
+        lib.WithSettings("""{ "ParameterHasDescription": true }""");
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Contains("disabled since: MLQT.Doc.ClassDescription", stderr);
+    }
+
+    [Fact]
+    public void Check_WarnsWhenASeverityChanged()
+    {
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+
+        lib.WithSettings("""
+            { "ParameterHasDescription": true,
+              "RuleSeverities": { "MLQT.Doc.ParameterDescription": "Error" } }
+            """);
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Contains("severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)", stderr);
+    }
+
+    [Fact]
+    public void Check_SaysNothingWhenTheRulesAreUnchanged()
+    {
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.DoesNotContain("different rule set", stderr);
+        Assert.DoesNotContain("predates rule recording", stderr);
+    }
+
+    [Fact]
+    public void Check_DoesNotGuessForABaselineWithoutARecordedRuleSet()
+    {
+        // An older file has nothing to compare against; say so once rather than warn about a
+        // difference that cannot be established.
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+        File.WriteAllText(lib.BaselineFile, """
+            { "version": 2, "findings": [] }
+            """);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Contains("predates rule recording", stderr);
+        Assert.DoesNotContain("different rule set", stderr);
+    }
+
+    [Fact]
+    public void PruneAndUpdate_RefreshTheRecordedRuleSet()
+    {
+        // Both rewrite the file, so both should clear the drift they were run to resolve.
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+        Run("baseline", "create", lib.Path);
+        lib.WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""");
+
+        Run("baseline", "prune", lib.Path);
+        var (_, _, afterPrune) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        Assert.DoesNotContain("different rule set", afterPrune);
+
+        Assert.Contains("\"MLQT.Doc.ClassDescription\"", lib.BaselineText);
     }
 }

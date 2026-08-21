@@ -33,6 +33,32 @@ internal static class CheckRunner
             }
         }
 
+        // Warn when the baseline was generated under different rules. Both failure modes are silent
+        // otherwise: a rule enabled since reports its pre-existing violations as NEW, so a change looks
+        // like it caused a regression it had nothing to do with; a rule disabled since leaves entries
+        // that can never match again. Not fatal — the gate still means what it says, the user just
+        // needs to know why the numbers moved.
+        if (baseline is not null && load.Settings is not null)
+        {
+            var drift = baseline.DriftFrom(load.Settings);
+            if (drift.HasDrifted)
+            {
+                stderr.WriteLine("warning: the baseline was generated with a different rule set");
+                foreach (var line in drift.Describe())
+                    stderr.WriteLine($"         {line}");
+                if (drift.EnabledSince.Count > 0)
+                    stderr.WriteLine(
+                        "         Pre-existing violations of a newly enabled rule are reported as new. " +
+                        "`mlqt baseline update --force` would accept them.");
+            }
+            else if (!drift.IsComparable)
+            {
+                stderr.WriteLine(
+                    "note: this baseline predates rule recording, so rule changes cannot be detected — " +
+                    "regenerate it to enable that");
+            }
+        }
+
         IReadOnlySet<string>? changedModelIds = null;
         if (opts.ChangedFrom is not null)
         {

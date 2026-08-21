@@ -14,7 +14,8 @@ internal sealed record LoadResult(
     IReadOnlyDictionary<string, string> ModelToFile,
     int ModelsChecked,
     DirectedGraph? Graph = null,
-    IReadOnlyList<ModelNode>? Models = null)
+    IReadOnlyList<ModelNode>? Models = null,
+    StyleCheckingSettings? Settings = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) => new(code, [], new Dictionary<string, string>(), 0);
@@ -138,6 +139,6 @@ internal static class CheckPipeline
         var modelsChecked = checkable.Count - excluded;
         // The graph and model list are carried out so `--metrics` can compute coverage over exactly
         // the set that was checked, without loading the library a second time.
-        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models);
+        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models, settings);
     }
 }

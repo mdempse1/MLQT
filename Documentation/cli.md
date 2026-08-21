@@ -153,13 +153,40 @@ can tell how old the accepted debt is and diff from there:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "createdUtc": "2026-08-21T12:33:47Z",
   "revision": "8481e74df0bce85be36974da7daaa57c8e44d90f",
   "branch": "main",
+  "rules": { "MLQT.Doc.ClassDescription": "Warning" },
+  "excludedLibraries": ["*_Tests"],
   "findings": [ ... ]
 }
 ```
+
+### Rule drift
+
+`rules` records which rules were in force. A later `check` compares them and warns when the
+configuration has moved on, because both ways it can differ are otherwise silent:
+
+- a rule **enabled since** the baseline reports its pre-existing violations as **new**, so a change
+  looks like it caused a regression it had nothing to do with;
+- a rule **disabled since** leaves entries that can never match again.
+
+```
+$ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
+warning: the baseline was generated with a different rule set
+         enabled since: MLQT.Doc.ClassDescription
+         severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)
+         Pre-existing violations of a newly enabled rule are reported as new.
+         `mlqt baseline update --force` would accept them.
+```
+
+It is a warning, not a failure — the gate still means what it says. Changes to `ExcludedLibraries` are
+reported too, since un-excluding a library makes its findings appear as new in exactly the same way.
+`prune` and `update` both refresh the record, so either resolves the warning.
+
+A baseline written before version 3 has no `rules` to compare; the check says so once rather than
+guessing.
 
 `update` and `prune` refresh the stamp, because both rewrite the content. Outside a working copy the
 revision fields are simply absent. A version-1 baseline (no metadata) still loads unchanged.

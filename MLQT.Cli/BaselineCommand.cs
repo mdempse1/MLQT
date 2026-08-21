@@ -94,6 +94,10 @@ internal static class BaselineCommand
         if (!load.Ok)
             return load.ExitCode;
 
+        // Recorded in the file so a later check can warn when the rules have moved on — a rule
+        // enabled after baselining reports its pre-existing violations as new.
+        var settings = load.Settings;
+
         var path = opts.ResolvedBaselinePath;
 
         // Stamp the file with when it was generated and the revision it describes, so a reviewer can
@@ -112,7 +116,7 @@ internal static class BaselineCommand
                     stderr.WriteLine($"error: baseline already exists: {path} (use --force, or `baseline update`)");
                     return ExitCodes.Error;
                 }
-                var created = Baseline.FromFindings(load.Findings, now, stamp);
+                var created = Baseline.FromFindings(load.Findings, now, stamp, settings);
                 created.Save(path);
                 stdout.WriteLine($"Wrote {created.Entries.Count} finding(s) to {path}");
                 return ExitCodes.Ok;
@@ -123,7 +127,7 @@ internal static class BaselineCommand
                 // violations nobody has reviewed — the one way to defeat the ratchet by accident. So it
                 // says what it is absorbing, and refuses to absorb anything unless asked to.
                 var existing = File.Exists(path) ? Baseline.Load(path) : null;
-                var updated = Baseline.FromFindings(load.Findings, now, stamp);
+                var updated = Baseline.FromFindings(load.Findings, now, stamp, settings);
                 var absorbed = CountMissing(updated, existing);
                 var droppedByUpdate = CountMissing(existing, updated);
 
@@ -156,7 +160,7 @@ internal static class BaselineCommand
                 }
                 var baseline = Baseline.Load(path);
                 var stale = baseline.StaleEntries(load.Findings);
-                var pruned = baseline.WithoutStale(load.Findings, now, stamp);
+                var pruned = baseline.WithoutStale(load.Findings, now, stamp, settings);
                 pruned.Save(path);
 
                 stdout.WriteLine(

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
+using ModelicaGraph;
 using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Checking;
@@ -34,17 +35,68 @@ public sealed class Baseline
     /// <see cref="Revision"/>.</summary>
     public string? Branch { get; }
 
+    /// <summary>
+    /// The rules that were in force when this baseline was generated (rule id → severity, enabled
+    /// rules only), and the libraries that were excluded. Null for a file written before these were
+    /// recorded, in which case drift cannot be detected and is not reported.
+    ///
+    /// Kept so a check can warn when the configuration has moved on: a rule enabled after baselining
+    /// reports its pre-existing violations as NEW, which looks like a regression the change did not
+    /// cause.
+    /// </summary>
+    public IReadOnlyDictionary<string, RuleSeverity>? Rules { get; }
+
+    /// <inheritdoc cref="Rules"/>
+    public IReadOnlyList<string>? ExcludedLibraries { get; }
+
     public Baseline(
         IReadOnlyList<BaselineEntry> entries,
         DateTime? createdUtc = null,
         string? revision = null,
-        string? branch = null)
+        string? branch = null,
+        IReadOnlyDictionary<string, RuleSeverity>? rules = null,
+        IReadOnlyList<string>? excludedLibraries = null)
     {
         Entries = entries;
         _fingerprints = entries.Select(e => e.Fingerprint).ToHashSet(StringComparer.Ordinal);
         CreatedUtc = createdUtc;
         Revision = revision;
         Branch = branch;
+        Rules = rules;
+        ExcludedLibraries = excludedLibraries;
+    }
+
+    /// <summary>
+    /// How the current settings differ from the ones this baseline was generated with. Empty when
+    /// they match, or when the baseline predates rule recording (see <see cref="Rules"/>) — there is
+    /// nothing to compare against, and guessing would be worse than staying quiet.
+    /// </summary>
+    public RuleSetDrift DriftFrom(StyleCheckingSettings current)
+    {
+        if (Rules is null)
+            return RuleSetDrift.NotComparable;
+
+        var enabledNow = current.RuleSeverities
+            .Where(kv => kv.Value != RuleSeverity.Off)
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+        var enabledSince = enabledNow.Keys.Where(id => !Rules.ContainsKey(id))
+            .OrderBy(id => id, StringComparer.Ordinal).ToList();
+        var disabledSince = Rules.Keys.Where(id => !enabledNow.ContainsKey(id))
+            .OrderBy(id => id, StringComparer.Ordinal).ToList();
+        var severityChanged = enabledNow
+            .Where(kv => Rules.TryGetValue(kv.Key, out var was) && was != kv.Value)
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => (RuleId: kv.Key, Was: Rules[kv.Key], Now: kv.Value))
+            .ToList();
+
+        var wasExcluded = ExcludedLibraries ?? [];
+        var excludedNow = current.ExcludedLibraries;
+        var exclusionsChanged =
+            !wasExcluded.OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .SequenceEqual(excludedNow.OrderBy(n => n, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
+        return new RuleSetDrift(true, enabledSince, disabledSince, severityChanged, exclusionsChanged);
     }
 
     /// <summary>
@@ -61,14 +113,17 @@ public sealed class Baseline
     /// and testable rather than reading the clock here.</param>
     /// <param name="stamp">The revision the library was at, for matching the baseline to a commit.</param>
     public static Baseline FromFindings(
-        IEnumerable<Finding> findings, DateTime? createdUtc = null, VcsStamp? stamp = null)
+        IEnumerable<Finding> findings, DateTime? createdUtc = null, VcsStamp? stamp = null,
+        StyleCheckingSettings? settings = null)
     {
         var entries = findings
             .Where(f => !RuleIds.IsParseDiagnostic(f.RuleId))
             .GroupBy(f => f.Fingerprint, StringComparer.Ordinal)
             .Select(g => g.First())
             .Select(f => new BaselineEntry(f.Fingerprint, f.RuleId, f.ModelId, f.ElementPath, f.Message));
-        return new Baseline(Sort(entries), createdUtc, stamp?.Revision, stamp?.Branch);
+        return new Baseline(
+            Sort(entries), createdUtc, stamp?.Revision, stamp?.Branch,
+            RulesOf(settings), settings?.ExcludedLibraries.ToList());
     }
 
     /// <summary>Baseline entries whose finding no longer appears (i.e. fixed) — candidates for prune.</summary>
@@ -81,28 +136,41 @@ public sealed class Baseline
     /// <summary>A copy with fixed (stale) entries removed. Never adds entries. Prune rewrites the
     /// content, so the caller re-stamps it with the time and revision of the prune.</summary>
     public Baseline WithoutStale(
-        IEnumerable<Finding> current, DateTime? createdUtc = null, VcsStamp? stamp = null)
+        IEnumerable<Finding> current, DateTime? createdUtc = null, VcsStamp? stamp = null,
+        StyleCheckingSettings? settings = null)
     {
         var currentFingerprints = current.Select(f => f.Fingerprint).ToHashSet(StringComparer.Ordinal);
         return new Baseline(
             Sort(Entries.Where(e => currentFingerprints.Contains(e.Fingerprint))),
             createdUtc ?? CreatedUtc,
             stamp?.Revision ?? Revision,
-            stamp?.Branch ?? Branch);
+            stamp?.Branch ?? Branch,
+            RulesOf(settings) ?? Rules,
+            settings?.ExcludedLibraries.ToList() ?? ExcludedLibraries);
     }
+
+    /// <summary>The enabled rules of <paramref name="settings"/>, or null when none were supplied.</summary>
+    private static Dictionary<string, RuleSeverity>? RulesOf(StyleCheckingSettings? settings) =>
+        settings?.RuleSeverities
+            .Where(kv => kv.Value != RuleSeverity.Off)
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
 
     // --- persistence ---------------------------------------------------------------------------
 
-    // Version 2 added createdUtc/revision/branch. A version-1 file (no metadata) still loads — the
-    // fields are simply null — so an existing committed baseline keeps working untouched.
-    private const int CurrentVersion = 2;
+    // Version 2 added createdUtc/revision/branch; version 3 added the rules the baseline was
+    // generated with. Older files still load — the added fields are simply null — so an existing
+    // committed baseline keeps working untouched, it just cannot report rule drift.
+    private const int CurrentVersion = 3;
 
     private sealed record BaselineFile(
         int Version,
         IReadOnlyList<BaselineEntry> Findings,
         DateTime? CreatedUtc = null,
         string? Revision = null,
-        string? Branch = null);
+        string? Branch = null,
+        IReadOnlyDictionary<string, RuleSeverity>? Rules = null,
+        IReadOnlyList<string>? ExcludedLibraries = null);
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -115,7 +183,9 @@ public sealed class Baseline
     {
         var file = JsonSerializer.Deserialize<BaselineFile>(File.ReadAllText(path), Options)
             ?? throw new InvalidOperationException($"could not parse baseline '{path}'");
-        return new Baseline(file.Findings ?? [], file.CreatedUtc, file.Revision, file.Branch);
+        return new Baseline(
+            file.Findings ?? [], file.CreatedUtc, file.Revision, file.Branch,
+            file.Rules, file.ExcludedLibraries);
     }
 
     public void Save(string path)
@@ -126,7 +196,9 @@ public sealed class Baseline
 
         // Always sort on write so regenerating identical findings at the same revision yields a
         // byte-identical file — that is what lets CI skip a no-op commit.
-        var file = new BaselineFile(CurrentVersion, Sort(Entries), CreatedUtc, Revision, Branch);
+        var file = new BaselineFile(
+            CurrentVersion, Sort(Entries), CreatedUtc, Revision, Branch,
+            Rules, ExcludedLibraries is { Count: > 0 } ? ExcludedLibraries : null);
         File.WriteAllText(path, JsonSerializer.Serialize(file, Options));
     }
 
@@ -136,4 +208,42 @@ public sealed class Baseline
         .ThenBy(e => e.Element ?? string.Empty, StringComparer.Ordinal)
         .ThenBy(e => e.Fingerprint, StringComparer.Ordinal)
         .ToList();
+}
+
+/// <summary>
+/// How the rules in force now differ from the ones a baseline was generated with.
+///
+/// This matters because the two failure modes are silent. A rule enabled after baselining reports its
+/// pre-existing violations as NEW, so a change looks like it caused a regression it had nothing to do
+/// with. A rule disabled since leaves entries in the baseline that can never match again.
+/// </summary>
+public sealed record RuleSetDrift(
+    bool IsComparable,
+    IReadOnlyList<string> EnabledSince,
+    IReadOnlyList<string> DisabledSince,
+    IReadOnlyList<(string RuleId, RuleSeverity Was, RuleSeverity Now)> SeverityChanged,
+    bool ExclusionsChanged)
+{
+    /// <summary>A baseline written before the rule set was recorded — nothing to compare.</summary>
+    public static readonly RuleSetDrift NotComparable = new(false, [], [], [], false);
+
+    public bool HasDrifted =>
+        IsComparable &&
+        (EnabledSince.Count > 0 || DisabledSince.Count > 0 || SeverityChanged.Count > 0 || ExclusionsChanged);
+
+    /// <summary>Lines describing the drift, for a warning. Empty when nothing has changed.</summary>
+    public IEnumerable<string> Describe()
+    {
+        if (!HasDrifted)
+            yield break;
+
+        if (EnabledSince.Count > 0)
+            yield return $"enabled since: {string.Join(", ", EnabledSince)}";
+        if (DisabledSince.Count > 0)
+            yield return $"disabled since: {string.Join(", ", DisabledSince)}";
+        foreach (var (ruleId, was, now) in SeverityChanged)
+            yield return $"severity changed: {ruleId} ({was} -> {now})";
+        if (ExclusionsChanged)
+            yield return "the set of excluded libraries has changed";
+    }
 }
