@@ -600,4 +600,61 @@ public class CheckCommandTests
         Assert.True(File.Exists(abs));
         Assert.Equal(0, Run("check", lib.Path, "--baseline", abs, "--fail-on", "warning", "--no-color").code);
     }
+
+    // ---- excluded libraries ---------------------------------------------------------------------
+    // A customer repository holds the libraries under development alongside their test-case libraries,
+    // and the same rules are not wanted on the tests.
+
+    private const string LibraryUnderTest = """
+        model Lib "described"
+          parameter Real x = 1.0;
+        end Lib;
+        """;
+
+    private const string TestLibrary = """
+        model Tests "described"
+          parameter Real y = 2.0;
+        end Tests;
+        """;
+
+    private const string WildcardNamedTestLibrary = """
+        model Foo_Tests "described"
+          parameter Real y = 2.0;
+        end Foo_Tests;
+        """;
+
+    [Fact]
+    public void ExcludedLibrary_IsNotReportedOn()
+    {
+        using var lib = new TempLibrary()
+            .WithModel("Lib.mo", LibraryUnderTest)
+            .WithModel("Tests.mo", TestLibrary)
+            .WithSettings("""{ "ParameterHasDescription": true }""");
+
+        var before = Run("check", lib.Path, "--no-color");
+        Assert.Contains("Lib", before.stdout);
+        Assert.Contains("Tests", before.stdout);
+
+        lib.WithSettings("""{ "ParameterHasDescription": true, "ExcludedLibraries": ["Tests"] }""");
+        var (_, stdout, stderr) = Run("check", lib.Path, "--no-color");
+
+        Assert.Contains("Lib", stdout);
+        Assert.DoesNotContain("Tests", stdout);
+        // Counted out loud, so a mistyped library name shows up rather than quietly passing.
+        Assert.Contains("skipped as excluded libraries", stderr);
+    }
+
+    [Fact]
+    public void ExcludedLibrary_AcceptsAWildcard()
+    {
+        using var lib = new TempLibrary()
+            .WithModel("Lib.mo", LibraryUnderTest)
+            .WithModel("Foo_Tests.mo", WildcardNamedTestLibrary)
+            .WithSettings("""{ "ParameterHasDescription": true, "ExcludedLibraries": ["*_Tests"] }""");
+
+        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+
+        Assert.Contains("Lib", stdout);
+        Assert.DoesNotContain("Foo_Tests", stdout);
+    }
 }

@@ -17,14 +17,24 @@ namespace ModelicaGraph.Analysis;
 /// </list>
 /// Needs dependency analysis (the reverse edges are analyzer-only). Never flagged: top-level classes
 /// (a library root is external API by definition), partial classes (extended, not instantiated),
-/// packages, and classes carrying an <c>experiment(...)</c> annotation (simulation entry points — they
-/// are meant to be run, not referenced). Each tier only runs when its own rule is enabled.
+/// packages, classes carrying an <c>experiment(...)</c> annotation (simulation entry points — they are
+/// meant to be run, not referenced), and an <c>ExternalObject</c>'s <c>constructor</c>/<c>destructor</c>
+/// (called implicitly by the language). Each tier only runs when its own rule is enabled.
 /// </summary>
 public sealed class UnusedClassAnalyzer : IGraphAnalyzer
 {
     public IReadOnlyList<string> RuleIds { get; } = new[] { RuleIdsRef.UnusedClass, RuleIdsRef.UnusedPublicClass };
 
     public bool NeedsDependencyAnalysis => true;
+
+    /// <summary>
+    /// True for the <c>constructor</c>/<c>destructor</c> of an <c>ExternalObject</c>. Modelica
+    /// reserves those two names inside an ExternalObject for the create/destroy protocol and calls
+    /// them implicitly, so they are never referenced by name.
+    /// </summary>
+    private static bool IsExternalObjectLifecycleFunction(ModelNode node) =>
+        node.ClassType == "function" &&
+        (node.Definition.Name == "constructor" || node.Definition.Name == "destructor");
 
     public IEnumerable<Finding> Analyze(GraphAnalysisContext context)
     {
@@ -45,6 +55,11 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
             // expected state rather than a finding. Without this, a library's whole test/example
             // package reports as dead code.
             if (node.HasExperimentAnnotation)
+                continue;
+            // An ExternalObject's constructor/destructor are the language's own protocol: the tool
+            // calls them implicitly when the object is created and destroyed, so no code anywhere
+            // references them by name. Reporting them is never right, in any library.
+            if (IsExternalObjectLifecycleFunction(node))
                 continue;
             if (node.UsedByModelIds.Count > 0)
                 continue;

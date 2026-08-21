@@ -139,6 +139,18 @@ every report):
 Severities in `RuleSeverities` are `Off`, `Info`, `Warning`, or `Error`; the map wins over the
 booleans. Enabled rules default to `Warning`.
 
+**Leave out the libraries you don't want judged.** A repository usually holds test-case and example
+libraries next to the ones under development. List them and they are loaded but never reported on —
+while still counting as users of the code they exercise, so excluding them cannot make that code look
+unused:
+
+```jsonc
+{ "ExcludedLibraries": ["Examples", "*_Tests"] }
+```
+
+Names match the first segment of a class id, case-insensitively, and `*` is a wildcard. See
+[settings-reference.md](settings-reference.md#excluding-whole-libraries-from-the-checks).
+
 **Recommended starting set for a first trial:** the self-contained documentation/ordering rules above.
 Add these with care:
 

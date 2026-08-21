@@ -351,6 +351,26 @@
             </MudStack>
         }
 
+        <MudText Typo="Typo.body1" Class="mt-4">Excluded libraries</MudText>
+        <MudText Typo="Typo.body1" Class="mt-2 mb-1">
+            Top-level library names that are loaded but never reported on — typically the test-case and
+            example libraries kept alongside the libraries under development. <b>*</b> is a wildcard, so
+            <b>*_Tests</b> covers Foo_Tests and Bar_Tests. An excluded library still counts as a user of
+            what it references, so excluding your tests will not make the code they exercise look unused.
+        </MudText>
+        <MudChipSet T="string" Class="mt-1">
+            @foreach (var name in SelectedSettings.ExcludedLibraries)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExcludedLibrary(name)">@name</MudChip>
+            }
+        </MudChipSet>
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+            <MudTextField @bind-Value="_newExcludedLibrary" Placeholder="Library name or *_Tests" Variant="Variant.Outlined"
+                Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+            <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                OnClick="AddExcludedLibrary" Disabled="@string.IsNullOrWhiteSpace(_newExcludedLibrary)" />
+        </MudStack>
+
         @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
         {
             <MudText Typo="Typo.body1" Class="mt-4">SVN branch directories</MudText>
@@ -391,6 +411,7 @@
     private List<DictionaryInfo> _availableDictionaries = new();
     private string _newRepoExceptionName = "";
     private string _newBranchDirectory = "";
+    private string _newExcludedLibrary = "";
 
     // Project management state
     private List<ProjectProfile> _projects = new();
@@ -764,6 +785,24 @@
     private void RemoveRepoExceptionName(string name)
     {
         SelectedSettings.NamingConvention.ExceptionNames.Remove(name);
+        StateHasChanged();
+    }
+
+    private void AddExcludedLibrary()
+    {
+        var name = _newExcludedLibrary.Trim();
+        if (!string.IsNullOrEmpty(name) &&
+            !SelectedSettings.ExcludedLibraries.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            SelectedSettings.ExcludedLibraries.Add(name);
+            _newExcludedLibrary = "";
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveExcludedLibrary(string name)
+    {
+        SelectedSettings.ExcludedLibraries.Remove(name);
         StateHasChanged();
     }
 

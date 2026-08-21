@@ -49,6 +49,8 @@ internal static class CheckPipeline
 
         if (!settings.HasAnyStyleRuleEnabled)
             stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
+        if (settings.ExcludedLibraries.Count > 0)
+            stderr.WriteLine($"note: excluding {string.Join(", ", settings.ExcludedLibraries)} from the checks");
 
         // Load every library in the repository (matching the UI: one .mlqt/settings.json at the
         // repository root applies to all libraries found under it).
@@ -126,8 +128,14 @@ internal static class CheckPipeline
             foreach (var model in graph.GetModelsInFile(file.Id))
                 modelToFile[model.Id] = file.FilePath;
 
-        // Report the number of classes actually checked, which excludes the unparseable placeholders.
-        var modelsChecked = models.Count(m => !m.IsParseFailurePlaceholder);
+        // Report the number of classes actually checked: excludes unparseable placeholders and any
+        // library the settings exclude. Excluded classes are counted out loud rather than silently, so
+        // a mistyped library name shows up as an unexpected number rather than as a quiet pass.
+        var checkable = models.Where(m => !m.IsParseFailurePlaceholder).ToList();
+        var excluded = checkable.Count(m => settings.IsLibraryExcluded(m.Id));
+        if (excluded > 0)
+            stderr.WriteLine($"note: {excluded} class(es) skipped as excluded libraries");
+        var modelsChecked = checkable.Count - excluded;
         // The graph and model list are carried out so `--metrics` can compute coverage over exactly
         // the set that was checked, without loading the library a second time.
         return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models);

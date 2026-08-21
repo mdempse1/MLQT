@@ -118,4 +118,43 @@ public class UnusedClassAnalyzerTests
         Assert.NotEmpty(Run(Build(), settings));
     }
 
+
+    [Fact]
+    public void ExternalObjectConstructorAndDestructor_AreNotFlagged()
+    {
+        // Modelica reserves these two names inside an ExternalObject and calls them implicitly when the
+        // object is created and destroyed, so nothing anywhere references them by name. Reporting them
+        // is never right — it fires on every library that wraps native code.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("P", "P", "package P end P;") { ClassType = "package" });
+        graph.AddNode(new ModelNode("P.Ext", "Ext", "class Ext extends ExternalObject; end Ext;")
+        { ClassType = "class", IsNested = true, ParentModelName = "P" });
+        graph.AddNode(new ModelNode("P.Ext.constructor", "constructor", "function constructor end constructor;")
+        { ClassType = "function", IsNested = true, ParentModelName = "P.Ext" });
+        graph.AddNode(new ModelNode("P.Ext.destructor", "destructor", "function destructor end destructor;")
+        { ClassType = "function", IsNested = true, ParentModelName = "P.Ext" });
+
+        var settings = new StyleCheckingSettings { CheckUnusedClass = true, CheckUnusedPublicClass = true };
+        var findings = Run(graph, settings);
+
+        Assert.DoesNotContain(findings, f => f.ModelId.EndsWith("constructor"));
+        Assert.DoesNotContain(findings, f => f.ModelId.EndsWith("destructor"));
+        // The ExternalObject wrapper itself is still eligible, so the fixture isn't vacuous.
+        Assert.Contains(findings, f => f.ModelId == "P.Ext");
+    }
+
+    [Fact]
+    public void AnOrdinaryUnusedFunction_IsStillFlagged()
+    {
+        // The exemption is by name inside the ExternalObject protocol, not "functions are exempt".
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("P", "P", "package P end P;") { ClassType = "package" });
+        graph.AddNode(new ModelNode("P.helper", "helper", "function helper end helper;")
+        { ClassType = "function", IsNested = true, ParentModelName = "P" });
+
+        var settings = new StyleCheckingSettings { CheckUnusedPublicClass = true };
+
+        Assert.Contains(Run(graph, settings), f => f.ModelId == "P.helper");
+    }
+
 }

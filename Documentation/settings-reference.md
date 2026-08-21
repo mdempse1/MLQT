@@ -162,12 +162,41 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
 
-‡ **Simulation entry points are exempt.** A class carrying an `experiment(...)` annotation exists to
-be run, not to be instantiated by something else, so neither unused-class rule reports it. Without
-this a library's example or test package reads as entirely dead. Note this only covers classes that
-actually carry the annotation — a library's *public API* functions (and an `ExternalObject`'s
-language-mandated `constructor`/`destructor`) are still reported, which is why `MLQT.Unused.PublicClass`
-is off by default and best suited to an application library.
+‡ **Never reported by the unused-class rules:** a class carrying an `experiment(...)` annotation (a
+simulation entry point — it exists to be run, not to be instantiated by something else), and an
+`ExternalObject`'s `constructor`/`destructor` (Modelica calls those implicitly, so no code references
+them by name). Without the first, a library's example package reads as entirely dead.
+
+A library's *public API* is still reported — nothing inside the library uses it because its users are
+downstream — which is why `MLQT.Unused.PublicClass` is Info and off by default, and best suited to an
+application library. For a foundational library, either leave it off or exclude the library (below).
+
+### Excluding whole libraries from the checks
+
+A repository often holds the libraries under development alongside their test-case and example
+libraries, where the same rules are not wanted. `ExcludedLibraries` lists the top-level library names
+to leave alone:
+
+```jsonc
+{
+  "ClassHasDescription": true,
+  "ExcludedLibraries": ["Examples", "*_Tests"]
+}
+```
+
+- Matched against the **first segment** of a class id — the library name — so `"Tests"` excludes
+  `Tests.SomeCase` but not `Lib.Tests.Thing`.
+- Case-insensitive, and `*` is a wildcard, so `"*_Tests"` covers `Foo_Tests` and `Bar_Tests`.
+- An excluded library is still **loaded**, and still counts as a *user* of everything it references —
+  so excluding your test library will not make the code it exercises look unused. Only the reporting
+  is suppressed.
+- **Parse errors are still reported.** Those say the file could not be read at all rather than
+  expressing an opinion about its style; see [cli.md](cli.md#parse-diagnostics).
+- `mlqt check` prints `note: N class(es) skipped as excluded libraries`, so a mistyped name shows up
+  as an unexpected number rather than as a quiet pass.
+
+Honoured identically by the desktop app, the CLI and the MCP server. In the app it is edited under
+**Excluded libraries** in the repository settings dialog.
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call

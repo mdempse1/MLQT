@@ -61,6 +61,13 @@ public static class StyleChecking
         if (!settings.HasAnyStyleRuleEnabled)
             return findings;
 
+        // A library the user excluded (typically a test-case or example library sharing the repository)
+        // is loaded and still counts as a user of what it references, but nothing in it is reported.
+        // The check lives here, in the per-class primitive, so every surface inherits it: the GUI's
+        // worker and its combined deferred pass, the CLI, and MCP all funnel through this method.
+        if (settings.IsLibraryExcluded(fullModelId))
+            return findings;
+
         var parsedCode = _currentModel.EnsureParsed();
         if (parsedCode == null)
             return findings;

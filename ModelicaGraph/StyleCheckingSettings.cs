@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
@@ -105,6 +106,64 @@ public class StyleCheckingSettings
 
     public bool IsModelExcludedFromFormatting(string modelId)
         => FormattingExcludedModels.Contains(modelId, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Top-level library names whose classes are not reported on — typically the test-case and example
+    /// libraries that sit in the same repository as the libraries under development, where the same
+    /// rules are not wanted. Matched case-insensitively against the first segment of a class id, and
+    /// <c>*</c> is a wildcard, so <c>"*_Tests"</c> covers <c>Foo_Tests</c> and <c>Bar_Tests</c>.
+    ///
+    /// An excluded library is still LOADED and still counts as a user of everything it references —
+    /// so a test library keeps the classes it exercises from looking unused. Only the reporting is
+    /// suppressed. Parse errors are still reported, because they say the file could not be read at
+    /// all rather than expressing an opinion about its style.
+    /// </summary>
+    public List<string> ExcludedLibraries { get; set; } = new();
+
+    // Compiled form of ExcludedLibraries, rebuilt when the list changes. Checking runs this per class,
+    // so it must not recompile a regex each time.
+    private string[]? _excludedLibrariesSource;
+    private Regex[]? _excludedLibraryPatterns;
+
+    /// <summary>
+    /// True if the class belongs to an excluded library. <paramref name="modelId"/> is a fully
+    /// qualified class id; only its first segment (the library name) is considered.
+    /// </summary>
+    public bool IsLibraryExcluded(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId) || ExcludedLibraries.Count == 0)
+            return false;
+
+        var patterns = EnsureExcludedLibraryPatterns();
+        if (patterns.Length == 0)
+            return false;
+
+        var dot = modelId.IndexOf('.');
+        var library = dot < 0 ? modelId : modelId[..dot];
+
+        foreach (var pattern in patterns)
+            if (pattern.IsMatch(library))
+                return true;
+        return false;
+    }
+
+    private Regex[] EnsureExcludedLibraryPatterns()
+    {
+        // Cheap identity check on the current entries — the settings object is mutated in place by the
+        // UI, so a cached compilation has to notice an edit.
+        var current = ExcludedLibraries.Where(n => !string.IsNullOrWhiteSpace(n)).ToArray();
+        if (_excludedLibraryPatterns is not null && _excludedLibrariesSource is not null &&
+            current.SequenceEqual(_excludedLibrariesSource, StringComparer.Ordinal))
+            return _excludedLibraryPatterns;
+
+        _excludedLibrariesSource = current;
+        _excludedLibraryPatterns = current
+            .Select(name => new Regex(
+                "^" + string.Join(".*", name.Trim().Split('*').Select(Regex.Escape)) + "$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            .ToArray();
+        return _excludedLibraryPatterns;
+    }
 
     // Style guidelines
     public bool ClassHasDescription

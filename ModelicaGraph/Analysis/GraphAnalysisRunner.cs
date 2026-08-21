@@ -39,6 +39,18 @@ public static class GraphAnalysisRunner
         GraphAnalysisContext context, IReadOnlyList<IGraphAnalyzer> analyzers, bool honorSuppressions = true)
     {
         var findings = new List<Finding>();
+
+        // Drop excluded libraries from the REPORTED set only. They stay in context.Graph, so a test
+        // library still counts as a user of the classes it exercises — excluding it must not make the
+        // library under test look unused.
+        if (context.Settings.ExcludedLibraries.Count > 0)
+        {
+            var reportable = context.Models.Where(m => !context.Settings.IsLibraryExcluded(m.Id)).ToList();
+            if (reportable.Count != context.Models.Count)
+                context = new GraphAnalysisContext(
+                    context.Graph, context.Settings, reportable, context.DependenciesAnalyzed);
+        }
+
         foreach (var analyzer in analyzers)
         {
             if (!analyzer.RuleIds.Any(id => context.Settings.SeverityFor(id) != RuleSeverity.Off))
