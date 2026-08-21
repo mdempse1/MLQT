@@ -57,6 +57,16 @@ public class ModelInfo
     public bool IsNested { get; set; }
 
     /// <summary>
+    /// Whether the class sits in a public section of its enclosing class. False only for a class
+    /// declared after a <c>protected</c> keyword. Top-level classes are always public.
+    ///
+    /// Captured here at parse time so consumers do not have to re-derive it from the parent's stored
+    /// source — that source is trimmed of its standalone children as a memory optimisation, which
+    /// would make the answer depend on whether the trim had run.
+    /// </summary>
+    public bool IsPublic { get; set; } = true;
+
+    /// <summary>
     /// Name of the parent model if this is nested, null otherwise.
     /// </summary>
     public string? ParentModelName { get; set; }

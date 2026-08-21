@@ -37,6 +37,7 @@ public static class PackageCodeTrimmer
 
         var packagesToTrim = allModels.Where(m =>
             m.ClassType == "package" &&
+            !m.ChildrenTrimmed &&
             (onlyModelIds is null || onlyModelIds.Contains(m.Id)) &&
             childrenByParent.TryGetValue(m.Id, out var children) &&
             children.Any(c => c.CanBeStoredStandalone)).ToList();
@@ -45,6 +46,11 @@ public static class PackageCodeTrimmer
 
         Parallel.ForEach(packagesToTrim, model =>
         {
+            // Marked whatever the outcome (trimmed, nothing to trim, unparseable): the work has been
+            // attempted for this source, and repeating it would produce the same answer. A reload
+            // replaces the node, so reloaded source is considered afresh.
+            model.ChildrenTrimmed = true;
+
             try
             {
                 var children = childrenByParent[model.Id];

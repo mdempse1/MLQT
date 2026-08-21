@@ -14,14 +14,19 @@ public class UnusedClassAnalyzerTests
     private const string ParentCode =
         "package P\n  model A end A;\nprotected\n  model Helper end Helper;\n  model Used end Used;\nend P;";
 
+    // IsPublic mirrors what the loader records from ParentCode above: A is public, Helper and Used
+    // sit after the `protected` keyword. The analyzer reads the flag rather than re-parsing the
+    // parent's source, because that source gets trimmed of its standalone children.
     private static DirectedGraph Build(bool partialHelper = false)
     {
         var graph = new DirectedGraph();
         graph.AddNode(new ModelNode("P", "P", ParentCode) { ClassType = "package" });
-        graph.AddNode(new ModelNode("P.A", "A", "model A end A;") { ClassType = "model", IsNested = true, ParentModelName = "P" });
+        graph.AddNode(new ModelNode("P.A", "A", "model A end A;")
+        { ClassType = "model", IsNested = true, ParentModelName = "P", IsPublic = true });
         graph.AddNode(new ModelNode("P.Helper", "Helper", "model Helper end Helper;")
-        { ClassType = "model", IsNested = true, ParentModelName = "P", IsPartial = partialHelper });
-        graph.AddNode(new ModelNode("P.Used", "Used", "model Used end Used;") { ClassType = "model", IsNested = true, ParentModelName = "P" });
+        { ClassType = "model", IsNested = true, ParentModelName = "P", IsPartial = partialHelper, IsPublic = false });
+        graph.AddNode(new ModelNode("P.Used", "Used", "model Used end Used;")
+        { ClassType = "model", IsNested = true, ParentModelName = "P", IsPublic = false });
         graph.AddModelUsesModel("P.A", "P.Used");   // Used is referenced → not dead
         return graph;
     }

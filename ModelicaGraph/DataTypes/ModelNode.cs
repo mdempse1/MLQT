@@ -84,6 +84,24 @@ public class ModelNode : GraphNode
     public bool IsNested { get; set; }
 
     /// <summary>
+    /// Whether the class sits in a public section of its enclosing class — false only for one
+    /// declared after a <c>protected</c> keyword. Top-level classes are always public.
+    ///
+    /// Captured at load time from the parse tree. Consumers must use this rather than re-deriving
+    /// visibility from the parent package's stored source: that source has its standalone children
+    /// trimmed out as a memory optimisation, so the answer would otherwise depend on whether the
+    /// trim had run — which differs between a fresh load and a file reload.
+    /// </summary>
+    public bool IsPublic { get; set; } = true;
+
+    /// <summary>
+    /// Set once <see cref="PackageCodeTrimmer"/> has processed this package, so a repeated trim is a
+    /// no-op instead of re-parsing and re-rendering it. A reload replaces the node, which clears the
+    /// flag and lets the reloaded source be trimmed again.
+    /// </summary>
+    public bool ChildrenTrimmed { get; set; }
+
+    /// <summary>
     /// Name of the parent model/package.
     /// </summary>
     public string? ParentModelName { get; set; }

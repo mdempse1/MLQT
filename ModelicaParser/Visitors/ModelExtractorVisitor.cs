@@ -80,7 +80,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
                     ElementPrefix = _elementPrefix,
-                    IsPartial = GetIsPartial(prefixes)
+                    IsPartial = GetIsPartial(prefixes),
+                    IsPublic = !IsInProtectedSection(context)
                 };
 
                 ExtractAnnotations(longSpec.composition(), modelInfo);
@@ -119,7 +120,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
                     ElementPrefix = _elementPrefix,
-                    IsPartial = GetIsPartial(prefixes)
+                    IsPartial = GetIsPartial(prefixes),
+                    IsPublic = !IsInProtectedSection(context)
                 };
 
                 _models.Add(modelInfo);
@@ -146,7 +148,8 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
                     ParentModelName = _parentModelNames.Count > 0 ? _parentModelNames.Peek() : _withinPackage,
                     CanBeStoredStandalone = !_hasElementPrefixes,
                     ElementPrefix = _elementPrefix,
-                    IsPartial = GetIsPartial(prefixes)
+                    IsPartial = GetIsPartial(prefixes),
+                    IsPublic = !IsInProtectedSection(context)
                 };
 
                 _models.Add(modelInfo);
@@ -185,6 +188,43 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
         _elementPrefix = hadPrefix;
 
         return result;
+    }
+
+    /// <summary>
+    /// True when the class is declared after a <c>protected</c> keyword in its enclosing class.
+    ///
+    /// Walks up to the enclosing <c>element_list</c> and then scans the composition's children in
+    /// order: the leading element_list is public, and every later one takes the visibility of the
+    /// keyword that introduced it. Reading the tree this way keeps the default traversal untouched.
+    /// </summary>
+    private static bool IsInProtectedSection(Antlr4.Runtime.ParserRuleContext classDefinition)
+    {
+        Antlr4.Runtime.RuleContext? node = classDefinition.Parent;
+        while (node is not null and not modelicaParser.Element_listContext)
+            node = node.Parent;
+
+        if (node is not modelicaParser.Element_listContext elementList ||
+            elementList.Parent is not modelicaParser.CompositionContext composition ||
+            composition.children is null)
+            return false;   // top-level class, or a shape the grammar shouldn't produce
+
+        var isProtected = false;
+        foreach (var child in composition.children)
+        {
+            if (ReferenceEquals(child, elementList))
+                return isProtected;
+
+            if (child is Antlr4.Runtime.Tree.ITerminalNode terminal)
+            {
+                var text = terminal.GetText();
+                if (text == "protected")
+                    isProtected = true;
+                else if (text == "public")
+                    isProtected = false;
+            }
+        }
+
+        return false;
     }
 
     private static void ExtractAnnotations(modelicaParser.CompositionContext? composition, ModelInfo modelInfo)

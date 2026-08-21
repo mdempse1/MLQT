@@ -33,8 +33,6 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
         if (!checkProtected && !checkPublic)
             return findings;
 
-        var childVisibilityByParent = new Dictionary<string, ChildClasses>(StringComparer.Ordinal);
-
         foreach (var node in context.Models)
         {
             if (node.IsParseFailurePlaceholder || node.IsPartial || node.ClassType == "package")
@@ -44,16 +42,24 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
             if (node.UsedByModelIds.Count > 0)
                 continue;
 
-            var children = ChildClassNames(context.Graph, node.ParentModelName, childVisibilityByParent);
-            if (checkProtected && children.Protected.Contains(node.Definition.Name))
-                findings.Add(new Finding
-                {
-                    RuleId = RuleIdsRef.UnusedClass,
-                    ModelId = node.Id,
-                    Message = $"protected class {node.Definition.Name} is never used",
-                    LineNumber = node.StartLine
-                });
-            else if (checkPublic && children.Public.Contains(node.Definition.Name))
+            // Visibility comes from the node, captured when the class was parsed. It used to be
+            // re-derived by re-parsing the parent package's stored source, which is trimmed of its
+            // standalone children as a memory optimisation — so a child the trim had removed matched
+            // neither tier and was silently never reported, and the count changed depending on
+            // whether the library had just been loaded or just been reloaded.
+            if (!node.IsPublic)
+            {
+                if (checkProtected)
+                    findings.Add(new Finding
+                    {
+                        RuleId = RuleIdsRef.UnusedClass,
+                        ModelId = node.Id,
+                        Message = $"protected class {node.Definition.Name} is never used",
+                        LineNumber = node.StartLine
+                    });
+            }
+            else if (checkPublic)
+            {
                 findings.Add(new Finding
                 {
                     RuleId = RuleIdsRef.UnusedPublicClass,
@@ -61,42 +67,9 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
                     Message = $"public class {node.Definition.Name} may be unused — nothing in the loaded libraries references it",
                     LineNumber = node.StartLine
                 });
+            }
         }
 
         return findings;
-    }
-
-    private readonly record struct ChildClasses(HashSet<string> Public, HashSet<string> Protected);
-
-    // The simple names of the parent's nested classes split by visibility (nested classes are declared
-    // inline in the parent, so its stored code contains them even when it is a formatting shell). Cached
-    // per parent.
-    private static ChildClasses ChildClassNames(
-        DirectedGraph graph, string parentId, Dictionary<string, ChildClasses> cache)
-    {
-        if (cache.TryGetValue(parentId, out var cached))
-            return cached;
-
-        var publicNames = new HashSet<string>(StringComparer.Ordinal);
-        var protectedNames = new HashSet<string>(StringComparer.Ordinal);
-        var code = graph.GetNode<ModelNode>(parentId)?.Definition?.ModelicaCode;
-        if (!string.IsNullOrEmpty(code))
-        {
-            try
-            {
-                var iface = ClassInterfaceExtractor.ExtractFromCode(code);
-                foreach (var element in iface.Elements)
-                    if (element.Kind == ClassElementKind.Class)
-                        (element.IsPublic ? publicNames : protectedNames).Add(element.Name);
-            }
-            catch
-            {
-                // Unparseable parent → treat as no known nested classes (under-report).
-            }
-        }
-
-        var result = new ChildClasses(publicNames, protectedNames);
-        cache[parentId] = result;
-        return result;
     }
 }

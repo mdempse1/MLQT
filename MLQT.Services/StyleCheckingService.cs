@@ -262,6 +262,7 @@ public class StyleCheckingService : IStyleCheckingService
 
         //Reset StyleRulesChecked flag so models get re-checked with current settings
         ResetStyleRulesChecked(repository);
+        EnsureTrimmedForChecking(ModelIdsFor(repository));
 
         //Create worker for this repository
         int queuedModels = 0;
@@ -316,6 +317,7 @@ public class StyleCheckingService : IStyleCheckingService
 
         //Reset StyleRulesChecked flag so models get re-checked with current settings
         ResetStyleRulesChecked(repository);
+        EnsureTrimmedForChecking(ModelIdsFor(repository));
 
         //Create worker for this repository
         int queuedModels = 0;
@@ -366,6 +368,7 @@ public class StyleCheckingService : IStyleCheckingService
             }
 
             ResetStyleRulesChecked(repository);
+            EnsureTrimmedForChecking(ModelIdsFor(repository));
 
             var spellChecker = GetSpellCheckerIfNeeded(repository.StyleSettings);
             var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
@@ -425,6 +428,28 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public Task RunGraphAnalysesForRepositoriesAsync(IReadOnlyList<Repository> repositories)
         => StartGraphAnalyses(repositories, removeStaleFirst: true);
+
+    /// <summary>
+    /// Brings the packages about to be checked into the trimmed representation every checking surface
+    /// uses (the CLI does this in <c>CheckPipeline</c>, MCP in <c>StyleTools</c>).
+    ///
+    /// Startup trims once, but a file reload — the Refresh button, a VCS operation, a revert, saving
+    /// an edit — replaces the node with the full source read back from disk. Without re-trimming here,
+    /// those paths checked a different representation from startup and the CLI and reported a
+    /// different number of findings. Already-trimmed packages are skipped, so this is cheap to repeat.
+    /// </summary>
+    private void EnsureTrimmedForChecking(IReadOnlySet<string>? modelIds = null)
+    {
+        try
+        {
+            PackageCodeTrimmer.TrimStandaloneChildren(_libraryDataService.CombinedGraph, modelIds);
+        }
+        catch (Exception ex)
+        {
+            // Trimming is a representation tidy-up; failing it must not stop the check running.
+            Error("StyleCheckingService", "Trimming package source before checking failed", ex);
+        }
+    }
 
     /// <summary>
     /// Starts a graph-analysis pass in the background and registers it with the completion signal.
@@ -553,6 +578,13 @@ public class StyleCheckingService : IStyleCheckingService
         return null;
     }
 
+    /// <summary>The ids of every model in the repository's libraries.</summary>
+    private IReadOnlySet<string> ModelIdsFor(Repository repository) =>
+        _libraryDataService.Libraries
+            .Where(l => l.RepositoryId == repository.Id)
+            .SelectMany(l => l.ModelIds)
+            .ToHashSet(StringComparer.Ordinal);
+
     private void ResetStyleRulesChecked(Repository repository)
     {
         foreach (var library in _libraryDataService.Libraries)
@@ -581,6 +613,8 @@ public class StyleCheckingService : IStyleCheckingService
         var modelIdList = modelIds.ToList();
         if (modelIdList.Count == 0)
             return;
+
+        EnsureTrimmedForChecking(modelIdList.ToHashSet(StringComparer.Ordinal));
 
         // Reset the StyleRulesChecked flag for these models so they get re-checked
         foreach (var modelId in modelIdList)
