@@ -220,9 +220,11 @@ public sealed class StyleTools
                 // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
                 // the whole-graph analyses (package.order, uses hygiene, unused classes) can't drift between
                 // the tools. Dependency-requiring analyses only run if analyze_dependencies ran first.
+                // Whether the edges are present is read off the graph itself rather than the session
+                // flag, so this can't disagree with what the GUI and CLI see for the same library.
                 var findings = LibraryCheckSession.Check(
                     graph, models, effective, _customDictionary, _dictionaryManager,
-                    honorSuppressions: true, dependenciesAnalyzed: _session.DependenciesAnalyzed);
+                    honorSuppressions: true);
                 foreach (var finding in findings)
                     all.Add(finding.ToLogMessage());
             }

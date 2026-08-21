@@ -95,8 +95,7 @@ internal static class CheckPipeline
         // Some graph analyses (uses hygiene, unused classes) rely on cross-model dependency edges,
         // which the load path does not populate. Run dependency analysis once, only when such a rule
         // is enabled, so a plain style-check run doesn't pay for it.
-        var dependenciesAnalyzed = ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(settings);
-        if (dependenciesAnalyzed)
+        if (ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(settings))
         {
             stderr.WriteLine("note: running dependency analysis (required by an enabled rule)…");
             await ModelicaGraph.GraphBuilder.AnalyzeDependenciesAsync(graph);
@@ -105,8 +104,10 @@ internal static class CheckPipeline
         var customDictionary = new CustomDictionaryService();
         var dictionaryManager = new DictionaryManagerService();
 
+        // Whether the edges are present is read off the graph itself, so this can't disagree with what
+        // the GUI and MCP see for the same library.
         var findings = LibraryCheckSession
-            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions, dependenciesAnalyzed)
+            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)

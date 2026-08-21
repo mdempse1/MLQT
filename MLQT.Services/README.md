@@ -56,6 +56,15 @@ LoadedLibrary lib = await libraryDataService.AddLibraryFromDirectoryAsync(@"C:\M
 // Access the combined graph (all libraries merged)
 DirectedGraph graph = libraryDataService.CombinedGraph;
 
+// Run full dependency analysis once. Idempotent, and concurrent callers share a single run.
+// Everything that needs UsedModelIds/UsedByModelIds must go through here rather than calling
+// GraphBuilder.AnalyzeDependenciesAsync directly, so two runs can never overlap.
+await libraryDataService.EnsureDependenciesAnalyzedAsync();
+
+// graph.DependenciesAnalyzed is the single source of truth for "are the edges populated?".
+// Adding a library clears it; DirectedGraph.Clear() clears it.
+bool ready = libraryDataService.CombinedGraph.DependenciesAnalyzed;
+
 // Get model by ID
 ModelNode? model = libraryDataService.GetModelById("MyLibrary.MyModel");
 
@@ -159,6 +168,16 @@ styleCheckingService.StartBackgroundCheckingForRepositories(repositories);
 
 // Re-check specific models after file changes (clears previous violations first)
 await styleCheckingService.CheckModelsAsync(changedModelIds, graph);
+
+// Every entry point above runs BOTH the per-class rules and the whole-graph analyses
+// (package.order, uses hygiene, unused class/member, shadowing), and arranges dependency
+// analysis first when an enabled rule needs the edges. That is what keeps a single-repository
+// check (Apply in repository settings) reporting the same count as a whole-project check and
+// as `mlqt check`. OnProgressChanged(true) waits for the graph analyses too, so the total
+// shown on completion is final.
+
+// Graph analyses only — for the deferred pipeline, which runs the per-class rules itself
+await styleCheckingService.RunGraphAnalysesForRepositoriesAsync(repositories);
 
 // Subscribe to progress (bool = allComplete)
 styleCheckingService.OnProgressChanged += (allComplete) =>

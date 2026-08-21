@@ -16,6 +16,25 @@ public interface ILibraryDataService
     IReadOnlyList<LoadedLibrary> Libraries { get; }
 
     /// <summary>
+    /// Gets the name and root path of each loaded library, as needed by
+    /// <c>GraphBuilder</c> to resolve <c>modelica://</c> URIs.
+    /// </summary>
+    List<LibraryInfo> GetLibraryInfos();
+
+    /// <summary>
+    /// Runs full dependency analysis over the combined graph exactly once, coalescing concurrent
+    /// callers onto a single run and returning immediately when the graph is already analysed.
+    ///
+    /// Every consumer that needs <c>UsedModelIds</c>/<c>UsedByModelIds</c> — the startup pipeline and
+    /// the style-checking graph analyses — must go through here. Calling
+    /// <c>GraphBuilder.AnalyzeDependenciesAsync</c> directly lets two runs overlap, which is how the
+    /// graph analyses used to observe a half-built graph and report a different number of findings
+    /// from one launch to the next.
+    /// </summary>
+    /// <param name="progressLog">Optional progress callback, used only if this call starts the run.</param>
+    Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null);
+
+    /// <summary>
     /// Adds a library from a file path.
     /// </summary>
     /// <param name="filePath">Path to the .mo file.</param>

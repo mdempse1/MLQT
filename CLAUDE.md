@@ -61,11 +61,11 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 | Service | Purpose |
 |---------|---------|
-| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data |
+| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run |
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
 | **ICodeReviewService** | Log messages and issues from parsing/style checking |
-| **IStyleCheckingService** | Background style rule checking for models with queue management |
+| **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
 | **IExternalResourceService** | External resource analysis, validation, and monitoring |
 | **ICustomDictionaryService** | User custom word list persistence (`%LocalAppData%/MLQT/custom_dictionary.txt`) |
@@ -176,7 +176,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 - `ResourceDirectoryNode` - Represents an external resource directory
 
 **Key Classes:**
-- `DirectedGraph` - Main graph structure with node/edge management
+- `DirectedGraph` - Main graph structure with node/edge management. `DependenciesAnalyzed` is the single source of truth for whether `UsedModelIds`/`UsedByModelIds` are populated — never infer it by checking whether some model happens to have edges
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
 - `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule violations) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)

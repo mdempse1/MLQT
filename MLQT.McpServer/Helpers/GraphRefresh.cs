@@ -37,11 +37,5 @@ internal static class GraphRefresh
     }
 
     public static List<LibraryInfo> BuildLibraryInfos(ILibraryDataService libraries) =>
-        libraries.Libraries.Select(lib =>
-        {
-            var rootPath = lib.SourceType == LibrarySourceType.File
-                ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
-                : lib.SourcePath;
-            return new LibraryInfo(lib.Name, rootPath);
-        }).ToList();
+        libraries.GetLibraryInfos();
 }

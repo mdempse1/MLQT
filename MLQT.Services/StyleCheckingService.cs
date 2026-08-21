@@ -25,6 +25,16 @@ public class StyleCheckingService : IStyleCheckingService
     private bool _stopRequested;
     private long _lastProgressTicks = 0;
 
+    // Number of graph-analysis passes currently in flight. The completion signal waits on these as
+    // well as on the per-model workers, so the count the UI shows when checking reports "complete"
+    // is the final count rather than a partial one that grows a moment later.
+    private int _graphAnalysesRunning;
+
+    // Bumped whenever a run is cancelled. A graph-analysis pass captures the value before it awaits
+    // dependency analysis (which can take minutes) and abandons its findings if the run it belongs
+    // to has since been superseded.
+    private int _runGeneration;
+
     /// <summary>
     /// Cancels any in-flight workers, clears pending violations, and removes
     /// previously delivered style checking messages from CodeReviewService so a
@@ -46,6 +56,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// </summary>
     private void CancelRunningWorkers()
     {
+        Interlocked.Increment(ref _runGeneration);
         lock (_workerLock)
         {
             foreach (var worker in _workers)
@@ -275,6 +286,7 @@ public class StyleCheckingService : IStyleCheckingService
         }
         //Ensure the worker is processing the queue and that the UI update task is running
         worker.StartProcessing();
+        _ = StartGraphAnalyses([repository], removeStaleFirst: false);
         _ = ProcessQueueAsync();
 
         LogProcessStart("StyleCheckingService", $"Background style checking ({repository.Name} models)");
@@ -328,6 +340,7 @@ public class StyleCheckingService : IStyleCheckingService
         }
         //Ensure the worker is processing the queue and that the UI update task is running
         worker.StartProcessing();
+        _ = StartGraphAnalyses([repository], removeStaleFirst: false);
         _ = Task.Run(()=>ProcessQueueAsync());
 
         LogProcessStart("StyleCheckingService", $"Background style checking ({repository.Name} models)");
@@ -383,10 +396,10 @@ public class StyleCheckingService : IStyleCheckingService
         if (anyWorkerStarted)
         {
             OnProgressChanged?.Invoke(false);
-            _ = Task.Run(() => ProcessQueueAsync());
             // Whole-graph analyses run alongside the per-model workers and deliver through the same
-            // violation buffer. Additive: if this fails or is slow it never affects per-class checking.
-            _ = Task.Run(() => RunGraphAnalyses(repositories));
+            // violation buffer. Registered before the flush loop starts so completion waits for them.
+            _ = StartGraphAnalyses(repositories, removeStaleFirst: false);
+            _ = Task.Run(() => ProcessQueueAsync());
         }
         else
         {
@@ -410,8 +423,68 @@ public class StyleCheckingService : IStyleCheckingService
     /// package node) and so would not be removed by the caller's per-model cleanup.
     /// </summary>
     /// <inheritdoc/>
-    public void RunGraphAnalysesForRepositories(IReadOnlyList<Repository> repositories)
-        => RunGraphAnalyses(repositories, removeStaleFirst: true);
+    public Task RunGraphAnalysesForRepositoriesAsync(IReadOnlyList<Repository> repositories)
+        => StartGraphAnalyses(repositories, removeStaleFirst: true);
+
+    /// <summary>
+    /// Starts a graph-analysis pass in the background and registers it with the completion signal.
+    /// Every entry point that starts checking goes through here, so a single-repository check
+    /// (Apply in repository settings, adding a repository) produces the same rules as a
+    /// whole-project check — previously only the multi-repository path ran the graph analyzers,
+    /// which is why the two reported different totals for the same library and settings.
+    /// </summary>
+    /// <returns>The running pass, so a caller that must not proceed without its findings can await
+    /// it. Background callers ignore it.</returns>
+    private Task StartGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst)
+    {
+        Interlocked.Increment(ref _graphAnalysesRunning);
+        return Task.Run(async () =>
+        {
+            try
+            {
+                await RunGraphAnalysesAsync(repositories, removeStaleFirst);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _graphAnalysesRunning);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Ensures the dependency edges the graph analyzers need are present, then runs the analyses.
+    ///
+    /// The ordering is the point. <c>UnusedClassAnalyzer</c> and <c>UsesHygieneAnalyzer</c> are
+    /// skipped outright when the edges are missing, so running this concurrently with dependency
+    /// analysis — as the startup path used to — made the finding count depend on which task won a
+    /// race. Awaiting <see cref="ILibraryDataService.EnsureDependenciesAnalyzedAsync"/> both fixes
+    /// the ordering and covers the paths that never ran dependency analysis at all.
+    /// </summary>
+    private async Task RunGraphAnalysesAsync(IReadOnlyList<Repository> repositories, bool removeStaleFirst)
+    {
+        var generation = Volatile.Read(ref _runGeneration);
+
+        if (repositories.Any(r => r.StyleSettings is not null
+                && GraphAnalysisRunner.RequiresDependencyAnalysis(r.StyleSettings)))
+        {
+            try
+            {
+                await _libraryDataService.EnsureDependenciesAnalyzedAsync(
+                    msg => LogProcessStart("StyleCheckingService", msg));
+            }
+            catch (Exception ex)
+            {
+                // Fall through and run the analyzers that don't need edges rather than losing them all.
+                Error("StyleCheckingService", "Dependency analysis for graph analyses failed", ex);
+            }
+        }
+
+        // A newer run superseded this one while we waited — its own pass will deliver the findings.
+        if (Volatile.Read(ref _runGeneration) != generation)
+            return;
+
+        RunGraphAnalyses(repositories, removeStaleFirst);
+    }
 
     private void RunGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst = false)
     {
@@ -446,8 +519,10 @@ public class StyleCheckingService : IStyleCheckingService
                         m.RuleId is not null && GraphRuleIds.Contains(m.RuleId) && repoModelIds.Contains(m.ModelName));
                 }
 
-                var dependenciesAnalyzed = models.Any(m => m.UsedByModelIds.Count > 0 || m.UsedModelIds.Count > 0);
-                var context = new GraphAnalysisContext(graph, settings, models, dependenciesAnalyzed);
+                // Whether the edges exist is answered by the graph itself (DirectedGraph.DependenciesAnalyzed),
+                // not inferred from whether some model happens to have edges — that inference read true for a
+                // partly-built graph and changed the finding count between runs.
+                var context = new GraphAnalysisContext(graph, settings, models);
                 var findings = GraphAnalysisRunner.Run(context);
                 if (findings.Count > 0)
                 {
@@ -578,7 +653,7 @@ public class StyleCheckingService : IStyleCheckingService
             .Cast<Repository>()
             .ToList();
         if (affectedRepos.Count > 0)
-            _ = Task.Run(() => RunGraphAnalyses(affectedRepos, removeStaleFirst: true));
+            _ = StartGraphAnalyses(affectedRepos, removeStaleFirst: true);
 
         LogProcessStart("StyleCheckingService", $"Style checking {modelIdList.Count} model(s)");
         OnProgressChanged?.Invoke(false);
@@ -598,7 +673,9 @@ public class StyleCheckingService : IStyleCheckingService
 
         try
         {
-            // Keep flushing while there are active workers or pending violations
+            // Keep flushing while there are active workers, in-flight graph analyses, or pending
+            // violations. Graph analyses are included so completion is not signalled before their
+            // findings land — otherwise the total the UI shows on completion grows afterwards.
             while (!_stopRequested)
             {
                 bool hasWorkers;
@@ -607,7 +684,7 @@ public class StyleCheckingService : IStyleCheckingService
                     hasWorkers = _workers.Count > 0;
                 }
 
-                if (!hasWorkers)
+                if (!hasWorkers && Volatile.Read(ref _graphAnalysesRunning) == 0)
                     break;
 
                 await Task.Delay(500); // Batch updates every 500ms

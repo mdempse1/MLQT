@@ -616,6 +616,9 @@ public static class GraphBuilder
             }
         }
 
+        // Only now are UsedModelIds/UsedByModelIds complete. Consumers that need the edges gate on
+        // this flag rather than inspecting the graph, so it must be set last.
+        graph.MarkDependenciesAnalyzed();
         progressLog?.Invoke("Dependency analysis complete");
     }
 

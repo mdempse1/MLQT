@@ -720,10 +720,10 @@
                     // Steps 3 & 4: Analyze dependencies and start style checking in parallel
                     LogProcessStart("MainLayout", "Analyzing dependencies and starting style checking");
 
-                    var libraryInfos = GetLibraryInfos();
-                    var dependencyTask = Task.Run(async () => await GraphBuilder.AnalyzeDependenciesAsync(
-                        LibraryDataService.CombinedGraph, libraryInfos,
-                        progressLog: msg => LogProcessStart("GraphBuilder", msg)));
+                    // Style checking's graph analyses need these edges, and join this same run rather
+                    // than starting a competing one — see ILibraryDataService.EnsureDependenciesAnalyzedAsync.
+                    var dependencyTask = LibraryDataService.EnsureDependenciesAnalyzedAsync(
+                        progressLog: msg => LogProcessStart("GraphBuilder", msg));
 
                     StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
                     if (RepositoryService.Repositories.Count == 0)
@@ -917,10 +917,10 @@
                 if (!shouldDefer)
                 {
                     // Steps 3 & 4: Analyze dependencies and start style checking
-                    var libraryInfos = GetLibraryInfos();
-                    var dependencyTask = Task.Run(async () =>
-                        await GraphBuilder.AnalyzeDependenciesAsync(LibraryDataService.CombinedGraph, libraryInfos,
-                            progressLog: msg => LogProcessStart("GraphBuilder", msg)));
+                    // Style checking's graph analyses need these edges, and join this same run rather
+                    // than starting a competing one — see ILibraryDataService.EnsureDependenciesAnalyzedAsync.
+                    var dependencyTask = LibraryDataService.EnsureDependenciesAnalyzedAsync(
+                        progressLog: msg => LogProcessStart("GraphBuilder", msg));
 
                     StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories);
                     if (RepositoryService.Repositories.Count == 0)
@@ -1594,7 +1594,7 @@
                 // finished, so run the whole-graph analyses (package.order, uses hygiene, unused
                 // class/member, shadowing) now too, otherwise those findings would be missing entirely
                 // from the deferred flow. Delivered via the service's violation pipeline.
-                await Task.Run(() => StyleCheckingService.RunGraphAnalysesForRepositories(RepositoryService.Repositories));
+                await StyleCheckingService.RunGraphAnalysesForRepositoriesAsync(RepositoryService.Repositories);
 
                 NavState.StyleCheckingCompleted();
                 _step4deferred = false;
@@ -2225,30 +2225,10 @@
     }
 
     /// <summary>
-    /// Converts loaded libraries to LibraryInfo objects for GraphBuilder.
+    /// Converts loaded libraries to LibraryInfo objects for GraphBuilder. Lives on the service so
+    /// dependency analysis started there builds the same list as the ones started here.
     /// </summary>
-    private List<LibraryInfo> GetLibraryInfos()
-    {
-        return LibraryDataService.Libraries.Select(lib =>
-        {
-            // Determine library root path based on source type
-            string rootPath;
-            if (lib.SourceType == LibrarySourceType.Directory)
-            {
-                rootPath = lib.SourcePath;
-            }
-            else if (lib.SourceType == LibrarySourceType.File)
-            {
-                rootPath = Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath;
-            }
-            else
-            {
-                rootPath = lib.SourcePath;
-            }
-
-            return new LibraryInfo(lib.Name, rootPath);
-        }).ToList();
-    }
+    private List<LibraryInfo> GetLibraryInfos() => LibraryDataService.GetLibraryInfos();
 
     private string GetRefreshTooltip()
     {

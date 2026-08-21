@@ -52,6 +52,28 @@ public class DirectedGraph
     public int NodeCount => _nodes.Count;
 
     /// <summary>
+    /// True once <see cref="GraphBuilder.AnalyzeDependenciesAsync"/> has completed over this graph,
+    /// so <c>UsedModelIds</c>/<c>UsedByModelIds</c> are populated.
+    ///
+    /// This is the single source of truth for that question. Consumers must never infer it by
+    /// sniffing whether any model happens to have edges — during a run in progress that sniff is
+    /// true for a partly-built graph, which silently changes how many findings the dependency-based
+    /// analyzers (unused class, uses hygiene) produce.
+    /// </summary>
+    public bool DependenciesAnalyzed { get; private set; }
+
+    /// <summary>Records that full dependency analysis has completed over this graph.</summary>
+    public void MarkDependenciesAnalyzed() => DependenciesAnalyzed = true;
+
+    /// <summary>
+    /// Records that the graph has gained content that has never been through dependency analysis
+    /// (a newly loaded library), so the next consumer that needs the edges re-runs it. Incremental
+    /// re-analysis of already-loaded models (<see cref="GraphBuilder.AnalyzeDependenciesForModelsAsync"/>)
+    /// maintains the edges itself and must not call this.
+    /// </summary>
+    public void InvalidateDependencyAnalysis() => DependenciesAnalyzed = false;
+
+    /// <summary>
     /// Adds a node to the graph.
     /// </summary>
     public void AddNode(IGraphNode node)
@@ -543,5 +565,6 @@ public class DirectedGraph
             _edges.Clear();
             _resourceEdges.Clear();
         }
+        InvalidateDependencyAnalysis();
     }
 }

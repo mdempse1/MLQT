@@ -19,13 +19,17 @@ public sealed class GraphAnalysisContext
     /// </summary>
     public bool DependenciesAnalyzed { get; }
 
+    /// <param name="dependenciesAnalyzed">Leave null to take the answer from
+    /// <see cref="DirectedGraph.DependenciesAnalyzed"/>, which is the authoritative one. Pass a value
+    /// only when the caller genuinely knows better than the graph (e.g. a test fixture that wires
+    /// edges up by hand, or a run that deliberately suppresses the dependency-based analyzers).</param>
     public GraphAnalysisContext(
         DirectedGraph graph, StyleCheckingSettings settings, IReadOnlyList<ModelNode> models,
-        bool dependenciesAnalyzed = false)
+        bool? dependenciesAnalyzed = null)
     {
         Graph = graph;
         Settings = settings;
         Models = models;
-        DependenciesAnalyzed = dependenciesAnalyzed;
+        DependenciesAnalyzed = dependenciesAnalyzed ?? graph.DependenciesAnalyzed;
     }
 }

@@ -78,4 +78,66 @@ public class GraphAnalysisRunnerTests
         var (_, ctx) = Setup("M", "model M\n  Real x;\nend M;", new StyleCheckingSettings());
         Assert.Empty(GraphAnalysisRunner.Run(ctx));
     }
+
+    // --- Dependency gating ----------------------------------------------------------------------
+
+    private sealed class DependencyRequiringStub : IGraphAnalyzer
+    {
+        public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Stub" };
+        public bool NeedsDependencyAnalysis => true;
+        public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
+            new[] { new Finding { RuleId = "MLQT.Test.Stub", ModelId = "M", Message = "hi" } };
+    }
+
+    private static StyleCheckingSettings StubEnabled()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Stub"] = RuleSeverity.Warning;
+        return settings;
+    }
+
+    [Fact]
+    public void DependencyRequiringAnalyzer_IsSkipped_WhenGraphNotAnalyzed()
+    {
+        var (_, ctx) = Setup("M", "model M\n  Real x;\nend M;", StubEnabled());
+
+        Assert.Empty(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new DependencyRequiringStub() }));
+    }
+
+    [Fact]
+    public void DependencyRequiringAnalyzer_Runs_WhenGraphIsMarkedAnalyzed()
+    {
+        var (graph, _) = Setup("M", "model M\n  Real x;\nend M;", StubEnabled());
+        graph.MarkDependenciesAnalyzed();
+        var ctx = new GraphAnalysisContext(graph, StubEnabled(), graph.ModelNodes.ToList());
+
+        Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new DependencyRequiringStub() }));
+    }
+
+    [Fact]
+    public void PartlyBuiltGraph_DoesNotCountAsAnalyzed()
+    {
+        // Regression guard: gating used to be inferred by asking whether any model already had
+        // dependency edges. A graph that dependency analysis is still working through satisfies that
+        // inference, which made the finding count depend on when the analyzers happened to run.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("M", "M", "model M\n  Real x;\nend M;"));
+        graph.AddNode(new ModelNode("N", "N", "model N\n  M m;\nend N;"));
+        graph.AddModelUsesModel("N", "M");   // edges exist, but the run has not finished
+
+        Assert.False(graph.DependenciesAnalyzed);
+        var ctx = new GraphAnalysisContext(graph, StubEnabled(), graph.ModelNodes.ToList());
+
+        Assert.Empty(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new DependencyRequiringStub() }));
+    }
+
+    [Fact]
+    public void ExplicitDependencyFlag_OverridesTheGraph()
+    {
+        var (graph, _) = Setup("M", "model M\n  Real x;\nend M;", StubEnabled());
+        Assert.False(graph.DependenciesAnalyzed);
+        var ctx = new GraphAnalysisContext(graph, StubEnabled(), graph.ModelNodes.ToList(), dependenciesAnalyzed: true);
+
+        Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new DependencyRequiringStub() }));
+    }
 }

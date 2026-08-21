@@ -23,7 +23,7 @@ public static class LibraryCheckSession
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
         bool honorSuppressions = true,
-        bool dependenciesAnalyzed = false)
+        bool? dependenciesAnalyzed = null)
     {
         if (!settings.HasAnyStyleRuleEnabled)
             return [];

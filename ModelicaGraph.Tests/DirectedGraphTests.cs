@@ -517,4 +517,51 @@ public class DirectedGraphTests
         Assert.Contains(modelNode, modelNodes);
         Assert.DoesNotContain<IGraphNode>(fileNode, modelNodes.Cast<IGraphNode>());
     }
+
+    [Fact]
+    public void DependenciesAnalyzed_IsFalseUntilMarked()
+    {
+        var graph = new DirectedGraph();
+
+        Assert.False(graph.DependenciesAnalyzed);
+
+        graph.MarkDependenciesAnalyzed();
+
+        Assert.True(graph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public void InvalidateDependencyAnalysis_ResetsTheFlag()
+    {
+        var graph = new DirectedGraph();
+        graph.MarkDependenciesAnalyzed();
+
+        graph.InvalidateDependencyAnalysis();
+
+        Assert.False(graph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public void Clear_ResetsDependenciesAnalyzed()
+    {
+        // Clearing drops every edge, so anything gating on the flag must re-analyse afterwards.
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("model1", "Model1"));
+        graph.MarkDependenciesAnalyzed();
+
+        graph.Clear();
+
+        Assert.False(graph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task AnalyzeDependenciesAsync_MarksTheGraphAnalyzed()
+    {
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("M", "M", "model M\n  Real x;\nend M;"));
+
+        await GraphBuilder.AnalyzeDependenciesAsync(graph);
+
+        Assert.True(graph.DependenciesAnalyzed);
+    }
 }

@@ -53,6 +53,46 @@ public class LibraryDataService : ILibraryDataService
             OnTreeDataChanged?.Invoke();
     }
 
+    // Guards EnsureDependenciesAnalyzedAsync so concurrent callers share one run instead of racing.
+    private readonly object _dependencyAnalysisGate = new();
+    private Task? _dependencyAnalysisTask;
+
+    /// <inheritdoc/>
+    public List<LibraryInfo> GetLibraryInfos()
+    {
+        return Libraries.Select(lib =>
+        {
+            // A file-backed library resolves modelica:// URIs relative to its containing directory.
+            var rootPath = lib.SourceType == LibrarySourceType.File
+                ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
+                : lib.SourcePath;
+            return new LibraryInfo(lib.Name, rootPath);
+        }).ToList();
+    }
+
+    /// <inheritdoc/>
+    public Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null)
+    {
+        if (_combinedGraph.DependenciesAnalyzed)
+            return Task.CompletedTask;
+
+        lock (_dependencyAnalysisGate)
+        {
+            // Re-check inside the gate: a run may have finished while we waited for it.
+            if (_combinedGraph.DependenciesAnalyzed)
+                return Task.CompletedTask;
+
+            // Join an in-flight run rather than starting a second, competing one.
+            if (_dependencyAnalysisTask is { IsCompleted: false })
+                return _dependencyAnalysisTask;
+
+            var libraryInfos = GetLibraryInfos();
+            _dependencyAnalysisTask = Task.Run(() =>
+                GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, libraryInfos, progressLog));
+            return _dependencyAnalysisTask;
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<LoadedLibrary> AddLibraryFromFileAsync(string filePath, string? content = null)
     {
@@ -79,6 +119,10 @@ public class LibraryDataService : ILibraryDataService
                 }
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
+
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
 
             lock (_lock)
             {
@@ -126,6 +170,10 @@ public class LibraryDataService : ILibraryDataService
 
                 BuildLibraryIndex(library, _combinedGraph, modelIDs);
             });
+
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
 
             lock (_lock)
             {

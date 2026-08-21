@@ -2,6 +2,7 @@ using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.Services;
 using MLQT.Services.Checking;
+using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using ModelicaParser.DataTypes;
 
@@ -103,5 +104,132 @@ end P;
 
         Assert.True(facade > 0, "fixture should produce findings");
         Assert.Equal(facade, worker);
+    }
+
+    // --- Whole-graph analyses -------------------------------------------------------------------
+    //
+    // The tests above compare the per-class rules only, which is how the GUI came to report fewer
+    // findings than the CLI on the same library: the whole-graph analyzers ran on one GUI entry
+    // point (whole-project checking) but not the other (Apply in repository settings / adding a
+    // repository), and they were raced against dependency analysis rather than sequenced after it.
+    // The fixture below turns on a graph rule that needs dependency edges, so every path has to run
+    // dependency analysis before checking to report the finding at all.
+
+    // P references Q.Thing but declares no uses(Q(...)) → one MLQT.Uses.Undeclared finding on P.
+    // Model A also has no description → at least one per-class finding, so both families are covered.
+    private const string LibraryP = @"within;
+package P ""P package""
+  model A
+    Q.Thing t ""a thing"";
+  end A;
+end P;
+";
+
+    private const string LibraryQ = @"within;
+package Q ""Q package""
+  model Thing ""a thing""
+    Real x ""a real"";
+  end Thing;
+end Q;
+";
+
+    private static StyleCheckingSettings GraphSettings() => new()
+    {
+        ClassHasDescription = true,
+        CheckUsesUndeclared = true,
+    };
+
+    /// <summary>Loads both libraries into one repository, trimmed the way every checking path starts.</summary>
+    private static (LibraryDataService data, Repository repo) LoadTwoLibraryRepo()
+    {
+        var data = new LibraryDataService();
+        var repo = new Repository { Name = "ParityRepo", StyleSettings = GraphSettings() };
+        foreach (var (file, code) in new[] { ("P.mo", LibraryP), ("Q.mo", LibraryQ) })
+        {
+            var library = data.AddLibraryFromFileAsync(file, code).GetAwaiter().GetResult();
+            library.RepositoryId = repo.Id;
+        }
+        PackageCodeTrimmer.TrimStandaloneChildren(data.CombinedGraph);
+        return (data, repo);
+    }
+
+    /// <summary>CLI/MCP path: dependency analysis, then the shared facade — as CheckPipeline does.</summary>
+    private static List<Finding> FacadeFindings()
+    {
+        var (data, _) = LoadTwoLibraryRepo();
+        var graph = data.CombinedGraph;
+        GraphBuilder.AnalyzeDependenciesAsync(graph).GetAwaiter().GetResult();
+
+        var models = data.Libraries
+            .SelectMany(l => l.ModelIds)
+            .Select(data.GetModelById)
+            .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
+            .Cast<ModelNode>()
+            .ToList();
+
+        return LibraryCheckSession
+            .Check(graph, models, GraphSettings(), new CustomDictionaryService(), new DictionaryManagerService())
+            .ToList();
+    }
+
+    /// <summary>
+    /// GUI path: the real service, driven through whichever entry point the caller picks. Neither is
+    /// given a pre-analysed graph — each has to arrange dependency analysis for itself, which is what
+    /// the Apply-settings path previously failed to do.
+    /// </summary>
+    private static List<LogMessage> ServiceFindings(bool wholeProjectEntryPoint)
+    {
+        var (data, repo) = LoadTwoLibraryRepo();
+        var settingsService = new InMemorySettingsService();
+        var service = new StyleCheckingService(
+            data,
+            new RepositoryService(data, settingsService, new FileMonitoringService()),
+            settingsService,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            new CodeReviewService());
+
+        var found = new List<LogMessage>();
+        service.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+
+        if (wholeProjectEntryPoint)
+            service.StartBackgroundCheckingForRepositories(new List<Repository> { repo });
+        else
+            service.StartBackgroundChecking(repo);
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        Thread.Sleep(100);
+        while (service.IsRunning && DateTime.UtcNow < deadline)
+            Thread.Sleep(50);
+        Assert.False(service.IsRunning, "style checking did not complete in time");
+        Thread.Sleep(600); // final flush
+
+        lock (found)
+            return found.ToList();
+    }
+
+    [Fact]
+    public void GraphAnalyses_RunOnEverySurface_AndReportTheSameCount()
+    {
+        var facade = FacadeFindings();
+        var wholeProject = ServiceFindings(wholeProjectEntryPoint: true);
+        var singleRepository = ServiceFindings(wholeProjectEntryPoint: false);
+
+        // The fixture must exercise both families, or the parity assertion proves nothing.
+        Assert.Contains(facade, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.UsesUndeclared);
+        Assert.Contains(facade, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.ClassDescription);
+
+        Assert.Equal(facade.Count, wholeProject.Count);
+        Assert.Equal(facade.Count, singleRepository.Count);
+    }
+
+    [Fact]
+    public void SingleRepositoryCheck_RunsDependencyRequiringGraphAnalyzers()
+    {
+        // The reported bug in one assertion: Apply-in-settings checks a single repository, and used
+        // to skip the graph analyzers entirely — so this finding was missing until the next restart.
+        var findings = ServiceFindings(wholeProjectEntryPoint: false);
+
+        Assert.Contains(findings, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.UsesUndeclared);
     }
 }

@@ -59,20 +59,22 @@ public interface IStyleCheckingService
     Task<List<LogMessage>> CheckModelAsync(ModelDefinition model, StyleCheckingSettings settings);
 
     /// <summary>
-    /// Queues all models in a repository for background style checking.
+    /// Queues all models in a repository for background style checking, including the whole-graph
+    /// analyses. Running dependency analysis first is handled internally when an enabled rule needs it.
     /// </summary>
     /// <param name="repository">The repository to be checked.</param>
     Task StartBackgroundCheckingAsync(Repository repository);
 
     /// <summary>
-    /// Queues all models in a repository for background style checking.
+    /// Queues all models in a repository for background style checking, including the whole-graph
+    /// analyses. Running dependency analysis first is handled internally when an enabled rule needs it.
     /// </summary>
     /// <param name="repository">The repository to be checked.</param>
     void StartBackgroundChecking(Repository repository);
 
     /// <summary>
-    /// Queues all models across multiple repositories for background style checking.
-    /// Repositories with no enabled style rules are skipped.
+    /// Queues all models across multiple repositories for background style checking, including the
+    /// whole-graph analyses. Repositories with no enabled style rules are skipped.
     /// Fires <see cref="OnProgressChanged"/> with <c>true</c> only after all repositories
     /// are processed, avoiding premature completion signals when some repos are skipped.
     /// </summary>
@@ -97,11 +99,16 @@ public interface IStyleCheckingService
 
     /// <summary>
     /// Runs the whole-graph analyses (package.order, uses hygiene, unused class/member, shadowing) for
-    /// the given repositories and delivers their findings. Requires dependency analysis to have run for
-    /// the dependency-based analyzers to produce results. Any stale graph findings are cleared first, so
-    /// this is safe to call after a combined dependency+style pass that only ran the per-model rules.
+    /// the given repositories and delivers their findings. Dependency analysis is run first when an
+    /// enabled rule needs the edges, so the dependency-based analyzers always see a complete graph.
+    /// Any stale graph findings are cleared first, so this is safe to call after a combined
+    /// dependency+style pass that only ran the per-model rules.
+    ///
+    /// The other <c>StartBackgroundChecking*</c> entry points already include a graph-analysis pass;
+    /// this exists for the deferred pipeline, which runs the per-model rules itself.
     /// </summary>
     /// <param name="repositories">The repositories to analyse.</param>
-    void RunGraphAnalysesForRepositories(IReadOnlyList<Repository> repositories);
+    /// <returns>A task that completes once the findings have been delivered.</returns>
+    Task RunGraphAnalysesForRepositoriesAsync(IReadOnlyList<Repository> repositories);
 
 }

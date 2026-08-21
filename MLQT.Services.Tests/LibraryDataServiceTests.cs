@@ -1142,4 +1142,88 @@ end TestPkg;
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
     }
+
+    // --- Dependency analysis coordination -------------------------------------------------------
+
+    [Fact]
+    public async Task AddLibrary_LeavesGraphNeedingDependencyAnalysis()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+
+        // Newly loaded models have no edges yet, so nothing may treat the graph as analysed.
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_AnalysesTheGraph()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_IsIdempotent()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        var progressReports = 0;
+        await service.EnsureDependenciesAnalyzedAsync(_ => Interlocked.Increment(ref progressReports));
+
+        // Already analysed → returns without doing the work again.
+        Assert.Equal(0, progressReports);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_ConcurrentCallers_ShareOneRun()
+    {
+        // The startup pipeline and style checking's graph analyses both need the edges. They must
+        // join one run: two overlapping runs are what let the analyzers observe a half-built graph.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;");
+
+        var tasks = Enumerable.Range(0, 8).Select(_ => service.EnsureDependenciesAnalyzedAsync()).ToList();
+        await Task.WhenAll(tasks);
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        // Every caller that started while a run was in flight got that same run back.
+        Assert.Single(tasks.Where(t => !ReferenceEquals(t, Task.CompletedTask)).Distinct());
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_ReAnalysesAfterANewLibraryIsAdded()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        // Adding a repository mid-session brings in models nothing has analysed yet.
+        await service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;");
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task GetLibraryInfos_ReturnsNameAndRootPathPerLibrary()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync(Path.Combine(Path.GetTempPath(), "A.mo"), "model A Real x; end A;");
+
+        var infos = service.GetLibraryInfos();
+
+        var info = Assert.Single(infos);
+        // A file-backed library resolves modelica:// URIs relative to its containing directory.
+        Assert.Equal(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), info.RootPath.TrimEnd(Path.DirectorySeparatorChar));
+    }
 }
