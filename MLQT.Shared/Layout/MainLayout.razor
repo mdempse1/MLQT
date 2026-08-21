@@ -737,6 +737,11 @@
                         _step4running = false;
 
                     await dependencyTask;
+                    // Record it: the deferred pipeline was the only thing setting this, so on a library
+                    // below the defer threshold the app behaved all session as if dependencies had never
+                    // been analysed — which also kept the Coverage dashboard from ever considering the
+                    // analysis complete.
+                    NavState.DependencyAnalysisCompleted();
                     LogProcessEnd("MainLayout", "Analyzing dependencies");
 
                     // Compact the LOH after dependency analysis released parse trees
@@ -939,6 +944,7 @@
                         _step4running = false;
 
                     await dependencyTask;
+                    NavState.DependencyAnalysisCompleted();   // see the startup path's note
 
                     // Compact the LOH after dependency analysis
                     GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
@@ -2186,8 +2192,8 @@
                         FileMonitoringService.StartMonitoring(repositoryId, repository.VcsRootPath);
                 }
 
-                // Re-analyze dependencies for affected models (skip if deferred and not yet run)
-                if (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun)
+                // Re-analyse whenever the graph has edges to maintain (see RefreshLibrariesAsync).
+                if (LibraryDataService.CombinedGraph.DependenciesAnalyzed)
                 {
                     await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
                     var libraryInfos = GetLibraryInfos();
@@ -2256,8 +2262,8 @@
                 var affectedModelIds = new HashSet<string>(modelIds);
                 if (affectedModelIds.Count == 0) return;
 
-                // Re-analyze dependencies (skip if deferred and not yet run)
-                if (!NavState.IsDeferredMode || NavState.HasDependencyAnalysisRun)
+                // Re-analyse whenever the graph has edges to maintain (see RefreshLibrariesAsync).
+                if (LibraryDataService.CombinedGraph.DependenciesAnalyzed)
                 {
                     await InvokeAsync(() => Snackbar.Add("Analyzing dependencies...", Severity.Normal));
                     var libraryInfos = GetLibraryInfos();
@@ -2420,8 +2426,12 @@
                 Info("MainLayout", "Code formatting complete");
             }
 
-            // Re-analyze dependencies only if the user has already run dependency analysis.
-            if (affectedModelIds.Count > 0 && NavState.HasDependencyAnalysisRun)
+            // Re-analyse dependencies whenever the graph HAS edges — the reload above dropped them for
+            // the affected models, so skipping this leaves the graph claiming to be analysed while those
+            // models look unreferenced, and the unused-class rule then flags everything they used.
+            // Asking the graph rather than NavState matters: HasDependencyAnalysisRun is only set by the
+            // deferred pipeline, so on a library below the defer threshold it is false all session.
+            if (affectedModelIds.Count > 0 && LibraryDataService.CombinedGraph.DependenciesAnalyzed)
             {
                 Info("MainLayout", "Re-analyzing dependencies for affected models...");
                 var libraryInfos = GetLibraryInfos();
