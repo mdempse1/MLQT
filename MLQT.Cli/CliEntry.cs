@@ -60,6 +60,8 @@ internal static class CliEntry
           --changed-from <ref>          VCS ref to diff against, for touched-debt escalation
           --dependency <path>           Load another library so references resolve (repeatable).
                                         Never reported on — use for MSL and other dependencies
+          --allow-version-mismatch      Check anyway when a loaded dependency is not the version
+                                        the library's uses(...) declares (findings may not be real)
           --metrics                     Record a coverage snapshot in <library-path>/.mlqt/metrics-history.json
           --metrics-out <path>          Record it somewhere else instead (implies --metrics)
           --metrics-force               Record even when the numbers are unchanged
@@ -79,14 +81,15 @@ internal static class CliEntry
         deps:     without --dependency, a reference into a library that is not loaded cannot resolve,
                   so inherited icons and modelica:// links report as findings. Pass the same
                   --dependency set to `baseline` as to `check`, or the two disagree — check warns
-                  when the baseline recorded a dependency this run did not load, and when a loaded
-                  copy is not the version the library's uses(...) declares.
+                  when the baseline recorded a dependency this run did not load. A loaded copy that
+                  is NOT the version the library's uses(...) declares STOPS the run (exit 2): the
+                  findings would not be real. Override with --allow-version-mismatch.
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.
 
         Exit codes: 0 = passed, 1 = findings at/above --fail-on (new; touched debt if --touched-debt fail),
-                    2 = usage/load error
+                    2 = usage/load/setup error (bad path, unreadable config, dependency version mismatch)
         """;
 }
 

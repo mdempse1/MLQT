@@ -10,7 +10,8 @@ internal static class CheckRunner
     {
         var load = await CheckPipeline.LoadAndCheckAsync(
             opts.LibraryPath, opts.ConfigPath, stderr,
-            honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths);
+            honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
+            allowVersionMismatch: opts.AllowVersionMismatch);
         if (!load.Ok)
             return load.ExitCode;
 

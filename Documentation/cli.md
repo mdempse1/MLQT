@@ -40,6 +40,7 @@ of `.mo` files) or a single `.mo` file.
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
+| `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
 | `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
@@ -51,7 +52,7 @@ of `.mo` files) or a single `.mo` file.
 |------|---------|
 | `0` | No findings at or above `--fail-on` |
 | `1` | Findings at or above `--fail-on` |
-| `2` | Usage or load error (bad path, unreadable/invalid config) |
+| `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) |
 
 Because the built-in **style** rules report at **warning** severity, the default `--fail-on error`
 is effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for
@@ -84,19 +85,36 @@ note: loaded Modelica, ModelicaReference, ModelicaServices, ModelicaTest, … fo
 On ExternData this removes 96 findings — 91 inherited icons and all 5 `modelica://` references — which
 is the same effect as adding MSL to the project in the desktop app.
 
-### Version mismatches
+### Version mismatches stop the run
 
 The versions a library declares in its `uses(...)` annotation are compared against the copies actually
-loaded, and any disagreement is reported:
+loaded. A disagreement **stops the check** before any findings are reported:
 
 ```
-warning: dependency version mismatch — ExternData declares Modelica 3.2.2, but 4.2.0 dev is loaded
+$ mlqt check ./ExternData --dependency /path/to/msl-4.x
+error: dependency version mismatch
+       ExternData declares Modelica 3.2.2, but 4.2.0 dev is loaded
+       Checking against the wrong version reports findings that are not real, so this check has
+       been stopped.
+       Point --dependency at the declared versions, or update the uses(...) annotation to match
+       what you have.
+       If the difference is deliberate (a conversion(noneFromVersion=...) covers it, say), pass
+       --allow-version-mismatch.
+                                                                                       (exit 2)
 ```
 
-This is about the check's setup rather than the source: references still resolve, but against classes
-that may have moved, been renamed or changed signature between versions, so the findings become
-unreliable. It is a warning, not a rule and not a failure — there is nothing to baseline and nothing
-to fix in the code, only a checkout to correct (or a judgement that the copy is close enough).
+References still *resolve* against the wrong version, but against classes that may have moved, been
+renamed or changed signature — so the run would report a pile of findings that are not real. Handing
+those back is worse than refusing: someone would spend a morning on them.
+
+The exit code is **2 (setup error)**, not 1 (gate failed). In CI those mean different things: fix your
+invocation versus fix your code. `baseline create`/`update`/`prune` refuse for the same reason — a
+baseline taken against the wrong versions bakes unreal findings into the ledger, where they are far
+harder to notice.
+
+`--allow-version-mismatch` downgrades it to a warning and continues. It exists because a
+`conversion(noneFromVersion=...)` annotation can make a version difference legitimate and MLQT does not
+read those; the run then says plainly that its findings may not be real.
 
 Comparison is by version segment, and a shorter declaration matches a longer version: `4.0` covers
 `4.0.0`, and a build suffix on the loaded copy (`4.2.0 dev`) is not treated as a disagreement with a

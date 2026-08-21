@@ -13,6 +13,10 @@ internal sealed record BaselineOptions
     /// same set the check uses, or the two disagree about what resolves — see the drift warning.</summary>
     public IReadOnlyList<string> DependencyPaths { get; init; } = [];
 
+    /// <summary>Baseline anyway despite a dependency version mismatch. A baseline taken against the
+    /// wrong versions bakes findings that are not real into the ledger, so this is off by default.</summary>
+    public bool AllowVersionMismatch { get; init; }
+
     /// <summary>The baseline file to operate on — explicit (resolved against the library path when
     /// relative), or the default <c>&lt;lib&gt;/.mlqt/baseline.json</c>.</summary>
     public string ResolvedBaselinePath =>
@@ -28,6 +32,7 @@ internal sealed record BaselineOptions
         string? path = null, baseline = null, config = null;
         var force = false;
         var dependencies = new List<string>();
+        var allowVersionMismatch = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -47,6 +52,9 @@ internal sealed record BaselineOptions
                     if (!Next(args, ref i, out var dependency, out error)) return false;
                     dependencies.Add(dependency!);
                     break;
+                case "--allow-version-mismatch":
+                    allowVersionMismatch = true;
+                    break;
                 default:
                     if (arg.StartsWith('-')) { error = $"unknown option '{arg}'"; return false; }
                     if (path is not null) { error = $"unexpected argument '{arg}'"; return false; }
@@ -60,7 +68,7 @@ internal sealed record BaselineOptions
         options = new BaselineOptions
         {
             LibraryPath = path, BaselinePath = baseline, ConfigPath = config,
-            Force = force, DependencyPaths = dependencies
+            Force = force, DependencyPaths = dependencies, AllowVersionMismatch = allowVersionMismatch
         };
         return true;
     }
@@ -104,7 +112,8 @@ internal static class BaselineCommand
         }
 
         var load = await CheckPipeline.LoadAndCheckAsync(
-            opts!.LibraryPath, opts.ConfigPath, stderr, dependencyPaths: opts.DependencyPaths);
+            opts!.LibraryPath, opts.ConfigPath, stderr, dependencyPaths: opts.DependencyPaths,
+            allowVersionMismatch: opts.AllowVersionMismatch);
         if (!load.Ok)
             return load.ExitCode;
 

@@ -326,28 +326,89 @@ public class BaselineMaintenanceTests
 
     // ---- dependency version mismatch -------------------------------------------------------------
 
+    private const string DependencyAtTwo = """
+        package Dep "a dependency"
+          model Thing "described"
+          end Thing;
+          annotation(version="2.0.0");
+        end Dep;
+        """;
+
+    private const string LibraryDeclaringOne = """
+        package Lib "a library"
+          model A "described"
+          end A;
+          annotation(uses(Dep(version="1.0.0")));
+        end Lib;
+        """;
+
     [Fact]
-    public void Check_WarnsWhenALoadedDependencyIsNotTheDeclaredVersion()
+    public void Check_RefusesToRunWhenALoadedDependencyIsNotTheDeclaredVersion()
     {
+        // Resolving against the wrong version reports findings that are not real, so the honest
+        // outcome is to stop rather than hand back numbers nobody should act on.
+        using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
+        using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
+
+        var (code, stdout, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+
+        // 2 = setup error, not 1 = gate failed. In CI those mean different things: fix your
+        // invocation versus fix your code.
+        Assert.Equal(2, code);
+        Assert.Contains("error: dependency version mismatch", stderr);
+        Assert.Contains("Lib declares Dep 1.0.0, but 2.0.0 is loaded", stderr);
+        Assert.Contains("--allow-version-mismatch", stderr);
+        Assert.Equal("", stdout.Trim());   // no findings reported at all
+    }
+
+    [Fact]
+    public void Check_AllowVersionMismatch_ContinuesButSaysTheFindingsMayNotBeReal()
+    {
+        // The escape hatch: a conversion(noneFromVersion=...) annotation can make a difference
+        // legitimate, and MLQT does not read those.
+        using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
+        using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
+
+        var (code, _, stderr) = Run(
+            "check", lib.Path, "--dependency", dependency.Path, "--allow-version-mismatch", "--no-color");
+
+        Assert.Equal(0, code);
+        Assert.Contains("warning: dependency version mismatch", stderr);
+        Assert.Contains("may not be real", stderr);
+    }
+
+    [Fact]
+    public void Baseline_AlsoRefusesOnAVersionMismatch()
+    {
+        // A baseline taken against the wrong versions bakes findings that are not real into the
+        // ledger, where they are far harder to notice than in a single check.
+        using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
+        using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
+
+        var (code, _, stderr) = Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+
+        Assert.Equal(2, code);
+        Assert.Contains("dependency version mismatch", stderr);
+        Assert.False(File.Exists(lib.BaselineFile));
+    }
+
+    [Fact]
+    public void Check_MatchingVersions_RunNormally()
+    {
+        // Guards the premise: the refusal is about a real disagreement, not about --dependency itself.
         using var dependency = new TempLibrary().WithModel("""
             package Dep "a dependency"
               model Thing "described"
               end Thing;
-              annotation(version="2.0.0");
+              annotation(version="1.0.0");
             end Dep;
             """);
-        using var lib = new TempLibrary().WithModel("""
-            package Lib "a library"
-              model A "described"
-              end A;
-              annotation(uses(Dep(version="1.0.0")));
-            end Lib;
-            """);
+        using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+        var (code, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
 
-        Assert.Contains("dependency version mismatch", stderr);
-        Assert.Contains("Lib declares Dep 1.0.0, but 2.0.0 is loaded", stderr);
+        Assert.Equal(0, code);
+        Assert.DoesNotContain("version mismatch", stderr);
     }
 
     [Fact]

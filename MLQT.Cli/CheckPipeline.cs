@@ -27,7 +27,7 @@ internal static class CheckPipeline
 {
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
-        IReadOnlyList<string>? dependencyPaths = null)
+        IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false)
     {
         var isDir = Directory.Exists(libraryPath);
         var isMoFile = File.Exists(libraryPath) &&
@@ -164,11 +164,35 @@ internal static class CheckPipeline
                 modelToFile[model.Id] = file.FilePath;
 
         // A dependency on the machine that is not the version the library targets resolves references
-        // against classes that may have moved or changed between versions, so the findings themselves
-        // become unreliable. Warn rather than fail: there is nothing to fix in the source, only a
-        // checkout to correct, and the user may well know their copy is close enough.
-        foreach (var mismatch in UsesVersionChecker.Check(graph, models))
-            stderr.WriteLine($"warning: dependency version mismatch — {mismatch.Describe()}");
+        // against classes that may have moved, been renamed or changed signature between versions. The
+        // result is not a slightly-off check but a pile of findings that are not real, so stop rather
+        // than hand back numbers nobody should act on. Exit code 2 (setup error), not 1 (gate failed):
+        // in CI the two mean different things — fix your invocation vs fix your code.
+        var mismatches = UsesVersionChecker.Check(graph, models);
+        if (mismatches.Count > 0)
+        {
+            var severity = allowVersionMismatch ? "warning" : "error";
+            stderr.WriteLine($"{severity}: dependency version mismatch");
+            foreach (var mismatch in mismatches)
+                stderr.WriteLine($"       {mismatch.Describe()}");
+
+            if (!allowVersionMismatch)
+            {
+                stderr.WriteLine(
+                    "       Checking against the wrong version reports findings that are not real, so " +
+                    "this check has been stopped.");
+                stderr.WriteLine(
+                    "       Point --dependency at the declared versions, or update the uses(...) " +
+                    "annotation to match what you have.");
+                stderr.WriteLine(
+                    "       If the difference is deliberate (a conversion(noneFromVersion=...) covers " +
+                    "it, say), pass --allow-version-mismatch.");
+                return LoadResult.Failed(ExitCodes.Error);
+            }
+
+            stderr.WriteLine(
+                "       Continuing because --allow-version-mismatch was given; findings may not be real.");
+        }
 
         // Report the number of classes actually checked: excludes unparseable placeholders and any
         // library the settings exclude. Excluded classes are counted out loud rather than silently, so

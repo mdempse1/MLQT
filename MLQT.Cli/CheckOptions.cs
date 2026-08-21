@@ -36,6 +36,14 @@ internal sealed record CheckOptions
     /// </summary>
     public IReadOnlyList<string> DependencyPaths { get; init; } = [];
 
+    /// <summary>
+    /// Check anyway when a loaded dependency is not the version the library declares. Off by default:
+    /// the findings such a run produces are not reliable, so stopping is the honest outcome. The
+    /// escape hatch exists because a <c>conversion(noneFromVersion=...)</c> annotation can make a
+    /// difference legitimate, and MLQT does not read those.
+    /// </summary>
+    public bool AllowVersionMismatch { get; init; }
+
     /// <summary>Record a coverage snapshot into the metrics history the desktop dashboard reads.</summary>
     public bool RecordMetrics { get; init; }
 
@@ -69,6 +77,7 @@ internal sealed record CheckOptions
         var recordMetrics = false;
         var metricsForce = false;
         var dependencies = new List<string>();
+        var allowVersionMismatch = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -93,6 +102,9 @@ internal sealed record CheckOptions
                 case "--dependency":
                     if (!Next(args, ref i, out var dependency, out error)) return false;
                     dependencies.Add(dependency!);
+                    break;
+                case "--allow-version-mismatch":
+                    allowVersionMismatch = true;
                     break;
                 case "--metrics":
                     recordMetrics = true;
@@ -169,7 +181,8 @@ internal sealed record CheckOptions
             RecordMetrics = recordMetrics,
             MetricsPath = metricsPath,
             MetricsForce = metricsForce,
-            DependencyPaths = dependencies
+            DependencyPaths = dependencies,
+            AllowVersionMismatch = allowVersionMismatch
         };
         return true;
     }

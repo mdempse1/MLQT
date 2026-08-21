@@ -159,9 +159,10 @@ Add these with care:
   icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
   earn — on ExternData, 96 of them. Dependencies are loaded for resolution only and are never reported
   on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
-  resolves; the check warns when they differ. It also warns when the copy you point at is not the
-  version the library's `uses(...)` declares — pin the dependency checkouts in CI to the versions your
-  libraries target.
+  resolves; the check warns when they differ. If the copy you point at is **not** the version the
+  library's `uses(...)` declares, the run **stops with exit 2** rather than report findings that are
+  not real — so pin the dependency checkouts in CI to the versions your libraries target. Exit 2 is
+  worth handling separately in your pipeline: it means the invocation is wrong, not the code.
 - **`SpellCheckDescription` / `SpellCheckDocumentation`** — will flag domain terms until you build up a
   custom dictionary. See [spell-checking.md](spell-checking.md).
 - **`FollowNamingConvention`** — needs a naming convention configured. See
@@ -504,4 +505,5 @@ end Foo;
 | The metrics chart is empty in the app | The dashboard reads `.mlqt/metrics-history.json`; make sure CI's commits of it are being pulled, or press **Save snapshot** once locally. |
 | Gate fails on `MLQT.Parse.SyntaxError` and the baseline doesn't help | It is not meant to. Fix the syntax error — see [Parse errors always fail](#parse-errors-always-fail). |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
+| `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |
