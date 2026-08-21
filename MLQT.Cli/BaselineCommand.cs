@@ -118,12 +118,37 @@ internal static class BaselineCommand
                 return ExitCodes.Ok;
 
             case "update":
+            {
+                // update is the only command that can GROW the baseline, and growing it means accepting
+                // violations nobody has reviewed — the one way to defeat the ratchet by accident. So it
+                // says what it is absorbing, and refuses to absorb anything unless asked to.
+                var existing = File.Exists(path) ? Baseline.Load(path) : null;
                 var updated = Baseline.FromFindings(load.Findings, now, stamp);
+                var absorbed = CountMissing(updated, existing);
+                var droppedByUpdate = CountMissing(existing, updated);
+
+                if (absorbed > 0 && !opts.Force)
+                {
+                    stderr.WriteLine(
+                        $"error: this would absorb {absorbed} finding(s) that are not in the baseline, " +
+                        "accepting them as debt.");
+                    stderr.WriteLine(
+                        "       Re-run with --force if that is intended (e.g. you just enabled new rules).");
+                    stderr.WriteLine(
+                        "       To only drop findings you have fixed, without accepting anything new, " +
+                        "use `baseline prune`.");
+                    return ExitCodes.Error;
+                }
+
                 updated.Save(path);
-                stdout.WriteLine($"Updated {path} with {updated.Entries.Count} finding(s)");
+                stdout.WriteLine(
+                    $"Updated {path}: {updated.Entries.Count} finding(s) " +
+                    $"— absorbed {absorbed} new as accepted debt, dropped {droppedByUpdate} fixed");
                 return ExitCodes.Ok;
+            }
 
             case "prune":
+            {
                 if (!File.Exists(path))
                 {
                     stderr.WriteLine($"error: baseline not found: {path}");
@@ -131,13 +156,36 @@ internal static class BaselineCommand
                 }
                 var baseline = Baseline.Load(path);
                 var stale = baseline.StaleEntries(load.Findings);
-                baseline.WithoutStale(load.Findings, now, stamp).Save(path);
-                stdout.WriteLine($"Pruned {stale.Count} fixed entr{(stale.Count == 1 ? "y" : "ies")} from {path}");
+                var pruned = baseline.WithoutStale(load.Findings, now, stamp);
+                pruned.Save(path);
+
+                stdout.WriteLine(
+                    $"Pruned {stale.Count} fixed entr{(stale.Count == 1 ? "y" : "ies")} from {path}; " +
+                    $"{pruned.Entries.Count} remain");
+
+                // Prune never accepts anything new — say so when there is something it left alone, so
+                // the difference from `update` is visible at the point of use rather than only in docs.
+                var stillFailing = CountMissing(Baseline.FromFindings(load.Findings), pruned);
+                if (stillFailing > 0)
+                    stdout.WriteLine(
+                        $"{stillFailing} finding(s) are not in the baseline and will still fail the gate. " +
+                        "Prune never accepts new debt; `baseline update --force` would.");
                 return ExitCodes.Ok;
+            }
 
             default:
                 return ExitCodes.Ok;
         }
+    }
+
+    /// <summary>How many of <paramref name="candidate"/>'s entries are absent from <paramref name="other"/>.
+    /// A null <paramref name="other"/> is an empty baseline (nothing recorded yet).</summary>
+    private static int CountMissing(Baseline? candidate, Baseline? other)
+    {
+        if (candidate is null)
+            return 0;
+        var known = (other?.Entries ?? []).Select(e => e.Fingerprint).ToHashSet(StringComparer.Ordinal);
+        return candidate.Entries.Count(e => !known.Contains(e.Fingerprint));
     }
 
     /// <summary>Abbreviates a Git SHA for a log line; SVN revision numbers are short already.</summary>

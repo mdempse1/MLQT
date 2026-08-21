@@ -45,7 +45,7 @@ internal static class CliEntry
 
         Usage:
           mlqt check <library-path> [options]
-          mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <path>] [--force]
+          mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>] [--force]
 
         check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
@@ -62,8 +62,15 @@ internal static class CliEntry
           --metrics-force               Record even when the numbers are unchanged
           -h, --help                    Show this help
 
-        baseline: create/update snapshot current findings to <library-path>/.mlqt/baseline.json
-                  (or --baseline <path>); prune drops entries whose findings are now fixed.
+        baseline: create  snapshot the current findings as accepted debt (refuses to overwrite
+                          an existing file without --force)
+                  prune   drop entries whose findings are now fixed. Never accepts anything new,
+                          so it can only ever shrink the baseline — the safe maintenance command
+                  update  regenerate from the current findings: drops fixed entries AND accepts
+                          any new ones as debt. Requires --force when it would accept something,
+                          because that is how a violation gets past the gate unreviewed
+
+                  Writes <library-path>/.mlqt/baseline.json unless --baseline <path> is given.
                   The file records when it was generated and the revision it describes.
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.

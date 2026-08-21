@@ -311,12 +311,23 @@ You get:
 
 ## 8. Maintaining the baseline
 
-- **When you fix issues:** `mlqt baseline prune <root>` drops entries whose findings are now fixed,
-  shrinking the ledger. Commit the result.
-- **After deliberately accepting more debt** (e.g. a big import): `mlqt baseline update <root>` and
-  review the diff — the baseline growing is visible in code review.
-- **Never** let the baseline grow silently: keep it under review, and let `prune` pull the numbers down
-  as the library improves.
+Both maintenance commands drop entries whose findings you have fixed. The difference is whether they
+can also **add**:
+
+| | Drops fixed entries | Accepts new findings as debt |
+|---|---|---|
+| `mlqt baseline prune <root>` | yes | **no** — it can only ever shrink the baseline |
+| `mlqt baseline update <root>` | yes | **yes**, and only with `--force` |
+
+- **When you fix issues:** run `prune`. It banks the progress and cannot silently accept debt someone
+  just added, so it is safe to run at any time or on a schedule. Commit the result. If findings exist
+  that it left alone, it tells you how many still fail the gate.
+- **After deliberately accepting more debt** (e.g. you enabled new rules, or imported a large library):
+  `mlqt baseline update <root> --force`. Without `--force` it refuses and tells you how many findings
+  it would have absorbed — accepting a violation nobody reviewed is the one way to defeat the ratchet
+  by accident. Review the resulting diff; the baseline growing should be visible in code review.
+- **Never run `update --force` from CI.** That turns the gate off one commit at a time. CI should only
+  ever *read* the baseline.
 
 ---
 
@@ -329,7 +340,8 @@ mlqt check <library-path> [--baseline <path>] [--changed-from <ref>]
                           [--out <file>] [--fail-on off|warning|error] [--no-color]
                           [--no-suppress] [--metrics] [--metrics-out <path>] [--metrics-force]
 
-mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <path>] [--force]
+mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>] [--force]
+        # --force: create = overwrite an existing file; update = accept new findings as debt
 ```
 
 `--config` defaults to `<library-path>/.mlqt/settings.json`; `--baseline` for the `baseline` commands

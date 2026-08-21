@@ -104,9 +104,46 @@ records the current findings as *accepted debt* so CI fails only on **new** issu
 
 ```bash
 mlqt baseline create <library-path>     # snapshot current findings -> <library-path>/.mlqt/baseline.json
-mlqt baseline update <library-path>     # regenerate the baseline
 mlqt baseline prune  <library-path>     # drop entries whose findings are now fixed
+mlqt baseline update <library-path>     # regenerate: drop fixed entries AND accept new ones as debt
 ```
+
+### `prune` vs `update`
+
+Both drop entries you have fixed. The difference is whether the command can **add**:
+
+| | Drops fixed entries | Accepts new findings as debt |
+|---|---|---|
+| `prune` | yes | **no** — it can only ever shrink the baseline |
+| `update` | yes | **yes**, and only with `--force` |
+
+**`prune` is the safe maintenance command.** Run it whenever you like, or on a schedule: it banks the
+debt you have paid off and cannot silently accept debt someone just added. When findings exist that it
+left alone, it says so:
+
+```
+Pruned 1 fixed entry from .mlqt/baseline.json; 1 remain
+1 finding(s) are not in the baseline and will still fail the gate. Prune never accepts new debt;
+`baseline update --force` would.
+```
+
+**`update` is a deliberate re-baseline** — for when you have enabled new rules and want their existing
+violations accepted in one go. Because accepting a violation nobody reviewed is the one way to defeat
+the ratchet by accident, it refuses unless you say so:
+
+```
+$ mlqt baseline update ./MyLibrary
+error: this would absorb 1 finding(s) that are not in the baseline, accepting them as debt.
+       Re-run with --force if that is intended (e.g. you just enabled new rules).
+       To only drop findings you have fixed, without accepting anything new, use `baseline prune`.
+
+$ mlqt baseline update ./MyLibrary --force
+Updated .mlqt/baseline.json: 2 finding(s) — absorbed 1 new as accepted debt, dropped 1 fixed
+```
+
+`--force` is only needed when there is something to absorb; an `update` that would merely drop fixed
+entries behaves like `prune` and runs without it. **Never run `update --force` from CI** — that turns
+the gate off one commit at a time.
 
 `create`/`update`/`prune` accept `--baseline <path>` (default `<library-path>/.mlqt/baseline.json`)
 and `--config <path>`; `create` refuses to overwrite an existing file unless `--force` is given.
