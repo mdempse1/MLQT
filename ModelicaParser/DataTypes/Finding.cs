@@ -56,5 +56,6 @@ public sealed record Finding
             Source = "StyleChecking",
             RuleId = RuleId,
             ElementPath = ElementPath,
+            Fingerprint = Fingerprint,
         };
 }

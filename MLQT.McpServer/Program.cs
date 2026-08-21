@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MLQT.McpServer.Services;
 using MLQT.Services;
+using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
 
 // Modelica source and the VCS protocols are culture-invariant: the decimal separator is always
@@ -28,6 +29,7 @@ builder.Services.AddSingleton<ILibraryDataService, LibraryDataService>();
 builder.Services.AddSingleton<IFileMonitoringService, FileMonitoringService>();
 builder.Services.AddSingleton<IRepositoryService, RepositoryService>();
 builder.Services.AddSingleton<ICodeReviewService, CodeReviewService>();
+builder.Services.AddSingleton<IBaselineStatusService, BaselineStatusService>();
 builder.Services.AddSingleton<IStyleCheckingService, StyleCheckingService>();
 builder.Services.AddSingleton<ICustomDictionaryService, CustomDictionaryService>();
 builder.Services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();

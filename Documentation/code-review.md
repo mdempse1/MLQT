@@ -164,3 +164,37 @@ For details on configuring naming conventions, presets, exception names, and und
 - **External tool errors** are added when you manually run a Dymola or OpenModelica check
 - Issues persist across model selections — switching models does not clear the issues list
 - Resolving an issue removes it from the list for the current session
+
+## Filtering to what you have changed
+
+A mature library carries a lot of standing debt, and on a first look the Issues list is mostly that
+rather than anything you did. When the repository has a committed baseline
+(`.mlqt/baseline.json` — see [ci-quality-gate.md](ci-quality-gate.md)), the Issues toolbar offers a
+**Changes vs baseline** switch, and each row gains a **Baseline** column:
+
+| Label | Meaning |
+|---|---|
+| `new` | Not in the baseline — something introduced since it was taken |
+| `touched` | In the baseline, but in a file your working copy has pending |
+| `accepted` | In the baseline, in a file you have not touched |
+
+With the switch on, only `new` and `touched` are listed; `accepted` is hidden. The heading keeps both
+numbers, so the standing debt is never invisible:
+
+```
+132 Issues to review (7 changed vs baseline)
+```
+
+**"Touched" means pending commit, not a diff between commits.** A file counts as touched when the
+working copy has it modified, added, renamed, untracked or conflicted — the question the app answers
+is *what have I done to this library right now*, and that must not depend on which commit you happen
+to be sitting on. (The `mlqt check --changed-from <ref>` CLI option is the commit-to-commit variant,
+for CI.)
+
+Findings with no baseline entry to compare against — a library in a repository with no baseline, or an
+external tool's output, which carries no finding identity — are always shown. "Not classifiable" is not
+the same as "already accepted".
+
+The switch is disabled when none of the loaded repositories has a baseline; hover it for the reason.
+The classification follows the loaded libraries and the working copy automatically, so committing or
+editing updates it without a manual refresh.

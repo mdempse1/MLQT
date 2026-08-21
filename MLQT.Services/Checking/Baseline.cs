@@ -125,6 +125,14 @@ public sealed class Baseline
     public bool Contains(Finding finding) =>
         !RuleIds.IsParseDiagnostic(finding.RuleId) && _fingerprints.Contains(finding.Fingerprint);
 
+    /// <summary>
+    /// Whether the baseline records this fingerprint. For a consumer that holds a projected
+    /// <see cref="LogMessage"/> rather than the original finding. Parse diagnostics are never written
+    /// to a baseline, so they simply do not match.
+    /// </summary>
+    public bool ContainsFingerprint(string? fingerprint) =>
+        fingerprint is not null && _fingerprints.Contains(fingerprint);
+
     /// <summary>Snapshots the current findings into a baseline (deduped by fingerprint, sorted).
     /// Parse diagnostics are excluded — see <see cref="Contains"/>.</summary>
     /// <param name="createdUtc">Generation time, supplied by the caller so the result is deterministic

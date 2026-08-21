@@ -50,6 +50,13 @@ public class LogMessage
     /// </summary>
     public string? ElementPath { get; set; }
 
+    /// <summary>
+    /// The originating <see cref="Finding"/>'s reformat-stable identity, or <c>null</c> for a message
+    /// that has none (an external tool's output). Carried through so a consumer holding only messages
+    /// — the desktop issues list — can still ask a baseline whether it already knows about this one.
+    /// </summary>
+    public string? Fingerprint { get; set; }
+
     public LogMessage(string modelName, string severity, int lineNumber, string summary, string details = "")
     {
         ModelName = modelName;

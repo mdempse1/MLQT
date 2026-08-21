@@ -65,6 +65,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
 | **ICodeReviewService** | Log messages and issues from parsing/style checking |
+| **IBaselineStatusService** | Classifies issues against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff |
 | **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
 | **IExternalResourceService** | External resource analysis, validation, and monitoring |

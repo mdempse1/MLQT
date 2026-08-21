@@ -45,7 +45,8 @@ public static class ParserErrorReporter
             finding.Message)
         {
             Source = SourceName,
-            RuleId = finding.RuleId
+            RuleId = finding.RuleId,
+            Fingerprint = finding.Fingerprint
         };
     }
 

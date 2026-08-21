@@ -15,6 +15,7 @@
 @inject ISettingsService SettingsService
 @inject IDialogService DialogService
 @inject ICodeReviewService CodeReviewService
+@inject IBaselineStatusService BaselineStatus
 @inject IStyleCheckingService StyleCheckingService
 @inject ICustomDictionaryService CustomDictionaryService
 @inject IFileMonitoringService FileMonitoringService
@@ -140,8 +141,13 @@
                 Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
                 FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>
-                    <MudText Typo="Typo.body1">@CodeReviewService.LogMessages.Count Issues to review</MudText>
+                    <MudText Typo="Typo.body1">@IssuesHeading</MudText>
                     <MudSpacer />
+                    <MudTooltip Text="@ChangesOnlyTooltip">
+                        <MudSwitch T="bool" ValueChanged="OnChangesOnlyChanged" Value="@ShowChangesOnly"
+                            Label="Changes vs baseline" Color="Color.Primary" Size="Size.Small"
+                            Disabled="@(!BaselineStatus.HasBaseline)" />
+                    </MudTooltip>
                     <MudSwitch T="bool" ValueChanged="OnIssuesScopeChanged" Value="@IssuesScopeAllModels" Label="Only this model" Color="Color.Primary" Size="Size.Small" />
                     <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
                         AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
@@ -152,6 +158,10 @@
                     <MudTh>Description</MudTh>
                     <MudTh>Line Number</MudTh>
                     <MudTh>Type</MudTh>
+                    @if (BaselineStatus.HasBaseline)
+                    {
+                        <MudTh>Baseline</MudTh>
+                    }
                     <MudTh Style="width:1px;"></MudTh>
                 </HeaderContent>
                 <RowTemplate>
@@ -163,6 +173,17 @@
                         @context.LineNumber</MudTd>
                     <MudTd DataLabel="Type" Style="text-align: left; vertical-align:top;" Class="compact-table">
                         @context.Severity</MudTd>
+                    @if (BaselineStatus.HasBaseline)
+                    {
+                        <MudTd DataLabel="Baseline" Style="text-align: left; vertical-align:top;" Class="compact-table">
+                            @{ var status = BaselineStatus.StatusOf(context); }
+                            @if (status is not null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                         Color="@BaselineStatusColour(status.Value)">@BaselineStatusLabel(status.Value)</MudChip>
+                            }
+                        </MudTd>
+                    }
                     <MudTd DataLabel="" Style="text-align: center; vertical-align:top;" Class="compact-table">
                         @if (CanSuppressRule(context))
                         {
@@ -295,6 +316,12 @@
     private LogMessage? _currentIssue = null;
     private string _searchString = "";
     private bool IssuesScopeAllModels = false;
+
+    /// <summary>
+    /// Narrows the issues list to what this working copy has changed — new findings, plus standing
+    /// debt in a file waiting to be committed. Off by default so nothing is hidden until asked for.
+    /// </summary>
+    private bool ShowChangesOnly = false;
     private CancellationTokenSource? _checkCancellationTokenSource;
     private IReadOnlyList<string>? _suggestions = null;
     private HashSet<string>? _misspelledWords = null;
@@ -379,6 +406,7 @@
         NavState.OnSaveSettings += OnSettingsSaved;
         NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged += OnLogMessagesChanged;
+        BaselineStatus.OnChanged += OnBaselineStatusChanged;
         // Note: background style-checking violations are added to CodeReviewService by MainLayout (the
         // always-mounted layout), so they are captured even when this page isn't open. This page just
         // reacts to OnLogMessagesChanged to refresh.
@@ -398,7 +426,13 @@
     {
         await LoadSettings();
         await ApplySyntaxHighlightingStyles();
+
+        // Pick up the current baselines and pending changes when the tab opens. The service keeps
+        // itself current after that, from library loads and file activity.
+        BaselineStatus.Refresh();
     }
+
+    private async void OnBaselineStatusChanged() => await InvokeAsync(StateHasChanged);
 
     private async void OnDeferredAnalysisCompleted()
     {
@@ -539,6 +573,7 @@
         LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
+        BaselineStatus.OnChanged -= OnBaselineStatusChanged;
 
         // Unsubscribe from model checking service events
         DymolaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
@@ -1360,7 +1395,56 @@ document.head.appendChild(style);
                 name.Substring(0, name.IndexOf(".", idx)) + "..." + name.Substring(name.LastIndexOf("."));
     }
 
-    private bool FilterFunc1(LogMessage element) => FilterFunc(element, _searchString + (IssuesScopeAllModels ? " " + NavState.ModelID: "") );
+    private bool FilterFunc1(LogMessage element)
+    {
+        // Hide accepted debt first: the point of the toggle is that the search box then works over
+        // what is left rather than over the whole ledger.
+        if (ShowChangesOnly && !BaselineStatus.Snapshot.IsChangedFromBaseline(element))
+            return false;
+
+        return FilterFunc(element, _searchString + (IssuesScopeAllModels ? " " + NavState.ModelID : ""));
+    }
+
+    private void OnChangesOnlyChanged(bool value)
+    {
+        ShowChangesOnly = value;
+        StateHasChanged();
+    }
+
+    private string IssuesHeading
+    {
+        get
+        {
+            var all = CodeReviewService.LogMessages;
+            if (!BaselineStatus.HasBaseline)
+                return $"{all.Count} Issues to review";
+
+            var snapshot = BaselineStatus.Snapshot;
+            var changed = all.Count(snapshot.IsChangedFromBaseline);
+            return ShowChangesOnly
+                ? $"{changed} changed of {all.Count} issues"
+                : $"{all.Count} Issues to review ({changed} changed vs baseline)";
+        }
+    }
+
+    private string ChangesOnlyTooltip => BaselineStatus.HasBaseline
+        ? "Show only findings this working copy changed: new ones, plus accepted debt in a file " +
+          $"waiting to be committed ({BaselineStatus.TouchedFileCount} such file(s))."
+        : "No .mlqt/baseline.json in the loaded repositories — run `mlqt baseline create` to enable this.";
+
+    private static string BaselineStatusLabel(FindingStatus status) => status switch
+    {
+        FindingStatus.New => "new",
+        FindingStatus.TouchedDebt => "touched",
+        _ => "accepted"
+    };
+
+    private static Color BaselineStatusColour(FindingStatus status) => status switch
+    {
+        FindingStatus.New => Color.Error,
+        FindingStatus.TouchedDebt => Color.Warning,
+        _ => Color.Default
+    };
 
     private bool FilterFunc(LogMessage element, string searchString)
     {
