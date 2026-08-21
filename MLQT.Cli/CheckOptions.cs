@@ -28,6 +28,14 @@ internal sealed record CheckOptions
     /// <summary>Audit mode: ignore __MLQT suppression annotations and report everything.</summary>
     public bool NoSuppress { get; init; }
 
+    /// <summary>
+    /// Extra library paths loaded so references resolve — the Modelica Standard Library and anything
+    /// else the library under check depends on. They are never reported on: rules like "class has an
+    /// icon" need to see <c>Modelica.Icons.*</c> to know the icon is inherited, but MSL's own findings
+    /// are not your problem.
+    /// </summary>
+    public IReadOnlyList<string> DependencyPaths { get; init; } = [];
+
     /// <summary>Record a coverage snapshot into the metrics history the desktop dashboard reads.</summary>
     public bool RecordMetrics { get; init; }
 
@@ -60,6 +68,7 @@ internal sealed record CheckOptions
         string? metricsPath = null;
         var recordMetrics = false;
         var metricsForce = false;
+        var dependencies = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -80,6 +89,10 @@ internal sealed record CheckOptions
                     break;
                 case "--no-suppress":
                     noSuppress = true;
+                    break;
+                case "--dependency":
+                    if (!Next(args, ref i, out var dependency, out error)) return false;
+                    dependencies.Add(dependency!);
                     break;
                 case "--metrics":
                     recordMetrics = true;
@@ -155,7 +168,8 @@ internal sealed record CheckOptions
             NoSuppress = noSuppress,
             RecordMetrics = recordMetrics,
             MetricsPath = metricsPath,
-            MetricsForce = metricsForce
+            MetricsForce = metricsForce,
+            DependencyPaths = dependencies
         };
         return true;
     }

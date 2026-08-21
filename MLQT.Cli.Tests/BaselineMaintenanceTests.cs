@@ -172,7 +172,7 @@ public class BaselineMaintenanceTests
         lib.WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""");
         var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
-        Assert.Contains("different rule set", stderr);
+        Assert.Contains("different configuration", stderr);
         Assert.Contains("enabled since: MLQT.Doc.ClassDescription", stderr);
         Assert.Contains("baseline update --force", stderr);
     }
@@ -214,8 +214,8 @@ public class BaselineMaintenanceTests
 
         var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
-        Assert.DoesNotContain("different rule set", stderr);
-        Assert.DoesNotContain("predates rule recording", stderr);
+        Assert.DoesNotContain("different configuration", stderr);
+        Assert.DoesNotContain("predates configuration recording", stderr);
     }
 
     [Fact]
@@ -231,8 +231,8 @@ public class BaselineMaintenanceTests
 
         var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
-        Assert.Contains("predates rule recording", stderr);
-        Assert.DoesNotContain("different rule set", stderr);
+        Assert.Contains("predates configuration recording", stderr);
+        Assert.DoesNotContain("different configuration", stderr);
     }
 
     [Fact]
@@ -245,8 +245,82 @@ public class BaselineMaintenanceTests
 
         Run("baseline", "prune", lib.Path);
         var (_, _, afterPrune) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
-        Assert.DoesNotContain("different rule set", afterPrune);
+        Assert.DoesNotContain("different configuration", afterPrune);
 
         Assert.Contains("\"MLQT.Doc.ClassDescription\"", lib.BaselineText);
     }
+
+    // ---- dependency drift ------------------------------------------------------------------------
+
+    [Fact]
+    public void Check_WarnsWhenABaselinedDependencyIsNotLoaded()
+    {
+        // The silent failure: baselining with MSL loaded and checking without it resolves fewer
+        // references, so rules like "class has an icon" report findings the change did not cause.
+        using var dependency = new TempLibrary().WithModel("""
+            package Dep "a dependency"
+              model Thing "described"
+              end Thing;
+            end Dep;
+            """);
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+        Assert.Contains("\"dependencies\"", lib.BaselineText);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Contains("different configuration", stderr);
+        Assert.Contains("not loaded this time", stderr);
+        Assert.Contains("--dependency", stderr);
+    }
+
+    [Fact]
+    public void Check_SaysNothingWhenTheSameDependenciesAreLoaded()
+    {
+        using var dependency = new TempLibrary().WithModel("""
+            package Dep "a dependency"
+              model Thing "described"
+              end Thing;
+            end Dep;
+            """);
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+        var (_, _, stderr) = Run(
+            "check", lib.Path, "--baseline", lib.BaselineFile, "--dependency", dependency.Path, "--no-color");
+
+        Assert.DoesNotContain("different configuration", stderr);
+    }
+
+    [Fact]
+    public void Check_WarnsWhenADependencyWasAddedSinceTheBaseline()
+    {
+        using var dependency = new TempLibrary().WithModel("""
+            package Dep "a dependency"
+              model Thing "described"
+              end Thing;
+            end Dep;
+            """);
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        Run("baseline", "create", lib.Path);
+        var (_, _, stderr) = Run(
+            "check", lib.Path, "--baseline", lib.BaselineFile, "--dependency", dependency.Path, "--no-color");
+
+        Assert.Contains("loaded this time but not when baselined", stderr);
+    }
+
+    [Fact]
+    public void MissingDependencyPath_ExitsTwo()
+    {
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        var (code, _, stderr) = Run(
+            "check", lib.Path, "--dependency", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nope-xyz"));
+
+        Assert.Equal(2, code);
+        Assert.Contains("dependency path not found", stderr);
+    }
+
 }

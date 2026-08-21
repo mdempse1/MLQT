@@ -45,7 +45,8 @@ internal static class CliEntry
 
         Usage:
           mlqt check <library-path> [options]
-          mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>] [--force]
+          mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
+                                                           [--dependency <path>] [--force]
 
         check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
@@ -57,6 +58,8 @@ internal static class CliEntry
           --no-color                    Disable coloured console output
           --no-suppress                 Ignore __MLQT suppression annotations (audit)
           --changed-from <ref>          VCS ref to diff against, for touched-debt escalation
+          --dependency <path>           Load another library so references resolve (repeatable).
+                                        Never reported on — use for MSL and other dependencies
           --metrics                     Record a coverage snapshot in <library-path>/.mlqt/metrics-history.json
           --metrics-out <path>          Record it somewhere else instead (implies --metrics)
           --metrics-force               Record even when the numbers are unchanged
@@ -72,6 +75,11 @@ internal static class CliEntry
 
                   Writes <library-path>/.mlqt/baseline.json unless --baseline <path> is given.
                   The file records when it was generated and the revision it describes.
+
+        deps:     without --dependency, a reference into a library that is not loaded cannot resolve,
+                  so inherited icons and modelica:// links report as findings. Pass the same
+                  --dependency set to `baseline` as to `check`, or the two disagree — check warns
+                  when the baseline recorded a dependency this run did not load.
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.

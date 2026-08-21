@@ -9,7 +9,8 @@ internal static class CheckRunner
     public static async Task<int> RunAsync(CheckOptions opts, TextWriter stdout, TextWriter stderr)
     {
         var load = await CheckPipeline.LoadAndCheckAsync(
-            opts.LibraryPath, opts.ConfigPath, stderr, honorSuppressions: !opts.NoSuppress);
+            opts.LibraryPath, opts.ConfigPath, stderr,
+            honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths);
         if (!load.Ok)
             return load.ExitCode;
 
@@ -40,22 +41,26 @@ internal static class CheckRunner
         // needs to know why the numbers moved.
         if (baseline is not null && load.Settings is not null)
         {
-            var drift = baseline.DriftFrom(load.Settings);
+            var drift = baseline.DriftFrom(load.Settings, load.DependencyLibraries);
             if (drift.HasDrifted)
             {
-                stderr.WriteLine("warning: the baseline was generated with a different rule set");
+                stderr.WriteLine("warning: the baseline was generated with a different configuration");
                 foreach (var line in drift.Describe())
                     stderr.WriteLine($"         {line}");
                 if (drift.EnabledSince.Count > 0)
                     stderr.WriteLine(
                         "         Pre-existing violations of a newly enabled rule are reported as new. " +
                         "`mlqt baseline update --force` would accept them.");
+                if (drift.DependenciesMissing.Count > 0)
+                    stderr.WriteLine(
+                        "         Pass --dependency <path> for each, or references into them resolve as " +
+                        "findings that the change did not cause.");
             }
             else if (!drift.IsComparable)
             {
                 stderr.WriteLine(
-                    "note: this baseline predates rule recording, so rule changes cannot be detected — " +
-                    "regenerate it to enable that");
+                    "note: this baseline predates configuration recording, so changes to it cannot be " +
+                    "detected — regenerate the baseline to enable that");
             }
         }
 

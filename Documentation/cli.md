@@ -39,6 +39,7 @@ of `.mo` files) or a single `.mo` file.
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
+| `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
@@ -56,6 +57,44 @@ Because the built-in **style** rules report at **warning** severity, the default
 is effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for
 a strict gate, or `--fail-on off` to never fail. **Parse diagnostics are the exception** — they are
 errors and fail even the default gate; see below.
+
+## Resolving references into other libraries
+
+`mlqt check <path>` loads only what is under that path. A reference into a library it has not loaded
+cannot resolve, and several rules then report findings the code did not earn — most visibly
+`MLQT.Doc.ClassIcon`, which cannot see that an icon is inherited from `Modelica.Icons.*`, and
+`MLQT.Reference.ModelReferences`, which cannot resolve a `modelica://` link into MSL.
+
+`--dependency <path>` loads a library for resolution only. It is never reported on — you want MSL's
+classes visible, not MSL's findings:
+
+```bash
+mlqt check ./ExternData --dependency /path/to/ModelicaStandardLibrary
+```
+
+The flag is repeatable, and each path is discovered the same way as the positional argument, so
+pointing it at an MSL checkout picks up `Modelica`, `ModelicaServices` and the rest in one go. The run
+says what it loaded:
+
+```
+note: loaded Modelica, ModelicaReference, ModelicaServices, ModelicaTest, … for reference resolution
+      (not reported on)
+```
+
+On ExternData this removes 96 findings — 91 inherited icons and all 5 `modelica://` references — which
+is the same effect as adding MSL to the project in the desktop app.
+
+**Pass the same set to `baseline` as to `check`.** A baseline generated with MSL loaded and then
+checked without it sees a pile of findings the change did not cause. The baseline records the
+dependency library *names* (not paths, which differ between a laptop and a CI agent) and the check
+warns:
+
+```
+warning: the baseline was generated with a different configuration
+         not loaded this time: Modelica, ModelicaServices — references into them will not resolve
+         Pass --dependency <path> for each, or references into them resolve as findings that the
+         change did not cause.
+```
 
 ## Parse diagnostics
 
@@ -159,6 +198,7 @@ can tell how old the accepted debt is and diff from there:
   "branch": "main",
   "rules": { "MLQT.Doc.ClassDescription": "Warning" },
   "excludedLibraries": ["*_Tests"],
+  "dependencies": ["Modelica", "ModelicaServices"],
   "findings": [ ... ]
 }
 ```
@@ -181,8 +221,9 @@ warning: the baseline was generated with a different rule set
          `mlqt baseline update --force` would accept them.
 ```
 
-It is a warning, not a failure — the gate still means what it says. Changes to `ExcludedLibraries` are
-reported too, since un-excluding a library makes its findings appear as new in exactly the same way.
+It is a warning, not a failure — the gate still means what it says. Changes to `ExcludedLibraries` and
+to the loaded `dependencies` are reported too, since both make findings appear or disappear in exactly
+the same way.
 `prune` and `update` both refresh the record, so either resolves the warning.
 
 A baseline written before version 3 has no `rules` to compare; the check says so once rather than

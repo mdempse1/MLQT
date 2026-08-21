@@ -15,7 +15,8 @@ internal sealed record LoadResult(
     int ModelsChecked,
     DirectedGraph? Graph = null,
     IReadOnlyList<ModelNode>? Models = null,
-    StyleCheckingSettings? Settings = null)
+    StyleCheckingSettings? Settings = null,
+    IReadOnlyList<string>? DependencyLibraries = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) => new(code, [], new Dictionary<string, string>(), 0);
@@ -25,7 +26,8 @@ internal sealed record LoadResult(
 internal static class CheckPipeline
 {
     public static async Task<LoadResult> LoadAndCheckAsync(
-        string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true)
+        string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
+        IReadOnlyList<string>? dependencyPaths = null)
     {
         var isDir = Directory.Exists(libraryPath);
         var isMoFile = File.Exists(libraryPath) &&
@@ -95,6 +97,36 @@ internal static class CheckPipeline
             }
         }
 
+        // Dependencies are loaded into the SAME graph so references resolve — an inherited icon from
+        // Modelica.Icons.*, a modelica:// link into MSL, a type the code extends — but they are kept
+        // out of `models`, which is the reported set. Their own findings are not the user's problem.
+        var dependencyLibraries = new List<string>();
+        foreach (var dependency in dependencyPaths ?? [])
+        {
+            if (!Directory.Exists(dependency) && !File.Exists(dependency))
+            {
+                stderr.WriteLine($"error: dependency path not found: {dependency}");
+                return LoadResult.Failed(ExitCodes.Error);
+            }
+
+            foreach (var path in LibraryDiscovery.DiscoverLibraryPaths(dependency))
+            {
+                try
+                {
+                    var library = await libraryData.AddLibraryFromDirectoryAsync(path);
+                    dependencyLibraries.Add(library.Name);
+                }
+                catch (Exception ex)
+                {
+                    stderr.WriteLine($"warning: failed to load dependency '{path}': {ex.Message}");
+                }
+            }
+        }
+        if (dependencyLibraries.Count > 0)
+            stderr.WriteLine(
+                $"note: loaded {string.Join(", ", dependencyLibraries)} for reference resolution " +
+                "(not reported on)");
+
         var graph = libraryData.CombinedGraph;
 
         // Match the GUI: trim each package's inline standalone children out of its stored source before
@@ -108,7 +140,9 @@ internal static class CheckPipeline
         if (ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(settings))
         {
             stderr.WriteLine("note: running dependency analysis (required by an enabled rule)…");
-            await ModelicaGraph.GraphBuilder.AnalyzeDependenciesAsync(graph);
+            // Pass the library roots so modelica:// URIs resolve against every loaded library, not
+            // just the one under check.
+            await ModelicaGraph.GraphBuilder.AnalyzeDependenciesAsync(graph, libraryData.GetLibraryInfos());
         }
 
         var customDictionary = new CustomDictionaryService();
@@ -139,6 +173,7 @@ internal static class CheckPipeline
         var modelsChecked = checkable.Count - excluded;
         // The graph and model list are carried out so `--metrics` can compute coverage over exactly
         // the set that was checked, without loading the library a second time.
-        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models, settings);
+        return new LoadResult(
+            ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models, settings, dependencyLibraries);
     }
 }

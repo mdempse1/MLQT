@@ -9,6 +9,10 @@ internal sealed record BaselineOptions
     public string? ConfigPath { get; init; }
     public bool Force { get; init; }
 
+    /// <summary>Extra libraries loaded so references resolve. A baseline must be generated with the
+    /// same set the check uses, or the two disagree about what resolves — see the drift warning.</summary>
+    public IReadOnlyList<string> DependencyPaths { get; init; } = [];
+
     /// <summary>The baseline file to operate on — explicit (resolved against the library path when
     /// relative), or the default <c>&lt;lib&gt;/.mlqt/baseline.json</c>.</summary>
     public string ResolvedBaselinePath =>
@@ -23,6 +27,7 @@ internal sealed record BaselineOptions
 
         string? path = null, baseline = null, config = null;
         var force = false;
+        var dependencies = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -38,6 +43,10 @@ internal sealed record BaselineOptions
                 case "--force":
                     force = true;
                     break;
+                case "--dependency":
+                    if (!Next(args, ref i, out var dependency, out error)) return false;
+                    dependencies.Add(dependency!);
+                    break;
                 default:
                     if (arg.StartsWith('-')) { error = $"unknown option '{arg}'"; return false; }
                     if (path is not null) { error = $"unexpected argument '{arg}'"; return false; }
@@ -48,7 +57,11 @@ internal sealed record BaselineOptions
 
         if (path is null) { error = "missing <library-path>"; return false; }
 
-        options = new BaselineOptions { LibraryPath = path, BaselinePath = baseline, ConfigPath = config, Force = force };
+        options = new BaselineOptions
+        {
+            LibraryPath = path, BaselinePath = baseline, ConfigPath = config,
+            Force = force, DependencyPaths = dependencies
+        };
         return true;
     }
 
@@ -90,7 +103,8 @@ internal static class BaselineCommand
             return ExitCodes.Error;
         }
 
-        var load = await CheckPipeline.LoadAndCheckAsync(opts!.LibraryPath, opts.ConfigPath, stderr);
+        var load = await CheckPipeline.LoadAndCheckAsync(
+            opts!.LibraryPath, opts.ConfigPath, stderr, dependencyPaths: opts.DependencyPaths);
         if (!load.Ok)
             return load.ExitCode;
 
@@ -116,7 +130,7 @@ internal static class BaselineCommand
                     stderr.WriteLine($"error: baseline already exists: {path} (use --force, or `baseline update`)");
                     return ExitCodes.Error;
                 }
-                var created = Baseline.FromFindings(load.Findings, now, stamp, settings);
+                var created = Baseline.FromFindings(load.Findings, now, stamp, settings, load.DependencyLibraries);
                 created.Save(path);
                 stdout.WriteLine($"Wrote {created.Entries.Count} finding(s) to {path}");
                 return ExitCodes.Ok;
@@ -127,7 +141,7 @@ internal static class BaselineCommand
                 // violations nobody has reviewed — the one way to defeat the ratchet by accident. So it
                 // says what it is absorbing, and refuses to absorb anything unless asked to.
                 var existing = File.Exists(path) ? Baseline.Load(path) : null;
-                var updated = Baseline.FromFindings(load.Findings, now, stamp, settings);
+                var updated = Baseline.FromFindings(load.Findings, now, stamp, settings, load.DependencyLibraries);
                 var absorbed = CountMissing(updated, existing);
                 var droppedByUpdate = CountMissing(existing, updated);
 
@@ -160,7 +174,7 @@ internal static class BaselineCommand
                 }
                 var baseline = Baseline.Load(path);
                 var stale = baseline.StaleEntries(load.Findings);
-                var pruned = baseline.WithoutStale(load.Findings, now, stamp, settings);
+                var pruned = baseline.WithoutStale(load.Findings, now, stamp, settings, load.DependencyLibraries);
                 pruned.Save(path);
 
                 stdout.WriteLine(

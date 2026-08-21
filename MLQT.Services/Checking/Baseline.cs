@@ -49,13 +49,22 @@ public sealed class Baseline
     /// <inheritdoc cref="Rules"/>
     public IReadOnlyList<string>? ExcludedLibraries { get; }
 
+    /// <summary>
+    /// The libraries loaded purely so references would resolve (MSL and friends), by name rather than
+    /// by path — the path differs between a developer's machine and a CI agent, the set of libraries
+    /// does not. Checking without a dependency the baseline had resolves fewer references, which
+    /// surfaces as a pile of findings the change did not cause.
+    /// </summary>
+    public IReadOnlyList<string>? Dependencies { get; }
+
     public Baseline(
         IReadOnlyList<BaselineEntry> entries,
         DateTime? createdUtc = null,
         string? revision = null,
         string? branch = null,
         IReadOnlyDictionary<string, RuleSeverity>? rules = null,
-        IReadOnlyList<string>? excludedLibraries = null)
+        IReadOnlyList<string>? excludedLibraries = null,
+        IReadOnlyList<string>? dependencies = null)
     {
         Entries = entries;
         _fingerprints = entries.Select(e => e.Fingerprint).ToHashSet(StringComparer.Ordinal);
@@ -64,6 +73,7 @@ public sealed class Baseline
         Branch = branch;
         Rules = rules;
         ExcludedLibraries = excludedLibraries;
+        Dependencies = dependencies;
     }
 
     /// <summary>
@@ -71,7 +81,8 @@ public sealed class Baseline
     /// they match, or when the baseline predates rule recording (see <see cref="Rules"/>) — there is
     /// nothing to compare against, and guessing would be worse than staying quiet.
     /// </summary>
-    public RuleSetDrift DriftFrom(StyleCheckingSettings current)
+    public RuleSetDrift DriftFrom(
+        StyleCheckingSettings current, IReadOnlyList<string>? currentDependencies = null)
     {
         if (Rules is null)
             return RuleSetDrift.NotComparable;
@@ -96,7 +107,14 @@ public sealed class Baseline
             !wasExcluded.OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .SequenceEqual(excludedNow.OrderBy(n => n, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 
-        return new RuleSetDrift(true, enabledSince, disabledSince, severityChanged, exclusionsChanged);
+        // Compared as a set of names: order and path are irrelevant, presence is not.
+        var wasDependencies = (Dependencies ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var nowDependencies = (currentDependencies ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return new RuleSetDrift(
+            true, enabledSince, disabledSince, severityChanged, exclusionsChanged,
+            wasDependencies.Except(nowDependencies).OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            nowDependencies.Except(wasDependencies).OrderBy(n => n, StringComparer.Ordinal).ToList());
     }
 
     /// <summary>
@@ -114,7 +132,7 @@ public sealed class Baseline
     /// <param name="stamp">The revision the library was at, for matching the baseline to a commit.</param>
     public static Baseline FromFindings(
         IEnumerable<Finding> findings, DateTime? createdUtc = null, VcsStamp? stamp = null,
-        StyleCheckingSettings? settings = null)
+        StyleCheckingSettings? settings = null, IReadOnlyList<string>? dependencies = null)
     {
         var entries = findings
             .Where(f => !RuleIds.IsParseDiagnostic(f.RuleId))
@@ -123,7 +141,7 @@ public sealed class Baseline
             .Select(f => new BaselineEntry(f.Fingerprint, f.RuleId, f.ModelId, f.ElementPath, f.Message));
         return new Baseline(
             Sort(entries), createdUtc, stamp?.Revision, stamp?.Branch,
-            RulesOf(settings), settings?.ExcludedLibraries.ToList());
+            RulesOf(settings), settings?.ExcludedLibraries.ToList(), dependencies);
     }
 
     /// <summary>Baseline entries whose finding no longer appears (i.e. fixed) — candidates for prune.</summary>
@@ -137,7 +155,7 @@ public sealed class Baseline
     /// content, so the caller re-stamps it with the time and revision of the prune.</summary>
     public Baseline WithoutStale(
         IEnumerable<Finding> current, DateTime? createdUtc = null, VcsStamp? stamp = null,
-        StyleCheckingSettings? settings = null)
+        StyleCheckingSettings? settings = null, IReadOnlyList<string>? dependencies = null)
     {
         var currentFingerprints = current.Select(f => f.Fingerprint).ToHashSet(StringComparer.Ordinal);
         return new Baseline(
@@ -146,7 +164,8 @@ public sealed class Baseline
             stamp?.Revision ?? Revision,
             stamp?.Branch ?? Branch,
             RulesOf(settings) ?? Rules,
-            settings?.ExcludedLibraries.ToList() ?? ExcludedLibraries);
+            settings?.ExcludedLibraries.ToList() ?? ExcludedLibraries,
+            dependencies ?? Dependencies);
     }
 
     /// <summary>The enabled rules of <paramref name="settings"/>, or null when none were supplied.</summary>
@@ -170,7 +189,8 @@ public sealed class Baseline
         string? Revision = null,
         string? Branch = null,
         IReadOnlyDictionary<string, RuleSeverity>? Rules = null,
-        IReadOnlyList<string>? ExcludedLibraries = null);
+        IReadOnlyList<string>? ExcludedLibraries = null,
+        IReadOnlyList<string>? Dependencies = null);
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -185,7 +205,7 @@ public sealed class Baseline
             ?? throw new InvalidOperationException($"could not parse baseline '{path}'");
         return new Baseline(
             file.Findings ?? [], file.CreatedUtc, file.Revision, file.Branch,
-            file.Rules, file.ExcludedLibraries);
+            file.Rules, file.ExcludedLibraries, file.Dependencies);
     }
 
     public void Save(string path)
@@ -198,7 +218,9 @@ public sealed class Baseline
         // byte-identical file — that is what lets CI skip a no-op commit.
         var file = new BaselineFile(
             CurrentVersion, Sort(Entries), CreatedUtc, Revision, Branch,
-            Rules, ExcludedLibraries is { Count: > 0 } ? ExcludedLibraries : null);
+            Rules,
+            ExcludedLibraries is { Count: > 0 } ? ExcludedLibraries : null,
+            Dependencies is { Count: > 0 } ? Dependencies : null);
         File.WriteAllText(path, JsonSerializer.Serialize(file, Options));
     }
 
@@ -222,14 +244,17 @@ public sealed record RuleSetDrift(
     IReadOnlyList<string> EnabledSince,
     IReadOnlyList<string> DisabledSince,
     IReadOnlyList<(string RuleId, RuleSeverity Was, RuleSeverity Now)> SeverityChanged,
-    bool ExclusionsChanged)
+    bool ExclusionsChanged,
+    IReadOnlyList<string> DependenciesMissing,
+    IReadOnlyList<string> DependenciesAdded)
 {
     /// <summary>A baseline written before the rule set was recorded — nothing to compare.</summary>
-    public static readonly RuleSetDrift NotComparable = new(false, [], [], [], false);
+    public static readonly RuleSetDrift NotComparable = new(false, [], [], [], false, [], []);
 
     public bool HasDrifted =>
         IsComparable &&
-        (EnabledSince.Count > 0 || DisabledSince.Count > 0 || SeverityChanged.Count > 0 || ExclusionsChanged);
+        (EnabledSince.Count > 0 || DisabledSince.Count > 0 || SeverityChanged.Count > 0 ||
+         ExclusionsChanged || DependenciesMissing.Count > 0 || DependenciesAdded.Count > 0);
 
     /// <summary>Lines describing the drift, for a warning. Empty when nothing has changed.</summary>
     public IEnumerable<string> Describe()
@@ -245,5 +270,11 @@ public sealed record RuleSetDrift(
             yield return $"severity changed: {ruleId} ({was} -> {now})";
         if (ExclusionsChanged)
             yield return "the set of excluded libraries has changed";
+        if (DependenciesMissing.Count > 0)
+            yield return
+                $"not loaded this time: {string.Join(", ", DependenciesMissing)} " +
+                "— references into them will not resolve";
+        if (DependenciesAdded.Count > 0)
+            yield return $"loaded this time but not when baselined: {string.Join(", ", DependenciesAdded)}";
     }
 }

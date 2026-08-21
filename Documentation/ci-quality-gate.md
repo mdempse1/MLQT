@@ -154,10 +154,12 @@ Names match the first segment of a class id, case-insensitively, and `*` is a wi
 **Recommended starting set for a first trial:** the self-contained documentation/ordering rules above.
 Add these with care:
 
-- **`ValidateModelReferences`** — the CLI loads only the library you point it at, **not its
-  dependencies** (MSL, commercial libraries). A `modelica://` reference into a library that isn't
-  loaded will currently be reported as broken. Leave it off until you load dependencies alongside your
-  library, or expect false positives.
+- **`ValidateModelReferences`** and **`ClassHasIcon`** — both need the libraries you depend on to be
+  loaded. Pass `--dependency /path/to/ModelicaStandardLibrary` (repeatable) so `modelica://` links and
+  icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
+  earn — on ExternData, 96 of them. Dependencies are loaded for resolution only and are never reported
+  on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
+  resolves; the check warns when they differ.
 - **`SpellCheckDescription` / `SpellCheckDocumentation`** — will flag domain terms until you build up a
   custom dictionary. See [spell-checking.md](spell-checking.md).
 - **`FollowNamingConvention`** — needs a naming convention configured. See
@@ -342,10 +344,13 @@ mlqt check <library-path> [--baseline <path>] [--changed-from <ref>]
                           [--touched-debt warn|fail|ignore]
                           [--config <path>] [--format console|json|junit|sarif|teamcity|markdown]
                           [--out <file>] [--fail-on off|warning|error] [--no-color]
-                          [--no-suppress] [--metrics] [--metrics-out <path>] [--metrics-force]
+                          [--no-suppress] [--dependency <path>]
+                          [--metrics] [--metrics-out <path>] [--metrics-force]
 
-mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>] [--force]
+mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
+                                                 [--dependency <path>] [--force]
         # --force: create = overwrite an existing file; update = accept new findings as debt
+        # --dependency: repeatable; must match between baseline and check
 ```
 
 `--config` defaults to `<library-path>/.mlqt/settings.json`; `--baseline` for the `baseline` commands
