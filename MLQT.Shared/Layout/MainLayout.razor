@@ -6,6 +6,7 @@
 @using System.Reflection
 @using System.Runtime
 @using static MLQT.Services.LoggingService
+@using MLQT.Services.Checking
 @using RevisionControl
 
 @inherits LayoutComponentBase
@@ -675,6 +676,12 @@
                 Info("MainLayout", $"Memory after loading + trim + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB ({totalModelCount} models)");
             }
 
+            // Parser errors are recorded on the nodes during load, so report them as soon as loading
+            // finishes rather than waiting for analysis — a syntax error is the one thing the user
+            // needs to know about before anything downstream reads the file.
+            SurfaceParserErrors();
+            await NotifyParserErrorsIfAnyAsync();
+
             _step1running = false;
 
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
@@ -874,6 +881,11 @@
                 await InvokeAsync(StateHasChanged);
                 return;
             }
+
+            // Parser errors are recorded on the nodes during load — report them before anything
+            // downstream reads the file (see the equivalent call in the startup path).
+            SurfaceParserErrors();
+            await NotifyParserErrorsIfAnyAsync();
 
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
@@ -1526,7 +1538,11 @@
                 // Clear existing violations before re-running
                 var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
                 if (allModelIds.Count > 0)
+                {
                     CodeReviewService.RemoveLogMessagesForModels(allModelIds);
+                    // The clear above takes the parser issues with it — put them back.
+                    SurfaceParserErrors(allModelIds);
+                }
 
                 // Build the same checking context the background worker uses (StyleCheckingWorker), so the
                 // combined pass yields the SAME violations. Without this, spelling, model-reference and
@@ -1675,7 +1691,11 @@
             // (matches the pattern used by OnRepositorySettingsApplied and OnVcsFilesChanged)
             var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
             if (allModelIds.Count > 0)
+            {
                 CodeReviewService.RemoveLogMessagesForModels(allModelIds);
+                // The clear above takes the parser issues with it — put them back.
+                SurfaceParserErrors(allModelIds);
+            }
 
             // Offload to a background thread: StartBackgroundCheckingForRepositories performs
             // sync-over-async work (custom dictionary + settings load). When this method is
@@ -1908,6 +1928,69 @@
     private void OnStyleViolationsFound(List<LogMessage> violations)
         => InvokeAsync(() => CodeReviewService.AddLogMessages(violations));
 
+    /// <summary>
+    /// Re-derives the Parser-sourced issues for <paramref name="modelIds"/> (all models when null)
+    /// from the graph and puts them back in the issues list.
+    ///
+    /// This lives in the layout, alongside style-violation delivery, for the same reason: it used to
+    /// sit on the Code Review page, so parser errors only ever reached the issues list if that page
+    /// happened to be mounted when the library loaded. Everything that clears the issue list for a set
+    /// of models must call this afterwards — otherwise the tree badge and the Code Review banner keep
+    /// reporting "N parser errors" (they read the graph node) while the panel they point the user at
+    /// is empty.
+    /// </summary>
+    private void SurfaceParserErrors(IEnumerable<string>? modelIds = null)
+    {
+        var models = modelIds is null
+            ? LibraryDataService.GetAllModels().ToList()
+            : modelIds.Select(LibraryDataService.GetModelById).Where(m => m is not null).Cast<ModelNode>().ToList();
+        if (models.Count == 0)
+            return;
+
+        // Drop the previous parser issues for exactly these models before re-adding, so repeated
+        // re-analysis can neither duplicate them nor leave behind ones the file no longer has.
+        var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+        CodeReviewService.RemoveLogMessagesByPredicate(
+            m => m.Source == ParserErrorReporter.SourceName && ids.Contains(m.ModelName));
+
+        var messages = ParserErrorReporter.ToLogMessages(models);
+        if (messages.Count > 0)
+            CodeReviewService.AddLogMessages(messages);
+    }
+
+    /// <summary>
+    /// Tells the user up front that something failed to parse. Without this the only signals are a
+    /// small icon in the tree and a banner on a page they may never open, so a library that silently
+    /// dropped part of a file looks like it loaded cleanly.
+    /// </summary>
+    private async Task NotifyParserErrorsIfAnyAsync()
+    {
+        var (fatal, recovered) = ParserErrorReporter.Count(LibraryDataService.GetAllModels());
+        if (fatal == 0 && recovered == 0)
+            return;
+
+        string message;
+        Severity severity;
+        if (fatal > 0)
+        {
+            message = fatal == 1
+                ? "1 file could not be parsed. It appears in the library tree as a placeholder — see the Issues panel."
+                : $"{fatal} files could not be parsed. They appear in the library tree as placeholders — see the Issues panel.";
+            if (recovered > 0)
+                message += $" ({recovered} additional recoverable syntax {(recovered == 1 ? "error" : "errors")} also reported.)";
+            severity = Severity.Error;
+        }
+        else
+        {
+            message = recovered == 1
+                ? "1 syntax error found while loading the library. See the Issues panel."
+                : $"{recovered} syntax errors found while loading the library. See the Issues panel.";
+            severity = Severity.Warning;
+        }
+
+        await InvokeAsync(() => Snackbar.Add(message, severity));
+    }
+
     private async void OnRepositoriesChanged()
     {
         await InvokeAsync(StateHasChanged);
@@ -1971,6 +2054,8 @@
                     if (repositoryModelIds.Count > 0)
                     {
                         CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
+                        // The clear above takes the parser issues with it — put them back.
+                        SurfaceParserErrors(repositoryModelIds);
                         await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
                         _showStyleCheckingCompleteMessage = true;
                         StyleCheckingService.StartBackgroundChecking(repository);
@@ -2118,6 +2203,8 @@
                 if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
                 {
                     CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                    // The clear above takes the parser issues with it — put them back.
+                    SurfaceParserErrors(affectedModelIds);
                     await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
                     await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
                     await InvokeAsync(() => Snackbar.Add("Style checking complete.", Severity.Success));
@@ -2186,6 +2273,8 @@
                 if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
                 {
                     CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                    // The clear above takes the parser issues with it — put them back.
+                    SurfaceParserErrors(affectedModelIds);
                     await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
                     await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
                 }
@@ -2353,6 +2442,8 @@
             {
                 Info("MainLayout", $"Style checking {affectedModelIds.Count} affected model(s)...");
                 CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
+                // The clear above takes the parser issues with it — put them back.
+                SurfaceParserErrors(affectedModelIds);
                 var graph = LibraryDataService.CombinedGraph;
                 await Task.Run(async () =>
                     await StyleCheckingService.CheckModelsAsync(affectedModelIds, graph));

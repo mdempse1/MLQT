@@ -116,4 +116,57 @@ end ValidModel;";
         Assert.Equal(0, listener.Errors[0].Line);
         Assert.Equal(0, listener.Errors[0].CharPosition);
     }
+
+    // --- Message quality ------------------------------------------------------------------------
+    // An error the author cannot act on is barely better than no error at all, so these pin the
+    // wording down rather than just asserting that something was reported.
+
+    [Fact]
+    public void UnterminatedString_IsNamedAsSuch_NotAsATokenRecognitionError()
+    {
+        // A missing closing quote in a Documentation(info=...) annotation — the string then runs to
+        // the end of the file, and ANTLR's raw message is "token recognition error at: '<all of it>'".
+        var code = "model M \"desc\"\n  annotation(Documentation(info=\"<html><p>hi</p>));\nend M;";
+
+        var (_, errors) = ModelicaParserHelper.ParseWithErrors(code);
+
+        var unterminated = Assert.Single(errors, e => e.Message.Contains("Unterminated string literal"));
+        Assert.DoesNotContain("token recognition error", unterminated.Message);
+        Assert.Contains("<html>", unterminated.Message);   // keeps an excerpt as evidence
+    }
+
+    [Fact]
+    public void UnterminatedString_ExcerptIsTruncatedToOneShortLine()
+    {
+        var longText = new string('x', 500);
+        var code = $"model M \"desc\"\n  annotation(Documentation(info=\"{longText}\n\nmore\n));\nend M;";
+
+        var (_, errors) = ModelicaParserHelper.ParseWithErrors(code);
+
+        var unterminated = Assert.Single(errors, e => e.Message.Contains("Unterminated string literal"));
+        Assert.True(unterminated.Message.Length < 200, $"message not truncated: {unterminated.Message.Length} chars");
+        Assert.DoesNotContain('\n', unterminated.Message);
+    }
+
+    [Fact]
+    public void ParserError_UsesAntlrDiagnosis_NotTheExceptionTypeName()
+    {
+        // RecognitionException doesn't override Message, so preferring it yields
+        // "Exception of type 'Antlr4.Runtime.InputMismatchException' was thrown." — useless.
+        var code = "model M \"desc\"\n  annotation(Documentation(info=\"<html><p>hi</p>));\nend M;";
+
+        var (_, errors) = ModelicaParserHelper.ParseWithErrors(code);
+
+        Assert.DoesNotContain(errors, e => e.Message.Contains("Exception of type"));
+        // ANTLR's diagnosis always names the input it choked on ("mismatched input '<EOF>' expecting …",
+        // "no viable alternative at input …") — the exception's default message never does.
+        Assert.Contains(errors, e => e.OffendingToken is not null && e.Message.Contains("input"));
+    }
+
+    [Theory]
+    [InlineData("token recognition error at: '@@@'", "Unrecognised input: '@@@'")]
+    [InlineData("some other lexer message", "some other lexer message")]
+    [InlineData("", "")]
+    public void DescribeLexerError_LeavesNonStringMessagesUsable(string input, string expected)
+        => Assert.Equal(expected, ModelicaErrorListener.DescribeLexerError(input));
 }
