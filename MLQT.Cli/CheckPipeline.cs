@@ -163,6 +163,13 @@ internal static class CheckPipeline
             foreach (var model in graph.GetModelsInFile(file.Id))
                 modelToFile[model.Id] = file.FilePath;
 
+        // A dependency on the machine that is not the version the library targets resolves references
+        // against classes that may have moved or changed between versions, so the findings themselves
+        // become unreliable. Warn rather than fail: there is nothing to fix in the source, only a
+        // checkout to correct, and the user may well know their copy is close enough.
+        foreach (var mismatch in UsesVersionChecker.Check(graph, models))
+            stderr.WriteLine($"warning: dependency version mismatch — {mismatch.Describe()}");
+
         // Report the number of classes actually checked: excludes unparseable placeholders and any
         // library the settings exclude. Excluded classes are counted out loud rather than silently, so
         // a mistyped library name shows up as an unexpected number rather than as a quiet pass.

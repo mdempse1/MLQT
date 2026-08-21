@@ -79,7 +79,8 @@ internal static class CliEntry
         deps:     without --dependency, a reference into a library that is not loaded cannot resolve,
                   so inherited icons and modelica:// links report as findings. Pass the same
                   --dependency set to `baseline` as to `check`, or the two disagree — check warns
-                  when the baseline recorded a dependency this run did not load.
+                  when the baseline recorded a dependency this run did not load, and when a loaded
+                  copy is not the version the library's uses(...) declares.
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.

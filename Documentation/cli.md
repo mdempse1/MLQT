@@ -84,6 +84,25 @@ note: loaded Modelica, ModelicaReference, ModelicaServices, ModelicaTest, … fo
 On ExternData this removes 96 findings — 91 inherited icons and all 5 `modelica://` references — which
 is the same effect as adding MSL to the project in the desktop app.
 
+### Version mismatches
+
+The versions a library declares in its `uses(...)` annotation are compared against the copies actually
+loaded, and any disagreement is reported:
+
+```
+warning: dependency version mismatch — ExternData declares Modelica 3.2.2, but 4.2.0 dev is loaded
+```
+
+This is about the check's setup rather than the source: references still resolve, but against classes
+that may have moved, been renamed or changed signature between versions, so the findings become
+unreliable. It is a warning, not a rule and not a failure — there is nothing to baseline and nothing
+to fix in the code, only a checkout to correct (or a judgement that the copy is close enough).
+
+Comparison is by version segment, and a shorter declaration matches a longer version: `4.0` covers
+`4.0.0`, and a build suffix on the loaded copy (`4.2.0 dev`) is not treated as a disagreement with a
+declared `4.2.0`. A declared dependency that is not loaded at all is not reported here — that shows up
+as unresolved references instead.
+
 **Pass the same set to `baseline` as to `check`.** A baseline generated with MSL loaded and then
 checked without it sees a pile of findings the change did not cause. The baseline records the
 dependency library *names* (not paths, which differ between a laptop and a CI agent) and the check

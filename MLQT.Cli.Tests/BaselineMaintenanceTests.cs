@@ -323,4 +323,71 @@ public class BaselineMaintenanceTests
         Assert.Contains("dependency path not found", stderr);
     }
 
+
+    // ---- dependency version mismatch -------------------------------------------------------------
+
+    [Fact]
+    public void Check_WarnsWhenALoadedDependencyIsNotTheDeclaredVersion()
+    {
+        using var dependency = new TempLibrary().WithModel("""
+            package Dep "a dependency"
+              model Thing "described"
+              end Thing;
+              annotation(version="2.0.0");
+            end Dep;
+            """);
+        using var lib = new TempLibrary().WithModel("""
+            package Lib "a library"
+              model A "described"
+              end A;
+              annotation(uses(Dep(version="1.0.0")));
+            end Lib;
+            """);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+
+        Assert.Contains("dependency version mismatch", stderr);
+        Assert.Contains("Lib declares Dep 1.0.0, but 2.0.0 is loaded", stderr);
+    }
+
+    [Fact]
+    public void Check_SaysNothingWhenTheDeclaredVersionMatches()
+    {
+        using var dependency = new TempLibrary().WithModel("""
+            package Dep "a dependency"
+              model Thing "described"
+              end Thing;
+              annotation(version="1.0.0");
+            end Dep;
+            """);
+        using var lib = new TempLibrary().WithModel("""
+            package Lib "a library"
+              model A "described"
+              end A;
+              annotation(uses(Dep(version="1.0.0")));
+            end Lib;
+            """);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+
+        Assert.DoesNotContain("version mismatch", stderr);
+    }
+
+    [Fact]
+    public void Check_SaysNothingAboutADeclaredDependencyThatIsNotLoaded()
+    {
+        // Already visible as unresolved references; a version claim about an absent library is noise.
+        using var lib = new TempLibrary().WithModel("""
+            package Lib "a library"
+              model A "described"
+              end A;
+              annotation(uses(Dep(version="1.0.0")));
+            end Lib;
+            """);
+
+        var (_, _, stderr) = Run("check", lib.Path, "--no-color");
+
+        Assert.DoesNotContain("version mismatch", stderr);
+    }
+
 }

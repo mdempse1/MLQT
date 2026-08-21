@@ -159,7 +159,9 @@ Add these with care:
   icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
   earn — on ExternData, 96 of them. Dependencies are loaded for resolution only and are never reported
   on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
-  resolves; the check warns when they differ.
+  resolves; the check warns when they differ. It also warns when the copy you point at is not the
+  version the library's `uses(...)` declares — pin the dependency checkouts in CI to the versions your
+  libraries target.
 - **`SpellCheckDescription` / `SpellCheckDocumentation`** — will flag domain terms until you build up a
   custom dictionary. See [spell-checking.md](spell-checking.md).
 - **`FollowNamingConvention`** — needs a naming convention configured. See
