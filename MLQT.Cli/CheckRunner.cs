@@ -49,6 +49,27 @@ internal static class CheckRunner
         }
 
         var classified = FindingClassifier.Classify(load.Findings, baseline, changedModelIds);
+
+        // `--touched-debt ignore` means treat it exactly as accepted debt: out of the gate AND out of
+        // the listings. Every formatter already keys off AcceptedDebt to decide what not to list, so
+        // folding the status here gives all six output formats the same behaviour. Matters most on a
+        // library stored as one big file, where any edit touches every model and unfixed debt would
+        // otherwise swamp the findings the change actually introduced.
+        if (opts.TouchedDebt == TouchedDebtPolicy.Ignore)
+        {
+            var ignored = classified.Count(c => c.Status == FindingStatus.TouchedDebt);
+            if (ignored > 0)
+            {
+                stderr.WriteLine(
+                    $"note: --touched-debt ignore: {ignored} touched-debt finding(s) counted as accepted debt");
+                classified = classified
+                    .Select(c => c.Status == FindingStatus.TouchedDebt
+                        ? c with { Status = FindingStatus.AcceptedDebt }
+                        : c)
+                    .ToList();
+            }
+        }
+
         var gateFailureCount = classified.Count(c => FailsGate(c, opts));
 
         // Fixed = baseline findings in a changed model that are no longer present (positive feedback).

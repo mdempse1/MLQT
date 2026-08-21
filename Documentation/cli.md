@@ -34,7 +34,7 @@ of `.mo` files) or a single `.mo` file.
 | `--config <path>` | Settings file to use | `<library-path>/.mlqt/settings.json`, else built-in defaults |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
-| `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched | `warn` |
+| `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit` | Output format | `console` |
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
@@ -103,13 +103,28 @@ accepted debt into new findings.
 ### Changed-model escalation (the "boy-scout rule")
 
 With `--changed-from <ref>`, existing debt in a model the change touched becomes **touched debt**.
-By default it is reported but does not fail (`--touched-debt warn`); use `--touched-debt fail` to
-require cleanup of pre-existing issues in files you edit. Works with Git and SVN.
+Works with Git and SVN. The three policies are:
+
+| Policy | Listed in the report? | Fails the gate? |
+|--------|----------------------|-----------------|
+| `warn` (default) | yes, tagged `[touched]` | no |
+| `fail` | yes, tagged `[touched]` | yes |
+| `ignore` | no — counted as accepted debt | no |
 
 ```bash
 # Fail on new issues, and on pre-existing issues in models changed since main
 mlqt check ./MyLibrary --baseline .mlqt/baseline.json --changed-from main \
       --touched-debt fail --fail-on warning
+```
+
+**Single-file libraries.** When a library is stored as one big `package.mo`, any edit marks *every*
+model in it as changed, so all its baselined debt becomes touched debt and swamps the report. Use
+`--touched-debt ignore` to silence it — new findings are still reported and still gate, and the
+"Fixed in changed models" section still credits the debt you did clear:
+
+```bash
+mlqt check ./ExternData --baseline .mlqt/baseline.json --changed-from main \
+      --touched-debt ignore --fail-on warning
 ```
 
 ## Output formats

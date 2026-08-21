@@ -328,6 +328,63 @@ public class CheckCommandTests
     }
 
     [Fact]
+    public void TouchedDebtIgnore_OmitsTouchedDebtFromTheReport()
+    {
+        // A library stored as one file has every model touched by any edit, so unfixed touched debt
+        // swamps the report. `ignore` must drop it from the listing, not just from the gate.
+        using var lib = DefaultFixture();
+
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        var baseRev = repo.Head.Tip.Sha;
+
+        Run("baseline", "create", lib.Path);
+        lib.WithModel("TestModel.mo",
+            "model TestModel\n  parameter Real x = 1.0;\n  // touched\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
+
+        var warn = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "warn", "--no-color");
+        Assert.Contains("[touched]", warn.stdout);
+
+        var ignore = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "ignore", "--fail-on", "warning", "--no-color");
+
+        Assert.Equal(0, ignore.code);
+        Assert.DoesNotContain("[touched]", ignore.stdout);
+        Assert.Contains("0 touched-debt", ignore.stdout);
+        Assert.Contains("touched-debt finding(s) counted as accepted debt", ignore.stderr);
+    }
+
+    [Fact]
+    public void TouchedDebtIgnore_StillReportsNewFindings()
+    {
+        // Only the baselined debt is silenced — a genuinely new finding must still surface and gate.
+        using var lib = DefaultFixture();
+
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        var baseRev = repo.Head.Tip.Sha;
+
+        Run("baseline", "create", lib.Path);
+        lib.WithModel("TestModel.mo",                       // `z` is undescribed and not in the baseline
+            "model TestModel\n  parameter Real x = 1.0;\n  parameter Real z = 3.0;\n" +
+            "  parameter Real y = 2.0 \"described\";\nend TestModel;");
+
+        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+            "--changed-from", baseRev, "--touched-debt", "ignore", "--fail-on", "warning", "--no-color");
+
+        Assert.Equal(1, code);
+        Assert.Contains("[new]", stdout);
+        Assert.DoesNotContain("[touched]", stdout);
+    }
+
+    [Fact]
     public void ChangedFrom_UnresolvableRef_ErrorsExitTwo()
     {
         using var lib = DefaultFixture();
