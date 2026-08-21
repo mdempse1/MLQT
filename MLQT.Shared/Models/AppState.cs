@@ -76,12 +76,7 @@ public class AppState
         OnEnableMultiSelect?.Invoke();
     }
 
-    // ========== Library State ==========
-
-    /// <summary>
-    /// Indicates whether a library is currently loaded.
-    /// </summary>
-    public bool IsLibraryLoaded { get; private set; }
+    // ========== Library Content State ==========
 
     /// <summary>
     /// The scope (package id, or "" for all loaded libraries) selected on the Metrics/Coverage tab.
@@ -90,15 +85,11 @@ public class AppState
     /// </summary>
     public string MetricsScope { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Event fired when a library is loaded.
-    /// </summary>
-    public event Action? OnLibraryLoaded;
-
-    /// <summary>
-    /// Event fired when the library is cleared.
-    /// </summary>
-    public event Action? OnLibraryCleared;
+    // Note: there is deliberately no "library loaded/cleared" event here. Changes to the set of
+    // loaded libraries are published by the services that own it — ILibraryDataService.OnLibrariesChanged
+    // and OnTreeDataChanged for library content, IRepositoryService.OnProjectChanged plus
+    // OnProjectSwitchStarting for a project switch. A fourth notification on AppState duplicated those
+    // and was never raised, so its subscribers silently never ran.
 
     /// <summary>
     /// Event fired when the in-memory content of specific models has changed (e.g. after
@@ -113,26 +104,6 @@ public class AppState
     public void ModelContentChanged(IReadOnlyCollection<string> modelIds)
     {
         OnModelContentChanged?.Invoke(modelIds);
-    }
-
-    /// <summary>
-    /// Notifies that a library has been loaded.
-    /// </summary>
-    public void LibraryLoaded()
-    {
-        IsLibraryLoaded = true;
-        OnLibraryLoaded?.Invoke();
-    }
-
-    /// <summary>
-    /// Notifies that the library has been cleared.
-    /// </summary>
-    public void LibraryCleared()
-    {
-        IsLibraryLoaded = false;
-        ModelID = string.Empty;
-        SelectedModelIDs.Clear();
-        OnLibraryCleared?.Invoke();
     }
 
     // ========== Settings State ==========

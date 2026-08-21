@@ -26,7 +26,6 @@ The UI is built using MudBlazor for Material Design components.
     protected override void OnInitialized()
     {
         AppState.OnChangeModel += HandleModelChanged;
-        AppState.OnLibraryLoaded += HandleLibraryLoaded;
     }
 
     private async void HandleModelChanged()
@@ -41,7 +40,6 @@ The UI is built using MudBlazor for Material Design components.
     public void Dispose()
     {
         AppState.OnChangeModel -= HandleModelChanged;
-        AppState.OnLibraryLoaded -= HandleLibraryLoaded;
     }
 }
 ```
@@ -53,7 +51,11 @@ The UI is built using MudBlazor for Material Design components.
 | `ModelID` | `string` | Currently selected model ID |
 | `SelectedModelIDs` | `HashSet<string>` | Selected models in multi-select mode |
 | `SelectionMode` | `SelectionMode` | Single or multi-selection |
-| `IsLibraryLoaded` | `bool` | Whether a library is currently loaded |
+
+`AppState` deliberately carries no "library loaded/cleared" state or event. The set of loaded
+libraries is owned by the services that manage it, and they publish the changes:
+`ILibraryDataService.OnLibrariesChanged` / `OnTreeDataChanged` for library content, and
+`IRepositoryService.OnProjectChanged` (with `AppState.OnProjectSwitchStarting`) for a project switch.
 
 **State methods** (always use methods, not direct property access):
 
@@ -63,8 +65,6 @@ The UI is built using MudBlazor for Material Design components.
 | `SetSelectedModels(IEnumerable<string>)` | Sets multi-select models, fires `OnSelectedModelsChanged` |
 | `ClearSelectedModels()` | Clears multi-select, fires `OnSelectedModelsChanged` |
 | `ChangeSelectionMode(SelectionMode)` | Changes selection mode, fires `OnEnableMultiSelect` |
-| `LibraryLoaded()` | Notifies library loaded, fires `OnLibraryLoaded` |
-| `LibraryCleared()` | Clears state and fires `OnLibraryCleared` |
 | `SaveSettings()` | Fires `OnSaveSettings` |
 | `ClearLogMessages()` | Fires `OnClearLogMessages` |
 

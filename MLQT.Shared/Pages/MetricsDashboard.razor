@@ -272,7 +272,6 @@
 
     protected override void OnInitialized()
     {
-        NavState.OnLibraryCleared += OnLibraryCleared;
         NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
         CodeReviewService.OnLogMessagesChanged += OnFindingsChanged;
@@ -400,10 +399,23 @@
     private string LibrarySignature()
         => string.Join("|", LibraryDataService.Libraries.Select(l => $"{l.Id}:{l.ModelIds.Count}"));
 
-    // Reload the merged history when the set of loaded libraries/repositories changes, so a newly loaded
-    // library's shared history appears without reopening the tab.
+    // The set of loaded libraries/repositories changed: reload the merged history so a newly loaded
+    // library's shared trend appears without reopening the tab, and drop a measured result that now
+    // describes a library set that is gone. (The metrics cache is keyed on LibrarySignature(), so it
+    // invalidates itself; only this instance's displayed figures need clearing.)
     private void OnLibrariesChanged()
     {
+        // A remembered scope from the previous project may not exist any more.
+        if (!string.IsNullOrEmpty(_scope) && !LibraryDataService.GetAllModels().Any(m => m.Id == _scope))
+        {
+            _scope = string.Empty;
+            NavState.MetricsScope = string.Empty;
+        }
+
+        _metrics = null;
+        _summary = new();
+        _violations = null;
+
         _history = LoadAllHistory();
         RebuildTrend();
         InvokeAsync(StateHasChanged);
@@ -711,19 +723,6 @@
         return i < 0 ? id : id[(i + 1)..];
     }
 
-    private void OnLibraryCleared()
-    {
-        _metrics = null;
-        _summary = new();
-        _violations = null;
-        _analysisRunning = false;
-        _cacheMetrics = null;
-        _cacheScope = null;
-        _cacheSignature = null;
-        NavState.MetricsScope = string.Empty;   // the old scope may not exist in the next library
-        InvokeAsync(StateHasChanged);
-    }
-
     private static Color CoverageColor(double percent)
         => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
 
@@ -836,7 +835,6 @@
 
     public void Dispose()
     {
-        NavState.OnLibraryCleared -= OnLibraryCleared;
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
         LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
         CodeReviewService.OnLogMessagesChanged -= OnFindingsChanged;

@@ -333,7 +333,6 @@ else if (Repository != null)
         NavState.OnChangeModel += OnModelChanged;
         NavState.OnEnableMultiSelect += OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged += OnExternalSelectedModelsChanged;
-        NavState.OnLibraryLoaded += OnLibraryLoaded;
         NavState.OnVcsFilesChanged += OnVcsFilesChangedHandler;
         LibraryDataService.OnTreeDataChanged += OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged += OnRepositoryLoadStateChanged;
@@ -459,7 +458,6 @@ else if (Repository != null)
         NavState.OnChangeModel -= OnModelChanged;
         NavState.OnEnableMultiSelect -= OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged -= OnExternalSelectedModelsChanged;
-        NavState.OnLibraryLoaded -= OnLibraryLoaded;
         NavState.OnVcsFilesChanged -= OnVcsFilesChangedHandler;
         LibraryDataService.OnTreeDataChanged -= OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged -= OnRepositoryLoadStateChanged;
@@ -802,11 +800,6 @@ else if (Repository != null)
     private async void OnModelChanged()
     {
         _currentModelName = NavState.ModelID;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async void OnLibraryLoaded()
-    {
         await InvokeAsync(StateHasChanged);
     }
 

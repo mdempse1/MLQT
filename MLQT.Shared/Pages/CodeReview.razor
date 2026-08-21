@@ -375,7 +375,7 @@
     {
         NavState.OnChangeModel += OnModelSelected;
         NavState.OnModelContentChanged += OnModelContentChanged;
-        NavState.OnLibraryLoaded += LibraryLoaded;
+        LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
         NavState.OnSaveSettings += OnSettingsSaved;
         NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged += OnLogMessagesChanged;
@@ -536,7 +536,7 @@
         NavState.OnChangeModel -= OnModelSelected;
         NavState.OnModelContentChanged -= OnModelContentChanged;
         NavState.OnSaveSettings -= OnSettingsSaved;
-        NavState.OnLibraryLoaded -= LibraryLoaded;
+        LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
 
@@ -1336,17 +1336,19 @@ document.head.appendChild(style);
         }
     }
 
-    private async void LibraryLoaded()
+    /// <summary>
+    /// The set of loaded libraries changed (a library was added or removed, or the project was
+    /// switched). The render cache is keyed on model id alone, so an id that exists in both the old
+    /// and the new set would otherwise render from the previous library's source — drop all of it.
+    ///
+    /// This page stays mounted across a project switch, so it cannot rely on being recreated. Issue
+    /// messages are cleared by MainLayout's project-changed handler, and parser errors are surfaced
+    /// there too — the always-mounted layout is where anything that must happen regardless of the
+    /// open tab belongs.
+    /// </summary>
+    private async void OnLibrariesChanged()
     {
-        // Clear render cache — models may have changed
         _renderCache.Clear();
-
-        // Clear existing log messages when a new library is loaded
-        CodeReviewService.ClearLogMessages();
-
-        // Note: parser errors are surfaced into CodeReviewService by MainLayout (the always-mounted
-        // layout), for the same reason style violations are — this page only sees a library load if
-        // it happens to be the open tab at the time.
         await InvokeAsync(StateHasChanged);
     }
 

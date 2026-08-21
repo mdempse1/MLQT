@@ -87,17 +87,17 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 Centralized state container in `MLQT.Shared/Models/AppState.cs`:
 - **Model Selection**: `ModelID`, `SelectedModelIDs`, `SelectionMode`
-- **Library State**: `IsLibraryLoaded`
 - **Deferred Analysis**: `IsDeferredMode`, `HasDependencyAnalysisRun`, `HasStyleCheckingRun`, `HasExternalResourcesAnalyzed`
 - **Events**:
   - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`
-  - Library: `OnLibraryLoaded`, `OnLibraryCleared`
   - Settings: `OnSaveSettings`, `OnClearLogMessages`, `OnRepositorySettingsApplied`
   - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`
   - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`
   - Deferred analysis: `OnRunDeferredDependencies`, `OnRunDeferredStyleChecking`, `OnRunDeferredExternalResources`, `OnRunAllDeferredAnalysis`, `OnDeferredAnalysisCompleted`
   - Formatting: `OnFormatChangedFilesForCommit`
-- Always use methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `LibraryLoaded()`, `LibraryCleared()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) not direct property access
+- Always use methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) not direct property access
+- AppState carries no "library loaded/cleared" state — the set of loaded libraries is published by
+  `ILibraryDataService.OnLibrariesChanged`/`OnTreeDataChanged` and `IRepositoryService.OnProjectChanged`
 
 ### User Interface
 
