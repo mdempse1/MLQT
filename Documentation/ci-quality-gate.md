@@ -315,6 +315,7 @@ mlqt check <library-path> [--baseline <path>] [--changed-from <ref>]
                           [--touched-debt warn|fail|ignore]
                           [--config <path>] [--format console|json|junit|sarif|teamcity|markdown]
                           [--out <file>] [--fail-on off|warning|error] [--no-color]
+                          [--no-suppress] [--metrics] [--metrics-out <path>] [--metrics-force]
 
 mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <path>] [--force]
 ```
@@ -323,7 +324,68 @@ mlqt baseline create|update|prune <library-path> [--baseline <path>] [--config <
 defaults to `<library-path>/.mlqt/baseline.json`. A **relative** `--config`/`--baseline` value is
 resolved against the library/repository path (not the current directory), so
 `--baseline .mlqt/baseline.json` finds `<repo>/.mlqt/baseline.json` from any working directory;
-absolute paths are used as-is.
+absolute paths are used as-is — the same applies to `--metrics-out`.
+
+The `baseline` file records the time, revision and branch it was generated at (`version: 2`); a
+version-1 file written before that still loads.
+
+---
+
+## Tracking the trend from CI
+
+`mlqt check --metrics` appends a point to `<root>/.mlqt/metrics-history.json` — the file the desktop
+app's **Coverage** dashboard plots. Add it to the CI job and the burndown builds itself, one point per
+commit that actually moved the numbers, each stamped with its revision and branch.
+
+```bash
+mlqt check /path/to/MyLibrary --baseline .mlqt/baseline.json --fail-on warning --metrics
+```
+
+Recording happens whatever the gate decides — a failing build is exactly the one you want on the chart.
+
+### The commit loop, and why it doesn't happen
+
+If CI commits the updated history file to share it, that commit triggers CI, which updates the file
+again… forever. `--metrics` prevents this by **not writing a point that says nothing new**:
+
+- a point already exists for this **revision** → skip (covers rebuilds and retries);
+- the numbers are **identical to the previous point** → skip.
+
+The build triggered by CI's own commit measures the same library, gets the same numbers, writes
+nothing and commits nothing. The cycle ends after one extra run — without relying on your CI system's
+path filters or `[skip ci]` handling being configured correctly.
+
+A commit step that is safe to drop into a default-branch job:
+
+```bash
+mlqt check "$PWD" --baseline .mlqt/baseline.json --fail-on warning --metrics || GATE=$?
+
+if ! git diff --quiet -- .mlqt/metrics-history.json; then
+  git add .mlqt/metrics-history.json
+  git commit -m "Update MLQT coverage history [skip ci]"
+  git push
+fi
+
+exit "${GATE:-0}"
+```
+
+Note the `git diff --quiet` guard: because an unchanged run leaves the file byte-identical, most builds
+commit nothing at all.
+
+### Or don't commit it
+
+If you would rather not have CI push to the repository, keep the history outside it:
+
+```bash
+mlqt check "$PWD" --metrics-out "$CI_ARTIFACT_DIR/metrics-history.json"
+```
+
+No commits, so no loop is possible. The trade-off is that the trend lives in CI rather than in the
+desktop app, and you have to restore the previous file into each run for it to accumulate.
+
+**Which to choose:** commit it if you want reviewers to see the burndown in MLQT; keep it as an
+artifact if your CI must not push. Committing from the **default-branch job only** is the usual middle
+ground — the trend follows the mainline instead of gaining a point per PR.
 
 ---
 
@@ -403,6 +465,8 @@ end Foo;
 | `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
 | Only new findings show, no touched debt | The note says `0 model(s) changed` — the ref found no changes (it may already contain your change). Diff against a ref *behind* it. |
 | Touched debt swamps the report | A single-file library marks every model changed on any edit. Use `--touched-debt ignore`. |
+| `--metrics` wrote nothing | Expected when the numbers haven't moved, or the revision already has a point. The note on stderr says which. Use `--metrics-force` to override (never in a job that commits the file). |
+| The metrics chart is empty in the app | The dashboard reads `.mlqt/metrics-history.json`; make sure CI's commits of it are being pulled, or press **Save snapshot** once locally. |
 | Gate fails on `MLQT.Parse.SyntaxError` and the baseline doesn't help | It is not meant to. Fix the syntax error — see [Parse errors always fail](#parse-errors-always-fail). |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

@@ -28,6 +28,24 @@ internal sealed record CheckOptions
     /// <summary>Audit mode: ignore __MLQT suppression annotations and report everything.</summary>
     public bool NoSuppress { get; init; }
 
+    /// <summary>Record a coverage snapshot into the metrics history the desktop dashboard reads.</summary>
+    public bool RecordMetrics { get; init; }
+
+    /// <summary>Where to record it. Null = <c>&lt;library-path&gt;/.mlqt/metrics-history.json</c>, the
+    /// shared, version-controllable file the desktop app uses. Point this outside the repository to
+    /// collect the history as a CI artifact instead of committing it.</summary>
+    public string? MetricsPath { get; init; }
+
+    /// <summary>Record even when the numbers are unchanged. Off by default — see
+    /// <c>MetricsHistoryStore.AppendIfChanged</c> for why that matters in CI.</summary>
+    public bool MetricsForce { get; init; }
+
+    /// <summary>The metrics file this run would write to.</summary>
+    public string ResolvedMetricsPath =>
+        MetricsPath is not null
+            ? RepoPath.Resolve(LibraryPath, MetricsPath)
+            : Path.Combine(LibraryPath, ".mlqt", "metrics-history.json");
+
     public static bool TryParse(IReadOnlyList<string> args, out CheckOptions? options, out string? error)
     {
         options = null;
@@ -39,6 +57,9 @@ internal sealed record CheckOptions
         var touchedDebt = TouchedDebtPolicy.Warn;
         var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is not null;
         var noSuppress = false;
+        string? metricsPath = null;
+        var recordMetrics = false;
+        var metricsForce = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -59,6 +80,17 @@ internal sealed record CheckOptions
                     break;
                 case "--no-suppress":
                     noSuppress = true;
+                    break;
+                case "--metrics":
+                    recordMetrics = true;
+                    break;
+                case "--metrics-out":
+                    if (!Next(args, ref i, out metricsPath, out error)) return false;
+                    recordMetrics = true;   // naming a destination implies recording
+                    break;
+                case "--metrics-force":
+                    metricsForce = true;
+                    recordMetrics = true;
                     break;
                 case "--format":
                     if (!Next(args, ref i, out var fmt, out error)) return false;
@@ -120,7 +152,10 @@ internal sealed record CheckOptions
             BaselinePath = baseline,
             TouchedDebt = touchedDebt,
             ChangedFrom = changedFrom,
-            NoSuppress = noSuppress
+            NoSuppress = noSuppress,
+            RecordMetrics = recordMetrics,
+            MetricsPath = metricsPath,
+            MetricsForce = metricsForce
         };
         return true;
     }

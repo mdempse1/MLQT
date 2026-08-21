@@ -81,4 +81,56 @@ public class MetricsSnapshotTests
 
         Assert.Null(combined.Violations);
     }
+
+    // --- HasSameMetricsAs -----------------------------------------------------------------------
+    // Identity of the measurement, not of the record: timestamp/revision are metadata about when it
+    // was taken. Used to decide whether a new point would say anything.
+
+    private static MetricsSnapshot S(double desc, int classes = 10, int? violations = 3,
+        (int compliant, int eligible)? counts = null)
+        => new(new DateTime(2026, 1, 1), "", classes,
+            new Dictionary<string, double> { ["Description"] = desc },
+            counts is null ? null : new Dictionary<string, CoverageCount> { ["Description"] = new(counts.Value.compliant, counts.Value.eligible) },
+            violations);
+
+    [Fact]
+    public void HasSameMetricsAs_IdenticalNumbers_True()
+        => Assert.True(S(50).HasSameMetricsAs(S(50) with { TimestampUtc = new DateTime(2027, 5, 5), Revision = "other" }));
+
+    [Fact]
+    public void HasSameMetricsAs_Null_False()
+        => Assert.False(S(50).HasSameMetricsAs(null));
+
+    [Fact]
+    public void HasSameMetricsAs_DifferentCoverage_False()
+        => Assert.False(S(50).HasSameMetricsAs(S(51)));
+
+    [Fact]
+    public void HasSameMetricsAs_DifferentViolations_False()
+        => Assert.False(S(50).HasSameMetricsAs(S(50, violations: 4)));
+
+    [Fact]
+    public void HasSameMetricsAs_DifferentClassCount_False()
+        => Assert.False(S(50).HasSameMetricsAs(S(50, classes: 11)));
+
+    [Fact]
+    public void HasSameMetricsAs_SameRoundedPercentButDifferentCounts_False()
+    {
+        // 500/1000 and 501/1002 both round to 50.0; the underlying library did change.
+        var a = S(50.0, counts: (500, 1000));
+        var b = S(50.0, counts: (501, 1002));
+
+        Assert.False(a.HasSameMetricsAs(b));
+    }
+
+    [Fact]
+    public void HasSameMetricsAs_MissingDimension_False()
+    {
+        var a = S(50);
+        var b = new MetricsSnapshot(new DateTime(2026, 1, 1), "", 10,
+            new Dictionary<string, double> { ["Icon"] = 50 }, null, 3);
+
+        Assert.False(a.HasSameMetricsAs(b));
+    }
+
 }

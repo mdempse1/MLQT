@@ -96,6 +96,14 @@ internal static class BaselineCommand
 
         var path = opts.ResolvedBaselinePath;
 
+        // Stamp the file with when it was generated and the revision it describes, so a reviewer can
+        // tell how old the accepted debt is and diff from there. Absent outside a working copy.
+        var now = DateTime.UtcNow;
+        var stamp = VcsLocator.Stamp(opts.LibraryPath);
+        if (stamp.IsKnown)
+            stderr.WriteLine($"note: stamping baseline with revision {Short(stamp.Revision!)}" +
+                             (stamp.Branch is not null ? $" on {stamp.Branch}" : ""));
+
         switch (sub)
         {
             case "create":
@@ -104,13 +112,15 @@ internal static class BaselineCommand
                     stderr.WriteLine($"error: baseline already exists: {path} (use --force, or `baseline update`)");
                     return ExitCodes.Error;
                 }
-                Baseline.FromFindings(load.Findings).Save(path);
-                stdout.WriteLine($"Wrote {load.Findings.Count} finding(s) to {path}");
+                var created = Baseline.FromFindings(load.Findings, now, stamp);
+                created.Save(path);
+                stdout.WriteLine($"Wrote {created.Entries.Count} finding(s) to {path}");
                 return ExitCodes.Ok;
 
             case "update":
-                Baseline.FromFindings(load.Findings).Save(path);
-                stdout.WriteLine($"Updated {path} with {load.Findings.Count} finding(s)");
+                var updated = Baseline.FromFindings(load.Findings, now, stamp);
+                updated.Save(path);
+                stdout.WriteLine($"Updated {path} with {updated.Entries.Count} finding(s)");
                 return ExitCodes.Ok;
 
             case "prune":
@@ -121,7 +131,7 @@ internal static class BaselineCommand
                 }
                 var baseline = Baseline.Load(path);
                 var stale = baseline.StaleEntries(load.Findings);
-                baseline.WithoutStale(load.Findings).Save(path);
+                baseline.WithoutStale(load.Findings, now, stamp).Save(path);
                 stdout.WriteLine($"Pruned {stale.Count} fixed entr{(stale.Count == 1 ? "y" : "ies")} from {path}");
                 return ExitCodes.Ok;
 
@@ -129,4 +139,7 @@ internal static class BaselineCommand
                 return ExitCodes.Ok;
         }
     }
+
+    /// <summary>Abbreviates a Git SHA for a log line; SVN revision numbers are short already.</summary>
+    private static string Short(string revision) => revision.Length > 12 ? revision[..12] : revision;
 }

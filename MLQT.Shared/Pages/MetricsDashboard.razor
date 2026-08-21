@@ -445,11 +445,14 @@
             {
                 // A scope belongs to exactly one library — its repository's shared file, or the per-user
                 // file for a library not loaded from a repository. _metrics already covers this scope.
-                var repoLocalPath = OwningRepositoryLocalPath(_scope);
+                var repo = OwningRepository(_scope);
+                var repoLocalPath = repo?.LocalPath;
                 var path = !string.IsNullOrEmpty(repoLocalPath)
                     ? MetricsHistoryStore.RepoPath(repoLocalPath)
                     : MetricsHistoryStore.DefaultPath;
-                MetricsHistoryStore.Append(path, MetricsSnapshot.From(_metrics, _scope, timestamp, ReliableViolations(_violations)));
+                MetricsHistoryStore.Append(path, MetricsSnapshot.From(
+                    _metrics, _scope, timestamp, ReliableViolations(_violations),
+                    repo?.CurrentRevision, repo?.CurrentBranch));
                 if (!string.IsNullOrEmpty(repoLocalPath)) sharedCount++; else anyPerUser = true;
             }
             else
@@ -468,7 +471,9 @@
                 {
                     // Single target: _metrics already covers exactly this group's models — reuse it.
                     var g = groups[0];
-                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(_metrics, "", timestamp, ReliableViolations(_violations)));
+                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
+                        _metrics, "", timestamp, ReliableViolations(_violations),
+                        g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
                     if (g.Shared) sharedCount++; else anyPerUser = true;
                 }
                 else
@@ -485,7 +490,8 @@
                             int? v = violationsReliable
                                 ? CountViolationsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
                                 : (int?)null;
-                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(metrics, "", timestamp, v));
+                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
+                                metrics, "", timestamp, v, g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
                         }
                     });
                     sharedCount = groups.Count(g => g.Shared);
@@ -516,11 +522,15 @@
 
     // Every loaded library grouped by the history file it belongs to (a repository's shared .mlqt file,
     // or the per-user file for non-repo libraries), with that group's model nodes for per-group metrics.
-    private List<(string Path, bool Shared, List<ModelNode> Models)> StorageGroups()
+    private List<(string Path, bool Shared, List<ModelNode> Models, Repository? Repo)> StorageGroups()
     {
         var graph = LibraryDataService.CombinedGraph;
         var byPath = new Dictionary<string, List<ModelNode>>(System.StringComparer.OrdinalIgnoreCase);
         var sharedPaths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        // The repository each history file belongs to, so its snapshots can name the revision they
+        // describe — the same stamp `mlqt check --metrics` writes, so points from the desktop app and
+        // from CI are comparable in the one shared file.
+        var repoByPath = new Dictionary<string, Repository?>(System.StringComparer.OrdinalIgnoreCase);
 
         foreach (var lib in LibraryDataService.Libraries)
         {
@@ -538,6 +548,7 @@
             {
                 path = MetricsHistoryStore.DefaultPath;
             }
+            repoByPath[path] = repo;
 
             if (!byPath.TryGetValue(path, out var list))
                 byPath[path] = list = new List<ModelNode>();
@@ -549,13 +560,15 @@
             }
         }
 
-        return byPath.Select(kv => (kv.Key, sharedPaths.Contains(kv.Key), kv.Value)).ToList();
+        return byPath
+            .Select(kv => (kv.Key, sharedPaths.Contains(kv.Key), kv.Value, repoByPath.GetValueOrDefault(kv.Key)))
+            .ToList();
     }
 
     // The local path of the repository whose library owns this scope, or null when there is none:
     // a non-empty scope resolves via the library that contains it; an empty scope resolves only when a
     // single repository is loaded (otherwise it spans several).
-    private string? OwningRepositoryLocalPath(string scope)
+    private Repository? OwningRepository(string scope)
     {
         string? repoId;
         if (!string.IsNullOrEmpty(scope))
@@ -573,7 +586,7 @@
         }
         if (string.IsNullOrEmpty(repoId))
             return null;
-        return RepositoryService.Repositories.FirstOrDefault(r => r.Id == repoId)?.LocalPath;
+        return RepositoryService.Repositories.FirstOrDefault(r => r.Id == repoId);
     }
 
     // Merge every loaded repository's shared history with the per-user file (which covers file/directory

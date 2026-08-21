@@ -39,6 +39,9 @@ of `.mo` files) or a single `.mo` file.
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
+| `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
+| `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
+| `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `-h`, `--help` | Show help | |
 
 ### Exit codes
@@ -107,6 +110,22 @@ mlqt baseline prune  <library-path>     # drop entries whose findings are now fi
 
 `create`/`update`/`prune` accept `--baseline <path>` (default `<library-path>/.mlqt/baseline.json`)
 and `--config <path>`; `create` refuses to overwrite an existing file unless `--force` is given.
+
+The file records **when it was generated** and the **revision and branch** it describes, so a reviewer
+can tell how old the accepted debt is and diff from there:
+
+```json
+{
+  "version": 2,
+  "createdUtc": "2026-08-21T12:33:47Z",
+  "revision": "8481e74df0bce85be36974da7daaa57c8e44d90f",
+  "branch": "main",
+  "findings": [ ... ]
+}
+```
+
+`update` and `prune` refresh the stamp, because both rewrite the content. Outside a working copy the
+revision fields are simply absent. A version-1 baseline (no metadata) still loads unchanged.
 **Commit `.mlqt/baseline.json` to the repository** — it is a reviewable debt ledger, and its size
 shrinking over time is your burndown.
 
@@ -151,6 +170,48 @@ model in it as changed, so all its baselined debt becomes touched debt and swamp
 mlqt check ./ExternData --baseline .mlqt/baseline.json --changed-from main \
       --touched-debt ignore --fail-on warning
 ```
+
+## Recording the coverage trend
+
+`--metrics` appends a point to `<library-path>/.mlqt/metrics-history.json` — the same file the desktop
+app's **Coverage** dashboard plots. Running it per commit in CI builds the burndown automatically,
+instead of it depending on someone remembering to press **Save snapshot**.
+
+A point records the coverage percentages and their raw compliant/eligible counts, the class count, the
+active style-finding count, and the **revision and branch** it was measured at. Recording happens
+whatever the gate decides — a failing build is exactly the one whose numbers you want on the trend.
+
+```bash
+mlqt check ./MyLibrary --baseline .mlqt/baseline.json --metrics
+```
+
+### It will not loop
+
+The obvious worry: CI writes the history file, commits it to share it, that commit triggers CI, which
+writes the file again — forever.
+
+`--metrics` **skips a point that says nothing new**, which breaks the cycle without depending on your
+CI system's path filters or `[skip ci]` conventions being right:
+
+- if the history already has a point for this **revision**, nothing is written (a rebuild or retry of
+  the same commit does not stack duplicate points);
+- if the numbers are **identical to the previous point**, nothing is written.
+
+So the CI-commit build measures the same library, finds the same numbers, writes nothing, and commits
+nothing. The cycle ends after one extra run. `--metrics-force` overrides this; do not use it in a job
+that commits the file.
+
+### Choosing how to share the history
+
+| Approach | How | Trade-off |
+|---|---|---|
+| **Commit it** (default) | `--metrics`, then commit `.mlqt/metrics-history.json` if it changed | Everyone sees the trend in the desktop app. Needs the commit step; relies on the skip rule above (plus, ideally, a path filter) to stay quiet. |
+| **Keep it as an artifact** | `--metrics-out $CI_ARTIFACTS/metrics-history.json` | No commits at all, so no loop is even possible. The trend lives in CI, not in the desktop app, and you must carry the previous file into the next run for it to accumulate. |
+| **Commit from one branch only** | `--metrics` in the default-branch job only | Trend follows the mainline rather than every PR. Simplest thing that stays useful. |
+
+If you commit from CI, belt and braces is worth it: exclude `.mlqt/metrics-history.json` from your
+build trigger's path filter, and/or put `[skip ci]` in the commit message. The skip rule means you are
+safe without them, but with them the extra build never happens at all.
 
 ## Output formats
 

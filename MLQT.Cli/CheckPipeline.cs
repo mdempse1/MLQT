@@ -12,7 +12,9 @@ internal sealed record LoadResult(
     int ExitCode,
     IReadOnlyList<Finding> Findings,
     IReadOnlyDictionary<string, string> ModelToFile,
-    int ModelsChecked)
+    int ModelsChecked,
+    DirectedGraph? Graph = null,
+    IReadOnlyList<ModelNode>? Models = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) => new(code, [], new Dictionary<string, string>(), 0);
@@ -126,6 +128,8 @@ internal static class CheckPipeline
 
         // Report the number of classes actually checked, which excludes the unparseable placeholders.
         var modelsChecked = models.Count(m => !m.IsParseFailurePlaceholder);
-        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked);
+        // The graph and model list are carried out so `--metrics` can compute coverage over exactly
+        // the set that was checked, without loading the library a second time.
+        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models);
     }
 }

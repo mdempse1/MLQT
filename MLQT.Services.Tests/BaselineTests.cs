@@ -71,6 +71,106 @@ public class BaselineTests
         Assert.Single(pruned.Entries);
         Assert.True(pruned.Contains(kept));
     }
+
+    // --- provenance metadata --------------------------------------------------------------------
+
+    [Fact]
+    public void Metadata_RoundTripsThroughTheFile()
+    {
+        var created = new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+        var path = TempPath();
+        try
+        {
+            Baseline.FromFindings([F("R", "M", "x")], created, new VcsStamp("abc123", "main")).Save(path);
+            var loaded = Baseline.Load(path);
+
+            Assert.Equal(created, loaded.CreatedUtc);
+            Assert.Equal("abc123", loaded.Revision);
+            Assert.Equal("main", loaded.Branch);
+            Assert.Single(loaded.Entries);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void VersionOneFile_WithoutMetadata_StillLoads()
+    {
+        // An already-committed baseline must keep working untouched.
+        var path = TempPath();
+        try
+        {
+            File.WriteAllText(path, """
+                {
+                  "version": 1,
+                  "findings": [
+                    { "fingerprint": "abc", "ruleId": "R", "model": "M", "element": "x", "message": "m" }
+                  ]
+                }
+                """);
+
+            var loaded = Baseline.Load(path);
+
+            Assert.Single(loaded.Entries);
+            Assert.Null(loaded.CreatedUtc);
+            Assert.Null(loaded.Revision);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void NoWorkingCopy_LeavesMetadataNull_WithoutFailing()
+    {
+        // A library outside a working copy still gets a valid baseline; it just cannot name a revision.
+        var baseline = Baseline.FromFindings([F("R", "M", "x")], DateTime.UtcNow, VcsStamp.None);
+
+        Assert.Null(baseline.Revision);
+        Assert.Null(baseline.Branch);
+        Assert.Single(baseline.Entries);
+    }
+
+    [Fact]
+    public void WithoutStale_ReStampsBecauseItRewritesTheContent()
+    {
+        var original = Baseline.FromFindings(
+            [F("R", "M", "x"), F("R", "M", "y")],
+            new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), new VcsStamp("old", "main"));
+
+        var pruned = original.WithoutStale(
+            [F("R", "M", "x")],
+            new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), new VcsStamp("new", "main"));
+
+        Assert.Single(pruned.Entries);
+        Assert.Equal("new", pruned.Revision);
+        Assert.Equal(new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), pruned.CreatedUtc);
+    }
+
+    [Fact]
+    public void WithoutStale_KeepsTheOriginalStampWhenNoneIsSupplied()
+    {
+        var original = Baseline.FromFindings(
+            [F("R", "M", "x")], new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), new VcsStamp("old", "main"));
+
+        var pruned = original.WithoutStale([F("R", "M", "x")]);
+
+        Assert.Equal("old", pruned.Revision);
+    }
+
+    [Fact]
+    public void SameFindingsAtSameRevision_ProduceAByteIdenticalFile()
+    {
+        // What lets CI skip a no-op commit of the baseline.
+        var created = new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+        var stamp = new VcsStamp("abc123", "main");
+        string a = TempPath(), b = TempPath();
+        try
+        {
+            Baseline.FromFindings([F("R", "M", "x"), F("R", "N", "y")], created, stamp).Save(a);
+            Baseline.FromFindings([F("R", "N", "y"), F("R", "M", "x")], created, stamp).Save(b);
+
+            Assert.Equal(File.ReadAllText(a), File.ReadAllText(b));
+        }
+        finally { File.Delete(a); File.Delete(b); }
+    }
 }
 
 public class FindingClassifierTests

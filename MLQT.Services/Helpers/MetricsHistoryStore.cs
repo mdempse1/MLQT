@@ -42,6 +42,48 @@ public static class MetricsHistoryStore
         }
     }
 
+    /// <summary>Why <see cref="AppendIfChanged"/> did or did not write.</summary>
+    public enum AppendOutcome
+    {
+        /// <summary>The snapshot was added.</summary>
+        Appended,
+
+        /// <summary>The history already has a point for this revision.</summary>
+        RevisionAlreadyRecorded,
+
+        /// <summary>The numbers are identical to the most recent point for this scope.</summary>
+        Unchanged
+    }
+
+    /// <summary>
+    /// Append a snapshot only if it says something new, and report which.
+    ///
+    /// This is what makes recording from CI safe. A CI job that commits the updated history file
+    /// triggers a build of its own commit; that build measures the same library and would append an
+    /// identical point, commit again, and loop forever. Skipping an unchanged point breaks the cycle
+    /// after one extra run without depending on the CI system's path filters or <c>[skip ci]</c>
+    /// conventions being configured correctly.
+    ///
+    /// Revision is checked as well so rebuilding the same commit (a retry, a re-run of an old build)
+    /// does not stack duplicate points on one revision.
+    /// </summary>
+    public static (AppendOutcome Outcome, List<MetricsSnapshot> History) AppendIfChanged(
+        string path, MetricsSnapshot snapshot)
+    {
+        var history = Load(path);
+        var sameScope = history.Where(s => (s.Scope ?? "") == (snapshot.Scope ?? "")).ToList();
+
+        if (snapshot.Revision is not null &&
+            sameScope.Any(s => string.Equals(s.Revision, snapshot.Revision, StringComparison.Ordinal)))
+            return (AppendOutcome.RevisionAlreadyRecorded, history);
+
+        var latest = sameScope.OrderBy(s => s.TimestampUtc).LastOrDefault();
+        if (snapshot.HasSameMetricsAs(latest))
+            return (AppendOutcome.Unchanged, history);
+
+        return (AppendOutcome.Appended, Append(path, snapshot));
+    }
+
     /// <summary>Append a snapshot and persist, keeping at most the most recent <see cref="MaxSnapshots"/>.</summary>
     public static List<MetricsSnapshot> Append(string path, MetricsSnapshot snapshot)
     {

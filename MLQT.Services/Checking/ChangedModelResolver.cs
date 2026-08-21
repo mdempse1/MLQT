@@ -22,26 +22,7 @@ public static class ChangedModelResolver
     public static ChangedModelResult Resolve(
         string libraryPath, string sinceRevision, IReadOnlyDictionary<string, string> modelToFile)
     {
-        // Pick the VCS: first system whose working-copy root contains the library path.
-        var systems = new IRevisionControlSystem[]
-        {
-            new GitRevisionControlSystem(),
-            new SvnRevisionControlSystem()
-        };
-
-        IRevisionControlSystem? vcs = null;
-        string? root = null;
-        foreach (var system in systems)
-        {
-            var candidate = system.FindRepositoryRoot(libraryPath);
-            if (candidate is not null && system.IsValidRepository(candidate))
-            {
-                vcs = system;
-                root = candidate;
-                break;
-            }
-        }
-
+        var (vcs, root) = VcsLocator.Find(libraryPath);
         if (vcs is null || root is null)
             return Failed($"'{libraryPath}' is not inside a Git or SVN working copy");
 

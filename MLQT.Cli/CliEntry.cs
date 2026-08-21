@@ -56,10 +56,18 @@ internal static class CliEntry
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output
           --no-suppress                 Ignore __MLQT suppression annotations (audit)
+          --changed-from <ref>          VCS ref to diff against, for touched-debt escalation
+          --metrics                     Record a coverage snapshot in <library-path>/.mlqt/metrics-history.json
+          --metrics-out <path>          Record it somewhere else instead (implies --metrics)
+          --metrics-force               Record even when the numbers are unchanged
           -h, --help                    Show this help
 
         baseline: create/update snapshot current findings to <library-path>/.mlqt/baseline.json
                   (or --baseline <path>); prune drops entries whose findings are now fixed.
+                  The file records when it was generated and the revision it describes.
+
+        metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
+                  An unchanged point is skipped, so a CI job that commits the file cannot loop.
 
         Exit codes: 0 = passed, 1 = findings at/above --fail-on (new; touched debt if --touched-debt fail),
                     2 = usage/load error
