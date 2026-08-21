@@ -157,10 +157,17 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
-| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). † | GUI, CLI, MCP |
-| `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. † | GUI, CLI, MCP |
+| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
+| `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
+
+‡ **Simulation entry points are exempt.** A class carrying an `experiment(...)` annotation exists to
+be run, not to be instantiated by something else, so neither unused-class rule reports it. Without
+this a library's example or test package reads as entirely dead. Note this only covers classes that
+actually carry the annotation — a library's *public API* functions (and an `ExternalObject`'s
+language-mandated `constructor`/`destructor`) are still reported, which is why `MLQT.Unused.PublicClass`
+is off by default and best suited to an application library.
 
 † **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
 enabled (you'll see `note: running dependency analysis…`); via the MCP server, call

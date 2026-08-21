@@ -91,4 +91,31 @@ public class UnusedClassAnalyzerTests
         // Without edges every class looks unreferenced — the analyzer must not run.
         Assert.Empty(Run(Build(), depAnalyzed: false));
     }
+
+    // --- simulation entry points ----------------------------------------------------------------
+
+    [Fact]
+    public void ExperimentAnnotatedClass_IsNotFlagged_InEitherTier()
+    {
+        // A class with experiment(...) is meant to be simulated, not instantiated by something else,
+        // so nothing referencing it is the expected state. Without this a library's whole example or
+        // test package reports as dead code.
+        var graph = Build();
+        graph.GetNode<ModelNode>("P.A")!.HasExperimentAnnotation = true;        // public tier
+        graph.GetNode<ModelNode>("P.Helper")!.HasExperimentAnnotation = true;   // protected tier
+
+        var settings = new StyleCheckingSettings { CheckUnusedClass = true, CheckUnusedPublicClass = true };
+
+        Assert.Empty(Run(graph, settings));
+    }
+
+    [Fact]
+    public void WithoutTheAnnotation_TheSameClassesAreStillFlagged()
+    {
+        // Guards the premise: the exemption above is doing the work, not an empty fixture.
+        var settings = new StyleCheckingSettings { CheckUnusedClass = true, CheckUnusedPublicClass = true };
+
+        Assert.NotEmpty(Run(Build(), settings));
+    }
+
 }

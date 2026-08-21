@@ -15,9 +15,10 @@ namespace ModelicaGraph.Analysis;
 /// default): a downstream library we cannot see may use it, so this is only meaningful on an application
 /// library, not a foundational one. Opt-in and off by default.</item>
 /// </list>
-/// Needs dependency analysis (the reverse edges are analyzer-only). Top-level classes are never flagged
-/// (a library root is external API by definition); partial classes (extended, not instantiated) and
-/// packages are skipped. Each tier only runs when its own rule is enabled.
+/// Needs dependency analysis (the reverse edges are analyzer-only). Never flagged: top-level classes
+/// (a library root is external API by definition), partial classes (extended, not instantiated),
+/// packages, and classes carrying an <c>experiment(...)</c> annotation (simulation entry points — they
+/// are meant to be run, not referenced). Each tier only runs when its own rule is enabled.
 /// </summary>
 public sealed class UnusedClassAnalyzer : IGraphAnalyzer
 {
@@ -38,6 +39,12 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
             if (node.IsParseFailurePlaceholder || node.IsPartial || node.ClassType == "package")
                 continue;
             if (!node.IsNested || string.IsNullOrEmpty(node.ParentModelName))
+                continue;
+            // An experiment(...) annotation marks a simulation entry point: the class exists to be
+            // run, not to be instantiated by something else, so "nothing references it" is the
+            // expected state rather than a finding. Without this, a library's whole test/example
+            // package reports as dead code.
+            if (node.HasExperimentAnnotation)
                 continue;
             if (node.UsedByModelIds.Count > 0)
                 continue;
