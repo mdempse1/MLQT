@@ -305,6 +305,19 @@ A point records the coverage percentages and their raw compliant/eligible counts
 active style-finding count, and the **revision and branch** it was measured at. Recording happens
 whatever the gate decides — a failing build is exactly the one whose numbers you want on the trend.
 
+**Scopes.** One point is recorded for the whole checked set, plus one for each top-level library
+package, each counting only its own classes:
+
+```
+note: recorded metrics for all libraries, Modelica, ModelicaServices, ModelicaTest in …
+```
+
+This is what the dashboard's scope filter reads — it matches a point's scope against the selected
+package id exactly, so without the per-library points a library shows its current coverage but an
+empty trend. Only packages get their own scope: a flat folder of loose `.mo` files records the
+whole-set point alone, since the dashboard's picker only offers packages anyway. Each scope skips
+independently when its numbers have not moved.
+
 ```bash
 mlqt check ./MyLibrary --baseline .mlqt/baseline.json --metrics
 ```

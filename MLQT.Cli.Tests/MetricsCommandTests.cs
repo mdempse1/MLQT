@@ -85,11 +85,75 @@ public class MetricsCommandTests
         using var lib = Fixture();
         Run("check", lib.Path, "--metrics", "--no-color");
 
-        var point = Assert.Single(Points(lib.MetricsPath));
+        // Scope "" is the whole checked set — what the dashboard's "all libraries" view reads.
+        var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
         Assert.True(point.GetProperty("TotalClasses").GetInt32() > 0);
         Assert.True(point.TryGetProperty("Coverage", out _));
-        // Scope "" is the whole checked set — what the dashboard's "all libraries" view reads.
+    }
+
+    // A repository holding two real libraries, each a package — the shape the scope filter is for.
+    private const string PackageOne = """
+        within;
+        package One "library one"
+          model A "described"
+            parameter Real x = 1.0 "described";
+          end A;
+        end One;
+        """;
+
+    private const string PackageTwo = """
+        within;
+        package Two "library two"
+          model B "described"
+          end B;
+          model C "described"
+          end C;
+        end Two;
+        """;
+
+    private static TempLibrary TwoLibraries() =>
+        new TempLibrary()
+            .WithModel("One.mo", PackageOne)
+            .WithModel("Two.mo", PackageTwo)
+            .WithSettings("""{ "ClassHasDescription": true }""");
+
+    [Fact]
+    public void Metrics_AlsoWritesAPointPerLibrary()
+    {
+        // The dashboard's scope filter matches a snapshot's Scope against the selected package id
+        // exactly, so without these a library shows current coverage but an empty trend.
+        using var lib = TwoLibraries();
+        Run("check", lib.Path, "--metrics", "--no-color");
+
+        var scopes = Points(lib.MetricsPath).Select(p => p.GetProperty("Scope").GetString()).ToList();
+
+        Assert.Contains("", scopes);
+        Assert.Contains("One", scopes);
+        Assert.Contains("Two", scopes);
+    }
+
+    [Fact]
+    public void Metrics_OnlyPackagesGetTheirOwnScope()
+    {
+        // A flat folder of loose classes has no library packages, so only the whole-set point is
+        // recorded — a scope per class could never be selected in the dashboard anyway.
+        using var lib = Fixture();
+        Run("check", lib.Path, "--metrics", "--no-color");
+
+        var point = Assert.Single(Points(lib.MetricsPath));
         Assert.Equal("", point.GetProperty("Scope").GetString());
+    }
+
+    [Fact]
+    public void Metrics_EachLibraryScopeCountsOnlyItsOwnClasses()
+    {
+        using var lib = TwoLibraries();
+        Run("check", lib.Path, "--metrics", "--no-color");
+
+        var whole = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
+        var one = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "One");
+
+        Assert.True(one.GetProperty("TotalClasses").GetInt32() < whole.GetProperty("TotalClasses").GetInt32());
     }
 
     [Fact]
@@ -99,7 +163,7 @@ public class MetricsCommandTests
         using var lib = Fixture(TwoClassesPlusUndocumented);
         Run("check", lib.Path, "--metrics", "--no-color");
 
-        var point = Assert.Single(Points(lib.MetricsPath));
+        var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
         Assert.Equal(1, point.GetProperty("Violations").GetInt32());
     }
 
@@ -131,8 +195,7 @@ public class MetricsCommandTests
         var (_, _, stderr) = Run("check", lib.Path, "--metrics", "--no-color");
 
         Assert.Equal(afterFirst, File.ReadAllText(lib.MetricsPath));
-        Assert.Contains("metrics unchanged", stderr);
-        Assert.Single(Points(lib.MetricsPath));
+        Assert.Contains("unchanged", stderr);
     }
 
     [Fact]
@@ -143,6 +206,7 @@ public class MetricsCommandTests
 
         Run("check", lib.Path, "--metrics-force", "--no-color");
 
+        // Every scope is re-recorded, so the count doubles.
         Assert.Equal(2, Points(lib.MetricsPath).Length);
     }
 
@@ -155,7 +219,7 @@ public class MetricsCommandTests
         lib.WithModel("Lib.mo", TwoClassesPlusUndocumented);   // coverage drops
         Run("check", lib.Path, "--metrics", "--no-color");
 
-        Assert.Equal(2, Points(lib.MetricsPath).Length);
+        Assert.Equal(2, Points(lib.MetricsPath).Count(p => p.GetProperty("Scope").GetString() == ""));
     }
 
     [Fact]
@@ -167,7 +231,7 @@ public class MetricsCommandTests
         var (code, _, _) = Run("check", lib.Path, "--metrics", "--fail-on", "warning", "--no-color");
 
         Assert.Equal(1, code);
-        Assert.Single(Points(lib.MetricsPath));
+        Assert.NotEmpty(Points(lib.MetricsPath));
     }
 
     [Fact]

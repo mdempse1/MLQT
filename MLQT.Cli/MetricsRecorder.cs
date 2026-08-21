@@ -34,34 +34,67 @@ internal static class MetricsRecorder
     {
         try
         {
-            var metrics = MetricsCalculator.Compute(graph, models);
-
-            // Match the dashboard's figure: active style findings only. Parse diagnostics are not
-            // style debt and would make the trend jump on a syntax error rather than on quality.
-            var violations = findings.Count(f => !RuleIds.IsParseDiagnostic(f.RuleId));
-
-            // Scope "" — the whole checked set, which is what `mlqt check <root>` covers and what the
-            // dashboard's "all libraries" view reads.
-            var snapshot = MetricsSnapshot.From(
-                metrics, scope: "", timestampUtc, violations, stamp.Revision, stamp.Branch);
-
-            if (force)
+            // One point for the whole checked set, plus one per library. The per-library points are
+            // what the dashboard's scope filter reads: it matches a snapshot's Scope against the
+            // selected package id exactly, so a repository checked only under the empty scope shows
+            // current coverage for a library but an empty trend.
+            var scopes = new List<(string Scope, IReadOnlyList<ModelNode> Models)>
             {
-                MetricsHistoryStore.Append(path, snapshot);
-                stderr.WriteLine($"note: recorded metrics snapshot in {path} (forced)");
-                return;
+                ("", models)
+            };
+            // Only top-level PACKAGES get their own scope. The dashboard's scope picker offers
+            // packages, so a scope recorded for anything else could never be selected — and a flat
+            // folder of loose .mo files would otherwise produce one scope per class.
+            var libraryRoots = models
+                .Where(m => m.ClassType == "package" && !m.Id.Contains('.'))
+                .Select(m => m.Id)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(root => root, StringComparer.Ordinal)
+                .ToList();
+
+            scopes.AddRange(libraryRoots.Select(root => (
+                Scope: root,
+                Models: (IReadOnlyList<ModelNode>)models
+                    .Where(m => RootLibrary(m.Id) == root)
+                    .ToList())));
+
+            var recorded = new List<string>();
+            var skipped = 0;
+
+            foreach (var (scope, scopeModels) in scopes)
+            {
+                var metrics = MetricsCalculator.Compute(graph, scopeModels);
+
+                // Match the dashboard's figure: active style findings in scope. Parse diagnostics are
+                // not style debt and would make the trend jump on a syntax error rather than quality.
+                var inScope = scopeModels.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+                var violations = findings.Count(f =>
+                    !RuleIds.IsParseDiagnostic(f.RuleId) && inScope.Contains(f.ModelId));
+
+                var snapshot = MetricsSnapshot.From(
+                    metrics, scope, timestampUtc, violations, stamp.Revision, stamp.Branch);
+
+                if (force)
+                {
+                    MetricsHistoryStore.Append(path, snapshot);
+                    recorded.Add(Label(scope));
+                    continue;
+                }
+
+                if (MetricsHistoryStore.AppendIfChanged(path, snapshot).Outcome
+                    == MetricsHistoryStore.AppendOutcome.Appended)
+                    recorded.Add(Label(scope));
+                else
+                    skipped++;
             }
 
-            var (outcome, _) = MetricsHistoryStore.AppendIfChanged(path, snapshot);
-            stderr.WriteLine(outcome switch
-            {
-                MetricsHistoryStore.AppendOutcome.Appended =>
-                    $"note: recorded metrics snapshot in {path}",
-                MetricsHistoryStore.AppendOutcome.RevisionAlreadyRecorded =>
-                    $"note: metrics unchanged — {path} already has a point for this revision",
-                _ =>
-                    $"note: metrics unchanged since the last point — {path} not modified",
-            });
+            if (recorded.Count > 0)
+                stderr.WriteLine(
+                    $"note: recorded metrics for {string.Join(", ", recorded)} in {path}" +
+                    (force ? " (forced)" : ""));
+            if (skipped > 0)
+                stderr.WriteLine(
+                    $"note: {skipped} metrics scope(s) unchanged since the last point — not re-recorded");
         }
         catch (Exception ex)
         {
@@ -70,4 +103,13 @@ internal static class MetricsRecorder
             stderr.WriteLine($"warning: could not record metrics: {ex.Message}");
         }
     }
+
+    /// <summary>The library a class belongs to: the first segment of its id.</summary>
+    private static string RootLibrary(string modelId)
+    {
+        var dot = modelId.IndexOf('.');
+        return dot < 0 ? modelId : modelId[..dot];
+    }
+
+    private static string Label(string scope) => scope.Length == 0 ? "all libraries" : scope;
 }
