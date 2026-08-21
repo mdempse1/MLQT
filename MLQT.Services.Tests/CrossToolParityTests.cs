@@ -5,6 +5,7 @@ using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Tests;
 
@@ -221,6 +222,78 @@ end Q;
 
         Assert.Equal(facade.Count, wholeProject.Count);
         Assert.Equal(facade.Count, singleRepository.Count);
+    }
+
+    // --- Parse diagnostics ----------------------------------------------------------------------
+
+    // A Documentation(info=...) annotation missing its closing quote. The parser recovers, so the
+    // class still loads and every style rule reports on a tree that is missing part of the file.
+    private const string UnterminatedString = """
+        within;
+        package P "P package"
+          model A "a model"
+          end A;
+          annotation(Documentation(info="<html><p>docs</p>));
+        end P;
+        """;
+
+    [Fact]
+    public void ParseErrors_AreReportedByTheSharedFacade_WhateverTheSettings()
+    {
+        var data = new LibraryDataService();
+        var library = data.AddLibraryFromFileAsync("P.mo", UnterminatedString).GetAwaiter().GetResult();
+        var models = library.ModelIds.Select(data.GetModelById).Where(m => m is not null)!.Cast<ModelNode>().ToList();
+
+        // No style rules at all — a check that returned nothing here would be reporting a clean bill
+        // of health on code it could not read.
+        var findings = LibraryCheckSession.Check(
+            data.CombinedGraph, models, new StyleCheckingSettings(),
+            new CustomDictionaryService(), new DictionaryManagerService());
+
+        Assert.NotEmpty(findings);
+        Assert.All(findings, f => Assert.True(RuleIds.IsParseDiagnostic(f.RuleId)));
+        Assert.All(findings, f => Assert.Equal(RuleSeverity.Error, f.Severity));
+        Assert.Contains(findings, f => f.Message.Contains("Unterminated string literal"));
+    }
+
+    [Fact]
+    public void ParseErrors_ReadIdenticallyAsFindingsAndAsMessages()
+    {
+        // The GUI consumes LogMessages and the CLI/MCP consume Findings. Both come from the same
+        // conversion, so the wording and line numbers cannot drift between the surfaces.
+        var data = new LibraryDataService();
+        var library = data.AddLibraryFromFileAsync("P.mo", UnterminatedString).GetAwaiter().GetResult();
+        var models = library.ModelIds.Select(data.GetModelById).Where(m => m is not null)!.Cast<ModelNode>().ToList();
+
+        var findings = ParserErrorReporter.ToFindings(models);
+        var messages = ParserErrorReporter.ToLogMessages(models);
+
+        Assert.Equal(findings.Count, messages.Count);
+        Assert.Equal(
+            findings.Select(f => (f.ModelId, f.LineNumber, f.Message)).OrderBy(x => x.LineNumber).ToList(),
+            messages.Select(m => (m.ModelName, m.LineNumber, m.Details)).OrderBy(x => x.LineNumber).ToList());
+    }
+
+    [Fact]
+    public void ParseErrors_SurviveTheLazyReparseThatStyleCheckingTriggers()
+    {
+        // EnsureParsed re-parses a class in isolation. It used to overwrite the load-time errors with
+        // its own, replacing the readable diagnosis and the real file line numbers — so the message a
+        // user saw depended on whether anything had checked the class yet.
+        var data = new LibraryDataService();
+        var library = data.AddLibraryFromFileAsync("P.mo", UnterminatedString).GetAwaiter().GetResult();
+        var models = library.ModelIds.Select(data.GetModelById).Where(m => m is not null)!.Cast<ModelNode>().ToList();
+
+        var beforeCheck = ParserErrorReporter.ToFindings(models)
+            .Select(f => (f.LineNumber, f.Message)).OrderBy(x => x.LineNumber).ToList();
+
+        foreach (var model in models)
+            model.Definition.EnsureParsed();
+
+        var afterCheck = ParserErrorReporter.ToFindings(models)
+            .Select(f => (f.LineNumber, f.Message)).OrderBy(x => x.LineNumber).ToList();
+
+        Assert.Equal(beforeCheck, afterCheck);
     }
 
     [Fact]

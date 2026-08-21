@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Checking;
 
@@ -20,14 +21,50 @@ public static class ParserErrorReporter
     public const string SourceName = "Parser";
 
     /// <summary>
-    /// One message per parser error across <paramref name="models"/>. The message is keyed on the
-    /// node id (the full Modelica path) rather than the short class name, because that is what
-    /// <c>NavState.ModelID</c> holds — row-click navigation and the "only this model" filter both
-    /// match against it.
+    /// One message per parser error across <paramref name="models"/>, in the flat shape the GUI's
+    /// issue list consumes. Defined in terms of <see cref="ToFindings"/> so a parse error reads
+    /// identically whichever surface reported it.
     /// </summary>
     public static List<LogMessage> ToLogMessages(IEnumerable<ModelNode> models)
+        => ToFindings(models).Select(ToLogMessage).ToList();
+
+    /// <summary>
+    /// Projects a finding produced by <see cref="ToFindings"/> into the flat message shape.
+    /// <see cref="Finding.ToLogMessage"/> deliberately renders every finding as a style warning, which
+    /// is wrong for a parse diagnostic — it is an error, not an opinion, and it must not be cleared by
+    /// a style-checking re-run.
+    /// </summary>
+    public static LogMessage ToLogMessage(Finding finding)
     {
-        var messages = new List<LogMessage>();
+        var isFatal = finding.RuleId == RuleIds.ParseFailure;
+        return new LogMessage(
+            finding.ModelId,
+            isFatal ? "Fatal" : "Error",
+            finding.LineNumber,
+            isFatal ? "Fatal parse failure" : "Parser error",
+            finding.Message)
+        {
+            Source = SourceName,
+            RuleId = finding.RuleId
+        };
+    }
+
+    /// <summary>
+    /// The same errors as structured findings, for the surfaces that report <see cref="Finding"/>s
+    /// (the CLI and MCP) rather than the GUI's flat message list.
+    ///
+    /// These are emitted unconditionally at <see cref="RuleSeverity.Error"/>: unlike a style rule
+    /// there is nothing to opt into, and a file that does not parse makes every other rule's result
+    /// unreliable, so a check that stayed silent about it would be reporting a clean bill of health
+    /// on code it never read. They carry a rule id so they flow through the normal formatting paths,
+    /// but callers must not put them through the severity map.
+    ///
+    /// The error message is used as the fingerprint discriminator so several errors in one class stay
+    /// distinct — a line number would not, since it moves whenever the file above it is edited.
+    /// </summary>
+    public static List<Finding> ToFindings(IEnumerable<ModelNode> models)
+    {
+        var findings = new List<Finding>();
 
         foreach (var model in models)
         {
@@ -38,24 +75,22 @@ public static class ParserErrorReporter
             {
                 // A fatal failure means the file could not be parsed at all and a placeholder stands
                 // in for it; a recovered syntax error means the rest of the file still loaded, so the
-                // two need to read differently in the issues list.
+                // two are separate rule ids and read differently.
                 var isFatal = error.Severity == ParserErrorSeverity.FatalParseFailure;
-                var details = error.Message +
-                              (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : "");
-
-                messages.Add(new LogMessage(
-                    model.Id,
-                    isFatal ? "Fatal" : "Error",
-                    error.Line,
-                    isFatal ? "Fatal parse failure" : "Parser error",
-                    details)
+                findings.Add(new Finding
                 {
-                    Source = SourceName
+                    RuleId = isFatal ? RuleIds.ParseFailure : RuleIds.SyntaxError,
+                    ModelId = model.Id,
+                    Discriminator = error.Message,
+                    Message = error.Message +
+                              (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : ""),
+                    LineNumber = error.Line,
+                    Severity = RuleSeverity.Error
                 });
             }
         }
 
-        return messages;
+        return findings;
     }
 
     /// <summary>Counts parser errors by kind, for a load-time summary notification.</summary>

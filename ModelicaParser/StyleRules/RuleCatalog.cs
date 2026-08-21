@@ -64,6 +64,11 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.UnusedPublicClass, "Possibly-unused public classes", "Unused", RuleSeverity.Info, "A public nested class that nothing in the loaded libraries references — lower confidence, as a downstream library you cannot see may use it. Best on an application library, not a foundational one."),
             new RuleDefinition(RuleIds.ShadowingInheritedMember, "No shadowed inherited members", "Correctness", RuleSeverity.Warning, "A declaration must not silently shadow a same-named member inherited via extends (use redeclare to override intentionally)."),
             new RuleDefinition(RuleIds.UnusedMember, "No unused protected members", "Unused", RuleSeverity.Warning, "A protected component/parameter/constant in a class that nothing extends should be referenced."),
+            // Parse diagnostics are catalogued for SARIF metadata and suppression-id validation only.
+            // They are never enabled or disabled — see RuleIds.IsParseDiagnostic. The "Parse" category
+            // is deliberately outside the settings UI's rule categories so they cannot be switched off.
+            new RuleDefinition(RuleIds.SyntaxError, "Source parses cleanly", "Parse", RuleSeverity.Error, "The file contains a syntax error. The parser recovered, so the class still loaded, but part of it may have been misread and every other rule under-reports on it."),
+            new RuleDefinition(RuleIds.ParseFailure, "Source could be parsed", "Parse", RuleSeverity.Error, "The file could not be parsed at all. No classes were extracted from it and nothing in it has been checked."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);

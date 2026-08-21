@@ -37,4 +37,14 @@ public static class RuleIds
     public const string UnusedPublicClass = "MLQT.Unused.PublicClass";
     public const string ShadowingInheritedMember = "MLQT.Shadowing.InheritedMember";
     public const string UnusedMember = "MLQT.Unused.Member";
+
+    // Parse diagnostics. These are NOT style rules: they are always reported regardless of the
+    // severity map and cannot be suppressed or baselined, because code that does not parse cannot
+    // be meaningfully checked — every other rule silently under-reports on it.
+    public const string SyntaxError = "MLQT.Parse.SyntaxError";
+    public const string ParseFailure = "MLQT.Parse.Failure";
+
+    /// <summary>True for the always-on parse diagnostics above.</summary>
+    public static bool IsParseDiagnostic(string ruleId) =>
+        ruleId is SyntaxError or ParseFailure;
 }

@@ -38,7 +38,15 @@ public class ModelDefinition
 
         var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(ModelicaCode);
         ParsedCode = parseTree;
-        ParserErrors = errors;
+
+        // Keep whatever the load path already recorded. Those errors came from parsing the whole
+        // file, so they carry real file line numbers and the lexer's diagnosis (e.g. "unterminated
+        // string literal"). Re-parsing this one class in isolation re-derives the same problem with
+        // class-relative positions and less context — overwriting with that used to replace the
+        // useful message with a bare "mismatched input ';'" as soon as anything checked the class.
+        if (ParserErrors.Count == 0)
+            ParserErrors = errors;
+
         return ParsedCode;
     }
 

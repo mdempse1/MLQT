@@ -103,6 +103,76 @@ public class QualityToolsTests
         Assert.True(res.ViolationCount >= 1);
     }
 
+    // ----- parse diagnostics -----
+    // A file that does not parse is the one problem no style rule can report — every rule reads a
+    // parse tree that is missing the code in question. The MCP surface must say so, or an agent
+    // reads "no violations" as "this class is fine".
+
+    // A Documentation(info=...) annotation missing its closing quote. The parser recovers, so the
+    // class still loads and nothing else flags it.
+    private const string UnterminatedString = """
+        model B "b"
+          annotation(Documentation(info="<html><p>docs</p>));
+        end B;
+        """;
+
+    [Fact]
+    public void CheckClass_ReportsSyntaxError_AlongsideStyleViolations()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckClass("B", new StyleSettingsInput { ClassHasDescription = true }));
+
+        Assert.Contains(res.Violations, v => v.Summary == "Parser error");
+    }
+
+    [Fact]
+    public void CheckClass_ReportsSyntaxError_EvenWithNoRulesEnabled()
+    {
+        // "No rules enabled" means no style opinions; it cannot mean silence about unreadable code.
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("B", new StyleSettingsInput()));
+
+        Assert.Contains(res.Violations, v => v.Summary == "Parser error");
+    }
+
+    [Fact]
+    public void CheckLibrary_ReportsSyntaxError()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+                .GetAwaiter().GetResult());
+
+        // One unterminated string produces both a lexer and a parser diagnostic.
+        var parseErrors = res.Violations.Where(v => v.Summary == "Parser error").ToList();
+        Assert.NotEmpty(parseErrors);
+        // Error, not the "Style warning" every other finding projects to, and tagged as the parser's
+        // so a style re-run cannot clear it.
+        Assert.All(parseErrors, v => Assert.Equal("Error", v.Severity));
+        Assert.All(parseErrors, v => Assert.Equal("Parser", v.Source));
+        Assert.Contains(parseErrors, v => v.Details.Contains("Unterminated string literal"));
+    }
+
+    [Fact]
+    public void CheckLibrary_CleanLibrary_ReportsNoParseDiagnostics()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B \"b\"\n  Real p \"p\";\nend B;");
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+                .GetAwaiter().GetResult());
+
+        Assert.DoesNotContain(res.Violations, v => v.Summary is "Parser error" or "Fatal parse failure");
+    }
+
     [Fact]
     public void CheckLibrary_NothingLoaded_Errors()
     {

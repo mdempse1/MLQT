@@ -12,6 +12,9 @@ library will have many findings; nobody fixes them all at once. So you:
 2. **Gate** on findings that are *not* in the baseline — only genuinely new issues fail CI.
 3. Optionally **escalate** pre-existing issues in models a change touched (the "boy-scout rule").
 
+Parse errors are reported separately from all of this and always fail — see
+[Parse errors always fail](#parse-errors-always-fail).
+
 Findings are classified as **new** (fail), **accepted debt** (tolerated), or **touched debt**
 (in a model the change modified). Identity is a reformat-stable fingerprint, so reformatting a model
 never turns its accepted debt into new findings.
@@ -82,8 +85,12 @@ repo is a single library or several side by side. A single `<root>/.mlqt/setting
 mlqt check /path/to/MyLibrary
 ```
 
-Out of the box **no rules are enabled**, so you'll see `note: no style rules are enabled`. Enable
-rules next.
+Out of the box **no style rules are enabled**, so you'll see `note: no style rules are enabled`.
+Enable rules next.
+
+One thing is reported even with no rules configured: a **parse error**. If a file has a syntax error
+you will see it on this very first run, and the command will exit `1`. That is deliberate — see
+[Parse errors always fail](#parse-errors-always-fail).
 
 ---
 
@@ -320,6 +327,34 @@ absolute paths are used as-is.
 
 ---
 
+## Parse errors always fail
+
+Two findings sit outside the ratchet entirely:
+
+| Rule id | Meaning |
+|---------|---------|
+| `MLQT.Parse.SyntaxError` | The file has a syntax error. The parser recovered, so the class still loaded — but part of it was misread. |
+| `MLQT.Parse.Failure` | The file could not be parsed at all. No classes were extracted from it and nothing in it was checked. |
+
+They are **always reported** (no setting enables or disables them), **always errors** (so they fail
+even the default `--fail-on error`), **cannot be suppressed** with a `__MLQT` annotation, and are
+**never written to a baseline** — so `baseline create` cannot accept one and the ratchet cannot
+tolerate one.
+
+This is on purpose. Every style rule reads a parse tree; when part of a file did not parse, those
+rules quietly report on the code they *could* read and stay silent about the rest. A gate that
+tolerated a parse error would be reporting a clean bill of health on code it never looked at.
+
+The fix is always the same: correct the syntax. A common cause is a missing closing quote in a
+`Documentation(info="…")` annotation, which makes the string run to the end of the file — MLQT
+reports that as *"Unterminated string literal — no closing `"` before the end of the file"*, with the
+line where the string starts.
+
+The same diagnostics appear in the desktop app's Issues panel and from the MCP server, with identical
+wording and line numbers.
+
+---
+
 ## Suppressing intentional findings
 
 Some violations are deliberate — most notably a **declaration order that matters** for a Modelica
@@ -368,5 +403,6 @@ end Foo;
 | `error: could not resolve revision '<ref>'` | Git: the ref doesn't exist locally (wrong branch name, or only `origin/<ref>`) — try `origin/main`, `master`, `HEAD~1`. SVN: `--changed-from` must be a revision number or keyword (`BASE`/`HEAD`/`PREV`), **not a branch name**. |
 | Only new findings show, no touched debt | The note says `0 model(s) changed` — the ref found no changes (it may already contain your change). Diff against a ref *behind* it. |
 | Touched debt swamps the report | A single-file library marks every model changed on any edit. Use `--touched-debt ignore`. |
+| Gate fails on `MLQT.Parse.SyntaxError` and the baseline doesn't help | It is not meant to. Fix the syntax error — see [Parse errors always fail](#parse-errors-always-fail). |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

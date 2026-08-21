@@ -80,7 +80,12 @@ internal static class CheckPipeline
                 if (!seenModelIds.Add(id))
                     continue;
                 var model = libraryData.GetModelById(id);
-                if (model is not null && !model.IsParseFailurePlaceholder)
+                // Placeholders (files that failed to parse outright) are included deliberately.
+                // LibraryCheckSession skips them for the per-class rules and the graph analyses, but it
+                // needs to see them to report the parse failure — filtering them here is what used to
+                // make the worst case, a file MLQT could not read at all, the one thing CI never heard
+                // about.
+                if (model is not null)
                     models.Add(model);
             }
         }
@@ -119,6 +124,8 @@ internal static class CheckPipeline
             foreach (var model in graph.GetModelsInFile(file.Id))
                 modelToFile[model.Id] = file.FilePath;
 
-        return new LoadResult(ExitCodes.Ok, findings, modelToFile, models.Count);
+        // Report the number of classes actually checked, which excludes the unparseable placeholders.
+        var modelsChecked = models.Count(m => !m.IsParseFailurePlaceholder);
+        return new LoadResult(ExitCodes.Ok, findings, modelToFile, modelsChecked);
     }
 }

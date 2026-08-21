@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 
 namespace MLQT.Services.Checking;
 
@@ -25,12 +26,20 @@ public sealed class Baseline
         _fingerprints = entries.Select(e => e.Fingerprint).ToHashSet(StringComparer.Ordinal);
     }
 
-    public bool Contains(Finding finding) => _fingerprints.Contains(finding.Fingerprint);
+    /// <summary>
+    /// True if the finding is recorded as accepted debt. Parse diagnostics never are: a baseline is a
+    /// record of style debt someone chose to live with, and code that does not parse is not something
+    /// a gate should be able to accept — every other rule under-reports on it.
+    /// </summary>
+    public bool Contains(Finding finding) =>
+        !RuleIds.IsParseDiagnostic(finding.RuleId) && _fingerprints.Contains(finding.Fingerprint);
 
-    /// <summary>Snapshots the current findings into a baseline (deduped by fingerprint, sorted).</summary>
+    /// <summary>Snapshots the current findings into a baseline (deduped by fingerprint, sorted).
+    /// Parse diagnostics are excluded — see <see cref="Contains"/>.</summary>
     public static Baseline FromFindings(IEnumerable<Finding> findings)
     {
         var entries = findings
+            .Where(f => !RuleIds.IsParseDiagnostic(f.RuleId))
             .GroupBy(f => f.Fingerprint, StringComparer.Ordinal)
             .Select(g => g.First())
             .Select(f => new BaselineEntry(f.Fingerprint, f.RuleId, f.ModelId, f.ElementPath, f.Message));

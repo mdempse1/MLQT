@@ -49,15 +49,37 @@ of `.mo` files) or a single `.mo` file.
 | `1` | Findings at or above `--fail-on` |
 | `2` | Usage or load error (bad path, unreadable/invalid config) |
 
-Because the built-in rules currently report at **warning** severity, the default `--fail-on error`
-is effectively report-only (it surfaces findings but exits `0`). Use `--fail-on warning` for a
-strict gate, or `--fail-on off` to never fail.
+Because the built-in **style** rules report at **warning** severity, the default `--fail-on error`
+is effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for
+a strict gate, or `--fail-on off` to never fail. **Parse diagnostics are the exception** — they are
+errors and fail even the default gate; see below.
+
+## Parse diagnostics
+
+Two findings are reported that are not style rules:
+
+| Rule id | Meaning |
+|---------|---------|
+| `MLQT.Parse.SyntaxError` | The file has a syntax error. The parser recovered, so the class still loaded — but part of it was misread. |
+| `MLQT.Parse.Failure` | The file could not be parsed at all. No classes were extracted from it and nothing in it was checked. |
+
+They behave differently from style rules on purpose, because a file MLQT cannot read is not a matter
+of taste and every other rule silently under-reports on it:
+
+- **Always reported.** They ignore the settings file — there is nothing to enable, and they are
+  produced even when no style rules are configured at all.
+- **Always errors.** They fail the default `--fail-on error` gate.
+- **Cannot be suppressed** with a `__MLQT` annotation, and `baseline create` will not record them, so
+  a baseline can never accept one.
+
+The same diagnostics appear in the desktop app's Issues panel and from the MCP server's `check_class`
+/ `check_library`, with identical wording and line numbers.
 
 ## Settings
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
-desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no rules are enabled and
-no findings are produced. See [settings-reference.md](settings-reference.md).
+desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no style rules are enabled
+and only parse diagnostics are produced. See [settings-reference.md](settings-reference.md).
 
 **Per-rule severity.** Enabled rules default to `Warning`. To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
@@ -99,6 +121,9 @@ Findings are classified as **new** (not in the baseline → gated), **accepted d
 unchanged model → never fails), or **touched debt** (in the baseline, but in a model this change
 modified). The baseline uses a reformat-stable fingerprint, so reformatting a model does not turn its
 accepted debt into new findings.
+
+Parse diagnostics are never captured in a baseline and are always classified **new** — see
+[Parse diagnostics](#parse-diagnostics).
 
 ### Changed-model escalation (the "boy-scout rule")
 

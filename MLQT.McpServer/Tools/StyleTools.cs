@@ -5,6 +5,7 @@ using ModelicaGraph;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
@@ -131,12 +132,23 @@ public sealed class StyleTools
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        // A class that failed to parse still has something worth returning: the parse error itself.
+        // Refusing outright left the caller unable to tell "no issues" from "never looked".
         if (node.IsParseFailurePlaceholder)
-            return new ToolError($"Class '{classId}' failed to parse and cannot be style-checked.");
+        {
+            var parseOnly = ParserErrorReporter.ToLogMessages([node]);
+            _codeReview.RemoveLogMessagesForModels([classId]);
+            _codeReview.AddLogMessages(parseOnly);
+            return ToCheckResult(parseOnly, modelsChecked: 0);
+        }
 
         var effective = settings?.ToSettings() ?? RepoSettingsForClass(classId);
         var context = StyleCheckContext.Build(effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager);
         var violations = StyleCheckRunner.Run(node, effective, context);
+
+        // Parse errors are not style rules and are reported whatever the settings say — a class that
+        // only partly parsed makes every rule result below it unreliable.
+        violations.AddRange(ParserErrorReporter.ToLogMessages([node]));
 
         _codeReview.RemoveLogMessagesForModels([classId]);
         _codeReview.AddLogMessages(violations);
@@ -204,9 +216,13 @@ public sealed class StyleTools
 
             foreach (var library in targets)
             {
+                // Placeholders (files that failed to parse) are included: LibraryCheckSession skips
+                // them for the per-class rules but needs them to report the parse failure. Excluding
+                // them here meant the worst case — a file MLQT could not read — was reported as
+                // nothing at all.
                 var models = library.ModelIds
                     .Select(id => _libraries.GetModelById(id))
-                    .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
+                    .Where(m => m is not null)!
                     .Cast<ModelNode>()
                     .ToList();
                 if (models.Count == 0)
@@ -214,7 +230,7 @@ public sealed class StyleTools
 
                 // Each library is checked with its own repository settings unless an override was passed.
                 var effective = explicitSettings ?? RepoSettingsForLibrary(library);
-                modelsChecked += models.Count;
+                modelsChecked += models.Count(m => !m.IsParseFailurePlaceholder);
                 checkedIds.AddRange(models.Select(m => m.Id));
 
                 // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
@@ -226,7 +242,11 @@ public sealed class StyleTools
                     graph, models, effective, _customDictionary, _dictionaryManager,
                     honorSuppressions: true);
                 foreach (var finding in findings)
-                    all.Add(finding.ToLogMessage());
+                    // Finding.ToLogMessage renders everything as a style warning; a parse diagnostic
+                    // has to keep its Error/Fatal severity and its "Parser" source.
+                    all.Add(RuleIds.IsParseDiagnostic(finding.RuleId)
+                        ? ParserErrorReporter.ToLogMessage(finding)
+                        : finding.ToLogMessage());
             }
 
             if (modelsChecked == 0)

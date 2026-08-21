@@ -25,10 +25,17 @@ public static class LibraryCheckSession
         bool honorSuppressions = true,
         bool? dependenciesAnalyzed = null)
     {
-        if (!settings.HasAnyStyleRuleEnabled)
-            return [];
-
         var modelList = models as IReadOnlyList<ModelNode> ?? models.ToList();
+
+        // Parse diagnostics come first and are not gated by the severity map. A class that failed to
+        // parse is one the style rules below either skip outright (a placeholder) or read only partly,
+        // so reporting the style result without the parse error would understate the problem — and
+        // "no rules enabled" still has to report a file that cannot be read.
+        var parseFindings = ParserErrorReporter.ToFindings(modelList);
+
+        if (!settings.HasAnyStyleRuleEnabled)
+            return parseFindings;
+
         var context = StyleCheckContext.Build(settings, graph, customDictionary, dictionaryManager);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
@@ -50,6 +57,7 @@ public static class LibraryCheckSession
         });
 
         var results = all.ToList();
+        results.AddRange(parseFindings);
 
         // Whole-graph analyses (Phase 6): run once over the checked model set and merge. A no-op until
         // graph analyzers are registered and their rules enabled, so it never affects a per-class-only run.
