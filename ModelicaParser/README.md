@@ -274,6 +274,40 @@ foreach (var (word, offset) in TextExtractor.TokenizeToWords(plainText))
 }
 ```
 
+### Reading an Encrypted Library's Documentation
+
+Commercial libraries ship as a single encrypted `package.moe` with no readable source, but almost
+all include the vendor's generated HTML documentation. `ExternalDocs/` recovers from it the three
+things the checks need — whether a class exists, what it extends, and whether it has an icon.
+
+```csharp
+using ModelicaParser.ExternalDocs;
+
+// Read a whole library's help directory
+DymolaHelpDocument document = DymolaHelpReader.Read(@"C:\...\Battery 2.9.0\help");
+
+foreach (DocumentedClass documented in document.Classes)
+{
+    Console.WriteLine(documented.FullName);        // Battery.BMS.Interfaces.CurrentRestrictor
+    Console.WriteLine(documented.Description);     // Interface model for current restrictor
+    Console.WriteLine(documented.ExtendsClasses);  // null = NOT KNOWN, empty = extends nothing
+    Console.WriteLine(documented.HasIcon);         // null = NOT KNOWN
+}
+
+// A single file, if you already have the content
+ParsedHelpFile parsed = DymolaHelpParser.ParseFile(html);
+```
+
+Two things to know before changing this code:
+
+- **`ExtendsClasses` and `HasIcon` are nullable on purpose.** "The documentation did not say" and
+  "the documentation says there is none" are different answers, and collapsing them is what turns a
+  missing input into a fabricated finding.
+- **Scanning is tag-oriented and must stay that way.** Dymola 2024x Refresh 1 shipped a generator
+  regression that emits a literal numeric token where newlines belong (~57k times in MSL alone),
+  collapsing whole tables onto one line. Anything that anchors a marker to "the next line" cannot
+  read that release.
+
 ### Using the Visitor Pattern
 
 ```csharp

@@ -70,6 +70,15 @@ not boolean:
 of expected-invisible namespaces) + encrypted-file detection + an explicit
 treat-as-external config in `.mlqt/settings.json`. Severity follows confidence.
 
+**Encrypted libraries now move *individual classes* from state 2 to state 1** (shipped —
+see [encrypted-libraries.md](encrypted-libraries.md) and
+[design-encrypted-libraries.md](design-encrypted-libraries.md)). MLQT reads the vendor's
+generated help HTML and recovers each documented class's name, description, base classes and
+whether it has an icon, so references into commercial libraries resolve and inherited icons are
+seen. Resolution against documentation is **asymmetric**: a hit is reliable, but a miss is not
+proof of absence — vendors choose how much to document, and that varies between releases of the
+same version — so anything the documentation does not name stays in state 2 and never gates.
+
 ### Wave 1 — self-contained (need only the user's own source; zero missing-library risk)
 
 Ship these first — they cannot produce library-visibility false positives, so MLQT earns

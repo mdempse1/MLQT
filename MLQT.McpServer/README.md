@@ -42,7 +42,8 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 ## Key concepts
 
 - **Load first.** Almost every tool operates on an in-memory graph. Use `load_repository` (a Git/SVN
-  working copy or directory of libraries) or `load_library` (one library directory or `.mo` file).
+  working copy or directory of libraries) or `load_library` (one library directory, `.mo` file, or an
+  encrypted `package.moe` library, whose classes come from the vendor's shipped documentation).
 - **Class ids are fully-qualified dotted names** (e.g. `Modelica.Blocks.Continuous.Integrator`). Use
   `search_classes` to find one.
 - **Analysis is opt-in.** Loading only parses structure. Dependency edges, impact and external

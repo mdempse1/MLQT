@@ -19,6 +19,11 @@
             <SettingsStyleChecking @ref="_styleCheckingSettings" />
         </MudTabPanel>
 
+        <!-- Reference Libraries Tab -->
+        <MudTabPanel Text="Reference Libraries" Icon="@Icons.Material.Filled.LibraryBooks" ToolTip="Read-only libraries used to resolve references">
+            <SettingsReferenceLibraries @ref="_referenceLibrarySettings" />
+        </MudTabPanel>
+
         <!-- Repository Settings Tab -->
         <MudTabPanel Text="Manage Repositories" Icon="@Icons.Material.Filled.Build" ToolTip="Manage Repository Settings">
             <SettingsRepositories />
@@ -26,7 +31,7 @@
     </MudTabs>
 
     <!-- Action Buttons, not displayed on the Repository Settings tab -->
-    @if (_activePanelIndex != 3)
+    @if (_activePanelIndex != RepositoriesTabIndex)
     {
         <MudPaper Class="pa-2 mt-2" Elevation="0">
             <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
@@ -42,11 +47,17 @@
 </MudPaper>
 
     @code {
+    // The Manage Repositories tab manages its own persistence and shows no Save/Reset buttons.
+    // Named rather than written as a literal so inserting a tab before it cannot silently point
+    // the check at the wrong panel.
+    private const int RepositoriesTabIndex = 4;
+
     private int _activePanelIndex = 0;
 
     private SettingsUI? _uiSettings;
     private SettingsExternalTools? _externalToolsSettings;
     private SettingsStyleChecking? _styleCheckingSettings;
+    private SettingsReferenceLibraries? _referenceLibrarySettings;
 
     private async Task SaveSettings()
     {
@@ -63,7 +74,7 @@
     private async Task ResetToDefaults()
     {
         // Restore only the currently active tab's settings to their defaults.
-        // The Manage Repositories tab (index 3) has no action buttons, so it is never reset here.
+        // The Manage Repositories tab has no action buttons, so it is never reset here.
         try
         {
             switch (_activePanelIndex)
@@ -79,6 +90,10 @@
                 case 2:
                     if (_styleCheckingSettings is not null)
                         await _styleCheckingSettings.ResetToDefaultsAsync();
+                    break;
+                case 3:
+                    if (_referenceLibrarySettings is not null)
+                        await _referenceLibrarySettings.ResetToDefaultsAsync();
                     break;
             }
         }

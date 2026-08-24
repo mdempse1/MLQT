@@ -190,6 +190,23 @@ public class ModelNode : GraphNode
     public bool IsParseFailurePlaceholder { get; set; }
 
     /// <summary>
+    /// True when this node does not stand for readable source at all, but for a class recovered
+    /// from a vendor's generated documentation because the library ships encrypted.
+    /// <see cref="ModelDefinition.ModelicaCode"/> holds a synthesized declaration carrying only
+    /// what the documentation stated — name, description, base classes, whether there is an icon —
+    /// so that reference resolution, extends-chain walking and icon inheritance work across the
+    /// boundary without every rule needing to know the class came from a different source.
+    ///
+    /// <para>Because that code is a reconstruction and not the vendor's source, a stub must never
+    /// reach a path that <b>writes</b>: formatting, saving, package restructuring, VCS staging or
+    /// commit. Those paths reject stubs outright rather than skipping them quietly, so a missing
+    /// guard surfaces as a failing test instead of as a rewritten third-party library on a user's
+    /// machine. Stubs are likewise never <b>reported</b> on — they are loaded to resolve
+    /// references, and findings about a vendor's library are not the user's to fix.</para>
+    /// </summary>
+    public bool IsExternalStub { get; set; }
+
+    /// <summary>
     /// True when any <see cref="ParserError"/> has been recorded against this model —
     /// either a recoverable syntax error or a fatal parse failure. Convenience for UI
     /// code that needs to flag problem models in the tree and code viewer.

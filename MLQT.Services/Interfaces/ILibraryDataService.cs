@@ -50,6 +50,21 @@ public interface ILibraryDataService
     Task<LoadedLibrary> AddLibraryFromDirectoryAsync(string directoryPath);
 
     /// <summary>
+    /// Adds an encrypted library — one shipping an unreadable <c>package.moe</c> — by
+    /// reconstructing its classes from the vendor's generated documentation.
+    ///
+    /// <para>The result is read-only and deliberately incomplete: names, descriptions, base
+    /// classes and whether a class has an icon, and nothing else. It exists so that references
+    /// into the library resolve, inherited icons are seen, and extends chains can be walked. The
+    /// library is never reported on and never written to.</para>
+    /// </summary>
+    /// <param name="directoryPath">The encrypted library's root directory.</param>
+    /// <returns>The loaded library. Its <see cref="LoadedLibrary.ModelIds"/> is empty when the
+    /// library ships no usable documentation, which leaves its namespace opaque rather than
+    /// wrongly asserting that it contains no classes.</returns>
+    Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath);
+
+    /// <summary>
     /// Adds a library from a zip file.
     /// </summary>
     /// <param name="files">Dictionary of file paths to content from the zip.</param>

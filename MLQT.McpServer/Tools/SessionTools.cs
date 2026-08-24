@@ -4,6 +4,7 @@ using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
+using MLQT.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
@@ -147,13 +148,34 @@ public sealed class SessionTools
     [Description("Load a single Modelica library directly (not via a repository): pass either the library " +
                 "directory (containing package.mo), the path to its package.mo, or a single standalone .mo " +
                 "file. Pointing at a package.mo loads the WHOLE library (its directory, including standalone " +
-                "child .mo files), not just that one file. Returns the loaded library summary. For a " +
+                "child .mo files), not just that one file. Also accepts an ENCRYPTED library (a directory " +
+                "holding a package.moe): its classes are recovered from the vendor's generated help " +
+                "documentation, giving names, descriptions, base classes and whether each has an icon — " +
+                "enough for references into it to resolve — but no source, so it is read-only and is never " +
+                "reported on. Returns the loaded library summary. For a " +
                 "repository root containing several libraries, use load_repository instead.")]
     public async Task<object> LoadLibrary(
         [Description("Absolute path to a library directory, its package.mo, or a single standalone .mo file.")]
         string path)
     {
         LoadedLibrary library;
+        if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
+        {
+            // An encrypted library has no readable source; its classes come from the vendor's
+            // generated documentation and exist only so references into them resolve.
+            library = await _libraries.AddEncryptedLibraryFromDirectoryAsync(path);
+            if (library.ModelIds.Count == 0)
+            {
+                _libraries.RemoveLibrary(library.Id);
+                return new ToolError(
+                    $"'{library.Name}' at '{path}' is an encrypted library that ships no usable " +
+                    "documentation, so none of its classes could be recovered. References into it will " +
+                    "stay unresolved; there is nothing to load.");
+            }
+
+            return ToSummary(library);
+        }
+
         if (File.Exists(path) && string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase))
         {
             // A package.mo IS the root of a directory package: load the whole library (its directory), not
@@ -314,6 +336,8 @@ public sealed class SessionTools
         _libraries.RemoveLibrary(library.Id);
         if (library.SourceType == LibrarySourceType.File)
             await _libraries.AddLibraryFromFileAsync(path);
+        else if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+            await _libraries.AddEncryptedLibraryFromDirectoryAsync(path);
         else
             await _libraries.AddLibraryFromDirectoryAsync(path);
     }

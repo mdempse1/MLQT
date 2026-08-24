@@ -25,7 +25,14 @@ public static class LibraryCheckSession
         bool honorSuppressions = true,
         bool? dependenciesAnalyzed = null)
     {
-        var modelList = models as IReadOnlyList<ModelNode> ?? models.ToList();
+        // Classes recovered from an encrypted library's documentation are dropped here, at the one
+        // place every surface goes through, rather than left to each caller to remember. They are
+        // loaded so that references into them resolve — not so they can be judged: their "source"
+        // is MLQT's own reconstruction, so any finding would be about the reconstruction, and it
+        // would name a third-party library the user cannot edit in any case.
+        var modelList = (models as IReadOnlyList<ModelNode> ?? models.ToList())
+            .Where(node => node is null || !node.IsExternalStub)
+            .ToList();
 
         // Parse diagnostics come first and are not gated by the severity map. A class that failed to
         // parse is one the style rules below either skip outright (a placeholder) or read only partly,

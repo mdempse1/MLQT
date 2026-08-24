@@ -65,6 +65,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
 | **ICodeReviewService** | Log messages and issues from parsing/style checking |
+| **EncryptedLibraryDetector** | Recognises an encrypted library (`package.moe`) and reads its name/version — versioned directory name first, `libraryinfo.mos` as fallback |
 | **IBaselineStatusService** | Classifies issues against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff |
 | **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
@@ -161,6 +162,7 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 - **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules
 - **IconExtractor** (`Visitors/`) / **IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG
 - **ExternalResourceExtractor** (`Visitors/`) - Extract resource references from parse trees
+- **ExternalDocs** (`ExternalDocs/`) - `DymolaHelpParser`/`DymolaHelpReader` recover classes (name, description, extends, has-icon) from a vendor's generated help HTML, for encrypted libraries with no readable source. Scanning is **tag-oriented, never line-oriented** — Dymola 2024x Refresh 1 emits a junk token where newlines belong
 - **StyleRules** (`StyleRules/`) - Style rule visitors (extends `VisitorWithModelNameTracking` base class). Visitors only check the outermost class — nested class definitions are skipped because each has its own `ModelNode` and is checked independently
 - **SpellChecking** (`SpellChecking/`) - Hunspell-based spell checker, text extraction, and embedded dictionaries
 
@@ -179,6 +181,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 **Key Classes:**
 - `DirectedGraph` - Main graph structure with node/edge management. `DependenciesAnalyzed` is the single source of truth for whether `UsedModelIds`/`UsedByModelIds` are populated — never infer it by checking whether some model happens to have edges
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
+- `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
 - `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule violations) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
 
@@ -255,6 +258,7 @@ User-facing documentation is in `Documentation/`:
 | `settings-reference.md` | All settings: style rules, formatting, spell check, SVN branch dirs, JSON schema |
 | `dependency-analysis.md` | Impact analysis, Cytoscape graph, layout options |
 | `external-resources.md` | Resource tracking, tree view, file type filters |
+| `encrypted-libraries.md` | Commercial `package.moe` libraries: what is recovered from vendor help HTML, accuracy, reference-library setup |
 | `external-tools.md` | Dymola and OpenModelica configuration |
 | `naming-conventions.md` | Naming styles, presets, exception names |
 | `spell-checking.md` | Dictionaries, custom words, Code Review workflow |

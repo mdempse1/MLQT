@@ -32,6 +32,7 @@ The MCP server provides powerful and surgical Modelica editing tools that any AI
 - **Impact Analysis** — Select a set of models and see the network of models that depend on them, visualized as an interactive graph
 - **Style Checking** — Configurable rules enforce coding conventions (description strings, section ordering, naming conventions, Hunspell-based spell checking of descriptions and documentation, etc.)
 - **External Resources** — Track all data files, C libraries, and images referenced by models; detect missing files and portability issues
+- **Encrypted Libraries** — Commercial libraries ship as an unreadable `package.moe`. MLQT recovers their class names, descriptions, base classes and icons from the vendor's shipped documentation, so references into them resolve and inherited icons are seen instead of being reported as errors; see the [Encrypted Libraries guide](Documentation/encrypted-libraries.md)
 - **Code Formatting** — Auto-format Modelica source with configurable rules (section ordering, imports first, annotation placement, etc.)
 - **Dymola Integration** — Check and simulate models via Dymola's HTTP JSON-RPC interface
 - **OpenModelica Integration** — Check and simulate models via OMC's ZeroMQ interface

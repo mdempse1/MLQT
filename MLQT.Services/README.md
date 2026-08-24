@@ -32,6 +32,20 @@ All services follow the pattern:
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |
 
+### Static Helpers
+
+| Helper | Purpose |
+|--------|---------|
+| `LibraryDiscovery` | Finds the library roots under a path — a directory holding a `package.mo` *or* a `package.moe` |
+| `EncryptedLibraryDetector` | Recognises an encrypted library and reads its name, version and help directory. Version comes from the versioned directory name first (`Battery 2.9.0`) and `libraryinfo.mos` only as a fallback: the directory name is what a tool resolves against, so it states which copy is actually installed |
+
+Encrypted libraries are loaded through `ILibraryDataService.AddEncryptedLibraryFromDirectoryAsync`,
+which reconstructs their classes from the vendor's documentation via `ModelicaParser.ExternalDocs`
+and `ModelicaGraph.ExternalStubBuilder`. The result is read-only: `ModelicaPackageSaver` refuses to
+write such a class, and `LibraryCheckSession` filters them out of the reported set centrally. A
+library shipping no documentation loads **zero** classes rather than appearing empty — an empty
+library would make every reference into it a fabricated broken-reference finding.
+
 ### Platform Services
 
 These interfaces are implemented by the MAUI host project:

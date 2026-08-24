@@ -16,9 +16,10 @@ Application settings are found in the **Settings** tab on the right panel. They 
 | **UI Settings** | Theme and syntax highlighting colors |
 | **External Tools** | Paths to Dymola and OpenModelica |
 | **Style Checking** | Default style rules for new repositories |
+| **Reference Libraries** | Read-only libraries loaded so references out of your code resolve |
 | **Manage Repositories** | Project and repository management |
 
-Changes to UI Settings, External Tools, and Style Checking are saved by clicking the **Save Settings** button at the bottom of the settings panel.
+Changes to UI Settings, External Tools, Style Checking, and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel.
 
 ![Screenshot: The Settings panel showing the four sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
 
@@ -31,6 +32,25 @@ Found under **Settings > Style Checking**, these are the default rules applied t
 A note at the top of this tab reminds you: *"These are the default rules that will be applied to any new repository. They are overridden by the repository specific settings — see Manage Repositories."*
 
 ![Screenshot: The Style Checking defaults tab showing all the toggle switches with the explanatory note at the top.](Images/settings-reference-2.png)
+
+---
+
+## Reference Libraries
+
+Found under **Settings > Reference Libraries**. These are libraries MLQT loads **read-only** so that references out of your own code resolve — most often a tool's installed library folder, such as Dymola's `Modelica\Library`. Without them, a reference into a library you have not loaded is reported as broken, and an icon inherited from one is reported as missing.
+
+| Setting | Purpose |
+|---------|---------|
+| **Library folders** | Directories to scan. Each may hold a single library or many; MLQT finds every library beneath. |
+| **Recover encrypted libraries from their documentation** | On by default. Reconstructs the classes of encrypted (`package.moe`) libraries from the vendor's shipped HTML documentation. Turn it off to leave those namespaces opaque. |
+
+The table shows how many libraries each folder contributes and how many are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Changes take effect the next time the project is loaded.
+
+Reference libraries are never checked, formatted, committed or written to. They appear in the library browser for reading only.
+
+These paths live in application settings rather than in a repository's `.mlqt/settings.json`, because an install location is a property of your machine — a colleague's checkout or a CI runner will not share it. In CI, pass the equivalent with the CLI's `--dependency` option instead.
+
+See [encrypted-libraries.md](encrypted-libraries.md) for what is recovered from an encrypted library and how accurate it is.
 
 ---
 

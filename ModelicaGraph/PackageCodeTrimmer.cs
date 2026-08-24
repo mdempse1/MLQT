@@ -37,6 +37,9 @@ public static class PackageCodeTrimmer
 
         var packagesToTrim = allModels.Where(m =>
             m.ClassType == "package" &&
+            // A stub's source is a synthesized declaration, not the vendor's text: it has no inline
+            // children to trim out, and re-rendering it would be rewriting our own reconstruction.
+            !m.IsExternalStub &&
             !m.ChildrenTrimmed &&
             (onlyModelIds is null || onlyModelIds.Contains(m.Id)) &&
             childrenByParent.TryGetValue(m.Id, out var children) &&

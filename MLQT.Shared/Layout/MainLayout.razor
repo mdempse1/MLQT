@@ -645,6 +645,11 @@
             _step1color = Color.Success;
             await InvokeAsync(StateHasChanged);
 
+            // Reference libraries go in first, so that by the time the user's own code is analysed
+            // every class it can see is already in the graph. Loading them afterwards would leave
+            // the first analysis pass resolving against a partial namespace.
+            await LoadReferenceLibrariesAsync();
+
             // Step 1: Load saved repositories and libraries
             LogProcessStart("MainLayout", "Loading repositories and libraries");
             await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
@@ -1037,12 +1042,81 @@
     /// 3. Deletes orphaned files that are no longer part of the new structure
     /// 4. Updates FileNodes in the graph with new file paths
     /// </summary>
+    /// <summary>
+    /// Loads the configured reference libraries read-only, so references out of the user's code
+    /// resolve against them. Encrypted libraries are reconstructed from their vendor documentation;
+    /// readable ones are loaded normally. Neither is ever reported on or written to.
+    ///
+    /// <para>Failures here are reported and stepped over rather than allowed to stop startup: a
+    /// reference library is an aid to resolution, and a missing or unreadable one should degrade
+    /// the check, not prevent the application from opening the user's own work.</para>
+    /// </summary>
+    private async Task LoadReferenceLibrariesAsync()
+    {
+        var settings = await SettingsService.GetAsync("ReferenceLibraries", new ReferenceLibrarySettings());
+        if (settings.Paths.Count == 0)
+            return;
+
+        LogProcessStart("MainLayout", "Loading reference libraries");
+        var loaded = 0;
+        var classes = 0;
+
+        foreach (var configuredPath in settings.Paths)
+        {
+            if (string.IsNullOrWhiteSpace(configuredPath) || !Directory.Exists(configuredPath))
+            {
+                Warn("MainLayout", $"Reference library path not found: {configuredPath}");
+                await InvokeAsync(() => Snackbar.Add(
+                    $"Reference library path not found: {configuredPath}", Severity.Warning));
+                continue;
+            }
+
+            foreach (var libraryPath in LibraryDiscovery.DiscoverLibraryPaths(configuredPath))
+            {
+                try
+                {
+                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath);
+                    if (isEncrypted && !settings.UseEncryptedLibraryDocumentation)
+                        continue;
+
+                    var library = isEncrypted
+                        ? await LibraryDataService.AddEncryptedLibraryFromDirectoryAsync(libraryPath)
+                        : await LibraryDataService.AddLibraryFromDirectoryAsync(libraryPath);
+
+                    if (library.ModelIds.Count == 0)
+                    {
+                        // An encrypted library with no documentation contributes nothing. Removing it
+                        // keeps it out of the tree rather than showing an empty node that suggests the
+                        // library is loaded and simply has no classes.
+                        LibraryDataService.RemoveLibrary(library.Id);
+                        continue;
+                    }
+
+                    loaded++;
+                    classes += library.ModelIds.Count;
+                }
+                catch (Exception ex)
+                {
+                    Warn("MainLayout", $"Failed to load reference library '{libraryPath}': {ex.Message}");
+                }
+            }
+        }
+
+        Info("MainLayout", $"Loaded {loaded} reference libraries ({classes} classes) for reference resolution");
+        LogProcessEnd("MainLayout", "Loading reference libraries");
+    }
+
     private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
     {
         LogProcessStart("MainLayout", "Saving all libraries with formatting");
-        IReadOnlyList<LoadedLibrary> libraries = filterRepositoryId == null
-            ? LibraryDataService.Libraries
-            : LibraryDataService.Libraries.Where(l => l.RepositoryId == filterRepositoryId).ToList();
+
+        // Encrypted reference libraries are dropped before anything else looks at the list. Their
+        // classes exist only as reconstructions from vendor documentation, so there is nothing here
+        // that could be formatted and written back — and the saver refuses them outright.
+        IReadOnlyList<LoadedLibrary> libraries = LibraryDataService.Libraries
+            .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
+            .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
+            .ToList();
 
         // Collect all original file paths before we start saving
         // When filtering by repository, only consider files from those libraries

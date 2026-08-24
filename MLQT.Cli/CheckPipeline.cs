@@ -25,6 +25,42 @@ internal sealed record LoadResult(
 /// <summary>Shared load + check pipeline used by both `check` and the `baseline` commands.</summary>
 internal static class CheckPipeline
 {
+    /// <summary>
+    /// Loads an encrypted library for reference resolution, reporting what was recovered — and, as
+    /// importantly, what was not. A library shipping no documentation contributes nothing, and
+    /// saying so is the difference between a user understanding why a reference is still unresolved
+    /// and assuming the check covered it.
+    /// </summary>
+    /// <param name="loadedNames">Collects the library's <b>bare name</b>. This list is recorded in
+    /// the baseline and compared name-by-name to detect a check running against a different set of
+    /// dependencies than the baseline was taken with, so nothing variable — a class count, a path —
+    /// may be folded into it: that would report drift every time the vendor reissued the library.
+    /// The count belongs in the console note, not here.</param>
+    private static async Task LoadEncryptedAsync(
+        LibraryDataService libraryData, string path, List<string> loadedNames, TextWriter stderr)
+    {
+        try
+        {
+            var library = await libraryData.AddEncryptedLibraryFromDirectoryAsync(path);
+            if (library.ModelIds.Count == 0)
+            {
+                stderr.WriteLine(
+                    $"warning: encrypted library '{library.Name}' ships no usable documentation, so its " +
+                    "classes cannot be recovered; references into it stay unresolved");
+                return;
+            }
+
+            loadedNames.Add(library.Name);
+            stderr.WriteLine(
+                $"note: recovered {library.ModelIds.Count} classes of encrypted library '{library.Name}' " +
+                "from its documentation");
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"warning: failed to load encrypted library '{path}': {ex.Message}");
+        }
+    }
+
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
         IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false)
@@ -69,8 +105,19 @@ internal static class CheckPipeline
         var libraryData = new LibraryDataService();
         var models = new List<ModelNode>();
         var seenModelIds = new HashSet<string>(StringComparer.Ordinal);
+        var referenceLibraries = new List<string>();
         foreach (var path in libraryPaths)
         {
+            // An encrypted library found inside the repository is loaded for reference but never
+            // checked. There is no source in it to have an opinion about — only classes rebuilt
+            // from the vendor's documentation — so reporting on it would be reporting on our own
+            // reconstruction.
+            if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
+            {
+                await LoadEncryptedAsync(libraryData, path, referenceLibraries, stderr);
+                continue;
+            }
+
             LoadedLibrary library;
             try
             {
@@ -111,6 +158,12 @@ internal static class CheckPipeline
 
             foreach (var path in LibraryDiscovery.DiscoverLibraryPaths(dependency))
             {
+                if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
+                {
+                    await LoadEncryptedAsync(libraryData, path, dependencyLibraries, stderr);
+                    continue;
+                }
+
                 try
                 {
                     var library = await libraryData.AddLibraryFromDirectoryAsync(path);
@@ -122,6 +175,8 @@ internal static class CheckPipeline
                 }
             }
         }
+
+        dependencyLibraries.AddRange(referenceLibraries);
         if (dependencyLibraries.Count > 0)
             stderr.WriteLine(
                 $"note: loaded {string.Join(", ", dependencyLibraries)} for reference resolution " +

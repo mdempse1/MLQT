@@ -85,6 +85,32 @@ note: loaded Modelica, ModelicaReference, ModelicaServices, ModelicaTest, … fo
 On ExternData this removes 96 findings — 91 inherited icons and all 5 `modelica://` references — which
 is the same effect as adding MSL to the project in the desktop app.
 
+### Encrypted libraries
+
+`--dependency` also accepts a commercial library that ships **encrypted** — a directory holding a
+`package.moe` with no readable source. MLQT recovers its classes from the vendor's generated `help/`
+documentation, which is enough for references into it to resolve and for icons inherited from it to
+be seen:
+
+```bash
+mlqt check ./MyLibrary --dependency "C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library\Battery 2.9.0"
+```
+
+```
+note: recovered 1223 classes of encrypted library 'Battery' from its documentation
+note: loaded Battery for reference resolution (not reported on)
+```
+
+An encrypted library found *inside* the checked path is loaded the same way and likewise never
+reported on. A library shipping no documentation is called out rather than passed over silently:
+
+```
+warning: encrypted library 'CATIAMultiBody' ships no usable documentation, so its classes cannot be
+         recovered; references into it stay unresolved
+```
+
+See [encrypted-libraries.md](encrypted-libraries.md) for what is and is not recovered.
+
 ### Version mismatches stop the run
 
 The versions a library declares in its `uses(...)` annotation are compared against the copies actually

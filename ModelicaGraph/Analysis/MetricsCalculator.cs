@@ -30,7 +30,14 @@ public static class MetricsCalculator
 {
     public static LibraryMetrics Compute(DirectedGraph graph, IEnumerable<ModelNode> models)
     {
-        var classes = models.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
+        // Stubs are excluded from every count and every coverage denominator. They stand for classes
+        // in an encrypted third-party library, so their description and icon coverage is neither the
+        // user's achievement nor the user's debt — folding a vendor's library into the numbers would
+        // move the percentages for reasons the user cannot act on. Filtered here rather than in each
+        // caller so no surface can drift from the others.
+        var classes = models
+            .Where(m => m is not null && !m.IsParseFailurePlaceholder && !m.IsExternalStub)
+            .ToList();
         var total = classes.Count;
         var byType = classes
             .GroupBy(m => string.IsNullOrEmpty(m.ClassType) ? "unknown" : m.ClassType, StringComparer.Ordinal)

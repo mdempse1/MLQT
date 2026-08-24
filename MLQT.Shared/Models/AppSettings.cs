@@ -14,6 +14,33 @@ public class AppSettings
     public DymolaSettings Dymola { get; set; } = new();
     public OpenModelicaSettings OpenModelica { get; set; } = new();
     public StyleCheckingSettings StyleChecking { get; set; } = new();
+    public ReferenceLibrarySettings ReferenceLibraries { get; set; } = new();
+}
+
+/// <summary>
+/// Libraries loaded read-only so that references out of the user's own code resolve — typically a
+/// tool's installed library folder such as Dymola's <c>Modelica\Library</c>.
+///
+/// <para>These are held in application settings rather than in a repository's
+/// <c>.mlqt/settings.json</c> because the paths are properties of the machine, not of the code. A
+/// checkout shared with colleagues or a CI runner would not have the same install location, and
+/// baking one into the repository would break for everyone else. CI supplies the equivalent
+/// explicitly with the CLI's <c>--dependency</c> option.</para>
+/// </summary>
+public class ReferenceLibrarySettings
+{
+    /// <summary>
+    /// Directories to scan for reference libraries. Each may be a single library or a folder
+    /// containing many; both readable and encrypted libraries are picked up.
+    /// </summary>
+    public List<string> Paths { get; set; } = new();
+
+    /// <summary>
+    /// Whether to recover the classes of encrypted libraries from their vendor documentation.
+    /// Turning this off leaves those namespaces opaque — references into them stay unresolved and
+    /// inherited icons stay invisible, which is the behaviour from before that was possible.
+    /// </summary>
+    public bool UseEncryptedLibraryDocumentation { get; set; } = true;
 }
 
 /// <summary>

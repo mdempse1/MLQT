@@ -2,6 +2,7 @@ using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.ExternalDocs;
 using ModelicaParser.Icons;
 using static MLQT.Services.LoggingService;
 using MLQT.Services.Helpers;
@@ -190,6 +191,87 @@ public class LibraryDataService : ILibraryDataService
         catch (Exception ex)
         {
             LogProcessFailed("LibraryDataService", $"Loading library from directory: {directoryPath}", ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath)
+    {
+        LogProcessStart("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+        var library = new LoadedLibrary
+        {
+            SourcePath = directoryPath,
+            SourceType = LibrarySourceType.EncryptedDirectory
+        };
+
+        try
+        {
+            var detected = EncryptedLibraryDetector.Detect(directoryPath)
+                ?? throw new InvalidOperationException(
+                    $"'{directoryPath}' is not an encrypted Modelica library (no {EncryptedLibraryDetector.EncryptedPackageFileName}).");
+
+            library.Name = detected.Name;
+
+            if (!detected.HasDocumentation)
+            {
+                // Nothing shipped that describes the library. Loading zero classes is the honest
+                // outcome: the namespace stays opaque, so references into it remain unresolved
+                // and are treated as external rather than as pointing at classes we "know" are
+                // absent. Claiming an empty library would turn every such reference into a
+                // fabricated broken-reference finding.
+                Warn("LibraryDataService",
+                    $"Encrypted library '{detected.Name}' ships no documentation; its classes cannot be recovered");
+
+                lock (_lock)
+                {
+                    _libraries.Add(library);
+                }
+
+                OnLibrariesChanged?.Invoke();
+                RaiseTreeDataChanged();
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
+
+            await Task.Run(() =>
+            {
+                var document = DymolaHelpReader.Read(detected.HelpDirectory!);
+                Debug("LibraryDataService",
+                    $"Read {document.Classes.Count} documented classes from {document.FilesRead} help files " +
+                    $"({document.FilesSkipped} skipped) for '{detected.Name}'");
+
+                List<string> modelIds;
+                lock (_graphLock)
+                {
+                    modelIds = ExternalStubBuilder.AddDocumentedClasses(
+                        _combinedGraph, document.Classes, detected.EncryptedPackagePath, detected.Version);
+                }
+
+                BuildLibraryIndex(library, _combinedGraph, modelIds);
+            });
+
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
+
+            lock (_lock)
+            {
+                _libraries.Add(library);
+            }
+
+            OnLibrariesChanged?.Invoke();
+            RaiseTreeDataChanged();
+
+            Info("LibraryDataService",
+                $"Loaded encrypted library '{library.Name}' {detected.Version} with {library.ModelIds.Count} " +
+                "classes recovered from documentation (reference only)");
+            LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+            return library;
+        }
+        catch (Exception ex)
+        {
+            LogProcessFailed("LibraryDataService", $"Loading encrypted library: {directoryPath}", ex);
             throw;
         }
     }

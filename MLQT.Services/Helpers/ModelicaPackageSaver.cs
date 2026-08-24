@@ -34,6 +34,19 @@ public class ModelicaPackageSaver
         // Get only the models belonging to this library
         var allModels = graph.ModelNodes.Where(m => modelIds.Contains(m.Id)).ToList();
 
+        // Refuse outright rather than filtering them out. A stub stands for a class in an encrypted
+        // third-party library, and its "source" is a reconstruction from documentation — writing it
+        // anywhere would replace a vendor's library with our own summary of it. Silently skipping
+        // would hide the fact that a caller assembled the wrong model set; a caller that has stubs
+        // in hand has a bug, and it should surface here rather than on a user's installation.
+        var stub = allModels.FirstOrDefault(m => m.IsExternalStub);
+        if (stub is not null)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to save '{stub.Id}': it belongs to an encrypted library and exists only as a " +
+                "reconstruction from vendor documentation. Reference libraries are read-only.");
+        }
+
         // PHASE 1: Pre-parse all models in parallel (batched to limit peak memory)
         PreParseModelsParallel(allModels, modelIds);
 

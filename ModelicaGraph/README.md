@@ -240,12 +240,39 @@ GraphNode (abstract base)
 
 DirectedGraph           - Node/edge management, relationship queries
 GraphBuilder (static)   - File loading and dependency analysis (model queries live on DirectedGraph)
+ExternalStubBuilder     - Nodes for encrypted libraries, from vendor documentation
 StyleChecking (static)  - Style rule execution
 StyleCheckingSettings   - Configurable rule toggles and additional settings
 ModelDefinition         - Name, ModelicaCode, ParsedCode
 ResourceEdge            - ModelId, ResourceNodeId, RawPath, ReferenceType
 LibraryInfo             - Library metadata (name, path, root package)
 ```
+
+### External Stubs
+
+A library that ships encrypted (`package.moe`) has no readable source, so `ExternalStubBuilder`
+builds its nodes from the classes `ModelicaParser.ExternalDocs` recovers from the vendor's
+documentation. Each node's `Definition.ModelicaCode` is a **synthesized declaration** carrying only
+what the documentation stated — name, description, `extends`, and whether there is an icon:
+
+```modelica
+within Battery.BMS.Interfaces;
+model CurrentRestrictor "Interface model for current restrictor"
+  extends DymolaModels.Icons.Templates.Box_Bottom;
+  annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+end CurrentRestrictor;
+```
+
+Synthesizing source rather than carrying parallel metadata is what makes this cheap: every consumer
+already works through the parse tree — icon inheritance, the type and element resolvers, dependency
+analysis, reference validation — so a stub that parses is resolved by all of them with no rule
+changes.
+
+Such nodes are flagged `ModelNode.IsExternalStub`. That flag has one job: keep them off every path
+that **writes** or **reports**. `ModelicaPackageSaver` throws rather than skipping (a caller holding
+stubs has a bug, and it should surface in a test rather than as a rewritten third-party library),
+`PackageCodeTrimmer` and `MetricsCalculator` skip them, and `LibraryCheckSession` filters them out
+centrally so no surface can drift.
 
 ### Node Properties
 
