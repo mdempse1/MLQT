@@ -50,10 +50,11 @@ internal static class CheckPipeline
                 return;
             }
 
+            // No per-library note on success: with a tool's library folder loaded that is fifty
+            // lines of scrollback saying nothing actionable. The libraries that loaded are named
+            // once in the reference-resolution summary, and the ones that could not are warned
+            // about individually above.
             loadedNames.Add(library.Name);
-            stderr.WriteLine(
-                $"note: recovered {library.ModelIds.Count} classes of encrypted library '{library.Name}' " +
-                "from its documentation");
         }
         catch (Exception ex)
         {

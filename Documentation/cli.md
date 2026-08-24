@@ -97,7 +97,6 @@ mlqt check ./MyLibrary --dependency "C:\Program Files\Dymola 2026x Refresh 1\Mod
 ```
 
 ```
-note: recovered 1223 classes of encrypted library 'Battery' from its documentation
 note: loaded Battery for reference resolution (not reported on)
 ```
 
