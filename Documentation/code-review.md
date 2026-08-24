@@ -124,21 +124,29 @@ Each entry carries the same fields, with the same names, as the CLI's `--format 
 array — `RuleId`, `Severity`, `Status`, `Model`, `Element`, `Line`, `Message`, `Fingerprint`,
 `File` — so the two can be compared directly:
 
-```bash
-mlqt check ./MyLibrary --format json --out cli.json
+```powershell
+mlqt check .\MyLibrary --format json --out cli.json
+.\build\Compare-Findings.ps1 cli.json .\mlqt-issues-20260824-141530.json
 ```
 
-```bash
-# issues the CLI reports that the app does not, keyed on model + rule + line
-jq -r '.findings[] | "\(.Model)|\(.RuleId)|\(.Line)"' cli.json | sort > cli.txt
-jq -r '.findings[] | "\(.Model)|\(.RuleId)|\(.Line)"' mlqt-issues-*.json | sort > gui.txt
-comm -23 cli.txt gui.txt
+`build/Compare-Findings.ps1` pairs the two up on model + rule + line and reports what each has that
+the other does not, grouped by rule and by library. It needs nothing installed — PowerShell reads
+JSON natively — and `-Detail` lists the individual issues rather than just the counts.
+
+```
+CLI 103683    App 103516    difference 167
+
+Only the CLI reports (167)
+  by rule:
+       167  MLQT.Doc.ClassIcon                     e.g. MyLib.Widget:12
+  by library:
+       167  MyLib
 ```
 
-If the two disagree, the difference nearly always clusters on one rule id or one library prefix,
-which names the cause immediately. Common ones: a filter left on in the app, per-repository style
-settings differing from the `.mlqt/settings.json` the CLI resolved, or a library present in the
-repository that the app has not been asked to load.
+The difference nearly always clusters on one rule id or one library prefix, and the cluster names
+the cause: a rule enabled on one side only, a library loaded by one side only (or excluded by
+`ExcludedLibraries` in only one), parse diagnostics — which the CLI emits for its checked set
+regardless of which rules are enabled — or, when it is spread evenly, a filter left on in the app.
 
 ### Interacting with Issues
 
