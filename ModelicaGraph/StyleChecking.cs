@@ -173,12 +173,9 @@ public static class StyleChecking
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);
         }
-        if (settings.CheckUnusedImports)
-        {
-            var visitor = new UnusedImports(basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
-        }
+        // MLQT.Unused.Import is not here: an import is visible to every class lexically nested below
+        // it, which in a library means other files entirely, so it is decided by UnusedImportAnalyzer
+        // over the graph rather than by looking at the declaring class on its own.
 
         // Stamp the configured severity on each finding (visitors emit at the default level).
         // A finding only exists because its rule ran, so a resolved severity of Off (e.g. the

@@ -23,6 +23,13 @@
 >   missing-units presence (`MLQT.Units.MissingUnit`, plain `Real`), unused imports
 >   (`MLQT.Unused.Import`). `VisitorWithModelNameTracking`s wired into `RunStyleCheckingFindings` — so
 >   they work on **every** surface (GUI, CLI, MCP).
+>
+>   **Correction (2026-08-24): `MLQT.Unused.Import` was not a per-class rule and could not be one.**
+>   An import is visible to every class lexically nested below it (§5.3.1), and a package directory's
+>   children are lexically nested inside its `package.mo` (§13.4) — so the uses sit in files the
+>   declaring class's parse tree never sees. As a per-class check it reported the root package of
+>   essentially every real library as full of unused imports, MSL's `Modelica.Blocks` included. It is
+>   now `UnusedImportAnalyzer`, a graph analyzer; `ImportScopeExtractor` keeps the per-source half.
 > - **Graph-analyzer substrate (6a):** `IGraphAnalyzer` + `GraphAnalysisContext` + `GraphAnalysisRunner`
 >   (severity stamping, per-model `__MLQT` suppression, `NeedsDependencyAnalysis` gating), wired into
 >   `LibraryCheckSession`. The **dependency-analysis prerequisite** is handled: the CLI runs
@@ -305,7 +312,7 @@ like every rule) — a library opts in per `.mlqt/settings.json`.
 | `MLQT.Unused.Parameter` | 1 | per-class | Unused | Warning | component | high (leaf) |
 | `MLQT.Unused.Constant` | 1 | per-class | Unused | Warning | component | high (leaf) |
 | `MLQT.Unused.Component` | 1 | per-class | Unused | Warning | component | high (protected/local) |
-| `MLQT.Unused.Import` | 1 | per-class | Unused | Warning | import | high |
+| `MLQT.Unused.Import` | 1 | graph (was per-class — see correction above) | Unused | Warning | import | high |
 | `MLQT.Unused.Class` | 2 | graph | Unused | Warning / **Info** (public top-level) | class | high / low |
 | `MLQT.Duplicate.Declaration` | 3a | per-class | Correctness | **Error** | component | high |
 | `MLQT.Duplicate.Import` | 3a | per-class | Correctness | Warning | import | high |

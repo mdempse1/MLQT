@@ -153,7 +153,7 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 | `MLQT.Duplicate.Declaration` | Error | A name declared more than once in the same class. | GUI, CLI, MCP |
 | `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
 | `MLQT.Units.MissingUnit` | Warning | A plain `Real` variable/parameter with no `unit` attribute (use an SI type or add `unit=`). Presence only, not dimensional analysis. SI-typed components are not flagged. | GUI, CLI, MCP |
-| `MLQT.Unused.Import` | Warning | An `import` whose name is never referenced in the class that declares it. | GUI, CLI, MCP |
+| `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
@@ -161,6 +161,15 @@ below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(supp
 | `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
 | `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
 | `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
+
+§ **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
+then in each enclosing class in turn, and a package directory's children are lexically nested inside
+its `package.mo` — so `import SI = Modelica.Units.SI;` in a library's root package is usable by every
+class in the library, which is exactly how libraries use it. The rule therefore searches the declaring
+class *and everything below it* before reporting, and a use anywhere in that subtree is enough. Two
+deliberate biases keep it from crying wolf: a name appearing in a comment or string counts as a use,
+and an `encapsulated` class (which cannot see enclosing scopes) is not treated as a boundary. Both
+under-report rather than call a live import dead.
 
 ‡ **Never reported by the unused-class rules:** a class carrying an `experiment(...)` annotation (a
 simulation entry point — it exists to be run, not to be instantiated by something else), and an
