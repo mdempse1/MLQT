@@ -33,38 +33,55 @@ public class LoadSelectorModificationAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public List<ExternalResourceInfo> Resources => _resources;
 
-    public LoadSelectorModificationAnalyzer(string modelId, DirectedGraph graph)
+    /// <summary>
+    /// The two parameter sets this analyzer matches against, built once for a whole pass.
+    ///
+    /// <para>They describe the <b>graph</b>, not the model being visited, so building them per model
+    /// made the pass cost models × graph size. That went unnoticed while the graph held only the
+    /// code under check; loading a tool's library folder for reference resolution adds tens of
+    /// thousands of classes and turns the same loop into hundreds of millions of visits.</para>
+    /// </summary>
+    public sealed record ParameterIndex(
+        HashSet<string> LoadSelectorParameters, HashSet<string> LoadResourceParameters)
+    {
+        /// <summary>Indexes every loadSelector/loadResource parameter discovered in pass 1.</summary>
+        public static ParameterIndex Build(DirectedGraph graph)
+        {
+            var loadSelector = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var loadResource = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var model in graph.ModelNodes)
+            {
+                foreach (var paramName in model.LoadSelectorParameters)
+                    loadSelector.Add($"{model.Id}.{paramName}");
+
+                foreach (var paramName in model.LoadResourceParameters)
+                    loadResource.Add($"{model.Id}.{paramName}");
+            }
+
+            return new ParameterIndex(loadSelector, loadResource);
+        }
+    }
+
+    /// <summary>
+    /// Creates an analyzer sharing a prebuilt <see cref="ParameterIndex"/>. Prefer this: the index
+    /// is the same for every model in a pass.
+    /// </summary>
+    public LoadSelectorModificationAnalyzer(string modelId, DirectedGraph graph, ParameterIndex parameters)
     {
         _modelId = modelId;
         _graph = graph;
-        _loadSelectorParameters = BuildLoadSelectorParameterSet();
-        _loadResourceParameters = BuildLoadResourceParameterSet();
+        _loadSelectorParameters = parameters.LoadSelectorParameters;
+        _loadResourceParameters = parameters.LoadResourceParameters;
     }
 
-    private HashSet<string> BuildLoadSelectorParameterSet()
+    /// <summary>
+    /// Creates an analyzer that builds its own index. Convenient for a one-off analysis of a single
+    /// model; do not use it in a loop, which is what made this pass quadratic.
+    /// </summary>
+    public LoadSelectorModificationAnalyzer(string modelId, DirectedGraph graph)
+        : this(modelId, graph, ParameterIndex.Build(graph))
     {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var model in _graph.ModelNodes)
-        {
-            foreach (var paramName in model.LoadSelectorParameters)
-            {
-                result.Add($"{model.Id}.{paramName}");
-            }
-        }
-        return result;
-    }
-
-    private HashSet<string> BuildLoadResourceParameterSet()
-    {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var model in _graph.ModelNodes)
-        {
-            foreach (var paramName in model.LoadResourceParameters)
-            {
-                result.Add($"{model.Id}.{paramName}");
-            }
-        }
-        return result;
     }
 
     /// <summary>

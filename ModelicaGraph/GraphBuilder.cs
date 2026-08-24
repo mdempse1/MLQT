@@ -463,7 +463,18 @@ public static class GraphBuilder
 
         // Placeholder nodes carry raw (unparseable) file content and already have a fatal
         // error attached — re-parsing them wastes work and produces noise. Skip them here.
-        var allModels = graph.ModelNodes.Where(m => !m.IsParseFailurePlaceholder).ToList();
+        //
+        // External stubs are skipped for a different reason: there is nothing in them to analyse.
+        // A stub's source is a synthesized declaration — a name, a description, its extends clauses
+        // and an icon — with no components, equations or resource references, so visiting it can
+        // only ever produce edges to its own base classes. Nothing reads those: the analyses ask
+        // what uses a *checked* class, and the edges that answer that are created from the user's
+        // side when the user's own models are analysed. Reference libraries can outnumber the code
+        // under check many times over (a Dymola install contributes ~38k classes), so analysing
+        // them is the difference between a check that takes seconds and one that takes minutes.
+        var allModels = graph.ModelNodes
+            .Where(m => !m.IsParseFailurePlaceholder && !m.IsExternalStub)
+            .ToList();
         progressLog?.Invoke($"Starting dependency analysis for {allModels.Count} models");
 
         // Phase 1+2: Parse, analyze, and add edges in batches to limit peak memory.
@@ -535,6 +546,8 @@ public static class GraphBuilder
 
         if (hasTrackedParams)
         {
+            // Built once for the whole pass: it describes the graph, not any one model.
+            var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
             totalProcessed = 0;
             foreach (var batch in Batch(allModels, batchSize))
             {
@@ -547,7 +560,7 @@ public static class GraphBuilder
                         var parseTree = model.Definition.EnsureParsed();
                         if (parseTree == null) return;
 
-                        var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph);
+                        var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph, parameterIndex);
                         modAnalyzer.Visit(parseTree);
 
                         // Release parse tree immediately
@@ -722,6 +735,7 @@ public static class GraphBuilder
         if (hasTrackedParams)
         {
             var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
+            var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
 
             Parallel.ForEach(models, model =>
             {
@@ -730,7 +744,7 @@ public static class GraphBuilder
                     var parseTree = model.Definition.EnsureParsed();
                     if (parseTree == null) return;
 
-                    var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph);
+                    var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph, parameterIndex);
                     modAnalyzer.Visit(parseTree);
 
                     // Release parse tree immediately

@@ -184,15 +184,27 @@ internal static class CheckPipeline
 
         var graph = libraryData.CombinedGraph;
 
-        // Match the GUI: trim each package's inline standalone children out of its stored source before
-        // checking (they have their own nodes), so the CLI checks the same representation the app does
-        // and reports the same findings with the same line numbers.
-        PackageCodeTrimmer.TrimStandaloneChildren(graph);
-
         // Some graph analyses (uses hygiene, unused classes) rely on cross-model dependency edges,
         // which the load path does not populate. Run dependency analysis once, only when such a rule
         // is enabled, so a plain style-check run doesn't pay for it.
-        if (ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(settings))
+        var needsDependencyAnalysis =
+            ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(settings);
+
+        // Match the GUI: trim each package's inline standalone children out of its stored source before
+        // checking (they have their own nodes), so the CLI checks the same representation the app does
+        // and reports the same findings with the same line numbers.
+        //
+        // Trimming rewrites a package's stored source, so it is worth doing exactly for the packages
+        // whose source will be read again — and no others. The reported models always qualify. Every
+        // other loaded package qualifies only if dependency analysis is going to parse it, in which
+        // case trimming pays for itself several times over by shrinking what that parse sees; when no
+        // analysis needs the edges, trimming a tool's whole library folder is pure cost for an
+        // output that cannot change.
+        PackageCodeTrimmer.TrimStandaloneChildren(
+            graph,
+            needsDependencyAnalysis ? null : models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal));
+
+        if (needsDependencyAnalysis)
         {
             stderr.WriteLine("note: running dependency analysis (required by an enabled rule)…");
             // Pass the library roots so modelica:// URIs resolve against every loaded library, not

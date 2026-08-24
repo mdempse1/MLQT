@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
@@ -222,45 +223,108 @@ public static class StyleChecking
     {
         if (graph == null) return null;
 
+        // "Does this class, or anything it inherits from, have an icon" is a property of the class
+        // alone, so it is answered once per class rather than once per class that extends it.
+        // Without this the answer is recomputed — reparsing the class and re-running the extractor —
+        // for every derived class, and the classes at the top of a hierarchy are exactly the ones
+        // with the most derivations: in a library built on Modelica.Icons.* or a vendor's icon
+        // package, the same handful of base classes are walked thousands of times.
+        //
+        // Shared across the parallel per-class checks, hence concurrent.
+        var iconInChain = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+        var resolved = new ConcurrentDictionary<(string Name, string Context), string?>();
+
         return (baseClassName, currentModelFullId) =>
-            HasIconInInheritanceChain(graph, baseClassName, currentModelFullId, new HashSet<string>());
+            HasIconInInheritanceChain(
+                graph, baseClassName, currentModelFullId, new HashSet<string>(StringComparer.Ordinal),
+                iconInChain, resolved);
     }
 
     /// <summary>
     /// Recursively checks whether a base class or any of its ancestors has an Icon annotation.
     /// </summary>
     private static bool HasIconInInheritanceChain(
-        DirectedGraph graph, string baseClassName, string currentModelFullId, HashSet<string> visited)
+        DirectedGraph graph, string baseClassName, string currentModelFullId, HashSet<string> visited,
+        ConcurrentDictionary<string, bool> iconInChain,
+        ConcurrentDictionary<(string, string), string?> resolvedNames)
+        => Walk(graph, baseClassName, currentModelFullId, visited, iconInChain, resolvedNames).HasIcon;
+
+    /// <summary>
+    /// One step of the walk.
+    ///
+    /// <para><paramref name="Complete"/> reports whether the answer describes the class on its own
+    /// merits, or whether the walk was cut short by meeting a name already on the current path — a
+    /// cycle, which is invalid Modelica but must not be allowed to poison the cache with a
+    /// truncated "no". Only complete answers are remembered.</para>
+    /// </summary>
+    private readonly record struct IconWalkResult(bool HasIcon, bool Complete)
     {
-        var resolvedId = ResolveModelName(graph, baseClassName, currentModelFullId);
-        if (resolvedId == null || !visited.Add(resolvedId))
-            return false;
+        public static IconWalkResult Found { get; } = new(true, true);
+        public static IconWalkResult NotFound { get; } = new(false, true);
+        public static IconWalkResult Truncated { get; } = new(false, false);
+    }
 
-        var node = graph.GetNode<ModelNode>(resolvedId);
-        if (node == null)
-            return false;
+    private static IconWalkResult Walk(
+        DirectedGraph graph, string baseClassName, string currentModelFullId, HashSet<string> visited,
+        ConcurrentDictionary<string, bool> iconInChain,
+        ConcurrentDictionary<(string, string), string?> resolvedNames)
+    {
+        // Name resolution walks up the package hierarchy probing the graph, and the same
+        // (name, context) pair recurs constantly across a library — cache it alongside the answer.
+        var resolvedId = resolvedNames.GetOrAdd(
+            (baseClassName, currentModelFullId),
+            key => ResolveModelName(graph, key.Item1, key.Item2));
 
-        // Parse the model and extract icon + extends information
-        var parsedCode = node.Definition.EnsureParsed();
-        if (parsedCode == null)
-            return false;
+        // A name that resolves to nothing is a settled answer, not a truncated one: there is no
+        // class here to have an icon.
+        if (resolvedId == null)
+            return IconWalkResult.NotFound;
 
-        var result = IconExtractor.ExtractIconWithInheritance(parsedCode);
-        if (result == null)
-            return false;
+        if (iconInChain.TryGetValue(resolvedId, out var cached))
+            return cached ? IconWalkResult.Found : IconWalkResult.NotFound;
 
-        // This model directly has an Icon annotation
-        if (result.Icon != null)
-            return true;
+        if (!visited.Add(resolvedId))
+            return IconWalkResult.Truncated;
 
-        // Recursively check this model's base classes
-        foreach (var ancestorName in result.ExtendsClasses)
+        var result = Resolve();
+        if (result.Complete)
+            iconInChain[resolvedId] = result.HasIcon;
+
+        return result;
+
+        IconWalkResult Resolve()
         {
-            if (HasIconInInheritanceChain(graph, ancestorName, resolvedId, visited))
-                return true;
-        }
+            var node = graph.GetNode<ModelNode>(resolvedId);
+            if (node == null)
+                return IconWalkResult.NotFound;
 
-        return false;
+            // Parse the model and extract icon + extends information
+            var parsedCode = node.Definition.EnsureParsed();
+            if (parsedCode == null)
+                return IconWalkResult.NotFound;
+
+            var extracted = IconExtractor.ExtractIconWithInheritance(parsedCode);
+            if (extracted == null)
+                return IconWalkResult.NotFound;
+
+            // This model directly has an Icon annotation
+            if (extracted.Icon != null)
+                return IconWalkResult.Found;
+
+            // Recursively check this model's base classes
+            var complete = true;
+            foreach (var ancestorName in extracted.ExtendsClasses)
+            {
+                var ancestor = Walk(
+                    graph, ancestorName, resolvedId, visited, iconInChain, resolvedNames);
+                if (ancestor.HasIcon)
+                    return IconWalkResult.Found;
+
+                complete &= ancestor.Complete;
+            }
+
+            return complete ? IconWalkResult.NotFound : IconWalkResult.Truncated;
+        }
     }
 
     /// <summary>
