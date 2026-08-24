@@ -50,6 +50,30 @@ public interface ILibraryDataService
     Task<LoadedLibrary> AddLibraryFromDirectoryAsync(string directoryPath);
 
     /// <summary>
+    /// Adds whatever library is at <paramref name="path"/>, working out from the path itself how it
+    /// should be loaded.
+    ///
+    /// <para><b>Prefer this over the specific loaders.</b> Deciding between them at the call site
+    /// means every surface — the app's repository loader, its reference libraries, the CLI's checked
+    /// set, the CLI's dependencies, the MCP tools — has to make the same decision and keep making it
+    /// as new kinds of library appear. That is not hypothetical: when encrypted libraries were
+    /// added, one of those places was missed, and a library sitting in a repository silently loaded
+    /// as empty. Every reference into it was then reported broken, in the app but not the CLI.</para>
+    ///
+    /// <list type="bullet">
+    /// <item>a directory holding a <c>package.moe</c> → loaded from its documentation, read-only</item>
+    /// <item>a directory → loaded as Modelica source</item>
+    /// <item>a <c>package.mo</c> file → loads the <b>whole</b> library its directory holds, not just
+    ///   that file, since pointing at a package.mo means "this library"</item>
+    /// <item>another <c>.mo</c> file → loaded as a single standalone file</item>
+    /// </list>
+    /// </summary>
+    /// <param name="path">Absolute path to a library directory, its <c>package.mo</c>, or a
+    /// standalone <c>.mo</c> file.</param>
+    /// <exception cref="ArgumentException">The path is neither a directory nor a <c>.mo</c> file.</exception>
+    Task<LoadedLibrary> AddLibraryFromPathAsync(string path);
+
+    /// <summary>
     /// Adds an encrypted library — one shipping an unreadable <c>package.moe</c> — by
     /// reconstructing its classes from the vendor's generated documentation.
     ///

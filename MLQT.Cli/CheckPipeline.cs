@@ -26,40 +26,30 @@ internal sealed record LoadResult(
 internal static class CheckPipeline
 {
     /// <summary>
-    /// Loads an encrypted library for reference resolution, reporting what was recovered — and, as
-    /// importantly, what was not. A library shipping no documentation contributes nothing, and
-    /// saying so is the difference between a user understanding why a reference is still unresolved
-    /// and assuming the check covered it.
+    /// Records an encrypted library that has been loaded, and says so when it turned out to carry
+    /// nothing. A library shipping no documentation contributes no classes, and saying so is the
+    /// difference between a user understanding why a reference is still unresolved and assuming the
+    /// check covered it.
     /// </summary>
     /// <param name="loadedNames">Collects the library's <b>bare name</b>. This list is recorded in
     /// the baseline and compared name-by-name to detect a check running against a different set of
     /// dependencies than the baseline was taken with, so nothing variable — a class count, a path —
-    /// may be folded into it: that would report drift every time the vendor reissued the library.
-    /// The count belongs in the console note, not here.</param>
-    private static async Task LoadEncryptedAsync(
-        LibraryDataService libraryData, string path, List<string> loadedNames, TextWriter stderr)
+    /// may be folded into it: that would report drift every time the vendor reissued the library.</param>
+    private static void ReportEncrypted(
+        LoadedLibrary library, List<string> loadedNames, TextWriter stderr)
     {
-        try
+        if (library.ModelIds.Count == 0)
         {
-            var library = await libraryData.AddEncryptedLibraryFromDirectoryAsync(path);
-            if (library.ModelIds.Count == 0)
-            {
-                stderr.WriteLine(
-                    $"warning: encrypted library '{library.Name}' ships no usable documentation, so its " +
-                    "classes cannot be recovered; references into it stay unresolved");
-                return;
-            }
+            stderr.WriteLine(
+                $"warning: encrypted library '{library.Name}' ships no usable documentation, so its " +
+                "classes cannot be recovered; references into it stay unresolved");
+            return;
+        }
 
-            // No per-library note on success: with a tool's library folder loaded that is fifty
-            // lines of scrollback saying nothing actionable. The libraries that loaded are named
-            // once in the reference-resolution summary, and the ones that could not are warned
-            // about individually above.
-            loadedNames.Add(library.Name);
-        }
-        catch (Exception ex)
-        {
-            stderr.WriteLine($"warning: failed to load encrypted library '{path}': {ex.Message}");
-        }
+        // No per-library note on success: with a tool's library folder loaded that is fifty lines of
+        // scrollback saying nothing actionable. The libraries that loaded are named once in the
+        // reference-resolution summary, and the ones that could not are warned about individually.
+        loadedNames.Add(library.Name);
     }
 
     public static async Task<LoadResult> LoadAndCheckAsync(
@@ -109,24 +99,24 @@ internal static class CheckPipeline
         var referenceLibraries = new List<string>();
         foreach (var path in libraryPaths)
         {
-            // An encrypted library found inside the repository is loaded for reference but never
-            // checked. There is no source in it to have an opinion about — only classes rebuilt
-            // from the vendor's documentation — so reporting on it would be reporting on our own
-            // reconstruction.
-            if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
-            {
-                await LoadEncryptedAsync(libraryData, path, referenceLibraries, stderr);
-                continue;
-            }
-
             LoadedLibrary library;
             try
             {
-                library = await libraryData.AddLibraryFromDirectoryAsync(path);
+                library = await libraryData.AddLibraryFromPathAsync(path);
             }
             catch (Exception ex)
             {
                 stderr.WriteLine($"warning: failed to load '{path}': {ex.Message}");
+                continue;
+            }
+
+            // An encrypted library found inside the repository is loaded for reference but never
+            // checked. There is no source in it to have an opinion about — only classes rebuilt
+            // from the vendor's documentation — so reporting on it would be reporting on our own
+            // reconstruction.
+            if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+            {
+                ReportEncrypted(library, referenceLibraries, stderr);
                 continue;
             }
 
@@ -159,16 +149,13 @@ internal static class CheckPipeline
 
             foreach (var path in LibraryDiscovery.DiscoverLibraryPaths(dependency))
             {
-                if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
-                {
-                    await LoadEncryptedAsync(libraryData, path, dependencyLibraries, stderr);
-                    continue;
-                }
-
                 try
                 {
-                    var library = await libraryData.AddLibraryFromDirectoryAsync(path);
-                    dependencyLibraries.Add(library.Name);
+                    var library = await libraryData.AddLibraryFromPathAsync(path);
+                    if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+                        ReportEncrypted(library, dependencyLibraries, stderr);
+                    else
+                        dependencyLibraries.Add(library.Name);
                 }
                 catch (Exception ex)
                 {

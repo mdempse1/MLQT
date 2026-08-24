@@ -160,11 +160,22 @@ public sealed class SessionTools
         string path)
     {
         LoadedLibrary library;
-        if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(path))
+        try
         {
-            // An encrypted library has no readable source; its classes come from the vendor's
-            // generated documentation and exist only so references into them resolve.
-            library = await _libraries.AddEncryptedLibraryFromDirectoryAsync(path);
+            // How each shape of path loads — a directory, a package.mo meaning its whole library, a
+            // standalone .mo file, an encrypted package.moe — is decided in one place for every
+            // surface, so this tool cannot fall out of step with the app or the CLI.
+            library = await _libraries.AddLibraryFromPathAsync(path);
+        }
+        catch (ArgumentException)
+        {
+            return new ToolError(
+                $"Path not found, or not a .mo file / directory: '{path}'. Pass an absolute path to a " +
+                "library directory containing a package.mo file, or to a single .mo file.");
+        }
+
+        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+        {
             if (library.ModelIds.Count == 0)
             {
                 _libraries.RemoveLibrary(library.Id);
@@ -175,28 +186,6 @@ public sealed class SessionTools
             }
 
             return ToSummary(library);
-        }
-
-        if (File.Exists(path) && string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase))
-        {
-            // A package.mo IS the root of a directory package: load the whole library (its directory), not
-            // just that one file — otherwise standalone child .mo files are missed. Callers routinely point
-            // load_library at ".../MyLib/package.mo" meaning "load MyLib".
-            library = await _libraries.AddLibraryFromDirectoryAsync(Path.GetDirectoryName(path)!);
-        }
-        else if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-        {
-            library = await _libraries.AddLibraryFromFileAsync(path);
-        }
-        else if (Directory.Exists(path))
-        {
-            library = await _libraries.AddLibraryFromDirectoryAsync(path);
-        }
-        else
-        {
-            return new ToolError(
-                $"Path not found, or not a .mo file / directory: '{path}'. Pass an absolute path to a " +
-                "library directory containing a package.mo file, or to a single .mo file.");
         }
 
         // A directory with no package.mo (or an empty one) loads nothing — tell the caller how to fix it
@@ -332,15 +321,12 @@ public sealed class SessionTools
             return;
         }
 
-        // Directly-loaded library: rebuild it from its source path (handles added/removed/edited files).
+        // Directly-loaded library: rebuild it from its source path (handles added/removed/edited
+        // files). The path is reloaded the same way it was loaded, because that decision is made
+        // from the path rather than remembered here.
         var path = library.SourcePath;
         _libraries.RemoveLibrary(library.Id);
-        if (library.SourceType == LibrarySourceType.File)
-            await _libraries.AddLibraryFromFileAsync(path);
-        else if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-            await _libraries.AddEncryptedLibraryFromDirectoryAsync(path);
-        else
-            await _libraries.AddLibraryFromDirectoryAsync(path);
+        await _libraries.AddLibraryFromPathAsync(path);
     }
 
     private void ResetAnalysis()

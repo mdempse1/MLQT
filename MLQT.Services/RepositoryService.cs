@@ -416,15 +416,10 @@ public class RepositoryService : IRepositoryService
                 {
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
 
-                    // A repository can contain an encrypted library alongside the source it is
-                    // checked with — a vendor library vendored into the checkout. It has no .mo
-                    // files, so the ordinary loader finds nothing and yields an empty library:
-                    // invisible in the tree, and worse, silently absent from reference resolution,
-                    // which makes every reference into it look broken.
-                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath);
-                    var library = isEncrypted
-                        ? await _libraryDataService.AddEncryptedLibraryFromDirectoryAsync(fullPath)
-                        : await _libraryDataService.AddLibraryFromDirectoryAsync(fullPath);
+                    // A repository can contain an encrypted library alongside the source that uses
+                    // it. AddLibraryFromPathAsync works out how to load whatever is here, so this
+                    // does not have to know the kinds of library that exist.
+                    var library = await _libraryDataService.AddLibraryFromPathAsync(fullPath);
 
                     library.RepositoryId = repositoryId;
                     library.RelativePathInRepository = relativePath;
@@ -433,7 +428,7 @@ public class RepositoryService : IRepositoryService
                     // repository. It is what marks the library read-only — the formatter and the
                     // "format all files" path both key off it — so overwriting it with Git/SVN would
                     // put a library MLQT cannot read back on a write path.
-                    if (!isEncrypted)
+                    if (library.SourceType != LibrarySourceType.EncryptedDirectory)
                         library.SourceType = sourceType;
 
                     library.Revision = repository.CurrentRevision;

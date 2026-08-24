@@ -197,6 +197,30 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public Task<LoadedLibrary> AddLibraryFromPathAsync(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            return EncryptedLibraryDetector.IsEncryptedLibraryRoot(path)
+                ? AddEncryptedLibraryFromDirectoryAsync(path)
+                : AddLibraryFromDirectoryAsync(path);
+        }
+
+        if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+        {
+            // A package.mo is the root of a directory package: loading only that file would miss
+            // every standalone child beside it, which is never what the caller meant.
+            return string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase)
+                ? AddLibraryFromDirectoryAsync(Path.GetDirectoryName(path)!)
+                : AddLibraryFromFileAsync(path);
+        }
+
+        throw new ArgumentException(
+            $"'{path}' is not a Modelica library: expected a directory, a package.mo, or a .mo file.",
+            nameof(path));
+    }
+
+    /// <inheritdoc/>
     public async Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath)
     {
         LogProcessStart("LibraryDataService", $"Loading encrypted library: {directoryPath}");

@@ -1076,13 +1076,13 @@
             {
                 try
                 {
-                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath);
-                    if (isEncrypted && !settings.UseEncryptedLibraryDocumentation)
+                    // Whether to load an encrypted library at all is a policy question the user
+                    // answers in settings; how to load one is not this loop's business.
+                    if (!settings.UseEncryptedLibraryDocumentation &&
+                        EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath))
                         continue;
 
-                    var library = isEncrypted
-                        ? await LibraryDataService.AddEncryptedLibraryFromDirectoryAsync(libraryPath)
-                        : await LibraryDataService.AddLibraryFromDirectoryAsync(libraryPath);
+                    var library = await LibraryDataService.AddLibraryFromPathAsync(libraryPath);
 
                     if (library.ModelIds.Count == 0)
                     {
