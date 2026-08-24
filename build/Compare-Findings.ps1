@@ -108,6 +108,36 @@ function Write-Section($title, $findings) {
 Write-Section 'Only the CLI reports' $onlyCli
 Write-Section 'Only the app reports' $onlyGui
 
+# The single most useful discriminator. If the exclusive findings sit on models the other side says
+# nothing about at all, that side never checked those classes — a loading, queueing or scoping
+# problem. If they sit on models both sides report on, both checked the class and disagreed about
+# it — a settings or rule problem. The two have completely different causes.
+function Write-ModelSplit($title, $findings, $otherFindings) {
+    if ($findings.Count -eq 0) { return }
+
+    $otherModels = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($finding in $otherFindings) { [void]$otherModels.Add($finding.Model) }
+
+    $unseen = @($findings | Where-Object { -not $otherModels.Contains($_.Model) })
+    $shared = @($findings | Where-Object { $otherModels.Contains($_.Model) })
+
+    $unseenModels = @($unseen | Group-Object Model).Count
+    $sharedModels = @($shared | Group-Object Model).Count
+
+    Write-Output ''
+    Write-Output "$title"
+    Write-Output ("    {0,6} on {1} model(s) the other side reports nothing for  -> not checked there" -f $unseen.Count, $unseenModels)
+    Write-Output ("    {0,6} on {1} model(s) both sides report on                -> checked, but disagreed" -f $shared.Count, $sharedModels)
+
+    if ($unseenModels -gt 0) {
+        Write-Output '    models only one side reports on (first 15):'
+        $unseen | Group-Object Model | Select-Object -First 15 | ForEach-Object { '      ' + $_.Name }
+    }
+}
+
+Write-ModelSplit 'CLI-only findings, split by whether the app reports on that model:' $onlyCli $gui
+Write-ModelSplit 'App-only findings, split by whether the CLI reports on that model:' $onlyGui $cli
+
 if ($onlyCli.Count -eq 0 -and $onlyGui.Count -eq 0) {
     Write-Output ''
     Write-Output 'The two agree exactly.'
