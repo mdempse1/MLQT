@@ -646,17 +646,21 @@
             _step1color = Color.Success;
             await InvokeAsync(StateHasChanged);
 
-            // Reference libraries go in first, so that by the time the user's own code is analysed
-            // every class it can see is already in the graph. Loading them afterwards would leave
-            // the first analysis pass resolving against a partial namespace.
-            await LoadReferenceLibrariesAsync();
-
             // Step 1: Load saved repositories and libraries
             LogProcessStart("MainLayout", "Loading repositories and libraries");
             await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
             var project = RepositoryService.GetActiveProject();
             _currentProjectName = project!.Name;
             LogProcessEnd("MainLayout", "Loading repositories and libraries");
+
+            // Reference libraries fill in what the user's own code refers to but does not contain, so
+            // they go in after it and before anything analyses it.
+            //
+            // The order matters: a tool's library folder ships encrypted builds of libraries the user
+            // may have checked out as source, and the source copy must win. Loading references first
+            // meant the encrypted build got there first, and for a nested class — which, like a stub,
+            // cannot be stored standalone — the graph had no rule that preferred the real source.
+            await LoadReferenceLibrariesAsync();
 
             // Surface any repositories that could not be loaded (e.g. their path no longer exists) as a
             // notification, and reveal the "Continue to app" escape hatch immediately so the user isn't
@@ -1081,6 +1085,23 @@
                     if (!settings.UseEncryptedLibraryDocumentation &&
                         EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath))
                         continue;
+
+                    // A tool's library folder ships the encrypted build of libraries a user may also
+                    // have checked out as source. The source copy is strictly better — it is the code
+                    // being worked on — so the encrypted one is not loaded at all rather than loaded
+                    // and then overridden class by class. Skipping it also avoids thousands of stub
+                    // nodes that would be discarded anyway.
+                    var encryptedName = EncryptedLibraryDetector.Detect(libraryPath)?.Name;
+                    if (encryptedName is not null &&
+                        LibraryDataService.Libraries.Any(l =>
+                            l.SourceType != LibrarySourceType.EncryptedDirectory &&
+                            string.Equals(l.Name, encryptedName, StringComparison.Ordinal)))
+                    {
+                        Info("MainLayout",
+                            $"Skipping encrypted reference library '{encryptedName}' at {libraryPath}: " +
+                            "already loaded from source");
+                        continue;
+                    }
 
                     var library = await LibraryDataService.AddLibraryFromPathAsync(libraryPath);
 

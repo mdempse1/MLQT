@@ -86,11 +86,28 @@ public class DirectedGraph
             }
             else if (node is ModelNode newModel && _nodes[node.Id] is ModelNode existingModel)
             {
+                // Readable source always beats a class reconstructed from vendor documentation, in
+                // whichever order the two arrive. The same library really does turn up twice: a tool's
+                // library folder ships the encrypted build of a library the user also has checked out
+                // as source, and both land in the one graph.
+                //
+                // This has to be decided before the standalone rule below, because that rule cannot
+                // see the difference. A stub is never standalone, so a stub colliding with a nested
+                // `redeclare` class — which is not standalone either — matched none of its cases and
+                // left the stub in place. The class then had no source to check, so every rule went
+                // quiet on it while the standalone classes beside it were checked normally.
+                if (existingModel.IsExternalStub != newModel.IsExternalStub)
+                {
+                    if (existingModel.IsExternalStub)
+                        _nodes[node.Id] = node;
+
+                    // Otherwise the existing node is the real source: keep it.
+                }
                 // When a standalone model collides with a non-standalone (prefixed) model,
                 // prefer the standalone version — it has the full class definition and can
                 // be saved as a separate file. The non-standalone version (e.g., redeclare
                 // function extends X) is just a modification embedded in the parent.
-                if (!existingModel.CanBeStoredStandalone && newModel.CanBeStoredStandalone)
+                else if (!existingModel.CanBeStoredStandalone && newModel.CanBeStoredStandalone)
                 {
                     _nodes[node.Id] = node;
                 }
