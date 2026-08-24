@@ -322,7 +322,12 @@ public class RepositoryService : IRepositoryService
             {
                 var isFile = File.Exists(fullPath) && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase);
                 var packageMoPath = isFile ? fullPath : Path.Combine(fullPath, "package.mo");
-                var libraryName = ExtractLibraryName(packageMoPath);
+
+                // An encrypted library has no package.mo to read a name out of. Its name comes from
+                // the versioned directory name or its libraryinfo.mos — without this the fallback
+                // below would show it as "Battery 2.9.0", version suffix and all.
+                var libraryName = EncryptedLibraryDetector.Detect(fullPath)?.Name
+                                  ?? ExtractLibraryName(packageMoPath);
 
                 string relativePath;
                 string fallbackName;
@@ -410,10 +415,27 @@ public class RepositoryService : IRepositoryService
                 try
                 {
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
-                    var library = await _libraryDataService.AddLibraryFromDirectoryAsync(fullPath);
+
+                    // A repository can contain an encrypted library alongside the source it is
+                    // checked with — a vendor library vendored into the checkout. It has no .mo
+                    // files, so the ordinary loader finds nothing and yields an empty library:
+                    // invisible in the tree, and worse, silently absent from reference resolution,
+                    // which makes every reference into it look broken.
+                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath);
+                    var library = isEncrypted
+                        ? await _libraryDataService.AddEncryptedLibraryFromDirectoryAsync(fullPath)
+                        : await _libraryDataService.AddLibraryFromDirectoryAsync(fullPath);
+
                     library.RepositoryId = repositoryId;
                     library.RelativePathInRepository = relativePath;
-                    library.SourceType = sourceType;
+
+                    // An encrypted library keeps its own source type even inside a version-controlled
+                    // repository. It is what marks the library read-only — the formatter and the
+                    // "format all files" path both key off it — so overwriting it with Git/SVN would
+                    // put a library MLQT cannot read back on a write path.
+                    if (!isEncrypted)
+                        library.SourceType = sourceType;
+
                     library.Revision = repository.CurrentRevision;
 
                     lock (_lock)
