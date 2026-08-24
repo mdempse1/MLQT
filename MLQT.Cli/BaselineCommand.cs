@@ -141,7 +141,11 @@ internal static class BaselineCommand
                 }
                 var created = Baseline.FromFindings(load.Findings, now, stamp, settings, load.DependencyLibraries);
                 created.Save(path);
-                stdout.WriteLine($"Wrote {created.Entries.Count} finding(s) to {path}");
+                var createdCoverage = Baseline.CoverageOf(load.Findings);
+                stdout.WriteLine(
+                    $"Wrote {Plural.Entries(created.Entries.Count)} to {path}, " +
+                    $"covering {createdCoverage.Baselineable} finding(s).");
+                ExplainCoverage(createdCoverage, stderr);
                 return ExitCodes.Ok;
 
             case "update":
@@ -157,8 +161,8 @@ internal static class BaselineCommand
                 if (absorbed > 0 && !opts.Force)
                 {
                     stderr.WriteLine(
-                        $"error: this would absorb {absorbed} finding(s) that are not in the baseline, " +
-                        "accepting them as debt.");
+                        $"error: this would absorb {Plural.Entries(absorbed)} not in the baseline, " +
+                        $"accepting {(absorbed == 1 ? "it" : "them")} as debt.");
                     stderr.WriteLine(
                         "       Re-run with --force if that is intended (e.g. you just enabled new rules).");
                     stderr.WriteLine(
@@ -168,9 +172,13 @@ internal static class BaselineCommand
                 }
 
                 updated.Save(path);
+                var updatedCoverage = Baseline.CoverageOf(load.Findings);
                 stdout.WriteLine(
-                    $"Updated {path}: {updated.Entries.Count} finding(s) " +
-                    $"— absorbed {absorbed} new as accepted debt, dropped {droppedByUpdate} fixed");
+                    $"Updated {path}: {Plural.Entries(updated.Entries.Count)} " +
+                    $"covering {updatedCoverage.Baselineable} finding(s) " +
+                    $"— absorbed {Plural.Entries(absorbed)} as accepted debt, " +
+                    $"dropped {Plural.Entries(droppedByUpdate)} now fixed");
+                ExplainCoverage(updatedCoverage, stderr);
                 return ExitCodes.Ok;
             }
 
@@ -187,22 +195,45 @@ internal static class BaselineCommand
                 pruned.Save(path);
 
                 stdout.WriteLine(
-                    $"Pruned {stale.Count} fixed entr{(stale.Count == 1 ? "y" : "ies")} from {path}; " +
-                    $"{pruned.Entries.Count} remain");
+                    $"Pruned {Plural.Entries(stale.Count)} now fixed from {path}; " +
+                    $"{Plural.Entries(pruned.Entries.Count)} remaining");
 
                 // Prune never accepts anything new — say so when there is something it left alone, so
                 // the difference from `update` is visible at the point of use rather than only in docs.
                 var stillFailing = CountMissing(Baseline.FromFindings(load.Findings), pruned);
                 if (stillFailing > 0)
                     stdout.WriteLine(
-                        $"{stillFailing} finding(s) are not in the baseline and will still fail the gate. " +
-                        "Prune never accepts new debt; `baseline update --force` would.");
+                        $"{Plural.Entries(stillFailing)} {(stillFailing == 1 ? "is" : "are")} not in the " +
+                        "baseline and will still fail the gate. Prune never accepts new debt; " +
+                        "`baseline update --force` would.");
                 return ExitCodes.Ok;
             }
 
             default:
                 return ExitCodes.Ok;
         }
+    }
+
+    /// <summary>
+    /// Accounts for the gap between the number of findings a check reports and the number of entries
+    /// the baseline holds — silent otherwise, and the two numbers read as a contradiction. Said only
+    /// when there is a gap to account for, and on stderr with the other notes so the count on stdout
+    /// stays the machine-readable line.
+    /// </summary>
+    private static void ExplainCoverage(BaselineCoverage coverage, TextWriter stderr)
+    {
+        if (coverage.SharingAnEntry > 0)
+            stderr.WriteLine(
+                $"note: {coverage.SharingAnEntry} finding(s) share an entry with another. An entry is " +
+                "one rule + class + element + detail with no line number, so repeats of the same " +
+                "violation within a class collapse into one — a later check still reports and accepts " +
+                "every finding individually, so its accepted count is the larger number.");
+
+        if (coverage.ParseDiagnostics > 0)
+            stderr.WriteLine(
+                $"note: {coverage.ParseDiagnostics} parse diagnostic(s) were not recorded — a baseline " +
+                "cannot accept code that does not parse, so they will be reported as new. Severity is " +
+                "not a filter: errors are baselined like anything else.");
     }
 
     /// <summary>How many of <paramref name="candidate"/>'s entries are absent from <paramref name="other"/>.

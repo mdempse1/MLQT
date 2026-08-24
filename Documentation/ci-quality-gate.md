@@ -185,9 +185,23 @@ mlqt baseline create /path/to/MyLibrary          # writes <root>/.mlqt/baseline.
 git add .mlqt/baseline.json && git commit -m "Add MLQT baseline"
 ```
 
-`.mlqt/baseline.json` is a reviewable ledger — one entry per finding with its rule id, model, and
-message. Its size shrinking over time is your debt burndown. (`baseline create` refuses to overwrite
-an existing file; use `baseline update` to regenerate or `--force`.)
+`.mlqt/baseline.json` is a reviewable ledger — one entry per finding *identity*, with its rule id,
+model, and message. Its size shrinking over time is your debt burndown. (`baseline create` refuses to
+overwrite an existing file; use `baseline update` to regenerate or `--force`.)
+
+**Expect the entry count to be lower than the check's finding count**, and the later check to report
+*more* accepted than the baseline holds:
+
+```
+Wrote 101032 entries to .mlqt/baseline.json, covering 104447 finding(s).
+note: 3415 finding(s) share an entry with another. …
+```
+
+An entry is rule + class + element + detail with no line number, so a rule firing twice on the same
+element of the same class is one entry covering two findings — and a check still reports and accepts
+both. Severity is irrelevant to what gets recorded; only
+[parse diagnostics](#parse-errors-always-fail) are excluded. See
+[cli.md → Entries vs findings](cli.md#entries-vs-findings).
 
 ---
 
@@ -504,6 +518,8 @@ end Foo;
 | `--metrics` wrote nothing | Expected when the numbers haven't moved, or the revision already has a point. The note on stderr says which. Use `--metrics-force` to override (never in a job that commits the file). |
 | The metrics chart is empty in the app | The dashboard reads `.mlqt/metrics-history.json`; make sure CI's commits of it are being pulled, or press **Save snapshot** once locally. |
 | Gate fails on `MLQT.Parse.SyntaxError` and the baseline doesn't help | It is not meant to. Fix the syntax error — see [Parse errors always fail](#parse-errors-always-fail). |
+| `baseline create` recorded fewer than the check found | Expected. It writes one entry per finding *identity*, and a rule can fire several times on the same element of one class. Both numbers are on the `create` line, and the note explains the gap. See [cli.md → Entries vs findings](cli.md#entries-vs-findings). |
+| A baselined check accepts *more* findings than the baseline holds | Also expected, and the same cause: classification is per finding, so several findings can match one entry. |
 | `error: baseline not found` | The `--baseline` path is wrong, or you haven't run `baseline create` yet. |
 | `error: dependency version mismatch` | The `--dependency` checkout is not the version the library's `uses(...)` declares. Point it at the right version, update the annotation, or pass `--allow-version-mismatch` if the difference is deliberate. |
 | Gate passes but you expected a failure | Findings default to `Warning`; use `--fail-on warning`, or set the rule to `Error` in `RuleSeverities` and use `--fail-on error`. |

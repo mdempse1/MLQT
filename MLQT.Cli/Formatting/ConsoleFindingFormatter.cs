@@ -45,7 +45,9 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
         var touched = report.CountOfStatus(FindingStatus.TouchedDebt);
 
         if (actionable.Count == 0)
-            sb.AppendLine($"No new findings ({accepted} accepted from baseline) in {report.ModelsChecked} model(s).");
+            sb.AppendLine(
+                $"No new findings ({accepted} finding(s) accepted as baseline debt) " +
+                $"in {report.ModelsChecked} model(s).");
         else
             AppendGrouped(sb, report, actionable, showStatus: true);
 
@@ -63,7 +65,7 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
 
         var fixedText = fixedCount > 0 ? $", {fixedCount} fixed" : string.Empty;
         sb.AppendLine(
-            $"{newCount} new, {touched} touched-debt, {accepted} accepted (baseline){fixedText} " +
+            $"{newCount} new, {touched} touched-debt, {accepted} accepted as baseline debt{fixedText} " +
             $"across {report.ModelsChecked} model(s).");
         return sb.ToString();
     }

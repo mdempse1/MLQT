@@ -184,6 +184,41 @@ mlqt baseline prune  <library-path>     # drop entries whose findings are now fi
 mlqt baseline update <library-path>     # regenerate: drop fixed entries AND accept new ones as debt
 ```
 
+### Entries vs findings
+
+**A baseline holds entries, and a check reports findings. The two counts are not the same number**,
+which is why every command prints both:
+
+```
+$ mlqt check ./MyLibrary
+104447 finding(s): 2840 error(s), 101607 warning(s), 0 info across 38112 model(s).
+
+$ mlqt baseline create ./MyLibrary
+Wrote 101032 entries to .mlqt/baseline.json, covering 104447 finding(s).
+note: 3415 finding(s) share an entry with another. An entry is one rule + class + element + detail
+      with no line number, so repeats of the same violation within a class collapse into one — a
+      later check still reports and accepts every finding individually, so its accepted count is the
+      larger number.
+
+$ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
+note: baseline holds 101032 entries; one entry can cover several findings, so the accepted count
+      below can be larger
+No new findings (104447 finding(s) accepted as baseline debt) in 38112 model(s).
+```
+
+An entry is a **fingerprint**: rule id + class + element + detail, deliberately *without* a line
+number, so it survives reformatting and edits elsewhere in the file. A rule that fires more than once
+on the same element of the same class — two misplaced imports, the same misspelled word twice in one
+description, the same broken `modelica://` link twice in a Documentation block — therefore produces
+several findings but a single entry. Membership is by fingerprint, so all of them are accepted.
+
+One consequence worth knowing: an entry only becomes prunable when the **last** finding sharing it is
+fixed. Fix one of two identical-fingerprint findings and `prune` will correctly leave the entry alone.
+
+**Severity plays no part in this.** Errors, warnings and infos are all recorded. The only findings a
+baseline never holds are [parse diagnostics](#parse-diagnostics); `create` says so on stderr
+when it skipped any.
+
 ### `prune` vs `update`
 
 Both drop entries you have fixed. The difference is whether the command can **add**:
@@ -198,8 +233,8 @@ debt you have paid off and cannot silently accept debt someone just added. When 
 left alone, it says so:
 
 ```
-Pruned 1 fixed entry from .mlqt/baseline.json; 1 remain
-1 finding(s) are not in the baseline and will still fail the gate. Prune never accepts new debt;
+Pruned 1 entry now fixed from .mlqt/baseline.json; 1 entry remaining
+1 entry is not in the baseline and will still fail the gate. Prune never accepts new debt;
 `baseline update --force` would.
 ```
 
@@ -209,12 +244,13 @@ the ratchet by accident, it refuses unless you say so:
 
 ```
 $ mlqt baseline update ./MyLibrary
-error: this would absorb 1 finding(s) that are not in the baseline, accepting them as debt.
+error: this would absorb 1 entry not in the baseline, accepting it as debt.
        Re-run with --force if that is intended (e.g. you just enabled new rules).
        To only drop findings you have fixed, without accepting anything new, use `baseline prune`.
 
 $ mlqt baseline update ./MyLibrary --force
-Updated .mlqt/baseline.json: 2 finding(s) — absorbed 1 new as accepted debt, dropped 1 fixed
+Updated .mlqt/baseline.json: 2 entries covering 2 finding(s) — absorbed 1 entry as accepted debt,
+dropped 1 entry now fixed
 ```
 
 `--force` is only needed when there is something to absorb; an `update` that would merely drop fixed

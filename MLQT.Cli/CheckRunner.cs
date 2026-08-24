@@ -33,6 +33,13 @@ internal static class CheckRunner
                 stderr.WriteLine($"error: could not read baseline: {ex.Message}");
                 return ExitCodes.Error;
             }
+
+            // Classification is per finding, but the ledger is a set of entries, and several findings
+            // can share one. Without the ledger's own size on screen, an accepted count larger than the
+            // number `baseline create` reported writing reads as a miscount.
+            stderr.WriteLine(
+                $"note: baseline holds {Plural.Entries(baseline.Entries.Count)}; one entry can cover " +
+                "several findings, so the accepted count below can be larger");
         }
 
         // Warn when the baseline was generated under different rules. Both failure modes are silent

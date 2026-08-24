@@ -25,6 +25,29 @@ public class BaselineTests
     }
 
     [Fact]
+    public void CoverageOf_AccountsForBothReasonsEntriesTrailFindings()
+    {
+        // The two numbers a user compares: what a check reports, and what `baseline create` says it
+        // wrote. Coverage has to explain the whole gap or the difference reads as a lost finding.
+        var repeated = F("R", "M", "x");
+        var findings = new[]
+        {
+            repeated, repeated,                       // one entry between them
+            F("R2", "M"),                             // its own entry
+            F(RuleIds.SyntaxError, "M"),              // never baselined
+        };
+
+        var coverage = Baseline.CoverageOf(findings);
+
+        Assert.Equal(4, coverage.Findings);
+        Assert.Equal(2, coverage.Entries);
+        Assert.Equal(1, coverage.ParseDiagnostics);
+        Assert.Equal(3, coverage.Baselineable);
+        Assert.Equal(1, coverage.SharingAnEntry);
+        Assert.Equal(coverage.Entries, Baseline.FromFindings(findings).Entries.Count);
+    }
+
+    [Fact]
     public void SaveLoad_RoundTrips()
     {
         var path = TempPath();

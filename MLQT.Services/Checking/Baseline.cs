@@ -152,6 +152,20 @@ public sealed class Baseline
             RulesOf(settings), settings?.ExcludedLibraries.ToList(), dependencies);
     }
 
+    /// <summary>
+    /// How <paramref name="findings"/> map onto the entries <see cref="FromFindings"/> would write.
+    /// Lives beside it so the counts a command reports cannot drift from what it actually wrote.
+    /// </summary>
+    public static BaselineCoverage CoverageOf(IEnumerable<Finding> findings)
+    {
+        var all = findings as IReadOnlyCollection<Finding> ?? findings.ToList();
+        var baselineable = all.Where(f => !RuleIds.IsParseDiagnostic(f.RuleId)).ToList();
+        return new BaselineCoverage(
+            all.Count,
+            baselineable.Select(f => f.Fingerprint).Distinct(StringComparer.Ordinal).Count(),
+            all.Count - baselineable.Count);
+    }
+
     /// <summary>Baseline entries whose finding no longer appears (i.e. fixed) — candidates for prune.</summary>
     public IReadOnlyList<BaselineEntry> StaleEntries(IEnumerable<Finding> current)
     {
@@ -238,6 +252,27 @@ public sealed class Baseline
         .ThenBy(e => e.Element ?? string.Empty, StringComparer.Ordinal)
         .ThenBy(e => e.Fingerprint, StringComparer.Ordinal)
         .ToList();
+}
+
+/// <summary>
+/// How one run's findings map onto baseline entries. The two counts differ for two reasons, and with
+/// only one of them on screen the other looks like a miscount:
+/// <list type="bullet">
+/// <item>an entry is a fingerprint — rule + class + element + detail, deliberately without a line
+/// number — so repeats of one violation within a class collapse into a single entry;</item>
+/// <item>parse diagnostics are never baselined at all.</item>
+/// </list>
+/// A later check still classifies every finding individually, so its accepted count is the finding
+/// count, not the entry count.
+/// </summary>
+public sealed record BaselineCoverage(int Findings, int Entries, int ParseDiagnostics)
+{
+    /// <summary>Findings eligible for the ledger: everything except the parse diagnostics.</summary>
+    public int Baselineable => Findings - ParseDiagnostics;
+
+    /// <summary>Eligible findings that share an entry with another — the gap between what a check
+    /// reports and what the baseline holds.</summary>
+    public int SharingAnEntry => Baselineable - Entries;
 }
 
 /// <summary>

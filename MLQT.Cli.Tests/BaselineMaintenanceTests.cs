@@ -100,7 +100,7 @@ public class BaselineMaintenanceTests
 
         Assert.Equal(2, code);
         Assert.Equal(before, lib.BaselineText);   // untouched
-        Assert.Contains("would absorb 1 finding(s)", stderr);
+        Assert.Contains("would absorb 1 entry", stderr);
         Assert.Contains("baseline prune", stderr);   // points at the non-destructive option
     }
 
@@ -114,7 +114,7 @@ public class BaselineMaintenanceTests
         Assert.Equal(0, code);
         Assert.DoesNotContain("\"element\": \"a\"", lib.BaselineText);
         Assert.Contains("\"element\": \"c\"", lib.BaselineText);
-        Assert.Contains("absorbed 1 new as accepted debt, dropped 1 fixed", stdout);
+        Assert.Contains("absorbed 1 entry as accepted debt, dropped 1 entry now fixed", stdout);
     }
 
     [Fact]
@@ -135,8 +135,75 @@ public class BaselineMaintenanceTests
             var (code, stdout, _) = Run("baseline", "update", lib.Path);
 
             Assert.Equal(0, code);
-            Assert.Contains("absorbed 0 new as accepted debt, dropped 1 fixed", stdout);
+            Assert.Contains("absorbed 0 entries as accepted debt, dropped 1 entry now fixed", stdout);
         }
+    }
+
+    // ---- entries vs findings ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Two misplaced imports violate ImportStatementsFirst twice in one class, and the rule carries no
+    /// element or discriminator — so both findings share a fingerprint and the ledger holds one entry
+    /// for the pair.
+    /// </summary>
+    private const string RepeatedViolation = """
+        model Lib "described"
+          Real x;
+          import A.B;
+          import C.D;
+        end Lib;
+        """;
+
+    private const string RepeatedViolationSettings = """{ "ImportStatementsFirst": true }""";
+
+    [Fact]
+    public void Create_SaysHowManyFindingsTheEntriesCover()
+    {
+        // The confusing case: `create` reports fewer than the check did, and the check then reports
+        // all of them accepted. Both are right, and neither is legible without the other number.
+        using var lib = new TempLibrary()
+            .WithSettings(RepeatedViolationSettings)
+            .WithModel(RepeatedViolation);
+
+        var (code, stdout, stderr) = Run("baseline", "create", lib.Path);
+
+        Assert.Equal(0, code);
+        Assert.Contains("Wrote 1 entry to", stdout);
+        Assert.Contains("covering 2 finding(s).", stdout);
+        Assert.Contains("1 finding(s) share an entry with another", stderr);
+    }
+
+    [Fact]
+    public void Check_ReportsTheEntryCountAlongsideTheAcceptedFindings()
+    {
+        using var lib = new TempLibrary()
+            .WithSettings(RepeatedViolationSettings)
+            .WithModel(RepeatedViolation);
+        Run("baseline", "create", lib.Path);
+
+        var (code, stdout, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+
+        Assert.Equal(0, code);
+        Assert.Contains("baseline holds 1 entry", stderr);
+        Assert.Contains("2 finding(s) accepted as baseline debt", stdout);
+    }
+
+    [Fact]
+    public void Create_SaysWhenParseDiagnosticsWereNotRecorded()
+    {
+        // Answers the question the numbers provoke — "does the baseline drop errors?" — where it is
+        // asked. Severity is not the filter; being unparseable is.
+        using var lib = new TempLibrary().WithModel("""
+            model Lib "described"
+              parameter Real a = ;
+            end Lib;
+            """);
+
+        var (code, _, stderr) = Run("baseline", "create", lib.Path);
+
+        Assert.Equal(0, code);
+        Assert.Contains("parse diagnostic(s) were not recorded", stderr);
+        Assert.Contains("errors are baselined like anything else", stderr);
     }
 
     [Fact]
