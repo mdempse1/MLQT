@@ -404,7 +404,7 @@ public class ModelicaPackageSaver
             var packageFile = Path.Combine(packageDir, "package.mo");
             try
             {
-                File.WriteAllText(packageFile, code);
+                ModelicaFileEncoding.WriteAllText(packageFile, code);
                 result.WrittenFiles.Add(packageFile);
                 result.ModelIdToFilePath[model.Id] = packageFile;
             }
@@ -430,7 +430,7 @@ public class ModelicaPackageSaver
                 {
                     try
                     {
-                        File.WriteAllLines(packageOrderFile, packageOrderList);
+                        ModelicaFileEncoding.WriteAllLines(packageOrderFile, packageOrderList);
                         result.WrittenFiles.Add(packageOrderFile);
                     }
                     catch (Exception e)
@@ -469,7 +469,7 @@ public class ModelicaPackageSaver
             var filePath = Path.Combine(parentDirectory, fileName);
             try
             {
-                File.WriteAllText(filePath, code);
+                ModelicaFileEncoding.WriteAllText(filePath, code);
                 result.WrittenFiles.Add(filePath);
                 result.ModelIdToFilePath[model.Id] = filePath;
             }

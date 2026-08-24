@@ -92,7 +92,7 @@ internal static class ClassBodyEditor
         if (FileWritability.RequireWritable(filePath, operation) is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(filePath, fileContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(filePath, fileContent);
         var affected = await libraries.ReloadFileAsync(filePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, libraries, resources, session);
         return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);
@@ -119,7 +119,7 @@ internal static class ClassBodyEditor
         if (FileWritability.RequireWritable(filePath, operation) is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(filePath, newFileContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(filePath, newFileContent);
         var affected = await libraries.ReloadFileAsync(filePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, libraries, resources, session);
         return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);

@@ -98,19 +98,20 @@ public class DocumentationAccuracyTests
                 mismatched.Add($"{documented.FullName}: doc='{documented.Description}' source='{sourceDescription}'");
         }
 
-        // The handful that differ are non-ASCII: the documentation says "Krüger" and the source
-        // side says "KrÃ¼ger". That is the .mo load path reading UTF-8 files as Latin-1, not a
-        // fault in the documentation reader — which decodes the entities and the declared UTF-8
-        // charset correctly. Left as-is: changing how source files are read is a separate concern
-        // with a far wider blast radius than this feature.
+        // Exact, including the non-ASCII descriptions. Those used to differ — the documentation
+        // said "Krüger" while the source side said "KrÃ¼ger" — because the .mo load path read every
+        // file as Latin-1. Now that encoding is detected per file, both sides agree character for
+        // character, which makes this a genuine cross-check of the reader rather than one with a
+        // known excuse attached.
         _output.WriteLine($"descriptions compared: {compared}, mismatched: {mismatched.Count}");
         foreach (var line in mismatched.Take(5))
             _output.WriteLine("  " + line);
 
         Assert.True(compared > 1000, $"only {compared} descriptions were comparable");
         Assert.True(
-            mismatched.Count <= compared / 100,
-            $"{mismatched.Count} of {compared} descriptions differ from source");
+            mismatched.Count == 0,
+            $"{mismatched.Count} of {compared} descriptions differ from source, e.g. " +
+            string.Join(" | ", mismatched.Take(3)));
     }
 
     private void CompareExtends(DymolaHelpDocument document, Dictionary<string, ModelNode> source)

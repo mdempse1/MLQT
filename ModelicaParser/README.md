@@ -274,6 +274,32 @@ foreach (var (word, offset) in TextExtractor.TokenizeToWords(plainText))
 }
 ```
 
+### File Encoding
+
+Modelica source files carry no encoding declaration, and the population in the wild is mixed:
+older libraries use single-byte Windows-1252 for curly quotes and accented characters, while most
+files are UTF-8 with no byte-order mark. Neither encoding reads all of them, so it is detected per
+file — and, critically, a file is **written back in the encoding it was read in**.
+
+```csharp
+using ModelicaParser.Helpers;
+
+var (text, encoding) = ModelicaFileEncoding.ReadAllText(path);
+// ... modify text ...
+ModelicaFileEncoding.WriteAllText(path, text, encoding);
+
+// Callers that only read:
+string source = ModelicaFileEncoding.ReadAllTextOnly(path);
+
+// Callers that only write: the existing file's encoding is preserved automatically.
+ModelicaFileEncoding.WriteAllText(path, rendered);
+```
+
+**Every `.mo` and `package.order` read and write must go through this class.** Reading here and
+then writing with a plain `File.WriteAllText` re-encodes whatever was decoded: a Latin-1 read of
+the two UTF-8 bytes for `ü` yields two characters, which UTF-8 then writes as four bytes — and the
+damage doubles again on every subsequent save.
+
 ### Reading an Encrypted Library's Documentation
 
 Commercial libraries ship as a single encrypted `package.moe` with no readable source, but almost

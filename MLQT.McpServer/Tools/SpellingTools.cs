@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaParser.Helpers;
 using ModelicaGraph;
 using ModelicaParser.SpellChecking;
 using MLQT.McpServer.Dtos;
@@ -183,7 +184,7 @@ public sealed class SpellingTools
             return readOnly;
         }
 
-        await File.WriteAllTextAsync(ctx.FilePath, rendered);
+        await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, rendered);
         // Re-parse the file from disk so all its model nodes are rebuilt from the saved content.
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);

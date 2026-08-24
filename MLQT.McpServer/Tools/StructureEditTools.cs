@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -635,7 +636,7 @@ public sealed class StructureEditTools
             var (ctx, error) = ClassBodyEditor.Open(_libraries, op.ClassId);
             if (error is not null)
                 return new ToolError($"Operation {i} ({op.Op} on '{op.ClassId}'): {((ToolError)error).Error}");
-            snapshots.TryAdd(ctx!.FilePath, await File.ReadAllTextAsync(ctx.FilePath));
+            snapshots.TryAdd(ctx!.FilePath, await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath));
         }
 
         // Apply in order; each op writes and reloads, so later ops see earlier ones.
@@ -653,7 +654,7 @@ public sealed class StructureEditTools
 
         if (preview)
         {
-            var contents = snapshots.Keys.Select(p => new BatchFileChange(p, File.ReadAllText(p))).ToList();
+            var contents = snapshots.Keys.Select(p => new BatchFileChange(p, ModelicaFileEncoding.ReadAllTextOnly(p))).ToList();
             await RollbackAsync(snapshots);
             return new BatchEditResult(PreviewOnly: true, operations.Count, contents);
         }
@@ -688,9 +689,9 @@ public sealed class StructureEditTools
         var affected = new List<string>();
         foreach (var (path, original) in snapshots)
         {
-            if (!File.Exists(path) || File.ReadAllText(path) == original)
+            if (!File.Exists(path) || ModelicaFileEncoding.ReadAllTextOnly(path) == original)
                 continue; // untouched (e.g. an op failed before writing this file)
-            await File.WriteAllTextAsync(path, original);
+            await ModelicaFileEncoding.WriteAllTextAsync(path, original);
             affected.AddRange(await _libraries.ReloadFileAsync(path));
         }
         if (affected.Count > 0)

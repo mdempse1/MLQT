@@ -1,4 +1,5 @@
-﻿@using System.IO
+﻿@using ModelicaParser.Helpers
+@using System.IO
 @using System.Text.RegularExpressions
 @using Antlr4.Runtime
 @using DymolaInterface
@@ -1077,7 +1078,7 @@
 
         try
         {
-            return File.ReadAllText(fileNode.FilePath, System.Text.Encoding.Latin1);
+            return ModelicaFileEncoding.ReadAllTextOnly(fileNode.FilePath);
         }
         catch
         {
@@ -1563,7 +1564,7 @@ document.head.appendChild(style);
                 // Read the raw file so we can make a minimal edit that preserves its existing line
                 // endings — the annotation is spliced in without rewriting the whole file (which would
                 // otherwise show as hundreds of unrelated line-ending changes on a CRLF library).
-                fileContent = await Task.Run(() => File.ReadAllText(filePath));
+                fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(filePath);
             }
             catch (Exception ex)
             {
@@ -1607,7 +1608,7 @@ document.head.appendChild(style);
                     FileMonitoringService.StopMonitoring(repoId);
                     monitorPaused = true;
                 }
-                await Task.Run(() => File.WriteAllText(filePath, newContent));
+                await ModelicaFileEncoding.WriteAllTextAsync(filePath, newContent);
             }
             catch (Exception ex)
             {
@@ -1814,7 +1815,7 @@ document.head.appendChild(style);
                 FileMonitoringService.StopMonitoring(repoId);
                 monitorPaused = true;
             }
-            await Task.Run(() => File.WriteAllText(filePath, rendered));
+            await ModelicaFileEncoding.WriteAllTextAsync(filePath, rendered);
         }
         catch (Exception ex)
         {

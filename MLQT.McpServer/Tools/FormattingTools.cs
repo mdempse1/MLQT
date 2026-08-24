@@ -147,14 +147,14 @@ public sealed class FormattingTools
         if (preview)
             return new FormatClassResult(classId, PreviewOnly: true, Changed: false, ctx.FilePath, rendered);
 
-        var original = File.Exists(ctx.FilePath) ? await File.ReadAllTextAsync(ctx.FilePath) : null;
+        var original = File.Exists(ctx.FilePath) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath) : null;
         var changed = original is null || NormalizeEol(original) != NormalizeEol(rendered);
         if (changed)
         {
             if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)
                 return readOnly;
 
-            await File.WriteAllTextAsync(ctx.FilePath, rendered);
+            await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, rendered);
             var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
             await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
         }

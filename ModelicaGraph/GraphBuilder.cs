@@ -332,7 +332,7 @@ public static class GraphBuilder
             {
                 try
                 {
-                    var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath, Encoding.Latin1));
+                    var models = LoadModelicaFile(graph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                     foreach (var model in models)
                     {
                         modelIDs.Add(model);
@@ -390,7 +390,7 @@ public static class GraphBuilder
                     if (File.Exists(packageOrderPath))
                     {
                         // Read the package.order file
-                        var packageOrderContent = File.ReadAllLines(packageOrderPath, Encoding.Latin1);
+                        var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
 
                         // Find the TOP-LEVEL package model from the package.mo file
                         // A package.order file only applies to the main package in the file, not nested packages
@@ -1294,7 +1294,7 @@ public static class GraphBuilder
             if (packageModels.Count > 0)
             {
                 var packageNode = packageModels[0]; // The package model
-                var orderLines = File.ReadAllLines(fullPath)
+                var orderLines = ModelicaFileEncoding.ReadAllLinesOnly(fullPath)
                     .Select(l => l.Trim())
                     .Where(l => !string.IsNullOrEmpty(l))
                     .ToArray();

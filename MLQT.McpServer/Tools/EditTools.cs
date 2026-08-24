@@ -109,7 +109,7 @@ public sealed class EditTools
         if (FileWritability.RequireWritable(ctx.FilePath, "update this class") is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(ctx.FilePath, fileContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, fileContent);
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
 
@@ -223,7 +223,7 @@ public sealed class EditTools
         if (FileWritability.PreflightWritable(new[] { newFilePath }, $"create class '{newId}'") is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(newFilePath, content);
+        await ModelicaFileEncoding.WriteAllTextAsync(newFilePath, content);
         AppendToPackageOrder(dir, className);
         var affected = await _libraries.ReloadFileAsync(newFilePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
@@ -250,8 +250,8 @@ public sealed class EditTools
             return readOnly;
 
         Directory.CreateDirectory(packageDir);
-        await File.WriteAllTextAsync(newPackageMo, content);
-        await File.WriteAllTextAsync(Path.Combine(packageDir, "package.order"),
+        await ModelicaFileEncoding.WriteAllTextAsync(newPackageMo, content);
+        await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(packageDir, "package.order"),
             packageMembers.Count > 0 ? string.Join("\n", packageMembers) + "\n" : string.Empty);
         AppendToPackageOrder(parentDir, className); // register the package in its parent's package.order
         var affected = await _libraries.ReloadFileAsync(newPackageMo);
@@ -293,7 +293,7 @@ public sealed class EditTools
         if (FileWritability.RequireWritable(ctx.FilePath, $"create class '{newId}'") is { } readOnly)
             return readOnly;
 
-        await File.WriteAllTextAsync(ctx.FilePath, fileContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, fileContent);
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, className);
         var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
@@ -372,7 +372,7 @@ public sealed class EditTools
         }
         else
         {
-            await File.WriteAllTextAsync(ctx.FilePath, newOwnerContent!);
+            await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, newOwnerContent!);
             if (string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
                 RemoveFromPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, node.Name);
             affected = await _libraries.ReloadFileAsync(ctx.FilePath);
@@ -458,7 +458,7 @@ public sealed class EditTools
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
-            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -491,7 +491,7 @@ public sealed class EditTools
         var touched = new List<string>();
         foreach (var (path, content) in requalified)
         {
-            await File.WriteAllTextAsync(path, content);
+            await ModelicaFileEncoding.WriteAllTextAsync(path, content);
             touched.AddRange(await _libraries.ReloadFileAsync(path));
         }
 
@@ -569,7 +569,7 @@ public sealed class EditTools
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
-            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -609,7 +609,7 @@ public sealed class EditTools
         foreach (var (path, content) in changed)
         {
             var target = subtreeFiles.Contains(path) ? newDir + path[dir.Length..] : path;
-            await File.WriteAllTextAsync(target, content);
+            await ModelicaFileEncoding.WriteAllTextAsync(target, content);
             if (subtreeFiles.Contains(path)) { oldPaths.Add(path); newPaths.Add(target); }
             else newPaths.Add(path);
         }
@@ -662,7 +662,7 @@ public sealed class EditTools
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
-            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
             var locator = new ReferenceLocator(graph, targetSet);
             locator.Visit(tree);
@@ -710,7 +710,7 @@ public sealed class EditTools
         foreach (var (path, content) in changed)
         {
             var target = subtreeFiles.Contains(path) ? newDir + path[dir.Length..] : path;
-            await File.WriteAllTextAsync(target, content);
+            await ModelicaFileEncoding.WriteAllTextAsync(target, content);
             if (subtreeFiles.Contains(path)) { oldPaths.Add(path); newPaths.Add(target); }
             else newPaths.Add(path);
         }
@@ -758,10 +758,10 @@ public sealed class EditTools
         var path = Path.Combine(directory, "package.order");
         if (!File.Exists(path))
             return;
-        var lines = File.ReadAllLines(path, Encoding.Latin1)
+        var lines = ModelicaFileEncoding.ReadAllLinesOnly(path)
             .Select(l => string.Equals(l.Trim(), oldName, StringComparison.Ordinal) ? newName : l)
             .ToList();
-        File.WriteAllLines(path, lines, Encoding.Latin1);
+        ModelicaFileEncoding.WriteAllLines(path, lines);
     }
 
     // Delete a whole directory package: its directory (recursively), its parent's package.order entry, and
@@ -858,7 +858,7 @@ public sealed class EditTools
         if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
             return new ToolError("Could not uniquely locate the class within its source file to move it.");
         var content = PrependWithinClause(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
-        await File.WriteAllTextAsync(ctx.FilePath, content);
+        await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, content);
         if (string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             RemoveFromPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, node.Name);
         return await _libraries.ReloadFileAsync(ctx.FilePath);
@@ -877,7 +877,7 @@ public sealed class EditTools
         {
             var dir = Path.GetDirectoryName(tgtCtx.FilePath)!;
             var newFilePath = Path.Combine(dir, leaf + ".mo");
-            await File.WriteAllTextAsync(newFilePath, $"within {newParentId};\n{classCode.TrimEnd()}\n");
+            await ModelicaFileEncoding.WriteAllTextAsync(newFilePath, $"within {newParentId};\n{classCode.TrimEnd()}\n");
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
@@ -900,7 +900,7 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await File.WriteAllTextAsync(tgtCtx.FilePath, PrependWithinClause(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, PrependWithinClause(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);
@@ -1007,7 +1007,7 @@ public sealed class EditTools
         {
             // Normalize line endings to match the parse-tree offsets (ParseWithErrors normalizes internally),
             // so span-based reference edits align even when the file on disk uses CRLF.
-            var text = ModelicaParserHelper.NormalizeLineEndings(await File.ReadAllTextAsync(path));
+            var text = ModelicaParserHelper.NormalizeLineEndings(await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
             var (tree, _) = ModelicaParserHelper.ParseWithErrors(text);
 
             var locator = new ReferenceLocator(graph, new[] { classId });
@@ -1058,7 +1058,7 @@ public sealed class EditTools
         var affected = new List<string>();
         foreach (var (path, newContent, _) in planned)
         {
-            await File.WriteAllTextAsync(path, newContent);
+            await ModelicaFileEncoding.WriteAllTextAsync(path, newContent);
             affected.AddRange(await _libraries.ReloadFileAsync(path));
         }
         await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
@@ -1095,10 +1095,10 @@ public sealed class EditTools
         var path = Path.Combine(directory, "package.order");
         if (!File.Exists(path))
             return;
-        var lines = File.ReadAllLines(path, Encoding.Latin1)
+        var lines = ModelicaFileEncoding.ReadAllLinesOnly(path)
             .Where(l => !string.Equals(l.Trim(), className, StringComparison.Ordinal))
             .ToList();
-        File.WriteAllLines(path, lines, Encoding.Latin1);
+        ModelicaFileEncoding.WriteAllLines(path, lines);
     }
 
     private static string DescribeErrors(IReadOnlyList<ParserError> errors)
@@ -1137,13 +1137,13 @@ public sealed class EditTools
         var path = Path.Combine(directory, "package.order");
         if (!File.Exists(path))
             return;
-        var lines = File.ReadAllLines(path, Encoding.Latin1).ToList();
+        var lines = ModelicaFileEncoding.ReadAllLinesOnly(path).ToList();
         if (lines.Any(l => string.Equals(l.Trim(), className, StringComparison.Ordinal)))
             return;
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
             lines.RemoveAt(lines.Count - 1);
         lines.Add(className);
-        File.WriteAllLines(path, lines, Encoding.Latin1);
+        ModelicaFileEncoding.WriteAllLines(path, lines);
     }
 
     private static string PrependWithinClause(string ownerCode, string? parentModelName)

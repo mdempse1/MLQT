@@ -360,7 +360,7 @@ public class RepositoryService : IRepositoryService
     {
         try
         {
-            var content = File.ReadAllText(packageMoPath);
+            var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
             var models = ModelicaParserHelper.ExtractModels(content);
             var topLevel = models.FirstOrDefault(m => m.ParentModelName == null);
             return topLevel?.Name;
@@ -1249,7 +1249,7 @@ public class RepositoryService : IRepositoryService
         {
             // For local directories, just read the current file
             var fullPath = Path.Combine(repository.LocalPath, filePath);
-            return File.Exists(fullPath) ? File.ReadAllText(fullPath) : null;
+            return File.Exists(fullPath) ? ModelicaFileEncoding.ReadAllTextOnly(fullPath) : null;
         }
 
         IRevisionControlSystem vcs = repository.VcsType switch

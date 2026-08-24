@@ -1,3 +1,4 @@
+@using ModelicaParser.Helpers
 @using MLQT.Shared.Pages
 @using DymolaInterface
 @using OpenModelicaInterface
@@ -2683,7 +2684,7 @@
         {
             try
             {
-                await File.WriteAllTextAsync(filePath, content);
+                await ModelicaFileEncoding.WriteAllTextAsync(filePath, content);
                 _formattedFileTimestamps[filePath] = File.GetLastWriteTimeUtc(filePath);
                 Debug("MainLayout", $"Saved formatted file: {filePath}");
             }

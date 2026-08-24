@@ -165,6 +165,7 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 - **ExternalDocs** (`ExternalDocs/`) - `DymolaHelpParser`/`DymolaHelpReader` recover classes (name, description, extends, has-icon) from a vendor's generated help HTML, for encrypted libraries with no readable source. Scanning is **tag-oriented, never line-oriented** — Dymola 2024x Refresh 1 emits a junk token where newlines belong
 - **StyleRules** (`StyleRules/`) - Style rule visitors (extends `VisitorWithModelNameTracking` base class). Visitors only check the outermost class — nested class definitions are skipped because each has its own `ModelNode` and is checked independently
 - **SpellChecking** (`SpellChecking/`) - Hunspell-based spell checker, text extraction, and embedded dictionaries
+- **ModelicaFileEncoding** (`Helpers/`) - **All `.mo`/`package.order` reads and writes must go through this.** Modelica files declare no encoding and the population is mixed: older libraries use single-byte Windows-1252, most files are BOM-less UTF-8. Encoding is detected per file (BOM → strict UTF-8 → Latin-1 fallback, which cannot fail) and **written back in the encoding it was read in**. A read here paired with a plain `File.WriteAllText` re-encodes the decoded characters and corrupts the file, progressively, on every save
 
 **Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code.
 

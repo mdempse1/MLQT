@@ -1,6 +1,7 @@
 using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
 using ModelicaGraph;
+using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.ExternalDocs;
 using ModelicaParser.Icons;
@@ -116,7 +117,7 @@ public class LibraryDataService : ILibraryDataService
                 }
                 else
                 {
-                    modelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, File.ReadAllText(filePath));
+                    modelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                 }
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
@@ -358,7 +359,7 @@ public class LibraryDataService : ILibraryDataService
             if (!File.Exists(packageOrderPath)) continue;
 
             // Read the package.order file
-            var packageOrderContent = File.ReadAllLines(packageOrderPath);
+            var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
 
             // Find the top-level package model from the package.mo file
             var fileId = GraphBuilder.GenerateFileId(packageMoFile);
@@ -612,7 +613,7 @@ public class LibraryDataService : ILibraryDataService
         {
             await Task.Run(() =>
             {
-                var newModelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, File.ReadAllText(filePath));
+                var newModelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                 affectedModelIds.AddRange(newModelIds);
 
                 // Update library index with new models

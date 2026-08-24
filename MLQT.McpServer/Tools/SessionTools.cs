@@ -5,6 +5,7 @@ using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
 using MLQT.Services;
+using ModelicaParser.Helpers;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
@@ -134,8 +135,8 @@ public sealed class SessionTools
             return new ToolError($"Could not create the library folder '{libraryDir}': {ex.Message}.");
         }
 
-        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), packageContent);
-        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), string.Empty);
+        await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), packageContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), string.Empty);
 
         if (!loadIntoSession)
             return new CreateLibraryResult(name, libraryDir, null, Loaded: false, PreviewOnly: false, null);

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -84,7 +85,7 @@ public sealed class SuppressionTools
         try
         {
             // Read raw so the write is a minimal edit that keeps the file's existing line endings.
-            fileContent = await File.ReadAllTextAsync(owner.FilePath);
+            fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(owner.FilePath);
         }
         catch (Exception ex)
         {
