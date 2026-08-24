@@ -29,7 +29,17 @@ public sealed class GraphAnalysisContext
     {
         Graph = graph;
         Settings = settings;
-        Models = models;
+
+        // Classes recovered from an encrypted library's documentation are dropped from the reported
+        // set here, at the one place every analyzer reads it from, rather than left to each caller.
+        // They stay in Graph, so a vendor class still counts as a user of what it references — but a
+        // finding *about* one would be a finding about MLQT's reconstruction of a third-party library
+        // the user cannot edit. The desktop app builds this context from a repository's libraries,
+        // which is exactly where an encrypted library vendored into a checkout turns up.
+        Models = models.Any(m => m.IsExternalStub)
+            ? models.Where(m => !m.IsExternalStub).ToList()
+            : models;
+
         DependenciesAnalyzed = dependenciesAnalyzed ?? graph.DependenciesAnalyzed;
     }
 }

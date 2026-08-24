@@ -79,6 +79,21 @@ public class ExternalStubPerformanceTests
         Assert.Equal(before, graph.GetNode<ModelNode>("Vendor.Base")!.Definition.ModelicaCode);
     }
 
+    [Fact]
+    public void GraphAnalyses_NeverReportOnAnExternalStub()
+    {
+        // The desktop app builds this context from a repository's libraries, and a repository can
+        // contain an encrypted library — so the filter has to be in the context, not in the caller.
+        var graph = BuildGraph(out var userModel);
+        var stub = graph.GetNode<ModelNode>("Vendor.Derived")!;
+
+        var context = new Analysis.GraphAnalysisContext(
+            graph, new StyleCheckingSettings(), [userModel, stub]);
+
+        Assert.DoesNotContain(context.Models, m => m.IsExternalStub);
+        Assert.Contains(context.Models, m => m.Id == "MyLib.Widget");
+    }
+
     #region Icon inheritance
 
     private static DirectedGraph IconGraph()
