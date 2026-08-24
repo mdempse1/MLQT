@@ -110,6 +110,36 @@ The issues table provides two filtering mechanisms:
 - **"Only this model" toggle** — When enabled, the table only shows issues for the currently selected model. When disabled (default), issues from all models are shown.
 - **Search field** — Type text to filter issues by model name, description, details, or severity. Multiple search terms (space-separated) are matched independently.
 
+### Exporting the Issue List
+
+The download button in the issues toolbar writes every issue to a JSON file — you choose the folder,
+and it is saved as `mlqt-issues-<timestamp>.json`.
+
+**The export always contains the whole list**, regardless of the search box, the "Only this model"
+toggle and the "Changes vs baseline" switch. That is deliberate: the usual reason to export is to
+compare against a CI run, and an export that quietly honoured the on-screen filters would look like
+evidence while reproducing the filter as a difference.
+
+Each entry carries the same fields, with the same names, as the CLI's `--format json` findings
+array — `RuleId`, `Severity`, `Status`, `Model`, `Element`, `Line`, `Message`, `Fingerprint`,
+`File` — so the two can be compared directly:
+
+```bash
+mlqt check ./MyLibrary --format json --out cli.json
+```
+
+```bash
+# issues the CLI reports that the app does not, keyed on model + rule + line
+jq -r '.findings[] | "\(.Model)|\(.RuleId)|\(.Line)"' cli.json | sort > cli.txt
+jq -r '.findings[] | "\(.Model)|\(.RuleId)|\(.Line)"' mlqt-issues-*.json | sort > gui.txt
+comm -23 cli.txt gui.txt
+```
+
+If the two disagree, the difference nearly always clusters on one rule id or one library prefix,
+which names the cause immediately. Common ones: a filter left on in the app, per-repository style
+settings differing from the `.mlqt/settings.json` the CLI resolved, or a library present in the
+repository that the app has not been asked to load.
+
 ### Interacting with Issues
 
 - **Click a row** to navigate to the model containing that issue. The code viewer updates to show that model's code.

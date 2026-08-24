@@ -150,6 +150,11 @@
                             Disabled="@(!BaselineStatus.HasBaseline)" />
                     </MudTooltip>
                     <MudSwitch T="bool" ValueChanged="OnIssuesScopeChanged" Value="@IssuesScopeAllModels" Label="Only this model" Color="Color.Primary" Size="Size.Small" />
+                    <MudTooltip Text="Export every issue to a JSON file — the whole list, ignoring the filters and search above">
+                        <MudIconButton Icon="@Icons.Material.Filled.FileDownload" Size="Size.Small"
+                            Color="Color.Default" Disabled="_exporting" OnClick="ExportIssuesAsync"
+                            aria-label="Export all issues" />
+                    </MudTooltip>
                     <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
                         AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
                         Typo="Typo.body1"></MudTextField>
@@ -1410,6 +1415,96 @@ document.head.appendChild(style);
     {
         ShowChangesOnly = value;
         StateHasChanged();
+    }
+
+    private bool _exporting;
+
+    /// <summary>
+    /// Writes the issue list to a JSON file, in the same shape as the CLI's <c>--format json</c>
+    /// findings array so the two can be compared directly.
+    ///
+    /// <para>Exports the <b>complete</b> list, deliberately ignoring the search box and the
+    /// scope/baseline switches. An export that silently honoured the on-screen filters would be the
+    /// worst possible answer to "why do the app and CI disagree on the count" — it would look like
+    /// evidence while quietly reproducing the filter as a difference.</para>
+    /// </summary>
+    private async Task ExportIssuesAsync()
+    {
+        if (_exporting)
+            return;
+
+        var messages = CodeReviewService.LogMessages.ToList();
+        if (messages.Count == 0)
+        {
+            Snackbar.Add("There are no issues to export.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _exporting = true;
+        try
+        {
+            var folder = await FilePickerService.PickFolderAsync("Select a folder to export the issue list to");
+            if (string.IsNullOrEmpty(folder))
+                return;
+
+            // Model to file, so an exported issue can be traced back to a path the same way the CLI
+            // reports one.
+            var graph = LibraryDataService.CombinedGraph;
+            var fileByModel = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var file in graph.FileNodes)
+                foreach (var model in graph.GetModelsInFile(file.Id))
+                    fileByModel[model.Id] = file.FilePath;
+
+            var payload = new
+            {
+                tool = "mlqt-gui",
+                exported = DateTime.Now.ToString("o"),
+                project = RepositoryService.GetActiveProject()?.Name,
+                findingCount = messages.Count,
+                findings = messages
+                    .OrderBy(m => m.ModelName, StringComparer.Ordinal)
+                    .ThenBy(m => m.LineNumber)
+                    .ThenBy(m => m.RuleId ?? string.Empty, StringComparer.Ordinal)
+                    // Field names match the CLI's --format json findings array exactly, so the two
+                    // exports can be diffed without translating between them first.
+                    .Select(m => new
+                    {
+                        RuleId = m.RuleId,
+                        Severity = m.Severity,
+                        Status = BaselineStatus.HasBaseline ? BaselineStatus.StatusOf(m)?.ToString() : null,
+                        Model = m.ModelName,
+                        Element = m.ElementPath,
+                        Line = m.LineNumber,
+                        Message = m.Summary,
+                        Fingerprint = m.Fingerprint,
+                        File = fileByModel.TryGetValue(m.ModelName, out var path) ? path : null,
+                        Source = m.Source,
+                        Details = string.IsNullOrEmpty(m.Details) ? null : m.Details
+                    })
+                    .ToList()
+            };
+
+            var name = $"mlqt-issues-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var target = Path.Combine(folder, name);
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+
+            await File.WriteAllTextAsync(target, json);
+            Snackbar.Add($"Exported {messages.Count} issues to {target}", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", "Failed to export the issue list", ex);
+            Snackbar.Add($"Could not export the issue list: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _exporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private string IssuesHeading
