@@ -2,159 +2,198 @@ using MLQT.Services.Interfaces;
 
 namespace MLQT.Services;
 
-/// <summary>
-/// Manages a custom spell-checking dictionary stored at %LocalAppData%/MLQT/custom_dictionary.txt.
-/// One word per line, sorted, case-insensitive. Shared across all repositories.
-/// </summary>
+/// <inheritdoc cref="ICustomDictionaryService"/>
 public class CustomDictionaryService : ICustomDictionaryService
 {
-    private readonly HashSet<string> _words = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _lock = new();
-    private readonly string _dictionaryPath;
+    /// <summary>File name of a repository's word list, beside its <c>settings.json</c>.</summary>
+    public const string DictionaryFileName = "dictionary.txt";
 
-    public event Action? OnDictionaryChanged;
+    private const string MlqtDirectoryName = ".mlqt";
+    private const string LegacyFileName = "custom_dictionary.txt";
+
+    // One entry per repository root. Read on first use and kept, because the spell checker asks for
+    // a repository's words once per class checked.
+    private readonly Dictionary<string, HashSet<string>> _wordsByRoot =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly object _lock = new();
+    private readonly string? _legacyPath;
+
+    public event Action<string>? OnDictionaryChanged;
 
     public CustomDictionaryService()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _dictionaryPath = Path.Combine(appData, "MLQT", "custom_dictionary.txt");
+        var legacy = Path.Combine(appData, "MLQT", LegacyFileName);
+        _legacyPath = File.Exists(legacy) ? legacy : null;
     }
 
-    /// <summary>
-    /// Constructor for testing that allows specifying the dictionary file path.
-    /// </summary>
-    internal CustomDictionaryService(string dictionaryPath)
+    /// <summary>Constructor for testing, pointing the legacy list somewhere predictable.</summary>
+    internal CustomDictionaryService(string? legacyDictionaryPath)
     {
-        _dictionaryPath = dictionaryPath;
+        _legacyPath = legacyDictionaryPath is not null && File.Exists(legacyDictionaryPath)
+            ? legacyDictionaryPath
+            : null;
     }
 
-    public IReadOnlyCollection<string> CustomWords
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
-            }
-        }
-    }
+    public string? LegacyMachineDictionaryPath => _legacyPath;
 
-    public async Task LoadAsync()
-    {
-        if (!File.Exists(_dictionaryPath))
-            return;
+    public string PathFor(string repositoryRoot) =>
+        Path.Combine(repositoryRoot, MlqtDirectoryName, DictionaryFileName);
 
-        var lines = await File.ReadAllLinesAsync(_dictionaryPath);
+    public IReadOnlyCollection<string> WordsFor(string? repositoryRoot)
+    {
+        if (string.IsNullOrEmpty(repositoryRoot))
+            return [];
+
         lock (_lock)
         {
-            _words.Clear();
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
-            }
+            if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached))
+                return Snapshot(cached);
+        }
+
+        // Not seen yet: read it now rather than returning nothing and being quietly wrong. Callers
+        // reach this from the checking path, where "no words" and "not loaded yet" look identical in
+        // the results and only one of them is true.
+        var words = ReadFile(PathFor(repositoryRoot));
+        lock (_lock)
+        {
+            _wordsByRoot[repositoryRoot] = words;
+            return Snapshot(words);
         }
     }
 
-    public async Task AddWordAsync(string word)
+    public async Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot)
+    {
+        var words = await Task.Run(() => ReadFile(PathFor(repositoryRoot)));
+        lock (_lock)
+        {
+            _wordsByRoot[repositoryRoot] = words;
+            return Snapshot(words);
+        }
+    }
+
+    public async Task AddWordAsync(string repositoryRoot, string word)
     {
         if (string.IsNullOrWhiteSpace(word))
             return;
 
-        bool added;
+        var trimmed = word.Trim();
         lock (_lock)
         {
-            added = _words.Add(word.Trim());
+            var words = Cached(repositoryRoot);
+            if (!words.Add(trimmed))
+                return;
         }
 
-        if (added)
-        {
-            await SaveAsync();
-            OnDictionaryChanged?.Invoke();
-        }
+        await SaveAsync(repositoryRoot);
+        OnDictionaryChanged?.Invoke(repositoryRoot);
     }
 
-    public async Task RemoveWordAsync(string word)
+    public async Task RemoveWordAsync(string repositoryRoot, string word)
     {
-        if (string.IsNullOrWhiteSpace(word))
-            return;
-
-        bool removed;
         lock (_lock)
         {
-            removed = _words.Remove(word.Trim());
+            var words = Cached(repositoryRoot);
+            if (!words.Remove(word))
+                return;
         }
 
-        if (removed)
-        {
-            await SaveAsync();
-            OnDictionaryChanged?.Invoke();
-        }
+        await SaveAsync(repositoryRoot);
+        OnDictionaryChanged?.Invoke(repositoryRoot);
     }
 
-    public async Task ImportAsync(string filePath)
+    public async Task<int> MergeFromAsync(string repositoryRoot, string sourceFile)
     {
-        var lines = await File.ReadAllLinesAsync(filePath);
+        var incoming = await Task.Run(() => ReadFile(sourceFile));
+        int added;
+
         lock (_lock)
         {
-            _words.Clear();
-            foreach (var line in lines)
+            var words = Cached(repositoryRoot);
+            var before = words.Count;
+            words.UnionWith(incoming);
+            added = words.Count - before;
+        }
+
+        if (added > 0)
+        {
+            await SaveAsync(repositoryRoot);
+            OnDictionaryChanged?.Invoke(repositoryRoot);
+        }
+
+        return added;
+    }
+
+    public async Task ExportAsync(string repositoryRoot, string targetFile)
+    {
+        var words = WordsFor(repositoryRoot);
+        var directory = Path.GetDirectoryName(targetFile);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        await File.WriteAllLinesAsync(targetFile, words);
+    }
+
+    /// <summary>Caller must hold the lock.</summary>
+    private HashSet<string> Cached(string repositoryRoot)
+    {
+        if (!_wordsByRoot.TryGetValue(repositoryRoot, out var words))
+        {
+            words = ReadFile(PathFor(repositoryRoot));
+            _wordsByRoot[repositoryRoot] = words;
+        }
+
+        return words;
+    }
+
+    private static IReadOnlyCollection<string> Snapshot(HashSet<string> words) =>
+        words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
+
+    private static HashSet<string> ReadFile(string path)
+    {
+        var words = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(path))
+            return words;
+
+        try
+        {
+            foreach (var line in File.ReadAllLines(path))
             {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
+                var word = line.Trim();
+                // '#' starts a comment so a team can explain why a word is accepted — the list is a
+                // reviewed file in the repository now, not a private scratch pad.
+                if (word.Length > 0 && !word.StartsWith('#'))
+                    words.Add(word);
             }
         }
+        catch (IOException)
+        {
+            // An unreadable list means no accepted words, which is the safe direction: it reports
+            // spellings rather than hiding them.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
 
-        await SaveAsync();
-        OnDictionaryChanged?.Invoke();
+        return words;
     }
 
-    public async Task ExportAsync(string filePath)
+    private async Task SaveAsync(string repositoryRoot)
     {
         List<string> sorted;
         lock (_lock)
         {
-            sorted = _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList();
+            sorted = _wordsByRoot.TryGetValue(repositoryRoot, out var words)
+                ? words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList()
+                : [];
         }
 
-        var directory = Path.GetDirectoryName(filePath);
+        var path = PathFor(repositoryRoot);
+        var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllLinesAsync(filePath, sorted);
-    }
-
-    public async Task MergeAsync(string filePath)
-    {
-        var lines = await File.ReadAllLinesAsync(filePath);
-        lock (_lock)
-        {
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
-            }
-        }
-
-        await SaveAsync();
-        OnDictionaryChanged?.Invoke();
-    }
-
-    private async Task SaveAsync()
-    {
-        List<string> sorted;
-        lock (_lock)
-        {
-            sorted = _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList();
-        }
-
-        var directory = Path.GetDirectoryName(_dictionaryPath);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        await File.WriteAllLinesAsync(_dictionaryPath, sorted);
+        await File.WriteAllLinesAsync(path, sorted);
     }
 }

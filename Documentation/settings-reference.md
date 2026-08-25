@@ -278,13 +278,15 @@ A per-finding waiver can be written into the source with a `__MLQT(suppress="<ru
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica-specific terms (Modelica, Dymola, Jacobian, linearization, etc.) is also included.
 
-Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, add the word to your custom dictionary, ignore the violation, or close the menu. See [Spell Checking](spell-checking.md) for full details.
+Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, accept the word into the repository's word list, ignore the violation, or close the menu. See [Spell Checking](spell-checking.md) for full details.
 
-#### Custom Dictionary
+#### Accepted Spellings
 
-A custom dictionary stores additional words that should be accepted as correct (company names, domain terms, abbreviations). It is shared across all repositories and stored at `%LocalAppData%/MLQT/custom_dictionary.txt`.
+Words that no dictionary knows but that are not mistakes (company names, domain terms, abbreviations) are kept per repository, in `.mlqt/dictionary.txt` beside `settings.json`. Committing it means the app and `mlqt check` in CI accept the same words and report the same spelling findings.
 
-In the default settings (**Settings > Style Checking**), the **Custom Dictionary** expandable panel lets you add, remove, filter, import, and export custom words. Words can also be added directly by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary** — this is the fastest workflow.
+The **Accepted spellings** expandable panel in this repository's settings lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
+
+A word applies only to the repository holding it; the same term in another repository has to be accepted there too. Earlier versions kept one machine-wide list at `%LocalAppData%/MLQT/custom_dictionary.txt`; it is no longer used for checking, and an **Import machine list** button appears while it exists so its words can be copied into a repository.
 
 ![Screenshot: The Spell checking section of the Settings dialog showing the two spell check toggle switches, the language dictionary dropdown, and the Import Language button.](Images/settings-reference-6.png)
 
@@ -364,12 +366,13 @@ This also includes the project/repository configuration (which projects exist, w
 
 ### Repository-Level Settings (`.mlqt/settings.json`)
 
-Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository:
+Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository. The repository's accepted spellings sit beside it in `dictionary.txt` — a plain list, one word per line, sorted, with `#` comment lines allowed:
 
 ```
 your-repository/
     .mlqt/
         settings.json
+        dictionary.txt
     MyLibrary/
         package.mo
         ...

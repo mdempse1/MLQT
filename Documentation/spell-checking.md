@@ -93,25 +93,54 @@ Each repository can have its own set of active dictionaries. This is useful when
 
 The language selection in repository settings overrides the default language selection.
 
-## Custom Dictionary
+## Accepted Spellings (Custom Dictionary)
 
-The custom dictionary stores words that are not in any language dictionary but should be accepted as correct — company names, product names, domain-specific terminology, abbreviations, etc.
+Every library has words that no language dictionary knows and that are not mistakes — company and
+product names, domain terminology, abbreviations. Each repository keeps its own list of these, in
+`.mlqt/dictionary.txt` inside the working copy, next to the repository's other MLQT settings.
 
-The custom dictionary is shared across all repositories and stored at `%LocalAppData%/MLQT/custom_dictionary.txt`.
+The list is a plain text file, one word per line, sorted, with `#` comment lines allowed. It is meant
+to be committed with the code. That is the point of storing it in the repository: the desktop app and
+a CI run of `mlqt check` read the same file, so they accept the same words and report the same
+spelling findings. A list kept on one machine could not do that — a word accepted on a developer's
+laptop was still a finding in CI, with nothing in either result to explain the difference.
 
-### Managing Custom Words
+The trade-off is that a word applies only to the repository it was added to. A term used in three
+libraries in three repositories has to be accepted in all three. There is no shared list.
 
-The custom dictionary panel is in **Settings > Style Checking**, inside the **Custom Dictionary** expandable section:
+### Managing Accepted Spellings
+
+The word list is in **Settings > Repositories**, under the repository's spell-check options, inside
+the **Accepted spellings** expandable section:
 
 - **Add a word** — Type a word in the text field and press Enter or click the **+** button
 - **Remove a word** — Click the delete icon next to any word in the list
 - **Filter** — Use the filter text field to search within the word list
-- **Import** — Click **Import** to merge words from a text file (one word per line) into the custom dictionary. Existing words are kept; duplicates are ignored.
-- **Export** — Click **Export** to save the current custom dictionary to a text file on your desktop
+- **Import** — Merge words from a text file (one word per line). Existing words are kept; duplicates
+  are ignored.
+- **Export** — Save this repository's list to a text file, for example to seed another repository
+
+Words can also be added straight from a spelling violation — see below.
+
+### Words From an Earlier Version
+
+Versions before the list moved into the repository kept one machine-wide list at
+`%LocalAppData%/MLQT/custom_dictionary.txt`. That file is no longer read when checking. If it exists,
+the **Accepted spellings** section shows an extra **Import machine list** button that copies its words
+into the repository you are looking at; commit `.mlqt/dictionary.txt` afterwards to share them. Import
+it into each repository that needs those words — the old file is left alone, so you can do this at
+whatever pace suits.
 
 ### Adding Words from Code Review
 
-The fastest way to add words to the custom dictionary is directly from a spelling violation on the Code Review page — right-click the underlined word in the code view and choose **Add to Dictionary**. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
+The fastest way to accept a word is from a spelling violation on the Code Review page — right-click
+the underlined word in the code view and choose **Add to Dictionary**. The word goes into the list of
+the repository that owns the class you are looking at, not into whichever repository is selected in
+settings. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
+
+If the class belongs to no repository — a library loaded on its own, or one reconstructed from a
+vendor's encrypted documentation — there is nowhere to write the word that a check would read back,
+so **Add to Dictionary** is disabled and says why.
 
 ## Reviewing Spelling Issues
 
@@ -134,7 +163,7 @@ Misspelled words are **highlighted inline** (wavy red underline) in the rendered
    |--------|--------|
    | **Suggestions** | A list of possible correct spellings from the loaded dictionaries. Click one to apply it in place. |
    | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-   | **Add to Dictionary** | Adds the word to your custom dictionary. The word is immediately accepted as correct and **all** violations for that word across all models are removed. |
+   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. The word is immediately accepted and **all** violations for that word in that repository are removed. Disabled for classes that belong to no repository. |
    | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
    | **Close** | Closes the menu without taking any action. |
 
@@ -156,9 +185,9 @@ Spelling violations report the actual line where the misspelled word appears, ev
 
 - **Enable spell checking after initial library setup.** For large libraries with many existing description strings, you may get a large number of violations initially. Consider reviewing and fixing them in batches, using "Add to Dictionary" liberally for domain-specific terms.
 
-- **Build up your custom dictionary early.** The first time you enable spell checking on a library, spend some time adding your project's common terms to the custom dictionary. This significantly reduces noise in subsequent checks.
+- **Build up the word list early, and commit it.** The first time you enable spell checking on a library, spend some time accepting your project's common terms. This significantly reduces noise in subsequent checks — and because `.mlqt/dictionary.txt` is committed, everyone on the team and every CI run starts from the same list rather than rebuilding it.
 
-- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the violation to jump to the word, right-click the underlined word, and choose "Add to Dictionary"; all instances across your library are resolved immediately.
+- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the violation to jump to the word, right-click the underlined word, and choose "Add to Dictionary". It also puts the word in the right repository for you.
 
 - **Different languages for different repositories.** If your team maintains libraries documented in different languages, set the appropriate dictionaries per repository rather than at the application level.
 

@@ -12,14 +12,15 @@ namespace MLQT.Services.Checking;
 /// </summary>
 public static class SpellCheckerFactory
 {
+    /// <param name="customWords">The accepted words for the library being checked, which belong to
+    /// its repository. Passed in rather than fetched here so every call site has to say whose words
+    /// these are — the checker is only identical between the app and the CLI if they agree on
+    /// that.</param>
     public static SpellChecker Build(
         IEnumerable<string>? languages,
-        ICustomDictionaryService customDictionary,
+        IReadOnlyCollection<string> customWords,
         IDictionaryManagerService dictionaryManager)
     {
-        // Ensure the custom word list has been read from disk before we snapshot it.
-        customDictionary.LoadAsync().GetAwaiter().GetResult();
-
         var codes = languages?.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
         if (codes is null || codes.Count == 0)
             codes = ["en_US", "en_GB"];
@@ -37,7 +38,7 @@ public static class SpellCheckerFactory
 
         return SpellChecker.Create(
             languageCodes: bundled,
-            customWords: customDictionary.CustomWords,
+            customWords: customWords,
             additionalDictionaries: imported.Count > 0 ? imported : null);
     }
 }

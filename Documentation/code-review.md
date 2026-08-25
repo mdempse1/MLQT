@@ -152,7 +152,7 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 - **Click a row** to navigate to the model containing that issue. The code viewer updates to show that model's code.
 - If the issue has **additional details**, clicking the row opens an **Issue Details dialog** showing the full summary, severity, line number, and detailed description.
-- In the Issue Details dialog, click **Resolve** to remove the issue from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the issue. For a spelling violation the dialog also offers **Add to Dictionary**, which adds the flagged word to your custom dictionary so it is no longer reported.
+- In the Issue Details dialog, click **Resolve** to remove the issue from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the issue. For a spelling violation the dialog also offers **Add to Dictionary**, which accepts the flagged word into the word list of the repository that owns the class (`.mlqt/dictionary.txt`) so it is no longer reported there. It is disabled for a class that belongs to no repository, such as a library reconstructed from a vendor's encrypted documentation.
 
 ![Screenshot: The Issue Details dialog showing an issue with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 
@@ -178,7 +178,7 @@ To act on a misspelled word, right-click the highlighted word in the rendered co
 |--------|--------|
 | **Suggestions** | A scrollable list of similar words from the loaded language dictionaries. Click one to apply it in place. |
 | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-| **Add to Dictionary** | Adds the word to your custom dictionary. All violations for this word across all models are immediately removed. The word will be accepted as correct in all future checks. |
+| **Add to Dictionary** | Accepts the word into the word list of the repository that owns this class. All violations for the word in that repository are immediately removed, and future checks — including CI, once `.mlqt/dictionary.txt` is committed — accept it. |
 | **Ignore** | Removes this single violation from the list. The word will be flagged again on the next style check run. |
 | **Close** | Closes the menu without taking any action. |
 
@@ -186,7 +186,7 @@ When you apply a correction, MLQT replaces the word, re-formats and **saves the 
 
 The replacement is whole-word and case-sensitive, and is applied only inside description strings and documentation prose — occurrences inside HTML links and `<code>`/`<pre>` blocks are left untouched so a correction never breaks a link. If the result would fail to parse, the change is aborted and the file is left unchanged. (Repairing already-broken documentation links is a separate, planned feature.)
 
-For more details on configuring spell checking, language dictionaries, and the custom dictionary, see [Spell Checking](spell-checking.md).
+For more details on configuring spell checking, language dictionaries, and each repository's accepted spellings, see [Spell Checking](spell-checking.md).
 
 ### Naming Convention Violations
 

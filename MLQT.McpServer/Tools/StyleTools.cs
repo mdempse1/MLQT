@@ -143,7 +143,9 @@ public sealed class StyleTools
         }
 
         var effective = settings?.ToSettings() ?? RepoSettingsForClass(classId);
-        var context = StyleCheckContext.Build(effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager);
+        var context = StyleCheckContext.Build(
+            effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
+            DictionaryScope.RootForModel(_libraries, _repositories, classId));
         var violations = StyleCheckRunner.Run(node, effective, context);
 
         // Parse errors are not style rules and are reported whatever the settings say — a class that

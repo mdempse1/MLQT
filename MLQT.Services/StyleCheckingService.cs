@@ -84,9 +84,13 @@ public class StyleCheckingService : IStyleCheckingService
     private readonly ICustomDictionaryService _customDictionaryService;
     private readonly IDictionaryManagerService _dictionaryManagerService;
     private readonly ICodeReviewService _codeReviewService;
-    private SpellChecker? _spellChecker;
-    private bool _dictionaryLoaded;
-    private List<string>? _lastLanguages;
+    // One spell checker per repository, because the accepted words now live with the repository.
+    // A single shared checker would hand one repository's words to another — which is the sort of
+    // cross-contamination the move to per-repository lists exists to prevent.
+    private readonly Dictionary<string, (SpellChecker Checker, List<string>? Languages)> _spellCheckers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly object _spellCheckerLock = new();
 
 
     public StyleCheckingService(
@@ -104,16 +108,17 @@ public class StyleCheckingService : IStyleCheckingService
         _dictionaryManagerService = dictionaryManagerService;
         _codeReviewService = codeReviewService;
 
-        // Reload the spell checker when the custom dictionary or available dictionaries change
-        _customDictionaryService.OnDictionaryChanged += () =>
+        // Rebuild on the next request rather than eagerly: a word added mid-session should apply to
+        // the repository it was added for, and to no other.
+        _customDictionaryService.OnDictionaryChanged += repositoryRoot =>
         {
-            if (_spellChecker != null)
-                ReloadSpellChecker(_lastLanguages);
+            lock (_spellCheckerLock)
+                _spellCheckers.Remove(repositoryRoot);
         };
         _dictionaryManagerService.OnDictionariesChanged += () =>
         {
-            if (_spellChecker != null)
-                ReloadSpellChecker(_lastLanguages);
+            lock (_spellCheckerLock)
+                _spellCheckers.Clear();
         };
     }
 
@@ -132,49 +137,28 @@ public class StyleCheckingService : IStyleCheckingService
     }
 
     /// <inheritdoc/>
-    public SpellChecker? GetSpellChecker() => _spellChecker;
-
-    /// <inheritdoc/>
-    public SpellChecker EnsureSpellChecker(IEnumerable<string>? customWords = null)
+    public SpellChecker EnsureSpellChecker(string repositoryRoot, IEnumerable<string>? languages = null)
     {
-        return EnsureSpellChecker(null, customWords);
-    }
+        var wanted = languages?.ToList();
 
-    /// <summary>
-    /// Ensures a spell checker exists with the specified languages.
-    /// If languages differ from the last creation, the spell checker is recreated.
-    /// </summary>
-    private SpellChecker EnsureSpellChecker(List<string>? languages, IEnumerable<string>? customWords = null)
-    {
-        // Invalidate if language selection has changed
-        if (_spellChecker != null && languages != null && !LanguagesMatch(languages, _lastLanguages))
-            _spellChecker = null;
-
-        if (_spellChecker == null)
+        lock (_spellCheckerLock)
         {
-            // Ensure the custom dictionary is loaded from disk before first use
-            if (!_dictionaryLoaded)
+            if (_spellCheckers.TryGetValue(repositoryRoot, out var existing)
+                && (wanted is null || LanguagesMatch(wanted, existing.Languages)))
             {
-                _customDictionaryService.LoadAsync().GetAwaiter().GetResult();
-                _dictionaryLoaded = true;
+                return existing.Checker;
             }
-
-            _lastLanguages = languages;
-            _spellChecker = CreateSpellChecker(languages, customWords);
         }
-        return _spellChecker;
-    }
 
-    /// <inheritdoc/>
-    public void ReloadSpellChecker(IEnumerable<string>? customWords = null)
-    {
-        ReloadSpellChecker(null, customWords);
-    }
+        // Built outside the lock: reading dictionaries from disk is slow, and a repository's words
+        // are read through the dictionary service which does its own caching.
+        var checker = CreateSpellChecker(wanted, _customDictionaryService.WordsFor(repositoryRoot));
 
-    private void ReloadSpellChecker(List<string>? languages, IEnumerable<string>? customWords = null)
-    {
-        _lastLanguages = languages ?? _lastLanguages;
-        _spellChecker = CreateSpellChecker(_lastLanguages, customWords);
+        lock (_spellCheckerLock)
+        {
+            _spellCheckers[repositoryRoot] = (checker, wanted);
+            return checker;
+        }
     }
 
     /// <summary>
@@ -183,7 +167,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// </summary>
     private SpellChecker CreateSpellChecker(List<string>? languages, IEnumerable<string>? customWords)
     {
-        var allCustomWords = GetMergedCustomWords(customWords);
+        var allCustomWords = customWords;
 
         // Separate bundled from imported language codes
         var bundledCodes = new List<string>();
@@ -211,26 +195,6 @@ public class StyleCheckingService : IStyleCheckingService
         if (a == null || b == null) return false;
         if (a.Count != b.Count) return false;
         return a.SequenceEqual(b, StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Merges explicitly provided custom words with the custom dictionary service words.
-    /// </summary>
-    private IEnumerable<string>? GetMergedCustomWords(IEnumerable<string>? additionalWords)
-    {
-        var dictionaryWords = _customDictionaryService.CustomWords;
-        if (dictionaryWords.Count == 0 && additionalWords == null)
-            return null;
-
-        var merged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var word in dictionaryWords)
-            merged.Add(word);
-        if (additionalWords != null)
-        {
-            foreach (var word in additionalWords)
-                merged.Add(word);
-        }
-        return merged;
     }
 
     /// <inheritdoc/>
@@ -266,7 +230,7 @@ public class StyleCheckingService : IStyleCheckingService
 
         //Create worker for this repository
         int queuedModels = 0;
-        var spellChecker = GetSpellCheckerIfNeeded(repository.StyleSettings);
+        var spellChecker = GetSpellCheckerIfNeeded(repository);
         var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
         worker.OnViolationFound += ViolationsFound;
         worker.OnProgressChanged += ProgressChanged;
@@ -321,7 +285,7 @@ public class StyleCheckingService : IStyleCheckingService
 
         //Create worker for this repository
         int queuedModels = 0;
-        var spellChecker = GetSpellCheckerIfNeeded(repository.StyleSettings);
+        var spellChecker = GetSpellCheckerIfNeeded(repository);
         var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
         worker.OnViolationFound += ViolationsFound;
         worker.OnProgressChanged += ProgressChanged;
@@ -370,7 +334,7 @@ public class StyleCheckingService : IStyleCheckingService
             ResetStyleRulesChecked(repository);
             EnsureTrimmedForChecking(ModelIdsFor(repository));
 
-            var spellChecker = GetSpellCheckerIfNeeded(repository.StyleSettings);
+            var spellChecker = GetSpellCheckerIfNeeded(repository);
             var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
             worker.OnViolationFound += ViolationsFound;
             worker.OnProgressChanged += ProgressChanged;
@@ -571,11 +535,14 @@ public class StyleCheckingService : IStyleCheckingService
     /// Public so the deferred combined dependency+style pass can build the same spell-checking
     /// context the background workers use, keeping violation counts consistent between the two paths.
     /// </summary>
-    public SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings)
+    public SpellChecker? GetSpellCheckerIfNeeded(Repository repository)
     {
-        if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-            return EnsureSpellChecker(settings.SpellCheckLanguages);
-        return null;
+        var settings = repository.StyleSettings;
+        if (settings is null || !(settings.SpellCheckDescription || settings.SpellCheckDocumentation))
+            return null;
+
+        // Keyed on the working copy, which is where .mlqt/dictionary.txt lives.
+        return EnsureSpellChecker(repository.LocalPath, settings.SpellCheckLanguages);
     }
 
     /// <summary>The ids of every model in the repository's libraries.</summary>
@@ -659,7 +626,10 @@ public class StyleCheckingService : IStyleCheckingService
             }
 
             var workerName = repo?.Name ?? "unknown";
-            var spellChecker = GetSpellCheckerIfNeeded(settings);
+
+            // No repository means no word list to apply — the classes are not in one, so there is
+            // nowhere their accepted spellings could have been stored.
+            var spellChecker = repo is not null ? GetSpellCheckerIfNeeded(repo) : null;
             var worker = new StyleCheckingWorker(graph, settings, workerName, spellChecker);
             worker.OnViolationFound += ViolationsFound;
             worker.OnProgressChanged += ProgressChanged;

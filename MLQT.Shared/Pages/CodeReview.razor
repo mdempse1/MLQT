@@ -1,5 +1,6 @@
 ﻿@using ModelicaParser.Helpers
 @using System.IO
+@using MLQT.Services.Checking
 @using System.Text.RegularExpressions
 @using Antlr4.Runtime
 @using DymolaInterface
@@ -247,8 +248,11 @@
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                     Disabled="@(string.IsNullOrWhiteSpace(_customCorrection) || _customCorrection == _contextWord)"
                     OnClick="@(() => ApplyCorrection(_customCorrection))">Apply</MudButton>
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                    OnClick="AddToDictionary">Add to Dictionary</MudButton>
+                <MudTooltip Text="@(CanAddToDictionary ? "Accept this word for this repository" : NoRepositoryDictionaryTooltip)">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                        Disabled="@(!CanAddToDictionary)"
+                        OnClick="AddToDictionary">Add to Dictionary</MudButton>
+                </MudTooltip>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                     OnClick="IgnoreSpellingViolation">Ignore</MudButton>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
@@ -290,8 +294,10 @@
         <MudStack Row="true">
             @if (IsSpellingViolation(_currentIssue))
             {
-                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="AddToDictionary" Class="px-10">Add to Dictionary
-                </MudButton>
+                <MudTooltip Text="@(CanAddToDictionary ? "Accept this word for this repository" : NoRepositoryDictionaryTooltip)">
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(!CanAddToDictionary)"
+                        OnClick="AddToDictionary" Class="px-10">Add to Dictionary</MudButton>
+                </MudTooltip>
             }
             @if (CanSuppressRule(_currentIssue))
             {
@@ -633,7 +639,12 @@
         _currentIssue = CodeReviewService.LogMessages.FirstOrDefault(m =>
             m.ModelName == NavState.ModelID && IsSpellingViolation(m) && ExtractMisspelledWord(m) == word);
 
-        _suggestions = StyleCheckingService.GetSpellChecker()?.Suggest(word) ?? [];
+        // Suggestions come from the checker for the repository this class belongs to, so a word its
+        // team has accepted is not offered back as a correction.
+        var suggestionRoot = DictionaryRootForCurrentIssue();
+        _suggestions = suggestionRoot is null
+            ? []
+            : StyleCheckingService.EnsureSpellChecker(suggestionRoot).Suggest(word).ToList();
         _contextMenuOpen = true;
         // Position is provisional (the word's bottom-left from JS). Once the menu has rendered and its
         // real size is known, OnAfterRenderAsync re-measures and clamps it within the viewport.
@@ -1796,22 +1807,57 @@ document.head.appendChild(style);
         return match.Success ? match.Groups[1].Value : null;
     }
 
+    /// <summary>
+    /// The repository whose word list an accepted spelling belongs in — the one owning the class the
+    /// issue was raised against. Null when the class is not in a repository, in which case there is
+    /// nowhere to record the word and the action is offered as disabled rather than silently doing
+    /// nothing.
+    /// </summary>
+    private string? DictionaryRootForCurrentIssue()
+    {
+        var modelId = _currentIssue?.ModelName;
+        if (string.IsNullOrEmpty(modelId))
+            modelId = NavState.ModelID;
+
+        return string.IsNullOrEmpty(modelId)
+            ? null
+            : DictionaryScope.RootForModel(LibraryDataService, RepositoryService, modelId);
+    }
+
+    private bool CanAddToDictionary => DictionaryRootForCurrentIssue() is not null;
+
+    private const string NoRepositoryDictionaryTooltip =
+        "This class is not in a repository, so there is nowhere to record the word. Accepted " +
+        "spellings live in the repository's .mlqt/dictionary.txt so the app and CI agree on them.";
+
     private async Task AddToDictionary()
     {
         var word = ExtractMisspelledWord(_currentIssue) ?? (_contextMenuOpen ? _contextWord : null);
         if (string.IsNullOrEmpty(word))
             return;
 
-        await CustomDictionaryService.AddWordAsync(word);
+        var repositoryRoot = DictionaryRootForCurrentIssue();
+        if (repositoryRoot is null)
+        {
+            Snackbar.Add(NoRepositoryDictionaryTooltip, MudBlazor.Severity.Warning);
+            return;
+        }
 
-        // Also add to the spell checker's in-memory custom words
-        StyleCheckingService.GetSpellChecker()?.AddCustomWord(word);
+        await CustomDictionaryService.AddWordAsync(repositoryRoot, word);
 
-        // Remove all violations for this word across all models
+        // Clear this word's violations only within the repository that accepted it. It stays a
+        // finding elsewhere, which is the point of the list being per repository — another team's
+        // library has not agreed to the word.
+        var repositoryModelIds = LibraryDataService.Libraries
+            .Where(l => DictionaryScope.RootForLibrary(RepositoryService, l) == repositoryRoot)
+            .SelectMany(l => l.ModelIds)
+            .ToHashSet(StringComparer.Ordinal);
+
         CodeReviewService.RemoveLogMessagesByPredicate(m =>
-            m.Summary == $"Misspelled word '{word}' in description" ||
-            m.Summary == $"Misspelled word '{word}' in documentation info" ||
-            m.Summary == $"Misspelled word '{word}' in documentation revisions");
+            repositoryModelIds.Contains(m.ModelName) &&
+            (m.Summary == $"Misspelled word '{word}' in description" ||
+             m.Summary == $"Misspelled word '{word}' in documentation info" ||
+             m.Summary == $"Misspelled word '{word}' in documentation revisions"));
 
         _contextMenuOpen = false;
         _suggestions = null;

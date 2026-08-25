@@ -198,6 +198,26 @@ and only parse diagnostics are produced. See [settings-reference.md](settings-re
 
 Values are `Off`, `Info`, `Warning`, or `Error`. The map wins over the on/off booleans.
 
+### Accepted spellings
+
+When spell checking is enabled, the words your library uses that no dictionary knows are read from
+`<library>/.mlqt/dictionary.txt` — the same file the desktop app writes when someone chooses **Add to
+Dictionary**. One word per line; blank lines and `#` comments are ignored. Commit it, and CI accepts
+exactly the words your team accepted.
+
+The language dictionaries themselves are not in the repository. If the settings ask for a language the
+build agent has no dictionary installed for, the words are checked against the remaining languages and
+`mlqt` writes a warning to stderr, because the run will then disagree with a machine that has it:
+
+```
+warning: no spell-check dictionary installed for de_DE; those words are checked against the
+remaining languages, so the spelling findings will not match a machine that has them
+```
+
+en_US and en_GB ship with the tool. Other languages need their Hunspell `.aff`/`.dic` pair installed
+on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (or the equivalent user profile path on Linux
+and macOS).
+
 ## Baseline / ratchet
 
 A large existing library usually has many findings that no one will fix all at once. A **baseline**

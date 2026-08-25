@@ -4,6 +4,7 @@ using ModelicaParser.DataTypes;
 using MLQT.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
+using MLQT.Services.Interfaces;
 
 namespace MLQT.Cli;
 
@@ -50,6 +51,33 @@ internal static class CheckPipeline
         // scrollback saying nothing actionable. The libraries that loaded are named once in the
         // reference-resolution summary, and the ones that could not are warned about individually.
         loadedNames.Add(library.Name);
+    }
+
+    /// <summary>
+    /// Warns when the settings select a spell-check language this machine has no dictionary for.
+    /// </summary>
+    private static void WarnAboutMissingDictionaries(
+        StyleCheckingSettings settings, IDictionaryManagerService dictionaryManager, TextWriter stderr)
+    {
+        if (!settings.SpellCheckDescription && !settings.SpellCheckDocumentation)
+            return;
+
+        var requested = settings.SpellCheckLanguages;
+        if (requested is null || requested.Count == 0)
+            return;
+
+        var available = dictionaryManager.GetAvailableDictionaries()
+            .Select(d => d.LanguageCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var missing = requested.Where(code => !available.Contains(code)).ToList();
+        if (missing.Count == 0)
+            return;
+
+        stderr.WriteLine(
+            $"warning: no spell-check dictionary installed for {string.Join(", ", missing)}; " +
+            "those words are checked against the remaining languages, so the spelling findings " +
+            "will not match a machine that has them");
     }
 
     public static async Task<LoadResult> LoadAndCheckAsync(
@@ -205,8 +233,17 @@ internal static class CheckPipeline
 
         // Whether the edges are present is read off the graph itself, so this can't disagree with what
         // the GUI and MCP see for the same library.
+        // Language dictionaries are installed per machine, not committed with the library, so a CI
+        // runner can easily lack one the settings ask for. Hunspell would then quietly fall back and
+        // spell-check, say, French prose against an English dictionary — a wrong answer that looks
+        // like a real finding. Say so instead.
+        WarnAboutMissingDictionaries(settings, dictionaryManager, stderr);
+
+        // The accepted spellings live with the library being checked, resolved the same way its
+        // settings are, so CI reads the same list a developer's app does.
         var findings = LibraryCheckSession
-            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions)
+            .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
+                   dependenciesAnalyzed: null, repositoryRoot: libraryPath)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)

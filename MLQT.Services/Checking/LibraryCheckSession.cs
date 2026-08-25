@@ -23,7 +23,8 @@ public static class LibraryCheckSession
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
         bool honorSuppressions = true,
-        bool? dependenciesAnalyzed = null)
+        bool? dependenciesAnalyzed = null,
+        string? repositoryRoot = null)
     {
         // Classes recovered from an encrypted library's documentation are dropped here, at the one
         // place every surface goes through, rather than left to each caller to remember. They are
@@ -43,7 +44,8 @@ public static class LibraryCheckSession
         if (!settings.HasAnyStyleRuleEnabled)
             return parseFindings;
 
-        var context = StyleCheckContext.Build(settings, graph, customDictionary, dictionaryManager);
+        var context = StyleCheckContext.Build(
+            settings, graph, customDictionary, dictionaryManager, repositoryRoot);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };

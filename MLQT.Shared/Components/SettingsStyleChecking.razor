@@ -6,7 +6,6 @@
 @inject ISettingsService SettingsService
 @inject IJSRuntime JSRuntime
 @inject AppState NavState
-@inject ICustomDictionaryService CustomDictionaryService
 @inject IDictionaryManagerService DictionaryManagerService
 @inject IFilePickerService FilePickerService
 @inject ISnackbar Snackbar
@@ -172,51 +171,18 @@
             OnClick="ImportLanguageDictionary" Style="height:40px;">Import Language</MudButton>
     </MudStack>
 
-    <MudExpansionPanels Class="mt-2 pa-0 ml-0 mr-0" Dense="true" Gutters="false" Elevation="2">
-        <MudExpansionPanel Text="" Dense="true" Class="ma-0 pa-0">
-            <TitleContent>
-                <MudText Typo="Typo.subtitle2" Class="mt-4">Custom Dictionary (@CustomDictionaryService.CustomWords.Count words)</MudText>
-            </TitleContent>
-            <ChildContent>
-                <MudStack Row="true" Class="mb-2" Spacing="1" Style="width: fit-content;" AlignItems="AlignItems.Center">
-                    <MudTextField @bind-Value="_newWord" Placeholder="Add a word" Variant="Variant.Outlined"
-                        Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true"
-                        OnKeyDown="OnAddWordKeyDown" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
-                        OnClick="AddCustomWord" Disabled="@string.IsNullOrWhiteSpace(_newWord)" />
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                        OnClick="MergeDictionary">Import</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                        OnClick="ExportDictionary">Export</MudButton>
-                </MudStack>
-                <MudTextField T="string" Value="_wordFilter" ValueChanged="OnWordFilterChanged" Placeholder="Filter words"
-                    Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.body1"
-                    Immediate="true" Class="mb-2" Style="width: 200px;" />
-                <MudChipSet T="string" Class="mt-1">
-                    @foreach (var word in _filteredWords)
-                    {
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveCustomWord(word)">@word</MudChip>
-                    }
-                </MudChipSet>
-            </ChildContent>
-        </MudExpansionPanel>
-    </MudExpansionPanels>
 
 </MudPaper>
 
 
 @code {
     private AppSettings _settings = new();
-    private string _newWord = "";
     private string _newExceptionName = "";
-    private string _wordFilter = "";
-    private List<string> _filteredWords = new();
     private List<DictionaryInfo> _availableDictionaries = new();
 
     protected override void OnInitialized()
     {
         NavState.OnSaveSettings += SaveSettings;
-        CustomDictionaryService.OnDictionaryChanged += OnDictionaryChanged;
         DictionaryManagerService.OnDictionariesChanged += OnDictionariesChanged;
         RefreshAvailableDictionaries();
         base.OnInitialized();
@@ -225,15 +191,11 @@
     protected void OnDispose()
     {
         NavState.OnSaveSettings -= SaveSettings;
-        CustomDictionaryService.OnDictionaryChanged -= OnDictionaryChanged;
         DictionaryManagerService.OnDictionariesChanged -= OnDictionariesChanged;
     }
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadSettings();
-        await CustomDictionaryService.LoadAsync();
-        FilterWords();
     }
 
     private async Task LoadSettings()
@@ -299,87 +261,14 @@
         StateHasChanged();
     }
 
-    private void OnWordFilterChanged(string value)
-    {
-        _wordFilter = value;
-        FilterWords();
-    }
 
-    private void FilterWords()
-    {
-        var words = CustomDictionaryService.CustomWords;
-        if (string.IsNullOrWhiteSpace(_wordFilter))
-        {
-            _filteredWords = words.ToList();
-        }
-        else
-        {
-            _filteredWords = words
-                .Where(w => w.Contains(_wordFilter, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-    }
 
-    private async Task AddCustomWord()
-    {
-        if (string.IsNullOrWhiteSpace(_newWord))
-            return;
 
-        await CustomDictionaryService.AddWordAsync(_newWord.Trim());
-        _newWord = "";
-        FilterWords();
-    }
 
-    private async Task OnAddWordKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-            await AddCustomWord();
-    }
 
-    private async Task RemoveCustomWord(string word)
-    {
-        await CustomDictionaryService.RemoveWordAsync(word);
-        FilterWords();
-    }
 
-    private async Task ImportDictionary()
-    {
-        var result = await FilePickerService.PickModelicaFileAsync(".txt");
-        if (result?.FilePath != null)
-        {
-            await CustomDictionaryService.ImportAsync(result.FilePath);
-            FilterWords();
-            Snackbar.Add($"Imported {CustomDictionaryService.CustomWords.Count} words", MudBlazor.Severity.Success);
-        }
-    }
 
-    private async Task ExportDictionary()
-    {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-        var exportPath = Path.Combine(appData, "custom_dictionary.txt");
-        await CustomDictionaryService.ExportAsync(exportPath);
-        Snackbar.Add($"Dictionary exported to {exportPath}", MudBlazor.Severity.Success);
-    }
 
-    private async Task MergeDictionary()
-    {
-        var result = await FilePickerService.PickModelicaFileAsync(".txt");
-        if (result?.FilePath != null)
-        {
-            await CustomDictionaryService.MergeAsync(result.FilePath);
-            FilterWords();
-            Snackbar.Add($"Merged. Dictionary now has {CustomDictionaryService.CustomWords.Count} words", MudBlazor.Severity.Success);
-        }
-    }
-
-    private async void OnDictionaryChanged()
-    {
-        await InvokeAsync(() =>
-        {
-            FilterWords();
-            StateHasChanged();
-        });
-    }
 
     private async void OnDictionariesChanged()
     {

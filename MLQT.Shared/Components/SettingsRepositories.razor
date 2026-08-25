@@ -318,6 +318,11 @@
         <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
             Label="Spell check all documentation" />
 
+        @* The accepted spellings belong to the repository and are committed with it, which is what
+           lets the app and CI agree on them — so they are configured here rather than in the tool
+           settings, next to the rules that use them. *@
+        <SettingsRepositoryDictionary Repository="_selectedItem" />
+
         <MudText Typo="Typo.body1" Class="mt-4">Static analysis</MudText>
         <MudText Typo="Typo.caption" Class="mb-1">
             Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI

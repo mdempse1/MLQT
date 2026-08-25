@@ -18,15 +18,21 @@ public sealed class StyleCheckContext
 
     /// <summary>Context for checking loaded models against a graph, building a spell checker from the
     /// dictionary services for the settings' languages (used by the CLI and MCP).</summary>
+    /// <param name="repositoryRoot">Root of the repository whose libraries are being checked, which
+    /// is where its accepted spellings live. Null when the caller has no repository — a snippet, or a
+    /// library loaded on its own — in which case there are no accepted words rather than someone
+    /// else's.</param>
     public static StyleCheckContext Build(
         StyleCheckingSettings settings,
         DirectedGraph graph,
         ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager)
+        IDictionaryManagerService dictionaryManager,
+        string? repositoryRoot = null)
     {
         SpellChecker? spellChecker = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-            spellChecker = SpellCheckerFactory.Build(settings.SpellCheckLanguages, customDictionary, dictionaryManager);
+            spellChecker = SpellCheckerFactory.Build(
+                settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
         return Build(settings, graph, spellChecker);
     }
@@ -63,11 +69,13 @@ public sealed class StyleCheckContext
     public static StyleCheckContext BuildStateless(
         StyleCheckingSettings settings,
         ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager)
+        IDictionaryManagerService dictionaryManager,
+        string? repositoryRoot = null)
     {
         SpellChecker? spellChecker = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-            spellChecker = SpellCheckerFactory.Build(settings.SpellCheckLanguages, customDictionary, dictionaryManager);
+            spellChecker = SpellCheckerFactory.Build(
+                settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
         return new StyleCheckContext { SpellChecker = spellChecker };
     }

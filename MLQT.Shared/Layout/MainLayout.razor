@@ -1663,8 +1663,17 @@
                 var baseClassHasIcon = distinctSettings.Any(s => s.ClassHasIcon)
                     ? StyleChecking.CreateBaseClassHasIconCallback(graph)
                     : null;
-                var spellCheckerBySettings = distinctSettings
-                    .ToDictionary(s => s, s => StyleCheckingService.GetSpellCheckerIfNeeded(s));
+                // Keyed by repository, not by settings: the accepted spellings live with the
+                // repository now, so two repositories sharing identical settings still need their own
+                // checker. Sharing one would let either repository's words silence the other's.
+                var spellCheckerByRepository = RepositoryService.Repositories
+                    .Where(r => r.StyleSettings is not null)
+                    .ToDictionary(
+                        r => r.Id,
+                        r => StyleCheckingService.GetSpellCheckerIfNeeded(r),
+                        StringComparer.Ordinal);
+
+                var repositoryByModel = BuildModelToRepositoryMap();
 
                 postAnalysisAction = model =>
                 {
@@ -1674,7 +1683,9 @@
                     // the CLI/MCP. All paths now check all classes.
                     if (modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
                     {
-                        spellCheckerBySettings.TryGetValue(settings, out var spellChecker);
+                        ModelicaParser.SpellChecking.SpellChecker? spellChecker = null;
+                        if (repositoryByModel.TryGetValue(model.Id, out var repositoryId))
+                            spellCheckerByRepository.TryGetValue(repositoryId, out spellChecker);
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
                             knownModelIds, spellChecker, knownModelNames,
                             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id),
@@ -1753,6 +1764,25 @@
 
             foreach (var modelId in library.ModelIds)
                 result[modelId] = settings;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Which repository each model belongs to, so the combined pass can give each class its own
+    /// repository's accepted spellings. Models outside a repository are absent — they have no word
+    /// list, rather than someone else's.
+    /// </summary>
+    private Dictionary<string, string> BuildModelToRepositoryMap()
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var library in LibraryDataService.Libraries)
+        {
+            if (library.RepositoryId is not { Length: > 0 } repositoryId)
+                continue;
+
+            foreach (var modelId in library.ModelIds)
+                result[modelId] = repositoryId;
         }
         return result;
     }

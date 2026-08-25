@@ -33,22 +33,18 @@ public interface IStyleCheckingService
     int QueuedCount { get; }
 
     /// <summary>
-    /// Gets the current spell checker instance, or null if not yet created.
+    /// The spell checker for one repository, built on demand and cached until that repository's word
+    /// list or the installed language dictionaries change.
+    ///
+    /// <para>Scoped to a repository because the accepted words are: a single shared checker would
+    /// hand one repository's spellings to another, and the reason the lists moved into each
+    /// repository was to stop exactly that kind of leakage between what different tools and projects
+    /// consider correct.</para>
     /// </summary>
-    SpellChecker? GetSpellChecker();
-
-    /// <summary>
-    /// Ensures a spell checker instance exists, creating one if needed.
-    /// </summary>
-    /// <param name="customWords">Optional custom words to include.</param>
-    SpellChecker EnsureSpellChecker(IEnumerable<string>? customWords = null);
-
-    /// <summary>
-    /// Recreates the spell checker instance with updated custom words.
-    /// Call this when the custom dictionary changes.
-    /// </summary>
-    /// <param name="customWords">Optional custom words to include.</param>
-    void ReloadSpellChecker(IEnumerable<string>? customWords = null);
+    /// <param name="repositoryRoot">Root of the repository whose words apply.</param>
+    /// <param name="languages">Language codes to load; the repository's configured languages when
+    /// omitted for an already-built checker.</param>
+    SpellChecker EnsureSpellChecker(string repositoryRoot, IEnumerable<string>? languages = null);
 
     /// <summary>
     /// Runs style checking on a single model.
@@ -94,8 +90,9 @@ public interface IStyleCheckingService
     /// or null when spell checking is disabled. Lets callers build the same spell-checking context the
     /// background workers use.
     /// </summary>
-    /// <param name="settings">The style checking settings.</param>
-    SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings);
+    /// <param name="repository">The repository being checked — its settings choose the languages,
+    /// and its word list supplies the accepted spellings.</param>
+    SpellChecker? GetSpellCheckerIfNeeded(Repository repository);
 
     /// <summary>
     /// Runs the whole-graph analyses (package.order, uses hygiene, unused class/member, shadowing) for

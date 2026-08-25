@@ -70,7 +70,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
 | **IExternalResourceService** | External resource analysis, validation, and monitoring |
-| **ICustomDictionaryService** | User custom word list persistence (`%LocalAppData%/MLQT/custom_dictionary.txt`) |
+| **ICustomDictionaryService** | Accepted spellings per repository (`<repo>/.mlqt/dictionary.txt`, committed with the code so the app and CLI accept the same words). `DictionaryScope` decides which repository's list applies to a class |
 | **IDictionaryManagerService** | Hunspell dictionary management (bundled + imported at `%LocalAppData%/MLQT/Dictionaries/`) |
 | **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
 | **DymolaCheckingService** | Model checking via Dymola HTTP JSON-RPC |

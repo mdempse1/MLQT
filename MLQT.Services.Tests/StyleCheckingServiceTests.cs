@@ -31,16 +31,18 @@ public class StyleCheckingServiceTests
 
     private class StubCustomDictionaryService : ICustomDictionaryService
     {
-        public IReadOnlyCollection<string> CustomWords => Array.Empty<string>();
 #pragma warning disable CS0067
-        public event Action? OnDictionaryChanged;
+        public event Action<string>? OnDictionaryChanged;
 #pragma warning restore CS0067
-        public Task AddWordAsync(string word) => Task.CompletedTask;
-        public Task RemoveWordAsync(string word) => Task.CompletedTask;
-        public Task ImportAsync(string filePath) => Task.CompletedTask;
-        public Task ExportAsync(string filePath) => Task.CompletedTask;
-        public Task MergeAsync(string filePath) => Task.CompletedTask;
-        public Task LoadAsync() => Task.CompletedTask;
+        public string? LegacyMachineDictionaryPath => null;
+        public string PathFor(string repositoryRoot) => Path.Combine(repositoryRoot, ".mlqt", "dictionary.txt");
+        public IReadOnlyCollection<string> WordsFor(string? repositoryRoot) => Array.Empty<string>();
+        public Task AddWordAsync(string repositoryRoot, string word) => Task.CompletedTask;
+        public Task RemoveWordAsync(string repositoryRoot, string word) => Task.CompletedTask;
+        public Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot) =>
+            Task.FromResult<IReadOnlyCollection<string>>(Array.Empty<string>());
+        public Task<int> MergeFromAsync(string repositoryRoot, string sourceFile) => Task.FromResult(0);
+        public Task ExportAsync(string repositoryRoot, string targetFile) => Task.CompletedTask;
     }
 
     private class StubDictionaryManagerService : IDictionaryManagerService
@@ -406,55 +408,40 @@ end TestModel;");
     }
 
     [Fact]
-    public void GetSpellChecker_InitiallyNull()
+    public void EnsureSpellChecker_CreatesOnePerRepository()
     {
+        // The accepted words live with the repository, so two repositories must not share a checker
+        // — that would let one repository's spellings silence findings in another.
         var service = CreateService();
-        Assert.Null(service.GetSpellChecker());
+
+        var first = service.EnsureSpellChecker(@"C:epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:epos\Beta");
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
     }
 
     [Fact]
-    public void EnsureSpellChecker_CreatesSpellChecker()
+    public void EnsureSpellChecker_ReturnsSameInstanceForTheSameRepository()
     {
         var service = CreateService();
-        var checker = service.EnsureSpellChecker();
-        Assert.NotNull(checker);
+
+        var first = service.EnsureSpellChecker(@"C:epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:epos\Alpha");
+
+        Assert.Same(first, second);
     }
 
     [Fact]
-    public void EnsureSpellChecker_ReturnsSameInstanceOnSecondCall()
+    public void EnsureSpellChecker_RebuildsWhenTheLanguagesChange()
     {
         var service = CreateService();
-        var checker1 = service.EnsureSpellChecker();
-        var checker2 = service.EnsureSpellChecker();
-        Assert.Same(checker1, checker2);
-    }
 
-    [Fact]
-    public void EnsureSpellChecker_WithCustomWords_CreatesChecker()
-    {
-        var service = CreateService();
-        var checker = service.EnsureSpellChecker(new[] { "customword" });
-        Assert.NotNull(checker);
-    }
+        var english = service.EnsureSpellChecker(@"C:epos\Alpha", new[] { "en_US" });
+        var british = service.EnsureSpellChecker(@"C:epos\Alpha", new[] { "en_GB" });
 
-    [Fact]
-    public void ReloadSpellChecker_CreatesNewInstance()
-    {
-        var service = CreateService();
-        var checker1 = service.EnsureSpellChecker();
-        service.ReloadSpellChecker();
-        var checker2 = service.GetSpellChecker();
-        Assert.NotNull(checker2);
-        Assert.NotSame(checker1, checker2);
-    }
-
-    [Fact]
-    public void ReloadSpellChecker_WithCustomWords_Works()
-    {
-        var service = CreateService();
-        service.EnsureSpellChecker();
-        service.ReloadSpellChecker(new[] { "testword" });
-        Assert.NotNull(service.GetSpellChecker());
+        Assert.NotSame(english, british);
     }
 
     [Fact]
@@ -494,7 +481,7 @@ end TestModel;");
         await service.StartBackgroundCheckingAsync(repo);
         await WaitForCompletionAsync(service);
 
-        Assert.NotNull(service.GetSpellChecker());
+        Assert.NotNull(service.GetSpellCheckerIfNeeded(repo));
     }
 
     [Fact]

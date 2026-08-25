@@ -64,7 +64,9 @@ public sealed class SpellingTools
                 return new ToolError($"Class '{classId}' failed to parse and cannot be spell-checked.");
 
             var settings = SpellSettings(LanguagesForClass(classId));
-            var context = StyleCheckContext.Build(settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager);
+            var context = StyleCheckContext.Build(
+                settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
+                DictionaryScope.RootForModel(_libraries, _repositories, classId));
             return ToViolationList(StyleCheckRunner.Run(node, settings, context));
         }
 
@@ -92,19 +94,25 @@ public sealed class SpellingTools
             return new ToolError("word must be a non-empty string.");
 
         IReadOnlyList<string>? languages;
+        string? dictionaryRoot;
         if (repositoryId is not null)
         {
             var (repo, error) = EntityResolver.ResolveRepository(_repositories, repositoryId);
             if (error is not null)
                 return error;
             languages = repo!.StyleSettings?.SpellCheckLanguages;
+            dictionaryRoot = repo.LocalPath;
         }
         else
         {
             languages = SingleRepoLanguages();
+            dictionaryRoot = _repositories.Repositories.Count == 1
+                ? _repositories.Repositories[0].LocalPath
+                : null;
         }
 
-        var checker = SpellCheckerFactory.Build(languages, _customDictionary, _dictionaryManager);
+        var checker = SpellCheckerFactory.Build(
+            languages, _customDictionary.WordsFor(dictionaryRoot), _dictionaryManager);
         var isCorrect = checker.IsCorrect(word);
         var suggestions = isCorrect ? Array.Empty<string>() : checker.Suggest(word).ToArray();
         return new SpellSuggestionsResult(word, isCorrect, suggestions);
