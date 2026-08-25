@@ -69,6 +69,7 @@ public static class RuleCatalog
             // is deliberately outside the settings UI's rule categories so they cannot be switched off.
             new RuleDefinition(RuleIds.SyntaxError, "Source parses cleanly", "Parse", RuleSeverity.Error, "The file contains a syntax error. The parser recovered, so the class still loaded, but part of it may have been misread and every other rule under-reports on it."),
             new RuleDefinition(RuleIds.ParseFailure, "Source could be parsed", "Parse", RuleSeverity.Error, "The file could not be parsed at all. No classes were extracted from it and nothing in it has been checked."),
+            new RuleDefinition(RuleIds.CheckFailed, "Class could be checked", "Parse", RuleSeverity.Error, "Checking this class threw, so its findings are missing from the results. A defect in MLQT or an unworkable setting (for example a naming pattern that cannot be evaluated), not a problem with the code."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);

@@ -40,8 +40,15 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
                     try
                     {
                         var sanitized = NamingValidator.SanitizePattern(pattern);
+                        // The timeout is a backstop against a hand-edited pattern that backtracks
+                        // catastrophically, and it is measured in wall-clock time — a thread that
+                        // loses the CPU, or a blocking gen2 collection, spends the budget without
+                        // the pattern doing any work. At 100ms healthy patterns were timing out
+                        // during a parallel check of a large library, and the exception cost the
+                        // class every one of its findings. Seconds are still far beyond anything a
+                        // sane pattern needs on a class name.
                         compiled.Add(new Regex(sanitized, RegexOptions.Compiled,
-                            TimeSpan.FromMilliseconds(100)));
+                            TimeSpan.FromSeconds(5)));
                     }
                     catch (RegexParseException)
                     {

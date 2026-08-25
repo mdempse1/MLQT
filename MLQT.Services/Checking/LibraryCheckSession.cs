@@ -2,6 +2,7 @@ using ModelicaGraph;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
@@ -59,9 +60,19 @@ public static class LibraryCheckSession
                 foreach (var finding in StyleCheckRunner.RunFindings(node, settings, context, honorSuppressions))
                     all.Add(finding);
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip models that fail to check — don't stall the whole run.
+                // One class that cannot be checked must not stop the run — but it must not vanish
+                // from it either. Swallowing this dropped every finding for the class, so the totals
+                // moved between runs of the same tool on the same code with nothing to explain it.
+                all.Add(new Finding
+                {
+                    RuleId = RuleIds.CheckFailed,
+                    ModelId = node.Id,
+                    Message = $"Checking this class failed ({ex.GetType().Name}: {ex.Message}). " +
+                              "Its findings are missing from these results.",
+                    Severity = RuleSeverity.Error,
+                });
             }
         });
 

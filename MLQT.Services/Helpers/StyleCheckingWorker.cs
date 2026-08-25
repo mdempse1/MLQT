@@ -1,4 +1,5 @@
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using ModelicaParser.SpellChecking;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
@@ -106,9 +107,20 @@ public class StyleCheckingWorker
                             OnViolationFound?.Invoke(this, violations);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Skip models that fail to parse or check — don't stall the worker
+                    // Report it rather than dropping the class: one class that cannot be checked
+                    // should not stop the worker, but silence here cost the class every finding it
+                    // had and made the app's totals disagree with the CLI's for no visible reason.
+                    OnViolationFound?.Invoke(this, [
+                        new LogMessage(modelId, "Style warning", 0,
+                            $"Checking this class failed ({ex.GetType().Name}: {ex.Message}). " +
+                            "Its findings are missing from these results.")
+                        {
+                            Source = "StyleChecking",
+                            RuleId = RuleIds.CheckFailed,
+                        }
+                    ]);
                 }
 
                 // Batch progress notifications — fire every 50 models instead of every model

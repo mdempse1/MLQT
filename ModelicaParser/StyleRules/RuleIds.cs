@@ -44,6 +44,14 @@ public static class RuleIds
     public const string SyntaxError = "MLQT.Parse.SyntaxError";
     public const string ParseFailure = "MLQT.Parse.Failure";
 
+    /// <summary>
+    /// A class MLQT failed to check. Not a judgement on the code: the checking itself threw, so this
+    /// class's findings — however many there would have been — are missing from the results. Reported
+    /// because the alternative, which is what MLQT used to do, is a class quietly absent from the run
+    /// and a total nobody can reconcile.
+    /// </summary>
+    public const string CheckFailed = "MLQT.Check.Failed";
+
     /// <summary>True for the always-on parse diagnostics above.</summary>
     public static bool IsParseDiagnostic(string ruleId) =>
         ruleId is SyntaxError or ParseFailure;

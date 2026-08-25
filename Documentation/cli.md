@@ -179,6 +179,18 @@ of taste and every other rule silently under-reports on it:
 The same diagnostics appear in the desktop app's Issues panel and from the MCP server's `check_class`
 / `check_library`, with identical wording and line numbers.
 
+### `MLQT.Check.Failed`
+
+One more finding is not a style rule and not a judgement on your code: `MLQT.Check.Failed` says
+checking a class threw, so **that class's findings are missing from the results**. It names the class
+and the error. It means a defect in MLQT or a setting that cannot be evaluated (a naming pattern that
+never terminates, say) — not a problem with the Modelica.
+
+It exists because the alternative is worse: a class that cannot be checked used to be dropped in
+silence, so a run's totals could move between two runs over the same code with nothing to explain the
+difference, and a clean class looked exactly like one that was never checked. Seeing this finding
+means the reported totals are incomplete; please report it.
+
 ## Settings
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
