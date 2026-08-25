@@ -170,6 +170,13 @@ public interface IRepositoryService
     void InvalidateWorkingCopyCache(string? repositoryId = null);
 
     /// <summary>
+    /// Raised when a repository's working-copy VCS status may have changed — after a commit, revert,
+    /// update, or a file changing on disk. Carries the repository id, or null when every repository
+    /// is affected. Subscribe to this rather than asking each caller to notify you.
+    /// </summary>
+    event Action<string?>? OnWorkingCopyStatusChanged;
+
+    /// <summary>
     /// Gets the list of available branches for a repository.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

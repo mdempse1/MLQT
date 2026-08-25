@@ -1061,7 +1061,17 @@ public class RepositoryService : IRepositoryService
             else
                 _workingCopyCache.Clear();
         }
+
+        // Anything that invalidates this cache is saying the working copy's VCS status may have
+        // moved — a commit, a revert, an update, a file changing on disk. Announcing it lets the
+        // things derived from that status follow along instead of each caller having to remember
+        // them. A commit is the case that showed this was missing: it changes no file content, so
+        // nothing else fires, and the baseline classification silently kept the pre-commit answer.
+        OnWorkingCopyStatusChanged?.Invoke(repositoryId);
     }
+
+    /// <inheritdoc/>
+    public event Action<string?>? OnWorkingCopyStatusChanged;
 
     public List<VcsBranchInfo> GetBranches(string repositoryId, bool includeRemote = false)
     {

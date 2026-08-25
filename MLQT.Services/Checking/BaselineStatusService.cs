@@ -131,6 +131,9 @@ public sealed class BaselineStatusService : IBaselineStatusService
     private readonly IRepositoryService _repositories;
 
     private volatile BaselineStatusSnapshot _snapshot = BaselineStatusSnapshot.Empty;
+
+    // Identity of the last snapshot announced, so a refresh that changes nothing stays quiet.
+    private string? _signature;
     private long _lastRefreshTicks;
     private int _trailingRefreshQueued;
 
@@ -146,6 +149,10 @@ public sealed class BaselineStatusService : IBaselineStatusService
         // has pending, so it follows both rather than relying on every caller to remember.
         _libraries.OnLibrariesChanged += Refresh;
         fileMonitoring.OnRepositoryFileActivity += _ => RefreshThrottled();
+
+        // A commit changes no file content, so the file monitor never fires for it — but it does
+        // change which models are pending commit, which is half of this classification.
+        _repositories.OnWorkingCopyStatusChanged += _ => RefreshThrottled();
     }
 
     /// <summary>Refreshes at most once per <see cref="RefreshThrottle"/>, with a trailing run so the
@@ -208,13 +215,49 @@ public sealed class BaselineStatusService : IBaselineStatusService
             touchedFiles += changedFiles;
         }
 
-        var previous = _snapshot;
         _snapshot = new BaselineStatusSnapshot(baselineByModel, touchedModels, touchedFiles);
 
-        // Only wake the UI when something it displays actually moved.
-        if (previous.HasBaseline != _snapshot.HasBaseline ||
-            previous.TouchedFileCount != _snapshot.TouchedFileCount)
+        // Only wake the UI when something it displays actually moved — but "what it displays"
+        // includes every input to the classification, not just the two headline numbers.
+        //
+        // Comparing HasBaseline and TouchedFileCount alone missed the case that matters most: which
+        // models are pending commit can change while the file count does not, and a re-run of
+        // `mlqt baseline update` changes the baseline itself while both stay identical. The snapshot
+        // was then correctly replaced and silently never shown, so a view kept rendering the old
+        // classification until something unrelated re-rendered it — which is why leaving the Code
+        // Review tab and coming back "fixed" the count.
+        var signature = Signature(baselineByModel, touchedModels, touchedFiles);
+        if (!string.Equals(signature, _signature, StringComparison.Ordinal))
+        {
+            _signature = signature;
             OnChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// A cheap identity for everything the classification depends on. The touched models are folded
+    /// order-independently rather than sorted — this runs after a VCS status query, and the point is
+    /// to be cheaper than the refresh that produced it, not to be a cryptographic digest.
+    /// </summary>
+    private static string Signature(
+        IReadOnlyDictionary<string, Baseline> baselineByModel,
+        IReadOnlySet<string> touchedModels,
+        int touchedFiles)
+    {
+        var touchedFold = 0;
+        foreach (var model in touchedModels)
+            touchedFold ^= StringComparer.Ordinal.GetHashCode(model);
+
+        var baselineFold = 0;
+        foreach (var (modelId, baseline) in baselineByModel)
+        {
+            // The baseline instance is reloaded from disk on every refresh, so identity would always
+            // differ; its entry count moves whenever the committed baseline is regenerated, which is
+            // the change a view needs to hear about.
+            baselineFold ^= StringComparer.Ordinal.GetHashCode(modelId) * 397 ^ baseline.Entries.Count;
+        }
+
+        return $"{baselineByModel.Count}|{touchedModels.Count}|{touchedFiles}|{touchedFold}|{baselineFold}";
     }
 
     private IReadOnlyList<string> ModelsOf(Repository repository) =>
