@@ -87,6 +87,8 @@ To add support for a new language:
 
 Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/` and persist across application restarts. They are shown in the dropdown with an "(imported)" label.
 
+Because the language selection is committed with the repository while the dictionaries themselves are installed per machine, a repository can ask for a language the machine does not have. MLQT says so rather than quietly checking those words against the remaining languages — the app shows a warning, the MCP server returns a note with the results, and `mlqt check` writes a warning to stderr. If the missing one was the only language, every word is reported as misspelled, and the warning says that too.
+
 ### Dictionary Selection Per Repository
 
 Each repository can have its own set of active dictionaries. This is useful when different libraries are documented in different languages — for example, one library might use English documentation while another uses German.

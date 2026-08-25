@@ -240,8 +240,9 @@ public class QualityToolsTests
     {
         using var host = new TestHost();
         var fromSource = Spelling(host).SpellCheck(source: "model P\n Real q \"The postion of q\";\nequation\n q=1;\nend P;");
-        var list = Assert.IsAssignableFrom<IReadOnlyList<StyleViolationDto>>(fromSource);
-        Assert.Contains(list, v => v.Summary.Contains("postion"));
+        var result = Assert.IsType<SpellCheckResult>(fromSource);
+        Assert.Contains(result.Violations, v => v.Summary.Contains("postion"));
+        Assert.Null(result.Note);   // the bundled dictionaries are always present
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck());
     }
@@ -252,10 +253,34 @@ public class QualityToolsTests
         using var host = new TestHost();
         LoadSingle(host, "P.mo", "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;");
         var res = Spelling(host).SpellCheck(classId: "P");
-        var list = Assert.IsAssignableFrom<IReadOnlyList<StyleViolationDto>>(res);
-        Assert.Contains(list, v => v.Summary.Contains("postion"));
+        var result = Assert.IsType<SpellCheckResult>(res);
+        Assert.Contains(result.Violations, v => v.Summary.Contains("postion"));
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck(classId: "Nope"));
+    }
+
+    [Fact]
+    public async Task SpellCheck_SaysSoWhenAConfiguredDictionaryIsMissing()
+    {
+        // The languages are committed with the repository; the dictionaries are installed per machine.
+        // An agent on a box without one gets results that are not the ones the settings describe, and
+        // the CLI has always warned about exactly this on stderr.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P.mo"] = "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings
+        {
+            SpellCheckLanguages = ["en_GB", "de_DE"],
+        };
+
+        var result = Assert.IsType<SpellCheckResult>(Spelling(host).SpellCheck(classId: "P"));
+
+        Assert.NotNull(result.Note);
+        Assert.Contains("de_DE", result.Note);
     }
 
     [Fact]
@@ -344,6 +369,23 @@ B
         var onDisk = File.ReadAllText(Path.Combine(dir, "package.mo"));
         Assert.Contains("model A", onDisk);
         Assert.Contains("model B", onDisk);
+    }
+
+    [Fact]
+    public void CorrectSpelling_ChangesTheWordAndNothingElse()
+    {
+        // The tool used to rebuild the file through the formatter, so an agent's spelling fix and a
+        // user's produced different diffs for the same correction. The word is the only change now,
+        // including the file's own line endings.
+        using var host = new TestHost();
+        var original = "model Foo \"The postion\"\r\n  Real x;\r\nequation\r\n  x=1;\r\nend Foo;\r\n";
+        var path = host.WriteMoFile("Foo.mo", original);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+
+        ToolAssert.Ok<CorrectSpellingResult>(
+            Spelling(host).CorrectSpelling("Foo", "postion", "position").GetAwaiter().GetResult());
+
+        Assert.Equal(original.Replace("postion", "position"), File.ReadAllText(path));
     }
 
     [Fact]

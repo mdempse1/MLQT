@@ -81,6 +81,19 @@ public static class SpellingCorrector
     }
 
     /// <summary>
+    /// Puts a file's own line endings and trailing newline back after a correction.
+    /// <see cref="ReplaceWordInStrings"/> works on normalised text, so without this a one-word fix
+    /// rewrites every line of a CRLF file and the change is unreviewable.
+    /// </summary>
+    public static string MatchFileEnding(string original, string corrected)
+    {
+        if (original.Contains("\r\n"))
+            corrected = corrected.Replace("\n", "\r\n");
+
+        return corrected + original[original.TrimEnd(' ', '\t', '\r', '\n').Length..];
+    }
+
+    /// <summary>
     /// Builds a case-sensitive whole-word matcher whose boundaries mirror
     /// <see cref="TextExtractor.TokenizeToWords"/>, so a correction matches exactly the tokens the
     /// spell checker reported and never a substring of a larger one.

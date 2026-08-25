@@ -1894,19 +1894,6 @@ document.head.appendChild(style);
     }
 
     /// <summary>
-    /// Puts the file's own line-ending style and trailing newline back after a correction.
-    /// <see cref="SpellingCorrector"/> works on normalised text, so without this a one-word fix would
-    /// show up in the diff as every line of a CRLF file having changed.
-    /// </summary>
-    private static string RestoreFileEnding(string original, string corrected)
-    {
-        if (original.Contains("\r\n"))
-            corrected = corrected.Replace("\n", "\r\n");
-
-        return corrected + original[original.TrimEnd(' ', '\t', '\r', '\n').Length..];
-    }
-
-    /// <summary>
     /// Replaces the right-clicked misspelled word with the chosen correction throughout the
     /// containing file's descriptions and documentation, writes the file to disk immediately,
     /// reloads it, and refreshes the view. The file is otherwise left exactly as it was — the word
@@ -1974,7 +1961,7 @@ document.head.appendChild(style);
             // Never persist broken code: abort if the correction somehow fails to parse.
             var (_, errors) = ModelicaParserHelper.ParseWithErrors(corrected);
             var failed = errors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            return (RestoreFileEnding(fileText, corrected), count, failed);
+            return (SpellingCorrector.MatchFileEnding(fileText, corrected), count, failed);
         });
 
         if (replacements == 0)

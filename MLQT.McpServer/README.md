@@ -51,7 +51,9 @@ directed by each tool's method signature, so a parameter that is genuinely a str
   `check_class` / `check_library`. Query results carry a `dependenciesAnalyzed` flag so an empty
   result is unambiguous.
 - **Writes.** Most tools are read-only. `format_class` and `correct_spelling` update the graph and
-  write the `.mo` file to disk (unless `preview: true`). `format_code` / `check_style` are stateless.
+  write the `.mo` file to disk (unless `preview: true`). `correct_spelling` changes the word and
+  nothing else — the file keeps its layout and line endings, so the edit is a one-word diff; use
+  `format_class` when reformatting is what you want. `format_code` / `check_style` are stateless.
 - **VCS.** Only two, Modelica-aware, read-only tools are provided. Generic git/svn (commit, log,
   push, branch) is left to the CLI.
 - Call **`get_guidance`** (optionally with a topic) for workflow recipes.

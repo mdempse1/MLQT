@@ -62,22 +62,8 @@ internal static class CheckPipeline
         if (!settings.SpellCheckDescription && !settings.SpellCheckDocumentation)
             return;
 
-        var requested = settings.SpellCheckLanguages;
-        if (requested is null || requested.Count == 0)
-            return;
-
-        var available = dictionaryManager.GetAvailableDictionaries()
-            .Select(d => d.LanguageCode)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var missing = requested.Where(code => !available.Contains(code)).ToList();
-        if (missing.Count == 0)
-            return;
-
-        stderr.WriteLine(
-            $"warning: no spell-check dictionary installed for {string.Join(", ", missing)}; " +
-            "those words are checked against the remaining languages, so the spelling findings " +
-            "will not match a machine that has them");
+        if (DictionaryAvailability.WarningFor(settings.SpellCheckLanguages, dictionaryManager) is { } warning)
+            stderr.WriteLine($"warning: {warning}");
     }
 
     public static async Task<LoadResult> LoadAndCheckAsync(

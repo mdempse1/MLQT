@@ -38,26 +38,6 @@ public class SettingsResolverTests : IDisposable
     }
 
     [Fact]
-    public void SettingsBesideTheLibrary_KeepTheLibraryAsTheRoot()
-    {
-        Directory.CreateDirectory(Path.Combine(Library, ".mlqt"));
-        File.WriteAllText(Path.Combine(Library, ".mlqt", "settings.json"), "{}");
-
-        var resolved = SettingsResolver.Resolve(Library, configPath: null);
-
-        Assert.Equal(Library, resolved.DictionaryRoot);
-    }
-
-    [Fact]
-    public void NoSettingsAtAll_LeavesTheLibraryAsTheRoot()
-    {
-        var resolved = SettingsResolver.Resolve(Library, configPath: null);
-
-        Assert.Equal("built-in defaults", resolved.Source);
-        Assert.Equal(Library, resolved.DictionaryRoot);
-    }
-
-    [Fact]
     public void AConfigKeptOutsideAnyMlqtDirectory_LeavesTheLibraryAsTheRoot()
     {
         // A shared rules file has no accepted spellings of its own, so there is nothing to read
@@ -68,5 +48,47 @@ public class SettingsResolverTests : IDisposable
         var resolved = SettingsResolver.Resolve(Library, shared);
 
         Assert.Equal(Library, resolved.DictionaryRoot);
+    }
+
+    [Fact]
+    public void SettingsAboveTheLibrary_AreFound()
+    {
+        // What the app does: settings belong to a repository, and a repository usually holds several
+        // libraries with one .mlqt at its root. Looking only in the library meant the CLI silently
+        // used built-in defaults where the app used the team's rules.
+        var resolved = SettingsResolver.Resolve(Library, configPath: null);
+
+        Assert.Equal(Path.Combine(_repo, ".mlqt", "settings.json"), resolved.Source);
+        Assert.True(resolved.Settings.ClassHasDescription);
+        Assert.Equal(_repo, resolved.DictionaryRoot);
+    }
+
+    [Fact]
+    public void SettingsBesideTheLibrary_WinOverThoseAbove()
+    {
+        Directory.CreateDirectory(Path.Combine(Library, ".mlqt"));
+        File.WriteAllText(Path.Combine(Library, ".mlqt", "settings.json"), "{\"ClassHasIcon\":true}");
+
+        var resolved = SettingsResolver.Resolve(Library, configPath: null);
+
+        Assert.True(resolved.Settings.ClassHasIcon);
+        Assert.False(resolved.Settings.ClassHasDescription);
+        Assert.Equal(Library, resolved.DictionaryRoot);
+    }
+
+    [Fact]
+    public void TheWalkStopsAtAWorkingCopyRoot()
+    {
+        // A checkout must never pick up a settings file belonging to something outside it — one left
+        // in a shared parent folder, or in a home directory.
+        var checkout = Path.Combine(_repo, "Vendored");
+        Directory.CreateDirectory(Path.Combine(checkout, ".git"));
+        var library = Path.Combine(checkout, "TheirLib");
+        Directory.CreateDirectory(library);
+
+        var resolved = SettingsResolver.Resolve(library, configPath: null);
+
+        Assert.Equal("built-in defaults", resolved.Source);
+        Assert.Equal(library, resolved.DictionaryRoot);
     }
 }

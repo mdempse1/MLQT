@@ -177,6 +177,9 @@ public class StyleCheckingService : IStyleCheckingService
     }
 
     /// <inheritdoc/>
+    public event Action<string>? OnSpellCheckWarning;
+
+    /// <inheritdoc/>
     public SpellChecker EnsureSpellChecker(string? repositoryRoot, IEnumerable<string>? languages = null)
     {
         var wanted = languages?.ToList();
@@ -205,6 +208,17 @@ public class StyleCheckingService : IStyleCheckingService
         Info("StyleCheckingService",
             $"Building spell checker for {repositoryRoot} with {words.Count} accepted word(s) from " +
             _customDictionaryService.PathFor(repositoryRoot));
+
+        // Raised here, where a checker is genuinely built, so it is said once per repository rather
+        // than on every cache hit. The dictionaries are installed per machine while the languages are
+        // committed, so this is a real and silent way for one person's results to differ from
+        // another's — and the CLI has warned about it all along.
+        if (DictionaryAvailability.WarningFor(wanted, _dictionaryManagerService) is { } warning)
+        {
+            Warn("StyleCheckingService", warning);
+            OnSpellCheckWarning?.Invoke(warning);
+        }
+
         var checker = CreateSpellChecker(wanted, words);
 
         lock (_spellCheckerLock)

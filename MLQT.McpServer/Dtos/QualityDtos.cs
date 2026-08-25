@@ -184,7 +184,17 @@ public sealed record FormatClassResult(
 public sealed record SpellSuggestionsResult(
     string Word,
     bool IsCorrect,
-    IReadOnlyList<string> Suggestions);
+    IReadOnlyList<string> Suggestions,
+    string? Note = null);
+
+/// <summary>
+/// The misspellings found, plus a note when this machine has no dictionary for a language the
+/// settings ask for — in which case the results are not the ones the settings describe. The CLI
+/// warns about the same gap on stderr; an agent gets it here.
+/// </summary>
+public sealed record SpellCheckResult(
+    IReadOnlyList<StyleViolationDto> Violations,
+    string? Note = null);
 
 public sealed record UpdateClassSourceResult(
     string ClassId,

@@ -52,6 +52,14 @@ public interface IStyleCheckingService
     /// <param name="repositoryRoot">Root of the repository whose words apply.</param>
     /// <param name="languages">Language codes to load; the repository's configured languages when
     /// omitted for an already-built checker.</param>
+    /// <summary>
+    /// Raised when a spell checker is built for languages this machine has no dictionary for. The
+    /// languages are committed with the repository and the dictionaries are installed per machine, so
+    /// this is how one person's spelling results come to differ from another's with nothing on screen
+    /// to say why.
+    /// </summary>
+    event Action<string>? OnSpellCheckWarning;
+
     SpellChecker EnsureSpellChecker(string? repositoryRoot, IEnumerable<string>? languages = null);
 
     /// <summary>

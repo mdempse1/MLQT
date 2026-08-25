@@ -561,6 +561,7 @@
         // in the CodeReview page — otherwise violations are dropped whenever checking runs while the
         // user is on another tab (e.g. Metrics auto-triggering it).
         StyleCheckingService.OnViolationsFound += OnStyleViolationsFound;
+        StyleCheckingService.OnSpellCheckWarning += OnSpellCheckWarning;
 
         _ = Task.Run(async () => await RunStartUpAsync());
 
@@ -809,6 +810,17 @@
             _startupProcessRunning = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// A spell-check language the settings ask for that this machine has no dictionary for. Shown
+    /// rather than logged only: the results are not the ones the settings describe, and a user
+    /// comparing them with a colleague's — or with CI, which has always warned about this — would
+    /// otherwise have nothing to go on.
+    /// </summary>
+    private async void OnSpellCheckWarning(string message)
+    {
+        await InvokeAsync(() => Snackbar.Add($"Spell check: {message}", Severity.Warning));
     }
 
     private async void OnStyleCheckingProgressChanged(bool allComplete) {
@@ -2112,6 +2124,7 @@
         FileMonitoringService.OnPendingChangesUpdated -= OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged -= OnStyleCheckingProgressChanged;
         StyleCheckingService.OnViolationsFound -= OnStyleViolationsFound;
+        StyleCheckingService.OnSpellCheckWarning -= OnSpellCheckWarning;
     }
 
     // Route background style-checking violations into the persistent CodeReviewService. Lives in the

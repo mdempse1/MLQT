@@ -31,7 +31,7 @@ of `.mo` files) or a single `.mo` file.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <path>` | Settings file to use | `<library-path>/.mlqt/settings.json`, else built-in defaults |
+| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above the library, else built-in defaults |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
@@ -196,6 +196,13 @@ means the reported totals are incomplete; please report it.
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
 desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no style rules are enabled
 and only parse diagnostics are produced. See [settings-reference.md](settings-reference.md).
+
+**Where they are found.** Without `--config`, `mlqt` looks for `.mlqt/settings.json` in the library
+directory and then in each directory above it, stopping at a working-copy root (one holding `.git` or
+`.svn`) so a checkout never picks up settings from outside it. This matches the desktop app: settings
+belong to a repository, and a repository usually holds several libraries under one `.mlqt`. So
+`mlqt check MyRepo/MyLibrary` uses `MyRepo/.mlqt/settings.json` — the same rules, and the same
+accepted spellings, your team sees in the app.
 
 **Per-rule severity.** Enabled rules default to `Warning`. To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
