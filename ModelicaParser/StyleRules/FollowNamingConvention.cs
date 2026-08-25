@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
@@ -37,29 +38,50 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
                 var compiled = new List<Regex>(patterns.Count);
                 foreach (var pattern in patterns)
                 {
-                    try
-                    {
-                        var sanitized = NamingValidator.SanitizePattern(pattern);
-                        // The timeout is a backstop against a hand-edited pattern that backtracks
-                        // catastrophically, and it is measured in wall-clock time — a thread that
-                        // loses the CPU, or a blocking gen2 collection, spends the budget without
-                        // the pattern doing any work. At 100ms healthy patterns were timing out
-                        // during a parallel check of a large library, and the exception cost the
-                        // class every one of its findings. Seconds are still far beyond anything a
-                        // sane pattern needs on a class name.
-                        compiled.Add(new Regex(sanitized, RegexOptions.Compiled,
-                            TimeSpan.FromSeconds(5)));
-                    }
-                    catch (RegexParseException)
-                    {
-                        // Skip invalid patterns — may have been manually edited in settings JSON
-                    }
+                    var regex = Compile(pattern);
+                    if (regex is not null)
+                        compiled.Add(regex);
                 }
                 if (compiled.Count > 0)
                     _compiledPatterns[slotKey] = compiled;
             }
         }
     }
+
+    /// <summary>
+    /// The timeout is a backstop against a hand-edited pattern that backtracks catastrophically, and
+    /// it is measured in wall-clock time — a thread that loses the CPU, or a blocking gen2 collection,
+    /// spends the budget without the pattern doing any work. At 100ms healthy patterns were timing out
+    /// during a parallel check of a large library, and the exception cost the class every one of its
+    /// findings. Seconds are still far beyond anything a sane pattern needs on a class name.
+    /// </summary>
+    private static readonly TimeSpan PatternTimeout = TimeSpan.FromSeconds(5);
+
+    // Compiled patterns are shared across classes. One visitor is built per class checked, so without
+    // this each of a library's thousands of classes recompiled every configured pattern — and because
+    // RegexOptions.Compiled emits its IL on first use, that cost landed inside the check itself: about
+    // 8ms per class against the five patterns of a real settings file, against 0.03ms once they are
+    // shared. The emit also allocated hard enough to provoke the collections that were tripping the
+    // match timeout. Keyed by the pattern text, so a settings change simply adds entries; null records
+    // a pattern that does not compile, so it is not re-parsed (and re-thrown) for every class.
+    private static readonly ConcurrentDictionary<string, Regex?> _patternCache = new(StringComparer.Ordinal);
+
+    private static Regex? Compile(string pattern) =>
+        _patternCache.GetOrAdd(pattern, static p =>
+        {
+            try
+            {
+                return new Regex(NamingValidator.SanitizePattern(p), RegexOptions.Compiled, PatternTimeout);
+            }
+            catch (RegexParseException)
+            {
+                // Not a usable pattern — may have been hand-edited in the settings JSON.
+                return null;
+            }
+        });
+
+    /// <summary>Test seam: how many distinct patterns have been compiled in this process.</summary>
+    internal static int CompiledPatternCount => _patternCache.Count;
 
     protected override void OnClassEntered()
     {

@@ -1095,4 +1095,34 @@ public class FollowNamingConventionTests
             """;
         Assert.Empty(CheckRule(classCode, config));
     }
+
+    [Fact]
+    public void AdditionalPatterns_AreCompiledOncePerPattern_NotOncePerClass()
+    {
+        // A visitor is built for every class checked. Recompiling the patterns each time cost about
+        // 8ms per class on a real settings file — RegexOptions.Compiled emits its IL on first use, so
+        // the cost landed inside the check — and allocated hard enough to provoke the collections that
+        // were tripping the match timeout and losing classes from the run.
+        var config = new NamingConventionConfig();
+        config.AdditionalPatterns["record"] = [@"^[A-Z][a-zA-Z]*(_rec)$"];
+
+        var before = FollowNamingConvention.CompiledPatternCount;
+        for (var i = 0; i < 50; i++)
+            _ = new FollowNamingConvention(config);
+
+        Assert.True(
+            FollowNamingConvention.CompiledPatternCount - before <= 1,
+            $"compiled {FollowNamingConvention.CompiledPatternCount - before} regexes for one pattern");
+    }
+
+    [Fact]
+    public void AnUncompilablePattern_IsIgnoredRatherThanThrowing()
+    {
+        var config = new NamingConventionConfig();
+        config.AdditionalPatterns["record"] = ["^[unclosed"];
+
+        var visitor = new FollowNamingConvention(config);   // must not throw
+
+        Assert.NotNull(visitor);
+    }
 }

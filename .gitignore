@@ -387,3 +387,8 @@ nul
 # Bundled SlikSVN command-line client — populated by build/fetch-svn-tools.ps1, not committed.
 # (The README and the folder itself are kept; only the binaries are ignored.)
 MLQT/svn-tools/win-x64/
+
+# Findings exports from the GUI/CLI comparison recipe (Documentation/code-review.md). These are
+# generated, machine-specific and large — one full run over a sizeable library is tens of megabytes.
+/cli.json
+/mlqt-issues-*.json
