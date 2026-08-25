@@ -1,5 +1,6 @@
 using ModelicaGraph;
 using ModelicaParser.SpellChecking;
+using ModelicaParser.StyleRules;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
@@ -15,6 +16,14 @@ public sealed class StyleCheckContext
     public IReadOnlySet<string>? KnownModelNames { get; private init; }
     public SpellChecker? SpellChecker { get; private init; }
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
+
+    /// <summary>
+    /// The naming rules in the form the visitor wants them. Derived purely from the settings, so it
+    /// is the same for every class in a run — it belongs here with the other once-per-run inputs
+    /// rather than being rebuilt, with its dictionaries and sets, for each of a library's thousands
+    /// of classes.
+    /// </summary>
+    public NamingConventionConfig? NamingConfig { get; private init; }
 
     /// <summary>Context for checking loaded models against a graph, building a spell checker from the
     /// dictionary services for the settings' languages (used by the CLI and MCP).</summary>
@@ -62,6 +71,7 @@ public sealed class StyleCheckContext
             KnownModelNames = knownModelNames,
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
+            NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
         };
     }
 
@@ -77,6 +87,10 @@ public sealed class StyleCheckContext
             spellChecker = SpellCheckerFactory.Build(
                 settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
-        return new StyleCheckContext { SpellChecker = spellChecker };
+        return new StyleCheckContext
+        {
+            SpellChecker = spellChecker,
+            NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
+        };
     }
 }

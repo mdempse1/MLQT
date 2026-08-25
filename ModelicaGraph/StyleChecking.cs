@@ -30,9 +30,10 @@ public static class StyleChecking
         SpellChecker? spellChecker = null,
         IReadOnlySet<string>? knownModelNames = null,
         bool isExcludedFromFormatting = false,
-        Func<string, string, bool>? baseClassHasIcon = null)
+        Func<string, string, bool>? baseClassHasIcon = null,
+        NamingConventionConfig? namingConfig = null)
         => RunStyleCheckingFindings(_currentModel, settings, fullModelId, knownModelIds, spellChecker,
-                knownModelNames, isExcludedFromFormatting, baseClassHasIcon)
+                knownModelNames, isExcludedFromFormatting, baseClassHasIcon, namingConfig: namingConfig)
             .Select(f => f.ToLogMessage())
             .ToList();
 
@@ -53,7 +54,8 @@ public static class StyleChecking
         IReadOnlySet<string>? knownModelNames = null,
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null,
-        bool honorSuppressions = true)
+        bool honorSuppressions = true,
+        NamingConventionConfig? namingConfig = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -157,7 +159,10 @@ public static class StyleChecking
         }
         if (settings.FollowNamingConvention)
         {
-            var config = settings.NamingConvention.ToConfig();
+            // Derived from the settings, so it is the same for every class in a run. Callers that
+            // check more than one class build it once and pass it in — see StyleCheckContext. The
+            // fallback keeps the single-class callers (a snippet, a test) working unchanged.
+            var config = namingConfig ?? settings.NamingConvention.ToConfig();
             var visitor = new FollowNamingConvention(config, basePackage);
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);

@@ -1663,6 +1663,16 @@
                 var baseClassHasIcon = distinctSettings.Any(s => s.ClassHasIcon)
                     ? StyleChecking.CreateBaseClassHasIconCallback(graph)
                     : null;
+                // One per repository's settings rather than one per class: the naming rules are the
+                // same for every class checked under a given settings object, and rebuilding them —
+                // dictionaries, sets and all — for each of tens of thousands of classes is work whose
+                // answer never changes. Keyed by reference and thrown away with the pass, so a
+                // settings change cannot be read from a stale entry.
+                var namingConfigs = new Dictionary<StyleCheckingSettings, ModelicaParser.StyleRules.NamingConventionConfig>(
+                    ReferenceEqualityComparer.Instance as IEqualityComparer<StyleCheckingSettings>);
+                foreach (var s in distinctSettings)
+                    if (s.FollowNamingConvention)
+                        namingConfigs[s] = s.NamingConvention.ToConfig();
                 // Keyed by repository, not by settings: the accepted spellings live with the
                 // repository now, so two repositories sharing identical settings still need their own
                 // checker. Sharing one would let either repository's words silence the other's.
@@ -1686,10 +1696,11 @@
                         ModelicaParser.SpellChecking.SpellChecker? spellChecker = null;
                         if (repositoryByModel.TryGetValue(model.Id, out var repositoryId))
                             spellCheckerByRepository.TryGetValue(repositoryId, out spellChecker);
+                        namingConfigs.TryGetValue(settings, out var namingConfig);
                         var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
                             knownModelIds, spellChecker, knownModelNames,
                             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id),
-                            baseClassHasIcon: baseClassHasIcon);
+                            baseClassHasIcon: baseClassHasIcon, namingConfig: namingConfig);
 
                         foreach (var v in violations)
                             combinedViolations.Add(v);

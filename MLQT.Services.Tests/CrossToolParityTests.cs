@@ -305,4 +305,32 @@ end Q;
 
         Assert.Contains(findings, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.UsesUndeclared);
     }
+
+    [Fact]
+    public void TheNamingRulesAreBuiltOncePerRun_AndTheFindingsAreUnchanged()
+    {
+        // The config is derived from the settings alone, so it is the same for every class in a run.
+        // It is built with the other once-per-run inputs in StyleCheckContext; the per-class fallback
+        // has to agree with it exactly, or which path a surface takes would decide what it reports.
+        var settings = new StyleCheckingSettings { FollowNamingConvention = true };
+        settings.NamingConvention.RecordNaming = ModelicaParser.StyleRules.NamingStyle.PascalCase;
+
+        var data = new LibraryDataService();
+        data.AddLibraryFromFileAsync("R.mo",
+                "record lower_case_rec\n  Real x;\nend lower_case_rec;")
+            .GetAwaiter().GetResult();
+        var node = data.CombinedGraph.ModelNodes.Single();
+
+        var context = StyleCheckContext.Build(settings, data.CombinedGraph, spellChecker: null);
+        Assert.NotNull(context.NamingConfig);
+
+        var viaContext = StyleCheckRunner.RunFindings(node, settings, context);
+        node.Definition.ParsedCode = null;
+        var viaFallback = StyleChecking.RunStyleCheckingFindings(node.Definition, settings, node.Id);
+
+        Assert.Equal(
+            viaFallback.Select(f => f.Fingerprint).OrderBy(f => f, StringComparer.Ordinal),
+            viaContext.Select(f => f.Fingerprint).OrderBy(f => f, StringComparer.Ordinal));
+        Assert.Contains(viaContext, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.NamingConvention);
+    }
 }

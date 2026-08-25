@@ -27,7 +27,8 @@ public static class StyleCheckRunner
         var findings = StyleChecking.RunStyleCheckingFindings(
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions);
+            baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions,
+            namingConfig: context.NamingConfig);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return findings;
@@ -42,7 +43,7 @@ public static class StyleCheckRunner
         var violations = StyleChecking.RunStyleChecking(
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: context.BaseClassHasIcon);
+            baseClassHasIcon: context.BaseClassHasIcon, namingConfig: context.NamingConfig);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return violations;
@@ -54,6 +55,6 @@ public static class StyleCheckRunner
         return StyleChecking.RunStyleChecking(
             definition, settings, fullModelId: string.Empty,
             knownModelIds: null, spellChecker: context.SpellChecker, knownModelNames: null,
-            isExcludedFromFormatting: false, baseClassHasIcon: null);
+            isExcludedFromFormatting: false, baseClassHasIcon: null, namingConfig: context.NamingConfig);
     }
 }
