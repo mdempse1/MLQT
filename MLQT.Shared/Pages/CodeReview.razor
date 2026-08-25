@@ -1954,7 +1954,21 @@ document.head.appendChild(style);
             return;
         }
 
-        var (correctedCode, replacements) = SpellingCorrector.ReplaceWordInStrings(fileText, oldWord, newWord);
+        // Off the render thread: correcting parses the whole file twice — once to find the word in the
+        // strings, once to check the result still parses — which is over a second each on the larger
+        // generated files in a library. Done inline, the window froze for the length of it and then
+        // reported the outcome, which reads as the app having hung rather than worked.
+        var (correctedCode, replacements, parseFailed) = await Task.Run(() =>
+        {
+            var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(fileText, oldWord, newWord);
+            if (count == 0)
+                return (corrected, count, false);
+
+            // Never persist broken code: abort if the correction somehow fails to parse.
+            var (_, errors) = ModelicaParserHelper.ParseWithErrors(corrected);
+            var failed = errors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
+            return (RestoreFileEnding(fileText, corrected), count, failed);
+        });
 
         if (replacements == 0)
         {
@@ -1963,16 +1977,12 @@ document.head.appendChild(style);
             return;
         }
 
-        // Never persist broken code: abort if the correction somehow fails to parse.
-        var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(correctedCode);
-        if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
+        if (parseFailed)
         {
             Snackbar.Add("Correction was not applied: the result failed to parse.", MudBlazor.Severity.Error);
             CloseContextMenu();
             return;
         }
-
-        correctedCode = RestoreFileEnding(fileText, correctedCode);
 
         // Identify the repository (if any) so file monitoring can be paused across the write,
         // preventing the watcher from echoing our own change back as a pending refresh.

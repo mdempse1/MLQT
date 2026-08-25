@@ -167,4 +167,63 @@ end Sources;
         // Lower-case "genarate" is a different word to a case-sensitive replace, and is left alone.
         Assert.Contains("Height of the genarate step", corrected);
     }
+
+    [Fact]
+    public void ReplaceWordInStrings_CorrectsAWordTheSourceHasQuoted()
+    {
+        // Real case from a library: "- 'ivc' minus 'ivo' must match ...". The tokenizer trims the
+        // apostrophes, so the checker reports 'ivc' as the word ivc — and the correction has to be
+        // able to find it, or the app reports a misspelling it cannot fix.
+        var code = "model M \"Valve timing - 'ivc' minus 'ivo'\"\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "ivc", "IVC");
+
+        Assert.Equal(1, count);
+        Assert.Contains("'IVC' minus 'ivo'", corrected);
+    }
+
+    [Fact]
+    public void ReplaceWordInStrings_CorrectsAWordWithATrailingUnderscore()
+    {
+        var code = "model M \"the _ivc_ timing\"\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "ivc", "IVC");
+
+        Assert.Equal(1, count);
+        Assert.Contains("_IVC_", corrected);
+    }
+
+    [Fact]
+    public void ReplaceWordInStrings_DoesNotCorrectTheStemOfAPossessive()
+    {
+        // The checker reports "Stodola's" as one word. Correcting "Stodola" — a separate finding —
+        // must leave the possessive alone, or a correction silently rewrites text nobody asked about.
+        var code = "model M \"Stodola and Stodola's method\"\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "Stodola", "Stodolla");
+
+        Assert.Equal(1, count);
+        Assert.Contains("Stodolla and Stodola's method", corrected);
+    }
+
+    [Fact]
+    public void ReplaceWordInStrings_CorrectsAPossessiveWhole()
+    {
+        var code = "model M \"Stodola's method\"\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "Stodola's", "Stodolla's");
+
+        Assert.Equal(1, count);
+        Assert.Contains("Stodolla's method", corrected);
+    }
+
+    [Fact]
+    public void ReplaceWordInStrings_DoesNotCorrectPartOfAnUnderscoredToken()
+    {
+        var code = "model M \"the ivc_timing value\"\nend M;";
+
+        var (_, count) = SpellingCorrector.ReplaceWordInStrings(code, "ivc", "IVC");
+
+        Assert.Equal(0, count);
+    }
 }
