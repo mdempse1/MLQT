@@ -1792,7 +1792,12 @@ document.head.appendChild(style);
         _misspelledWords = words.Count > 0 ? words : null;
     }
 
-    private static readonly Regex MisspelledWordRegex = new(@"^Misspelled word '([^']+)'", RegexOptions.Compiled);
+    // Fallback for a message that predates the word being carried structurally. Greedy up to the
+    // trailing " in <where>", because the word itself can contain the quote character ("Stodola's") —
+    // stopping at the first one underlined every plain "Stodola" in the file and none of the
+    // possessive that was actually reported.
+    private static readonly Regex MisspelledWordRegex =
+        new(@"^Misspelled word '(.+)' in ", RegexOptions.Compiled);
 
     private static bool IsSpellingViolation(LogMessage? issue)
     {
@@ -1803,6 +1808,9 @@ document.head.appendChild(style);
     {
         if (issue == null)
             return null;
+        if (!string.IsNullOrEmpty(issue.Discriminator))
+            return issue.Discriminator;   // the word the rule flagged, carried through unaltered
+
         var match = MisspelledWordRegex.Match(issue.Summary);
         return match.Success ? match.Groups[1].Value : null;
     }

@@ -104,6 +104,23 @@ public class FindingProjectionTests
         Assert.Equal(42, lm.LineNumber);
         Assert.Equal("", lm.Details);
     }
+
+    [Fact]
+    public void ToLogMessage_CarriesTheDiscriminator()
+    {
+        // The desktop issues list acts on the flagged word — underlining it, accepting it into the
+        // repository's list — and used to recover it by reading the message text back. That cannot be
+        // done reliably when the word is quoted and the word itself contains a quote ("Stodola's").
+        var f = new Finding
+        {
+            RuleId = RuleIds.SpellingDescription,
+            ModelId = "MyLib.Foo",
+            Discriminator = "Stodola's",
+            Message = "Misspelled word 'Stodola's' in description",
+        };
+
+        Assert.Equal("Stodola's", f.ToLogMessage().Discriminator);
+    }
 }
 
 public class RuleCatalogTests

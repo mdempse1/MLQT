@@ -316,4 +316,25 @@ public class SpellCheckDescriptionsTests
             .ToList();
         Assert.Empty(camelViolations);
     }
+
+    [Fact]
+    public void PossessiveOfAnAcceptedWord_IsNotReported()
+    {
+        // End to end for the case a user hits: a name accepted for the repository, used in prose in
+        // both plain and possessive form. Reporting one and not the other made the word list look
+        // broken.
+        var code = """
+            model TestModel "Stodola's method, after Stodola"
+              Real x;
+            equation
+              x = 1.0;
+            end TestModel;
+            """;
+
+        var parseTree = ModelicaParserHelper.Parse(code);
+        var visitor = new SpellCheckDescriptions(SpellChecker.Create(["en_US"], customWords: ["Stodola"]));
+        visitor.Visit(parseTree);
+
+        Assert.Empty(visitor.RuleViolations);
+    }
 }

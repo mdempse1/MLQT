@@ -57,5 +57,6 @@ public sealed record Finding
             RuleId = RuleId,
             ElementPath = ElementPath,
             Fingerprint = Fingerprint,
+            Discriminator = Discriminator,
         };
 }

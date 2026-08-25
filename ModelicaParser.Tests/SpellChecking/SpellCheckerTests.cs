@@ -260,4 +260,43 @@ public class SpellCheckerTests
     {
         Assert.Empty(_checker.Suggest("  "));
     }
+
+    [Fact]
+    public void IsCorrect_AcceptsThePossessiveOfAnAcceptedWord()
+    {
+        // A name a repository has accepted appears in prose as often in the possessive as not, and
+        // no dictionary — Hunspell or hand-written — carries possessive forms. Reporting "Stodola's"
+        // while "Stodola" beside it is fine reads as the word list being ignored.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("Stodola"));
+        Assert.True(checker.IsCorrect("Stodola's"));
+    }
+
+    [Fact]
+    public void IsCorrect_AcceptsThePossessiveOfADictionaryWord()
+    {
+        var checker = SpellChecker.Create(["en_US"]);
+
+        Assert.True(checker.IsCorrect("engine's"));
+    }
+
+    [Fact]
+    public void IsCorrect_AcceptsAPossessiveWrittenWithATypographicApostrophe()
+    {
+        // Documentation is HTML prose and carries either apostrophe.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("Stodola\u2019s"));
+    }
+
+    [Fact]
+    public void IsCorrect_DoesNotAcceptThePossessiveOfAMisspelling()
+    {
+        // Accepting possessives must not become a way for any word ending in 's to pass.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.False(checker.IsCorrect("Stodolla's"));
+        Assert.False(checker.IsCorrect("qwertys"));
+    }
 }

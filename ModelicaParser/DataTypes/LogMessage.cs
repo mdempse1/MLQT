@@ -57,6 +57,14 @@ public class LogMessage
     /// </summary>
     public string? Fingerprint { get; set; }
 
+    /// <summary>
+    /// For a rule that can fire more than once on the same element, what distinguishes this one — for
+    /// a spelling rule, the flagged word. Carried over from the originating <see cref="Finding"/> so a
+    /// consumer can act on the word itself rather than picking it back out of <see cref="Summary"/>,
+    /// which cannot be done reliably: the word is quoted, and words contain quotes ("Stodola's").
+    /// </summary>
+    public string? Discriminator { get; set; }
+
     public LogMessage(string modelName, string severity, int lineNumber, string summary, string details = "")
     {
         ModelName = modelName;

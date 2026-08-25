@@ -106,6 +106,11 @@ public class SpellChecker
     /// <summary>
     /// Checks whether a word is spelled correctly against all loaded dictionaries,
     /// custom words, and optional context words.
+    ///
+    /// <para>The possessive of an accepted word is accepted too. Hunspell dictionaries carry no
+    /// possessive forms, and neither does a hand-written word list, so without this every
+    /// "Stodola's" is reported while every "Stodola" beside it is fine — which reads as the word
+    /// list not being used at all.</para>
     /// </summary>
     /// <param name="word">The word to check.</param>
     /// <param name="contextWords">Optional per-call context words (e.g. component names in scope).</param>
@@ -115,6 +120,16 @@ public class SpellChecker
         if (string.IsNullOrWhiteSpace(word))
             return true;
 
+        if (IsKnown(word, contextWords))
+            return true;
+
+        var possessed = PossessiveBase(word);
+        return possessed is not null && IsKnown(possessed, contextWords);
+    }
+
+    /// <summary>The word itself, against context words, custom words and the dictionaries.</summary>
+    private bool IsKnown(string word, IReadOnlySet<string>? contextWords)
+    {
         // Check context words first (cheapest check)
         if (contextWords != null && contextWords.Contains(word))
             return true;
@@ -135,6 +150,17 @@ public class SpellChecker
 
         return false;
     }
+
+    /// <summary>
+    /// The word a possessive belongs to ("Stodola's" -> "Stodola"), or null if this is not one.
+    /// Both the typewriter apostrophe and the typographic one are recognised, because documentation
+    /// prose carries either. A trailing bare apostrophe ("Jones'") never reaches here — the tokenizer
+    /// trims it — so only the "'s" form is handled.
+    /// </summary>
+    private static string? PossessiveBase(string word) =>
+        word.Length > 2 && (word[^1] == 's' || word[^1] == 'S') && (word[^2] == '\'' || word[^2] == '\u2019')
+            ? word[..^2]
+            : null;
 
     /// <summary>
     /// Returns spelling suggestions for a misspelled word from all loaded dictionaries.
