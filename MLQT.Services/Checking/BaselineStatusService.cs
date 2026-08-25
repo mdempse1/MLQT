@@ -147,12 +147,28 @@ public sealed class BaselineStatusService : IBaselineStatusService
 
         // Self-maintaining: the answer depends on the loaded libraries and on what the working copy
         // has pending, so it follows both rather than relying on every caller to remember.
-        _libraries.OnLibrariesChanged += Refresh;
+        //
+        // Throttled rather than immediate, because a repository load adds its libraries one at a
+        // time and each refresh runs a VCS status query per repository — work thrown away as soon as
+        // the next library arrives.
+        _libraries.OnLibrariesChanged += RefreshThrottled;
         fileMonitoring.OnRepositoryFileActivity += _ => RefreshThrottled();
 
         // A commit changes no file content, so the file monitor never fires for it — but it does
         // change which models are pending commit, which is half of this classification.
         _repositories.OnWorkingCopyStatusChanged += _ => RefreshThrottled();
+
+        // The one that actually matters at startup. A library is attached to its repository *after*
+        // it finishes loading, so every refresh triggered while loading was in progress looked at a
+        // repository that owned no models yet, found no baseline for it, and concluded there was
+        // none. Nothing fired again once the last library was attached, so the answer stayed "no
+        // baseline" until something called Refresh directly — which is what opening the Code Review
+        // tab does, and why leaving it and coming back appeared to fix the count.
+        _repositories.OnRepositoryLoadStateChanged += (_, isLoading) =>
+        {
+            if (!isLoading)
+                Refresh();
+        };
     }
 
     /// <summary>Refreshes at most once per <see cref="RefreshThrottle"/>, with a trailing run so the
