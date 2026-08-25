@@ -404,9 +404,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 var child = children[i];
                 if (child is modelicaParser.C_commentContext cCommentCtx)
                 {
-                    // Handle leading C comments (// and /* */)
+                    // Handle leading C comments (// and /* */).
+                    // VisitC_comment ends the line itself, so do not end it again — that put a blank
+                    // line after every comment at the top of a file, including between consecutive
+                    // lines of the same comment block.
                     Visit(cCommentCtx);
-                    EmitLine();
                 }
                 else if (child is ITerminalNode terminal && terminal.GetText() == "within")
                 {

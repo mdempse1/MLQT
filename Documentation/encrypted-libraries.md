@@ -83,7 +83,7 @@ checkout or a CI runner will not have the same one.
 ### What you see in the tool
 
 A recovered class opens in the code viewer showing the reconstruction, not the vendor's source —
-there is no vendor source to show. Both the class text and a banner above it say so:
+there is no vendor source to show. The class says so itself:
 
 ```modelica
 // Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.
