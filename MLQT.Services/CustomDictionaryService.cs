@@ -11,10 +11,15 @@ public class CustomDictionaryService : ICustomDictionaryService
     private const string MlqtDirectoryName = ".mlqt";
     private const string LegacyFileName = "custom_dictionary.txt";
 
-    // One entry per repository root. Read on first use and kept, because the spell checker asks for
-    // a repository's words once per class checked.
-    private readonly Dictionary<string, HashSet<string>> _wordsByRoot =
+    // One entry per repository root, with the file's timestamp when it was read. The timestamp is
+    // what makes a list that changed outside the app — pulled from version control, edited by hand —
+    // take effect: without it a spell checker built early in the session kept the words it was built
+    // with while the settings page showed the file's current contents, so words plainly listed there
+    // were still reported as misspelled.
+    private readonly Dictionary<string, Entry> _wordsByRoot =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record Entry(HashSet<string> Words, (DateTime When, long Length) Stamp);
 
     private readonly object _lock = new();
     private readonly string? _legacyPath;
@@ -41,36 +46,57 @@ public class CustomDictionaryService : ICustomDictionaryService
     public string PathFor(string repositoryRoot) =>
         Path.Combine(repositoryRoot, MlqtDirectoryName, DictionaryFileName);
 
-    public IReadOnlyCollection<string> WordsFor(string? repositoryRoot)
+    public IReadOnlyCollection<string> WordsFor(string? repositoryRoot) =>
+        string.IsNullOrEmpty(repositoryRoot) ? [] : Snapshot(Current(repositoryRoot));
+
+    public async Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot) =>
+        await Task.Run(() => Snapshot(Current(repositoryRoot)));
+
+    /// <summary>
+    /// The repository's words, re-read when the file has changed on disk since the last read. A
+    /// re-read that changes the list is announced, so anything holding a spell checker built from the
+    /// old one drops it — otherwise a word visible in the settings page goes on being reported, with
+    /// nothing on screen to explain the difference.
+    ///
+    /// <para>Reads on first use rather than returning nothing: callers reach this from the checking
+    /// path, where "no accepted words" and "not loaded yet" look identical in the results and only one
+    /// of them is true.</para>
+    /// </summary>
+    private HashSet<string> Current(string repositoryRoot)
     {
-        if (string.IsNullOrEmpty(repositoryRoot))
-            return [];
+        var path = PathFor(repositoryRoot);
+        var stamp = StampOf(path);
 
         lock (_lock)
         {
-            if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached))
-                return Snapshot(cached);
+            if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached) && cached.Stamp == stamp)
+                return cached.Words;
         }
 
-        // Not seen yet: read it now rather than returning nothing and being quietly wrong. Callers
-        // reach this from the checking path, where "no words" and "not loaded yet" look identical in
-        // the results and only one of them is true.
-        var words = ReadFile(PathFor(repositoryRoot));
+        var words = ReadFile(path);
+        bool changed;
         lock (_lock)
         {
-            _wordsByRoot[repositoryRoot] = words;
-            return Snapshot(words);
+            changed = _wordsByRoot.TryGetValue(repositoryRoot, out var previous)
+                      && !previous.Words.SetEquals(words);
+            _wordsByRoot[repositoryRoot] = new Entry(words, stamp);
         }
+
+        if (changed)
+            OnDictionaryChanged?.Invoke(repositoryRoot);
+
+        return words;
     }
 
-    public async Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot)
+    /// <summary>
+    /// When the list was last written and how long it is, or zeroes if there is none. The length is
+    /// part of it because the system clock is coarser than a file write: two writes close together can
+    /// carry the same timestamp, and missing an edit here is exactly the failure this guards against.
+    /// </summary>
+    private static (DateTime When, long Length) StampOf(string path)
     {
-        var words = await Task.Run(() => ReadFile(PathFor(repositoryRoot)));
-        lock (_lock)
-        {
-            _wordsByRoot[repositoryRoot] = words;
-            return Snapshot(words);
-        }
+        var file = new FileInfo(path);
+        return file.Exists ? (file.LastWriteTimeUtc, file.Length) : (DateTime.MinValue, 0);
     }
 
     public async Task AddWordAsync(string repositoryRoot, string word)
@@ -135,15 +161,20 @@ public class CustomDictionaryService : ICustomDictionaryService
         await File.WriteAllLinesAsync(targetFile, words);
     }
 
-    /// <summary>Caller must hold the lock.</summary>
+    /// <summary>
+    /// Caller must hold the lock. Honours the file's timestamp like <see cref="Current"/>, so adding a
+    /// word does not write a stale list back over an edit made outside the app.
+    /// </summary>
     private HashSet<string> Cached(string repositoryRoot)
     {
-        if (!_wordsByRoot.TryGetValue(repositoryRoot, out var words))
-        {
-            words = ReadFile(PathFor(repositoryRoot));
-            _wordsByRoot[repositoryRoot] = words;
-        }
+        var path = PathFor(repositoryRoot);
+        var stamp = StampOf(path);
 
+        if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached) && cached.Stamp == stamp)
+            return cached.Words;
+
+        var words = ReadFile(path);
+        _wordsByRoot[repositoryRoot] = new Entry(words, stamp);
         return words;
     }
 
@@ -184,8 +215,8 @@ public class CustomDictionaryService : ICustomDictionaryService
         List<string> sorted;
         lock (_lock)
         {
-            sorted = _wordsByRoot.TryGetValue(repositoryRoot, out var words)
-                ? words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList()
+            sorted = _wordsByRoot.TryGetValue(repositoryRoot, out var entry)
+                ? entry.Words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList()
                 : [];
         }
 
@@ -195,5 +226,13 @@ public class CustomDictionaryService : ICustomDictionaryService
             Directory.CreateDirectory(directory);
 
         await File.WriteAllLinesAsync(path, sorted);
+
+        // Record what we just wrote, so the next read does not mistake our own write for an outside
+        // change and announce it.
+        lock (_lock)
+        {
+            if (_wordsByRoot.TryGetValue(repositoryRoot, out var entry))
+                _wordsByRoot[repositoryRoot] = entry with { Stamp = StampOf(path) };
+        }
     }
 }

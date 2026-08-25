@@ -141,6 +141,11 @@ public class StyleCheckingService : IStyleCheckingService
     {
         var wanted = languages?.ToList();
 
+        // Ask for the words before looking in the cache. That re-reads the repository's list if it has
+        // changed on disk since it was last read, and a change drops any checker built from the old
+        // list — which is what lets an updated list take effect without restarting the app.
+        var words = _customDictionaryService.WordsFor(repositoryRoot);
+
         lock (_spellCheckerLock)
         {
             if (_spellCheckers.TryGetValue(repositoryRoot, out var existing)
@@ -150,9 +155,11 @@ public class StyleCheckingService : IStyleCheckingService
             }
         }
 
-        // Built outside the lock: reading dictionaries from disk is slow, and a repository's words
-        // are read through the dictionary service which does its own caching.
-        var checker = CreateSpellChecker(wanted, _customDictionaryService.WordsFor(repositoryRoot));
+        // Built outside the lock: loading the language dictionaries from disk is slow.
+        Info("StyleCheckingService",
+            $"Building spell checker for {repositoryRoot} with {words.Count} accepted word(s) from " +
+            _customDictionaryService.PathFor(repositoryRoot));
+        var checker = CreateSpellChecker(wanted, words);
 
         lock (_spellCheckerLock)
         {

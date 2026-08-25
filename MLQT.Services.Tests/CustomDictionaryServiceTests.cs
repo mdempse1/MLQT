@@ -166,6 +166,52 @@ public class CustomDictionaryServiceTests : IDisposable
         Assert.Equal(0, changed);
     }
 
+    [Fact]
+    public async Task AnEditMadeOutsideTheAppIsPickedUpAndAnnounced()
+    {
+        // Committed lists arrive by version control update and get edited in a text editor, so the
+        // file — not the first read of it — is the authority. Whoever cached a spell checker built
+        // from the old list has to be told, or the word stays reported while the settings page shows
+        // it as accepted.
+        var service = NewService();
+        await service.AddWordAsync(_alpha, "enthalpy");
+
+        var changed = new List<string>();
+        service.OnDictionaryChanged += root => changed.Add(root);
+
+        File.WriteAllLines(service.PathFor(_alpha), ["enthalpy", "exergy"]);
+
+        Assert.Equal(["enthalpy", "exergy"], service.WordsFor(_alpha));
+        Assert.Equal([_alpha], changed);
+    }
+
+    [Fact]
+    public async Task AnUnchangedFileIsNotAnnouncedAgain()
+    {
+        var service = NewService();
+        await service.AddWordAsync(_alpha, "enthalpy");
+
+        var changed = 0;
+        service.OnDictionaryChanged += _ => changed++;
+
+        service.WordsFor(_alpha);
+        service.WordsFor(_alpha);
+
+        Assert.Equal(0, changed);
+    }
+
+    [Fact]
+    public async Task AddingAWordDoesNotWriteBackOverAnOutsideEdit()
+    {
+        var service = NewService();
+        await service.AddWordAsync(_alpha, "enthalpy");
+
+        File.WriteAllLines(service.PathFor(_alpha), ["enthalpy", "exergy"]);
+        await service.AddWordAsync(_alpha, "SOC");
+
+        Assert.Equal(["enthalpy", "exergy", "SOC"], service.WordsFor(_alpha));
+    }
+
     #endregion
 
     #region Import, export and the machine list

@@ -100,7 +100,9 @@ product names, domain terminology, abbreviations. Each repository keeps its own 
 `.mlqt/dictionary.txt` inside the working copy, next to the repository's other MLQT settings.
 
 The list is a plain text file, one word per line, sorted, with `#` comment lines allowed. It is meant
-to be committed with the code. That is the point of storing it in the repository: the desktop app and
+to be committed with the code, and editing it outside MLQT is fine — a list that arrives with a
+version-control update, or that you edit in a text editor, is picked up on the next check without
+restarting. That is the point of storing it in the repository: the desktop app and
 a CI run of `mlqt check` read the same file, so they accept the same words and report the same
 spelling findings. A list kept on one machine could not do that — a word accepted on a developer's
 laptop was still a finding in CI, with nothing in either result to explain the difference.
