@@ -1792,28 +1792,17 @@ document.head.appendChild(style);
         _misspelledWords = words.Count > 0 ? words : null;
     }
 
-    // Fallback for a message that predates the word being carried structurally. Greedy up to the
-    // trailing " in <where>", because the word itself can contain the quote character ("Stodola's") —
-    // stopping at the first one underlined every plain "Stodola" in the file and none of the
-    // possessive that was actually reported.
-    private static readonly Regex MisspelledWordRegex =
-        new(@"^Misspelled word '(.+)' in ", RegexOptions.Compiled);
+    private static bool IsSpellingViolation(LogMessage? issue) =>
+        SpellingMessage.Is(issue?.Summary);
 
-    private static bool IsSpellingViolation(LogMessage? issue)
-    {
-        return issue?.Summary?.StartsWith("Misspelled word '") == true;
-    }
-
-    private static string? ExtractMisspelledWord(LogMessage? issue)
-    {
-        if (issue == null)
-            return null;
-        if (!string.IsNullOrEmpty(issue.Discriminator))
-            return issue.Discriminator;   // the word the rule flagged, carried through unaltered
-
-        var match = MisspelledWordRegex.Match(issue.Summary);
-        return match.Success ? match.Groups[1].Value : null;
-    }
+    /// <summary>
+    /// The word the rule flagged. Read through the shared format rather than from the finding's
+    /// Discriminator: that field exists to make the fingerprint unique, and for a documentation
+    /// finding it carries the section as well as the word ("documentation info:tyre"), which
+    /// underlined nothing because no such text appears in the source.
+    /// </summary>
+    private static string? ExtractMisspelledWord(LogMessage? issue) =>
+        SpellingMessage.WordFrom(issue?.Summary);
 
     /// <summary>
     /// The repository whose word list an accepted spelling belongs in — the one owning the class the

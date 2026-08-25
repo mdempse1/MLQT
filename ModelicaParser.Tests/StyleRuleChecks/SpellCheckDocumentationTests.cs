@@ -570,4 +570,25 @@ public class SpellCheckDocumentationTests
 
         Assert.Empty(visitor.RuleViolations);
     }
+
+    [Fact]
+    public void TheFlaggedWordCanBeReadBackFromTheMessage()
+    {
+        // The code view underlines the word by reading it out of the finding. A documentation
+        // finding's Discriminator holds "documentation info:<word>" so its fingerprint is unique,
+        // and taking the word from there underlined nothing — no such text is in the source.
+        var code = """
+            model TestModel
+              annotation(Documentation(info="<html><p>The tyre presure is low</p></html>"));
+            end TestModel;
+            """;
+
+        var parseTree = ModelicaParserHelper.Parse(code);
+        var visitor = new SpellCheckDocumentation(CreateSpellChecker());
+        visitor.Visit(parseTree);
+
+        var finding = Assert.Single(visitor.Findings);
+        Assert.Equal("presure", SpellingMessage.WordFrom(finding.Message));
+        Assert.Contains("presure", finding.Discriminator);   // unique per section AND word
+    }
 }

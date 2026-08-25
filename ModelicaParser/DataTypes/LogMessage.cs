@@ -58,10 +58,14 @@ public class LogMessage
     public string? Fingerprint { get; set; }
 
     /// <summary>
-    /// For a rule that can fire more than once on the same element, what distinguishes this one — for
-    /// a spelling rule, the flagged word. Carried over from the originating <see cref="Finding"/> so a
-    /// consumer can act on the word itself rather than picking it back out of <see cref="Summary"/>,
-    /// which cannot be done reliably: the word is quoted, and words contain quotes ("Stodola's").
+    /// For a rule that can fire more than once on the same element, what distinguishes this one, so
+    /// that two findings on the same element are still told apart. Carried over from the originating
+    /// <see cref="Finding"/>, where it is part of the fingerprint.
+    ///
+    /// <para>It is not a field to read a value out of: what it holds is whatever made the finding
+    /// unique. A description spelling puts the word in it; a documentation spelling puts the section
+    /// and the word ("documentation info:tyre"). Anything wanting the flagged word should use
+    /// <c>SpellingMessage.WordFrom</c>.</para>
     /// </summary>
     public string? Discriminator { get; set; }
 

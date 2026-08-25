@@ -108,9 +108,8 @@ public class FindingProjectionTests
     [Fact]
     public void ToLogMessage_CarriesTheDiscriminator()
     {
-        // The desktop issues list acts on the flagged word — underlining it, accepting it into the
-        // repository's list — and used to recover it by reading the message text back. That cannot be
-        // done reliably when the word is quoted and the word itself contains a quote ("Stodola's").
+        // What makes two findings on the same element distinct travels with the message, so an
+        // exported issue list can tell them apart the way the fingerprint does.
         var f = new Finding
         {
             RuleId = RuleIds.SpellingDescription,

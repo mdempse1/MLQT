@@ -116,7 +116,9 @@ public class SpellCheckDocumentation : VisitorWithModelNameTracking
                     continue;
 
                 var contextWords = BuildContextWords();
-                var label = paramName == "info" ? "documentation info" : "documentation revisions";
+                var label = paramName == "info"
+                    ? SpellingMessage.InDocumentationInfo
+                    : SpellingMessage.InDocumentationRevisions;
 
                 foreach (var (word, charOffset) in TextExtractor.TokenizeToWords(plainText))
                 {
@@ -126,7 +128,7 @@ public class SpellCheckDocumentation : VisitorWithModelNameTracking
                     if (!_spellChecker.IsCorrect(word, contextWords))
                     {
                         var lineNumber = startLine + TextExtractor.CountNewlinesBefore(plainText, charOffset);
-                        AddViolation(lineNumber, $"Misspelled word '{word}' in {label}",
+                        AddViolation(lineNumber, SpellingMessage.For(word, label),
                             RuleIds.SpellingDocumentation, discriminator: $"{label}:{word}");
                     }
                 }
