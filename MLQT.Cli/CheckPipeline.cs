@@ -94,10 +94,13 @@ internal static class CheckPipeline
         }
 
         StyleCheckingSettings settings;
+        string dictionaryRoot;
         try
         {
-            settings = SettingsResolver.Resolve(libraryPath, configPath, out var source);
-            stderr.WriteLine($"note: settings from {source}");
+            var resolved = SettingsResolver.Resolve(libraryPath, configPath);
+            settings = resolved.Settings;
+            dictionaryRoot = resolved.DictionaryRoot;
+            stderr.WriteLine($"note: settings from {resolved.Source}");
         }
         catch (Exception ex)
         {
@@ -239,11 +242,11 @@ internal static class CheckPipeline
         // like a real finding. Say so instead.
         WarnAboutMissingDictionaries(settings, dictionaryManager, stderr);
 
-        // The accepted spellings live with the library being checked, resolved the same way its
-        // settings are, so CI reads the same list a developer's app does.
+        // The accepted spellings live beside the settings that were resolved for this run, so CI reads
+        // the same list a developer's app does even when the settings cover several libraries.
         var findings = LibraryCheckSession
             .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
-                   dependenciesAnalyzed: null, repositoryRoot: libraryPath)
+                   dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)

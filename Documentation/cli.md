@@ -213,9 +213,13 @@ Values are `Off`, `Info`, `Warning`, or `Error`. The map wins over the on/off bo
 ### Accepted spellings
 
 When spell checking is enabled, the words your library uses that no dictionary knows are read from
-`<library>/.mlqt/dictionary.txt` — the same file the desktop app writes when someone chooses **Add to
-Dictionary**. One word per line; blank lines and `#` comments are ignored. Commit it, and CI accepts
-exactly the words your team accepted.
+the `.mlqt` directory the **settings** came from — `<library>/.mlqt/dictionary.txt` by default, or
+`<repo>/.mlqt/dictionary.txt` when `--config <repo>/.mlqt/settings.json` points there. It is the same
+file the desktop app writes when someone chooses **Add to Dictionary**. One word per line; blank
+lines and `#` comments are ignored. Commit it, and CI accepts exactly the words your team accepted.
+
+The two travel together on purpose: a repository whose settings cover several libraries keeps one
+word list for all of them, so pointing `--config` at it brings the vocabulary as well as the rules.
 
 The language dictionaries themselves are not in the repository. If the settings ask for a language the
 build agent has no dictionary installed for, the words are checked against the remaining languages and

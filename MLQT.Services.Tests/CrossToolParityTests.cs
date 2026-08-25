@@ -333,4 +333,27 @@ end Q;
             viaContext.Select(f => f.Fingerprint).OrderBy(f => f, StringComparer.Ordinal));
         Assert.Contains(viaContext, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.NamingConvention);
     }
+
+    [Fact]
+    public void AnEmptyLanguageList_MeansTheBundledDictionariesEverywhere()
+    {
+        // "When empty, defaults to all bundled dictionaries" is what the setting documents. The app
+        // built its checker through its own copy of the construction, which read an empty list as no
+        // dictionaries at all: every word a misspelling and no suggestions, while CI checking the same
+        // library was fine. Deselecting every language in the settings is all it took.
+        var libraries = new LibraryDataService();
+        var settingsService = new InMemorySettingsService();
+        var monitoring = new FileMonitoringService();
+        var repositories = new RepositoryService(libraries, settingsService, monitoring);
+        var service = new StyleCheckingService(
+            libraries, repositories, settingsService, new CustomDictionaryService(),
+            new DictionaryManagerService(), new CodeReviewService());
+
+        var app = service.EnsureSpellChecker(@"C:\repos\R", new List<string>());
+        var headless = SpellCheckerFactory.Build(new List<string>(), [], new DictionaryManagerService());
+
+        Assert.True(app.IsCorrect("house"));
+        Assert.Equal(headless.IsCorrect("house"), app.IsCorrect("house"));
+        Assert.Equal(headless.Suggest("hosue").Count > 0, app.Suggest("hosue").Count > 0);
+    }
 }

@@ -5,6 +5,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.SpellChecking;
 using MLQT.Services.Helpers;
 using MLQT.Services.DataTypes;
+using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
 using static MLQT.Services.LoggingService;
 
@@ -214,32 +215,17 @@ public class StyleCheckingService : IStyleCheckingService
     }
 
     /// <summary>
-    /// Creates a new SpellChecker with the given languages and custom words,
-    /// separating bundled from imported dictionaries.
+    /// Creates a SpellChecker through the same factory the CLI and MCP use.
+    ///
+    /// <para>This used to be a second implementation of the same construction, and the two had drifted:
+    /// an empty language list meant "no dictionaries at all" here — every word misspelled, no
+    /// suggestions — while the factory read it as the setting documents it, "all bundled
+    /// dictionaries". Deselecting every language in the settings therefore produced a different answer
+    /// in the app from the one CI gave for the same library.</para>
     /// </summary>
-    private SpellChecker CreateSpellChecker(List<string>? languages, IEnumerable<string>? customWords)
-    {
-        var allCustomWords = customWords;
-
-        // Separate bundled from imported language codes
-        var bundledCodes = new List<string>();
-        var additionalDicts = new List<DictionarySource>();
-
-        var codes = languages ?? ["en_US", "en_GB"];
-        foreach (var code in codes)
-        {
-            var imported = _dictionaryManagerService.GetImportedDictionaryPaths(code);
-            if (imported != null)
-                additionalDicts.Add(imported);
-            else
-                bundledCodes.Add(code);
-        }
-
-        return SpellChecker.Create(
-            languageCodes: bundledCodes,
-            customWords: allCustomWords,
-            additionalDictionaries: additionalDicts.Count > 0 ? additionalDicts : null);
-    }
+    private SpellChecker CreateSpellChecker(List<string>? languages, IEnumerable<string>? customWords) =>
+        SpellCheckerFactory.Build(
+            languages, customWords?.ToList() ?? [], _dictionaryManagerService);
 
     private static bool LanguagesMatch(List<string>? a, List<string>? b)
     {

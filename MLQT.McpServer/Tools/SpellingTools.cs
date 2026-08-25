@@ -63,17 +63,23 @@ public sealed class SpellingTools
             if (node.IsParseFailurePlaceholder)
                 return new ToolError($"Class '{classId}' failed to parse and cannot be spell-checked.");
 
-            var settings = SpellSettings(LanguagesForClass(classId));
+            var repository = RepositoryForClass(classId);
+            var settings = SpellSettings(LanguagesOf(repository));
             var context = StyleCheckContext.Build(
                 settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
-                DictionaryScope.RootForModel(_libraries, _repositories, classId));
+                repository?.LocalPath);
             return ToViolationList(StyleCheckRunner.Run(node, settings, context));
         }
 
         if (!string.IsNullOrWhiteSpace(source))
         {
-            var settings = SpellSettings(SingleRepoLanguages());
-            var context = StyleCheckContext.BuildStateless(settings, _customDictionary, _dictionaryManager);
+            // A snippet belongs to no class, so the only sensible scope is the one loaded repository —
+            // and then it is that repository's accepted words as well as its languages. Taking the
+            // languages and not the words reported a term the team had accepted as a misspelling.
+            var repository = SingleRepository();
+            var settings = SpellSettings(LanguagesOf(repository));
+            var context = StyleCheckContext.BuildStateless(
+                settings, _customDictionary, _dictionaryManager, repository?.LocalPath);
             return ToViolationList(StyleCheckRunner.RunStateless(source, settings, context));
         }
 
@@ -93,26 +99,21 @@ public sealed class SpellingTools
         if (string.IsNullOrWhiteSpace(word))
             return new ToolError("word must be a non-empty string.");
 
-        IReadOnlyList<string>? languages;
-        string? dictionaryRoot;
+        Repository? repository;
         if (repositoryId is not null)
         {
             var (repo, error) = EntityResolver.ResolveRepository(_repositories, repositoryId);
             if (error is not null)
                 return error;
-            languages = repo!.StyleSettings?.SpellCheckLanguages;
-            dictionaryRoot = repo.LocalPath;
+            repository = repo;
         }
         else
         {
-            languages = SingleRepoLanguages();
-            dictionaryRoot = _repositories.Repositories.Count == 1
-                ? _repositories.Repositories[0].LocalPath
-                : null;
+            repository = SingleRepository();
         }
 
         var checker = SpellCheckerFactory.Build(
-            languages, _customDictionary.WordsFor(dictionaryRoot), _dictionaryManager);
+            LanguagesOf(repository), _customDictionary.WordsFor(repository?.LocalPath), _dictionaryManager);
         var isCorrect = checker.IsCorrect(word);
         var suggestions = isCorrect ? Array.Empty<string>() : checker.Suggest(word).ToArray();
         return new SpellSuggestionsResult(word, isCorrect, suggestions);
@@ -224,17 +225,20 @@ public sealed class SpellingTools
         return settings;
     }
 
-    private IReadOnlyList<string>? LanguagesForClass(string classId)
-    {
-        var library = _libraries.Libraries.FirstOrDefault(l => l.ModelIds.Contains(classId));
-        var repo = library?.RepositoryId is { } rid ? _repositories.GetRepository(rid) : null;
-        return repo?.StyleSettings?.SpellCheckLanguages;
-    }
+    /// <summary>
+    /// The repository a class belongs to, resolved the one way — through DictionaryScope, which the
+    /// app uses too. Resolving it here separately is how the languages and the accepted words came to
+    /// be taken from different copies of a library that is loaded twice.
+    /// </summary>
+    private Repository? RepositoryForClass(string classId) =>
+        DictionaryScope.RepositoryForModel(_libraries, _repositories, classId);
 
-    private IReadOnlyList<string>? SingleRepoLanguages()
-        => _repositories.Repositories.Count == 1
-            ? _repositories.Repositories[0].StyleSettings?.SpellCheckLanguages
-            : null;
+    /// <summary>The single loaded repository, or null when the choice would be a guess.</summary>
+    private Repository? SingleRepository() =>
+        _repositories.Repositories.Count == 1 ? _repositories.Repositories[0] : null;
+
+    private static IReadOnlyList<string>? LanguagesOf(Repository? repository) =>
+        repository?.StyleSettings?.SpellCheckLanguages;
 
     private static object ToViolationList(IReadOnlyList<ModelicaParser.DataTypes.LogMessage> violations) =>
         violations
