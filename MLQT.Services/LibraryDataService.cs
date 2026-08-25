@@ -773,9 +773,29 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    /// <summary>
+    /// Whether this library is the one whose copy of <paramref name="node"/> is actually in the
+    /// graph.
+    ///
+    /// <para>The same library can be loaded twice — a tool's library folder ships the encrypted
+    /// build of a library the user also has checked out as source, and both are perfectly ordinary
+    /// repositories in the same project. Only one copy of each class survives in the graph (source
+    /// wins), but both <see cref="LoadedLibrary"/> entries still list the same ids, so "which
+    /// library does this class belong to" has two answers and only one of them is right.</para>
+    /// </summary>
+    private static bool Owns(LoadedLibrary library, ModelNode node) =>
+        node.IsExternalStub == (library.SourceType == LibrarySourceType.EncryptedDirectory);
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
-        var items = new List<ModelNode>();
+        // Keyed by model id, because two libraries claiming the same top-level class are claiming
+        // the *same node object*. Adding it once per claiming library put the library in the tree
+        // twice, and — since preparing it for display stamps the library id onto the shared node —
+        // both copies ended up attributed to whichever library was processed last. That is why a
+        // library appeared twice under one repository and not at all under the other, and why which
+        // repository it landed in varied from one library to the next.
+        var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
 
         lock (_lock)
         {
@@ -784,16 +804,26 @@ public class LibraryDataService : ILibraryDataService
                 foreach (var modelId in library.TopLevelModelIds)
                 {
                     var model = _combinedGraph.GetNode<ModelNode>(modelId);
-                    if (model != null)
-                    {
-                        PrepareModelForDisplay(model, library);
-                        items.Add(model);
-                    }
+                    if (model == null)
+                        continue;
+
+                    // First claim wins unless a later library is the one that actually owns the node.
+                    if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
+                        continue;
+
+                    byModelId[modelId] = (model, library);
                 }
             }
-        }
 
-        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            var items = new List<ModelNode>(byModelId.Count);
+            foreach (var (node, library) in byModelId.Values)
+            {
+                PrepareModelForDisplay(node, library);
+                items.Add(node);
+            }
+
+            return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+        }
     }
 
     /// <inheritdoc/>
@@ -808,36 +838,36 @@ public class LibraryDataService : ILibraryDataService
 
         lock (_lock)
         {
-            // Find the library for this parent
-            foreach (var library in _libraries)
+            var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
+            if (parentModel == null)
+                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+
+            // The library for this parent is the one that owns it, not merely the first that claims
+            // it. Both copies of a doubly-loaded library list the same parent, but their child lists
+            // differ: the encrypted one knows only what its documentation named, the source one knows
+            // what is actually there. Taking the first claimant meant expanding a package could show
+            // the wrong set of children entirely.
+            var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
+            var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
+            if (library == null)
+                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+
+            if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
             {
-                if (library.ModelIds.Contains(parentNode.Id))
+                var childModels = childIds
+                    .Where(id => library.ModelIds.Contains(id))
+                    .Select(id => _combinedGraph.GetNode<ModelNode>(id))
+                    .Where(m => m != null)
+                    .Cast<ModelNode>()
+                    .ToList();
+
+                // Sort by package.order if available
+                childModels = SortByPackageOrder(childModels, parentModel);
+
+                foreach (var child in childModels)
                 {
-                    var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
-                    if (parentModel == null)
-                        break;
-
-                    // Get children from the ChildrenByParent dictionary
-                    if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
-                    {
-                        var childModels = childIds
-                            .Where(id => library.ModelIds.Contains(id))
-                            .Select(id => _combinedGraph.GetNode<ModelNode>(id))
-                            .Where(m => m != null)
-                            .Cast<ModelNode>()
-                            .ToList();
-
-                        // Sort by package.order if available
-                        childModels = SortByPackageOrder(childModels, parentModel);
-
-                        foreach (var child in childModels)
-                        {
-                            PrepareModelForDisplay(child, library);
-                            items.Add(child);
-                        }
-                    }
-
-                    break; // Found the parent, no need to check other libraries
+                    PrepareModelForDisplay(child, library);
+                    items.Add(child);
                 }
             }
         }
