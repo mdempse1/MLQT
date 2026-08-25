@@ -1814,6 +1814,14 @@
             LogProcessEnd("MainLayout", "Running deferred style checking (continues in background)");
             await InvokeAsync(StateHasChanged);
         }
+        catch
+        {
+            // The progress dialog is modal and is only closed by the completion event. If the run
+            // never got far enough to produce one, close it here rather than wedging the app.
+            _styleCheckRunning = false;
+            await InvokeAsync(StateHasChanged);
+            throw;
+        }
         finally
         {
             PowerManagementService.AllowSleep();
@@ -2144,23 +2152,41 @@
 
                 if (formattingChanged || styleSettingsChanged)
                 {
-                    _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
-                    _styleCheckRunning = true;
-                    await InvokeAsync(StateHasChanged);
-
                     var repositoryModelIds = LibraryDataService.Libraries
                         .Where(l => l.RepositoryId == repositoryId)
                         .SelectMany(l => l.ModelIds)
                         .ToHashSet();
 
+                    // Decide there is work before showing the progress dialog, not after. It is
+                    // modal and cannot be dismissed, and the only thing that closes it is the
+                    // completion event — so opening it on a path that then starts nothing leaves the
+                    // application wedged with no way out and nothing further in the log.
                     if (repositoryModelIds.Count > 0)
                     {
-                        CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
-                        // The clear above takes the parser issues with it — put them back.
-                        SurfaceParserErrors(repositoryModelIds);
-                        await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
-                        _showStyleCheckingCompleteMessage = true;
-                        StyleCheckingService.StartBackgroundChecking(repository);
+                        _styleCheckStatusMessage = $"Running style checking rules on all classes in {repository.Name}...";
+                        _styleCheckRunning = true;
+                        await InvokeAsync(StateHasChanged);
+
+                        try
+                        {
+                            CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
+                            // The clear above takes the parser issues with it — put them back.
+                            SurfaceParserErrors(repositoryModelIds);
+                            await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
+                            _showStyleCheckingCompleteMessage = true;
+
+                            // Signals completion itself even when it finds nothing to do (no rules
+                            // enabled), which is what closes the dialog.
+                            StyleCheckingService.StartBackgroundChecking(repository);
+                        }
+                        catch
+                        {
+                            // Nothing will signal completion now, so close the dialog here rather
+                            // than leaving it up for a run that never started.
+                            _styleCheckRunning = false;
+                            await InvokeAsync(StateHasChanged);
+                            throw;
+                        }
                     }
                 }
             }
