@@ -133,30 +133,61 @@ public sealed class FormattingTools
                 $"error(s): {DescribeErrors(syntaxErrors)}. Fix the syntax first — format_class will not " +
                 "overwrite the file with malformed output.");
 
+        if (!File.Exists(ctx.FilePath))
+            return new ToolError($"'{classId}' has no file on disk to format.");
+
+        var original = await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath);
+
+        // Format the file as it is on disk, not the owner's stored source. Style checking trims a
+        // package's inline standalone children out of its ModelicaCode — each child has its own node
+        // — so rendering from the stored source would write the file back without those classes,
+        // which is the opposite of what this tool promises ("all classes stored in it").
+        var owner = ctx.FileOwner;
+        var storedCode = owner.Definition.ModelicaCode;
+        var storedParsed = owner.Definition.ParsedCode;
+        owner.Definition.ModelicaCode = original;
+        owner.Definition.ParsedCode = null;
+
         string rendered;
         try
         {
             rendered = ModelicaPackageSaver.RenderFileOwnerModel(
-                ctx.FileOwner, oneOfEachSection, importStatementsFirst, componentsBeforeClasses);
+                owner, oneOfEachSection, importStatementsFirst, componentsBeforeClasses);
         }
         catch (Exception ex)
         {
+            owner.Definition.ModelicaCode = storedCode;
+            owner.Definition.ParsedCode = storedParsed;
             return new ToolError($"Formatting failed: {ex.Message}");
         }
 
         if (preview)
+        {
+            // Nothing is written, so put the node back the way it was.
+            owner.Definition.ModelicaCode = storedCode;
+            owner.Definition.ParsedCode = storedParsed;
             return new FormatClassResult(classId, PreviewOnly: true, Changed: false, ctx.FilePath, rendered);
+        }
 
-        var original = File.Exists(ctx.FilePath) ? await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath) : null;
-        var changed = original is null || NormalizeEol(original) != NormalizeEol(rendered);
+        var changed = NormalizeEol(original) != NormalizeEol(rendered);
         if (changed)
         {
             if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)
+            {
+                owner.Definition.ModelicaCode = storedCode;
+                owner.Definition.ParsedCode = storedParsed;
                 return readOnly;
+            }
 
             await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, rendered);
             var affected = await _libraries.ReloadFileAsync(ctx.FilePath);
             await GraphRefresh.RefreshAfterEditAsync(affected, _libraries, _resources, _session);
+        }
+        else
+        {
+            // The file was already formatted, so nothing was written and the node keeps its own source.
+            owner.Definition.ModelicaCode = storedCode;
+            owner.Definition.ParsedCode = storedParsed;
         }
 
         return new FormatClassResult(classId, PreviewOnly: false, Changed: changed, ctx.FilePath, rendered);

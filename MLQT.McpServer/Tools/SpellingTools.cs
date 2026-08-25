@@ -152,13 +152,29 @@ public sealed class SpellingTools
             return new ToolError($"Could not locate the source file for '{classId}'.");
 
         var owner = ctx.FileOwner;
-        var originalCode = owner.Definition.ModelicaCode ?? string.Empty;
-        var (corrected, replacements) = SpellingCorrector.ReplaceWordInStrings(originalCode, oldWord, newWord);
+
+        // Correct the file as it is on disk, not the owner's stored source. Style checking trims a
+        // package's inline standalone children out of its ModelicaCode — each child has its own node
+        // — so the word is often not in the stored source at all, and re-rendering the file from
+        // what was left would write it back without those classes.
+        string fileText;
+        try
+        {
+            fileText = await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not read '{ctx.FilePath}': {ex.Message}");
+        }
+
+        var (corrected, replacements) = SpellingCorrector.ReplaceWordInStrings(fileText, oldWord, newWord);
 
         if (replacements == 0)
             return new CorrectSpellingResult(classId, ctx.FilePath, 0, Changed: false, preview, Source: null);
 
-        // Temporarily apply the correction so the saver re-renders the whole file from it.
+        // Temporarily hand the corrected file to the owner node so the saver re-renders from it. The
+        // node's own stored source is kept so it can be put back if the file is never written.
+        var storedCode = owner.Definition.ModelicaCode;
         var originalParsed = owner.Definition.ParsedCode;
         owner.Definition.ModelicaCode = corrected;
         owner.Definition.ParsedCode = null;
@@ -171,7 +187,7 @@ public sealed class SpellingTools
         }
         catch (Exception ex)
         {
-            owner.Definition.ModelicaCode = originalCode;
+            owner.Definition.ModelicaCode = storedCode;
             owner.Definition.ParsedCode = originalParsed;
             return new ToolError($"Rendering the corrected file failed: {ex.Message}");
         }
@@ -179,7 +195,7 @@ public sealed class SpellingTools
         if (preview)
         {
             // Restore in-memory state so the graph stays consistent with what is on disk.
-            owner.Definition.ModelicaCode = originalCode;
+            owner.Definition.ModelicaCode = storedCode;
             owner.Definition.ParsedCode = originalParsed;
             return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: false, PreviewOnly: true, rendered);
         }
@@ -187,7 +203,7 @@ public sealed class SpellingTools
         if (FileWritability.RequireWritable(ctx.FilePath, "correct spelling in this file") is { } readOnly)
         {
             // Restore in-memory state so the graph stays consistent with what is on disk.
-            owner.Definition.ModelicaCode = originalCode;
+            owner.Definition.ModelicaCode = storedCode;
             owner.Definition.ParsedCode = originalParsed;
             return readOnly;
         }

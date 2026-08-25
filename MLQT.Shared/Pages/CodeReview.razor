@@ -1878,10 +1878,24 @@ document.head.appendChild(style);
     }
 
     /// <summary>
+    /// Puts the file's own line-ending style and trailing newline back after a correction.
+    /// <see cref="SpellingCorrector"/> works on normalised text, so without this a one-word fix would
+    /// show up in the diff as every line of a CRLF file having changed.
+    /// </summary>
+    private static string RestoreFileEnding(string original, string corrected)
+    {
+        if (original.Contains("\r\n"))
+            corrected = corrected.Replace("\n", "\r\n");
+
+        return corrected + original[original.TrimEnd(' ', '\t', '\r', '\n').Length..];
+    }
+
+    /// <summary>
     /// Replaces the right-clicked misspelled word with the chosen correction throughout the
-    /// containing file's descriptions and documentation, persists the reformatted file to disk
-    /// immediately, reloads it, and refreshes the view. Occurrences inside links/hrefs and code
-    /// blocks are left untouched (see <see cref="SpellingCorrector"/>).
+    /// containing file's descriptions and documentation, writes the file to disk immediately,
+    /// reloads it, and refreshes the view. The file is otherwise left exactly as it was — the word
+    /// is the only change — and occurrences inside links/hrefs and code blocks are left untouched
+    /// (see <see cref="SpellingCorrector"/>).
     /// </summary>
     private async Task ApplyCorrection(string newWord)
     {
@@ -1904,17 +1918,34 @@ document.head.appendChild(style);
             return;
         }
 
-        // Resolve the file-owner: the topmost model stored in this file. Its ModelicaCode is the
-        // complete file slice, so correcting and re-rendering it rewrites the whole .mo file.
-        var fileOwner = graph.GetModelsInFile(fileId!).FirstOrDefault(m =>
-                string.IsNullOrEmpty(m.ParentModelName)
-                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId)
-            ?? _currentModelNode;
+        var filePath = fileNode.FilePath;
+        if (!File.Exists(filePath))
+        {
+            Snackbar.Add("Cannot locate the file on disk to correct.", MudBlazor.Severity.Warning);
+            CloseContextMenu();
+            return;
+        }
 
-        // Correct every occurrence of the word inside descriptions and documentation prose in the
-        // whole file. Links/hrefs and code blocks are preserved by SpellingCorrector.
-        var (correctedCode, replacements) = SpellingCorrector.ReplaceWordInStrings(
-            fileOwner.Definition.ModelicaCode ?? "", oldWord, newWord);
+        // Correct the file as it is on disk, not the source the graph holds for the class. Style
+        // checking trims a package's inline standalone children out of its stored ModelicaCode —
+        // each child has its own node — so the word being corrected is usually not in the package's
+        // code at all, and rewriting the file from it would drop those classes from the file. The
+        // file is the whole truth. Every occurrence in it is corrected; links/hrefs and code blocks
+        // are left alone by SpellingCorrector.
+        string fileText;
+        try
+        {
+            fileText = await ModelicaFileEncoding.ReadAllTextOnlyAsync(filePath);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to read {filePath} to correct spelling", ex);
+            Snackbar.Add($"Failed to read the file: {ex.Message}", MudBlazor.Severity.Error);
+            CloseContextMenu();
+            return;
+        }
+
+        var (correctedCode, replacements) = SpellingCorrector.ReplaceWordInStrings(fileText, oldWord, newWord);
 
         if (replacements == 0)
         {
@@ -1932,20 +1963,11 @@ document.head.appendChild(style);
             return;
         }
 
-        // Render the whole file via the saver (same formatting as format-on-save).
-        fileOwner.Definition.ModelicaCode = correctedCode;
-        fileOwner.Definition.ParsedCode = null;
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(
-            fileOwner,
-            _settings.StyleChecking.OneOfEachSection,
-            _settings.StyleChecking.ImportStatementsFirst,
-            _settings.StyleChecking.ComponentsBeforeClasses);
-
-        var filePath = fileNode.FilePath;
+        correctedCode = RestoreFileEnding(fileText, correctedCode);
 
         // Identify the repository (if any) so file monitoring can be paused across the write,
         // preventing the watcher from echoing our own change back as a pending refresh.
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(fileOwner.Id));
+        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
         var repoId = repository?.Id;
@@ -1959,7 +1981,7 @@ document.head.appendChild(style);
                 FileMonitoringService.StopMonitoring(repoId);
                 monitorPaused = true;
             }
-            await ModelicaFileEncoding.WriteAllTextAsync(filePath, rendered);
+            await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
         }
         catch (Exception ex)
         {

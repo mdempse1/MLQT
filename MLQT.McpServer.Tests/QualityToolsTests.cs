@@ -287,6 +287,65 @@ public class QualityToolsTests
         Assert.Contains("position", File.ReadAllText(path));
     }
 
+    /// <summary>
+    /// A package that stores its classes inline has them trimmed out of its stored source once
+    /// checking has run — each class has its own node. Rewriting the file from that stored source
+    /// would write the file back without them, so the file on disk has to be the source of truth.
+    /// </summary>
+    private static string TrimmedInlinePackage(TestHost host)
+    {
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = @"within;
+package P ""The postion package""
+  model A ""a""
+  end A;
+  model B ""b""
+  end B;
+end P;
+",
+            ["package.order"] = @"A
+B
+",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        ModelicaGraph.PackageCodeTrimmer.TrimStandaloneChildren(host.Libraries.CombinedGraph);
+        var stored = host.Libraries.GetModelById("P")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model A", stored);   // the situation this guards against is real
+
+        return dir;
+    }
+
+    [Fact]
+    public void CorrectSpelling_KeepsClassesTrimmedFromTheStoredSource()
+    {
+        using var host = new TestHost();
+        var dir = TrimmedInlinePackage(host);
+
+        var res = ToolAssert.Ok<CorrectSpellingResult>(
+            Spelling(host).CorrectSpelling("P", "postion", "position").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(Path.Combine(dir, "package.mo"));
+        Assert.Equal(1, res.Replacements);
+        Assert.Contains("position", onDisk);
+        Assert.Contains("model A", onDisk);
+        Assert.Contains("model B", onDisk);
+    }
+
+    [Fact]
+    public void FormatClass_KeepsClassesTrimmedFromTheStoredSource()
+    {
+        using var host = new TestHost();
+        var dir = TrimmedInlinePackage(host);
+
+        ToolAssert.Ok<FormatClassResult>(Formatting(host).FormatClass("P").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(Path.Combine(dir, "package.mo"));
+        Assert.Contains("model A", onDisk);
+        Assert.Contains("model B", onDisk);
+    }
+
     [Fact]
     public void CorrectSpelling_NoMatch_ReturnsZero()
     {

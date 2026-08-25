@@ -138,4 +138,33 @@ public class SpellingCorrectorTests
         Assert.Equal(0, count);
         Assert.Equal(code, corrected);
     }
+
+    [Fact]
+    public void ReplaceWordInStrings_CorrectsAWholeFileIncludingNestedClasses()
+    {
+        // The Code Review correction reads the .mo file from disk and rewrites it, so the input is a
+        // complete file — a within clause, a package, and the classes stored inline in it. Working
+        // from a class's stored source instead would miss these: style checking trims inline
+        // standalone children out of a package's stored code, and rewriting the file from what was
+        // left would delete them.
+        var file = @"within Lib;
+package Sources ""Signal sources""
+  model Step ""Genarate a step signal""
+    parameter Real height = 1 ""Height of the genarate step"";
+  end Step;
+
+  model Ramp ""Genarate a ramp signal""
+  end Ramp;
+end Sources;
+";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(file, "Genarate", "Generate");
+
+        Assert.Equal(2, count);
+        Assert.Contains("within Lib;", corrected);
+        Assert.Contains(@"model Step ""Generate a step signal""", corrected);
+        Assert.Contains(@"model Ramp ""Generate a ramp signal""", corrected);
+        // Lower-case "genarate" is a different word to a case-sensitive replace, and is left alone.
+        Assert.Contains("Height of the genarate step", corrected);
+    }
 }

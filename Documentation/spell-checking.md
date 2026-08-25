@@ -167,11 +167,11 @@ Misspelled words are **highlighted inline** (wavy red underline) in the rendered
    | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
    | **Close** | Closes the menu without taking any action. |
 
-3. When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk**, re-parses it, and clears the resolved violation.
+3. When you apply a correction, MLQT replaces the word, **saves the file to disk**, re-parses it, and clears the resolved violation.
 
 The replacement is **whole-word and case-sensitive**, and is only applied inside description strings and documentation prose. Occurrences inside HTML links (`href`s) and `<code>`/`<pre>` blocks are deliberately left untouched, so correcting a word never breaks a link or a code example. If the correction would produce code that fails to parse, the change is aborted and the file is left unchanged.
 
-Because the save reuses the same formatter as save-on-format, the saved file may be re-formatted beyond just the corrected word (consistent with how MLQT writes Modelica files elsewhere).
+The rest of the file is left exactly as it was, including its line endings — the corrected word is the only change, so the correction shows up in version control as a one-word diff.
 
 After a correction is applied, the code view reloads but keeps your current scroll position (both vertical and horizontal), so you stay where you were in the file rather than jumping back to the top-left.
 
