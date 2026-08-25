@@ -97,9 +97,24 @@ public static class ExternalStubBuilder
     /// <summary>
     /// Builds the Modelica declaration for one documented class.
     /// </summary>
+    /// <summary>
+    /// Header written above every stub.
+    ///
+    /// <para>Without it the synthesized declaration reads as ordinary Modelica that happens to be
+    /// nearly empty, which is a worse impression to give than "MLQT cannot read this library": a
+    /// user could reasonably conclude the vendor's class has no parameters, or that MLQT had lost
+    /// them. It travels with the text, so it is still there if the code is copied out of the viewer
+    /// or reaches somewhere the surrounding UI does not.</para>
+    /// </summary>
+    private const string StubHeader =
+        "// Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.\n" +
+        "// The library ships encrypted, so only what its documentation states is known here: the name,\n" +
+        "// the description, the base classes and whether there is an icon. Read-only.\n";
+
     public static string SynthesizeSource(DocumentedClass documented)
     {
         var source = new StringBuilder();
+        source.Append(StubHeader);
 
         if (documented.ParentName is { Length: > 0 } parent)
             source.Append("within ").Append(parent).Append(";\n");

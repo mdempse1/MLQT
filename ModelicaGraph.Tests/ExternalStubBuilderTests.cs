@@ -83,6 +83,25 @@ public class ExternalStubBuilderTests
         Assert.Empty(ModelicaParserHelper.ParseWithErrors(source).Item2);
     }
 
+    [Fact]
+    public void SynthesizeSource_SaysWhatItIs()
+    {
+        // A stub reads as ordinary Modelica that happens to be nearly empty, which invites a worse
+        // conclusion than the truth — that the vendor's class has no parameters, or that MLQT lost
+        // them. The header travels with the text, so it survives being copied out of the viewer.
+        var source = ExternalStubBuilder.SynthesizeSource(
+            Documented("Lib.Thing", "A thing", kind: DocumentedClass.KindModel));
+
+        Assert.StartsWith("//", source);
+        Assert.Contains("NOT the vendor's source", source);
+        Assert.Contains("encrypted", source);
+
+        // And it must still be a comment, not something the parser trips over.
+        var (tree, errors) = ModelicaParserHelper.ParseWithErrors(source);
+        Assert.NotNull(tree);
+        Assert.Empty(errors);
+    }
+
     #endregion
 
     #region Icon asymmetry

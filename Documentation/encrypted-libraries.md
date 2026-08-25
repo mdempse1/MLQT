@@ -80,6 +80,26 @@ The paths are stored in your application settings rather than in the repository'
 `.mlqt/settings.json`, because an install location is a property of your machine — a colleague's
 checkout or a CI runner will not have the same one.
 
+### What you see in the tool
+
+A recovered class opens in the code viewer showing the reconstruction, not the vendor's source —
+there is no vendor source to show. Both the class text and a banner above it say so:
+
+```modelica
+// Reconstructed by MLQT from this library's documentation — this is NOT the vendor's source.
+// The library ships encrypted, so only what its documentation states is known here: the name,
+// the description, the base classes and whether there is an icon. Read-only.
+within Battery.BMS.Interfaces;
+model CurrentRestrictor "Interface model for current restrictor"
+  extends DymolaModels.Icons.Templates.Box_Bottom;
+  annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+end CurrentRestrictor;
+```
+
+The parameters, equations and annotations that class really has are all still in the library — they
+are simply not visible, and MLQT does not invent them. The comment is part of the text so it stays
+with the code if you copy it somewhere else.
+
 ### On the command line
 
 Pass the library with `--dependency`, exactly as you would an unencrypted one:

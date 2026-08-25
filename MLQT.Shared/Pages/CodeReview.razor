@@ -81,7 +81,19 @@
                 }    
             </MudButtonGroup>
         </MudStack>
-        @if (_currentModelNode?.HasParserErrors == true)
+        @if (_currentModelNode?.IsExternalStub == true)
+        {
+            <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Class="mt-1 mb-0 py-1">
+                <text>
+                    This library ships encrypted, so its source cannot be read. What is shown below was
+                    reconstructed from the vendor's documentation: the class name, its description, what
+                    it extends and whether it has an icon. Everything else — parameters, equations,
+                    annotations — exists in the library but is not visible here. It is read-only and is
+                    never checked or reported on.
+                </text>
+            </MudAlert>
+        }
+        else if (_currentModelNode?.HasParserErrors == true)
         {
             <MudAlert Severity="@(_currentModelNode.HasFatalParseFailure ? MudBlazor.Severity.Error : MudBlazor.Severity.Warning)"
                       Dense="true" Class="mt-1 mb-0 py-1">
