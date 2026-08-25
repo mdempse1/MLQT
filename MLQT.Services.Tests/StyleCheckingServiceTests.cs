@@ -408,6 +408,30 @@ end TestModel;");
     }
 
     [Fact]
+    public void AClassWithNoRepository_StillGetsSuggestions()
+    {
+        // Suggestions come from the language dictionaries, which are installed per machine and belong
+        // to nobody. Only recording an accepted word needs a repository. Tying the two together made
+        // the correction menu say "No suggestions found" for a class MLQT could not place in one,
+        // which is a different statement from "this word has no suggestions".
+        var service = CreateService();
+
+        var checker = service.EnsureSpellChecker(null);
+
+        Assert.False(checker.IsCorrect("presure"));
+        Assert.NotEmpty(checker.Suggest("presure"));
+    }
+
+    [Fact]
+    public void TheNoRepositoryChecker_IsSeparateFromARepositorysOwn()
+    {
+        // It has no accepted words, so it must not be handed out as any repository's checker.
+        var service = CreateService();
+
+        Assert.NotSame(service.EnsureSpellChecker(null), service.EnsureSpellChecker(@"C:\repos\Alpha"));
+    }
+
+    [Fact]
     public void EnsureSpellChecker_CreatesOnePerRepository()
     {
         // The accepted words live with the repository, so two repositories must not share a checker

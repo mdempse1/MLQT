@@ -639,12 +639,16 @@
         _currentIssue = CodeReviewService.LogMessages.FirstOrDefault(m =>
             m.ModelName == NavState.ModelID && IsSpellingViolation(m) && ExtractMisspelledWord(m) == word);
 
-        // Suggestions come from the checker for the repository this class belongs to, so a word its
-        // team has accepted is not offered back as a correction.
-        var suggestionRoot = DictionaryRootForCurrentIssue();
-        _suggestions = suggestionRoot is null
-            ? []
-            : StyleCheckingService.EnsureSpellChecker(suggestionRoot).Suggest(word).ToList();
+        // Suggestions come from the language dictionaries, so they do not depend on the class
+        // belonging to a repository — only recording a word does. Gating them on that left the menu
+        // saying "No suggestions found" for every word whose class MLQT could not tie to a
+        // repository, which is not the same statement at all. The repository is still used when
+        // there is one, for its languages and its accepted words.
+        var repository = RepositoryForCurrentIssue();
+        _suggestions = StyleCheckingService
+            .EnsureSpellChecker(repository?.LocalPath, repository?.StyleSettings?.SpellCheckLanguages)
+            .Suggest(word)
+            .ToList();
         _contextMenuOpen = true;
         // Position is provisional (the word's bottom-left from JS). Once the menu has rendered and its
         // real size is known, OnAfterRenderAsync re-measures and clamps it within the viewport.
@@ -1810,7 +1814,10 @@ document.head.appendChild(style);
     /// nowhere to record the word and the action is offered as disabled rather than silently doing
     /// nothing.
     /// </summary>
-    private string? DictionaryRootForCurrentIssue()
+    private string? DictionaryRootForCurrentIssue() => RepositoryForCurrentIssue()?.LocalPath;
+
+    /// <summary>The repository owning the class the current issue is about, or null if it has none.</summary>
+    private Repository? RepositoryForCurrentIssue()
     {
         var modelId = _currentIssue?.ModelName;
         if (string.IsNullOrEmpty(modelId))
@@ -1818,7 +1825,7 @@ document.head.appendChild(style);
 
         return string.IsNullOrEmpty(modelId)
             ? null
-            : DictionaryScope.RootForModel(LibraryDataService, RepositoryService, modelId);
+            : DictionaryScope.RepositoryForModel(LibraryDataService, RepositoryService, modelId);
     }
 
     private bool CanAddToDictionary => DictionaryRootForCurrentIssue() is not null;

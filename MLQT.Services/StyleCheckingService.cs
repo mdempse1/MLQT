@@ -176,9 +176,15 @@ public class StyleCheckingService : IStyleCheckingService
     }
 
     /// <inheritdoc/>
-    public SpellChecker EnsureSpellChecker(string repositoryRoot, IEnumerable<string>? languages = null)
+    public SpellChecker EnsureSpellChecker(string? repositoryRoot, IEnumerable<string>? languages = null)
     {
         var wanted = languages?.ToList();
+
+        // No repository means no accepted words — not no checker. The language dictionaries are
+        // installed per machine and belong to nobody, so a class outside a repository can still be
+        // offered corrections; only recording a word needs somewhere to record it. Keyed by the empty
+        // string, which is not a path any repository has.
+        repositoryRoot ??= string.Empty;
 
         // Ask for the words before looking in the cache. That re-reads the repository's list if it has
         // changed on disk since it was last read, and a change drops any checker built from the old

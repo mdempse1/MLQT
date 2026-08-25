@@ -122,4 +122,29 @@ public class DictionaryScopeTests
             DictionaryScope.RootForModel(libraries, repositories, "A.Model"),
             DictionaryScope.RootForLibrary(repositories, library));
     }
+
+    [Fact]
+    public void AClassLoadedTwice_IsScopedToTheRepositoryCopy()
+    {
+        // The same library is often loaded twice: checked out in a repository, and again from the
+        // vendor's install folder for reference. Whichever happens to be loaded first must not decide
+        // whether the user can accept a word for it.
+        var repository = new Repository { Name = "R", LocalPath = @"C:\repos\R" };
+        var reference = Library("Engines", repositoryId: null, modelIds: "Engines.Model");
+        var owned = Library("Engines", repository.Id, modelIds: "Engines.Model");
+        var (libraries, repositories) = Fake([reference, owned], repository);
+
+        Assert.Equal(repository.LocalPath, DictionaryScope.RootForModel(libraries, repositories, "Engines.Model"));
+    }
+
+    [Fact]
+    public void AClassOnlyInAnEncryptedCopy_IsStillScopedNowhere()
+    {
+        var repository = new Repository { Name = "R", LocalPath = @"C:\repos\R" };
+        var (libraries, repositories) = Fake(
+            [Library("Vendor", repository.Id, LibrarySourceType.EncryptedDirectory, "Vendor.Model")],
+            repository);
+
+        Assert.Null(DictionaryScope.RootForModel(libraries, repositories, "Vendor.Model"));
+    }
 }

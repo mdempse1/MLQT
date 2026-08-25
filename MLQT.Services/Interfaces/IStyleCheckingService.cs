@@ -52,7 +52,7 @@ public interface IStyleCheckingService
     /// <param name="repositoryRoot">Root of the repository whose words apply.</param>
     /// <param name="languages">Language codes to load; the repository's configured languages when
     /// omitted for an already-built checker.</param>
-    SpellChecker EnsureSpellChecker(string repositoryRoot, IEnumerable<string>? languages = null);
+    SpellChecker EnsureSpellChecker(string? repositoryRoot, IEnumerable<string>? languages = null);
 
     /// <summary>
     /// Runs style checking on a single model.

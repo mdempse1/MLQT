@@ -18,10 +18,45 @@ public static class DictionaryScope
     /// documentation. Null means there are no accepted words, not that some other list applies.
     /// </summary>
     public static string? RootForModel(
+        ILibraryDataService libraries, IRepositoryService repositories, string modelId) =>
+        RepositoryForModel(libraries, repositories, modelId)?.LocalPath;
+
+    /// <summary>
+    /// The repository a class belongs to, by the same rule as <see cref="RootForModel"/> — which is
+    /// the point of it being here: the repository also carries the spell-check languages, and a
+    /// caller that resolved those separately could end up using one repository's languages against
+    /// another's words.
+    /// </summary>
+    public static Repository? RepositoryForModel(
         ILibraryDataService libraries, IRepositoryService repositories, string modelId)
     {
-        var library = libraries.Libraries.FirstOrDefault(l => l.ModelIds.Contains(modelId));
-        return library is null ? null : RootForLibrary(repositories, library);
+        // A class can be in more than one loaded library — a library checked out in a repository and
+        // the vendor's copy of the same library loaded for reference. Take the first that resolves to
+        // a repository rather than the first that contains the id: whichever happens to be loaded
+        // first should not decide whether the user can accept a word.
+        foreach (var library in libraries.Libraries)
+        {
+            if (!library.ModelIds.Contains(modelId))
+                continue;
+
+            var repository = RepositoryFor(repositories, library);
+            if (repository is not null)
+                return repository;
+        }
+
+        return null;
+    }
+
+    private static Repository? RepositoryFor(IRepositoryService repositories, LoadedLibrary library)
+    {
+        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+            return null;   // reconstructed from documentation; never checked, never spelled
+
+        if (library.RepositoryId is not { Length: > 0 } repositoryId)
+            return null;
+
+        var repository = repositories.GetRepository(repositoryId);
+        return string.IsNullOrEmpty(repository?.LocalPath) ? null : repository;
     }
 
     /// <summary>
@@ -32,15 +67,6 @@ public static class DictionaryScope
     /// gets committed. A library loaded on its own has no repository and therefore no list: writing
     /// one beside it would put words somewhere no CI run would ever look.</para>
     /// </summary>
-    public static string? RootForLibrary(IRepositoryService repositories, LoadedLibrary library)
-    {
-        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-            return null;   // reconstructed from documentation; never checked, never spelled
-
-        if (library.RepositoryId is not { Length: > 0 } repositoryId)
-            return null;
-
-        var repository = repositories.GetRepository(repositoryId);
-        return string.IsNullOrEmpty(repository?.LocalPath) ? null : repository.LocalPath;
-    }
+    public static string? RootForLibrary(IRepositoryService repositories, LoadedLibrary library) =>
+        RepositoryFor(repositories, library)?.LocalPath;
 }
