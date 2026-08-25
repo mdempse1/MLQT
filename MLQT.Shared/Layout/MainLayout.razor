@@ -1658,7 +1658,7 @@
                     : null;
                 IReadOnlySet<string>? knownModelNames = distinctSettings.Any(s => s.SpellCheckDescription || s.SpellCheckDocumentation)
                     ? graph.ModelNodes.Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                        .ToHashSet(StringComparer.Ordinal)   // Modelica is case sensitive
                     : null;
                 var baseClassHasIcon = distinctSettings.Any(s => s.ClassHasIcon)
                     ? StyleChecking.CreateBaseClassHasIconCallback(graph)
@@ -1847,11 +1847,17 @@
             await Task.Run(() =>
                 StyleCheckingService.StartBackgroundCheckingForRepositories(RepositoryService.Repositories));
 
+            // The call above only queues the work. Wait for it to actually finish before reporting
+            // the step complete and letting the dialog go: checking saturates the machine, so a user
+            // handed the app back mid-run gets a UI that barely responds and a step that claims to
+            // have finished.
+            await StyleCheckingService.WaitForCompletionAsync();
+
             NavState.StyleCheckingCompleted();
             _step4deferred = false;
             _step4color = Color.Success;
             _showStyleCheckingCompleteMessage = true;
-            LogProcessEnd("MainLayout", "Running deferred style checking (continues in background)");
+            LogProcessEnd("MainLayout", "Running deferred style checking");
             await InvokeAsync(StateHasChanged);
         }
         catch
@@ -1864,6 +1870,11 @@
         }
         finally
         {
+            // The run is genuinely over by the time we get here, so close the modal rather than
+            // leaving it to the completion event — which does not arrive when there was nothing to
+            // check, and used to leave the dialog up with no way out.
+            _styleCheckRunning = false;
+            await InvokeAsync(StateHasChanged);
             PowerManagementService.AllowSleep();
         }
     }
@@ -1953,6 +1964,8 @@
         // already do. Relying on that event alone meant the buttons stayed disabled and the step
         // kept spinning whenever it did not arrive — including when there was nothing to check,
         // which is the one case where the run finishes before the user has let go of the mouse.
+        // The call below now waits for the run to finish, so this clears at the true end of it and
+        // not, as it once did, the moment the work had been handed to the background workers.
         try
         {
             await Task.Run(() => RunDeferredStyleCheckingAsync(showOwnDialog: false));

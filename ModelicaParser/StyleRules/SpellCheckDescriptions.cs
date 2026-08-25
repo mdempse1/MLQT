@@ -26,7 +26,7 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
 
     protected override void OnClassEntered()
     {
-        _scopedNames.Push(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        _scopedNames.Push(new HashSet<string>(StringComparer.Ordinal));
     }
 
     protected override void OnClassExited()
@@ -114,7 +114,10 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
         if (!hasScoped && !hasModelNames)
             return null;
 
-        var context = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Ordinal: these are Modelica identifiers, and Modelica is case sensitive. Matching them
+        // loosely would let a real misspelling through whenever it differed from a name in scope
+        // only by case.
+        var context = new HashSet<string>(StringComparer.Ordinal);
 
         if (hasScoped)
         {

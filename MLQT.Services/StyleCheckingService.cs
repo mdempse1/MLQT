@@ -56,6 +56,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// </summary>
     private void CancelRunningWorkers()
     {
+        EndRun();   // whoever was waiting on the cancelled run is not waiting for anything any more
         Interlocked.Increment(ref _runGeneration);
         lock (_workerLock)
         {
@@ -77,6 +78,44 @@ public class StyleCheckingService : IStyleCheckingService
 
     /// <inheritdoc/>
     public bool IsRunning => _isRunning;
+
+    // Completed when the run started by the last Start* call has finished — every worker done, every
+    // graph analysis done, every violation flushed. IsRunning cannot be polled instead: it is set by
+    // the flush loop, which starts on a thread-pool thread, so a caller that checks it immediately
+    // after queuing work can see false before the loop has begun and conclude the run is over.
+    private TaskCompletionSource<bool>? _completion;
+    private readonly object _completionLock = new();
+
+    /// <inheritdoc/>
+    public Task WaitForCompletionAsync()
+    {
+        lock (_completionLock)
+            return _completion?.Task ?? Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Arms the completion signal, immediately before the flush loop that will release it is started.
+    ///
+    /// <para>If a loop is already running it absorbs this run's workers too — they go in the same list
+    /// — and releases this signal when it drains, which is the right moment either way. Two runs
+    /// starting within a few milliseconds of each other can still let a waiter return a moment early,
+    /// no worse than not waiting at all, which is what callers did before this existed.</para>
+    /// </summary>
+    private void BeginRun()
+    {
+        lock (_completionLock)
+        {
+            if (_completion is null || _completion.Task.IsCompleted)
+                _completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
+    /// <summary>Releases anything waiting on the run, whether it finished or was cancelled.</summary>
+    private void EndRun()
+    {
+        lock (_completionLock)
+            _completion?.TrySetResult(true);
+    }
 
     private readonly ILibraryDataService _libraryDataService;
     private readonly IRepositoryService _repositoryService;
@@ -259,6 +298,7 @@ public class StyleCheckingService : IStyleCheckingService
         //Ensure the worker is processing the queue and that the UI update task is running
         worker.StartProcessing();
         _ = StartGraphAnalyses([repository], removeStaleFirst: false);
+        BeginRun();
         _ = ProcessQueueAsync();
 
         LogProcessStart("StyleCheckingService", $"Background style checking ({repository.Name} models)");
@@ -314,6 +354,7 @@ public class StyleCheckingService : IStyleCheckingService
         //Ensure the worker is processing the queue and that the UI update task is running
         worker.StartProcessing();
         _ = StartGraphAnalyses([repository], removeStaleFirst: false);
+        BeginRun();
         _ = Task.Run(()=>ProcessQueueAsync());
 
         LogProcessStart("StyleCheckingService", $"Background style checking ({repository.Name} models)");
@@ -373,11 +414,13 @@ public class StyleCheckingService : IStyleCheckingService
             // Whole-graph analyses run alongside the per-model workers and deliver through the same
             // violation buffer. Registered before the flush loop starts so completion waits for them.
             _ = StartGraphAnalyses(repositories, removeStaleFirst: false);
+            BeginRun();
             _ = Task.Run(() => ProcessQueueAsync());
         }
         else
         {
-            // All repositories were skipped — signal completion immediately
+            // Every repository was skipped, so there is nothing to wait for: CancelExistingWorkers
+            // above already released the previous run's signal.
             OnProgressChanged?.Invoke(true);
         }
     }
@@ -673,6 +716,7 @@ public class StyleCheckingService : IStyleCheckingService
         // FlushPendingViolations fires OnViolationsFound which calls InvokeAsync
         // to marshal to the render thread — awaiting would deadlock if the caller
         // is already on the render thread.
+        BeginRun();
         _ = Task.Run(ProcessQueueAsync);
     }
 
@@ -707,6 +751,7 @@ public class StyleCheckingService : IStyleCheckingService
         finally
         {
             _isRunning = false;
+            EndRun();
             LogProcessEnd("StyleCheckingService", "All background style checking completed");
             OnProgressChanged?.Invoke(true);
         }

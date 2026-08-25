@@ -414,8 +414,10 @@ end TestModel;");
         // — that would let one repository's spellings silence findings in another.
         var service = CreateService();
 
-        var first = service.EnsureSpellChecker(@"C:epos\Alpha");
-        var second = service.EnsureSpellChecker(@"C:epos\Beta");
+        var first = service.EnsureSpellChecker(@"C:
+epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:
+epos\Beta");
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -427,8 +429,10 @@ end TestModel;");
     {
         var service = CreateService();
 
-        var first = service.EnsureSpellChecker(@"C:epos\Alpha");
-        var second = service.EnsureSpellChecker(@"C:epos\Alpha");
+        var first = service.EnsureSpellChecker(@"C:
+epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:
+epos\Alpha");
 
         Assert.Same(first, second);
     }
@@ -438,8 +442,10 @@ end TestModel;");
     {
         var service = CreateService();
 
-        var english = service.EnsureSpellChecker(@"C:epos\Alpha", new[] { "en_US" });
-        var british = service.EnsureSpellChecker(@"C:epos\Alpha", new[] { "en_GB" });
+        var english = service.EnsureSpellChecker(@"C:
+epos\Alpha", new[] { "en_US" });
+        var british = service.EnsureSpellChecker(@"C:
+epos\Alpha", new[] { "en_GB" });
 
         Assert.NotSame(english, british);
     }
@@ -548,6 +554,49 @@ end TestModel;");
     /// <summary>
     /// Waits for the style checking service to finish processing.
     /// </summary>
+    [Fact]
+    public void WaitForCompletionAsync_WithNothingRunning_IsAlreadyComplete()
+    {
+        Assert.True(CreateService().WaitForCompletionAsync().IsCompleted);
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_ReturnsOnlyOnceTheCheckingHasFinished()
+    {
+        // The Start* methods queue work and return, so a caller that treated them as the whole run
+        // reported the step complete and handed the app back while every core was still checking —
+        // a UI that barely responds under a dialog that says it has finished.
+        var service = CreateService();
+        var violations = new List<LogMessage>();
+        service.OnViolationsFound += v => { lock (violations) violations.AddRange(v); };
+
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A Real x; end A;"),
+            ("B", "model B Real y; end B;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.False(service.IsRunning);
+        lock (violations)
+            Assert.NotEmpty(violations);   // already delivered when the wait returned — no polling
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_WithNoRulesEnabled_DoesNotWaitForever()
+    {
+        // Nothing is queued, so no completion is ever signalled by the flush loop — the case that
+        // once left the startup dialog spinning with no way out.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings(), ("A", "model A Real x; end A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+
+        await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     private static async Task WaitForCompletionAsync(StyleCheckingService service, int timeoutMs = 5000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);

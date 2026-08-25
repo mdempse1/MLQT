@@ -28,6 +28,14 @@ public interface IStyleCheckingService
     bool IsRunning { get; }
 
     /// <summary>
+    /// Completes when the run started by the last Start* call has finished — workers, whole-graph
+    /// analyses and the final flush. Returns an already-completed task when nothing is running, so a
+    /// caller can always await it. This is how a caller knows the work is over: the Start* methods
+    /// queue and return, so they say nothing about when checking finishes.
+    /// </summary>
+    Task WaitForCompletionAsync();
+
+    /// <summary>
     /// Gets the number of models queued for checking.
     /// </summary>
     int QueuedCount { get; }

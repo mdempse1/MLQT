@@ -780,7 +780,7 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { SpellCheckDescription = true };
         var spellChecker = ModelicaParser.SpellChecking.SpellChecker.Create();
-        var knownModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Integrator" };
+        var knownModelNames = new HashSet<string>(StringComparer.Ordinal) { "Integrator" };
 
         var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel",
             spellChecker: spellChecker, knownModelNames: knownModelNames);
