@@ -299,4 +299,33 @@ public class SpellCheckerTests
         Assert.False(checker.IsCorrect("Stodolla's"));
         Assert.False(checker.IsCorrect("qwertys"));
     }
+
+    [Fact]
+    public void AcceptedWords_IgnoreCase()
+    {
+        // The repository's word list is matched case-insensitively, so a term does not have to be
+        // listed once per casing it appears in. (The language dictionaries follow Hunspell's own
+        // rules instead: a lowercase entry covers "engine", "Engine" and "ENGINE", while a proper
+        // noun listed capitalised is not matched in lowercase.)
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("stodola"));
+        Assert.True(checker.IsCorrect("STODOLA"));
+        Assert.True(checker.IsCorrect("StOdOlA"));
+        Assert.True(checker.IsCorrect("stodola's"));
+    }
+
+    [Theory]
+    [InlineData("Stodola's", "Stodola")]
+    [InlineData("Stodola\u2019s", "Stodola")]
+    [InlineData("engine's", "engine")]
+    [InlineData("Stodola", null)]
+    [InlineData("its", null)]
+    [InlineData("'s", null)]
+    public void PossessiveBaseOf_NamesTheWordAPossessiveBelongsTo(string word, string? expected)
+    {
+        // Anything recording an accepted word uses this, so the list gets "Stodola" whichever form
+        // the user happened to click on.
+        Assert.Equal(expected, SpellChecker.PossessiveBaseOf(word));
+    }
 }

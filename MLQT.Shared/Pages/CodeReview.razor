@@ -1851,21 +1851,22 @@ document.head.appendChild(style);
             return;
         }
 
-        await CustomDictionaryService.AddWordAsync(repositoryRoot, word);
+        // Record the word itself, not a possessive of it: the checker already accepts "Stodola's"
+        // once "Stodola" is accepted, and the list is a file the team reads and reviews.
+        var accepted = ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(word) ?? word;
+        await CustomDictionaryService.AddWordAsync(repositoryRoot, accepted);
 
-        // Clear this word's violations only within the repository that accepted it. It stays a
-        // finding elsewhere, which is the point of the list being per repository — another team's
-        // library has not agreed to the word.
+        // Clear the violations this now covers — both the word and its possessive — and only within
+        // the repository that accepted it. It stays a finding elsewhere, which is the point of the
+        // list being per repository: another team's library has not agreed to the word.
         var repositoryModelIds = LibraryDataService.Libraries
             .Where(l => DictionaryScope.RootForLibrary(RepositoryService, l) == repositoryRoot)
             .SelectMany(l => l.ModelIds)
             .ToHashSet(StringComparer.Ordinal);
 
         CodeReviewService.RemoveLogMessagesByPredicate(m =>
-            repositoryModelIds.Contains(m.ModelName) &&
-            (m.Summary == $"Misspelled word '{word}' in description" ||
-             m.Summary == $"Misspelled word '{word}' in documentation info" ||
-             m.Summary == $"Misspelled word '{word}' in documentation revisions"));
+            repositoryModelIds.Contains(m.ModelName) && IsSpellingViolation(m) &&
+            IsNowAccepted(accepted, ExtractMisspelledWord(m)));
 
         _contextMenuOpen = false;
         _suggestions = null;
@@ -1873,6 +1874,17 @@ document.head.appendChild(style);
         RecomputeMisspelledWords();
         StateHasChanged();
     }
+
+    /// <summary>
+    /// Whether a flagged word is covered by <paramref name="acceptedWord"/> — the word itself, or a
+    /// possessive of it. Case is ignored because the word list is: a word accepted in one casing is
+    /// accepted in any.
+    /// </summary>
+    private static bool IsNowAccepted(string acceptedWord, string? flagged) =>
+        flagged is not null &&
+        string.Equals(
+            ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(flagged) ?? flagged,
+            acceptedWord, StringComparison.OrdinalIgnoreCase);
 
     private void IgnoreSpellingViolation()
     {

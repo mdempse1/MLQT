@@ -123,7 +123,7 @@ public class SpellChecker
         if (IsKnown(word, contextWords))
             return true;
 
-        var possessed = PossessiveBase(word);
+        var possessed = PossessiveBaseOf(word);
         return possessed is not null && IsKnown(possessed, contextWords);
     }
 
@@ -156,8 +156,12 @@ public class SpellChecker
     /// Both the typewriter apostrophe and the typographic one are recognised, because documentation
     /// prose carries either. A trailing bare apostrophe ("Jones'") never reaches here — the tokenizer
     /// trims it — so only the "'s" form is handled.
+    ///
+    /// <para>Public because anything recording an accepted word needs the same rule: accepting the
+    /// possessive would put a form in the list that <see cref="IsCorrect"/> already derives, and the
+    /// list is a file the team reads.</para>
     /// </summary>
-    private static string? PossessiveBase(string word) =>
+    public static string? PossessiveBaseOf(string word) =>
         word.Length > 2 && (word[^1] == 's' || word[^1] == 'S') && (word[^2] == '\'' || word[^2] == '\u2019')
             ? word[..^2]
             : null;

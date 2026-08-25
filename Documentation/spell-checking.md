@@ -115,7 +115,9 @@ libraries in three repositories has to be accepted in all three. There is no sha
 The word list is in **Settings > Repositories**, under the repository's spell-check options, inside
 the **Accepted spellings** expandable section:
 
-- **Add a word** — Type a word in the text field and press Enter or click the **+** button
+- **Add a word** — Type a word in the text field and press Enter or click the **+** button. Case is
+  ignored when checking, so a word only needs listing once however it is capitalised, and the
+  possessive of a listed word is accepted without listing it separately
 - **Remove a word** — Click the delete icon next to any word in the list
 - **Filter** — Use the filter text field to search within the word list
 - **Import** — Merge words from a text file (one word per line). Existing words are kept; duplicates
@@ -165,7 +167,7 @@ Misspelled words are **highlighted inline** (wavy red underline) in the rendered
    |--------|--------|
    | **Suggestions** | A list of possible correct spellings from the loaded dictionaries. Click one to apply it in place. |
    | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. The word is immediately accepted and **all** violations for that word in that repository are removed. Disabled for classes that belong to no repository. |
+   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** violations it covers in that repository are removed. Disabled for classes that belong to no repository. |
    | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
    | **Close** | Closes the menu without taking any action. |
 
