@@ -549,7 +549,7 @@
         RepositoryService.OnProjectChanged += OnProjectChanged;
         NavState.OnThemeChanged += OnThemeChangedHandler;
         NavState.OnRunDeferredDependencies += RunDeferredDependenciesOnlyAsync;
-        NavState.OnRunDeferredStyleChecking += RunDeferredStyleCheckingAsync;
+        NavState.OnRunDeferredStyleChecking += RunDeferredStyleCheckingFromEventAsync;
         NavState.OnRunDeferredExternalResources += RunDeferredExternalResourcesAsync;
         NavState.OnRunAllDeferredAnalysis += RunAllDeferredAnalysisAsync;
         NavState.OnFormatChangedFilesForCommit += FormatChangedFilesForCommitAsync;
@@ -1768,13 +1768,23 @@
     /// <summary>
     /// Runs deferred style checking. Called via AppState event from pages or startup dialog.
     /// </summary>
-    private async Task RunDeferredStyleCheckingAsync()
+    /// <summary>
+    /// Entry point for the AppState event, which carries no arguments. Pages asking for a run have
+    /// no dialog of their own, so this one raises the progress dialog.
+    /// </summary>
+    private Task RunDeferredStyleCheckingFromEventAsync() => RunDeferredStyleCheckingAsync();
+
+    /// <param name="showOwnDialog">Whether to raise the standalone progress dialog. False when the
+    /// startup dialog is driving this, because it already shows the step — and because raising a
+    /// second modal there put an undismissable dialog over the one the user was working in, whose
+    /// only route to closing was an event fired from a background thread mid-run.</param>
+    private async Task RunDeferredStyleCheckingAsync(bool showOwnDialog = true)
     {
         if (NavState.HasStyleCheckingRun) return;
         PowerManagementService.PreventSleep();
         try
         {
-            if (!_step4deferred) {
+            if (showOwnDialog) {
                 _styleCheckStatusMessage = "Running style checking rules on all classes";
                 _styleCheckRunning = true;
                 await InvokeAsync(StateHasChanged);
@@ -1908,7 +1918,24 @@
         _step4deferred = false;
         _step4color = Color.Success;
         StateHasChanged();
-        await Task.Run(RunDeferredStyleCheckingAsync);
+
+        // Settled here rather than left to the completion event, which is what its two siblings
+        // already do. Relying on that event alone meant the buttons stayed disabled and the step
+        // kept spinning whenever it did not arrive — including when there was nothing to check,
+        // which is the one case where the run finishes before the user has let go of the mouse.
+        try
+        {
+            await Task.Run(() => RunDeferredStyleCheckingAsync(showOwnDialog: false));
+        }
+        finally
+        {
+            _step4running = false;
+            _runningDeferredStep = false;
+            _styleCheckRunning = false;
+            if (!_step3deferred && !_step4deferred && !_step5deferred)
+                _startupProcessRunning = false;
+            StateHasChanged();
+        }
     }
 
     private async Task RunDeferredExternalResourcesFromDialogAsync()
@@ -2022,7 +2049,7 @@
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
         NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
         NavState.OnRunDeferredDependencies -= RunDeferredDependenciesOnlyAsync;
-        NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingAsync;
+        NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingFromEventAsync;
         NavState.OnRunDeferredExternalResources -= RunDeferredExternalResourcesAsync;
         NavState.OnRunAllDeferredAnalysis -= RunAllDeferredAnalysisAsync;
         NavState.OnFormatChangedFilesForCommit -= FormatChangedFilesForCommitAsync;
