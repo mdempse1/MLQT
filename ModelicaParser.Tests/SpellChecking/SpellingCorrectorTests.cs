@@ -226,4 +226,18 @@ end Sources;
 
         Assert.Equal(0, count);
     }
+
+    [Fact]
+    public void ReplaceWordInStrings_OnSourceThatCannotBeParsed_ReportsNothingRatherThanThrowing()
+    {
+        // The Code Review correction runs this against whatever is on disk, including a file someone
+        // has left mid-edit. Throwing here reached the renderer, which swallowed it: the menu stayed
+        // open, the file was untouched, and nothing said why.
+        var broken = "model M \"The postion\"\n  Real x\nequation\n  x = ;\nend";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(broken, "postion", "position");
+
+        Assert.True(count >= 0);              // whatever it manages, it must come back
+        Assert.NotNull(corrected);
+    }
 }

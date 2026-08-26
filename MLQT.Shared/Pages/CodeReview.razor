@@ -1902,6 +1902,26 @@ document.head.appendChild(style);
     /// </summary>
     private async Task ApplyCorrection(string newWord)
     {
+        // Anything that escapes here is swallowed by the renderer: the menu stays open, the file is
+        // untouched, and the only trace is a line in a debug window the user does not have. A failed
+        // correction has to say so, and has to leave something in the log to act on.
+        try
+        {
+            await ApplyCorrectionCore(newWord);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Correcting '{_contextWord}' failed", ex);
+            Snackbar.Add(
+                $"Correcting '{_contextWord}' failed: {ex.GetType().Name}: {ex.Message}",
+                MudBlazor.Severity.Error);
+            CloseContextMenu();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ApplyCorrectionCore(string newWord)
+    {
         var oldWord = _contextWord;
         if (_currentModelNode == null || string.IsNullOrEmpty(oldWord)
             || string.IsNullOrWhiteSpace(newWord) || newWord.Trim() == oldWord)
@@ -1952,21 +1972,36 @@ document.head.appendChild(style);
         // strings, once to check the result still parses — which is over a second each on the larger
         // generated files in a library. Done inline, the window froze for the length of it and then
         // reported the outcome, which reads as the app having hung rather than worked.
-        var (correctedCode, replacements, parseFailed) = await Task.Run(() =>
+        var (correctedCode, replacements, parseFailed, sourceUnreadable) = await Task.Run(() =>
         {
             var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(fileText, oldWord, newWord);
             if (count == 0)
-                return (corrected, count, false);
+            {
+                // Say which of the two it is. A word that is genuinely absent and a file the parser
+                // could not read look identical from the outside, and only one of them is the user's
+                // to fix. Parsed only on this path, so a successful correction pays nothing for it.
+                var (_, sourceErrors) = ModelicaParserHelper.ParseWithErrors(fileText);
+                var unreadable = sourceErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
+                return (corrected, count, false, unreadable);
+            }
 
             // Never persist broken code: abort if the correction somehow fails to parse.
             var (_, errors) = ModelicaParserHelper.ParseWithErrors(corrected);
             var failed = errors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            return (SpellingCorrector.MatchFileEnding(fileText, corrected), count, failed);
+            return (SpellingCorrector.MatchFileEnding(fileText, corrected), count, failed, false);
         });
 
         if (replacements == 0)
         {
-            Snackbar.Add($"Could not find '{oldWord}' to correct in this file.", MudBlazor.Severity.Warning);
+            Snackbar.Add(
+                sourceUnreadable
+                    ? $"'{Path.GetFileName(filePath)}' has a syntax error MLQT could not parse, so " +
+                      $"'{oldWord}' could not be located in it. Fix the syntax first."
+                    : $"Could not find '{oldWord}' to correct in this file.",
+                MudBlazor.Severity.Warning);
+            LoggingService.Warn("CodeReview",
+                $"No correction applied for '{oldWord}' in {filePath} " +
+                $"(source parses: {!sourceUnreadable})");
             CloseContextMenu();
             return;
         }
@@ -2047,6 +2082,8 @@ document.head.appendChild(style);
         OnModelSelected();   // re-render with corrected content and refresh VCS status
         RecomputeMisspelledWords();
 
+        LoggingService.Info("CodeReview",
+            $"Replaced '{oldWord}' with '{newWord}' {replacements} time(s) in {filePath}");
         Snackbar.Add(
             $"Replaced '{oldWord}' with '{newWord}' ({replacements} occurrence{(replacements == 1 ? "" : "s")}).",
             MudBlazor.Severity.Success);
