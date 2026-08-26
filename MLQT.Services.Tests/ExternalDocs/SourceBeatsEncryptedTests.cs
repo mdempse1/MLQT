@@ -233,4 +233,31 @@ public class SourceBeatsEncryptedTests : IDisposable
         Assert.False(graph.GetNode<ModelNode>("Lib.Thing")!.IsExternalStub);
     }
 
+
+    [Fact]
+    public async Task AnEncryptedLibraryWhoseClassesAreAllLoadedFromSource_IsNotMistakenForAnUnreadableOne()
+    {
+        // Both leave the encrypted library with no classes of its own, and only one of them is a
+        // problem. Reporting "ships no usable documentation" for a library whose help files read
+        // perfectly well sent people looking through a vendor's install for a fault that was not
+        // there.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromPathAsync(WriteSource());
+        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted());
+
+        Assert.Empty(encrypted.ModelIds);                    // nothing recovered, because nothing was needed
+        Assert.NotNull(encrypted.DocumentedClassCount);
+        Assert.True(encrypted.DocumentedClassCount > 0,      // the documentation was read fine
+            "the vendor's documentation described no classes");
+    }
+
+    [Fact]
+    public async Task AnEncryptedLibraryLoadedOnItsOwn_RecordsWhatItsDocumentationDescribed()
+    {
+        var service = new LibraryDataService();
+        var encrypted = await service.AddLibraryFromPathAsync(WriteEncrypted());
+
+        Assert.NotEmpty(encrypted.ModelIds);
+        Assert.Equal(encrypted.ModelIds.Count, encrypted.DocumentedClassCount);
+    }
 }

@@ -247,6 +247,7 @@ public class LibraryDataService : ILibraryDataService
                 // fabricated broken-reference finding.
                 Warn("LibraryDataService",
                     $"Encrypted library '{detected.Name}' ships no documentation; its classes cannot be recovered");
+                library.DocumentedClassCount = 0;
 
                 lock (_lock)
                 {
@@ -259,6 +260,7 @@ public class LibraryDataService : ILibraryDataService
                 return library;
             }
 
+            var supersededCount = 0;
             await Task.Run(() =>
             {
                 var document = DymolaHelpReader.Read(detected.HelpDirectory!);
@@ -267,12 +269,16 @@ public class LibraryDataService : ILibraryDataService
                     $"({document.FilesSkipped} skipped) for '{detected.Name}'");
 
                 List<string> modelIds;
+                int supersededBySource;
                 lock (_graphLock)
                 {
                     modelIds = ExternalStubBuilder.AddDocumentedClasses(
-                        _combinedGraph, document.Classes, detected.EncryptedPackagePath, detected.Version);
+                        _combinedGraph, document.Classes, detected.EncryptedPackagePath,
+                        out supersededBySource, detected.Version);
                 }
 
+                library.DocumentedClassCount = document.Classes.Count;
+                supersededCount = supersededBySource;
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
 
@@ -290,7 +296,10 @@ public class LibraryDataService : ILibraryDataService
 
             Info("LibraryDataService",
                 $"Loaded encrypted library '{library.Name}' {detected.Version} with {library.ModelIds.Count} " +
-                "classes recovered from documentation (reference only)");
+                "classes recovered from documentation (reference only)" +
+                (supersededCount > 0
+                    ? $"; {supersededCount} left to the source already loaded for them"
+                    : ""));
             LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
             return library;
         }

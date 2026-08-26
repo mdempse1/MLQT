@@ -39,7 +39,10 @@ internal static class CheckPipeline
     private static void ReportEncrypted(
         LoadedLibrary library, List<string> loadedNames, TextWriter stderr)
     {
-        if (library.ModelIds.Count == 0)
+        // Only when the vendor shipped nothing readable. A library whose documentation was read
+        // perfectly well but whose every class we already have from source also adds no nodes, and
+        // warning about that told people to go looking for a problem they did not have.
+        if (library.DocumentedClassCount is null or 0)
         {
             stderr.WriteLine(
                 $"warning: encrypted library '{library.Name}' ships no usable documentation, so its " +

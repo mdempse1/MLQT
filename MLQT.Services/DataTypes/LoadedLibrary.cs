@@ -58,4 +58,14 @@ public class LoadedLibrary
     /// Empty string if library is at repository root.
     /// </summary>
     public string? RelativePathInRepository { get; set; }
+
+    /// <summary>
+    /// For an encrypted library, how many classes the vendor's documentation described — whether or
+    /// not they became nodes. Null for a library loaded from source.
+    ///
+    /// <para>It is what separates "this library ships nothing we can read" from "we already have all
+    /// of it from source". Both leave <see cref="ModelIds"/> empty, and only the first is worth
+    /// telling anyone about.</para>
+    /// </summary>
+    public int? DocumentedClassCount { get; set; }
 }

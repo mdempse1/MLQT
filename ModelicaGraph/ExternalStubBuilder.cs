@@ -39,7 +39,21 @@ public static class ExternalStubBuilder
         IReadOnlyList<DocumentedClass> documented,
         string encryptedPackagePath,
         string? libraryVersion = null)
+        => AddDocumentedClasses(graph, documented, encryptedPackagePath, out _, libraryVersion);
+
+    /// <param name="supersededBySource">How many documented classes were left alone because their
+    /// real source is already loaded. Reported because it is the difference between a library that
+    /// shipped nothing readable and one whose every class we already have properly — both of which
+    /// add no nodes, and only one of which is a problem.</param>
+    /// <inheritdoc cref="AddDocumentedClasses(DirectedGraph, IReadOnlyList{DocumentedClass}, string, string?)"/>
+    public static List<string> AddDocumentedClasses(
+        DirectedGraph graph,
+        IReadOnlyList<DocumentedClass> documented,
+        string encryptedPackagePath,
+        out int supersededBySource,
+        string? libraryVersion = null)
     {
+        supersededBySource = 0;
         var modelIds = new List<string>(documented.Count);
         if (documented.Count == 0)
             return modelIds;
@@ -60,7 +74,10 @@ public static class ExternalStubBuilder
             // source is checked out came to read, and try to parse, a vendor's encrypted blob.
             var existing = graph.GetNode<ModelNode>(node.Id);
             if (existing is not null && !existing.IsExternalStub)
+            {
+                supersededBySource++;
                 continue;
+            }
 
             graph.AddNode(node);
             graph.AddFileContainsModel(fileId, node.Id);
