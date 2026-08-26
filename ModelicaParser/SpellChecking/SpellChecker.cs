@@ -167,12 +167,20 @@ public class SpellChecker
             : null;
 
     /// <summary>
-    /// Returns spelling suggestions for a misspelled word from all loaded dictionaries.
+    /// Returns spelling suggestions for a misspelled word: near matches among the accepted words
+    /// first, then whatever the language dictionaries offer.
+    ///
+    /// <para>The accepted words come first because they are the likelier intent. A term someone took
+    /// the trouble to accept for this repository is part of its vocabulary — mistype "Pacejka" as
+    /// "Pacjeka" and no English dictionary has anything useful to say, while the repository has the
+    /// exact word one transposition away and used to keep it to itself.</para>
     /// </summary>
     public IReadOnlyList<string> Suggest(string word)
     {
         if (string.IsNullOrWhiteSpace(word))
             return [];
+
+        var accepted = NearbyAcceptedWords(word);
 
         var suggestions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var dict in _dictionaries)
@@ -183,7 +191,96 @@ public class SpellChecker
             }
         }
 
+        if (accepted.Count > 0)
+        {
+            suggestions.ExceptWith(accepted);   // an accepted word is offered once, in its own casing
+            return [.. accepted, .. suggestions.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)];
+        }
+
         return suggestions.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Accepted words within a typo's distance of <paramref name="word"/>, closest first. Bounded by
+    /// length so a long list of accepted terms costs a length comparison for most of them.
+    /// </summary>
+    private List<string> NearbyAcceptedWords(string word)
+    {
+        // One edit for a short word, two for anything longer: enough for the ordinary typo, and tight
+        // enough that a repository's vocabulary does not start answering for unrelated words.
+        var limit = word.Length <= 4 ? 1 : 2;
+        var hits = new List<(string Word, int Distance)>();
+
+        lock (_customWordsLock)
+        {
+            foreach (var candidate in _customWords)
+            {
+                if (Math.Abs(candidate.Length - word.Length) > limit)
+                    continue;
+                if (string.Equals(candidate, word, StringComparison.OrdinalIgnoreCase))
+                    continue;   // not a suggestion: the word is already accepted
+
+                var distance = EditDistance(word, candidate, limit);
+                if (distance >= 0)
+                    hits.Add((candidate, distance));
+            }
+        }
+
+        return hits
+            .OrderBy(h => h.Distance)
+            .ThenBy(h => h.Word, StringComparer.OrdinalIgnoreCase)
+            .Select(h => h.Word)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Case-insensitive edit distance counting a swap of two neighbouring letters as one edit, which
+    /// is what "Pacjeka" for "Pacejka" is — and what plain insert/delete/substitute counts as two.
+    /// Returns -1 once the distance is past <paramref name="limit"/>, so a long word list is walked
+    /// without scoring candidates that cannot qualify.
+    /// </summary>
+    private static int EditDistance(string a, string b, int limit)
+    {
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+        var beforePrevious = new int[b.Length + 1];
+
+        for (var j = 0; j <= b.Length; j++)
+            previous[j] = j;
+
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            var best = current[0];
+
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var same = char.ToUpperInvariant(a[i - 1]) == char.ToUpperInvariant(b[j - 1]);
+                var cost = same ? 0 : 1;
+
+                var value = Math.Min(
+                    Math.Min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + cost);
+
+                if (i > 1 && j > 1
+                    && char.ToUpperInvariant(a[i - 1]) == char.ToUpperInvariant(b[j - 2])
+                    && char.ToUpperInvariant(a[i - 2]) == char.ToUpperInvariant(b[j - 1]))
+                {
+                    value = Math.Min(value, beforePrevious[j - 2] + 1);
+                }
+
+                current[j] = value;
+                best = Math.Min(best, value);
+            }
+
+            if (best > limit)
+                return -1;   // every path through this row is already too far
+
+            (beforePrevious, previous, current) = (previous, current, beforePrevious);
+        }
+
+        var distance = previous[b.Length];
+        return distance <= limit ? distance : -1;
     }
 
     /// <summary>

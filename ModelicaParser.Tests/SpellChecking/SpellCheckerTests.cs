@@ -328,4 +328,66 @@ public class SpellCheckerTests
         // the user happened to click on.
         Assert.Equal(expected, SpellChecker.PossessiveBaseOf(word));
     }
+
+    [Fact]
+    public void Suggest_OffersAnAcceptedWordThatIsNearlyRight()
+    {
+        // The case that prompted this: a repository accepts "Pacejka", someone types "Pacjeka", and
+        // no English dictionary has anything to say about either. The word the team accepted was one
+        // transposition away and was not being offered.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("Pacjeka");
+
+        Assert.Contains("Pacejka", suggestions);
+    }
+
+    [Fact]
+    public void Suggest_PutsAcceptedWordsFirst()
+    {
+        // They are the likelier intent: someone took the trouble to accept that exact term here.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("Pacjeka");
+
+        Assert.Equal("Pacejka", suggestions[0]);
+    }
+
+    [Fact]
+    public void Suggest_OffersAnAcceptedWordInItsAcceptedCasing()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["VeSyMA"]);
+
+        Assert.Contains("VeSyMA", checker.Suggest("VeSyMa1"));
+    }
+
+    [Fact]
+    public void Suggest_DoesNotOfferAcceptedWordsThatAreNothingLikeIt()
+    {
+        // A repository's vocabulary must not start answering for unrelated words.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka", "enthalpy", "SOC"]);
+
+        var suggestions = checker.Suggest("qwertyuiop");
+
+        Assert.DoesNotContain("Pacejka", suggestions);
+        Assert.DoesNotContain("enthalpy", suggestions);
+    }
+
+    [Fact]
+    public void Suggest_DoesNotOfferTheWordItself()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        Assert.DoesNotContain("Pacejka", checker.Suggest("pacejka"));
+    }
+
+    [Fact]
+    public void Suggest_StillOffersTheDictionarysOwnSuggestions()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("tempurature");
+
+        Assert.Contains(suggestions, s => s.Equals("temperature", StringComparison.OrdinalIgnoreCase));
+    }
 }

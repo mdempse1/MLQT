@@ -167,7 +167,7 @@ Misspelled words are **highlighted inline** (wavy red underline) in the rendered
 
    | Option | Action |
    |--------|--------|
-   | **Suggestions** | A list of possible correct spellings from the loaded dictionaries. Click one to apply it in place. |
+   | **Suggestions** | A list of possible correct spellings. Near matches from the repository's accepted spellings come first — mistype a term your team has accepted and the accepted spelling is what you want, not whatever the English dictionary makes of it — followed by the language dictionaries' own suggestions. Click one to apply it in place. |
    | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
    | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** violations it covers in that repository are removed. Disabled for classes that belong to no repository. |
    | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
