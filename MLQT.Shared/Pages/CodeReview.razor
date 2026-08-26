@@ -229,8 +229,12 @@
                 <MudPaper MaxHeight="150px" Style="overflow-y:auto;" Elevation="0" Class="mb-1">
                     @foreach (var suggestion in _suggestions)
                     {
+                        @* text-transform:none, not the button default: a suggestion is the word that
+                           will be written into the file, so it has to be shown as it will be written.
+                           Lower-casing it displayed a name like Pacejka as pacejka — which is itself a
+                           misspelling, and looked like what you would get by clicking it. *@
                         <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                            FullWidth="true" Class="justify-start" Style="text-transform: lowercase;"
+                            FullWidth="true" Class="justify-start" Style="text-transform: none;"
                             OnClick="@(() => ApplyCorrection(suggestion))">@suggestion</MudButton>
                     }
                 </MudPaper>
