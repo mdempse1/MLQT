@@ -52,6 +52,16 @@ public static class ExternalStubBuilder
         foreach (var documentedClass in documented)
         {
             var node = BuildNode(documentedClass, documentedNames, libraryVersion);
+
+            // A class we already have the source of is left entirely alone. AddNode knows to keep the
+            // real node over a stub, but registering the containment afterwards would still point that
+            // real node at the encrypted package — and everything that asks a class where it lives
+            // would then be told package.moe. That is how correcting a spelling in a class whose
+            // source is checked out came to read, and try to parse, a vendor's encrypted blob.
+            var existing = graph.GetNode<ModelNode>(node.Id);
+            if (existing is not null && !existing.IsExternalStub)
+                continue;
+
             graph.AddNode(node);
             graph.AddFileContainsModel(fileId, node.Id);
             modelIds.Add(node.Id);

@@ -128,6 +128,39 @@ public class SourceBeatsEncryptedTests : IDisposable
         Assert.Contains("Real d;", nested.Definition.ModelicaCode);
     }
 
+    [Theory]
+    [InlineData(true)]   // encrypted arrives first
+    [InlineData(false)]  // source arrives first — the order the app loads in, and the one that broke
+    public async Task TheClassKeepsTheFileItsSourceIsIn(bool encryptedFirst)
+    {
+        // Winning the node is not enough. Registering the encrypted package's containment afterwards
+        // repointed the real class at package.moe, and everything that asks a class where it lives
+        // believed it: correcting a spelling in a checked-out class read, and spent minutes trying to
+        // parse, a vendor's encrypted blob — then reported that the word was not in it.
+        var source = WriteSource();
+        var encrypted = WriteEncrypted();
+        var service = new LibraryDataService();
+
+        if (encryptedFirst)
+        {
+            await service.AddLibraryFromPathAsync(encrypted);
+            await service.AddLibraryFromPathAsync(source);
+        }
+        else
+        {
+            await service.AddLibraryFromPathAsync(source);
+            await service.AddLibraryFromPathAsync(encrypted);
+        }
+
+        var nested = service.GetModelById(NestedClass);
+        Assert.NotNull(nested);
+        var file = service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(nested!.ContainingFileId!);
+
+        Assert.NotNull(file);
+        Assert.DoesNotContain(".moe", file!.FilePath);
+        Assert.EndsWith("package.mo", file.FilePath);
+    }
+
     [Fact]
     public async Task ANestedClassShadowedByAStub_IsStillChecked()
     {

@@ -225,10 +225,26 @@ public class DirectedGraph
         if (fileNode == null || modelNode == null)
             throw new ArgumentException("Both file and model nodes must exist.");
 
+        // A class whose source is loaded keeps the file its source is in. The only thing that ever
+        // asks otherwise is a library recovered from a vendor's documentation being loaded over a
+        // checked-out copy of the same library, and letting it win pointed the real class at an
+        // encrypted package — which then got read, parsed and, in the worst case, written.
+        if (!modelNode.IsExternalStub && IsExternalStubFile(fileNode))
+            return;
+
         fileNode.AddContainedModel(modelNodeId);
         modelNode.ContainingFileId = fileNodeId;
         AddEdge(fileNodeId, modelNodeId);
     }
+
+    /// <summary>
+    /// Whether a file is an encrypted package, which holds no readable source at all — only classes
+    /// MLQT rebuilt from the vendor's documentation. Decided by the extension rather than by what the
+    /// file currently contains, so the answer does not depend on how much of it has been registered
+    /// yet.
+    /// </summary>
+    private static bool IsExternalStubFile(FileNode fileNode) =>
+        fileNode.FilePath.EndsWith(".moe", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Creates a relationship where one model uses another model.
