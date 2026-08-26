@@ -99,7 +99,10 @@ public class DirectedGraph
                 if (existingModel.IsExternalStub != newModel.IsExternalStub)
                 {
                     if (existingModel.IsExternalStub)
+                    {
+                        DetachFromFile(existingModel);
                         _nodes[node.Id] = node;
+                    }
 
                     // Otherwise the existing node is the real source: keep it.
                 }
@@ -109,6 +112,7 @@ public class DirectedGraph
                 // function extends X) is just a modification embedded in the parent.
                 else if (!existingModel.CanBeStoredStandalone && newModel.CanBeStoredStandalone)
                 {
+                    DetachFromFile(existingModel);
                     _nodes[node.Id] = node;
                 }
                 else if (existingModel.CanBeStoredStandalone && !newModel.CanBeStoredStandalone
@@ -232,9 +236,36 @@ public class DirectedGraph
         if (!modelNode.IsExternalStub && IsExternalStubFile(fileNode))
             return;
 
+        // A class lives in one file. Leaving it listed in the file it came from made it a member of
+        // two: after a class recovered from an encrypted package was replaced by its real source, the
+        // package still claimed it, and anything asking what a file contains — the CLI's model-to-file
+        // map, which decides the path a finding is reported against — could name the encrypted
+        // package for a class whose source is checked out. The same detach keeps the graph honest
+        // when formatting restructures a library and classes genuinely move between files.
+        if (!string.IsNullOrEmpty(modelNode.ContainingFileId) && modelNode.ContainingFileId != fileNodeId)
+        {
+            GetNode<FileNode>(modelNode.ContainingFileId)?.ContainedModelIds.Remove(modelNodeId);
+            RemoveEdge(modelNode.ContainingFileId, modelNodeId);
+        }
+
         fileNode.AddContainedModel(modelNodeId);
         modelNode.ContainingFileId = fileNodeId;
         AddEdge(fileNodeId, modelNodeId);
+    }
+
+    /// <summary>
+    /// Lets go of a model node's file before that node is replaced by another. The replacement is a
+    /// different object, so it does not carry the old one's file link — and the file went on listing
+    /// a class it no longer holds. An encrypted package kept claiming classes whose real source had
+    /// since been loaded, and asking that file what it contained handed back the real ones.
+    /// </summary>
+    private void DetachFromFile(ModelNode model)
+    {
+        if (string.IsNullOrEmpty(model.ContainingFileId))
+            return;
+
+        GetNode<FileNode>(model.ContainingFileId)?.ContainedModelIds.Remove(model.Id);
+        RemoveEdge(model.ContainingFileId, model.Id);
     }
 
     /// <summary>

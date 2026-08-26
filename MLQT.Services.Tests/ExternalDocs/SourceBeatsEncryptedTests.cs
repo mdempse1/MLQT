@@ -161,6 +161,37 @@ public class SourceBeatsEncryptedTests : IDisposable
         Assert.EndsWith("package.mo", file.FilePath);
     }
 
+    [Theory]
+    [InlineData(true)]   // encrypted first — adding a tool's library before checking out the repository
+    [InlineData(false)]  // source first
+    public async Task TheEncryptedPackageDoesNotStillClaimTheClass(bool encryptedFirst)
+    {
+        // Winning the node and keeping the right file is still not the whole story. The encrypted
+        // package went on listing the class as one of its own, so asking what that file contains
+        // handed back real source classes — and the CLI builds its model-to-file map that way, which
+        // decides the path each finding is reported against.
+        var source = WriteSource();
+        var encrypted = WriteEncrypted();
+        var service = new LibraryDataService();
+
+        if (encryptedFirst)
+        {
+            await service.AddLibraryFromPathAsync(encrypted);
+            await service.AddLibraryFromPathAsync(source);
+        }
+        else
+        {
+            await service.AddLibraryFromPathAsync(source);
+            await service.AddLibraryFromPathAsync(encrypted);
+        }
+
+        var graph = service.CombinedGraph;
+        var moe = graph.FileNodes.Single(f => f.FilePath.EndsWith(".moe", StringComparison.OrdinalIgnoreCase));
+
+        Assert.DoesNotContain(graph.GetModelsInFile(moe.Id), m => !m.IsExternalStub);
+        Assert.DoesNotContain(NestedClass, moe.ContainedModelIds);
+    }
+
     [Fact]
     public async Task ANestedClassShadowedByAStub_IsStillChecked()
     {
@@ -201,4 +232,5 @@ public class SourceBeatsEncryptedTests : IDisposable
 
         Assert.False(graph.GetNode<ModelNode>("Lib.Thing")!.IsExternalStub);
     }
+
 }
