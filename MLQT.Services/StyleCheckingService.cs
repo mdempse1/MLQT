@@ -633,7 +633,10 @@ public class StyleCheckingService : IStyleCheckingService
         CancelRunningWorkers();
         _stopRequested = false;
 
-        var modelIdList = modelIds.ToList();
+        // Distinct: the same class queued twice is checked twice, because the workers run in
+        // parallel and both entries can pass the already-checked guard before either sets it. The
+        // result is a class's findings reported twice over.
+        var modelIdList = modelIds.Distinct(StringComparer.Ordinal).ToList();
         if (modelIdList.Count == 0)
             return;
 

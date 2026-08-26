@@ -677,7 +677,12 @@ public class LibraryDataService : ILibraryDataService
 
         RaiseTreeDataChanged();
 
-        return affectedModelIds;
+        // Each class once. A file whose classes are unchanged contributes every id twice — once as
+        // removed, once as re-added — and a caller cannot tell that from a class genuinely listed for
+        // two reasons. It reaches a parallel re-check as two entries, where both can pass the
+        // already-checked guard before either sets it, and the class's findings are then reported
+        // twice.
+        return affectedModelIds.Distinct(StringComparer.Ordinal).ToList();
     }
 
     /// <inheritdoc/>
