@@ -454,10 +454,14 @@ public static class GraphBuilder
     /// </summary>
     /// <param name="graph">The graph to analyze.</param>
     /// <param name="libraries">Library information for resolving modelica:// URIs.</param>
+    /// <param name="onModelFailed">Optional callback for a model that could not be analysed, or whose
+    /// <paramref name="postAnalysisAction"/> threw. Without it such a model is skipped in silence: its
+    /// edges are absent and any work the caller hung on the callback never happened, which reads as a
+    /// smaller library rather than as a failure.</param>
     /// <param name="postAnalysisAction">Optional callback invoked for each model after dependency
     /// analysis while the parse tree is still available. This allows callers to piggyback on the
     /// parse (e.g., run style checking) without requiring a separate re-parse pass.</param>
-    public static async Task AnalyzeDependenciesAsync(DirectedGraph graph, IEnumerable<LibraryInfo>? libraries = null, Action<string>? progressLog = null, Action<ModelNode>? postAnalysisAction = null)
+    public static async Task AnalyzeDependenciesAsync(DirectedGraph graph, IEnumerable<LibraryInfo>? libraries = null, Action<string>? progressLog = null, Action<ModelNode>? postAnalysisAction = null, Action<ModelNode, Exception>? onModelFailed = null)
     {
         const int batchSize = 500;
 
@@ -501,17 +505,32 @@ public static class GraphBuilder
                     var analyzer = new ModelAnalyzer(model.Id, graph);
                     analyzer.Visit(parseTree);
 
-                    // Run the post-analysis callback while the parse tree is still available
-                    postAnalysisAction?.Invoke(model);
+                    // Run the post-analysis callback while the parse tree is still available, under
+                    // its own guard. The caller hangs its own work here — the app checks style during
+                    // this pass rather than walking every class twice — and sharing one catch meant a
+                    // check that threw also cost the model its dependency edges, or the other way
+                    // round. Both then went missing without a word, which is how a startup run came to
+                    // report fewer findings than the same check run again a minute later.
+                    try
+                    {
+                        postAnalysisAction?.Invoke(model);
+                    }
+                    catch (Exception ex)
+                    {
+                        onModelFailed?.Invoke(model, ex);
+                    }
 
                     // Release parse tree immediately to free memory
                     model.Definition.ParsedCode = null;
 
                     batchResults.Add((model.Id, analyzer.ReferencedModels, analyzer.Resources));
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // If analysis fails, skip this model
+                    // One model that cannot be analysed must not stop the pass, but it must not
+                    // vanish from it either: its edges are missing, and everything downstream that
+                    // reads them is quietly working from less than it thinks.
+                    onModelFailed?.Invoke(model, ex);
                 }
             });
 
@@ -663,13 +682,18 @@ public static class GraphBuilder
     /// <param name="graph">The graph to update.</param>
     /// <param name="modelIds">IDs of models to re-analyze. IDs not found in the graph are ignored.</param>
     /// <param name="libraries">Library information for resolving modelica:// URIs.</param>
+    /// <param name="onModelFailed">Optional callback for a model that could not be analysed, or whose
+    /// <paramref name="postAnalysisAction"/> threw. Without it such a model is skipped in silence: its
+    /// edges are absent and any work the caller hung on the callback never happened, which reads as a
+    /// smaller library rather than as a failure.</param>
     /// <param name="postAnalysisAction">Optional callback invoked for each model after dependency
     /// analysis while the parse tree is still available.</param>
     public static async Task AnalyzeDependenciesForModelsAsync(
         DirectedGraph graph,
         IReadOnlySet<string> modelIds,
         IEnumerable<LibraryInfo>? libraries = null,
-        Action<ModelNode>? postAnalysisAction = null)
+        Action<ModelNode>? postAnalysisAction = null,
+        Action<ModelNode, Exception>? onModelFailed = null)
     {
         if (modelIds.Count == 0)
             return;
@@ -699,17 +723,24 @@ public static class GraphBuilder
                 var analyzer = new ModelAnalyzer(model.Id, graph);
                 analyzer.Visit(parseTree);
 
-                // Run the post-analysis callback while the parse tree is still available
-                postAnalysisAction?.Invoke(model);
+                // Its own guard — see the full-graph pass above.
+                try
+                {
+                    postAnalysisAction?.Invoke(model);
+                }
+                catch (Exception ex)
+                {
+                    onModelFailed?.Invoke(model, ex);
+                }
 
                 // Release parse tree immediately to free memory
                 model.Definition.ParsedCode = null;
 
                 analysisResults.Add((model.Id, analyzer.ReferencedModels, analyzer.Resources));
             }
-            catch
+            catch (Exception ex)
             {
-                // If analysis fails, skip this model
+                onModelFailed?.Invoke(model, ex);
             }
         });
 

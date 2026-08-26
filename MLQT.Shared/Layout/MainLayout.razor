@@ -1720,10 +1720,28 @@
                 };
             }
 
+            // A class that cannot be analysed, or whose style check throws, is reported rather than
+            // dropped. Silently skipping it made this pass report fewer findings than the same check
+            // run again afterwards, with nothing to say which classes had been left out.
+            var analysisFailures = new ConcurrentBag<LogMessage>();
             await Task.Run(async () => await GraphBuilder.AnalyzeDependenciesAsync(
                 LibraryDataService.CombinedGraph, libraryInfos,
                 progressLog: msg => LogProcessStart("GraphBuilder", msg),
-                postAnalysisAction: postAnalysisAction));
+                postAnalysisAction: postAnalysisAction,
+                onModelFailed: (model, ex) =>
+                {
+                    Error("MainLayout", $"Analysing {model.Id} failed", ex);
+                    analysisFailures.Add(new LogMessage(model.Id, "Style warning", 0,
+                        $"Analysing this class failed ({ex.GetType().Name}: {ex.Message}). " +
+                        "Its findings and its dependencies are missing from these results.")
+                    {
+                        Source = "StyleChecking",
+                        RuleId = ModelicaParser.StyleRules.RuleIds.CheckFailed,
+                    });
+                }));
+
+            if (!analysisFailures.IsEmpty)
+                CodeReviewService.AddLogMessages(analysisFailures.ToList());
 
             // Compact the LOH after dependency analysis released all parse trees
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
