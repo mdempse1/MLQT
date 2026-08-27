@@ -55,6 +55,9 @@ public class LibraryDataService : ILibraryDataService
             OnTreeDataChanged?.Invoke();
     }
 
+    /// <inheritdoc/>
+    public void NotifyTreeDataChanged() => RaiseTreeDataChanged();
+
     // Guards EnsureDependenciesAnalyzedAsync so concurrent callers share one run instead of racing.
     private readonly object _dependencyAnalysisGate = new();
     private Task? _dependencyAnalysisTask;

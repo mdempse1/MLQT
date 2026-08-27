@@ -188,4 +188,12 @@ public interface ILibraryDataService
     /// The caller must fire OnTreeDataChanged once after unsetting this flag.
     /// </summary>
     bool SuppressTreeDataChangedEvents { get; set; }
+
+    /// <summary>
+    /// Announces that the tree data has changed, once. For a caller that has just suppressed the
+    /// per-library announcements through a bulk load and wants the one refresh that reflects all of
+    /// them — each announcement costs every open library tree a working-copy status query and a full
+    /// rebuild, so a hundred of them during a load is a hundred of those, queued on the UI thread.
+    /// </summary>
+    void NotifyTreeDataChanged();
 }

@@ -1226,4 +1226,44 @@ end TestPkg;
         // A file-backed library resolves modelica:// URIs relative to its containing directory.
         Assert.Equal(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), info.RootPath.TrimEnd(Path.DirectorySeparatorChar));
     }
+
+    [Fact]
+    public async Task ABulkLoad_CanAnnounceTheTreeOnceInsteadOfPerLibrary()
+    {
+        // Every announcement costs each open library tree a working-copy status query and a full
+        // rebuild, queued on the UI thread. A project holding a tool's library folder announces a
+        // hundred times over, and the queue that builds up sits in front of everything the startup
+        // does next — which is where two minutes of a three-minute startup were going.
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        service.SuppressTreeDataChangedEvents = true;
+        try
+        {
+            for (var i = 0; i < 5; i++)
+                await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
+        }
+        finally
+        {
+            service.SuppressTreeDataChangedEvents = false;
+            service.NotifyTreeDataChanged();
+        }
+
+        Assert.Equal(1, announcements);
+        Assert.Equal(5, service.Libraries.Count);   // the libraries are all there
+    }
+
+    [Fact]
+    public async Task WithoutSuppression_EveryLibraryAnnouncesItself()
+    {
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        for (var i = 0; i < 5; i++)
+            await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
+
+        Assert.True(announcements >= 5, $"expected one per library, got {announcements}");
+    }
 }
