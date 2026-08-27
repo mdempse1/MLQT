@@ -681,24 +681,37 @@
             var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
             if (totalModelCount > 0)
             {
+                LogProcessStart("MainLayout", "Trimming package source");
                 TrimPackageModelicaCode();
+                LogProcessEnd("MainLayout", "Trimming package source");
+
+                LogProcessStart("MainLayout", "Compacting the heap");
                 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
                 GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                LogProcessEnd("MainLayout", "Compacting the heap");
                 Info("MainLayout", $"Memory after loading + trim + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB ({totalModelCount} models)");
             }
 
             // Parser errors are recorded on the nodes during load, so report them as soon as loading
             // finishes rather than waiting for analysis — a syntax error is the one thing the user
             // needs to know about before anything downstream reads the file.
+            //
+            // Each step logged separately: this stretch of startup used to pass in silence, so time
+            // spent in it — three minutes of it, on a large project — could not be attributed to
+            // anything. A step that takes no time costs one log line to say so.
+            LogProcessStart("MainLayout", "Reporting parser errors");
             SurfaceParserErrors();
             await NotifyParserErrorsIfAnyAsync();
+            LogProcessEnd("MainLayout", "Reporting parser errors");
 
             _step1running = false;
 
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(StateHasChanged);
+            LogProcessEnd("MainLayout", "Rendering after load");
 
             LogProcessStart("MainLayout", "Formatting modified files");
             await FormatModifiedFilesAsync();
@@ -891,9 +904,14 @@
             var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
             if (totalModelCount > 0)
             {
+                LogProcessStart("MainLayout", "Trimming package source");
                 TrimPackageModelicaCode();
+                LogProcessEnd("MainLayout", "Trimming package source");
+
+                LogProcessStart("MainLayout", "Compacting the heap");
                 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
                 GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                LogProcessEnd("MainLayout", "Compacting the heap");
                 Info("MainLayout", $"Memory after loading + trim + GC: {GC.GetTotalMemory(false) / (1024 * 1024)} MB ({totalModelCount} models)");
             }
 
@@ -911,17 +929,21 @@
 
             // Parser errors are recorded on the nodes during load — report them before anything
             // downstream reads the file (see the equivalent call in the startup path).
+            LogProcessStart("MainLayout", "Reporting parser errors");
             SurfaceParserErrors();
             await NotifyParserErrorsIfAnyAsync();
+            LogProcessEnd("MainLayout", "Reporting parser errors");
 
             // Step 2: Format only VCS-modified files (fast — assumes repo is already formatted)
             _step2running = true;
             _step2color = Color.Success;
+            LogProcessStart("MainLayout", "Rendering after load");
             await InvokeAsync(() =>
             {
                 _startupProcessRunning = true;
                 StateHasChanged();
             });
+            LogProcessEnd("MainLayout", "Rendering after load");
 
             await FormatModifiedFilesAsync();
             _step2running = false;
