@@ -221,4 +221,108 @@ public class ModelicaFileEncodingTests : IDisposable
     }
 
     #endregion
+
+    #region Encodings the detector must not guess at
+
+    [Fact]
+    public void ReadAllText_Utf16LittleEndian_IsBelievedFromItsMark()
+    {
+        // A UTF-16 file decoded as anything else yields interleaved NUL characters — not a slightly
+        // wrong reading but an unusable one, so the mark is taken at its word.
+        var path = Write("utf16le.mo", Encoding.Unicode.GetPreamble()
+            .Concat(Encoding.Unicode.GetBytes(Text)).ToArray());
+
+        var (text, encoding) = ModelicaFileEncoding.ReadAllText(path);
+
+        Assert.Equal(Text, text);
+        Assert.Equal(Encoding.Unicode.CodePage, encoding.CodePage);
+        Assert.DoesNotContain('\0', text);
+    }
+
+    [Fact]
+    public void ReadAllText_Utf16BigEndian_IsBelievedFromItsMark()
+    {
+        var path = Write("utf16be.mo", Encoding.BigEndianUnicode.GetPreamble()
+            .Concat(Encoding.BigEndianUnicode.GetBytes(Text)).ToArray());
+
+        var (text, encoding) = ModelicaFileEncoding.ReadAllText(path);
+
+        Assert.Equal(Text, text);
+        Assert.Equal(Encoding.BigEndianUnicode.CodePage, encoding.CodePage);
+    }
+
+    [Fact]
+    public void AUtf16File_IsWrittenBackAsUtf16()
+    {
+        // The point of detecting it: a round trip through MLQT must not re-encode somebody's file.
+        var path = Write("utf16.mo", Encoding.Unicode.GetPreamble()
+            .Concat(Encoding.Unicode.GetBytes(Text)).ToArray());
+        var before = File.ReadAllBytes(path);
+
+        var text = ModelicaFileEncoding.ReadAllTextOnly(path);
+        ModelicaFileEncoding.WriteAllText(path, text);
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void NoBytesAtAll_IsUtf8()
+    {
+        // An empty file has no mark and decodes cleanly as UTF-8, which is what a new file is written
+        // as anyway.
+        Assert.Equal(ModelicaFileEncoding.Default.CodePage,
+            ModelicaFileEncoding.DetectFromBytes(Array.Empty<byte>()).CodePage);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0xEF })]         // the first byte of a UTF-8 mark, and nothing after it
+    [InlineData(new byte[] { 0xFF })]         // half a UTF-16 mark
+    [InlineData(new byte[] { 0xEF, 0xBB })]   // two thirds of a UTF-8 mark
+    public void BytesThatAreNeitherAMarkNorValidUtf8_FallBackToLatin1(byte[] bytes)
+    {
+        // The fallback is chosen precisely because it cannot fail: every byte means something in
+        // Latin-1, so detection is total and no input can produce replacement characters.
+        Assert.Equal(Encoding.Latin1.CodePage, ModelicaFileEncoding.DetectFromBytes(bytes).CodePage);
+    }
+
+    #endregion
+
+    #region When the file cannot be read
+
+    [Fact]
+    public void DetectExisting_AFileThatIsNotThere_IsTheDefault()
+    {
+        // Asked before writing a new file, which by definition does not exist yet.
+        Assert.Equal(ModelicaFileEncoding.Default.CodePage,
+            ModelicaFileEncoding.DetectExisting(Path.Combine(_root, "never-written.mo")).CodePage);
+    }
+
+    [Fact]
+    public void DetectExisting_AFileHeldOpenByAnotherProcess_IsTheDefaultRatherThanAThrow()
+    {
+        // Modelica libraries live in working copies that other tools have open. Failing to guess an
+        // encoding must not fail the operation that asked.
+        var path = Write("locked.mo", Latin1(Text));
+        using var hold = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.Equal(ModelicaFileEncoding.Default.CodePage,
+            ModelicaFileEncoding.DetectExisting(path).CodePage);
+    }
+
+    [Fact]
+    public void WritingPureAscii_OverAFileAnotherToolHasOpen_StillSucceeds()
+    {
+        // The ASCII fast path peeks at the first bytes to look for a mark. That peek can fail while
+        // another tool holds the file, and the write has to carry on: the failure of a guess is not
+        // the failure of the save.
+        var path = Write("shared-ascii.mo", Utf8NoBom("package P\nend P;\n"));
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            ModelicaFileEncoding.WriteAllText(path, "package Q\nend Q;\n");
+        }
+
+        Assert.Equal("package Q\nend Q;\n", ModelicaFileEncoding.ReadAllTextOnly(path));
+    }
+
+    #endregion
 }
