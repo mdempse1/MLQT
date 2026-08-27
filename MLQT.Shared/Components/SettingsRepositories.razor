@@ -148,20 +148,13 @@
     </TitleContent>
     <DialogContent>
         @{
-            // A rule row: an Off/Info/Warning/Error selector plus a label. Used for the style-guideline
+            // A rule row: an Off/Info/Warning/Error picker plus a label. Used for the style-guideline
             // and reference rules below (which keep their descriptive labels) and shares the severity
             // model with the data-driven Static analysis section.
             RenderFragment<(string Id, string Label)> severityRow = item =>
                 @<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
-                    <MudSelect T="RuleSeverity" Value="@SelectedSettings.SeverityFor(item.Id)"
-                        ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))"
-                        Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
-                        Typo="Typo.body1" Style="width:120px;" Class="mr-3">
-                        @foreach (var sev in RuleSeverityOptions)
-                        {
-                            <MudSelectItem T="RuleSeverity" Value="@sev">@sev</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.Id)"
+                        ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))" />
                     <MudText Typo="Typo.body1">@item.Label</MudText>
                 </MudStack>;
         }
@@ -359,15 +352,8 @@
                 <MudText Typo="Typo.body2" Class="mt-2 mb-0" Style="opacity:0.7;">@rule.Category</MudText>
             }
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
-                <MudSelect T="RuleSeverity" Value="@SelectedSettings.SeverityFor(rule.Id)"
-                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))"
-                    Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
-                    Typo="Typo.body1" Style="width:120px;" Class="mr-3">
-                    @foreach (var sev in RuleSeverityOptions)
-                    {
-                        <MudSelectItem T="RuleSeverity" Value="@sev">@sev</MudSelectItem>
-                    }
-                </MudSelect>
+                <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(rule.Id)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
                 <MudTooltip Text="@rule.Description" Placement="Placement.Right">
                     <MudText Typo="Typo.body1">@rule.Title</MudText>
                 </MudTooltip>
@@ -683,10 +669,6 @@
             .OrderBy(r => r.Category, StringComparer.Ordinal)
             .ThenBy(r => r.Title, StringComparer.Ordinal)
             .ToList();
-
-    // Severity choices offered per rule, worst-last so the dropdown reads Off → Error.
-    private static readonly RuleSeverity[] RuleSeverityOptions =
-        { RuleSeverity.Off, RuleSeverity.Info, RuleSeverity.Warning, RuleSeverity.Error };
 
     // Documentation/structure/reference rules that used to be hand-written on/off switches, now rendered
     // through the shared severity control. Their descriptive labels are kept (clearer than the terse

@@ -48,8 +48,11 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         var repositories = new RepositoryService(libraries, settings, monitoring);
         var review = new CodeReviewService();
         var checking = new StyleCheckingService(
-            libraries, repositories, settings, new CustomDictionaryService(),
-            new DictionaryManagerService(), review);
+            libraries,
+            repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            review);
         return new Harness(libraries, repositories, checking, review);
     }
 

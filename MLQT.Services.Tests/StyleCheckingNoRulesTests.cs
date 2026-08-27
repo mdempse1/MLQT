@@ -45,8 +45,11 @@ public class StyleCheckingNoRulesTests : IDisposable
         var settingsService = new InMemorySettingsService();
         var repos = new RepositoryService(libraries, settingsService, monitor);
         var service = new StyleCheckingService(
-            libraries, repos, settingsService,
-            new CustomDictionaryService(), new DictionaryManagerService(), new CodeReviewService());
+            libraries,
+            repos,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            new CodeReviewService());
 
         var loaded = new List<Repository>();
         foreach (var name in new[] { "MSL", "ExternData" })

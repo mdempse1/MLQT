@@ -2,7 +2,7 @@
 
 MLQT has two levels of settings:
 
-- **Application-level settings** — UI theme, syntax highlighting, external tool paths, and default style checking rules. These are stored locally on your machine and are personal to you.
+- **Application-level settings** — UI theme, syntax highlighting, external tool paths and reference-library paths. These are stored locally on your machine and are personal to you.
 - **Repository-level settings** — Style checking, formatting, commit requirements, and spell checking rules for a specific repository. These are stored inside the repository itself so they can be shared with your team.
 
 This guide covers both levels and explains every setting in detail.
@@ -15,23 +15,24 @@ Application settings are found in the **Settings** tab on the right panel. They 
 |-----|---------|
 | **UI Settings** | Theme and syntax highlighting colors |
 | **External Tools** | Paths to Dymola and OpenModelica |
-| **Style Checking** | Default style rules for new repositories |
 | **Reference Libraries** | Read-only libraries loaded so references out of your code resolve |
 | **Manage Repositories** | Project and repository management |
 
-Changes to UI Settings, External Tools, Style Checking, and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel.
+Changes to UI Settings, External Tools and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel.
 
-![Screenshot: The Settings panel showing the four sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
+![Screenshot: The Settings panel showing the sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
 
 ---
 
-## Default Style Checking Settings
+## Where the rules live
 
-Found under **Settings > Style Checking**, these are the default rules applied to any newly added repository. They serve as a template — once a repository is added, it gets its own copy of these settings which can be customized independently.
+Style, formatting and spell-checking rules belong to a **repository**, not to the application — they
+are set under **Settings > Manage Repositories** and stored in that repository's
+`.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
+CLI, the MCP server) applies the same ones.
 
-A note at the top of this tab reminds you: *"These are the default rules that will be applied to any new repository. They are overridden by the repository specific settings — see Manage Repositories."*
-
-![Screenshot: The Style Checking defaults tab showing all the toggle switches with the explanatory note at the top.](Images/settings-reference-2.png)
+A newly added repository starts with every rule **Off**, and a library loaded outside any repository
+— a reference library, say — has no rules at all and is never reported on.
 
 ---
 
@@ -106,9 +107,9 @@ For example, a repository that uses `main` instead of `trunk` and keeps release 
 
 ### Style Guidelines
 
-Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, any finding is reported as an finding in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
+Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, what it finds is reported in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
 
-Each rule below has a per-rule severity selector — **Off / Info / Warning / Error** — rather than a plain on/off switch. **Off** disables it; **Error** fails the CI quality gate while **Warning**/**Info** are reported only. (The naming-convention check keeps a simple on/off switch because it drives its own settings panel.)
+Each rule below sets its severity on a row of four buttons — **Off / Info / Warning / Error** — rather than a plain on/off switch. **Off** disables the rule; **Error** fails the CI quality gate, while **Warning** and **Info** are reported only. All four are shown at once so you can read how strictly a rule is set, and compare it with the rules above and below, without opening anything. (The naming-convention check keeps a simple on/off switch because it drives its own settings panel.)
 
 Style guidelines are **passive** — they only report findings and never modify your code.
 
@@ -374,7 +375,7 @@ MLQT uses a two-tier storage approach for settings:
 
 ### Application-Level Settings
 
-Application settings (UI theme, syntax highlighting, external tool paths, and default style checking rules) are stored in the platform's application preferences storage. On Windows, this uses the standard MAUI Preferences API.
+Application settings (UI theme, syntax highlighting, external tool paths and reference-library paths) are stored in the platform's application preferences storage. On Windows, this uses the standard MAUI Preferences API.
 
 These settings are:
 - **Personal** — Each user has their own copy

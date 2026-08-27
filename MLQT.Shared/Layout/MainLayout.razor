@@ -1255,11 +1255,11 @@
                 if (!string.IsNullOrEmpty(library.RepositoryId))
                 {
                     var repository = RepositoryService.GetRepository(library.RepositoryId);
-                    styleSettings = repository?.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                    styleSettings = repository?.StyleSettings ?? new StyleCheckingSettings();
                 }
                 else
                 {
-                    styleSettings = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                    styleSettings = new StyleCheckingSettings();
                 }
 
                 // Skip formatting if ApplyFormattingRules is disabled for this repository
@@ -1463,7 +1463,7 @@
             try
             {
                 // Get per-repository style settings
-                var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
                 if (!styleSettings.ApplyFormattingRules)
                 {
                     Debug("MainLayout", $"Skipping formatting for repository {repository.Name} (ApplyFormattingRules is disabled)");
@@ -1703,7 +1703,7 @@
                 // with. It had already drifted twice: spelling, model-reference and inherited-icon
                 // rules were once skipped here entirely, and the naming config was rebuilt per class.
                 var graph = LibraryDataService.CombinedGraph;
-                var defaultSettings = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                var defaultSettings = new StyleCheckingSettings();
 
                 var contexts = new Dictionary<string, StyleCheckContext>(StringComparer.Ordinal);
                 foreach (var repo in RepositoryService.Repositories.Where(r => r.StyleSettings is not null))
@@ -1816,7 +1816,7 @@
     private Dictionary<string, StyleCheckingSettings> BuildModelToStyleSettingsMap()
     {
         var result = new Dictionary<string, StyleCheckingSettings>();
-        var defaultSettings = SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings()).GetAwaiter().GetResult();
+        var defaultSettings = new StyleCheckingSettings();
 
         foreach (var library in LibraryDataService.Libraries)
         {
@@ -2110,7 +2110,7 @@
         var repository = RepositoryService.GetRepository(repositoryId);
         if (repository == null) return;
 
-        var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+        var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
         if (!styleSettings.ApplyFormattingRules)
             return;
 
@@ -2428,7 +2428,7 @@
                 }
 
                 // Get per-repository style settings for formatting
-                var styleSettings = repository.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
 
                 // Pause monitor and apply formatting. StopMonitoring is idempotent — safe to call
                 // even if the caller already paused it (e.g., for update/checkout operations).
@@ -2673,7 +2673,7 @@
                 foreach (var repoGroup in filesByRepo)
                 {
                     var repository = RepositoryService.GetRepository(repoGroup.Key);
-                    var styleSettings = repository?.StyleSettings ?? await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                    var styleSettings = repository?.StyleSettings ?? new StyleCheckingSettings();
                     var repoPaths = repoGroup.Select(c => c.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                     await SaveChangedFilesWithFormattingAsync(repoPaths, styleSettings);
                 }
@@ -2758,13 +2758,11 @@
     /// This is more efficient than saving all libraries when only a few files have changed.
     /// </summary>
     /// <param name="changedFilePaths">File paths that have been modified.</param>
-    /// <param name="styleSettings">Optional per-repository style settings. If null, uses global settings.</param>
-    private async Task SaveChangedFilesWithFormattingAsync(IEnumerable<string> changedFilePaths, StyleCheckingSettings? styleSettings = null)
+    /// <param name="styleSettings">The style settings of the repository the files belong to.</param>
+    private async Task SaveChangedFilesWithFormattingAsync(IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
     {
         var graph = LibraryDataService.CombinedGraph;
-
-        // Use provided settings or fall back to global settings
-        var effectiveSettings = styleSettings ?? _settings.StyleChecking;
+        var effectiveSettings = styleSettings;
 
         // Skip if formatting is disabled
         if (!effectiveSettings.ApplyFormattingRules)

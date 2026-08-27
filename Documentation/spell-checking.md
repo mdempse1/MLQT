@@ -53,7 +53,7 @@ The spell checker is designed to minimize false positives. The following are aut
 
 Spell checking is controlled by two independent toggle switches, available in both the default settings and per-repository settings:
 
-1. Navigate to **Settings > Style Checking** (for defaults) or **Settings > Manage Repositories** and click a repository (for per-repo settings)
+1. Navigate to **Settings > Manage Repositories** and click the repository
 2. Under **Spell checking**, enable one or both:
    - **Spell check every description string**
    - **Spell check all documentation**

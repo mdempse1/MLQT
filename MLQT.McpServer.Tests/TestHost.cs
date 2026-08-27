@@ -34,7 +34,11 @@ public sealed class TestHost : IDisposable
         CodeReview = new CodeReviewService();
         CustomDictionary = new CustomDictionaryService();
         DictionaryManager = new DictionaryManagerService();
-        StyleChecking = new StyleCheckingService(Libraries, Repositories, Settings, CustomDictionary, DictionaryManager, CodeReview);
+        StyleChecking = new StyleCheckingService(Libraries,
+            Repositories,
+            CustomDictionary,
+            DictionaryManager,
+            CodeReview);
         Impact = new ImpactAnalysisService();
         Resources = new ExternalResourceService();
         Session = new SessionState();

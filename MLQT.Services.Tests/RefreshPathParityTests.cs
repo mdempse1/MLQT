@@ -58,8 +58,11 @@ public class RefreshPathParityTests : IDisposable
             var settingsService = new InMemorySettingsService();
             Repositories = new RepositoryService(Libraries, settingsService, new FileMonitoringService());
             StyleChecking = new StyleCheckingService(
-                Libraries, Repositories, settingsService,
-                new CustomDictionaryService(), new DictionaryManagerService(), CodeReview);
+                Libraries,
+            Repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            CodeReview);
             // MainLayout routes findings into CodeReviewService; mirror that here.
             StyleChecking.OnFindingsFound += v => CodeReview.AddLogMessages(v);
         }

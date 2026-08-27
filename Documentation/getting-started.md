@@ -70,7 +70,7 @@ When MLQT starts for the first time, it creates a default project automatically 
 
 To manage projects, navigate to **Settings > Manage Repositories** (the last tab in the Settings panel on the right side). To load a project, click on the "play" icon button.  You can also edit the project name or delete the project.
 
-![Screenshot: The Settings panel showing the four tabs — "UI Settings", "External Tools", "Style Checking", and "Manage Repositories". The "Manage Repositories" tab is selected.](Images/getting-started-3.png)
+![Screenshot: The Settings panel showing its tabs — "UI Settings", "External Tools", "Reference Libraries" and "Manage Repositories". The "Manage Repositories" tab is selected.](Images/getting-started-3.png)
 
 ### Creating a New Project
 

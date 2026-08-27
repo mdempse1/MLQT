@@ -14,11 +14,6 @@
             <SettingsExternalTools @ref="_externalToolsSettings" />
         </MudTabPanel>
 
-        <!-- Style Checking Settings Tab -->
-        <MudTabPanel Text="Style Checking" Icon="@Icons.Material.Filled.Build" ToolTip="Style Checking Settings">
-            <SettingsStyleChecking @ref="_styleCheckingSettings" />
-        </MudTabPanel>
-
         <!-- Reference Libraries Tab -->
         <MudTabPanel Text="Reference Libraries" Icon="@Icons.Material.Filled.LibraryBooks" ToolTip="Read-only libraries used to resolve references">
             <SettingsReferenceLibraries @ref="_referenceLibrarySettings" />
@@ -50,13 +45,12 @@
     // The Manage Repositories tab manages its own persistence and shows no Save/Reset buttons.
     // Named rather than written as a literal so inserting a tab before it cannot silently point
     // the check at the wrong panel.
-    private const int RepositoriesTabIndex = 4;
+    private const int RepositoriesTabIndex = 3;
 
     private int _activePanelIndex = 0;
 
     private SettingsUI? _uiSettings;
     private SettingsExternalTools? _externalToolsSettings;
-    private SettingsStyleChecking? _styleCheckingSettings;
     private SettingsReferenceLibraries? _referenceLibrarySettings;
 
     private async Task SaveSettings()
@@ -88,10 +82,6 @@
                         await _externalToolsSettings.ResetToDefaultsAsync();
                     break;
                 case 2:
-                    if (_styleCheckingSettings is not null)
-                        await _styleCheckingSettings.ResetToDefaultsAsync();
-                    break;
-                case 3:
                     if (_referenceLibrarySettings is not null)
                         await _referenceLibrarySettings.ResetToDefaultsAsync();
                     break;

@@ -135,10 +135,12 @@ This removes the repository from MLQT's project — it does not delete any files
 
 **"Initial equation first"** and **"Initial equation last"** are contradictory. MLQT enforces mutual exclusivity — enabling one automatically disables the other.
 
-### What's the difference between default style settings and repository settings?
+### Where are the style rules set?
 
-- **Default style settings** (Settings > Style Checking) are a template used when adding new repositories. They do not affect existing repositories.
-- **Repository settings** (Settings > Manage Repositories > click a repository) are the actual settings applied to that specific repository. They are stored in `.mlqt/settings.json` and can be shared via version control.
+Only per repository, under **Settings > Manage Repositories > click a repository**. They are stored
+in that repository's `.mlqt/settings.json` and shared via version control, so everyone on the team —
+and the `mlqt` CLI in CI — checks against the same rules. A new repository starts with every rule
+Off. There is no application-wide copy of these settings.
 
 ### Can multiple people use MLQT on the same repository simultaneously?
 

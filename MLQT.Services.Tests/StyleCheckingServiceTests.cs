@@ -26,7 +26,11 @@ public class StyleCheckingServiceTests
         var customDictionaryService = new StubCustomDictionaryService();
         var dictionaryManagerService = new StubDictionaryManagerService();
         _codeReviewService = new CodeReviewService();
-        return new StyleCheckingService(_libraryDataService, _repositoryService, _settingsService, customDictionaryService, dictionaryManagerService, _codeReviewService);
+        return new StyleCheckingService(_libraryDataService,
+            _repositoryService,
+            customDictionaryService,
+            dictionaryManagerService,
+            _codeReviewService);
     }
 
     private class StubCustomDictionaryService : ICustomDictionaryService
@@ -80,6 +84,32 @@ public class StyleCheckingServiceTests
         }
 
         return repo;
+    }
+
+    /// <summary>
+    /// A repository registered with the RepositoryService, so a model in it resolves to it. The
+    /// lightweight fixture above builds a Repository the service never sees, which used to be
+    /// papered over by an app-level fallback; rules now come only from the repository a class is in.
+    /// </summary>
+    private async Task<Repository> AddRegisteredRepositoryAsync(
+        string directory, StyleCheckingSettings settings, string classCode)
+    {
+        var libraryDir = Path.Combine(directory, "P");
+        Directory.CreateDirectory(libraryDir);
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), classCode);
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), "");
+
+        var added = await _repositoryService.AddRepositoryAsync(directory, startMonitoring: false);
+        await _repositoryService.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = settings;
+        return added.Repository;
+    }
+
+    private static string NewTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-style-checking", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     [Fact]
@@ -228,14 +258,13 @@ end TestModel;");
         var findingsReceived = new List<LogMessage>();
         service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        var settings = new StyleCheckingSettings { ClassHasDescription = true };
-
-        // Store settings so CheckModelsAsync can find them via the fallback path
-        await _settingsService.SetAsync("StyleChecking", settings);
-
-        var repo = await CreateRepositoryWithModelsAsync(
-            settings,
-            ("TestModel", "model TestModel Real x; end TestModel;"));
+        var directory = NewTempDirectory();
+        try
+        {
+        await AddRegisteredRepositoryAsync(
+            directory,
+            new StyleCheckingSettings { ClassHasDescription = true },
+            "within;\npackage P\n  model TestModel\n    Real x;\n  end TestModel;\nend P;\n");
 
         // Mark models as already checked
         var graph = _libraryDataService.CombinedGraph;
@@ -250,6 +279,11 @@ end TestModel;");
         await WaitForCompletionAsync(service);
 
         Assert.NotEmpty(findingsReceived);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]
@@ -484,22 +518,26 @@ epos\Alpha", new[] { "en_GB" });
         var findingsReceived = new List<LogMessage>();
         service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+        var directory = NewTempDirectory();
+        try
+        {
+            await AddRegisteredRepositoryAsync(
+                directory,
+                new StyleCheckingSettings { ClassHasDescription = true },
+                "within;\npackage P\n  model Model1\n    Real x;\n  end Model1;\nend P;\n");
 
-        // Store settings so CheckModelsAsync uses them via the fallback path
-        // (repos aren't registered in RepositoryService, so it falls back to settings service)
-        await _settingsService.SetAsync("StyleChecking", settings);
+            var graph = _libraryDataService.CombinedGraph;
+            var modelIds = graph.ModelNodes.Select(m => m.Id).ToList();
+            await service.CheckModelsAsync(modelIds, graph);
+            await WaitForCompletionAsync(service);
 
-        // Create a library with a model missing a description
-        await _libraryDataService.AddLibraryFromFileAsync("Model1.mo", "model Model1 Real x; end Model1;");
-
-        var graph = _libraryDataService.CombinedGraph;
-        var modelIds = graph.ModelNodes.Select(m => m.Id).ToList();
-        await service.CheckModelsAsync(modelIds, graph);
-        await WaitForCompletionAsync(service);
-
-        // Model1 should have findings (description check enabled via fallback settings)
-        Assert.NotEmpty(findingsReceived);
+            // The classes are checked with their own repository's rules.
+            Assert.NotEmpty(findingsReceived);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]

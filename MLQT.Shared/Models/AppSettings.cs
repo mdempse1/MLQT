@@ -13,7 +13,6 @@ public class AppSettings
     public SyntaxHighlightingSettings SyntaxHighlighting { get; set; } = new();
     public DymolaSettings Dymola { get; set; } = new();
     public OpenModelicaSettings OpenModelica { get; set; } = new();
-    public StyleCheckingSettings StyleChecking { get; set; } = new();
     public ReferenceLibrarySettings ReferenceLibraries { get; set; } = new();
 }
 

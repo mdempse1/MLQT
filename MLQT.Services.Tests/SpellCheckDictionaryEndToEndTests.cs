@@ -41,8 +41,11 @@ public class SpellCheckDictionaryEndToEndTests : IDisposable
         var repositories = new RepositoryService(libraries, settingsService, monitoring);
         var review = new CodeReviewService();
         var service = new StyleCheckingService(
-            libraries, repositories, settingsService,
-            new CustomDictionaryService(), new DictionaryManagerService(), review);
+            libraries,
+            repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            review);
 
         var found = new List<LogMessage>();
         service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
@@ -88,8 +91,11 @@ public class SpellCheckDictionaryEndToEndTests : IDisposable
         var monitoring = new FileMonitoringService();
         var repositories = new RepositoryService(libraries, settingsService, monitoring);
         var service = new StyleCheckingService(
-            libraries, repositories, settingsService,
-            new CustomDictionaryService(), new DictionaryManagerService(), new CodeReviewService());
+            libraries,
+            repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            new CodeReviewService());
 
         var before = service.EnsureSpellChecker(_repoDir, new[] { "en_US" });
         Assert.True(before.IsCorrect("kinemtics"));

@@ -87,18 +87,24 @@ public class ReloadAffectedModelsTests : IDisposable
     {
         // CheckModelsAsync takes whatever a caller passes. The workers run in parallel, so two
         // entries for one class can both pass the already-checked guard before either sets it.
-        var lib = WriteLibrary(Library);
+        WriteLibrary(Library);
         var libraries = new LibraryDataService();
-        await libraries.AddLibraryFromPathAsync(lib);
-
         var settingsService = new InMemorySettingsService();
         var monitoring = new FileMonitoringService();
         var repositories = new RepositoryService(libraries, settingsService, monitoring);
         var service = new StyleCheckingService(
-            libraries, repositories, settingsService, new CustomDictionaryService(),
-            new DictionaryManagerService(), new CodeReviewService());
+            libraries,
+            repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            new CodeReviewService());
 
-        await settingsService.SetAsync("StyleChecking", new StyleCheckingSettings { ClassHasIcon = true });
+        // The rules have to come from a repository the service can resolve the class to. Loading the
+        // library on its own would leave it in no repository, which now means no rules — and this
+        // test would then pass on an empty list without checking anything.
+        var added = await repositories.AddRepositoryAsync(_dir, startMonitoring: false);
+        await repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasIcon = true };
 
         var found = new List<LogMessage>();
         service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
@@ -110,6 +116,7 @@ public class ReloadAffectedModelsTests : IDisposable
         lock (found)
         {
             var forA = found.Where(m => m.ModelName == "P.A").ToList();
+            Assert.NotEmpty(forA);   // otherwise the duplicate check below proves nothing
             Assert.Equal(forA.Select(m => m.Summary).Distinct().Count(), forA.Count);
         }
     }

@@ -1,0 +1,50 @@
+@using ModelicaParser.DataTypes
+
+@*
+    Picks the severity a rule reports at, showing all four levels at once.
+
+    A rule's severity is the whole of its configuration — Off is how a rule is turned off, and the
+    step from Warning to Error is what decides whether CI fails. A drop-down hid three of those four
+    choices behind a click each, on a dialog that lists thirty-odd rules, so comparing how strictly
+    two rules are set meant opening two menus. Laying the levels out means the current setting and
+    the alternatives are both readable at a glance, down a column.
+*@
+
+<MudRadioGroup T="RuleSeverity" Value="@Value" ValueChanged="OnValueChanged"
+               Class="mlqt-severity-picker">
+    @foreach (var severity in Levels)
+    {
+        <MudRadio T="RuleSeverity" Value="@severity" Dense="true" Size="Size.Small"
+                  Color="@ColorFor(severity)">
+            <MudText Typo="Typo.body1">@severity</MudText>
+        </MudRadio>
+    }
+</MudRadioGroup>
+
+@code {
+    /// <summary>The severity currently set for the rule.</summary>
+    [Parameter] public RuleSeverity Value { get; set; }
+
+    [Parameter] public EventCallback<RuleSeverity> ValueChanged { get; set; }
+
+    // Ordered least to most severe, so a column of pickers reads left-to-right as increasing
+    // strictness and the eye can compare two rules by radio position alone.
+    private static readonly RuleSeverity[] Levels =
+        [RuleSeverity.Off, RuleSeverity.Info, RuleSeverity.Warning, RuleSeverity.Error];
+
+    // The same colours the findings table uses for each severity, so a setting here and a finding
+    // there are recognisably the same thing.
+    private static Color ColorFor(RuleSeverity severity) => severity switch
+    {
+        RuleSeverity.Error => Color.Error,
+        RuleSeverity.Warning => Color.Warning,
+        RuleSeverity.Info => Color.Info,
+        _ => Color.Default
+    };
+
+    private async Task OnValueChanged(RuleSeverity severity)
+    {
+        Value = severity;
+        await ValueChanged.InvokeAsync(severity);
+    }
+}

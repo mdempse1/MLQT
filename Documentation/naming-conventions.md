@@ -96,7 +96,7 @@ Same as Modelica Standard, but constants (both public and protected) use UPPER_C
 
 ## Enabling Naming Convention Checking
 
-1. Navigate to **Settings > Style Checking** (for defaults) or **Settings > Manage Repositories** and click a repository (for per-repo settings)
+1. Navigate to **Settings > Manage Repositories** and click the repository
 2. Enable **Check that the naming convention is followed**
 3. An expansion panel appears below the toggle showing the current convention settings
 4. Select a preset or customize individual rules

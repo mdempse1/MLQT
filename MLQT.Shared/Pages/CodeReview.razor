@@ -562,7 +562,6 @@
         {
             // Load each settings category
             _settings.SyntaxHighlighting = await SettingsService.GetAsync("SyntaxHighlighting", new SyntaxHighlightingSettings());
-            _settings.StyleChecking = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
             _settings.Dymola = await SettingsService.GetAsync("Dymola", new DymolaSettings());
             _settings.OpenModelica = await SettingsService.GetAsync("OpenModelica", new OpenModelicaSettings());
 
@@ -984,7 +983,9 @@
             var modelNode = _currentModelNode;
             var showHighlighted = _showHighlighted;
             var showAnnotations = _showAnnotations;
-            var oneOfEachSection = _settings.StyleChecking.OneOfEachSection;
+            // Rendering follows the rules of the repository the class belongs to, the same ones the
+            // formatter would apply on save. There is no app-wide copy of these to fall back on.
+            var oneOfEachSection = StyleSettingsForModel(modelNode.Id)?.OneOfEachSection ?? false;
 
             // Render parse/format on a background thread. Display the code as soon as this
             // completes — crucially, do NOT gate code display on the VCS status check.
@@ -1818,6 +1819,13 @@ document.head.appendChild(style);
     /// nowhere to record the word and the action is offered as disabled rather than silently doing
     /// nothing.
     /// </summary>
+    /// <summary>
+    /// The style settings of the repository a class belongs to, or null when it belongs to none —
+    /// a library loaded only for reference, which has no rules of its own.
+    /// </summary>
+    private StyleCheckingSettings? StyleSettingsForModel(string modelId) =>
+        DictionaryScope.RepositoryForModel(LibraryDataService, RepositoryService, modelId)?.StyleSettings;
+
     private string? DictionaryRootForCurrentFinding() => RepositoryForCurrentFinding()?.LocalPath;
 
     /// <summary>The repository owning the class the current finding is about, or null if it has none.</summary>

@@ -123,7 +123,6 @@ public class StyleCheckingService : IStyleCheckingService
 
     private readonly ILibraryDataService _libraryDataService;
     private readonly IRepositoryService _repositoryService;
-    private readonly ISettingsService _settingsService;
     private readonly ICustomDictionaryService _customDictionaryService;
     private readonly IDictionaryManagerService _dictionaryManagerService;
     private readonly ICodeReviewService _codeReviewService;
@@ -139,14 +138,12 @@ public class StyleCheckingService : IStyleCheckingService
     public StyleCheckingService(
         ILibraryDataService libraryDataService,
         IRepositoryService repositoryService,
-        ISettingsService settingsService,
         ICustomDictionaryService customDictionaryService,
         IDictionaryManagerService dictionaryManagerService,
         ICodeReviewService codeReviewService)
     {
         _libraryDataService = libraryDataService;
         _repositoryService = repositoryService;
-        _settingsService = settingsService;
         _customDictionaryService = customDictionaryService;
         _dictionaryManagerService = dictionaryManagerService;
         _codeReviewService = codeReviewService;
@@ -264,12 +261,9 @@ public class StyleCheckingService : IStyleCheckingService
         CancelExistingWorkers();
         _stopRequested = false;
 
-        //Check that the repository style settings exist
-        if (repository.StyleSettings == null)
-        {
-            //Copy the tool defaults
-            repository.StyleSettings = await _settingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
-        }
+        // A repository is loaded with settings of its own; this is only for one that somehow arrived
+        // without any, and the answer is the same defaults a new repository gets.
+        repository.StyleSettings ??= new StyleCheckingSettings();
 
         // Skip entirely if no style rules are enabled — avoids queuing and parsing all models
         if (!repository.StyleSettings.HasAnyStyleRuleEnabled)
@@ -320,12 +314,7 @@ public class StyleCheckingService : IStyleCheckingService
         CancelExistingWorkers();
         _stopRequested = false;
 
-        //Check that the repository style settings exist
-        if (repository.StyleSettings == null)
-        {
-            //Copy the tool defaults
-            repository.StyleSettings = _settingsService.GetAsync("StyleChecking", new StyleCheckingSettings()).GetAwaiter().GetResult();
-        }
+        repository.StyleSettings ??= new StyleCheckingSettings();
 
         // Skip entirely if no style rules are enabled — avoids queuing and parsing all models
         if (!repository.StyleSettings.HasAnyStyleRuleEnabled)
@@ -388,7 +377,7 @@ public class StyleCheckingService : IStyleCheckingService
                 continue;
             }
 
-            repository.StyleSettings ??= _settingsService.GetAsync("StyleChecking", new StyleCheckingSettings()).GetAwaiter().GetResult();
+            repository.StyleSettings ??= new StyleCheckingSettings();
 
             if (!repository.StyleSettings.HasAnyStyleRuleEnabled)
             {
@@ -752,7 +741,9 @@ public class StyleCheckingService : IStyleCheckingService
             }
             else
             {
-                settings = await _settingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
+                // Classes outside every repository — a library loaded only for reference. Nothing has
+                // set rules for them, so nothing is checked.
+                settings = new StyleCheckingSettings();
             }
 
             var workerName = repo?.Name ?? "unknown";

@@ -185,7 +185,6 @@ end Q;
         var service = new StyleCheckingService(
             data,
             new RepositoryService(data, settingsService, new FileMonitoringService()),
-            settingsService,
             new CustomDictionaryService(),
             new DictionaryManagerService(),
             new CodeReviewService());
@@ -346,8 +345,11 @@ end Q;
         var monitoring = new FileMonitoringService();
         var repositories = new RepositoryService(libraries, settingsService, monitoring);
         var service = new StyleCheckingService(
-            libraries, repositories, settingsService, new CustomDictionaryService(),
-            new DictionaryManagerService(), new CodeReviewService());
+            libraries,
+            repositories,
+            new CustomDictionaryService(),
+            new DictionaryManagerService(),
+            new CodeReviewService());
 
         var app = service.EnsureSpellChecker(@"C:\repos\R", new List<string>());
         var headless = SpellCheckerFactory.Build(new List<string>(), [], new DictionaryManagerService());
