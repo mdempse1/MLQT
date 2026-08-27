@@ -164,10 +164,15 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
-    public void ComponentModifier_CapturedAsDefaultValue()
+    public void ComponentModifier_IsNotADefaultValue()
     {
+        // (k=2) configures the sub-component; the integrator itself is bound to nothing. Reporting
+        // it as the default told an agent the component defaults to a value it cannot be assigned.
         var iface = Extract("model M\n  Modelica.Blocks.Continuous.Integrator integrator(k=2);\nend M;");
-        Assert.Equal("(k=2)", iface.Elements.Single(e => e.Name == "integrator").DefaultValue);
+
+        var integrator = iface.Elements.Single(e => e.Name == "integrator");
+        Assert.Null(integrator.DefaultValue);
+        Assert.Equal("(k=2)", integrator.TypeModification);
     }
 
     [Fact]
@@ -315,5 +320,60 @@ public class ClassInterfaceExtractorTests
 
         Assert.Equal("a nested description",
             iface.Elements.Single(e => e.Kind == ClassElementKind.Class).Description);
+    }
+
+    // ── a value and a type constraint are different things ──
+
+    [Fact]
+    public void ADeclarationCarryingBothAModifierAndABinding_ReportsThemApart()
+    {
+        // `parameter SI.Length L(min = 0) = 1` is one parameter declaration in eight in the Modelica
+        // Standard Library. Splitting the modification's text rather than reading the grammar gave
+        // its default as "(min=0)=1" — not a value, and not something that can be written back.
+        var iface = Extract("model M\n  parameter SI.Length L(min = 0) = 1 \"length\";\nend M;");
+
+        var length = Assert.Single(iface.Elements);
+        Assert.Equal("1", length.DefaultValue);
+        Assert.Equal("(min=0)", length.TypeModification);
+    }
+
+    [Fact]
+    public void SeveralAttributesOnTheType_StayWithTheTypeModification()
+    {
+        var k = Assert.Single(Extract(
+            "model M\n  parameter Real k(min = 0, max = 1) = 0.5;\nend M;").Elements);
+
+        Assert.Equal("0.5", k.DefaultValue);
+        Assert.Equal("(min=0,max=1)", k.TypeModification);
+    }
+
+    [Fact]
+    public void AModifierWithNoBinding_LeavesTheComponentWithNoDefault()
+    {
+        var x = Assert.Single(Extract("model M\n  Real x(unit = \"m\");\nend M;").Elements);
+
+        Assert.Null(x.DefaultValue);
+        Assert.Equal("(unit=\"m\")", x.TypeModification);
+    }
+
+    [Fact]
+    public void APlainBinding_HasNoTypeModification()
+    {
+        var k = Assert.Single(Extract("model M\n  parameter Real k = 2;\nend M;").Elements);
+
+        Assert.Equal("2", k.DefaultValue);
+        Assert.Null(k.TypeModification);
+    }
+
+    [Fact]
+    public void AnArrayBinding_IsReadWhole()
+    {
+        // The braces are part of the value, not a modification — a text-based split has to be told
+        // that and the grammar already knows it.
+        var n = Assert.Single(Extract(
+            "model M\n  parameter Real n[3] = {1, 2, 3};\nend M;").Elements);
+
+        Assert.Equal("{1,2,3}", n.DefaultValue);
+        Assert.Null(n.TypeModification);
     }
 }

@@ -19,12 +19,14 @@ public sealed record ClassInterfaceView(
     FunctionSignatureView? FunctionSignature);
 
 /// <summary>A settable parameter/constant (or a function argument). InheritedFrom is the base class id
-/// it comes from, or null if declared in the class itself.</summary>
+/// it comes from, or null if declared in the class itself. Default is the value it takes; TypeModification
+/// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.</summary>
 public sealed record ParameterView(
     string Name,
     string? Type,
     string? Variability,
     string? Default,
+    string? TypeModification,
     string? Description,
     string? InheritedFrom);
 
@@ -61,6 +63,7 @@ public sealed record ClassElementView(
     string? Connection,
     string Visibility,
     string? Default,
+    string? TypeModification,
     string? Description,
     string? ClassType,
     IReadOnlyList<string> Prefixes,

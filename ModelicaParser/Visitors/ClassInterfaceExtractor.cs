@@ -164,7 +164,8 @@ public static class ClassInterfaceExtractor
                 Variability = variability,
                 Causality = causality,
                 Connection = connection,
-                DefaultValue = ReadModification(declaration!.modification()),
+                DefaultValue = ReadBinding(declaration!.modification()),
+                TypeModification = ReadTypeModification(declaration.modification()),
                 Description = ReadStringComment(decl.comment()?.string_comment()),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
@@ -233,16 +234,29 @@ public static class ClassInterfaceExtractor
         return (variability, causality, connection);
     }
 
-    private static string? ReadModification(modelicaParser.ModificationContext? mod)
+    /// <summary>
+    /// The value the component defaults to — the binding expression, without its <c>=</c>/<c>:=</c>.
+    ///
+    /// <para>A declaration can carry a type modification and a binding at once
+    /// (<c>parameter SI.Length L(min = 0) = 1</c>, one in eight parameters in the Modelica Standard
+    /// Library), and the two are separate things: <c>min = 0</c> constrains the type, <c>1</c> is the
+    /// value. Reading them off the grammar rather than splitting the text is what keeps a caller that
+    /// asks for the default from being handed <c>(min=0)=1</c>.</para>
+    /// </summary>
+    private static string? ReadBinding(modelicaParser.ModificationContext? mod)
     {
-        if (mod is null)
-            return null;
-        var text = mod.GetText().Trim();
-        if (text.StartsWith(":=", StringComparison.Ordinal))
-            text = text[2..].Trim();
-        else if (text.StartsWith("=", StringComparison.Ordinal))
-            text = text[1..].Trim();
-        return text.Length == 0 ? null : text;
+        var text = mod?.modification_expression()?.GetText()?.Trim();
+        return string.IsNullOrEmpty(text) ? null : text;
+    }
+
+    /// <summary>
+    /// The modification applied to the component's type, e.g. <c>(min = 0)</c> or <c>(k = 2)</c>. It
+    /// sets attributes on the type or on a sub-component; it is not a value the component takes.
+    /// </summary>
+    private static string? ReadTypeModification(modelicaParser.ModificationContext? mod)
+    {
+        var text = mod?.class_modification()?.GetText()?.Trim();
+        return string.IsNullOrEmpty(text) ? null : text;
     }
 
     private static IReadOnlyList<string> ReadElementPrefixes(modelicaParser.ElementContext element)
