@@ -240,4 +240,139 @@ end Sources;
         Assert.True(count >= 0);              // whatever it manages, it must come back
         Assert.NotNull(corrected);
     }
+
+    // ── the places a description can be written ──
+
+    [Fact]
+    public void AShortClassDefinitionsDescription_IsCorrected()
+    {
+        // `type Angle = Real(unit="rad") "descrption"` has no composition, so its description hangs
+        // off the short specifier. Missing it leaves the class reported and uncorrectable.
+        var code = "package P\n  type Gain = Real(min = 0) \"A dimensionles gain\";\nend P;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "dimensionles", "dimensionless");
+
+        Assert.Equal(1, count);
+        Assert.Contains("A dimensionless gain", corrected);
+    }
+
+    [Fact]
+    public void ADerivativeClassDefinitionsDescription_IsCorrected()
+    {
+        var code = "package P\n  function df = der(f, x) \"The derivitive\";\nend P;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "derivitive", "derivative");
+
+        Assert.Equal(1, count);
+        Assert.Contains("The derivative", corrected);
+    }
+
+    // ── annotations that are not documentation ──
+
+    [Fact]
+    public void AnAnnotationWithNoArguments_IsPassedOver()
+    {
+        var code = "model M \"A postion sensor\"\n  annotation();\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "postion", "position");
+
+        Assert.Equal(1, count);
+        Assert.Contains("A position sensor", corrected);
+    }
+
+    [Fact]
+    public void TextInsideANonDocumentationAnnotation_IsNotTouched()
+    {
+        // Only what the spell checker inspects may be rewritten. An Icon's text primitive, a Dialog
+        // group name or a __Dymola_ vendor annotation is markup, and silently editing it changes the
+        // rendering of the model.
+        var code =
+            "model M\n  annotation(Icon(graphics = {Text(textString = \"postion\")}), " +
+            "Dialog(group = \"postion\"));\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "postion", "position");
+
+        Assert.Equal(0, count);
+        Assert.Contains("textString = \"postion\"", corrected);
+    }
+
+    [Fact]
+    public void AnEmptyDocumentationAnnotation_IsPassedOver()
+    {
+        var code = "model M \"A postion sensor\"\n  annotation(Documentation());\nend M;";
+
+        var (_, count) = SpellingCorrector.ReplaceWordInStrings(code, "postion", "position");
+
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void ADocumentationFieldThatIsNeitherInfoNorRevisions_IsLeftAlone()
+    {
+        // figures=, __Dymola_ extensions and the like live beside info; they are not prose the spell
+        // checker reads, so they are not prose the corrector may rewrite.
+        var code =
+            "model M\n  annotation(Documentation(info = \"<html>The postion</html>\", " +
+            "figures = {Figure(title = \"postion\")}));\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "postion", "position");
+
+        Assert.Equal(1, count);
+        Assert.Contains("<html>The position</html>", corrected);
+        Assert.Contains("title = \"postion\"", corrected);
+    }
+
+    [Fact]
+    public void RevisionsAreCorrectedAsWellAsInfo()
+    {
+        var code =
+            "model M\n  annotation(Documentation(revisions = \"<html>Fixed the postion</html>\"));\nend M;";
+
+        var (corrected, count) = SpellingCorrector.ReplaceWordInStrings(code, "postion", "position");
+
+        Assert.Equal(1, count);
+        Assert.Contains("Fixed the position", corrected);
+    }
+
+    // ── keeping the file the shape it was in ──
+
+    [Fact]
+    public void ACrlfFile_KeepsItsLineEndings()
+    {
+        // The corrector works on LF-normalised text. Writing that back to a CRLF file rewrites every
+        // line, so a one-word fix shows up in review as the whole file having changed.
+        var original = "model M \"A postion sensor\"\r\nend M;\r\n";
+        var (corrected, _) = SpellingCorrector.ReplaceWordInStrings(original, "postion", "position");
+
+        var written = SpellingCorrector.MatchFileEnding(original, corrected);
+
+        Assert.Contains("A position sensor", written);
+        Assert.DoesNotContain("\n\n", written.Replace("\r\n", "\n").TrimEnd('\n') + "\n");
+        Assert.Equal(original.Split("\r\n").Length, written.Split("\r\n").Length);
+    }
+
+    [Fact]
+    public void AnLfFile_IsLeftWithLfEndings()
+    {
+        var original = "model M \"A postion sensor\"\nend M;\n";
+        var (corrected, _) = SpellingCorrector.ReplaceWordInStrings(original, "postion", "position");
+
+        var written = SpellingCorrector.MatchFileEnding(original, corrected);
+
+        Assert.DoesNotContain("\r", written);
+    }
+
+    [Theory]
+    [InlineData("model M\nend M;\n")]
+    [InlineData("model M\nend M;")]
+    [InlineData("model M\nend M;\n\n")]
+    public void TheFilesTrailingWhitespace_SurvivesUnchanged(string original)
+    {
+        var trailing = original[original.TrimEnd(' ', '\t', '\r', '\n').Length..];
+
+        var written = SpellingCorrector.MatchFileEnding(original, original.TrimEnd());
+
+        Assert.EndsWith(trailing, written);
+        Assert.Equal(original, written);
+    }
 }

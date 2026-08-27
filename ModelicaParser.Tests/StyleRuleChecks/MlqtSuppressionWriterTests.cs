@@ -216,4 +216,143 @@ public class MlqtSuppressionWriterTests
         Assert.False(MlqtSuppressionWriter.TryAddSuppression(code, new[] { "Missing" }, null, "R", null, out _, out var error));
         Assert.Contains("could not locate the class 'Missing'", error);
     }
+
+    // ── writing into a file rather than a class ──
+
+    [Fact]
+    public void WritingIntoACrlfFile_KeepsItACrlfFile()
+    {
+        // The splice works in LF. Writing that back would rewrite every line of the file, burying a
+        // one-line annotation in a whole-file diff.
+        var file = "model Foo\r\n  Real x;\r\nend Foo;\r\n";
+
+        Assert.True(MlqtSuppressionWriter.TryAddSuppressionToFile(
+            file, null, null, "MLQT.Class.Description", "legacy", out var written, out _));
+
+        Assert.DoesNotContain("\n", written.Replace("\r\n", ""));
+        Assert.True(Parses(written.Replace("\r\n", "\n")));
+    }
+
+    [Fact]
+    public void WritingIntoAnLfFile_LeavesItWithLfEndings()
+    {
+        Assert.True(MlqtSuppressionWriter.TryAddSuppressionToFile(
+            "model Foo\n  Real x;\nend Foo;\n", null, null, "MLQT.Class.Description", null,
+            out var written, out _));
+
+        Assert.DoesNotContain("\r", written);
+    }
+
+    [Fact]
+    public void AFileWhoseClassCannotBeFound_IsReturnedUntouchedWithAReason()
+    {
+        // MCP and the UI both offer to suppress against a class named by the caller. If the name does
+        // not match what is in the file, saying so beats writing the annotation onto another class.
+        const string file = "model Foo\r\n  Real x;\r\nend Foo;\r\n";
+
+        var added = MlqtSuppressionWriter.TryAddSuppressionToFile(
+            file, ["NoSuchNested"], null, "MLQT.Class.Description", null, out var written, out var error);
+
+        Assert.False(added);
+        Assert.Equal(file, written);
+        Assert.Contains("NoSuchNested", error);
+    }
+
+    [Fact]
+    public void ANestedClass_IsLocatedByItsPath()
+    {
+        // Each nested class is checked as its own model, so the annotation has to land inside that
+        // class rather than on the package that holds it.
+        const string code =
+            "package P\n  model Inner\n    Real x;\n  end Inner;\nend P;";
+
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(
+            code, ["Inner"], null, "MLQT.Class.Description", null, out var outCode, out _));
+
+        Assert.True(Parses(outCode));
+        var inner = outCode[outCode.IndexOf("model Inner", StringComparison.Ordinal)..
+                            outCode.IndexOf("end Inner;", StringComparison.Ordinal)];
+        Assert.Contains("__MLQT(suppress=\"MLQT.Class.Description\")", inner);
+    }
+
+    // ── the directive forms the extractor has to read ──
+
+    [Fact]
+    public void AShortClassDefinition_CarriesItsDirectiveInTheTrailingComment()
+    {
+        // `type Length = Real(unit="m")` has no composition to hold an annotation, so a suppression
+        // on it can only live in the trailing comment. Missing it means the rule fires anyway and
+        // the author has no way to silence it.
+        const string code =
+            "type Gain = Real annotation(__MLQT(suppress=\"MLQT.Class.Description\"));";
+
+        Assert.True(Suppresses(code, "Gain", null, "MLQT.Class.Description"));
+    }
+
+    [Fact]
+    public void ADerivativeClassDefinition_CarriesItsDirectiveTheSameWay()
+    {
+        const string code =
+            "function df = der(f, x) annotation(__MLQT(suppress=\"MLQT.Class.Description\"));";
+
+        Assert.True(Suppresses(code, "df", null, "MLQT.Class.Description"));
+    }
+
+    [Fact]
+    public void AnMlqtAnnotationWithNothingInIt_SuppressesNothing()
+    {
+        const string code = "model Foo\n  annotation(__MLQT);\nend Foo;";
+
+        Assert.True(Parses(code));
+        Assert.False(Suppresses(code, "Foo", null, "MLQT.Class.Description"));
+    }
+
+    [Fact]
+    public void AnotherVendorsAnnotation_IsNotReadAsADirective()
+    {
+        const string code =
+            "model Foo\n  annotation(__Dymola_experimentFlags(suppress=\"MLQT.Class.Description\"));\nend Foo;";
+
+        Assert.False(Suppresses(code, "Foo", null, "MLQT.Class.Description"));
+    }
+
+    // ── opting out of formatting ──
+
+    private static SuppressionSet SetFor(string code)
+    {
+        var extractor = new MlqtSuppressionExtractor();
+        extractor.VisitStored_definition(ModelicaParserHelper.Parse(code));
+        return extractor.Build();
+    }
+
+    [Theory]
+    [InlineData("preserveOrder=true")]
+    [InlineData("format=false")]
+    public void EitherWayOfSayingDoNotFormatThis_IsHonoured(string directive)
+    {
+        // Both spellings are in the field. A formatter that honoured only one would reorder a class
+        // whose author had explicitly asked it not to, and the diff would be the whole class.
+        var set = SetFor($"model Foo\n  annotation(__MLQT({directive}));\nend Foo;");
+
+        Assert.True(set.HasFormattingOptOut);
+        Assert.True(set.PreservesFormatting("Foo"));
+    }
+
+    [Theory]
+    [InlineData("preserveOrder=false")]
+    [InlineData("format=true")]
+    public void SayingTheOppositeIsNotAnOptOut(string directive)
+    {
+        Assert.False(SetFor($"model Foo\n  annotation(__MLQT({directive}));\nend Foo;").HasFormattingOptOut);
+    }
+
+    [Fact]
+    public void AComponentCannotOptTheClassOutOfFormatting()
+    {
+        // Formatting is a whole-class operation, so a component-level directive has nothing to act
+        // on; honouring it would silently exempt the class on the strength of one declaration.
+        var set = SetFor("model Foo\n  Real x annotation(__MLQT(preserveOrder=true));\nend Foo;");
+
+        Assert.False(set.HasFormattingOptOut);
+    }
 }

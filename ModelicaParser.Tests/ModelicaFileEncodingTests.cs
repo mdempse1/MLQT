@@ -325,4 +325,74 @@ public class ModelicaFileEncodingTests : IDisposable
     }
 
     #endregion
+
+    #region Awaiting the same answers
+
+    [Fact]
+    public async Task ReadingAsynchronously_DetectsTheSameEncoding()
+    {
+        // The async pair exists so call sites that already await their file access do not wrap this
+        // class in a Task.Run. They must not become a second, differently-behaved reader.
+        var path = Write("latin1.mo", Latin1(Text));
+
+        var (text, encoding) = await ModelicaFileEncoding.ReadAllTextAsync(path);
+
+        Assert.Equal(Text, text);
+        Assert.Equal(Encoding.Latin1.CodePage, encoding.CodePage);
+        Assert.Equal(text, await ModelicaFileEncoding.ReadAllTextOnlyAsync(path));
+    }
+
+    [Fact]
+    public async Task WritingAsynchronously_KeepsTheEncodingTheFileWasIn()
+    {
+        // The whole point of the class: a Latin-1 file written back as UTF-8 corrupts a little more
+        // of itself on every save.
+        var path = Write("latin1-roundtrip.mo", Latin1(Text));
+
+        await ModelicaFileEncoding.WriteAllTextAsync(path, "package P \"Grün\"\nend P;\n");
+
+        Assert.Equal(Encoding.Latin1.CodePage, ModelicaFileEncoding.DetectExisting(path).CodePage);
+        Assert.Equal("package P \"Grün\"\nend P;\n", ModelicaFileEncoding.ReadAllTextOnly(path));
+    }
+
+    [Fact]
+    public async Task AnExplicitEncoding_IsUsedInsteadOfTheFilesOwn()
+    {
+        var path = Write("converted.mo", Latin1(Text));
+
+        await ModelicaFileEncoding.WriteAllTextAsync(path, Text, new UTF8Encoding(false));
+
+        Assert.Equal(Text, ModelicaFileEncoding.ReadAllTextOnly(path));
+        Assert.Equal(Encoding.UTF8.CodePage, ModelicaFileEncoding.DetectExisting(path).CodePage);
+    }
+
+    #endregion
+
+    #region Files with nothing in them
+
+    [Fact]
+    public void AnEmptyFile_HasNoLinesRatherThanOneBlankOne()
+    {
+        // package.order files are read as lines and rewritten. An invented blank line becomes a
+        // blank entry, and the ordering of the package is then wrong.
+        var path = Write("empty.mo", []);
+
+        Assert.Empty(ModelicaFileEncoding.ReadAllLinesOnly(path));
+        Assert.Equal(string.Empty, ModelicaFileEncoding.ReadAllTextOnly(path));
+    }
+
+    [Fact]
+    public void AFileThatDoesNotExistYet_IsWrittenInTheDefaultEncoding()
+    {
+        // Saving a class into a new file: there is no existing encoding to preserve.
+        var path = Path.Combine(_root, "brand-new.mo");
+
+        ModelicaFileEncoding.WriteAllText(path, "package P\nend P;\n");
+
+        Assert.Equal("package P\nend P;\n", ModelicaFileEncoding.ReadAllTextOnly(path));
+        Assert.Equal(ModelicaFileEncoding.Default.CodePage,
+            ModelicaFileEncoding.DetectExisting(path).CodePage);
+    }
+
+    #endregion
 }

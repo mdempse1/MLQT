@@ -122,12 +122,20 @@ public class DymolaHelpReaderTests : IDisposable
 
     // ── icons, which decide whether a recovered class claims to have one ──
 
+    // Each row of a package-content table names a child and shows the small image the generator
+    // drew for it. That map is the only route to a package's own icon.
+    private static string ContentRow(string id, string image) =>
+        $"<tr><td><img src=\"{image}\" alt=\"{id}\"><a href=\"{id}.html#{id}\">{id}</a></td>" +
+        "<td>a child</td></tr>";
+
+    private static string ContentTable(params string[] rows) =>
+        "<table class=\"ModelicaTablePackageContent\">" + string.Join("", rows) + "</table>";
+
     [Fact]
     public void AClassWhoseHeadingCarriesAnIcon_IsRecordedAsHavingOne()
     {
         // This is all the evidence there is: the class itself cannot be read, so whether MLQT reports
         // "no icon" against it rests entirely on what the generated page showed.
-        WritePng("real-icon.png", RandomNumberGenerator.GetBytes(64));
         WriteHelp("Lib.html", ClassHeading("Lib.Drawn", "Drawn", "real-icon.png"));
 
         var drawn = Assert.Single(DymolaHelpReader.Read(_root).Classes, c => c.FullName == "Lib.Drawn");
@@ -164,24 +172,116 @@ public class DymolaHelpReaderTests : IDisposable
         Assert.Null(owner.HasIcon);
     }
 
-    [Fact]
-    public void AnIconReferenceOutsideTheHelpFolder_IsNotHashed()
+    /// <summary>
+    /// The library a package's icon has to be worked out from: Lib lists two children, one of which
+    /// (Lib.Leaf) is documented on this same page with no heading icon and therefore certainly has
+    /// none — which makes whatever image Lib showed for it a placeholder. Lib.Pack is a sub-package
+    /// with its own page, so its heading says nothing, and the only evidence about it is the image
+    /// its parent showed.
+    /// </summary>
+    private void WriteCalibratedLibrary(string packImage, string leafImage)
     {
-        // A path into Resources or an absolute URL is not an icon render, so there is nothing to
-        // calibrate against and no claim to make either way.
-        WriteHelp("Lib.html", ClassHeading("Lib.A", "A", "../Resources/Images/logo.png"));
+        WriteHelp("Lib.html",
+            ClassHeading("Lib", "Lib") +
+            ContentTable(ContentRow("Lib.Pack", packImage), ContentRow("Lib.Leaf", leafImage)) +
+            ClassHeading("Lib.Leaf", "Leaf"));
+        WriteHelp("Lib_Pack.html", ClassHeading("Lib.Pack", "Pack"));
+    }
 
-        var document = DymolaHelpReader.Read(_root);
+    private static DocumentedClass ClassNamed(DymolaHelpDocument document, string name) =>
+        Assert.Single(document.Classes, c => c.FullName == name);
 
-        Assert.Contains(document.Classes, c => c.FullName == "Lib.A");
+    [Fact]
+    public void APackageShownWithAnImageNoIconlessClassWasGiven_HasAnIcon()
+    {
+        WritePng("pack.png", RandomNumberGenerator.GetBytes(64));
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("pack.png", "blank.png");
+
+        var pack = ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack");
+
+        Assert.True(pack.HasIcon);
+        Assert.Equal("pack.png", pack.IconImagePath);
     }
 
     [Fact]
-    public void AnIconReferenceToAFileThatIsNotThere_IsNotHashed()
+    public void APackageShownWithThePlaceholderImage_HasNone()
     {
-        WriteHelp("Lib.html", ClassHeading("Lib.A", "A", "missing.png"));
+        // Calibrated, not hard-coded: blank.png is known to be a placeholder only because Lib.Leaf,
+        // which certainly has no icon, was drawn with it. The generator deduplicates identical
+        // images behind a mangled name, so the two rows genuinely name the same file.
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("blank.png", "blank.png");
 
-        Assert.Contains(DymolaHelpReader.Read(_root).Classes, c => c.FullName == "Lib.A");
+        Assert.False(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
+    }
+
+    [Fact]
+    public void TwoPlaceholdersThatAreCopiesOfEachOther_AreBothRecognised()
+    {
+        // Deduplication is not guaranteed — a release that emits the same placeholder under two
+        // names must not make one of them read as a real icon. The comparison is on content.
+        var placeholder = RandomNumberGenerator.GetBytes(64);
+        WritePng("blank.png", placeholder);
+        WritePng("default_0.png", placeholder);
+        WriteCalibratedLibrary("default_0.png", "blank.png");
+
+        Assert.False(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
+    }
+
+    [Fact]
+    public void TheLibrarysRootPackage_HasNoParentToAnswerForIt()
+    {
+        // Nothing showed an icon for Lib, so the answer stays unknown. Exactly one class per library
+        // ends up here, and reporting a missing icon against it would be a finding invented from an
+        // absence of evidence.
+        WritePng("pack.png", RandomNumberGenerator.GetBytes(64));
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("pack.png", "blank.png");
+
+        Assert.Null(ClassNamed(DymolaHelpReader.Read(_root), "Lib").HasIcon);
+    }
+
+    [Fact]
+    public void AnIconReferenceOutsideTheHelpFolder_LeavesThePackageUnknown()
+    {
+        // A path into Resources or an absolute URL is not an icon render, so there is nothing to
+        // calibrate against and no claim to make either way.
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("../Resources/Images/logo.png", "blank.png");
+
+        Assert.Null(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
+    }
+
+    [Fact]
+    public void AnIconFileThatIsNotThere_LeavesThePackageUnknown()
+    {
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("never-written.png", "blank.png");
+
+        Assert.Null(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
+    }
+
+    [Fact]
+    public void APlaceholderImageThatCannotBeRead_CalibratesNothing()
+    {
+        // Without the placeholder's content there is no set to compare against, so the sub-package's
+        // own image cannot be ruled a placeholder. Claiming an icon on that basis would be a guess.
+        WritePng("pack.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("pack.png", "no-such-placeholder.png");
+
+        Assert.True(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
+    }
+
+    [Fact]
+    public void AnIconFileHeldOpenExclusively_LeavesThePackageUnknown()
+    {
+        WritePng("blank.png", RandomNumberGenerator.GetBytes(64));
+        var locked = WritePng("pack.png", RandomNumberGenerator.GetBytes(64));
+        WriteCalibratedLibrary("pack.png", "blank.png");
+        using var hold = new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.Null(ClassNamed(DymolaHelpReader.Read(_root), "Lib.Pack").HasIcon);
     }
 
     // ── the document itself ──
