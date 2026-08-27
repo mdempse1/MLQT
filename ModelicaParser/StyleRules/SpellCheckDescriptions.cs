@@ -99,7 +99,7 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
                 if (!_spellChecker.IsCorrect(word, contextWords))
                 {
                     var lineNumber = startLine + TextExtractor.CountNewlinesBefore(text, charOffset);
-                    AddViolation(lineNumber, SpellingMessage.For(word, SpellingMessage.InDescription),
+                    AddFinding(lineNumber, SpellingMessage.For(word, SpellingMessage.InDescription),
                         RuleIds.SpellingDescription, discriminator: word);
                 }
             }

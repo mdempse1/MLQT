@@ -13,7 +13,7 @@ public class CheckDescriptionStringsTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new CheckClassDescriptionStrings();
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     [Fact]
@@ -29,10 +29,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -48,10 +48,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -63,10 +63,10 @@ type Voltage = Real(unit = "V") "Voltage in volts";
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -78,10 +78,10 @@ type Voltage = Real(unit = "V");
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -93,10 +93,10 @@ type Color = enumeration(Red, Green, Blue) "RGB colors";
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -108,10 +108,10 @@ type Color = enumeration(Red, Green, Blue);
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -123,10 +123,10 @@ type Velocity = der(Position, time) "Velocity in m/s";
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -138,10 +138,10 @@ type Velocity = der(Position, time);
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -159,17 +159,17 @@ end TestPackage;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
     public void NestedClass_SkippedByParentVisitor()
     {
         // Nested classes are checked independently via their own ModelNode,
-        // so the parent visitor should not report violations for them.
+        // so the parent visitor should not report findings for them.
         var code = """
 package TestPackage "test package"
   model InnerWithout
@@ -181,10 +181,10 @@ end TestPackage;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
         // Assert - InnerWithout is nested and skipped; TestPackage has a description
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -199,9 +199,9 @@ equation
 end InnerWithout;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -220,8 +220,8 @@ end SimpleModel;
         var visitor = new CheckClassDescriptionStrings("MyBasePackage");
         visitor.Visit(parseTree);
 
-        // Assert - no violations since description is present
-        Assert.Empty(visitor.RuleViolations);
+        // Assert - no findings since description is present
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -241,12 +241,12 @@ end SimpleModel;
         var visitor = new CheckClassDescriptionStrings();
         visitor.Visit(parseTree);
 
-        // Assert - no violations
-        Assert.Empty(visitor.RuleViolations);
+        // Assert - no findings
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void WithinClause_MissingDescription_ViolationHasFQN()
+    public void WithinClause_MissingDescription_FindingHasFQN()
     {
         // Arrange
         var code = """
@@ -262,9 +262,9 @@ end Undocumented;
         var visitor = new CheckClassDescriptionStrings();
         visitor.Visit(parseTree);
 
-        // Assert - one violation with correct FQN
-        Assert.Single(visitor.RuleViolations);
-        Assert.Contains("Undocumented", visitor.RuleViolations[0].ModelName);
+        // Assert - one finding with correct FQN
+        Assert.Single(visitor.RuleFindings);
+        Assert.Contains("Undocumented", visitor.RuleFindings[0].ModelName);
     }
 
     [Fact]
@@ -277,9 +277,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -292,9 +292,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -309,9 +309,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -325,9 +325,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
@@ -340,9 +340,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -354,9 +354,9 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
 
@@ -369,8 +369,8 @@ model Container "A container"
 end Container;
 """;
 
-        var ruleViolations = CheckRule(code, true, false, false, false, false);
+        var ruleFindings = CheckRule(code, true, false, false, false, false);
 
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 }

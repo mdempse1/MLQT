@@ -68,11 +68,11 @@ internal static class MetricsRecorder
                 // Match the dashboard's figure: active style findings in scope. Parse diagnostics are
                 // not style debt and would make the trend jump on a syntax error rather than quality.
                 var inScope = scopeModels.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
-                var violations = findings.Count(f =>
+                var findingCount = findings.Count(f =>
                     !RuleIds.IsParseDiagnostic(f.RuleId) && inScope.Contains(f.ModelId));
 
                 var snapshot = MetricsSnapshot.From(
-                    metrics, scope, timestampUtc, violations, stamp.Revision, stamp.Branch);
+                    metrics, scope, timestampUtc, findingCount, stamp.Revision, stamp.Branch);
 
                 if (force)
                 {

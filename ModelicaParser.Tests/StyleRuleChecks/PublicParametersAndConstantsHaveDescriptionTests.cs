@@ -13,11 +13,11 @@ public class PublicParametersAndConstantsHaveDescriptionTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new PublicParametersAndConstantsHaveDescription(true, true);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     [Fact]
-    public void OneVariable_WithDescription_NoViolation()
+    public void OneVariable_WithDescription_NoFinding()
     {
         // Arrange
         var code = """
@@ -27,14 +27,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
     
     [Fact]
-    public void OneVariable_NoDescription_NoViolation()
+    public void OneVariable_NoDescription_NoFinding()
     {
         // Arrange
         var code = """
@@ -44,15 +44,15 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
         
     [Fact]
-    public void OneProtectedVariable_NoDescription_NoViolation()
+    public void OneProtectedVariable_NoDescription_NoFinding()
     {
         // Arrange
         var code = """
@@ -63,14 +63,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
-    public void OneParameter_NoDescription_Violation()
+    public void OneParameter_NoDescription_Finding()
     {
         // Arrange
         var code = """
@@ -80,18 +80,18 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("Public parameter", ruleViolations[0].Summary);
-        Assert.Equal(2, ruleViolations[0].LineNumber);
-        Assert.Equal("SimpleModel", ruleViolations[0].ModelName);
-        Assert.Contains(" x ", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("Public parameter", ruleFindings[0].Summary);
+        Assert.Equal(2, ruleFindings[0].LineNumber);
+        Assert.Equal("SimpleModel", ruleFindings[0].ModelName);
+        Assert.Contains(" x ", ruleFindings[0].Summary);
     }    
 
     [Fact]
-    public void OnePublicParameter_NoDescription_Violation()
+    public void OnePublicParameter_NoDescription_Finding()
     {
         // Arrange
         var code = """
@@ -102,19 +102,19 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("Public parameter", ruleViolations[0].Summary);
-        Assert.Equal(3, ruleViolations[0].LineNumber);
-        Assert.Equal("SimpleModel", ruleViolations[0].ModelName);
-        Assert.Contains(" x ", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("Public parameter", ruleFindings[0].Summary);
+        Assert.Equal(3, ruleFindings[0].LineNumber);
+        Assert.Equal("SimpleModel", ruleFindings[0].ModelName);
+        Assert.Contains(" x ", ruleFindings[0].Summary);
     }    
 
 
     [Fact]
-    public void OnePublicOneProtectedParameter_NoDescription_Violation()
+    public void OnePublicOneProtectedParameter_NoDescription_Finding()
     {
         // Arrange
         var code = """
@@ -127,18 +127,18 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("Public parameter", ruleViolations[0].Summary);
-        Assert.Equal(3, ruleViolations[0].LineNumber);
-        Assert.Equal("SimpleModel", ruleViolations[0].ModelName);
-        Assert.Contains(" x ", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("Public parameter", ruleFindings[0].Summary);
+        Assert.Equal(3, ruleFindings[0].LineNumber);
+        Assert.Equal("SimpleModel", ruleFindings[0].ModelName);
+        Assert.Contains(" x ", ruleFindings[0].Summary);
     }        
 
        [Fact]
-    public void OnePublicOneProtectedParameter_WithDescription_NoViolation()
+    public void OnePublicOneProtectedParameter_WithDescription_NoFinding()
     {
         // Arrange
         var code = """
@@ -151,14 +151,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
    [Fact]
-    public void TwoPublicOneProtectedParameter_NoDescription_OneViolation()
+    public void TwoPublicOneProtectedParameter_NoDescription_OneFinding()
     {
         // Arrange
         var code = """
@@ -173,14 +173,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("Public parameter", ruleViolations[0].Summary);
-        Assert.Equal(7, ruleViolations[0].LineNumber);
-        Assert.Equal("SimpleModel", ruleViolations[0].ModelName);
-        Assert.Contains(" z ", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("Public parameter", ruleFindings[0].Summary);
+        Assert.Equal(7, ruleFindings[0].LineNumber);
+        Assert.Equal("SimpleModel", ruleFindings[0].ModelName);
+        Assert.Contains(" z ", ruleFindings[0].Summary);
     }    
     
        [Fact]
@@ -206,16 +206,16 @@ end Test;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert - nested models are skipped; Test package has no public parameters
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
-    public void Model_MultiplePublicParams_TwoViolations()
+    public void Model_MultiplePublicParams_TwoFindings()
     {
-        // Test standalone models with parameter violations
+        // Test standalone models with parameter findings
         var code = """
 model SimpleModel1
 public
@@ -227,15 +227,15 @@ public
 end SimpleModel1;
 """;
 
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        Assert.Single(ruleViolations);
-        Assert.Contains("Public parameter", ruleViolations[0].Summary);
-        Assert.Contains(" z ", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("Public parameter", ruleFindings[0].Summary);
+        Assert.Contains(" z ", ruleFindings[0].Summary);
     }
 
     [Fact]
-    public void PublicConstant_WithDescription_NoViolation()
+    public void PublicConstant_WithDescription_NoFinding()
     {
         // Arrange - constant prefix path in VisitComponent_clause
         var code = """
@@ -245,14 +245,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
-    public void PublicConstant_WithoutDescription_ReportsViolation()
+    public void PublicConstant_WithoutDescription_ReportsFinding()
     {
         // Arrange - constant without description
         var code = """
@@ -262,16 +262,16 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("constant", ruleViolations[0].Summary);
-        Assert.Contains("gravity", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("constant", ruleFindings[0].Summary);
+        Assert.Contains("gravity", ruleFindings[0].Summary);
     }
 
     [Fact]
-    public void TwoPublicConstants_WithoutDescription_ReportsTwoViolations()
+    public void TwoPublicConstants_WithoutDescription_ReportsTwoFindings()
     {
         // Arrange - two constants without descriptions
         var code = """
@@ -282,15 +282,15 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Equal(2, ruleViolations.Count);
-        Assert.All(ruleViolations, v => Assert.Contains("constant", v.Summary));
+        Assert.Equal(2, ruleFindings.Count);
+        Assert.All(ruleFindings, v => Assert.Contains("constant", v.Summary));
     }
 
     [Fact]
-    public void RegularVariable_NoPrefixNoDescription_NoViolation()
+    public void RegularVariable_NoPrefixNoDescription_NoFinding()
     {
         // Arrange - covers the else branch in VisitComponent_clause (no parameter/constant prefix)
         var code = """
@@ -304,14 +304,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert - regular variables don't require descriptions
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
-    public void OneParameter_WithConcatenatedDescription_NoViolation()
+    public void OneParameter_WithConcatenatedDescription_NoFinding()
     {
         // Arrange - description with two string tokens (covers line 135: i > 0 branch)
         var code = """
@@ -321,14 +321,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        // Assert - has description, no violation
-        Assert.Empty(ruleViolations);
+        // Assert - has description, no finding
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
-    public void DisabledCheck_NoViolationsReported()
+    public void DisabledCheck_NoFindingsReported()
     {
         // Arrange - both checks disabled, covers early return in VisitStored_definition
         var code = """
@@ -344,12 +344,12 @@ end SimpleModel;
             constantHasDescription: false);
         visitor.Visit(parseTree);
 
-        // Assert - checks disabled, no violations
-        Assert.Empty(visitor.RuleViolations);
+        // Assert - checks disabled, no findings
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void OneParameter_WithEmptyStringDescription_ReportsViolation()
+    public void OneParameter_WithEmptyStringDescription_ReportsFinding()
     {
         // Arrange - covers lines 138-141: empty string description (non-zero length but only whitespace)
         var code = """
@@ -359,15 +359,15 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert - an empty/whitespace string description should be flagged
-        Assert.Single(ruleViolations);
-        Assert.Contains("empty string", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("empty string", ruleFindings[0].Summary);
     }
 
     [Fact]
-    public void OneConstant_WithEmptyStringDescription_ReportsViolation()
+    public void OneConstant_WithEmptyStringDescription_ReportsFinding()
     {
         // Arrange - covers empty string check for constants
         var code = """
@@ -377,15 +377,15 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("empty string", ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("empty string", ruleFindings[0].Summary);
     }
 
     [Fact]
-    public void OneParameter_NoDescriptionWithAnnotation_ReportsViolation()
+    public void OneParameter_NoDescriptionWithAnnotation_ReportsFinding()
     {
         // Arrange
         var code = """
@@ -395,16 +395,16 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        // Assert - a single violation 
-        Assert.Single(ruleViolations);
-        Assert.Contains("must have a description", ruleViolations[0].Summary);
+        // Assert - a single finding 
+        Assert.Single(ruleFindings);
+        Assert.Contains("must have a description", ruleFindings[0].Summary);
     }    
 
 
     [Fact]
-    public void OneParameter_DescriptionWithAnnotation_ReportsViolation()
+    public void OneParameter_DescriptionWithAnnotation_ReportsFinding()
     {
         // Arrange
         var code = """
@@ -414,15 +414,15 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        // Assert - no violations
-        Assert.Empty(ruleViolations);
+        // Assert - no findings
+        Assert.Empty(ruleFindings);
     }    
 
 
     [Fact]
-    public void OneConstant_NoDescriptionWithAnnotation_ReportsViolation()
+    public void OneConstant_NoDescriptionWithAnnotation_ReportsFinding()
     {
         // Arrange
         var code = """
@@ -432,16 +432,16 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        // Assert - a single violation 
-        Assert.Single(ruleViolations);
-        Assert.Contains("must have a description", ruleViolations[0].Summary);
+        // Assert - a single finding 
+        Assert.Single(ruleFindings);
+        Assert.Contains("must have a description", ruleFindings[0].Summary);
     }    
 
 
     [Fact]
-    public void OneConstant_DescriptionWithAnnotation_ReportsViolation()
+    public void OneConstant_DescriptionWithAnnotation_ReportsFinding()
     {
         // Arrange
         var code = """
@@ -451,10 +451,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code);
+        var ruleFindings = CheckRule(code);
 
-        // Assert - no violations
-        Assert.Empty(ruleViolations);
+        // Assert - no findings
+        Assert.Empty(ruleFindings);
     }    
         
 }

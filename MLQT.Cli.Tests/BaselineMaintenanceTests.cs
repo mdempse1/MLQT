@@ -4,7 +4,7 @@ namespace MLQT.Cli.Tests;
 
 /// <summary>
 /// `prune` and `update` both drop findings you have fixed; only `update` can ADD, accepting a
-/// violation nobody reviewed. That is the one way to defeat the ratchet by accident, so the
+/// finding nobody reviewed. That is the one way to defeat the ratchet by accident, so the
 /// difference has to be visible at the point of use.
 /// </summary>
 public class BaselineMaintenanceTests
@@ -146,7 +146,7 @@ public class BaselineMaintenanceTests
     /// element or discriminator — so both findings share a fingerprint and the ledger holds one entry
     /// for the pair.
     /// </summary>
-    private const string RepeatedViolation = """
+    private const string RepeatedFinding = """
         model Lib "described"
           Real x;
           import A.B;
@@ -154,7 +154,7 @@ public class BaselineMaintenanceTests
         end Lib;
         """;
 
-    private const string RepeatedViolationSettings = """{ "ImportStatementsFirst": true }""";
+    private const string RepeatedFindingSettings = """{ "ImportStatementsFirst": true }""";
 
     [Fact]
     public void Create_SaysHowManyFindingsTheEntriesCover()
@@ -162,8 +162,8 @@ public class BaselineMaintenanceTests
         // The confusing case: `create` reports fewer than the check did, and the check then reports
         // all of them accepted. Both are right, and neither is legible without the other number.
         using var lib = new TempLibrary()
-            .WithSettings(RepeatedViolationSettings)
-            .WithModel(RepeatedViolation);
+            .WithSettings(RepeatedFindingSettings)
+            .WithModel(RepeatedFinding);
 
         var (code, stdout, stderr) = Run("baseline", "create", lib.Path);
 
@@ -177,8 +177,8 @@ public class BaselineMaintenanceTests
     public void Check_ReportsTheEntryCountAlongsideTheAcceptedFindings()
     {
         using var lib = new TempLibrary()
-            .WithSettings(RepeatedViolationSettings)
-            .WithModel(RepeatedViolation);
+            .WithSettings(RepeatedFindingSettings)
+            .WithModel(RepeatedFinding);
         Run("baseline", "create", lib.Path);
 
         var (code, stdout, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
@@ -231,7 +231,7 @@ public class BaselineMaintenanceTests
     [Fact]
     public void Check_WarnsWhenARuleWasEnabledSinceTheBaseline()
     {
-        // The silent failure this catches: the newly enabled rule's pre-existing violations are
+        // The silent failure this catches: the newly enabled rule's pre-existing findings are
         // reported as new, so the change looks like it caused a regression it had nothing to do with.
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
         Run("baseline", "create", lib.Path);

@@ -61,37 +61,37 @@ public class MetricsSnapshotTests
     }
 
     [Fact]
-    public void AggregateByTimestamp_SumsViolations_WhenAllPresent()
+    public void AggregateByTimestamp_SumsFindings_WhenAllPresent()
     {
         var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
         var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, 5);
 
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
 
-        Assert.Equal(15, combined.Violations);
+        Assert.Equal(15, combined.Findings);
     }
 
     [Fact]
-    public void AggregateByTimestamp_NullViolations_WhenAnyMissing()
+    public void AggregateByTimestamp_NullFindings_WhenAnyMissing()
     {
         var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
         var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, null);
 
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
 
-        Assert.Null(combined.Violations);
+        Assert.Null(combined.Findings);
     }
 
     // --- HasSameMetricsAs -----------------------------------------------------------------------
     // Identity of the measurement, not of the record: timestamp/revision are metadata about when it
     // was taken. Used to decide whether a new point would say anything.
 
-    private static MetricsSnapshot S(double desc, int classes = 10, int? violations = 3,
+    private static MetricsSnapshot S(double desc, int classes = 10, int? findings = 3,
         (int compliant, int eligible)? counts = null)
         => new(new DateTime(2026, 1, 1), "", classes,
             new Dictionary<string, double> { ["Description"] = desc },
             counts is null ? null : new Dictionary<string, CoverageCount> { ["Description"] = new(counts.Value.compliant, counts.Value.eligible) },
-            violations);
+            findings);
 
     [Fact]
     public void HasSameMetricsAs_IdenticalNumbers_True()
@@ -106,8 +106,8 @@ public class MetricsSnapshotTests
         => Assert.False(S(50).HasSameMetricsAs(S(51)));
 
     [Fact]
-    public void HasSameMetricsAs_DifferentViolations_False()
-        => Assert.False(S(50).HasSameMetricsAs(S(50, violations: 4)));
+    public void HasSameMetricsAs_DifferentFindings_False()
+        => Assert.False(S(50).HasSameMetricsAs(S(50, findings: 4)));
 
     [Fact]
     public void HasSameMetricsAs_DifferentClassCount_False()

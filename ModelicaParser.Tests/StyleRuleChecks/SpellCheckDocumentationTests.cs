@@ -10,7 +10,7 @@ public class SpellCheckDocumentationTests
     private static SpellChecker CreateSpellChecker() => SpellChecker.Create();
 
     [Fact]
-    public void CorrectDocumentation_NoViolations()
+    public void CorrectDocumentation_NoFindings()
     {
         var code = """
             model TestModel "A simple model"
@@ -25,11 +25,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void MisspelledInDocumentation_ReportsViolation()
+    public void MisspelledInDocumentation_ReportsFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -44,12 +44,12 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("documentation info"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("documentation info"));
     }
 
     [Fact]
-    public void MisspelledInRevisions_ReportsViolation()
+    public void MisspelledInRevisions_ReportsFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -66,7 +66,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v =>
+        Assert.Contains(visitor.RuleFindings, v =>
             v.Summary.Contains("misspeling") && v.Summary.Contains("documentation revisions"));
     }
 
@@ -87,7 +87,7 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // HTML tag names like 'html', 'body', 'p' should not be flagged
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -107,10 +107,10 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // 'xyzzy' and 'foobar' are inside <code> blocks and should be stripped
-        var codeViolations = visitor.RuleViolations
+        var codeFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("xyzzy") || v.Summary.Contains("foobar"))
             .ToList();
-        Assert.Empty(codeViolations);
+        Assert.Empty(codeFindings);
     }
 
     [Fact]
@@ -130,11 +130,11 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // &amp; should be decoded to & and not cause issues
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void NoDocumentation_NoViolations()
+    public void NoDocumentation_NoFindings()
     {
         var code = """
             model TestModel "A simple model"
@@ -148,11 +148,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void EmptyDocumentationString_NoViolations()
+    public void EmptyDocumentationString_NoFindings()
     {
         var code = """
             model TestModel "A simple model"
@@ -167,7 +167,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -186,11 +186,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void ModelNameInDocumentation_NoViolation()
+    public void ModelNameInDocumentation_NoFinding()
     {
         var knownModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -210,11 +210,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker(), knownModelNames);
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void ComponentNameInDocumentation_NoViolation()
+    public void ComponentNameInDocumentation_NoFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -231,10 +231,10 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var rflxViolations = visitor.RuleViolations
+        var rflxFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("'rflx'"))
             .ToList();
-        Assert.Empty(rflxViolations);
+        Assert.Empty(rflxFindings);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -273,10 +273,10 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var preViolations = visitor.RuleViolations
+        var preFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("xyzzy") || v.Summary.Contains("nonsenseword"))
             .ToList();
-        Assert.Empty(preViolations);
+        Assert.Empty(preFindings);
     }
 
     [Fact]
@@ -298,11 +298,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var violation = visitor.RuleViolations.FirstOrDefault(v => v.Summary.Contains("misspeling"));
-        Assert.NotNull(violation);
+        var finding = visitor.RuleFindings.FirstOrDefault(v => v.Summary.Contains("misspeling"));
+        Assert.NotNull(finding);
         // The STRING token starts on line 5 (annotation line), and the misspelled word
         // is 3 newlines into the string content, so it should be on line 8
-        Assert.Equal(8, violation.LineNumber);
+        Assert.Equal(8, finding.LineNumber);
     }
 
     [Fact]
@@ -327,10 +327,10 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var violation = visitor.RuleViolations.FirstOrDefault(v => v.Summary.Contains("misspeling"));
-        Assert.NotNull(violation);
+        var finding = visitor.RuleFindings.FirstOrDefault(v => v.Summary.Contains("misspeling"));
+        Assert.NotNull(finding);
         // The misspelled word is on line 11
-        Assert.Equal(11, violation.LineNumber);
+        Assert.Equal(11, finding.LineNumber);
     }
 
     [Fact]
@@ -351,8 +351,8 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        // No violations should be reported for decoded HTML entities
-        Assert.Empty(visitor.RuleViolations);
+        // No findings should be reported for decoded HTML entities
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -369,10 +369,10 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var violation = visitor.RuleViolations.FirstOrDefault(v => v.Summary.Contains("misspeling"));
-        Assert.NotNull(violation);
+        var finding = visitor.RuleFindings.FirstOrDefault(v => v.Summary.Contains("misspeling"));
+        Assert.NotNull(finding);
         // Single-line string on line 5
-        Assert.Equal(5, violation.LineNumber);
+        Assert.Equal(5, finding.LineNumber);
     }
 
     [Fact]
@@ -391,8 +391,8 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker(), basePackage: "MyLibrary");
         visitor.Visit(parseTree);
 
-        Assert.NotEmpty(visitor.RuleViolations);
-        Assert.Contains("MyLibrary", visitor.RuleViolations[0].ModelName);
+        Assert.NotEmpty(visitor.RuleFindings);
+        Assert.Contains("MyLibrary", visitor.RuleFindings[0].ModelName);
     }
 
     // ── Nested class scope stack tests ──
@@ -418,10 +418,10 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // "rflx" is in outer scope — with scope stacking it should still be visible
-        var rflxViolations = visitor.RuleViolations
+        var rflxFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("'rflx'"))
             .ToList();
-        Assert.Empty(rflxViolations);
+        Assert.Empty(rflxFindings);
     }
 
     [Fact]
@@ -445,14 +445,14 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // Both outerVar and innerVar should be in context words
-        var violations = visitor.RuleViolations
+        var findings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("outerVar") || v.Summary.Contains("innerVar"))
             .ToList();
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void EmptyDocumentationAnnotation_NoArguments_NoViolation()
+    public void EmptyDocumentationAnnotation_NoArguments_NoFinding()
     {
         // annotation(Documentation()) — empty argument list
         var code = """
@@ -466,7 +466,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -488,7 +488,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker(), knownModelNames);
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -503,7 +503,7 @@ public class SpellCheckDocumentationTests
         visitor.Visit(parseTree);
 
         // Should not throw — tests that OnClassEntered/OnClassExited work with short class specifier
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -517,7 +517,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -534,11 +534,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
-    public void WhitespaceOnlyDocumentation_NoViolation()
+    public void WhitespaceOnlyDocumentation_NoFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -551,11 +551,11 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void HtmlOnlyDocumentation_NoTextContent_NoViolation()
+    public void HtmlOnlyDocumentation_NoTextContent_NoFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -568,7 +568,7 @@ public class SpellCheckDocumentationTests
         var visitor = new SpellCheckDocumentation(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]

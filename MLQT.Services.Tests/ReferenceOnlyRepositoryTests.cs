@@ -63,7 +63,7 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
 
         var found = new List<LogMessage>();
-        h.Checking.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
 
         h.Checking.StartBackgroundCheckingForRepositories([added.Repository]);
         await h.Checking.WaitForCompletionAsync();
@@ -99,12 +99,12 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
 
         var found = new List<LogMessage>();
-        h.Checking.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
 
         h.Checking.StartBackgroundCheckingForRepositories([added.Repository]);
         await h.Checking.WaitForCompletionAsync();
 
-        // No sleep: completion means the final flush has happened, so the violations are already here.
+        // No sleep: completion means the final flush has happened, so the findings are already here.
         lock (found)
             Assert.NotEmpty(found);
         Assert.All(h.Libraries.GetAllModels(), m => Assert.NotNull(m.Definition.Coverage));

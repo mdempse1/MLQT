@@ -18,9 +18,9 @@ public interface IStyleCheckingService
     event Action<bool>? OnProgressChanged;
 
     /// <summary>
-    /// Event fired when new violations are found.
+    /// Event fired when new findings are found.
     /// </summary>
-    event Action<List<LogMessage>>? OnViolationsFound;
+    event Action<List<LogMessage>>? OnFindingsFound;
 
     /// <summary>
     /// Gets whether style checking is currently running.
@@ -67,7 +67,7 @@ public interface IStyleCheckingService
     /// </summary>
     /// <param name="model">The model definition to check.</param>
     /// <param name="settings">The style checking settings to be used.</param>
-    /// <returns>List of rule violations found.</returns>
+    /// <returns>List of rule findings found.</returns>
     Task<List<LogMessage>> CheckModelAsync(ModelDefinition model, StyleCheckingSettings settings);
 
     /// <summary>
@@ -94,8 +94,8 @@ public interface IStyleCheckingService
     void StartBackgroundCheckingForRepositories(IReadOnlyList<Repository> repositories);
 
     /// <summary>
-    /// Checks only specific models and updates their violations.
-    /// Clears previous violations for the specified models before checking.
+    /// Checks only specific models and updates their findings.
+    /// Clears previous findings for the specified models before checking.
     /// </summary>
     /// <param name="modelIds">The model IDs to check.</param>
     /// <param name="graph">The graph containing the models.</param>

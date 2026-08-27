@@ -13,7 +13,7 @@ public class OneOfEachSectionTests
     var parseTree = ModelicaParserHelper.Parse(code);
     var visitor = new OneOfEachSection(true, true, true, true, allowEquationAndAlgorithm);
     visitor.Visit(parseTree);
-    return visitor.RuleViolations;
+    return visitor.RuleFindings;
   }
 
   [Fact]
@@ -34,10 +34,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Empty(ruleViolations);
+    Assert.Empty(ruleFindings);
   }
 
   [Fact]
@@ -58,10 +58,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Empty(ruleViolations);
+    Assert.Empty(ruleFindings);
   }
 
   [Fact]
@@ -86,10 +86,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, true);
+    var ruleFindings = CheckRule(code, true);
 
     // Assert
-    Assert.Empty(ruleViolations);
+    Assert.Empty(ruleFindings);
   }
 
   [Fact]
@@ -112,10 +112,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
   [Fact]
@@ -138,10 +138,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
   [Fact]
@@ -162,10 +162,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
 
@@ -187,10 +187,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
 
@@ -212,10 +212,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
 
@@ -237,10 +237,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
 
@@ -260,10 +260,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
   [Fact]
@@ -282,10 +282,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
   [Fact]
@@ -304,10 +304,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
   [Fact]
@@ -326,10 +326,10 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Single(ruleViolations);
+    Assert.Single(ruleFindings);
   }
 
     [Fact]
@@ -350,14 +350,14 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.Empty(ruleViolations);
+    Assert.Empty(ruleFindings);
   }
 
   [Fact]
-  public void InitialEquationAndInitialAlgorithm_NotAllowed_ReportsViolation()
+  public void InitialEquationAndInitialAlgorithm_NotAllowed_ReportsFinding()
   {
     // Covers CheckEquationSection: tracker.InitialAlgorithmSection == 1 && !_allowEquationAndAlgorithm
     // Arrange
@@ -375,14 +375,14 @@ end SimpleModel;
 """;
 
     // Act - allowEquationAndAlgorithm = false, so mixing is not allowed
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
-    // Assert - mixing initial equation and initial algorithm should raise a violation
-    Assert.NotEmpty(ruleViolations);
+    // Assert - mixing initial equation and initial algorithm should raise a finding
+    Assert.NotEmpty(ruleFindings);
   }
 
   [Fact]
-  public void InitialAlgorithmAndInitialEquation_NotAllowed_ReportsViolation()
+  public void InitialAlgorithmAndInitialEquation_NotAllowed_ReportsFinding()
   {
     // Covers CheckAlgorithmSection: tracker.InitialEquationSection == 1 && !_allowEquationAndAlgorithm
     // Arrange
@@ -400,14 +400,14 @@ end SimpleModel;
 """;
 
     // Act - allowEquationAndAlgorithm = false
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.NotEmpty(ruleViolations);
+    Assert.NotEmpty(ruleFindings);
   }
 
   [Fact]
-  public void InitialEquationAndInitialAlgorithm_Allowed_NoViolation()
+  public void InitialEquationAndInitialAlgorithm_Allowed_NoFinding()
   {
     // Arrange
     var code = """
@@ -424,14 +424,14 @@ end SimpleModel;
 """;
 
     // Act - allowEquationAndAlgorithm = true
-    var ruleViolations = CheckRule(code, true);
+    var ruleFindings = CheckRule(code, true);
 
-    // Assert - allowed, so no violations from mixing
-    Assert.Empty(ruleViolations);
+    // Assert - allowed, so no findings from mixing
+    Assert.Empty(ruleFindings);
   }
 
   [Fact]
-  public void MultipleInitialEquationSections_ReportsViolation()
+  public void MultipleInitialEquationSections_ReportsFinding()
   {
     // Covers CheckEquationSection: tracker.InitialEquationSection == 1 && _oneInitialEquationSection
     // Arrange
@@ -448,14 +448,14 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, true);
+    var ruleFindings = CheckRule(code, true);
 
     // Assert
-    Assert.NotEmpty(ruleViolations);
+    Assert.NotEmpty(ruleFindings);
   }
 
   [Fact]
-  public void MultipleInitialAlgorithmSections_ReportsViolation()
+  public void MultipleInitialAlgorithmSections_ReportsFinding()
   {
     // Covers CheckAlgorithmSection: tracker.InitialAlgorithmSection == 1 && _oneInitialEquationSection
     // Arrange
@@ -472,14 +472,14 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, true);
+    var ruleFindings = CheckRule(code, true);
 
     // Assert
-    Assert.NotEmpty(ruleViolations);
+    Assert.NotEmpty(ruleFindings);
   }
 
   [Fact]
-  public void MultipleAlgorithmSections_ReportsViolation()
+  public void MultipleAlgorithmSections_ReportsFinding()
   {
     // Covers CheckAlgorithmSection: tracker.AlgorithmSection == 1 && _oneEquationSection
     // Arrange
@@ -494,14 +494,14 @@ end SimpleModel;
 """;
 
     // Act
-    var ruleViolations = CheckRule(code, true);
+    var ruleFindings = CheckRule(code, true);
 
     // Assert
-    Assert.NotEmpty(ruleViolations);
+    Assert.NotEmpty(ruleFindings);
   }
 
   [Fact]
-  public void AlgorithmBeforeEquation_NotAllowed_ReportsViolation()
+  public void AlgorithmBeforeEquation_NotAllowed_ReportsFinding()
   {
     // Covers CheckEquationSection: tracker.AlgorithmSection == 1 && !_allowEquationAndAlgorithm (lines 117-119)
     // This path only fires when algorithm appears BEFORE equation.
@@ -517,9 +517,9 @@ end SimpleModel;
 """;
 
     // Act - mixing not allowed
-    var ruleViolations = CheckRule(code, false);
+    var ruleFindings = CheckRule(code, false);
 
     // Assert
-    Assert.NotEmpty(ruleViolations);
+    Assert.NotEmpty(ruleFindings);
   }
 }

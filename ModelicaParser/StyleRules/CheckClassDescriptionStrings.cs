@@ -21,7 +21,7 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
             // For replaceable/redeclare elements, the description may be on the
             // element's constraining clause comment rather than the class specifier
             if (!HasElementLevelDescription(context))
-                AddViolation(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
+                AddFinding(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
         }
         return base.VisitLong_class_specifier(context);
     }
@@ -38,7 +38,7 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
             // For replaceable/redeclare elements, the description may be on the
             // element's constraining clause comment rather than the class specifier
             if (!HasElementLevelDescription(context))
-                AddViolation(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
+                AddFinding(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
         }
         return base.VisitShort_class_specifier(context);
     }
@@ -48,7 +48,7 @@ public class CheckClassDescriptionStrings : VisitorWithModelNameTracking
         if (context.comment() == null || context.comment().string_comment() == null || context.comment().string_comment().GetText().Length == 0)
         {
             if (!HasElementLevelDescription(context))
-                AddViolation(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
+                AddFinding(context.Start.Line, "The class is missing a description string", RuleIds.ClassDescription);
         }
         return base.VisitDer_class_specifier(context);
     }

@@ -19,13 +19,13 @@ public class CheckModelReferencesTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new CheckModelReferences(knownModels);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     // ── Valid references ──
 
     [Fact]
-    public void ValidModelReference_NoViolation()
+    public void ValidModelReference_NoFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -34,8 +34,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -49,12 +49,12 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void NoModelicaUri_NoViolation()
+    public void NoModelicaUri_NoFinding()
     {
         var code = """
             model TestModel "Simple model"
@@ -63,14 +63,14 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── Broken references ──
 
     [Fact]
-    public void BrokenModelReference_ReportsViolation()
+    public void BrokenModelReference_ReportsFinding()
     {
         var code = """
             model TestModel "A simple model"
@@ -79,10 +79,10 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("NonExistent.Model", violations[0].Summary);
-        Assert.Contains("not found", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("NonExistent.Model", findings[0].Summary);
+        Assert.Contains("not found", findings[0].Summary);
     }
 
     [Fact]
@@ -98,9 +98,9 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("DoesNotExist", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("DoesNotExist", findings[0].Summary);
     }
 
     [Fact]
@@ -116,8 +116,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Equal(2, violations.Count);
+        var findings = CheckRule(code);
+        Assert.Equal(2, findings.Count);
     }
 
     // ── HTML entity filtering ──
@@ -133,8 +133,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -148,8 +148,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── Plain text mentions ──
@@ -165,8 +165,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── Quoted identifiers ──
@@ -183,14 +183,14 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, knownModels);
-        Assert.Empty(violations);
+        var findings = CheckRule(code, knownModels);
+        Assert.Empty(findings);
     }
 
     // ── Empty path part ──
 
     [Fact]
-    public void EmptyPathPart_NoViolation()
+    public void EmptyPathPart_NoFinding()
     {
         // modelica:// with nothing after it — empty path part, not validated
         var code = """
@@ -200,8 +200,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── URI delimiters ──
@@ -216,9 +216,9 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("NonExistent", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("NonExistent", findings[0].Summary);
     }
 
     [Fact]
@@ -233,8 +233,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, knownModels);
-        Assert.Empty(violations);
+        var findings = CheckRule(code, knownModels);
+        Assert.Empty(findings);
     }
 
     // ── Multi-line string tracking ──
@@ -255,9 +255,9 @@ public class CheckModelReferencesTests
         var visitor = new CheckModelReferences(KnownModels);
         visitor.Visit(parseTree);
 
-        // The violation (if any) should track newlines for line number
+        // The finding (if any) should track newlines for line number
         // This test mainly exercises the newline counting logic
-        Assert.NotNull(visitor.RuleViolations);
+        Assert.NotNull(visitor.RuleFindings);
     }
 
     // ── Non-string primary ──
@@ -271,8 +271,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── Case insensitive URI prefix ──
@@ -287,8 +287,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Empty(violations);
+        var findings = CheckRule(code);
+        Assert.Empty(findings);
     }
 
     // ── Base package tracking ──
@@ -307,8 +307,8 @@ public class CheckModelReferencesTests
         var visitor = new CheckModelReferences(KnownModels, "MyLib");
         visitor.Visit(parseTree);
 
-        Assert.NotEmpty(visitor.RuleViolations);
-        Assert.Contains("MyLib", visitor.RuleViolations[0].ModelName);
+        Assert.NotEmpty(visitor.RuleFindings);
+        Assert.Contains("MyLib", visitor.RuleFindings[0].ModelName);
     }
 
     // ── URI terminated by whitespace ──
@@ -325,8 +325,8 @@ public class CheckModelReferencesTests
 
         // The inner quotes are part of the outer string, so "modelica://NonExistentModel
         // is preceded by \" which is a quote — so it WILL be validated
-        var violations = CheckRule(code);
-        Assert.Single(violations);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
     }
 
     // ── Ampersand terminator ──
@@ -341,8 +341,8 @@ public class CheckModelReferencesTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("NonExistent", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("NonExistent", findings[0].Summary);
     }
 }

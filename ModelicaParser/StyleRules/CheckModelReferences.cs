@@ -4,7 +4,7 @@ namespace ModelicaParser.StyleRules;
 
 /// <summary>
 /// Style rule that validates modelica:// model references in documentation and annotations.
-/// Reports violations when a modelica:// URI references a model that does not exist
+/// Reports findings when a modelica:// URI references a model that does not exist
 /// in the loaded libraries.
 /// </summary>
 public class CheckModelReferences : VisitorWithModelNameTracking
@@ -117,7 +117,7 @@ public class CheckModelReferences : VisitorWithModelNameTracking
             {
                 if (!_knownModelIds.Contains(pathPart))
                 {
-                    AddViolation(startLine + newlineCount, $"Broken model reference: {uri} — the model '{pathPart}' was not found in the loaded libraries",
+                    AddFinding(startLine + newlineCount, $"Broken model reference: {uri} — the model '{pathPart}' was not found in the loaded libraries",
                         RuleIds.ModelReferences, discriminator: pathPart);
                 }
             }

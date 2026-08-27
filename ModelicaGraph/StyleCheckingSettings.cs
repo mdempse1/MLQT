@@ -294,7 +294,7 @@ public class StyleCheckingSettings
     public List<string> SvnBranchDirectories { get; set; } = ["trunk", "branches", "tags"];
 
     /// <summary>
-    /// Returns true if any style checking rule is enabled that would produce violations.
+    /// Returns true if any style checking rule is enabled that would produce findings.
     /// Used to skip the entire style checking pipeline when no rules are active. Map-driven so new
     /// rules are counted automatically (the severity map holds only enabled rules; formatter flags
     /// such as ApplyFormattingRules/ComponentsBeforeClasses are plain bools and never appear here).

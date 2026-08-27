@@ -46,7 +46,7 @@ internal static class CheckRunner
         }
 
         // Warn when the baseline was generated under different rules. Both failure modes are silent
-        // otherwise: a rule enabled since reports its pre-existing violations as NEW, so a change looks
+        // otherwise: a rule enabled since reports its pre-existing findings as NEW, so a change looks
         // like it caused a regression it had nothing to do with; a rule disabled since leaves entries
         // that can never match again. Not fatal — the gate still means what it says, the user just
         // needs to know why the numbers moved.
@@ -60,7 +60,7 @@ internal static class CheckRunner
                     stderr.WriteLine($"         {line}");
                 if (drift.EnabledSince.Count > 0)
                     stderr.WriteLine(
-                        "         Pre-existing violations of a newly enabled rule are reported as new. " +
+                        "         Pre-existing findings of a newly enabled rule are reported as new. " +
                         "`mlqt baseline update --force` would accept them.");
                 if (drift.DependenciesMissing.Count > 0)
                     stderr.WriteLine(

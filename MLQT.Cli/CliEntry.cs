@@ -73,7 +73,7 @@ internal static class CliEntry
                           so it can only ever shrink the baseline — the safe maintenance command
                   update  regenerate from the current findings: drops fixed entries AND accepts
                           any new ones as debt. Requires --force when it would accept something,
-                          because that is how a violation gets past the gate unreviewed
+                          because that is how a finding gets past the gate unreviewed
 
                   Writes <library-path>/.mlqt/baseline.json unless --baseline <path> is given.
                   The file records when it was generated and the revision it describes.

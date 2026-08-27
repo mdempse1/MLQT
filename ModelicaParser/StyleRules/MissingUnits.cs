@@ -31,7 +31,7 @@ public class MissingUnits : VisitorWithModelNameTracking
         {
             var name = declaration.IDENT()?.GetText();
             if (name is not null && !HasUnitAttribute(declaration))
-                AddViolation(context.Start.Line, $"Real {StripQuotes(name)} does not declare a unit",
+                AddFinding(context.Start.Line, $"Real {StripQuotes(name)} does not declare a unit",
                     RuleIds.MissingUnit, StripQuotes(name));
         }
         return base.VisitComponent_declaration(context);

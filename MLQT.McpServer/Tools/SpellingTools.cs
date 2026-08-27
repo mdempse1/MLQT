@@ -47,7 +47,7 @@ public sealed class SpellingTools
 
     [McpServerTool(Name = "spell_check")]
     [Description("Spell-check the description and Documentation prose of a loaded class (or an arbitrary " +
-                "source snippet) and return the misspellings as violations (word + line). The dictionary " +
+                "source snippet) and return the misspellings as findings (word + line). The dictionary " +
                 "language(s) come from the relevant repository's settings (default en_US/en_GB). Provide " +
                 "exactly one of class_id or source. Then use spelling_suggestions and correct_spelling. The result carries a note when this machine has no dictionary for a configured language.")]
     public object SpellCheck(
@@ -69,7 +69,7 @@ public sealed class SpellingTools
                 settings, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
                 repository?.LocalPath);
             return new SpellCheckResult(
-                ToViolationList(StyleCheckRunner.Run(node, settings, context)),
+                ToFindingList(StyleCheckRunner.Run(node, settings, context)),
                 MissingDictionaryNote(settings.SpellCheckLanguages));
         }
 
@@ -83,7 +83,7 @@ public sealed class SpellingTools
             var context = StyleCheckContext.BuildStateless(
                 settings, _customDictionary, _dictionaryManager, repository?.LocalPath);
             return new SpellCheckResult(
-                ToViolationList(StyleCheckRunner.RunStateless(source, settings, context)),
+                ToFindingList(StyleCheckRunner.RunStateless(source, settings, context)),
                 MissingDictionaryNote(settings.SpellCheckLanguages));
         }
 
@@ -228,10 +228,10 @@ public sealed class SpellingTools
     private string? MissingDictionaryNote(IEnumerable<string>? languages) =>
         DictionaryAvailability.WarningFor(languages, _dictionaryManager);
 
-    private static IReadOnlyList<StyleViolationDto> ToViolationList(
-        IReadOnlyList<ModelicaParser.DataTypes.LogMessage> violations) =>
-        violations
-            .Select(v => new StyleViolationDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
+    private static IReadOnlyList<StyleFindingDto> ToFindingList(
+        IReadOnlyList<ModelicaParser.DataTypes.LogMessage> findings) =>
+        findings
+            .Select(v => new StyleFindingDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
                 string.IsNullOrEmpty(v.Source) ? "SpellCheck" : v.Source))
             .ToList();
 }

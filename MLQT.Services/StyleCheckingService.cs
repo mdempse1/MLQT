@@ -17,8 +17,8 @@ namespace MLQT.Services;
 /// </summary>
 public class StyleCheckingService : IStyleCheckingService
 {
-    private readonly object _pendingViolationsLock = new();
-    private readonly List<LogMessage> _pendingViolations = new();
+    private readonly object _pendingFindingsLock = new();
+    private readonly List<LogMessage> _pendingFindings = new();
     private readonly object _workerLock = new();
     private List<StyleCheckingWorker> _workers = new();
 
@@ -40,7 +40,7 @@ public class StyleCheckingService : IStyleCheckingService
     private int _runGeneration;
 
     /// <summary>
-    /// Cancels any in-flight workers, clears pending violations, and removes
+    /// Cancels any in-flight workers, clears pending findings, and removes
     /// previously delivered style checking messages from CodeReviewService so a
     /// new checking run starts from a clean slate. Must be called at the top of
     /// every public entry point that starts style checking.
@@ -48,14 +48,14 @@ public class StyleCheckingService : IStyleCheckingService
     private void CancelExistingWorkers()
     {
         CancelRunningWorkers();
-        // Remove style checking violations already delivered to CodeReviewService
+        // Remove style checking findings already delivered to CodeReviewService
         // so they don't duplicate when the new run re-produces them
         _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == "StyleChecking");
     }
 
     /// <summary>
-    /// Cancels any running workers and clears unflushed violations, but does NOT
-    /// remove already-delivered violations from CodeReviewService. Used by targeted
+    /// Cancels any running workers and clears unflushed findings, but does NOT
+    /// remove already-delivered findings from CodeReviewService. Used by targeted
     /// checks (CheckModelsAsync) where the caller handles removal for specific models.
     /// </summary>
     private void CancelRunningWorkers()
@@ -68,9 +68,9 @@ public class StyleCheckingService : IStyleCheckingService
                 worker.CancelProcessing();
             _workers.Clear();
         }
-        lock (_pendingViolationsLock)
+        lock (_pendingFindingsLock)
         {
-            _pendingViolations.Clear();
+            _pendingFindings.Clear();
         }
     }
 
@@ -78,13 +78,13 @@ public class StyleCheckingService : IStyleCheckingService
     public event Action<bool>? OnProgressChanged;
 
     /// <inheritdoc/>
-    public event Action<List<LogMessage>>? OnViolationsFound;
+    public event Action<List<LogMessage>>? OnFindingsFound;
 
     /// <inheritdoc/>
     public bool IsRunning => _isRunning;
 
     // Completed when the run started by the last Start* call has finished — every worker done, every
-    // graph analysis done, every violation flushed. IsRunning cannot be polled instead: it is set by
+    // graph analysis done, every finding flushed. IsRunning cannot be polled instead: it is set by
     // the flush loop, which starts on a thread-pool thread, so a caller that checks it immediately
     // after queuing work can see false before the loop has begun and conclude the run is over.
     private TaskCompletionSource<bool>? _completion;
@@ -287,7 +287,7 @@ public class StyleCheckingService : IStyleCheckingService
         int queuedModels = 0;
         var spellChecker = GetSpellCheckerIfNeeded(repository);
         var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
-        worker.OnViolationFound += ViolationsFound;
+        worker.OnFindingFound += FindingsFound;
         worker.OnProgressChanged += ProgressChanged;
         worker.OnWorkCompleted += WorkerCompletedChecks;
         lock (_workerLock) {
@@ -343,7 +343,7 @@ public class StyleCheckingService : IStyleCheckingService
         int queuedModels = 0;
         var spellChecker = GetSpellCheckerIfNeeded(repository);
         var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
-        worker.OnViolationFound += ViolationsFound;
+        worker.OnFindingFound += FindingsFound;
         worker.OnProgressChanged += ProgressChanged;
         worker.OnWorkCompleted += WorkerCompletedChecks;
         lock (_workerLock) {
@@ -401,7 +401,7 @@ public class StyleCheckingService : IStyleCheckingService
 
             var spellChecker = GetSpellCheckerIfNeeded(repository);
             var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
-            worker.OnViolationFound += ViolationsFound;
+            worker.OnFindingFound += FindingsFound;
             worker.OnProgressChanged += ProgressChanged;
             worker.OnWorkCompleted += WorkerCompletedChecks;
             lock (_workerLock)
@@ -440,7 +440,7 @@ public class StyleCheckingService : IStyleCheckingService
         {
             OnProgressChanged?.Invoke(false);
             // Whole-graph analyses run alongside the per-model workers and deliver through the same
-            // violation buffer. Registered before the flush loop starts so completion waits for them.
+            // finding buffer. Registered before the flush loop starts so completion waits for them.
             _ = StartGraphAnalyses(repositories, removeStaleFirst: false);
             BeginRun();
             _ = Task.Run(() => ProcessQueueAsync());
@@ -642,13 +642,13 @@ public class StyleCheckingService : IStyleCheckingService
                 var findings = GraphAnalysisRunner.Run(context);
                 if (findings.Count > 0)
                 {
-                    ViolationsFound(this, findings.Select(f => f.ToLogMessage()).ToList());
+                    FindingsFound(this, findings.Select(f => f.ToLogMessage()).ToList());
                     emitted = true;
                 }
             }
 
             if (emitted)
-                FlushPendingViolations();
+                FlushPendingFindings();
         }
         catch (Exception ex)
         {
@@ -660,7 +660,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// Returns the spell checker if spell checking is enabled in the given settings,
     /// ensuring it is created if needed with the correct language dictionaries.
     /// Public so the deferred combined dependency+style pass can build the same spell-checking
-    /// context the background workers use, keeping violation counts consistent between the two paths.
+    /// context the background workers use, keeping finding counts consistent between the two paths.
     /// </summary>
     public SpellChecker? GetSpellCheckerIfNeeded(Repository repository)
     {
@@ -698,8 +698,8 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public async Task CheckModelsAsync(IEnumerable<string> modelIds, DirectedGraph graph)
     {
-        // Cancel running workers but preserve already-delivered violations.
-        // The caller is responsible for removing old violations for the targeted
+        // Cancel running workers but preserve already-delivered findings.
+        // The caller is responsible for removing old findings for the targeted
         // models via CodeReviewService.RemoveLogMessagesForModels before calling.
         CancelRunningWorkers();
         _stopRequested = false;
@@ -761,7 +761,7 @@ public class StyleCheckingService : IStyleCheckingService
             // nowhere their accepted spellings could have been stored.
             var spellChecker = repo is not null ? GetSpellCheckerIfNeeded(repo) : null;
             var worker = new StyleCheckingWorker(graph, settings, workerName, spellChecker);
-            worker.OnViolationFound += ViolationsFound;
+            worker.OnFindingFound += FindingsFound;
             worker.OnProgressChanged += ProgressChanged;
             worker.OnWorkCompleted += WorkerCompletedChecks;
             lock (_workerLock)
@@ -793,7 +793,7 @@ public class StyleCheckingService : IStyleCheckingService
         OnProgressChanged?.Invoke(false);
 
         // Start the flush loop (fire-and-forget). Must NOT be awaited because
-        // FlushPendingViolations fires OnViolationsFound which calls InvokeAsync
+        // FlushPendingFindings fires OnFindingsFound which calls InvokeAsync
         // to marshal to the render thread — awaiting would deadlock if the caller
         // is already on the render thread.
         BeginRun();
@@ -809,7 +809,7 @@ public class StyleCheckingService : IStyleCheckingService
         try
         {
             // Keep flushing while there are active workers, in-flight graph analyses, or pending
-            // violations. Graph analyses are included so completion is not signalled before their
+            // findings. Graph analyses are included so completion is not signalled before their
             // findings land — otherwise the total the UI shows on completion grows afterwards.
             while (!_stopRequested)
             {
@@ -823,10 +823,10 @@ public class StyleCheckingService : IStyleCheckingService
                     break;
 
                 await Task.Delay(500); // Batch updates every 500ms
-                FlushPendingViolations();
+                FlushPendingFindings();
             }
             // Final flush when done
-            FlushPendingViolations();
+            FlushPendingFindings();
 
             // The workers have finished, so what is left unmeasured is what no check reached. Inside
             // the run, so the progress dialog covers it and completion still means everything is done.
@@ -846,13 +846,13 @@ public class StyleCheckingService : IStyleCheckingService
         }
     }
 
-    private void ViolationsFound(object? sender, List<LogMessage> violations)
+    private void FindingsFound(object? sender, List<LogMessage> findings)
     {
-        if (violations.Count > 0)
+        if (findings.Count > 0)
         {
-            lock (_pendingViolationsLock)
+            lock (_pendingFindingsLock)
             {
-                _pendingViolations.AddRange(violations);
+                _pendingFindings.AddRange(findings);
             }
         }
     }
@@ -893,25 +893,25 @@ public class StyleCheckingService : IStyleCheckingService
             lock (_workerLock) {
                 _workers.Remove(worker);
             }
-            // Flush any remaining violations from this worker
-            FlushPendingViolations();
+            // Flush any remaining findings from this worker
+            FlushPendingFindings();
             LogProcessEnd("StyleCheckingService", $"Background style checking completed for ({repositoryName})");
         }
     }
 
-    private void FlushPendingViolations()
+    private void FlushPendingFindings()
     {
-        List<LogMessage> violationsToProcess;
+        List<LogMessage> findingsToProcess;
 
-        lock (_pendingViolationsLock)
+        lock (_pendingFindingsLock)
         {
-            if (_pendingViolations.Count == 0)
+            if (_pendingFindings.Count == 0)
                 return;
 
-            violationsToProcess = new List<LogMessage>(_pendingViolations);
-            _pendingViolations.Clear();
+            findingsToProcess = new List<LogMessage>(_pendingFindings);
+            _pendingFindings.Clear();
         }
 
-        OnViolationsFound?.Invoke(violationsToProcess);
+        OnFindingsFound?.Invoke(findingsToProcess);
     }
 }

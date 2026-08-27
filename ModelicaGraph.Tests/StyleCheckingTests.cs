@@ -98,9 +98,9 @@ public class StyleCheckingTests
         var model = MakeModel("TestModel", "model TestModel Real x; end TestModel;");
         var settings = new StyleCheckingSettings();
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
         Assert.True(model.StyleRulesChecked);
     }
 
@@ -116,10 +116,10 @@ public class StyleCheckingTests
         var settings = new StyleCheckingSettings();
 
         // Act: should use existing ParsedCode, not re-parse
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
         Assert.NotNull(model.ParsedCode);
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -129,10 +129,10 @@ public class StyleCheckingTests
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
         // fullModelId with dot → basePackage = "MyPackage"
-        var violations = StyleChecking.RunStyleChecking(model, settings, "MyPackage.TestModel");
+        var findings = StyleChecking.RunStyleChecking(model, settings, "MyPackage.TestModel");
 
         // Should complete without error; basePackage extraction is exercised
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -142,9 +142,9 @@ public class StyleCheckingTests
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
         // fullModelId with no dot → basePackage stays ""
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel");
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel");
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -158,10 +158,10 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ParameterHasDescription = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        // Parameter x has no description — should produce a violation
-        Assert.NotEmpty(violations);
+        // Parameter x has no description — should produce a finding
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -175,9 +175,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ConstantHasDescription = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -196,13 +196,13 @@ end TestModel;
             ConstantHasDescription = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.True(violations.Count >= 2);
+        Assert.True(findings.Count >= 2);
     }
 
     [Fact]
-    public void RunStyleChecking_ImportStatementsFirst_DetectsViolation()
+    public void RunStyleChecking_ImportStatementsFirst_DetectsFinding()
     {
         var code = """
 model TestModel
@@ -215,10 +215,10 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        // Import after component declaration is a violation
-        Assert.NotNull(violations);
+        // Import after component declaration is a finding
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -236,9 +236,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -256,9 +256,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -277,9 +277,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { OneOfEachSection = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -297,9 +297,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { DontMixEquationAndAlgorithm = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -319,13 +319,13 @@ end TestModel;
             DontMixEquationAndAlgorithm = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_DontMixConnections_DetectsViolation()
+    public void RunStyleChecking_DontMixConnections_DetectsFinding()
     {
         var code = """
 model TestModel
@@ -339,9 +339,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { DontMixConnections = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotNull(violations);
+        Assert.NotNull(findings);
     }
 
     [Fact]
@@ -351,10 +351,10 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        // Model without description string should produce a violation
-        Assert.NotEmpty(violations);
+        // Model without description string should produce a finding
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -364,9 +364,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -374,7 +374,7 @@ end TestModel;
     // ============================================================================
 
     [Fact]
-    public void RunStyleChecking_ValidateModelReferences_NoViolationForKnownModel()
+    public void RunStyleChecking_ValidateModelReferences_NoFindingForKnownModel()
     {
         var code = """
             model TestModel "A test model"
@@ -385,13 +385,13 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "Modelica.Blocks.Continuous", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_ValidateModelReferences_ViolationForUnknownModel()
+    public void RunStyleChecking_ValidateModelReferences_FindingForUnknownModel()
     {
         var code = """
             model TestModel "A test model"
@@ -402,10 +402,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "Modelica.Blocks.Continuous", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("Modelica.Blocks.NonExistent", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("Modelica.Blocks.NonExistent", findings[0].Summary);
     }
 
     [Fact]
@@ -421,9 +421,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -438,10 +438,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "Known.Model", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Single(violations);
-        Assert.Contains("Missing.Model", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Missing.Model", findings[0].Summary);
     }
 
     [Fact]
@@ -455,9 +455,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings(); // ValidateModelReferences = false by default
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", new HashSet<string>());
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", new HashSet<string>());
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -472,9 +472,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
 
         // knownModelIds is null — rule should be skipped
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", null);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", null);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -490,9 +490,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "Known.Model", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -508,9 +508,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "ModelicaReference.Classes.'function'", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -526,9 +526,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "ModelicaReference.Operators.'semiLinear()'", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -545,10 +545,10 @@ end TestModel;
         // Only unquoted Lib.Test exists, but the URI references Lib.'Test'
         var knownModels = new HashSet<string> { "Lib.Test", "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        // Should report a violation — Lib.'Test' is not the same as Lib.Test
-        Assert.NotEmpty(violations);
+        // Should report a finding — Lib.'Test' is not the same as Lib.Test
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -563,10 +563,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("SomeLib.'missing'", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("SomeLib.'missing'", findings[0].Summary);
     }
 
     [Fact]
@@ -582,11 +582,11 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        // The entity-encoded link should be ignored, so no violation even though
+        // The entity-encoded link should be ignored, so no finding even though
         // "Modelica.Mechanics.MultiBody" is not in knownModels
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -605,10 +605,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Single(violations);
-        Assert.Equal(5, violations[0].LineNumber);
+        Assert.Single(findings);
+        Assert.Equal(5, findings[0].LineNumber);
     }
 
     [Fact]
@@ -624,9 +624,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -642,11 +642,11 @@ end TestModel;
         var settings = new StyleCheckingSettings { ValidateModelReferences = true };
         var knownModels = new HashSet<string> { "TestModel" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel", knownModels);
 
-        // Only the href link should produce a violation, not the plain text mention
-        Assert.Single(violations);
-        Assert.Contains("Missing.Model", violations[0].Summary);
+        // Only the href link should produce a finding, not the plain text mention
+        Assert.Single(findings);
+        Assert.Contains("Missing.Model", findings[0].Summary);
     }
 
     [Fact]
@@ -696,15 +696,15 @@ end TestModel;
         var settings = new StyleCheckingSettings { SpellCheckDescription = true };
         var spellChecker = ModelicaParser.SpellChecking.SpellChecker.Create();
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel",
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel",
             spellChecker: spellChecker);
 
-        Assert.NotEmpty(violations);
-        Assert.All(violations, v => Assert.Contains("Misspelled word", v.Summary));
+        Assert.NotEmpty(findings);
+        Assert.All(findings, v => Assert.Contains("Misspelled word", v.Summary));
     }
 
     [Fact]
-    public void RunStyleChecking_SpellCheckDescription_NoViolationsForCorrectText()
+    public void RunStyleChecking_SpellCheckDescription_NoFindingsForCorrectText()
     {
         var code = """
             model TestModel "A simple model for testing"
@@ -718,10 +718,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { SpellCheckDescription = true };
         var spellChecker = ModelicaParser.SpellChecking.SpellChecker.Create();
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel",
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel",
             spellChecker: spellChecker);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -739,9 +739,9 @@ end TestModel;
         var settings = new StyleCheckingSettings { SpellCheckDescription = true };
 
         // No spell checker passed — should skip spell checking
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel");
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel");
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -760,10 +760,10 @@ end TestModel;
         var settings = new StyleCheckingSettings { SpellCheckDocumentation = true };
         var spellChecker = ModelicaParser.SpellChecking.SpellChecker.Create();
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel",
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel",
             spellChecker: spellChecker);
 
-        Assert.Contains(violations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(findings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
@@ -782,11 +782,11 @@ end TestModel;
         var spellChecker = ModelicaParser.SpellChecking.SpellChecker.Create();
         var knownModelNames = new HashSet<string>(StringComparer.Ordinal) { "Integrator" };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "TestModel",
+        var findings = StyleChecking.RunStyleChecking(model, settings, "TestModel",
             spellChecker: spellChecker, knownModelNames: knownModelNames);
 
         // "Integrator" should not be flagged because it's a known model name
-        Assert.DoesNotContain(violations, v => v.Summary.Contains("Integrator"));
+        Assert.DoesNotContain(findings, v => v.Summary.Contains("Integrator"));
     }
 
     // ============================================================================
@@ -831,14 +831,14 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDocumentationInfo = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("Documentation info", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("Documentation info", findings[0].Summary);
     }
 
     [Fact]
-    public void RunStyleChecking_ClassHasDocumentationInfo_NoViolationWhenPresent()
+    public void RunStyleChecking_ClassHasDocumentationInfo_NoFindingWhenPresent()
     {
         var code = """
             model TestModel "A documented model"
@@ -851,9 +851,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDocumentationInfo = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -881,14 +881,14 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDocumentationRevisions = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("Documentation revisions", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("Documentation revisions", findings[0].Summary);
     }
 
     [Fact]
-    public void RunStyleChecking_ClassHasDocumentationRevisions_NoViolationWhenPresent()
+    public void RunStyleChecking_ClassHasDocumentationRevisions_NoFindingWhenPresent()
     {
         var code = """
             model TestModel "A documented model"
@@ -901,9 +901,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasDocumentationRevisions = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -930,14 +930,14 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasIcon = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
-    public void RunStyleChecking_ClassHasIcon_NoViolationWhenPresent()
+    public void RunStyleChecking_ClassHasIcon_NoFindingWhenPresent()
     {
         var code = """
             model TestModel "A model with icon"
@@ -950,9 +950,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasIcon = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -984,16 +984,16 @@ end TestModel;
             ClassHasIcon = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Equal(3, violations.Count);
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation info"));
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation revisions"));
-        Assert.Contains(violations, v => v.Summary.Contains("Icon"));
+        Assert.Equal(3, findings.Count);
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation info"));
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation revisions"));
+        Assert.Contains(findings, v => v.Summary.Contains("Icon"));
     }
 
     [Fact]
-    public void RunStyleChecking_AllAnnotationChecks_NoViolationsWhenAllPresent()
+    public void RunStyleChecking_AllAnnotationChecks_NoFindingsWhenAllPresent()
     {
         var code = """
             model TestModel "A fully annotated model"
@@ -1014,13 +1014,13 @@ end TestModel;
             ClassHasIcon = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_AnnotationChecks_DocumentationWithoutIcon_OnlyIconViolation()
+    public void RunStyleChecking_AnnotationChecks_DocumentationWithoutIcon_OnlyIconFinding()
     {
         var code = """
             model TestModel "A model with docs but no icon"
@@ -1038,10 +1038,10 @@ end TestModel;
             ClassHasIcon = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
@@ -1057,9 +1057,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings();
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -1082,14 +1082,14 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("should appear after the equation/algorithm section", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("should appear after the equation/algorithm section", findings[0].Summary);
     }
 
     [Fact]
-    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWhenInitialIsLast()
+    public void RunStyleChecking_InitialEQAlgoLast_NoFindingWhenInitialIsLast()
     {
         // Initial equation comes AFTER regular equation — satisfies "last" rule
         var code = """
@@ -1104,9 +1104,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1125,13 +1125,13 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWhenInitialAlgorithmIsLast()
+    public void RunStyleChecking_InitialEQAlgoLast_NoFindingWhenInitialAlgorithmIsLast()
     {
         // Initial algorithm comes AFTER regular algorithm — satisfies "last" rule
         var code = """
@@ -1146,9 +1146,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1167,14 +1167,14 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.NotEmpty(violations);
-        Assert.Contains("should appear before", violations[0].Summary);
+        Assert.NotEmpty(findings);
+        Assert.Contains("should appear before", findings[0].Summary);
     }
 
     [Fact]
-    public void RunStyleChecking_InitialEQAlgoFirst_NoViolationWhenInitialIsFirst()
+    public void RunStyleChecking_InitialEQAlgoFirst_NoFindingWhenInitialIsFirst()
     {
         // Initial equation comes BEFORE regular equation — satisfies "first" rule
         var code = """
@@ -1189,15 +1189,15 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_InitialEQAlgoFirst_NoViolationWithOnlyEquation()
+    public void RunStyleChecking_InitialEQAlgoFirst_NoFindingWithOnlyEquation()
     {
-        // Only regular equation section, no initial — no violation for either rule
+        // Only regular equation section, no initial — no finding for either rule
         var code = """
             model TestModel
               Real x;
@@ -1208,13 +1208,13 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void RunStyleChecking_InitialEQAlgoLast_NoViolationWithOnlyEquation()
+    public void RunStyleChecking_InitialEQAlgoLast_NoFindingWithOnlyEquation()
     {
         var code = """
             model TestModel
@@ -1226,9 +1226,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings);
+        var findings = StyleChecking.RunStyleChecking(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -1238,7 +1238,7 @@ end TestModel;
     [Fact]
     public void RunStyleChecking_ExcludedFromFormatting_SkipsFormattingRules()
     {
-        // Import after component should produce violations when NOT excluded
+        // Import after component should produce findings when NOT excluded
         var code = """
             model TestModel
               Real x;
@@ -1250,15 +1250,15 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
 
-        // First verify it produces violations normally
-        var normalViolations = StyleChecking.RunStyleChecking(model, settings);
+        // First verify it produces findings normally
+        var normalFindings = StyleChecking.RunStyleChecking(model, settings);
 
         // Now check that the same code with isExcludedFromFormatting skips the formatting rules
         var model2 = MakeModel("TestModel", code);
-        var excludedViolations = StyleChecking.RunStyleChecking(model2, settings, isExcludedFromFormatting: true);
+        var excludedFindings = StyleChecking.RunStyleChecking(model2, settings, isExcludedFromFormatting: true);
 
-        Assert.NotEmpty(normalViolations);
-        Assert.Empty(excludedViolations);
+        Assert.NotEmpty(normalFindings);
+        Assert.Empty(excludedFindings);
     }
 
     [Fact]
@@ -1276,9 +1276,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1297,9 +1297,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { OneOfEachSection = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1317,9 +1317,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { DontMixConnections = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1334,11 +1334,11 @@ end TestModel;
             ImportStatementsFirst = true  // This should be skipped
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        // Only ClassHasDescription violation, not ImportStatementsFirst
-        Assert.Single(violations);
-        Assert.Contains("description", violations[0].Summary, StringComparison.OrdinalIgnoreCase);
+        // Only ClassHasDescription finding, not ImportStatementsFirst
+        Assert.Single(findings);
+        Assert.Contains("description", findings[0].Summary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1352,9 +1352,9 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ParameterHasDescription = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        Assert.NotEmpty(violations);
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -1374,9 +1374,9 @@ end TestModel;
             ClassHasIcon = true
         };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
+        var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 
-        Assert.Equal(2, violations.Count);
+        Assert.Equal(2, findings.Count);
     }
 
     // ============================================================================
@@ -1543,10 +1543,10 @@ end TestModel;
         // Callback says base class has icon
         Func<string, string, bool> callback = (baseClass, currentModel) => baseClass == "BaseModel";
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: callback);
+        var findings = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: callback);
 
-        // No icon violation because inherited icon found
-        Assert.Empty(violations);
+        // No icon finding because inherited icon found
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -1563,10 +1563,10 @@ end TestModel;
         var model = MakeModel("TestModel", code);
         var settings = new StyleCheckingSettings { ClassHasIcon = true };
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: null);
+        var findings = StyleChecking.RunStyleChecking(model, settings, baseClassHasIcon: null);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     // ============================================================================

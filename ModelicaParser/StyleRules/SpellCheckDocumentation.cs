@@ -128,7 +128,7 @@ public class SpellCheckDocumentation : VisitorWithModelNameTracking
                     if (!_spellChecker.IsCorrect(word, contextWords))
                     {
                         var lineNumber = startLine + TextExtractor.CountNewlinesBefore(plainText, charOffset);
-                        AddViolation(lineNumber, SpellingMessage.For(word, label),
+                        AddFinding(lineNumber, SpellingMessage.For(word, label),
                             RuleIds.SpellingDocumentation, discriminator: $"{label}:{word}");
                     }
                 }

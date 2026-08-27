@@ -17,7 +17,7 @@ public sealed record MetricsSnapshot(
     int TotalClasses,
     Dictionary<string, double> Coverage,
     Dictionary<string, CoverageCount>? Counts = null,
-    int? Violations = null,
+    int? Findings = null,
     string? Revision = null,
     string? Branch = null)
 {
@@ -31,7 +31,7 @@ public sealed record MetricsSnapshot(
     {
         if (other is null)
             return false;
-        if (TotalClasses != other.TotalClasses || Violations != other.Violations)
+        if (TotalClasses != other.TotalClasses || Findings != other.Findings)
             return false;
         if (Coverage.Count != other.Coverage.Count)
             return false;
@@ -54,15 +54,15 @@ public sealed record MetricsSnapshot(
 
     /// <summary>Build a snapshot from a computed <see cref="LibraryMetrics"/> for a scope (a package id
     /// like "Modelica.Blocks", or "" for a whole library / all loaded libraries) at the given time.
-    /// <paramref name="violations"/> is the number of active (unsuppressed) rule findings in scope, or
+    /// <paramref name="findings"/> is the number of active (unsuppressed) rule findings in scope, or
     /// null when style checking has not been run so the count is unknown.</summary>
     public static MetricsSnapshot From(
-        LibraryMetrics metrics, string scope, DateTime timestampUtc, int? violations = null,
+        LibraryMetrics metrics, string scope, DateTime timestampUtc, int? findings = null,
         string? revision = null, string? branch = null)
         => new(timestampUtc, scope ?? string.Empty, metrics.TotalClasses,
             metrics.Coverage.ToDictionary(c => c.Dimension, c => c.Percent, StringComparer.Ordinal),
             metrics.Coverage.ToDictionary(c => c.Dimension, c => new CoverageCount(c.Compliant, c.Eligible), StringComparer.Ordinal),
-            violations, revision, branch);
+            findings, revision, branch);
 
     /// <summary>
     /// Collapse snapshots that share a timestamp into one combined snapshot each, summing class counts
@@ -84,8 +84,8 @@ public sealed record MetricsSnapshot(
             }
 
             var totalClasses = members.Sum(s => s.TotalClasses);
-            var violations = members.All(s => s.Violations.HasValue)
-                ? members.Sum(s => s.Violations!.Value)
+            var findings = members.All(s => s.Findings.HasValue)
+                ? members.Sum(s => s.Findings!.Value)
                 : (int?)null;
             var dims = members.SelectMany(s => s.Coverage.Keys).Distinct(StringComparer.Ordinal);
             var coverage = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -118,7 +118,7 @@ public sealed record MetricsSnapshot(
             var branch = members.Select(m => m.Branch).Distinct().Count() == 1 ? members[0].Branch : null;
 
             result.Add(new MetricsSnapshot(group.Key, members[0].Scope, totalClasses, coverage,
-                exactForAll ? counts : null, violations, revision, branch));
+                exactForAll ? counts : null, findings, revision, branch));
         }
 
         return result.OrderBy(s => s.TimestampUtc).ToList();

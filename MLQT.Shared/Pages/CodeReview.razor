@@ -83,7 +83,7 @@
             </MudButtonGroup>
         </MudStack>
         @* A recovered class explains itself in the comment at the top of its own source. An alert
-           here as well cost the page enough vertical space to push the issues table below the fold,
+           here as well cost the page enough vertical space to push the findings table below the fold,
            which is a poor trade for saying the same thing twice. *@
         @if (_currentModelNode?.HasParserErrors == true)
         {
@@ -91,18 +91,18 @@
                       Dense="true" Class="mt-1 mb-0 py-1">
                 @if (_currentModelNode.IsParseFailurePlaceholder)
                 {
-                    <text>This file could not be parsed. The raw contents are shown below so you can view and fix them — no models were extracted from it. See the Issues panel for the first syntax error.</text>
+                    <text>This file could not be parsed. The raw contents are shown below so you can view and fix them — no models were extracted from it. See the Findings panel for the first syntax error.</text>
                 }
                 else if (_currentModelNode.HasFatalParseFailure)
                 {
-                    <text>Parsing of this file failed before it completed. Some models were extracted but the code shown may be incomplete. See the Issues panel for the first syntax error.</text>
+                    <text>Parsing of this file failed before it completed. Some models were extracted but the code shown may be incomplete. See the Findings panel for the first syntax error.</text>
                 }
                 else
                 {
                     var n = _currentModelNode.Definition.ParserErrors.Count;
                     var first = _currentModelNode.Definition.ParserErrors.FirstOrDefault();
                     var atLine = first != null && first.Line > 0 ? $" (first at line {first.Line})" : "";
-                    <text>This model has @n parser @(n == 1 ? "error" : "errors")@atLine. See the Issues panel for details.</text>
+                    <text>This model has @n parser @(n == 1 ? "error" : "errors")@atLine. See the Findings panel for details.</text>
                 }
             </MudAlert>
         }
@@ -146,18 +146,18 @@
                 Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
                 FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>
-                    <MudText Typo="Typo.body1">@IssuesHeading</MudText>
+                    <MudText Typo="Typo.body1">@FindingsHeading</MudText>
                     <MudSpacer />
                     <MudTooltip Text="@ChangesOnlyTooltip">
                         <MudSwitch T="bool" ValueChanged="OnChangesOnlyChanged" Value="@ShowChangesOnly"
                             Label="Changes vs baseline" Color="Color.Primary" Size="Size.Small"
                             Disabled="@(!BaselineStatus.HasBaseline)" />
                     </MudTooltip>
-                    <MudSwitch T="bool" ValueChanged="OnIssuesScopeChanged" Value="@IssuesScopeAllModels" Label="Only this model" Color="Color.Primary" Size="Size.Small" />
-                    <MudTooltip Text="Export every issue to a JSON file — the whole list, ignoring the filters and search above">
+                    <MudSwitch T="bool" ValueChanged="OnFindingsScopeChanged" Value="@FindingsScopeAllModels" Label="Only this model" Color="Color.Primary" Size="Size.Small" />
+                    <MudTooltip Text="Export every finding to a JSON file — the whole list, ignoring the filters and search above">
                         <MudIconButton Icon="@Icons.Material.Filled.FileDownload" Size="Size.Small"
-                            Color="Color.Default" Disabled="_exporting" OnClick="ExportIssuesAsync"
-                            aria-label="Export all issues" />
+                            Color="Color.Default" Disabled="_exporting" OnClick="ExportFindingsAsync"
+                            aria-label="Export all findings" />
                     </MudTooltip>
                     <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
                         AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
@@ -201,7 +201,7 @@
                                 <MudTooltip Text="Suppress this rule here (writes a __MLQT annotation into the source)">
                                     <MudIconButton Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small"
                                         Color="Color.Default" Disabled="_suppressing"
-                                        OnClick="@(() => SuppressRuleForIssue(context))" aria-label="Suppress this rule" />
+                                        OnClick="@(() => SuppressRuleForFinding(context))" aria-label="Suppress this rule" />
                                 </MudTooltip>
                             </div>
                         }
@@ -258,7 +258,7 @@
                         OnClick="AddToDictionary">Add to Dictionary</MudButton>
                 </MudTooltip>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                    OnClick="IgnoreSpellingViolation">Ignore</MudButton>
+                    OnClick="IgnoreSpellingFinding">Ignore</MudButton>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                     OnClick="CloseContextMenu">Close</MudButton>
             </MudStack>
@@ -281,37 +281,37 @@
     </DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="_issueDetailsVisible" Options="_dialogOptions">
+<MudDialog @bind-Visible="_findingDetailsVisible" Options="_dialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.subtitle2">Issue in @_currentIssue!.ModelName</MudText>
+        <MudText Typo="Typo.subtitle2">Finding in @_currentFinding!.ModelName</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText Class="mt-2" Typo="Typo.body1">@_currentIssue!.Summary</MudText>
-        <MudText Class="mt-2" Typo="Typo.body1">@_currentIssue!.Severity on line @_currentIssue.LineNumber</MudText>
-        @if (_currentIssue!.Details?.Length > 0)
+        <MudText Class="mt-2" Typo="Typo.body1">@_currentFinding!.Summary</MudText>
+        <MudText Class="mt-2" Typo="Typo.body1">@_currentFinding!.Severity on line @_currentFinding.LineNumber</MudText>
+        @if (_currentFinding!.Details?.Length > 0)
         {
             <MudText Class="mt-2" Typo="Typo.body1">Details:</MudText>
-            <MudText Class="mt-2 pre-wrap" Typo="Typo.body1">@_currentIssue.Details</MudText>
+            <MudText Class="mt-2 pre-wrap" Typo="Typo.body1">@_currentFinding.Details</MudText>
         }
     </DialogContent>
     <DialogActions>
         <MudStack Row="true">
-            @if (IsSpellingViolation(_currentIssue))
+            @if (IsSpellingFinding(_currentFinding))
             {
                 <MudTooltip Text="@(CanAddToDictionary ? "Accept this word for this repository" : NoRepositoryDictionaryTooltip)">
                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(!CanAddToDictionary)"
                         OnClick="AddToDictionary" Class="px-10">Add to Dictionary</MudButton>
                 </MudTooltip>
             }
-            @if (CanSuppressRule(_currentIssue))
+            @if (CanSuppressRule(_currentFinding))
             {
-                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SuppressRuleForIssue(_currentIssue))"
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SuppressRuleForFinding(_currentFinding))"
                            Disabled="_suppressing" StartIcon="@Icons.Material.Filled.RuleFolder" Class="px-10">Suppress
                 </MudButton>
             }
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResolveIssue" Class="px-10">Resolve
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResolveFinding" Class="px-10">Resolve
             </MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseIssueDialog" Class="px-10">Close
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CloseFindingDialog" Class="px-10">Close
             </MudButton>
         </MudStack>
     </DialogActions>
@@ -331,13 +331,13 @@
     private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
     private string _checkingModel = "";
     private string _checkingToolName = "";
-    private bool _issueDetailsVisible = false;
-    private LogMessage? _currentIssue = null;
+    private bool _findingDetailsVisible = false;
+    private LogMessage? _currentFinding = null;
     private string _searchString = "";
-    private bool IssuesScopeAllModels = false;
+    private bool FindingsScopeAllModels = false;
 
     /// <summary>
-    /// Narrows the issues list to what this working copy has changed — new findings, plus standing
+    /// Narrows the findings list to what this working copy has changed — new findings, plus standing
     /// debt in a file waiting to be committed. Off by default so nothing is hidden until asked for.
     /// </summary>
     private bool ShowChangesOnly = false;
@@ -364,7 +364,7 @@
     // transient loading spinner, which coalesces away for small/fast files.
     private List<string>? _scrollBaselineCode;
 
-    // The misspelled word to scroll into view after a spelling issue is clicked in the issues list.
+    // The misspelled word to scroll into view after a spelling finding is clicked in the findings list.
     // Consumed once the selected model's content has rendered (see OnAfterRenderAsync).
     private string? _pendingScrollWord;
 
@@ -415,7 +415,7 @@
         OpenModelicaCheckingService.StopChecking();
     }
 
-    private void CloseIssueDialog() => _issueDetailsVisible = false;
+    private void CloseFindingDialog() => _findingDetailsVisible = false;
 
     protected override void OnInitialized()
     {
@@ -426,7 +426,7 @@
         NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
         CodeReviewService.OnLogMessagesChanged += OnLogMessagesChanged;
         BaselineStatus.OnChanged += OnBaselineStatusChanged;
-        // Note: background style-checking violations are added to CodeReviewService by MainLayout (the
+        // Note: background style-checking findings are added to CodeReviewService by MainLayout (the
         // always-mounted layout), so they are captured even when this page isn't open. This page just
         // reacts to OnLogMessagesChanged to refresh.
 
@@ -513,7 +513,7 @@
             }
         }
 
-        // After clicking a spelling issue in the issues list, scroll the highlighted misspelled
+        // After clicking a spelling finding in the findings list, scroll the highlighted misspelled
         // word into view once the (possibly newly selected) model's content has rendered. The JS
         // helper retries across frames, so it tolerates the highlight spans appearing slightly
         // after the code lines (RecomputeMisspelledWords runs just after the render).
@@ -639,16 +639,16 @@
         _contextMenuX = x;
         _contextMenuY = y;
 
-        // Track a representative violation for this word so Add to Dictionary / Ignore can reuse it.
-        _currentIssue = CodeReviewService.LogMessages.FirstOrDefault(m =>
-            m.ModelName == NavState.ModelID && IsSpellingViolation(m) && ExtractMisspelledWord(m) == word);
+        // Track a representative finding for this word so Add to Dictionary / Ignore can reuse it.
+        _currentFinding = CodeReviewService.LogMessages.FirstOrDefault(m =>
+            m.ModelName == NavState.ModelID && IsSpellingFinding(m) && ExtractMisspelledWord(m) == word);
 
         // Suggestions come from the language dictionaries, so they do not depend on the class
         // belonging to a repository — only recording a word does. Gating them on that left the menu
         // saying "No suggestions found" for every word whose class MLQT could not tie to a
         // repository, which is not the same statement at all. The repository is still used when
         // there is one, for its languages and its accepted words.
-        var repository = RepositoryForCurrentIssue();
+        var repository = RepositoryForCurrentFinding();
         _suggestions = StyleCheckingService
             .EnsureSpellChecker(repository?.LocalPath, repository?.StyleSettings?.SpellCheckLanguages)
             .Suggest(word)
@@ -943,7 +943,7 @@
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
 
             // Update UI synchronously — no await means no sync context queue delay
-            OnIssuesScopeChanged(IssuesScopeAllModels);
+            OnFindingsScopeChanged(FindingsScopeAllModels);
             StateHasChanged();
 
             // Run VCS check in background — will update UI when done
@@ -1046,7 +1046,7 @@
                         // Store in cache for future clicks
                         _renderCache[cacheKey] = code;
 
-                        OnIssuesScopeChanged(IssuesScopeAllModels);
+                        OnFindingsScopeChanged(FindingsScopeAllModels);
                         StateHasChanged();
 
                         LoggingService.Debug("CodeReview",
@@ -1141,7 +1141,7 @@
         // render-option cache key and we don't want it served to a later cache hit if the
         // model is ever cleared of errors (e.g. after a reload/fix).
 
-        OnIssuesScopeChanged(IssuesScopeAllModels);
+        OnFindingsScopeChanged(FindingsScopeAllModels);
         StateHasChanged();
 
         // Run VCS check in the background so the diff toggle reflects working-copy state.
@@ -1214,13 +1214,13 @@
         {
             if (!result.Success)
             {
-                var issue = new LogMessage(
+                var finding = new LogMessage(
                     result.ModelId,
                     "Error",
                     0,
                     result.Summary ?? "Check Failed",
                     result.ErrorMessage ?? "");
-                CodeReviewService.AddLogMessage(issue);
+                CodeReviewService.AddLogMessage(finding);
             }
             StateHasChanged();
         });
@@ -1283,22 +1283,22 @@
 
     private void RowClickEvent(TableRowClickEventArgs<LogMessage> args)
     {
-        _currentIssue = args.Item;
-        if (_currentIssue == null) return;
+        _currentFinding = args.Item;
+        if (_currentFinding == null) return;
 
         _suggestions = null;
 
-        if (IsSpellingViolation(_currentIssue))
+        if (IsSpellingFinding(_currentFinding))
         {
             // Arm a scroll so the misspelled word is brought into view once the model renders.
-            _pendingScrollWord = ExtractMisspelledWord(_currentIssue);
+            _pendingScrollWord = ExtractMisspelledWord(_currentFinding);
         }
-        else if (!string.IsNullOrEmpty(_currentIssue.Details))
+        else if (!string.IsNullOrEmpty(_currentFinding.Details))
         {
-            _issueDetailsVisible = true;
+            _findingDetailsVisible = true;
         }
 
-        NavState.ChangeModelID(_currentIssue.ModelName);
+        NavState.ChangeModelID(_currentFinding.ModelName);
     }
 
     private async Task ApplySyntaxHighlightingStyles()
@@ -1404,7 +1404,7 @@ document.head.appendChild(style);
     /// switched). The render cache is keyed on model id alone, so an id that exists in both the old
     /// and the new set would otherwise render from the previous library's source — drop all of it.
     ///
-    /// This page stays mounted across a project switch, so it cannot rely on being recreated. Issue
+    /// This page stays mounted across a project switch, so it cannot rely on being recreated. Finding
     /// messages are cleared by MainLayout's project-changed handler, and parser errors are surfaced
     /// there too — the always-mounted layout is where anything that must happen regardless of the
     /// open tab belongs.
@@ -1430,7 +1430,7 @@ document.head.appendChild(style);
         if (ShowChangesOnly && !BaselineStatus.Snapshot.IsChangedFromBaseline(element))
             return false;
 
-        return FilterFunc(element, _searchString + (IssuesScopeAllModels ? " " + NavState.ModelID : ""));
+        return FilterFunc(element, _searchString + (FindingsScopeAllModels ? " " + NavState.ModelID : ""));
     }
 
     private void OnChangesOnlyChanged(bool value)
@@ -1442,7 +1442,7 @@ document.head.appendChild(style);
     private bool _exporting;
 
     /// <summary>
-    /// Writes the issue list to a JSON file, in the same shape as the CLI's <c>--format json</c>
+    /// Writes the finding list to a JSON file, in the same shape as the CLI's <c>--format json</c>
     /// findings array so the two can be compared directly.
     ///
     /// <para>Exports the <b>complete</b> list, deliberately ignoring the search box and the
@@ -1450,7 +1450,7 @@ document.head.appendChild(style);
     /// worst possible answer to "why do the app and CI disagree on the count" — it would look like
     /// evidence while quietly reproducing the filter as a difference.</para>
     /// </summary>
-    private async Task ExportIssuesAsync()
+    private async Task ExportFindingsAsync()
     {
         if (_exporting)
             return;
@@ -1458,18 +1458,18 @@ document.head.appendChild(style);
         var messages = CodeReviewService.LogMessages.ToList();
         if (messages.Count == 0)
         {
-            Snackbar.Add("There are no issues to export.", MudBlazor.Severity.Info);
+            Snackbar.Add("There are no findings to export.", MudBlazor.Severity.Info);
             return;
         }
 
         _exporting = true;
         try
         {
-            var folder = await FilePickerService.PickFolderAsync("Select a folder to export the issue list to");
+            var folder = await FilePickerService.PickFolderAsync("Select a folder to export the finding list to");
             if (string.IsNullOrEmpty(folder))
                 return;
 
-            // Model to file, so an exported issue can be traced back to a path the same way the CLI
+            // Model to file, so an exported finding can be traced back to a path the same way the CLI
             // reports one.
             var graph = LibraryDataService.CombinedGraph;
             var fileByModel = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1506,7 +1506,7 @@ document.head.appendChild(style);
                     .ToList()
             };
 
-            var name = $"mlqt-issues-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var name = $"mlqt-findings-{DateTime.Now:yyyyMMdd-HHmmss}.json";
             var target = Path.Combine(folder, name);
             var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
             {
@@ -1515,12 +1515,12 @@ document.head.appendChild(style);
             });
 
             await File.WriteAllTextAsync(target, json);
-            Snackbar.Add($"Exported {messages.Count} issues to {target}", MudBlazor.Severity.Success);
+            Snackbar.Add($"Exported {messages.Count} findings to {target}", MudBlazor.Severity.Success);
         }
         catch (Exception ex)
         {
-            LoggingService.Error("CodeReview", "Failed to export the issue list", ex);
-            Snackbar.Add($"Could not export the issue list: {ex.Message}", MudBlazor.Severity.Error);
+            LoggingService.Error("CodeReview", "Failed to export the finding list", ex);
+            Snackbar.Add($"Could not export the finding list: {ex.Message}", MudBlazor.Severity.Error);
         }
         finally
         {
@@ -1529,19 +1529,19 @@ document.head.appendChild(style);
         }
     }
 
-    private string IssuesHeading
+    private string FindingsHeading
     {
         get
         {
             var all = CodeReviewService.LogMessages;
             if (!BaselineStatus.HasBaseline)
-                return $"{all.Count} Issues to review";
+                return $"{all.Count} Findings to review";
 
             var snapshot = BaselineStatus.Snapshot;
             var changed = all.Count(snapshot.IsChangedFromBaseline);
             return ShowChangesOnly
-                ? $"{changed} changed of {all.Count} issues"
-                : $"{all.Count} Issues to review ({changed} changed vs baseline)";
+                ? $"{changed} changed of {all.Count} findings"
+                : $"{all.Count} Findings to review ({changed} changed vs baseline)";
         }
     }
 
@@ -1569,7 +1569,7 @@ document.head.appendChild(style);
         if (string.IsNullOrWhiteSpace(searchString))
             return true;
 
-        if (IssuesScopeAllModels && NavState.ModelID.Length > 0) {
+        if (FindingsScopeAllModels && NavState.ModelID.Length > 0) {
             if (element.ModelName == NavState.ModelID) {
                 //Remove the model name from the search string before continuing
                 searchString = searchString.Replace(NavState.ModelID,"").Trim();
@@ -1602,11 +1602,11 @@ document.head.appendChild(style);
         return false;
     }
 
-    private void ResolveIssue()
+    private void ResolveFinding()
     {
-        if (_currentIssue != null)
-            CodeReviewService.RemoveLogMessage(_currentIssue);
-        _issueDetailsVisible = false;
+        if (_currentFinding != null)
+            CodeReviewService.RemoveLogMessage(_currentFinding);
+        _findingDetailsVisible = false;
         StateHasChanged();
     }
 
@@ -1615,20 +1615,20 @@ document.head.appendChild(style);
     // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
     // Spelling findings are excluded — they have their own dictionary/ignore workflow, and blanket
     // suppression of the spelling rule is rarely what the user wants there.
-    private static bool CanSuppressRule(LogMessage? issue)
-        => issue is { Source: "StyleChecking" } && !string.IsNullOrEmpty(issue.RuleId) && !IsSpellingViolation(issue);
+    private static bool CanSuppressRule(LogMessage? finding)
+        => finding is { Source: "StyleChecking" } && !string.IsNullOrEmpty(finding.RuleId) && !IsSpellingFinding(finding);
 
     /// <summary>
-    /// Waive the current issue's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the
+    /// Waive the current finding's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the
     /// class (or the finding's component) and saving the file — the same in-source suppression the CLI
     /// and MCP server honour. Persists through the single-file save path used by spelling corrections.
     /// </summary>
-    private async Task SuppressRuleForIssue(LogMessage? issue)
+    private async Task SuppressRuleForFinding(LogMessage? finding)
     {
-        if (issue is null || string.IsNullOrEmpty(issue.RuleId) || _suppressing)
+        if (finding is null || string.IsNullOrEmpty(finding.RuleId) || _suppressing)
             return;
 
-        var targetNode = LibraryDataService.GetModelById(issue.ModelName);
+        var targetNode = LibraryDataService.GetModelById(finding.ModelName);
         if (targetNode is null)
         {
             Snackbar.Add("Cannot locate the model to suppress the rule in.", MudBlazor.Severity.Warning);
@@ -1645,7 +1645,7 @@ document.head.appendChild(style);
         }
 
         // Scope to the component when the finding names a simple one; otherwise waive it for the class.
-        var component = issue.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
+        var component = finding.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
         var filePath = fileNode.FilePath;
 
         // Path from the file's top class to the target class. The annotation is placed onto the target
@@ -1690,12 +1690,12 @@ document.head.appendChild(style);
                 return;
             }
 
-            if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, issue.RuleId!, null, out var newContent, out var writeError))
+            if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, finding.RuleId!, null, out var newContent, out var writeError))
             {
                 // A component target that can't be located (e.g. an inherited element) falls back to
                 // suppressing at the class level so the action still succeeds.
                 if (component is null ||
-                    !MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, null, issue.RuleId!, null, out newContent, out writeError))
+                    !MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, null, finding.RuleId!, null, out newContent, out writeError))
                 {
                     Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
                     return;
@@ -1751,13 +1751,13 @@ document.head.appendChild(style);
             // them. Scoped to the target model (a class-level waiver doesn't affect sibling classes) and,
             // for a component waiver, to that component.
             CodeReviewService.RemoveLogMessagesByPredicate(m =>
-                m.ModelName == issue.ModelName && m.RuleId == issue.RuleId
+                m.ModelName == finding.ModelName && m.RuleId == finding.RuleId
                 && (component is null || m.ElementPath == component));
 
-            _issueDetailsVisible = false;
+            _findingDetailsVisible = false;
             OnModelSelected();   // re-render with the annotated content and refresh VCS status
             Snackbar.Add(
-                $"Suppressed rule '{issue.RuleId}'{(component is null ? "" : $" on '{component}'")}.",
+                $"Suppressed rule '{finding.RuleId}'{(component is null ? "" : $" on '{component}'")}.",
                 MudBlazor.Severity.Success);
         }
         finally
@@ -1767,14 +1767,14 @@ document.head.appendChild(style);
         }
     }
 
-    private void OnIssuesScopeChanged(bool value) {
-        IssuesScopeAllModels = value;
+    private void OnFindingsScopeChanged(bool value) {
+        FindingsScopeAllModels = value;
         RecomputeMisspelledWords();
         StateHasChanged();
     }
 
     /// <summary>
-    /// Rebuilds the set of misspelled words for the current model from the spelling violations,
+    /// Rebuilds the set of misspelled words for the current model from the spelling findings,
     /// assigning a fresh instance so CodeViewer re-renders its highlight overlay.
     /// </summary>
     private void RecomputeMisspelledWords()
@@ -1789,7 +1789,7 @@ document.head.appendChild(style);
         var words = new HashSet<string>(StringComparer.Ordinal);
         foreach (var msg in CodeReviewService.LogMessages)
         {
-            if (msg.ModelName == modelId && IsSpellingViolation(msg))
+            if (msg.ModelName == modelId && IsSpellingFinding(msg))
             {
                 var word = ExtractMisspelledWord(msg);
                 if (!string.IsNullOrEmpty(word))
@@ -1800,8 +1800,8 @@ document.head.appendChild(style);
         _misspelledWords = words.Count > 0 ? words : null;
     }
 
-    private static bool IsSpellingViolation(LogMessage? issue) =>
-        SpellingMessage.Is(issue?.Summary);
+    private static bool IsSpellingFinding(LogMessage? finding) =>
+        SpellingMessage.Is(finding?.Summary);
 
     /// <summary>
     /// The word the rule flagged. Read through the shared format rather than from the finding's
@@ -1809,21 +1809,21 @@ document.head.appendChild(style);
     /// finding it carries the section as well as the word ("documentation info:tyre"), which
     /// underlined nothing because no such text appears in the source.
     /// </summary>
-    private static string? ExtractMisspelledWord(LogMessage? issue) =>
-        SpellingMessage.WordFrom(issue?.Summary);
+    private static string? ExtractMisspelledWord(LogMessage? finding) =>
+        SpellingMessage.WordFrom(finding?.Summary);
 
     /// <summary>
     /// The repository whose word list an accepted spelling belongs in — the one owning the class the
-    /// issue was raised against. Null when the class is not in a repository, in which case there is
+    /// finding was raised against. Null when the class is not in a repository, in which case there is
     /// nowhere to record the word and the action is offered as disabled rather than silently doing
     /// nothing.
     /// </summary>
-    private string? DictionaryRootForCurrentIssue() => RepositoryForCurrentIssue()?.LocalPath;
+    private string? DictionaryRootForCurrentFinding() => RepositoryForCurrentFinding()?.LocalPath;
 
-    /// <summary>The repository owning the class the current issue is about, or null if it has none.</summary>
-    private Repository? RepositoryForCurrentIssue()
+    /// <summary>The repository owning the class the current finding is about, or null if it has none.</summary>
+    private Repository? RepositoryForCurrentFinding()
     {
-        var modelId = _currentIssue?.ModelName;
+        var modelId = _currentFinding?.ModelName;
         if (string.IsNullOrEmpty(modelId))
             modelId = NavState.ModelID;
 
@@ -1832,7 +1832,7 @@ document.head.appendChild(style);
             : DictionaryScope.RepositoryForModel(LibraryDataService, RepositoryService, modelId);
     }
 
-    private bool CanAddToDictionary => DictionaryRootForCurrentIssue() is not null;
+    private bool CanAddToDictionary => DictionaryRootForCurrentFinding() is not null;
 
     private const string NoRepositoryDictionaryTooltip =
         "This class is not in a repository, so there is nowhere to record the word. Accepted " +
@@ -1840,11 +1840,11 @@ document.head.appendChild(style);
 
     private async Task AddToDictionary()
     {
-        var word = ExtractMisspelledWord(_currentIssue) ?? (_contextMenuOpen ? _contextWord : null);
+        var word = ExtractMisspelledWord(_currentFinding) ?? (_contextMenuOpen ? _contextWord : null);
         if (string.IsNullOrEmpty(word))
             return;
 
-        var repositoryRoot = DictionaryRootForCurrentIssue();
+        var repositoryRoot = DictionaryRootForCurrentFinding();
         if (repositoryRoot is null)
         {
             Snackbar.Add(NoRepositoryDictionaryTooltip, MudBlazor.Severity.Warning);
@@ -1856,7 +1856,7 @@ document.head.appendChild(style);
         var accepted = ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(word) ?? word;
         await CustomDictionaryService.AddWordAsync(repositoryRoot, accepted);
 
-        // Clear the violations this now covers — both the word and its possessive — and only within
+        // Clear the findings this now covers — both the word and its possessive — and only within
         // the repository that accepted it. It stays a finding elsewhere, which is the point of the
         // list being per repository: another team's library has not agreed to the word.
         var repositoryModelIds = LibraryDataService.Libraries
@@ -1865,12 +1865,12 @@ document.head.appendChild(style);
             .ToHashSet(StringComparer.Ordinal);
 
         CodeReviewService.RemoveLogMessagesByPredicate(m =>
-            repositoryModelIds.Contains(m.ModelName) && IsSpellingViolation(m) &&
+            repositoryModelIds.Contains(m.ModelName) && IsSpellingFinding(m) &&
             IsNowAccepted(accepted, ExtractMisspelledWord(m)));
 
         _contextMenuOpen = false;
         _suggestions = null;
-        _issueDetailsVisible = false;
+        _findingDetailsVisible = false;
         RecomputeMisspelledWords();
         StateHasChanged();
     }
@@ -1886,10 +1886,10 @@ document.head.appendChild(style);
             ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(flagged) ?? flagged,
             acceptedWord, StringComparison.OrdinalIgnoreCase);
 
-    private void IgnoreSpellingViolation()
+    private void IgnoreSpellingFinding()
     {
-        if (_currentIssue != null)
-            CodeReviewService.RemoveLogMessage(_currentIssue);
+        if (_currentFinding != null)
+            CodeReviewService.RemoveLogMessage(_currentFinding);
 
         _contextMenuOpen = false;
         _suggestions = null;
@@ -2077,10 +2077,10 @@ document.head.appendChild(style);
         NavState.ModelContentChanged(affected);
         _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
 
-        // Drop resolved spelling violations for this word on the file's models — they're fixed now.
+        // Drop resolved spelling findings for this word on the file's models — they're fixed now.
         var affectedSet = new HashSet<string>(affected, StringComparer.Ordinal);
         CodeReviewService.RemoveLogMessagesByPredicate(m =>
-            affectedSet.Contains(m.ModelName) && IsSpellingViolation(m) && ExtractMisspelledWord(m) == oldWord);
+            affectedSet.Contains(m.ModelName) && IsSpellingFinding(m) && ExtractMisspelledWord(m) == oldWord);
 
         CloseContextMenu();
         OnModelSelected();   // re-render with corrected content and refresh VCS status

@@ -16,15 +16,15 @@ using MLQT.Services.Interfaces;
 namespace MLQT.McpServer.Tools;
 
 /// <summary>
-/// Style/quality checking, settings, and issue retrieval. Style checking is opt-in (nothing runs at
+/// Style/quality checking, settings, and finding retrieval. Style checking is opt-in (nothing runs at
 /// load). Rule settings are per-repository: they come from each repo's .mlqt/settings.json (loaded
 /// by load_repository), and set_style_settings writes changes back there.
 /// </summary>
 [McpServerToolType]
 public sealed class StyleTools
 {
-    private const int MaxReturnedViolations = 200;
-    private const int MaxIssueLimit = 1000;
+    private const int MaxReturnedFindings = 200;
+    private const int MaxFindingLimit = 1000;
 
     private readonly ILibraryDataService _libraries;
     private readonly ICodeReviewService _codeReview;
@@ -102,7 +102,7 @@ public sealed class StyleTools
 
     [McpServerTool(Name = "check_style")]
     [Description("Run style/spell rules against an arbitrary Modelica source snippet (stateless — no " +
-                "library needed) and return the violations. If 'settings' is omitted, the loaded " +
+                "library needed) and return the findings. If 'settings' is omitted, the loaded " +
                 "repository's settings are used when exactly one is loaded, otherwise all rules are off. " +
                 "Reference-validation and icon-inheritance rules need a loaded library and are inert here.")]
     public object CheckStyle(
@@ -115,13 +115,13 @@ public sealed class StyleTools
 
         var effective = settings?.ToSettings() ?? SingleRepoSettings() ?? new StyleCheckingSettings();
         var context = StyleCheckContext.BuildStateless(effective, _customDictionary, _dictionaryManager);
-        var violations = StyleCheckRunner.RunStateless(source, effective, context);
-        return ToCheckResult(violations, modelsChecked: 1);
+        var findings = StyleCheckRunner.RunStateless(source, effective, context);
+        return ToCheckResult(findings, modelsChecked: 1);
     }
 
     [McpServerTool(Name = "check_class")]
-    [Description("Run style/spell rules against a single loaded class and return the violations, which " +
-                "are also stored for list_issues. By default the rules come from the class's repository " +
+    [Description("Run style/spell rules against a single loaded class and return the findings, which " +
+                "are also stored for list_findings. By default the rules come from the class's repository " +
                 "(.mlqt/settings.json); pass a 'settings' object to override for this run.")]
     public object CheckClass(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -133,7 +133,7 @@ public sealed class StyleTools
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
         // A class that failed to parse still has something worth returning: the parse error itself.
-        // Refusing outright left the caller unable to tell "no issues" from "never looked".
+        // Refusing outright left the caller unable to tell "no findings" from "never looked".
         if (node.IsParseFailurePlaceholder)
         {
             var parseOnly = ParserErrorReporter.ToLogMessages([node]);
@@ -146,22 +146,22 @@ public sealed class StyleTools
         var context = StyleCheckContext.Build(
             effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
             DictionaryScope.RootForModel(_libraries, _repositories, classId));
-        var violations = StyleCheckRunner.Run(node, effective, context);
+        var findings = StyleCheckRunner.Run(node, effective, context);
 
         // Parse errors are not style rules and are reported whatever the settings say — a class that
         // only partly parsed makes every rule result below it unreliable.
-        violations.AddRange(ParserErrorReporter.ToLogMessages([node]));
+        findings.AddRange(ParserErrorReporter.ToLogMessages([node]));
 
         _codeReview.RemoveLogMessagesForModels([classId]);
-        _codeReview.AddLogMessages(violations);
+        _codeReview.AddLogMessages(findings);
 
-        return ToCheckResult(violations, modelsChecked: 1);
+        return ToCheckResult(findings, modelsChecked: 1);
     }
 
     [McpServerTool(Name = "check_library")]
     [Description("Run style/spell rules across all classes in a loaded library (or every loaded library " +
-                "if library_id is omitted) and return a summary plus the first 200 violations, all stored " +
-                "for list_issues. By default each library is checked with its own repository settings " +
+                "if library_id is omitted) and return a summary plus the first 200 findings, all stored " +
+                "for list_findings. By default each library is checked with its own repository settings " +
                 "(.mlqt/settings.json); pass 'settings' to override for every class. If an enabled rule " +
                 "needs cross-model dependencies (e.g. unused-class), dependency analysis is run first " +
                 "automatically (matching the GUI and CLI). Can be slow on a big library.")]
@@ -254,11 +254,11 @@ public sealed class StyleTools
             if (modelsChecked == 0)
                 return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
 
-            var violations = all.ToList();
+            var reported = all.ToList();
             _codeReview.RemoveLogMessagesForModels(checkedIds);
-            _codeReview.AddLogMessages(violations);
+            _codeReview.AddLogMessages(reported);
 
-            return ToCheckResult(violations, modelsChecked);
+            return ToCheckResult(reported, modelsChecked);
         }
         finally
         {
@@ -275,12 +275,12 @@ public sealed class StyleTools
         }
     }
 
-    [McpServerTool(Name = "list_issues")]
-    [Description("List issues currently known for the loaded libraries: parse errors (available " +
-                "immediately after loading) plus style/spell violations from any check that has been run " +
+    [McpServerTool(Name = "list_findings")]
+    [Description("List findings currently known for the loaded libraries: parse errors (available " +
+                "immediately after loading) plus style/spell findings from any check that has been run " +
                 "(check_class / check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +
                 "or a specific class id, and page with limit/offset.")]
-    public object ListIssues(
+    public object ListFindings(
         [Description("Filter by severity substring (case-insensitive), e.g. 'Error', 'Warning'.")]
         string? severity = null,
         [Description("Filter by source, e.g. 'Parser' or 'StyleChecking'.")] string? source = null,
@@ -289,13 +289,13 @@ public sealed class StyleTools
         [Description("Max items to return (default 100, max 1000).")] int limit = 100,
         [Description("Items to skip for pagination (default 0).")] int offset = 0)
     {
-        if (ToolDiagnostics.RequireLibrary(_libraries, "listing issues") is { } noLib)
+        if (ToolDiagnostics.RequireLibrary(_libraries, "listing findings") is { } noLib)
             return noLib;
 
-        limit = Math.Clamp(limit, 1, MaxIssueLimit);
+        limit = Math.Clamp(limit, 1, MaxFindingLimit);
         offset = Math.Max(offset, 0);
 
-        var issues = new List<IssueItem>();
+        var findings = new List<FindingItem>();
 
         if (includeParseErrors)
         {
@@ -307,7 +307,7 @@ public sealed class StyleTools
                 var filePath = ResolveFilePath(node);
                 foreach (var e in errors)
                 {
-                    issues.Add(new IssueItem(
+                    findings.Add(new FindingItem(
                         node.Id, "parse",
                         e.Severity == ParserErrorSeverity.FatalParseFailure ? "FatalParseError" : "SyntaxError",
                         e.Line, e.Message, e.OffendingToken ?? string.Empty, "Parser", filePath));
@@ -317,13 +317,13 @@ public sealed class StyleTools
 
         foreach (var m in _codeReview.LogMessages)
         {
-            issues.Add(new IssueItem(
+            findings.Add(new FindingItem(
                 m.ModelName, "style", m.Severity, m.LineNumber, m.Summary, m.Details,
                 string.IsNullOrEmpty(m.Source) ? "StyleChecking" : m.Source,
                 ResolveFilePath(_libraries.GetModelById(m.ModelName))));
         }
 
-        IEnumerable<IssueItem> filtered = issues;
+        IEnumerable<FindingItem> filtered = findings;
         if (!string.IsNullOrWhiteSpace(severity))
             filtered = filtered.Where(i => i.Severity.Contains(severity, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(source))
@@ -337,7 +337,7 @@ public sealed class StyleTools
             .ToList();
 
         var page = list.Skip(offset).Take(limit).ToList();
-        return new IssuesResult(list.Count, offset, page.Count, page);
+        return new FindingsResult(list.Count, offset, page.Count, page);
     }
 
     // ----- settings resolution helpers -----
@@ -383,13 +383,13 @@ public sealed class StyleTools
         return _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId)?.FilePath;
     }
 
-    private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> violations, int modelsChecked)
+    private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)
     {
-        var shown = violations
-            .Take(MaxReturnedViolations)
-            .Select(v => new StyleViolationDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
+        var shown = findings
+            .Take(MaxReturnedFindings)
+            .Select(v => new StyleFindingDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
                 string.IsNullOrEmpty(v.Source) ? "StyleChecking" : v.Source))
             .ToList();
-        return new CheckResult(modelsChecked, violations.Count, shown, violations.Count > shown.Count);
+        return new CheckResult(modelsChecked, findings.Count, shown, findings.Count > shown.Count);
     }
 }

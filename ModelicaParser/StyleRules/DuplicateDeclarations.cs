@@ -50,7 +50,7 @@ public class DuplicateDeclarations : VisitorWithModelNameTracking
             {
                 var scope = _scopes.Peek();
                 if (!scope.SeenComponents.Add(name) && scope.ReportedComponents.Add(name))
-                    AddViolation(context.Start.Line, $"'{name}' is declared more than once in this class",
+                    AddFinding(context.Start.Line, $"'{name}' is declared more than once in this class",
                         RuleIds.DuplicateDeclaration, name);
             }
         }
@@ -66,7 +66,7 @@ public class DuplicateDeclarations : VisitorWithModelNameTracking
             {
                 var scope = _scopes.Peek();
                 if (!scope.SeenImports.Add(alias) && scope.ReportedImports.Add(alias))
-                    AddViolation(context.Start.Line, $"'{alias}' is imported more than once in this class",
+                    AddFinding(context.Start.Line, $"'{alias}' is imported more than once in this class",
                         RuleIds.DuplicateImport, alias);
             }
         }

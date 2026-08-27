@@ -10,7 +10,7 @@ public class SpellCheckDescriptionsTests
     private static SpellChecker CreateSpellChecker() => SpellChecker.Create();
 
     [Fact]
-    public void CorrectDescription_NoViolations()
+    public void CorrectDescription_NoFindings()
     {
         var code = """
             model TestModel "A simple model for testing"
@@ -24,11 +24,11 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void MisspelledDescription_ReportsViolation()
+    public void MisspelledDescription_ReportsFinding()
     {
         var code = """
             model TestModel "A simpl modl for testin"
@@ -42,12 +42,12 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.NotEmpty(visitor.RuleViolations);
-        Assert.All(visitor.RuleViolations, v => Assert.Contains("Misspelled word", v.Summary));
+        Assert.NotEmpty(visitor.RuleFindings);
+        Assert.All(visitor.RuleFindings, v => Assert.Contains("Misspelled word", v.Summary));
     }
 
     [Fact]
-    public void EmptyDescription_NoViolations()
+    public void EmptyDescription_NoFindings()
     {
         var code = """
             model TestModel ""
@@ -61,11 +61,11 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void NoDescription_NoViolations()
+    public void NoDescription_NoFindings()
     {
         var code = """
             model TestModel
@@ -79,7 +79,7 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
@@ -97,11 +97,11 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void ModelNameInDescription_NoViolation()
+    public void ModelNameInDescription_NoFinding()
     {
         var knownModelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -120,11 +120,11 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker(), knownModelNames);
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void ComponentNameInDescription_NoViolation()
+    public void ComponentNameInDescription_NoFinding()
     {
         // The component 'myPump' is camelCase so it gets skipped by ShouldSkipWord.
         // But let's test a single-word component name that could look like a misspelling.
@@ -147,10 +147,10 @@ public class SpellCheckDescriptionsTests
         // However, 'rflx' description itself is checked AFTER adding it to scope,
         // so "rflx" in the first component's description should be recognized.
         // The second component references it and should also be fine.
-        var rflxViolations = visitor.RuleViolations
+        var rflxFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("'rflx'"))
             .ToList();
-        Assert.Empty(rflxViolations);
+        Assert.Empty(rflxFindings);
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        Assert.Contains(visitor.RuleViolations, v => v.Summary.Contains("misspeling"));
+        Assert.Contains(visitor.RuleFindings, v => v.Summary.Contains("misspeling"));
     }
 
     [Fact]
@@ -238,10 +238,10 @@ public class SpellCheckDescriptionsTests
         visitor.Visit(parseTree);
 
         // Both outerComp and innerComp should be recognized as valid
-        var compViolations = visitor.RuleViolations
+        var compFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("outerComp") || v.Summary.Contains("innerComp"))
             .ToList();
-        Assert.Empty(compViolations);
+        Assert.Empty(compFindings);
     }
 
     [Fact]
@@ -259,8 +259,8 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker(), basePackage: "MyLibrary");
         visitor.Visit(parseTree);
 
-        Assert.NotEmpty(visitor.RuleViolations);
-        Assert.Contains("MyLibrary", visitor.RuleViolations[0].ModelName);
+        Assert.NotEmpty(visitor.RuleFindings);
+        Assert.Contains("MyLibrary", visitor.RuleFindings[0].ModelName);
     }
 
     [Fact]
@@ -274,10 +274,10 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var violation = visitor.RuleViolations.FirstOrDefault(v => v.Summary.Contains("misspeling"));
-        Assert.NotNull(violation);
+        var finding = visitor.RuleFindings.FirstOrDefault(v => v.Summary.Contains("misspeling"));
+        Assert.NotNull(finding);
         // "misspeling" is on the second line of the string, so line 2
-        Assert.Equal(2, violation.LineNumber);
+        Assert.Equal(2, finding.LineNumber);
     }
 
     [Fact]
@@ -289,10 +289,10 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(CreateSpellChecker());
         visitor.Visit(parseTree);
 
-        var violation = visitor.RuleViolations.FirstOrDefault(v => v.Summary.Contains("misspeling"));
-        Assert.NotNull(violation);
+        var finding = visitor.RuleFindings.FirstOrDefault(v => v.Summary.Contains("misspeling"));
+        Assert.NotNull(finding);
         // Description is on line 1
-        Assert.Equal(1, violation.LineNumber);
+        Assert.Equal(1, finding.LineNumber);
     }
 
     [Fact]
@@ -311,10 +311,10 @@ public class SpellCheckDescriptionsTests
         visitor.Visit(parseTree);
 
         // getValue should be skipped by ShouldSkipWord (camelCase)
-        var camelViolations = visitor.RuleViolations
+        var camelFindings = visitor.RuleFindings
             .Where(v => v.Summary.Contains("getValue"))
             .ToList();
-        Assert.Empty(camelViolations);
+        Assert.Empty(camelFindings);
     }
 
     [Fact]
@@ -335,6 +335,6 @@ public class SpellCheckDescriptionsTests
         var visitor = new SpellCheckDescriptions(SpellChecker.Create(["en_US"], customWords: ["Stodola"]));
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 }

@@ -13,7 +13,7 @@ public class MixConnectionsAndEquationsTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new MixConnectionsAndEquations();
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     [Fact]
@@ -30,10 +30,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -49,10 +49,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
 
@@ -70,10 +70,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }   
 
     [Fact]
@@ -91,10 +91,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }       
 
     [Fact]
@@ -114,10 +114,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
     [Fact]
@@ -135,10 +135,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }      
 
 
@@ -156,10 +156,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -178,9 +178,9 @@ end WithInitialEquation;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert - initial equation connect is not checked, regular equation only has connect
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
   }

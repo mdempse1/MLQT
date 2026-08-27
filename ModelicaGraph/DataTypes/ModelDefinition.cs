@@ -77,9 +77,9 @@ public class ModelDefinition
     public Boolean StyleRulesChecked { get; set; } = false;
 
     /// <summary>
-    /// Style rule violations
+    /// Style rule findings
     /// </summary>
-    public List<LogMessage> StyleRuleViolations { get; set; } = new();
+    public List<LogMessage> StyleRuleFindings { get; set; } = new();
 
     /// <summary>
     /// Parser errors encountered when parsing this model

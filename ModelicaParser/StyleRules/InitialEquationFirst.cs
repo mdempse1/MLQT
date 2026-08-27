@@ -45,7 +45,7 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             SetFoundInitial();
             if (_initialFirst && _foundOtherElement.Peek())
             {
-                AddViolation(context.Start.Line,
+                AddFinding(context.Start.Line,
                     "The initial equation section should appear before the equation/algorithm section",
                     RuleIds.InitialEqAlgoFirst);
             }
@@ -54,7 +54,7 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
         {
             if (_initialLast && _foundInitialSection.Peek())
             {
-                AddViolation(context.Start.Line,
+                AddFinding(context.Start.Line,
                     "The initial equation section should appear after the equation/algorithm section",
                     RuleIds.InitialEqAlgoLast);
             }
@@ -70,7 +70,7 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             SetFoundInitial();
             if (_initialFirst && _foundOtherElement.Peek())
             {
-                AddViolation(context.Start.Line,
+                AddFinding(context.Start.Line,
                     "The initial algorithm section should appear before the equation/algorithm section",
                     RuleIds.InitialEqAlgoFirst);
             }
@@ -79,7 +79,7 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
         {
             if (_initialLast && _foundInitialSection.Peek())
             {
-                AddViolation(context.Start.Line,
+                AddFinding(context.Start.Line,
                     "The initial algorithm section should appear after the equation/algorithm section",
                     RuleIds.InitialEqAlgoLast);
             }

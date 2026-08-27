@@ -84,9 +84,9 @@ end P;
         var (graph, models) = LoadTrimmed();
         var worker = new StyleCheckingWorker(graph, Settings(), "test", spellChecker: null);
 
-        var violations = new List<LogMessage>();
+        var findings = new List<LogMessage>();
         var done = new ManualResetEventSlim(false);
-        worker.OnViolationFound += (_, v) => { lock (violations) violations.AddRange(v); };
+        worker.OnFindingFound += (_, v) => { lock (findings) findings.AddRange(v); };
         worker.OnWorkCompleted += (_, _) => done.Set();
 
         foreach (var m in models)
@@ -94,7 +94,7 @@ end P;
         worker.StartProcessing();
 
         Assert.True(done.Wait(TimeSpan.FromSeconds(30)), "worker did not complete in time");
-        return violations.Count;
+        return findings.Count;
     }
 
     [Fact]
@@ -191,7 +191,7 @@ end Q;
             new CodeReviewService());
 
         var found = new List<LogMessage>();
-        service.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+        service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
 
         if (wholeProjectEntryPoint)
             service.StartBackgroundCheckingForRepositories(new List<Repository> { repo });

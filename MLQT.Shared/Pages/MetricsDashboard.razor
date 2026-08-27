@@ -68,17 +68,17 @@
                 }
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-2 mb-1">
                     <MudIcon Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small" Color="Color.Error" />
-                    <MudText Typo="Typo.body1">Active rule violations:</MudText>
-                    @if (_violations is not null)
+                    <MudText Typo="Typo.body1">Active rule findings:</MudText>
+                    @if (_findings is not null)
                     {
-                        <MudText Typo="Typo.body1"><b>@_violations</b></MudText>
+                        <MudText Typo="Typo.body1"><b>@_findings</b></MudText>
                     }
                     @if (_analysisRunning)
                     {
                         <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="ml-1" />
                         <MudText Typo="Typo.caption">analysing…</MudText>
                     }
-                    else if (_violations is null)
+                    else if (_findings is null)
                     {
                         <MudText Typo="Typo.body1"><b>—</b></MudText>
                         <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
@@ -160,7 +160,7 @@
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mt-4 mb-1">
             <MudText Typo="Typo.body1">
-                @(_showCounts ? "Outstanding-issue burndown" : "Coverage trend") —
+                @(_showCounts ? "Outstanding-finding burndown" : "Coverage trend") —
                 <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
             </MudText>
             <MudSpacer />
@@ -190,7 +190,7 @@
                         {
                             <th style="text-align:right;">@d</th>
                         }
-                        <th style="text-align:right;">Violations</th>
+                        <th style="text-align:right;">Findings</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -213,7 +213,7 @@
                                     }
                                 </td>
                             }
-                            <td style="text-align:right;">@(s.Violations.HasValue ? s.Violations.Value.ToString() : "—")</td>
+                            <td style="text-align:right;">@(s.Findings.HasValue ? s.Findings.Value.ToString() : "—")</td>
                         </tr>
                     }
                 </tbody>
@@ -222,11 +222,11 @@
         <MudText Typo="Typo.caption">
             @if (_showCounts)
             {
-                <text><b>Outstanding counts</b> plot the number of issues still open per dimension (eligible − compliant), plus the total <b>Rule violations</b> line — for a large library these move well before the percentage does. Snapshots taken before counts were recorded are omitted from this view. </text>
+                <text><b>Outstanding counts</b> plot the number of findings still open per dimension (eligible − compliant), plus the total <b>Rule findings</b> line — for a large library these move well before the percentage does. Snapshots taken before counts were recorded are omitted from this view. </text>
             }
             else
             {
-                <text>Line chart shows coverage % over time; toggle <b>Outstanding counts</b> to watch the raw issue count burn down. </text>
+                <text>Line chart shows coverage % over time; toggle <b>Outstanding counts</b> to watch the raw finding count burn down. </text>
             }
             The table lists exact values (most recent first) for the selected scope. Snapshots are saved per library in each repository's version-controlled <code>.mlqt/metrics-history.json</code> — commit them so reviewers share the same burndown. The "all libraries" view aggregates the per-repository snapshots.
         </MudText>
@@ -248,13 +248,13 @@
     private List<MetricsSnapshot> _history = new();
     private List<MetricsSnapshot> _scopedHistory = new();
     private List<string> _dimensions = new();
-    private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding issue count
+    private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding count
 
-    private int? _violations;          // active (unsuppressed) rule findings in scope; null until known
+    private int? _findings;          // active (unsuppressed) rule findings in scope; null until known
     private bool _analysisRunning;   // dependency analysis / style checking still in progress
 
-    // Distinct line colour for the "Rule violations" burndown series (kept out of TrendPalette).
-    private const string ViolationsColor = "#f44336";
+    // Distinct line colour for the "Rule findings" burndown series (kept out of TrendPalette).
+    private const string FindingsColor = "#f44336";
 
     private List<(string Package, LibraryMetrics Metrics)> _summary = new();
     private List<string> _summaryDimensions = new();
@@ -288,7 +288,7 @@
         }
 
         _history = LoadAllHistory();
-        RecountViolations();   // from whatever findings the background checker has already delivered
+        RecountFindings();   // from whatever findings the background checker has already delivered
 
         // Restore a still-valid cached result so navigating back is instant; otherwise first render
         // triggers an automatic compute.
@@ -318,14 +318,14 @@
         StateHasChanged();
     }
 
-    // A complete violation count needs dependency analysis (for the graph-based rules) AND style
+    // A complete finding count needs dependency analysis (for the graph-based rules) AND style
     // checking to have run — anything less is a partial picture.
     private bool AnalysisComplete => NavState.HasDependencyAnalysisRun && NavState.HasStyleCheckingRun;
 
     // Findings arrive asynchronously from the background analysis; recount when they change.
     private void OnFindingsChanged()
     {
-        RecountViolations();
+        RecountFindings();
         InvokeAsync(StateHasChanged);
     }
 
@@ -334,7 +334,7 @@
     {
         if (done && AnalysisComplete)
             _analysisRunning = false;
-        RecountViolations();
+        RecountFindings();
         InvokeAsync(StateHasChanged);
     }
 
@@ -343,38 +343,38 @@
     {
         if (AnalysisComplete)
             _analysisRunning = false;
-        RecountViolations();
+        RecountFindings();
         InvokeAsync(StateHasChanged);
     }
 
     // Count active (unsuppressed) style/analysis findings whose model falls within the current scope.
     // Suppressed findings never reach CodeReviewService, so this drops when a rule is fixed OR suppressed.
-    private void RecountViolations()
+    private void RecountFindings()
     {
         if (!_analysisRunning && !AnalysisComplete)
         {
-            _violations = null;   // unknown until analysis has run at least once
+            _findings = null;   // unknown until analysis has run at least once
             return;
         }
-        _violations = CountViolationsForScope(_scope);
+        _findings = CountFindingsForScope(_scope);
     }
 
-    private int CountViolationsForScope(string scope)
+    private int CountFindingsForScope(string scope)
         => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && InScope(m.ModelName, scope));
 
-    private int CountViolationsForModels(HashSet<string> modelIds)
+    private int CountFindingsForModels(HashSet<string> modelIds)
         => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
 
-    // A violation count is only worth recording once the full analysis has finished; while it is still
+    // A finding count is only worth recording once the full analysis has finished; while it is still
     // running (or has never run) the number is partial, so store null rather than a misleading figure.
-    private int? ReliableViolations(int? current)
+    private int? ReliableFindings(int? current)
         => (_analysisRunning || !AnalysisComplete) ? (int?)null : current;
 
     private static bool InScope(string modelId, string scope)
         => string.IsNullOrEmpty(scope) || modelId == scope
            || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
 
-    // Ensure the full analysis has run so the violation count is complete: dependency analysis (for the
+    // Ensure the full analysis has run so the finding count is complete: dependency analysis (for the
     // graph-based rules) plus style checking. Kicks off whatever is missing; findings then stream in and
     // update the count reactively. RunAllDeferredAnalysisAsync runs dependency analysis + style + graph
     // analyses together; if dependencies are already done, only style checking is needed.
@@ -414,7 +414,7 @@
 
         _metrics = null;
         _summary = new();
-        _violations = null;
+        _findings = null;
 
         _history = LoadAllHistory();
         RebuildTrend();
@@ -463,7 +463,7 @@
                     ? MetricsHistoryStore.RepoPath(repoLocalPath)
                     : MetricsHistoryStore.DefaultPath;
                 MetricsHistoryStore.Append(path, MetricsSnapshot.From(
-                    _metrics, _scope, timestamp, ReliableViolations(_violations),
+                    _metrics, _scope, timestamp, ReliableFindings(_findings),
                     repo?.CurrentRevision, repo?.CurrentBranch));
                 if (!string.IsNullOrEmpty(repoLocalPath)) sharedCount++; else anyPerUser = true;
             }
@@ -484,7 +484,7 @@
                     // Single target: _metrics already covers exactly this group's models — reuse it.
                     var g = groups[0];
                     MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
-                        _metrics, "", timestamp, ReliableViolations(_violations),
+                        _metrics, "", timestamp, ReliableFindings(_findings),
                         g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
                     if (g.Shared) sharedCount++; else anyPerUser = true;
                 }
@@ -493,14 +493,14 @@
                     _loading = true;
                     StateHasChanged();
                     var graph = LibraryDataService.CombinedGraph;
-                    var violationsReliable = !_analysisRunning && AnalysisComplete;
+                    var findingsReliable = !_analysisRunning && AnalysisComplete;
                     await Task.Run(() =>
                     {
                         foreach (var g in groups)
                         {
                             var metrics = MetricsCalculator.Compute(graph, g.Models);
-                            int? v = violationsReliable
-                                ? CountViolationsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
+                            int? v = findingsReliable
+                                ? CountFindingsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
                                 : (int?)null;
                             MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
                                 metrics, "", timestamp, v, g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
@@ -528,7 +528,7 @@
             : "the per-user file (no repository-backed libraries)";
         Snackbar.Add($"Snapshot saved to {where}.", Severity.Success);
         if (_analysisRunning || !AnalysisComplete)
-            Snackbar.Add("Analysis hasn't finished — the violation count was left out of this snapshot. Save again once it completes.", Severity.Info);
+            Snackbar.Add("Analysis hasn't finished — the finding count was left out of this snapshot. Save again once it completes.", Severity.Info);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -650,7 +650,7 @@
     private async Task Compute()
     {
         EnsureAnalysisStarted();   // run dependency analysis + style checking if needed for a full count
-        RecountViolations();
+        RecountFindings();
 
         var all = ReportableModels();
         var models = string.IsNullOrEmpty(_scope)
@@ -748,8 +748,8 @@
         => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
 
     // The lines drawn on the trend, shared by the chart and its legend: one per coverage dimension, plus
-    // a "Rule violations" line in count mode (it's a raw count with no percentage) when any snapshot in
-    // view recorded a violation total.
+    // a "Rule findings" line in count mode (it's a raw count with no percentage) when any snapshot in
+    // view recorded a findings total.
     private List<(string Label, string Color, Func<MetricsSnapshot, double?> Value)> TrendSeries()
     {
         var series = new List<(string, string, Func<MetricsSnapshot, double?>)>();
@@ -759,13 +759,13 @@
             var color = TrendPalette[i % TrendPalette.Length];
             series.Add((dim, color, s => TrendValue(s, dim)));
         }
-        if (_showCounts && _scopedHistory.Any(s => s.Violations.HasValue))
-            series.Add(("Rule violations", ViolationsColor,
-                s => s.Violations.HasValue ? s.Violations.Value : (double?)null));
+        if (_showCounts && _scopedHistory.Any(s => s.Findings.HasValue))
+            series.Add(("Rule findings", FindingsColor,
+                s => s.Findings.HasValue ? s.Findings.Value : (double?)null));
         return series;
     }
 
-    // The outstanding issue count for a dimension in a snapshot (eligible − compliant), or null when
+    // The outstanding count for a dimension in a snapshot (eligible − compliant), or null when
     // that snapshot predates raw counts. Used by the "Outstanding counts" burndown view.
     private static int? Outstanding(MetricsSnapshot s, string dim)
         => s.Counts is not null && s.Counts.TryGetValue(dim, out var c) ? c.Eligible - c.Compliant : null;
@@ -802,7 +802,7 @@
 
         var series = TrendSeries();
 
-        // Y scale: fixed 0–100 for %, or 0–niceMax(largest plotted value, incl. violations) for counts.
+        // Y scale: fixed 0–100 for %, or 0–niceMax(largest plotted value, incl. findings) for counts.
         const int gridSteps = 4;
         double yMax;
         if (_showCounts)
@@ -841,7 +841,7 @@
                 .Select(t => $"{F(px(t.i))},{F(py(t.v!.Value))}"));
             if (points.Length > 0)
             {
-                var strokeWidth = sv.Color == ViolationsColor ? "2.2" : "1.5";
+                var strokeWidth = sv.Color == FindingsColor ? "2.2" : "1.5";
                 sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
             }
         }

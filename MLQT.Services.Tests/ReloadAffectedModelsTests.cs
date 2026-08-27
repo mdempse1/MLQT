@@ -101,7 +101,7 @@ public class ReloadAffectedModelsTests : IDisposable
         await settingsService.SetAsync("StyleChecking", new StyleCheckingSettings { ClassHasIcon = true });
 
         var found = new List<LogMessage>();
-        service.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+        service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
 
         await service.CheckModelsAsync(["P.A", "P.A", "P.A"], libraries.CombinedGraph);
         await service.WaitForCompletionAsync();

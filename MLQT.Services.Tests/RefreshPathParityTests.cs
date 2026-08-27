@@ -60,8 +60,8 @@ public class RefreshPathParityTests : IDisposable
             StyleChecking = new StyleCheckingService(
                 Libraries, Repositories, settingsService,
                 new CustomDictionaryService(), new DictionaryManagerService(), CodeReview);
-            // MainLayout routes violations into CodeReviewService; mirror that here.
-            StyleChecking.OnViolationsFound += v => CodeReview.AddLogMessages(v);
+            // MainLayout routes findings into CodeReviewService; mirror that here.
+            StyleChecking.OnFindingsFound += v => CodeReview.AddLogMessages(v);
         }
 
         public void WaitForChecking()

@@ -17,7 +17,7 @@ public class CheckClassAnnotationsTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new CheckClassAnnotations(checkDocInfo, checkDocRevisions, checkIcon, basePackage, baseClassHasIcon);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     // ============================================================================
@@ -25,7 +25,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void DocInfo_Present_NoViolation()
+    public void DocInfo_Present_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -36,13 +36,13 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true);
+        var findings = CheckRule(code, checkDocInfo: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void DocInfo_Missing_Violation()
+    public void DocInfo_Missing_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -52,14 +52,14 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true);
+        var findings = CheckRule(code, checkDocInfo: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Documentation info", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Documentation info", findings[0].Summary);
     }
 
     [Fact]
-    public void DocInfo_Disabled_NoViolation()
+    public void DocInfo_Disabled_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -69,9 +69,9 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: false);
+        var findings = CheckRule(code, checkDocInfo: false);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -79,7 +79,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void DocRevisions_Present_NoViolation()
+    public void DocRevisions_Present_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -90,13 +90,13 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocRevisions: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void DocRevisions_Missing_Violation()
+    public void DocRevisions_Missing_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -107,14 +107,14 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocRevisions: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Documentation revisions", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Documentation revisions", findings[0].Summary);
     }
 
     [Fact]
-    public void DocRevisions_NoAnnotationAtAll_Violation()
+    public void DocRevisions_NoAnnotationAtAll_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -124,10 +124,10 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocRevisions: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Documentation revisions", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Documentation revisions", findings[0].Summary);
     }
 
     // ============================================================================
@@ -135,7 +135,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void Icon_Present_NoViolation()
+    public void Icon_Present_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -146,13 +146,13 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkIcon: true);
+        var findings = CheckRule(code, checkIcon: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void Icon_Missing_Violation()
+    public void Icon_Missing_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -162,14 +162,14 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkIcon: true);
+        var findings = CheckRule(code, checkIcon: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
-    public void Icon_Disabled_NoViolation()
+    public void Icon_Disabled_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -179,9 +179,9 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkIcon: false);
+        var findings = CheckRule(code, checkIcon: false);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -189,7 +189,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void AllChecks_AllMissing_ThreeViolations()
+    public void AllChecks_AllMissing_ThreeFindings()
     {
         var code = """
             model TestModel "A model"
@@ -199,16 +199,16 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
 
-        Assert.Equal(3, violations.Count);
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation info"));
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation revisions"));
-        Assert.Contains(violations, v => v.Summary.Contains("Icon"));
+        Assert.Equal(3, findings.Count);
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation info"));
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation revisions"));
+        Assert.Contains(findings, v => v.Summary.Contains("Icon"));
     }
 
     [Fact]
-    public void AllChecks_AllPresent_NoViolations()
+    public void AllChecks_AllPresent_NoFindings()
     {
         var code = """
             model TestModel "A model"
@@ -222,13 +222,13 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void AllChecks_OnlyDocPresent_IconViolation()
+    public void AllChecks_OnlyDocPresent_IconFinding()
     {
         var code = """
             model TestModel "A model"
@@ -239,14 +239,14 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
-    public void AllChecks_OnlyIconPresent_DocViolations()
+    public void AllChecks_OnlyIconPresent_DocFindings()
     {
         var code = """
             model TestModel "A model"
@@ -257,11 +257,11 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
 
-        Assert.Equal(2, violations.Count);
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation info"));
-        Assert.Contains(violations, v => v.Summary.Contains("Documentation revisions"));
+        Assert.Equal(2, findings.Count);
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation info"));
+        Assert.Contains(findings, v => v.Summary.Contains("Documentation revisions"));
     }
 
     // ============================================================================
@@ -269,7 +269,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void Icon_InheritedViaCallback_NoViolation()
+    public void Icon_InheritedViaCallback_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -283,13 +283,13 @@ public class CheckClassAnnotationsTests
         // Callback says the base class has an icon
         Func<string, string, bool> callback = (baseClassName, currentModel) => baseClassName == "BaseModel";
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void Icon_InheritedCallbackReturnsFalse_Violation()
+    public void Icon_InheritedCallbackReturnsFalse_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -303,14 +303,14 @@ public class CheckClassAnnotationsTests
         // Callback says no base class has an icon
         Func<string, string, bool> callback = (baseClassName, currentModel) => false;
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
-    public void Icon_NoCallback_NoInheritanceCheck_Violation()
+    public void Icon_NoCallback_NoInheritanceCheck_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -322,14 +322,14 @@ public class CheckClassAnnotationsTests
             """;
 
         // No callback provided — inheritance not checked
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: null);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: null);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
-    public void Icon_MultipleExtends_FirstHasIcon_NoViolation()
+    public void Icon_MultipleExtends_FirstHasIcon_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -343,13 +343,13 @@ public class CheckClassAnnotationsTests
 
         Func<string, string, bool> callback = (baseClassName, currentModel) => baseClassName == "BaseA";
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void Icon_MultipleExtends_SecondHasIcon_NoViolation()
+    public void Icon_MultipleExtends_SecondHasIcon_NoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -363,13 +363,13 @@ public class CheckClassAnnotationsTests
 
         Func<string, string, bool> callback = (baseClassName, currentModel) => baseClassName == "BaseB";
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void Icon_MultipleExtends_NoneHasIcon_Violation()
+    public void Icon_MultipleExtends_NoneHasIcon_Finding()
     {
         var code = """
             model TestModel "A model"
@@ -383,10 +383,10 @@ public class CheckClassAnnotationsTests
 
         Func<string, string, bool> callback = (baseClassName, currentModel) => false;
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Single(violations);
-        Assert.Contains("Icon", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Icon", findings[0].Summary);
     }
 
     [Fact]
@@ -409,9 +409,9 @@ public class CheckClassAnnotationsTests
             return true;
         };
 
-        var violations = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
+        var findings = CheckRule(code, checkIcon: true, baseClassHasIcon: callback);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
         Assert.False(callbackInvoked);
     }
 
@@ -508,9 +508,9 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
 
-        Assert.Equal(2, violations.Count);
+        Assert.Equal(2, findings.Count);
     }
 
     [Fact]
@@ -526,13 +526,13 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
 
-        Assert.Equal(2, violations.Count);
+        Assert.Equal(2, findings.Count);
     }
 
     [Fact]
-    public void AnnotationWithDocInfoOnly_RevisionsViolation()
+    public void AnnotationWithDocInfoOnly_RevisionsFinding()
     {
         var code = """
             model TestModel "A model"
@@ -543,14 +543,14 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Documentation revisions", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Documentation revisions", findings[0].Summary);
     }
 
     [Fact]
-    public void AnnotationWithDocRevisionsOnly_InfoViolation()
+    public void AnnotationWithDocRevisionsOnly_InfoFinding()
     {
         var code = """
             model TestModel "A model"
@@ -561,10 +561,10 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true);
 
-        Assert.Single(violations);
-        Assert.Contains("Documentation info", violations[0].Summary);
+        Assert.Single(findings);
+        Assert.Contains("Documentation info", findings[0].Summary);
     }
 
     // ============================================================================
@@ -589,10 +589,10 @@ public class CheckClassAnnotationsTests
             end TestPackage;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
+        var findings = CheckRule(code, checkDocInfo: true, checkDocRevisions: true, checkIcon: true);
 
         // Only TestPackage is checked (and has all annotations), InnerModel is skipped
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -612,9 +612,9 @@ public class CheckClassAnnotationsTests
             end TestFunc;
             """;
 
-        var violations = CheckRule(code, checkIcon: true);
+        var findings = CheckRule(code, checkIcon: true);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -622,7 +622,7 @@ public class CheckClassAnnotationsTests
     // ============================================================================
 
     [Fact]
-    public void WithBasePackage_ViolationModelNameIncludesPackage()
+    public void WithBasePackage_FindingModelNameIncludesPackage()
     {
         var code = """
             model TestModel "A model"
@@ -632,9 +632,9 @@ public class CheckClassAnnotationsTests
             end TestModel;
             """;
 
-        var violations = CheckRule(code, checkDocInfo: true, basePackage: "MyLib");
+        var findings = CheckRule(code, checkDocInfo: true, basePackage: "MyLib");
 
-        Assert.Single(violations);
-        Assert.Contains("MyLib.TestModel", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Contains("MyLib.TestModel", findings[0].ModelName);
     }
 }

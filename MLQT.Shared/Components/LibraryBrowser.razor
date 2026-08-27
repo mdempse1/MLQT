@@ -656,13 +656,13 @@ else if (Repository != null)
     private string GetParserErrorTooltip(ModelNode node)
     {
         if (node.HasFatalParseFailure)
-            return "This file could not be fully parsed. The contents shown may be incomplete or replaced with a placeholder. See the Issues panel for details.";
+            return "This file could not be fully parsed. The contents shown may be incomplete or replaced with a placeholder. See the Findings panel for details.";
         if (node.HasParserErrors)
         {
             var count = node.Definition.ParserErrors.Count;
             return count == 1
-                ? "This model has 1 parser error. See the Issues panel for details."
-                : $"This model has {count} parser errors. See the Issues panel for details.";
+                ? "This model has 1 parser error. See the Findings panel for details."
+                : $"This model has {count} parser errors. See the Findings panel for details.";
         }
         return "A model inside this package has a parser error.";
     }

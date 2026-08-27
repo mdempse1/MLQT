@@ -141,7 +141,7 @@ public sealed record SetStyleSettingsResult(
     string? Note,
     StyleSettingsInput Settings);
 
-public sealed record StyleViolationDto(
+public sealed record StyleFindingDto(
     string ModelName,
     string Severity,
     int Line,
@@ -151,11 +151,11 @@ public sealed record StyleViolationDto(
 
 public sealed record CheckResult(
     int ModelsChecked,
-    int ViolationCount,
-    IReadOnlyList<StyleViolationDto> Violations,
+    int FindingCount,
+    IReadOnlyList<StyleFindingDto> Findings,
     bool Truncated);
 
-public sealed record IssueItem(
+public sealed record FindingItem(
     string ModelId,
     string Category,
     string Severity,
@@ -165,11 +165,11 @@ public sealed record IssueItem(
     string Source,
     string? FilePath);
 
-public sealed record IssuesResult(
+public sealed record FindingsResult(
     int Total,
     int Offset,
     int Count,
-    IReadOnlyList<IssueItem> Items);
+    IReadOnlyList<FindingItem> Items);
 
 public sealed record FormatCodeResult(
     string Source);
@@ -193,7 +193,7 @@ public sealed record SpellSuggestionsResult(
 /// warns about the same gap on stderr; an agent gets it here.
 /// </summary>
 public sealed record SpellCheckResult(
-    IReadOnlyList<StyleViolationDto> Violations,
+    IReadOnlyList<StyleFindingDto> Findings,
     string? Note = null);
 
 public sealed record UpdateClassSourceResult(

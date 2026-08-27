@@ -56,7 +56,7 @@ public class MixConnectionsAndEquations : VisitorWithModelNameTracking
 
             if (thisClassTracker.FoundConnection && thisClassTracker.FoundEquation && !thisClassTracker.LoggedError)
             {
-                AddViolation(context.Start.Line, "This class contains both equations and connect equations", RuleIds.DontMixConnections);
+                AddFinding(context.Start.Line, "This class contains both equations and connect equations", RuleIds.DontMixConnections);
                 thisClassTracker.LoggedError = true;
             }
         }

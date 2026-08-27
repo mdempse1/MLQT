@@ -157,14 +157,14 @@ public class MetricsCommandTests
     }
 
     [Fact]
-    public void Metrics_RecordsTheViolationCount()
+    public void Metrics_RecordsTheFindingCount()
     {
         // One undescribed class => one finding, and the trend should show it.
         using var lib = Fixture(TwoClassesPlusUndocumented);
         Run("check", lib.Path, "--metrics", "--no-color");
 
         var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
-        Assert.Equal(1, point.GetProperty("Violations").GetInt32());
+        Assert.Equal(1, point.GetProperty("Findings").GetInt32());
     }
 
     [Fact]

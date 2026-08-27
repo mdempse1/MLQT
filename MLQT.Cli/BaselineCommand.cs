@@ -118,7 +118,7 @@ internal static class BaselineCommand
             return load.ExitCode;
 
         // Recorded in the file so a later check can warn when the rules have moved on — a rule
-        // enabled after baselining reports its pre-existing violations as new.
+        // enabled after baselining reports its pre-existing findings as new.
         var settings = load.Settings;
 
         var path = opts.ResolvedBaselinePath;
@@ -151,7 +151,7 @@ internal static class BaselineCommand
             case "update":
             {
                 // update is the only command that can GROW the baseline, and growing it means accepting
-                // violations nobody has reviewed — the one way to defeat the ratchet by accident. So it
+                // findings nobody has reviewed — the one way to defeat the ratchet by accident. So it
                 // says what it is absorbing, and refuses to absorb anything unless asked to.
                 var existing = File.Exists(path) ? Baseline.Load(path) : null;
                 var updated = Baseline.FromFindings(load.Findings, now, stamp, settings, load.DependencyLibraries);
@@ -226,7 +226,7 @@ internal static class BaselineCommand
             stderr.WriteLine(
                 $"note: {coverage.SharingAnEntry} finding(s) share an entry with another. An entry is " +
                 "one rule + class + element + detail with no line number, so repeats of the same " +
-                "violation within a class collapse into one — a later check still reports and accepts " +
+                "finding within a class collapse into one — a later check still reports and accepts " +
                 "every finding individually, so its accepted count is the larger number.");
 
         if (coverage.ParseDiagnostics > 0)

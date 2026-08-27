@@ -45,7 +45,7 @@ public class SpellCheckDictionaryEndToEndTests : IDisposable
             new CustomDictionaryService(), new DictionaryManagerService(), review);
 
         var found = new List<LogMessage>();
-        service.OnViolationsFound += v => { lock (found) found.AddRange(v); };
+        service.OnFindingsFound += v => { lock (found) found.AddRange(v); };
 
         var repository = new Repository
         {

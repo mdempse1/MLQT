@@ -200,7 +200,7 @@ public class BaselineTests
 
     // --- rule-set drift -------------------------------------------------------------------------
     // Both failure modes are silent: a rule enabled after baselining reports its pre-existing
-    // violations as NEW (a change looks like it caused a regression it did not), and a rule disabled
+    // findings as NEW (a change looks like it caused a regression it did not), and a rule disabled
     // since leaves entries that can never match again.
 
     private static StyleCheckingSettings Rules(params string[] enabled)

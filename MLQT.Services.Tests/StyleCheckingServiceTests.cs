@@ -99,7 +99,7 @@ public class StyleCheckingServiceTests
     }
 
     [Fact]
-    public async Task CheckModelAsync_ReturnsViolationsForBadModel()
+    public async Task CheckModelAsync_ReturnsFindingsForBadModel()
     {
         var service = CreateService();
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
@@ -109,10 +109,10 @@ public class StyleCheckingServiceTests
   Real x;
 end TestModel;");
 
-        var violations = await service.CheckModelAsync(model, settings);
+        var findings = await service.CheckModelAsync(model, settings);
 
-        // Should have violation for missing description
-        Assert.NotEmpty(violations);
+        // Should have finding for missing description
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -143,9 +143,9 @@ end TestModel;");
   Real x;
 end TestModel;");
 
-        var violations = await service.CheckModelAsync(model, settings);
+        var findings = await service.CheckModelAsync(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -183,13 +183,13 @@ end TestModel;");
     }
 
     [Fact]
-    public async Task StartBackgroundCheckingAsync_FiresOnViolationsFoundEvent()
+    public async Task StartBackgroundCheckingAsync_FiresOnFindingsFoundEvent()
     {
         var service = CreateService();
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var repo = await CreateRepositoryWithModelsAsync(
             settings,
@@ -200,17 +200,17 @@ end TestModel;");
         // Wait for background processing and flush to complete
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
     public async Task StartBackgroundCheckingAsync_UsesRepositorySettings()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        // Create repo with description checking disabled - should find no violations
+        // Create repo with description checking disabled - should find no findings
         var repo = await CreateRepositoryWithModelsAsync(
             new StyleCheckingSettings { ClassHasDescription = false },
             ("TestModel", "model TestModel Real x; end TestModel;"));
@@ -218,15 +218,15 @@ end TestModel;");
         await service.StartBackgroundCheckingAsync(repo);
         await WaitForCompletionAsync(service);
 
-        Assert.Empty(violationsReceived);
+        Assert.Empty(findingsReceived);
     }
 
     [Fact]
     public async Task CheckModelsAsync_ReChecksSpecificModels()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
@@ -249,19 +249,19 @@ end TestModel;");
         await service.CheckModelsAsync(modelIds, graph);
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
     public async Task CheckModelsAsync_WithEmptyList_ReturnsEarly()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         await service.CheckModelsAsync(new List<string>(), _libraryDataService.CombinedGraph);
 
-        Assert.Empty(violationsReceived);
+        Assert.Empty(findingsReceived);
     }
 
     [Fact]
@@ -353,8 +353,8 @@ end TestModel;");
     public async Task StartBackgroundCheckingForRepositories_WithMultipleRepos_ProcessesAll()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
@@ -371,7 +371,7 @@ end TestModel;");
         service.StartBackgroundCheckingForRepositories(new List<Repository> { repo1, repo2 });
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
@@ -481,8 +481,8 @@ epos\Alpha", new[] { "en_GB" });
     public async Task CheckModelsAsync_GroupsModelsByRepository()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
@@ -498,8 +498,8 @@ epos\Alpha", new[] { "en_GB" });
         await service.CheckModelsAsync(modelIds, graph);
         await WaitForCompletionAsync(service);
 
-        // Model1 should have violations (description check enabled via fallback settings)
-        Assert.NotEmpty(violationsReceived);
+        // Model1 should have findings (description check enabled via fallback settings)
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
@@ -518,28 +518,28 @@ epos\Alpha", new[] { "en_GB" });
     }
 
     [Fact]
-    public async Task ReRun_ClearsOldStyleCheckingViolationsFromCodeReviewService()
+    public async Task ReRun_ClearsOldStyleCheckingFindingsFromCodeReviewService()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v =>
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v =>
         {
             _codeReviewService.AddLogMessages(v);
-            violationsReceived.AddRange(v);
+            findingsReceived.AddRange(v);
         };
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
         var repo = await CreateRepositoryWithModelsAsync(settings,
             ("TestModel", "model TestModel Real x; end TestModel;"));
 
-        // First run — produces violations
+        // First run — produces findings
         service.StartBackgroundChecking(repo);
         await WaitForCompletionAsync(service);
         var firstRunCount = _codeReviewService.LogMessages.Count;
-        Assert.True(firstRunCount > 0, "First run should produce violations");
+        Assert.True(firstRunCount > 0, "First run should produce findings");
 
-        // Second run — old violations should be cleared, not duplicated
-        violationsReceived.Clear();
+        // Second run — old findings should be cleared, not duplicated
+        findingsReceived.Clear();
         service.StartBackgroundChecking(repo);
         await WaitForCompletionAsync(service);
 
@@ -550,7 +550,7 @@ epos\Alpha", new[] { "en_GB" });
     public async Task ReRun_PreservesNonStyleCheckingMessages()
     {
         var service = CreateService();
-        service.OnViolationsFound += v => _codeReviewService.AddLogMessages(v);
+        service.OnFindingsFound += v => _codeReviewService.AddLogMessages(v);
 
         // Add a non-style-checking message (e.g., a parser error)
         _codeReviewService.AddLogMessage(new LogMessage("SomeModel", "Parser error", 1, "Syntax error"));
@@ -567,15 +567,15 @@ epos\Alpha", new[] { "en_GB" });
     }
 
     [Fact]
-    public void StyleCheckingViolations_HaveSourceSetToStyleChecking()
+    public void StyleCheckingFindings_HaveSourceSetToStyleChecking()
     {
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
         var model = new ModelDefinition("TestModel", "model TestModel Real x; end TestModel;");
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "Pkg.TestModel");
+        var findings = StyleChecking.RunStyleChecking(model, settings, "Pkg.TestModel");
 
-        Assert.NotEmpty(violations);
-        Assert.All(violations, v => Assert.Equal("StyleChecking", v.Source));
+        Assert.NotEmpty(findings);
+        Assert.All(findings, v => Assert.Equal("StyleChecking", v.Source));
     }
 
     /// <summary>
@@ -594,8 +594,8 @@ epos\Alpha", new[] { "en_GB" });
         // reported the step complete and handed the app back while every core was still checking —
         // a UI that barely responds under a dialog that says it has finished.
         var service = CreateService();
-        var violations = new List<LogMessage>();
-        service.OnViolationsFound += v => { lock (violations) violations.AddRange(v); };
+        var findings = new List<LogMessage>();
+        service.OnFindingsFound += v => { lock (findings) findings.AddRange(v); };
 
         var repo = await CreateRepositoryWithModelsAsync(
             new StyleCheckingSettings { ClassHasDescription = true },
@@ -606,8 +606,8 @@ epos\Alpha", new[] { "en_GB" });
         await service.WaitForCompletionAsync();
 
         Assert.False(service.IsRunning);
-        lock (violations)
-            Assert.NotEmpty(violations);   // already delivered when the wait returned — no polling
+        lock (findings)
+            Assert.NotEmpty(findings);   // already delivered when the wait returned — no polling
     }
 
     [Fact]

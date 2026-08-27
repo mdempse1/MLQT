@@ -41,7 +41,7 @@ public sealed class Baseline
     /// recorded, in which case drift cannot be detected and is not reported.
     ///
     /// Kept so a check can warn when the configuration has moved on: a rule enabled after baselining
-    /// reports its pre-existing violations as NEW, which looks like a regression the change did not
+    /// reports its pre-existing findings as NEW, which looks like a regression the change did not
     /// cause.
     /// </summary>
     public IReadOnlyDictionary<string, RuleSeverity>? Rules { get; }
@@ -259,7 +259,7 @@ public sealed class Baseline
 /// only one of them on screen the other looks like a miscount:
 /// <list type="bullet">
 /// <item>an entry is a fingerprint — rule + class + element + detail, deliberately without a line
-/// number — so repeats of one violation within a class collapse into a single entry;</item>
+/// number — so repeats of one finding within a class collapse into a single entry;</item>
 /// <item>parse diagnostics are never baselined at all.</item>
 /// </list>
 /// A later check still classifies every finding individually, so its accepted count is the finding
@@ -279,7 +279,7 @@ public sealed record BaselineCoverage(int Findings, int Entries, int ParseDiagno
 /// How the rules in force now differ from the ones a baseline was generated with.
 ///
 /// This matters because the two failure modes are silent. A rule enabled after baselining reports its
-/// pre-existing violations as NEW, so a change looks like it caused a regression it had nothing to do
+/// pre-existing findings as NEW, so a change looks like it caused a regression it had nothing to do
 /// with. A rule disabled since leaves entries in the baseline that can never match again.
 /// </summary>
 public sealed record RuleSetDrift(

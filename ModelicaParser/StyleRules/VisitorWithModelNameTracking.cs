@@ -7,7 +7,7 @@ namespace ModelicaParser.StyleRules;
 /// <summary>
 /// Base class for style rule visitors that tracks the fully qualified model name
 /// as it traverses nested class definitions. Provides common infrastructure for
-/// rule violations, model name resolution, and hooks for subclass-specific stack management.
+/// rule findings, model name resolution, and hooks for subclass-specific stack management.
 /// </summary>
 public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 {
@@ -40,7 +40,7 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
     /// existing consumers and tests keep working unchanged; new code should prefer
     /// <see cref="Findings"/>.
     /// </summary>
-    public List<LogMessage> RuleViolations => _findings.Select(f => f.ToLogMessage()).ToList();
+    public List<LogMessage> RuleFindings => _findings.Select(f => f.ToLogMessage()).ToList();
 
     /// <summary>
     /// Gets the fully qualified name of the current model being visited.
@@ -48,14 +48,14 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
     protected string CurrentModelName => _parentModelNames.Count > 0 ? _parentModelNames.Peek() : string.Empty;
 
     /// <summary>
-    /// Records a rule violation for the current model.
+    /// Records a rule finding for the current model.
     /// </summary>
     /// <param name="lineNumber">Source line (display only — not part of the fingerprint).</param>
     /// <param name="message">Human-readable message (preserved verbatim).</param>
     /// <param name="ruleId">Stable rule identifier from <see cref="RuleIds"/>.</param>
     /// <param name="elementPath">The element the finding is about (e.g. a component name), or null for class-level.</param>
     /// <param name="discriminator">Disambiguator for rules that fire multiple times on one element (e.g. a misspelled word).</param>
-    protected void AddViolation(int lineNumber, string message, string ruleId,
+    protected void AddFinding(int lineNumber, string message, string ruleId,
         string? elementPath = null, string? discriminator = null)
     {
         _findings.Add(new Finding
@@ -105,7 +105,7 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 
         // Skip standalone nested class definitions — each has its own ModelNode and
         // will be style-checked independently. Without this guard, a parent package's
-        // code (which includes nested classes) would produce duplicate violations.
+        // code (which includes nested classes) would produce duplicate findings.
         // However, non-standalone class definitions (replaceable/redeclare) cannot be
         // parsed as valid stored_definitions, so they must be checked here as elements
         // of their parent class.

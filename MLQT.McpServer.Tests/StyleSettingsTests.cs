@@ -62,7 +62,7 @@ public class StyleSettingsTests
 
         // No explicit settings -> uses the repo's persisted rules.
         var res = ToolAssert.Ok<CheckResult>(style.CheckClass("TestLib.Base"));
-        Assert.True(res.ViolationCount >= 1);
+        Assert.True(res.FindingCount >= 1);
     }
 
     [Fact]

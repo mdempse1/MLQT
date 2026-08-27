@@ -73,7 +73,7 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
     private void AppendGrouped(StringBuilder sb, CheckReport report, IReadOnlyList<ClassifiedFinding> items, bool showStatus)
     {
         // Group by model (not just file) so a file with several models still shows which model each
-        // violation belongs to; the model's file is shown alongside for navigation.
+        // finding belongs to; the model's file is shown alongside for navigation.
         foreach (var group in items
                      .GroupBy(c => c.Finding.ModelId)
                      .OrderBy(g => g.Key, StringComparer.Ordinal))

@@ -23,7 +23,7 @@ public class StyleCheckingWorker
     private string _repositoryName;
     private int _processedCount = 0;
 
-    public event EventHandler<List<LogMessage>>? OnViolationFound;
+    public event EventHandler<List<LogMessage>>? OnFindingFound;
     public event Action? OnProgressChanged;
     public event EventHandler<string>? OnWorkCompleted;
 
@@ -103,10 +103,10 @@ public class StyleCheckingWorker
                     {
                         // Same per-model entry point (StyleCheckRunner → RunStyleChecking) as the CLI/MCP;
                         // it releases the parse tree after checking to bound memory.
-                        var violations = StyleCheckRunner.Run(node, _settings, context);
+                        var findings = StyleCheckRunner.Run(node, _settings, context);
 
-                        if (violations.Count > 0)
-                            OnViolationFound?.Invoke(this, violations);
+                        if (findings.Count > 0)
+                            OnFindingFound?.Invoke(this, findings);
                     }
                 }
                 catch (Exception ex)
@@ -114,7 +114,7 @@ public class StyleCheckingWorker
                     // Report it rather than dropping the class: one class that cannot be checked
                     // should not stop the worker, but silence here cost the class every finding it
                     // had and made the app's totals disagree with the CLI's for no visible reason.
-                    OnViolationFound?.Invoke(this, [
+                    OnFindingFound?.Invoke(this, [
                         new LogMessage(modelId, "Style warning", 0,
                             $"Checking this class failed ({ex.GetType().Name}: {ex.Message}). " +
                             "Its findings are missing from these results.")

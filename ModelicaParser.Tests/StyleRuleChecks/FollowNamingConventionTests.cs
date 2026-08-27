@@ -36,13 +36,13 @@ public class FollowNamingConventionTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new FollowNamingConvention(config, basePackage);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     // ── Class name checks ──
 
     [Fact]
-    public void PascalCaseModelName_NoViolation()
+    public void PascalCaseModelName_NoFinding()
     {
         var code = """
             model SimpleModel
@@ -53,22 +53,22 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void CamelCaseModelName_Violation()
+    public void CamelCaseModelName_Finding()
     {
         var code = """
             model simpleModel
               Real x;
             end simpleModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'simpleModel'", violations[0].Summary);
-        Assert.Contains("PascalCase", violations[0].Summary);
-        Assert.Contains("model", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'simpleModel'", findings[0].Summary);
+        Assert.Contains("PascalCase", findings[0].Summary);
+        Assert.Contains("model", findings[0].Summary);
     }
 
     [Fact]
-    public void ClassNameViolation_ReportsCorrectModelName()
+    public void ClassNameFinding_ReportsCorrectModelName()
     {
         // Nested classes are checked independently via their own ModelNode.
         // Simulate checking badModel as a standalone class with basePackage.
@@ -77,13 +77,13 @@ public class FollowNamingConventionTests
               Real x;
             end badModel;
             """;
-        var violations = CheckRule(code, basePackage: "MyPackage");
-        Assert.Single(violations);
-        Assert.Equal("MyPackage.badModel", violations[0].ModelName);
+        var findings = CheckRule(code, basePackage: "MyPackage");
+        Assert.Single(findings);
+        Assert.Equal("MyPackage.badModel", findings[0].ModelName);
     }
 
     [Fact]
-    public void CamelCaseFunctionName_NoViolation()
+    public void CamelCaseFunctionName_NoFinding()
     {
         var code = """
             function myFunction
@@ -97,7 +97,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseFunctionName_Violation()
+    public void PascalCaseFunctionName_Finding()
     {
         var code = """
             function MyFunction
@@ -107,14 +107,14 @@ public class FollowNamingConventionTests
               y := x;
             end MyFunction;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'MyFunction'", violations[0].Summary);
-        Assert.Contains("camelCase", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'MyFunction'", findings[0].Summary);
+        Assert.Contains("camelCase", findings[0].Summary);
     }
 
     [Fact]
-    public void PascalCaseBlockName_NoViolation()
+    public void PascalCaseBlockName_NoFinding()
     {
         var code = """
             block MyBlock
@@ -125,7 +125,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseConnectorName_NoViolation()
+    public void PascalCaseConnectorName_NoFinding()
     {
         var code = """
             connector MyConnector
@@ -137,7 +137,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseRecordName_NoViolation()
+    public void PascalCaseRecordName_NoFinding()
     {
         var code = """
             record MyRecord
@@ -148,7 +148,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseTypeName_NoViolation()
+    public void PascalCaseTypeName_NoFinding()
     {
         var code = """
             type MyType = Real;
@@ -157,7 +157,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCasePackageName_NoViolation()
+    public void PascalCasePackageName_NoFinding()
     {
         var code = """
             package MyPackage
@@ -167,7 +167,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void ClassNameWithSuffix_NoViolation()
+    public void ClassNameWithSuffix_NoFinding()
     {
         var code = """
             model HeatExchanger_simple
@@ -178,7 +178,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void SingleCharClassName_NoViolation()
+    public void SingleCharClassName_NoFinding()
     {
         var code = """
             model T
@@ -191,7 +191,7 @@ public class FollowNamingConventionTests
     // ── Element name checks ──
 
     [Fact]
-    public void CamelCaseVariable_NoViolation()
+    public void CamelCaseVariable_NoFinding()
     {
         var code = """
             model MyModel
@@ -202,22 +202,22 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseVariable_Violation()
+    public void PascalCaseVariable_Finding()
     {
         var code = """
             model MyModel
               Real MyVariable;
             end MyModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'MyVariable'", violations[0].Summary);
-        Assert.Contains("camelCase", violations[0].Summary);
-        Assert.Contains("public variable", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'MyVariable'", findings[0].Summary);
+        Assert.Contains("camelCase", findings[0].Summary);
+        Assert.Contains("public variable", findings[0].Summary);
     }
 
     [Fact]
-    public void CamelCaseParameter_NoViolation()
+    public void CamelCaseParameter_NoFinding()
     {
         var code = """
             model MyModel
@@ -228,21 +228,21 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void PascalCaseParameter_Violation()
+    public void PascalCaseParameter_Finding()
     {
         var code = """
             model MyModel
               parameter Real MyParam = 1.0;
             end MyModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'MyParam'", violations[0].Summary);
-        Assert.Contains("public parameter", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'MyParam'", findings[0].Summary);
+        Assert.Contains("public parameter", findings[0].Summary);
     }
 
     [Fact]
-    public void CamelCaseConstant_NoViolation()
+    public void CamelCaseConstant_NoFinding()
     {
         var code = """
             model MyModel
@@ -253,7 +253,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void SingleCharVariable_NoViolation()
+    public void SingleCharVariable_NoFinding()
     {
         var code = """
             model MyModel
@@ -279,13 +279,13 @@ public class FollowNamingConventionTests
               Real myProtectedVar;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("protected variable", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("protected variable", findings[0].Summary);
     }
 
     [Fact]
-    public void ProtectedVariable_DefaultCamelCase_NoViolation()
+    public void ProtectedVariable_DefaultCamelCase_NoFinding()
     {
         var code = """
             model MyModel
@@ -299,7 +299,7 @@ public class FollowNamingConventionTests
     // ── Suffix handling ──
 
     [Fact]
-    public void VariableWithSuffix_AllowSuffixes_NoViolation()
+    public void VariableWithSuffix_AllowSuffixes_NoFinding()
     {
         var code = """
             model MyModel
@@ -311,7 +311,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void VariableWithSuffix_DisallowSuffixes_Violation()
+    public void VariableWithSuffix_DisallowSuffixes_Finding()
     {
         var config = ModelicaStandardConfig();
         config = config with { AllowUnderscoreSuffixes = false };
@@ -321,8 +321,8 @@ public class FollowNamingConventionTests
               Real pressure_in;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
     }
 
     // ── Nested classes ──
@@ -341,9 +341,9 @@ public class FollowNamingConventionTests
               end GoodModel;
             end MyPackage;
             """;
-        var violations = CheckRule(code);
+        var findings = CheckRule(code);
         // MyPackage follows PascalCase; nested models are skipped
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -355,15 +355,15 @@ public class FollowNamingConventionTests
               Real x;
             end myBadModel;
             """;
-        var violations = CheckRule(code, basePackage: "MyPackage");
-        Assert.Single(violations);
-        Assert.Contains("'myBadModel'", violations[0].Summary);
+        var findings = CheckRule(code, basePackage: "MyPackage");
+        Assert.Single(findings);
+        Assert.Contains("'myBadModel'", findings[0].Summary);
     }
 
     // ── UPPER_CASE constants ──
 
     [Fact]
-    public void UpperCaseConstant_WhenConfigured_NoViolation()
+    public void UpperCaseConstant_WhenConfigured_NoFinding()
     {
         var config = ModelicaStandardConfig();
         config = config with { PublicConstantNaming = NamingStyle.UpperCase };
@@ -377,7 +377,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void CamelCaseConstant_WhenUpperCaseConfigured_Violation()
+    public void CamelCaseConstant_WhenUpperCaseConfigured_Finding()
     {
         var config = ModelicaStandardConfig();
         config = config with { PublicConstantNaming = NamingStyle.UpperCase };
@@ -387,15 +387,15 @@ public class FollowNamingConventionTests
               constant Real myConst = 3.14;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("UPPER_CASE", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("UPPER_CASE", findings[0].Summary);
     }
 
     // ── NamingStyle.Any ──
 
     [Fact]
-    public void AnyStyle_NeverReportsViolations()
+    public void AnyStyle_NeverReportsFindings()
     {
         var config = new NamingConventionConfig
         {
@@ -431,9 +431,9 @@ public class FollowNamingConventionTests
               Real goodVar, BadVar;
             end MyModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'BadVar'", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'BadVar'", findings[0].Summary);
     }
 
     // ── Short class specifier ──
@@ -444,10 +444,10 @@ public class FollowNamingConventionTests
         var code = """
             type myBadType = Real;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'myBadType'", violations[0].Summary);
-        Assert.Contains("PascalCase", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'myBadType'", findings[0].Summary);
+        Assert.Contains("PascalCase", findings[0].Summary);
     }
 
     // ── Public after protected restores visibility ──
@@ -492,7 +492,7 @@ public class FollowNamingConventionTests
     // ── Short abbreviations ──
 
     [Fact]
-    public void ShortAbbreviationVariable_NoViolation()
+    public void ShortAbbreviationVariable_NoFinding()
     {
         var code = """
             model MyModel
@@ -505,7 +505,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void ShortAbbreviationConstant_NoViolation()
+    public void ShortAbbreviationConstant_NoFinding()
     {
         var code = """
             model MyModel
@@ -516,7 +516,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void SingleCharBaseWithNumericSuffix_NoViolation()
+    public void SingleCharBaseWithNumericSuffix_NoFinding()
     {
         var code = """
             model MyModel
@@ -531,7 +531,7 @@ public class FollowNamingConventionTests
     // ── Exception names ──
 
     [Fact]
-    public void ExceptionName_Variable_NoViolation()
+    public void ExceptionName_Variable_NoFinding()
     {
         var config = ModelicaStandardConfig();
         config = config with { ExceptionNames = new HashSet<string> { "NASCAR", "OMC" } };
@@ -546,7 +546,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void ExceptionName_ClassName_NoViolation()
+    public void ExceptionName_ClassName_NoFinding()
     {
         var config = ModelicaStandardConfig();
         config = config with { ExceptionNames = new HashSet<string> { "mySpecialModel" } };
@@ -571,15 +571,15 @@ public class FollowNamingConventionTests
             end MyModel;
             """;
         // "Nascar" is not in exceptions (case-sensitive), so it should violate camelCase
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("'Nascar'", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("'Nascar'", findings[0].Summary);
     }
 
     // ── Array subscripts ──
 
     [Fact]
-    public void ArrayVariable_SubscriptStripped_NoViolation()
+    public void ArrayVariable_SubscriptStripped_NoFinding()
     {
         var code = """
             model MyModel
@@ -591,22 +591,22 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void ArrayVariable_BadName_Violation()
+    public void ArrayVariable_BadName_Finding()
     {
         var code = """
             model MyModel
               Real BadVector[3];
             end MyModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'BadVector'", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'BadVector'", findings[0].Summary);
     }
 
     // ── Quoted identifiers ──
 
     [Fact]
-    public void QuotedIdentifier_SingleChar_NoViolation()
+    public void QuotedIdentifier_SingleChar_NoFinding()
     {
         var code = """
             model MyModel
@@ -617,7 +617,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void QuotedIdentifier_WithSuffix_NoViolation()
+    public void QuotedIdentifier_WithSuffix_NoFinding()
     {
         var code = """
             model MyModel
@@ -630,7 +630,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void QuotedIdentifier_CamelCase_NoViolation()
+    public void QuotedIdentifier_CamelCase_NoFinding()
     {
         var code = """
             model MyModel
@@ -641,16 +641,16 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void QuotedIdentifier_BadName_Violation()
+    public void QuotedIdentifier_BadName_Finding()
     {
         var code = """
             model MyModel
               Real 'BadVariable';
             end MyModel;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("BadVariable", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("BadVariable", findings[0].Summary);
     }
 
     // ── Der class specifier ──
@@ -661,14 +661,14 @@ public class FollowNamingConventionTests
         var code = """
             type badDerType = der(Real, x);
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.Contains("'badDerType'", violations[0].Summary);
-        Assert.Contains("PascalCase", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.Contains("'badDerType'", findings[0].Summary);
+        Assert.Contains("PascalCase", findings[0].Summary);
     }
 
     [Fact]
-    public void DerClassSpecifier_ValidName_NoViolation()
+    public void DerClassSpecifier_ValidName_NoFinding()
     {
         var code = """
             type GoodDerType = der(Real, x);
@@ -679,7 +679,7 @@ public class FollowNamingConventionTests
     // ── Class type not in naming rules ──
 
     [Fact]
-    public void ClassTypeNotInRules_NoViolation()
+    public void ClassTypeNotInRules_NoFinding()
     {
         // Use a config that doesn't have "operator" in class naming rules
         var config = new NamingConventionConfig
@@ -697,7 +697,7 @@ public class FollowNamingConventionTests
               Real x;
             end badOperator;
             """;
-        // No rule for "operator" class type, so no violation
+        // No rule for "operator" class type, so no finding
         Assert.Empty(CheckRule(code, config));
     }
 
@@ -715,9 +715,9 @@ public class FollowNamingConventionTests
               parameter Real badParam = 1.0;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("protected parameter", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("protected parameter", findings[0].Summary);
     }
 
     [Fact]
@@ -732,9 +732,9 @@ public class FollowNamingConventionTests
               constant Real badConst = 3.14;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("protected constant", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("protected constant", findings[0].Summary);
     }
 
     // ── snake_case and UpperCase styles ──
@@ -759,7 +759,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void SnakeCaseClassNaming_PascalCaseViolation()
+    public void SnakeCaseClassNaming_PascalCaseFinding()
     {
         var config = new NamingConventionConfig
         {
@@ -774,15 +774,15 @@ public class FollowNamingConventionTests
               Real x;
             end MyModel;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("snake_case", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("snake_case", findings[0].Summary);
     }
 
     // ── Exception name for class ──
 
     [Fact]
-    public void ExceptionName_InDerClassSpecifier_NoViolation()
+    public void ExceptionName_InDerClassSpecifier_NoFinding()
     {
         var config = ModelicaStandardConfig();
         config = config with { ExceptionNames = new HashSet<string> { "badDerType" } };
@@ -832,7 +832,7 @@ public class FollowNamingConventionTests
     // ── FormatStyleName coverage ──
 
     [Fact]
-    public void SnakeCaseVariable_WhenConfigured_NoViolation()
+    public void SnakeCaseVariable_WhenConfigured_NoFinding()
     {
         var config = ModelicaStandardConfig();
         config = config with { PublicVariableNaming = NamingStyle.SnakeCase };
@@ -848,7 +848,7 @@ public class FollowNamingConventionTests
     // ── AdditionalPatterns ──
 
     [Fact]
-    public void AdditionalPattern_ClassName_MatchesPattern_NoViolation()
+    public void AdditionalPattern_ClassName_MatchesPattern_NoFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -867,7 +867,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void AdditionalPattern_ClassName_WrongSlot_StillViolation()
+    public void AdditionalPattern_ClassName_WrongSlot_StillFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -882,13 +882,13 @@ public class FollowNamingConventionTests
               Real x;
             end Version_2026_1;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("'Version_2026_1'", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("'Version_2026_1'", findings[0].Summary);
     }
 
     [Fact]
-    public void AdditionalPattern_ElementName_MatchesPattern_NoViolation()
+    public void AdditionalPattern_ElementName_MatchesPattern_NoFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -927,7 +927,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void AdditionalPattern_ViolationMessage_IncludesPatternReference()
+    public void AdditionalPattern_FindingMessage_IncludesPatternReference()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -942,26 +942,26 @@ public class FollowNamingConventionTests
               Real x;
             end bad_model_name;
             """;
-        var violations = CheckRule(code, config);
-        Assert.Single(violations);
-        Assert.Contains("or match an allowed pattern", violations[0].Summary);
+        var findings = CheckRule(code, config);
+        Assert.Single(findings);
+        Assert.Contains("or match an allowed pattern", findings[0].Summary);
     }
 
     [Fact]
-    public void AdditionalPattern_NoPatterns_ViolationMessage_NoPatternReference()
+    public void AdditionalPattern_NoPatterns_FindingMessage_NoPatternReference()
     {
         var code = """
             model bad_model_name
               Real x;
             end bad_model_name;
             """;
-        var violations = CheckRule(code);
-        Assert.Single(violations);
-        Assert.DoesNotContain("pattern", violations[0].Summary);
+        var findings = CheckRule(code);
+        Assert.Single(findings);
+        Assert.DoesNotContain("pattern", findings[0].Summary);
     }
 
     [Fact]
-    public void AdditionalPattern_RecordClass_FrameRec_WithBody_NoViolation()
+    public void AdditionalPattern_RecordClass_FrameRec_WithBody_NoFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -983,7 +983,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void AdditionalPattern_RecordClass_FrameRec_EmptyBody_NoViolation()
+    public void AdditionalPattern_RecordClass_FrameRec_EmptyBody_NoFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -1004,7 +1004,7 @@ public class FollowNamingConventionTests
     }
 
     [Fact]
-    public void AdditionalPattern_RecordClass_FrameRec_NestedInPackage_NoViolation()
+    public void AdditionalPattern_RecordClass_FrameRec_NestedInPackage_NoFinding()
     {
         var config = ModelicaStandardConfig() with
         {
@@ -1065,7 +1065,7 @@ public class FollowNamingConventionTests
               Real x;
             end frame_rec;
             """;
-        // Should produce no violations — bracket-wrapped pattern is sanitized to match
+        // Should produce no findings — bracket-wrapped pattern is sanitized to match
         Assert.Empty(CheckRule(code, config));
     }
 

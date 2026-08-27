@@ -14,7 +14,7 @@ public class ImportFirstTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new ImportStatementsFirst(first);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     [Fact]
@@ -31,10 +31,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -51,11 +51,11 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleFindings[0].Summary);
     }    
 
 
@@ -74,11 +74,11 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleFindings[0].Summary);
     }
 
     [Fact]
@@ -96,10 +96,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
 
@@ -118,11 +118,11 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("This class does not have its import statements before the rest of the class definition",ruleFindings[0].Summary);
     }
 
     [Fact]
@@ -140,10 +140,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
     [Fact]
@@ -161,10 +161,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Single(ruleViolations);
-        Assert.Contains("This class does not have its extends clauses before the import statements",ruleViolations[0].Summary);
+        Assert.Single(ruleFindings);
+        Assert.Contains("This class does not have its extends clauses before the import statements",ruleFindings[0].Summary);
     }    
 }

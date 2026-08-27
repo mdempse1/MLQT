@@ -298,7 +298,7 @@
                     <MudStack Row="false" Style="gap:0px !important;">
                         <CurrentModelDisplay />
                         <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
-                            <MudTabPanel Icon="@Icons.Material.Filled.Code" ToolTip="Code Review and Issues">
+                            <MudTabPanel Icon="@Icons.Material.Filled.Code" ToolTip="Code Review and Findings">
                                 <CodeReview />
                             </MudTabPanel>
                             <MudTabPanel Icon="@Icons.Material.Filled.AccountTree" ToolTip="View Dependencies">
@@ -557,10 +557,10 @@
         RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated += OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged += OnStyleCheckingProgressChanged;
-        // Persist background style-checking violations here, in the always-mounted layout, rather than
-        // in the CodeReview page — otherwise violations are dropped whenever checking runs while the
+        // Persist background style-checking findings here, in the always-mounted layout, rather than
+        // in the CodeReview page — otherwise findings are dropped whenever checking runs while the
         // user is on another tab (e.g. Metrics auto-triggering it).
-        StyleCheckingService.OnViolationsFound += OnStyleViolationsFound;
+        StyleCheckingService.OnFindingsFound += OnStyleFindingsFound;
         StyleCheckingService.OnSpellCheckWarning += OnSpellCheckWarning;
 
         _ = Task.Run(async () => await RunStartUpAsync());
@@ -900,7 +900,7 @@
         {
             LogProcessStart("MainLayout", $"Project changed to: {projectId}");
 
-            // Clear style checking issues from the previous project
+            // Clear style checking findings from the previous project
             CodeReviewService.ClearLogMessages();
 
             // Step 1 (loading repos/libraries) is now complete — move to step 2
@@ -1679,20 +1679,20 @@
             // This runs style rules on each model while the parse tree is still available from
             // dependency analysis, avoiding a separate re-parse pass for style checking.
             Action<ModelNode>? postAnalysisAction = null;
-            ConcurrentBag<LogMessage>? combinedViolations = null;
+            ConcurrentBag<LogMessage>? combinedFindings = null;
 
             if (combineStyleChecking && !NavState.HasStyleCheckingRun)
             {
                 // Build model-to-settings lookup: each model belongs to a library with a repository
                 var modelToSettings = BuildModelToStyleSettingsMap();
-                combinedViolations = new ConcurrentBag<LogMessage>();
+                combinedFindings = new ConcurrentBag<LogMessage>();
 
-                // Clear existing violations before re-running
+                // Clear existing findings before re-running
                 var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
                 if (allModelIds.Count > 0)
                 {
                     CodeReviewService.RemoveLogMessagesForModels(allModelIds);
-                    // The clear above takes the parser issues with it — put them back.
+                    // The clear above takes the parser findings with it — put them back.
                     SurfaceParserErrors(allModelIds);
                 }
 
@@ -1734,7 +1734,7 @@
                     if (settings.HasAnyStyleRuleEnabled)
                     {
                         foreach (var v in StyleCheckRunner.Run(model, settings, context))
-                            combinedViolations.Add(v);
+                            combinedFindings.Add(v);
                     }
                     else
                     {
@@ -1778,17 +1778,17 @@
             _step3color = Color.Success;
             LogProcessEnd("MainLayout", "Running deferred dependency analysis");
 
-            // If style checking was combined, report violations and mark as complete
-            if (combineStyleChecking && combinedViolations != null)
+            // If style checking was combined, report findings and mark as complete
+            if (combineStyleChecking && combinedFindings != null)
             {
-                var violationsList = combinedViolations.ToList();
-                if (violationsList.Count > 0)
-                    CodeReviewService.AddLogMessages(violationsList);
+                var findingsList = combinedFindings.ToList();
+                if (findingsList.Count > 0)
+                    CodeReviewService.AddLogMessages(findingsList);
 
                 // The combined pass only runs the per-model rules. Dependency analysis has just
                 // finished, so run the whole-graph analyses (package.order, uses hygiene, unused
                 // class/member, shadowing) now too, otherwise those findings would be missing entirely
-                // from the deferred flow. Delivered via the service's violation pipeline.
+                // from the deferred flow. Delivered via the service's finding pipeline.
                 await StyleCheckingService.RunGraphAnalysesForRepositoriesAsync(RepositoryService.Repositories);
 
                 NavState.StyleCheckingCompleted();
@@ -1895,13 +1895,13 @@
             if (!NavState.HasDependencyAnalysisRun && AnyEnabledRuleNeedsDependencies())
                 await RunDeferredDependenciesAsync();
 
-            // Clear any existing style checking violations before re-running
+            // Clear any existing style checking findings before re-running
             // (matches the pattern used by OnRepositorySettingsApplied and OnVcsFilesChanged)
             var allModelIds = LibraryDataService.Libraries.SelectMany(l => l.ModelIds).ToList();
             if (allModelIds.Count > 0)
             {
                 CodeReviewService.RemoveLogMessagesForModels(allModelIds);
-                // The clear above takes the parser issues with it — put them back.
+                // The clear above takes the parser findings with it — put them back.
                 SurfaceParserErrors(allModelIds);
             }
 
@@ -2166,22 +2166,22 @@
         RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         FileMonitoringService.OnPendingChangesUpdated -= OnPendingChangesUpdated;
         StyleCheckingService.OnProgressChanged -= OnStyleCheckingProgressChanged;
-        StyleCheckingService.OnViolationsFound -= OnStyleViolationsFound;
+        StyleCheckingService.OnFindingsFound -= OnStyleFindingsFound;
         StyleCheckingService.OnSpellCheckWarning -= OnSpellCheckWarning;
     }
 
-    // Route background style-checking violations into the persistent CodeReviewService. Lives in the
+    // Route background style-checking findings into the persistent CodeReviewService. Lives in the
     // layout (always mounted) so delivery never depends on which tab is currently open.
-    private void OnStyleViolationsFound(List<LogMessage> violations)
-        => InvokeAsync(() => CodeReviewService.AddLogMessages(violations));
+    private void OnStyleFindingsFound(List<LogMessage> findings)
+        => InvokeAsync(() => CodeReviewService.AddLogMessages(findings));
 
     /// <summary>
-    /// Re-derives the Parser-sourced issues for <paramref name="modelIds"/> (all models when null)
-    /// from the graph and puts them back in the issues list.
+    /// Re-derives the Parser-sourced findings for <paramref name="modelIds"/> (all models when null)
+    /// from the graph and puts them back in the findings list.
     ///
-    /// This lives in the layout, alongside style-violation delivery, for the same reason: it used to
-    /// sit on the Code Review page, so parser errors only ever reached the issues list if that page
-    /// happened to be mounted when the library loaded. Everything that clears the issue list for a set
+    /// This lives in the layout, alongside style-finding delivery, for the same reason: it used to
+    /// sit on the Code Review page, so parser errors only ever reached the findings list if that page
+    /// happened to be mounted when the library loaded. Everything that clears the findings list for a set
     /// of models must call this afterwards — otherwise the tree badge and the Code Review banner keep
     /// reporting "N parser errors" (they read the graph node) while the panel they point the user at
     /// is empty.
@@ -2194,7 +2194,7 @@
         if (models.Count == 0)
             return;
 
-        // Drop the previous parser issues for exactly these models before re-adding, so repeated
+        // Drop the previous parser findings for exactly these models before re-adding, so repeated
         // re-analysis can neither duplicate them nor leave behind ones the file no longer has.
         var ids = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
         CodeReviewService.RemoveLogMessagesByPredicate(
@@ -2221,8 +2221,8 @@
         if (fatal > 0)
         {
             message = fatal == 1
-                ? "1 file could not be parsed. It appears in the library tree as a placeholder — see the Issues panel."
-                : $"{fatal} files could not be parsed. They appear in the library tree as placeholders — see the Issues panel.";
+                ? "1 file could not be parsed. It appears in the library tree as a placeholder — see the Findings panel."
+                : $"{fatal} files could not be parsed. They appear in the library tree as placeholders — see the Findings panel.";
             if (recovered > 0)
                 message += $" ({recovered} additional recoverable syntax {(recovered == 1 ? "error" : "errors")} also reported.)";
             severity = Severity.Error;
@@ -2230,8 +2230,8 @@
         else
         {
             message = recovered == 1
-                ? "1 syntax error found while loading the library. See the Issues panel."
-                : $"{recovered} syntax errors found while loading the library. See the Issues panel.";
+                ? "1 syntax error found while loading the library. See the Findings panel."
+                : $"{recovered} syntax errors found while loading the library. See the Findings panel.";
             severity = Severity.Warning;
         }
 
@@ -2307,7 +2307,7 @@
                         try
                         {
                             CodeReviewService.RemoveLogMessagesForModels(repositoryModelIds);
-                            // The clear above takes the parser issues with it — put them back.
+                            // The clear above takes the parser findings with it — put them back.
                             SurfaceParserErrors(repositoryModelIds);
                             await InvokeAsync(() => Snackbar.Add("Re-running style checking with new rules...", Severity.Normal));
                             _showStyleCheckingCompleteMessage = true;
@@ -2468,7 +2468,7 @@
                 if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
                 {
                     CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
-                    // The clear above takes the parser issues with it — put them back.
+                    // The clear above takes the parser findings with it — put them back.
                     SurfaceParserErrors(affectedModelIds);
                     await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
                     await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
@@ -2538,7 +2538,7 @@
                 if (!NavState.IsDeferredMode || NavState.HasStyleCheckingRun)
                 {
                     CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
-                    // The clear above takes the parser issues with it — put them back.
+                    // The clear above takes the parser findings with it — put them back.
                     SurfaceParserErrors(affectedModelIds);
                     await InvokeAsync(() => Snackbar.Add($"Style checking {affectedModelIds.Count} model(s)...", Severity.Normal));
                     await StyleCheckingService.CheckModelsAsync(affectedModelIds, LibraryDataService.CombinedGraph);
@@ -2699,14 +2699,14 @@
                 Info("MainLayout", "Dependency analysis complete");
             }
 
-            // Remove old violations for affected models and re-check style.
+            // Remove old findings for affected models and re-check style.
             // Run off the render thread because EnsureSpellChecker uses
             // .GetAwaiter().GetResult() which deadlocks the Blazor sync context.
             if (affectedModelIds.Count > 0)
             {
                 Info("MainLayout", $"Style checking {affectedModelIds.Count} affected model(s)...");
                 CodeReviewService.RemoveLogMessagesForModels(affectedModelIds);
-                // The clear above takes the parser issues with it — put them back.
+                // The clear above takes the parser findings with it — put them back.
                 SurfaceParserErrors(affectedModelIds);
                 var graph = LibraryDataService.CombinedGraph;
                 await Task.Run(async () =>

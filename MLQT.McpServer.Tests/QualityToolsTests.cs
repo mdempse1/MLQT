@@ -29,7 +29,7 @@ public class QualityToolsTests
         var result = Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckPackageOrder = true }).GetAwaiter().GetResult();
 
         var cr = Assert.IsType<CheckResult>(result);
-        Assert.Contains(cr.Violations, v => v.Summary.Contains("Ghost"));   // stale package.order entry
+        Assert.Contains(cr.Findings, v => v.Summary.Contains("Ghost"));   // stale package.order entry
     }
 
     // ----- style -----
@@ -50,7 +50,7 @@ public class QualityToolsTests
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckStyle(
             "model B\n Real p;\nequation\n p=1;\nend B;",
             new StyleSettingsInput { ClassHasDescription = true }));
-        Assert.Equal(1, res.ViolationCount);
+        Assert.Equal(1, res.FindingCount);
     }
 
     [Fact]
@@ -61,17 +61,17 @@ public class QualityToolsTests
     }
 
     [Fact]
-    public void CheckClass_StoresViolations_VisibleInListIssues()
+    public void CheckClass_StoresFindings_VisibleInListFindings()
     {
         using var host = new TestHost();
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
         var style = Style(host);
 
         var res = ToolAssert.Ok<CheckResult>(style.CheckClass("B", new StyleSettingsInput { ClassHasDescription = true }));
-        Assert.Equal(1, res.ViolationCount);
+        Assert.Equal(1, res.FindingCount);
 
-        var issues = ToolAssert.Ok<IssuesResult>(style.ListIssues());
-        Assert.Contains(issues.Items, i => i.ModelId == "B" && i.Category == "style");
+        var findings = ToolAssert.Ok<FindingsResult>(style.ListFindings());
+        Assert.Contains(findings.Items, i => i.ModelId == "B" && i.Category == "style");
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class QualityToolsTests
         // (known model ids and the base-class icon callback) in the check runner.
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("B",
             new StyleSettingsInput { ValidateModelReferences = true, ClassHasIcon = true }));
-        Assert.NotNull(res.Violations);
+        Assert.NotNull(res.Findings);
     }
 
     [Fact]
@@ -100,13 +100,13 @@ public class QualityToolsTests
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult());
         Assert.True(res.ModelsChecked >= 1);
-        Assert.True(res.ViolationCount >= 1);
+        Assert.True(res.FindingCount >= 1);
     }
 
     // ----- parse diagnostics -----
     // A file that does not parse is the one problem no style rule can report — every rule reads a
     // parse tree that is missing the code in question. The MCP surface must say so, or an agent
-    // reads "no violations" as "this class is fine".
+    // reads "no findings" as "this class is fine".
 
     // A Documentation(info=...) annotation missing its closing quote. The parser recovers, so the
     // class still loads and nothing else flags it.
@@ -117,7 +117,7 @@ public class QualityToolsTests
         """;
 
     [Fact]
-    public void CheckClass_ReportsSyntaxError_AlongsideStyleViolations()
+    public void CheckClass_ReportsSyntaxError_AlongsideStyleFindings()
     {
         using var host = new TestHost();
         LoadSingle(host, "B.mo", UnterminatedString);
@@ -125,7 +125,7 @@ public class QualityToolsTests
         var res = ToolAssert.Ok<CheckResult>(
             Style(host).CheckClass("B", new StyleSettingsInput { ClassHasDescription = true }));
 
-        Assert.Contains(res.Violations, v => v.Summary == "Parser error");
+        Assert.Contains(res.Findings, v => v.Summary == "Parser error");
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public class QualityToolsTests
 
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("B", new StyleSettingsInput()));
 
-        Assert.Contains(res.Violations, v => v.Summary == "Parser error");
+        Assert.Contains(res.Findings, v => v.Summary == "Parser error");
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class QualityToolsTests
                 .GetAwaiter().GetResult());
 
         // One unterminated string produces both a lexer and a parser diagnostic.
-        var parseErrors = res.Violations.Where(v => v.Summary == "Parser error").ToList();
+        var parseErrors = res.Findings.Where(v => v.Summary == "Parser error").ToList();
         Assert.NotEmpty(parseErrors);
         // Error, not the "Style warning" every other finding projects to, and tagged as the parser's
         // so a style re-run cannot clear it.
@@ -170,7 +170,7 @@ public class QualityToolsTests
             Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
                 .GetAwaiter().GetResult());
 
-        Assert.DoesNotContain(res.Violations, v => v.Summary is "Parser error" or "Fatal parse failure");
+        Assert.DoesNotContain(res.Findings, v => v.Summary is "Parser error" or "Fatal parse failure");
     }
 
     [Fact]
@@ -207,14 +207,14 @@ public class QualityToolsTests
     }
 
     [Fact]
-    public void ListIssues_IncludesParseErrors()
+    public void ListFindings_IncludesParseErrors()
     {
         using var host = new TestHost();
         LoadSingle(host, "Bad.mo", "model Bad \"broken\"\n  Real x;\nequation\n  x = ;\nend Bad;");
-        var issues = ToolAssert.Ok<IssuesResult>(Style(host).ListIssues(includeParseErrors: true));
-        Assert.Contains(issues.Items, i => i.Category == "parse");
+        var findings = ToolAssert.Ok<FindingsResult>(Style(host).ListFindings(includeParseErrors: true));
+        Assert.Contains(findings.Items, i => i.Category == "parse");
 
-        var noParse = ToolAssert.Ok<IssuesResult>(Style(host).ListIssues(includeParseErrors: false));
+        var noParse = ToolAssert.Ok<FindingsResult>(Style(host).ListFindings(includeParseErrors: false));
         Assert.DoesNotContain(noParse.Items, i => i.Category == "parse");
     }
 
@@ -241,7 +241,7 @@ public class QualityToolsTests
         using var host = new TestHost();
         var fromSource = Spelling(host).SpellCheck(source: "model P\n Real q \"The postion of q\";\nequation\n q=1;\nend P;");
         var result = Assert.IsType<SpellCheckResult>(fromSource);
-        Assert.Contains(result.Violations, v => v.Summary.Contains("postion"));
+        Assert.Contains(result.Findings, v => v.Summary.Contains("postion"));
         Assert.Null(result.Note);   // the bundled dictionaries are always present
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck());
@@ -254,7 +254,7 @@ public class QualityToolsTests
         LoadSingle(host, "P.mo", "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;");
         var res = Spelling(host).SpellCheck(classId: "P");
         var result = Assert.IsType<SpellCheckResult>(res);
-        Assert.Contains(result.Violations, v => v.Summary.Contains("postion"));
+        Assert.Contains(result.Findings, v => v.Summary.Contains("postion"));
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck(classId: "Nope"));
     }

@@ -44,7 +44,7 @@ public static class StyleCheckRunner
         if (node.IsExternalStub)
             return [];
 
-        var violations = StyleChecking.RunStyleChecking(
+        var findings = StyleChecking.RunStyleChecking(
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
             baseClassHasIcon: context.BaseClassHasIcon, namingConfig: context.NamingConfig);
@@ -53,7 +53,7 @@ public static class StyleCheckRunner
         context.Coverage?.Measure(node);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
-        return violations;
+        return findings;
     }
 
     public static List<LogMessage> RunStateless(string source, StyleCheckingSettings settings, StyleCheckContext context)

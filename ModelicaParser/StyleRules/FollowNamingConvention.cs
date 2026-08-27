@@ -204,7 +204,7 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
                     _ => "variable"
                 };
                 var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
-                AddViolation(lineNumber,
+                AddFinding(lineNumber,
                     $"{char.ToUpper(category[0])}{category[1..]} name '{name}' should be {FormatStyleName(style)}{suffix} ({visibility} {category})",
                     RuleIds.NamingConvention, name);
             }
@@ -228,7 +228,7 @@ public class FollowNamingConvention : VisitorWithModelNameTracking
         if (!NamingValidator.IsValid(className, style, _config.AllowUnderscoreSuffixes, patterns))
         {
             var suffix = patterns is { Count: > 0 } ? " or match an allowed pattern" : "";
-            AddViolation(lineNumber,
+            AddFinding(lineNumber,
                 $"Class name '{className}' should be {FormatStyleName(style)}{suffix} ({classType})",
                 RuleIds.NamingConvention);
         }

@@ -13,13 +13,13 @@ namespace ModelicaParser.Tests.StyleRuleChecks;
 /// </summary>
 public class VisitorWithModelNameTrackingTests
 {
-    private static (List<LogMessage> violations, CheckClassDescriptionStrings visitor) RunVisitor(
+    private static (List<LogMessage> findings, CheckClassDescriptionStrings visitor) RunVisitor(
         string code, string basePackage = "")
     {
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new CheckClassDescriptionStrings(basePackage);
         visitor.Visit(parseTree);
-        return (visitor.RuleViolations, visitor);
+        return (visitor.RuleFindings, visitor);
     }
 
     // ============================================================================
@@ -38,9 +38,9 @@ equation
 end TestModel;
 """;
 
-        var (violations, visitor) = RunVisitor(code);
+        var (findings, visitor) = RunVisitor(code);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -55,13 +55,13 @@ equation
 end TestModel;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void WithinClause_ViolationIncludesPackageInFQN()
+    public void WithinClause_FindingIncludesPackageInFQN()
     {
         var code = """
 within MyLib;
@@ -72,14 +72,14 @@ equation
 end Undocumented;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Single(violations);
-        Assert.Equal("MyLib.Undocumented", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("MyLib.Undocumented", findings[0].ModelName);
     }
 
     [Fact]
-    public void WithinClause_NestedViolationIncludesFullPath()
+    public void WithinClause_NestedFindingIncludesFullPath()
     {
         var code = """
 within MyLib.SubPkg;
@@ -90,10 +90,10 @@ equation
 end Undocumented;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Single(violations);
-        Assert.Equal("MyLib.SubPkg.Undocumented", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("MyLib.SubPkg.Undocumented", findings[0].ModelName);
     }
 
     // ============================================================================
@@ -101,7 +101,7 @@ end Undocumented;
     // ============================================================================
 
     [Fact]
-    public void BasePackage_ViolationIncludesBasePackageInFQN()
+    public void BasePackage_FindingIncludesBasePackageInFQN()
     {
         var code = """
 model Undocumented
@@ -111,10 +111,10 @@ equation
 end Undocumented;
 """;
 
-        var (violations, _) = RunVisitor(code, "MyBase");
+        var (findings, _) = RunVisitor(code, "MyBase");
 
-        Assert.Single(violations);
-        Assert.Equal("MyBase.Undocumented", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("MyBase.Undocumented", findings[0].ModelName);
     }
 
     [Fact]
@@ -128,10 +128,10 @@ equation
 end Undocumented;
 """;
 
-        var (violations, _) = RunVisitor(code, "");
+        var (findings, _) = RunVisitor(code, "");
 
-        Assert.Single(violations);
-        Assert.Equal("Undocumented", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("Undocumented", findings[0].ModelName);
     }
 
     [Fact]
@@ -148,11 +148,11 @@ end Undocumented;
 """;
 
         // basePackage is not used when within clause is present
-        var (violations, _) = RunVisitor(code, "IgnoredBase");
+        var (findings, _) = RunVisitor(code, "IgnoredBase");
 
-        Assert.Single(violations);
+        Assert.Single(findings);
         // The within clause should set the package, not the basePackage
-        Assert.Contains("Undocumented", violations[0].ModelName);
+        Assert.Contains("Undocumented", findings[0].ModelName);
     }
 
     // ============================================================================
@@ -167,23 +167,23 @@ within MyLib;
 type MyVoltage = Real(unit = "V") "Voltage type";
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void ShortClassSpecifier_ViolationHasCorrectModelName()
+    public void ShortClassSpecifier_FindingHasCorrectModelName()
     {
         var code = """
 within MyLib;
 type MyVoltage = Real(unit = "V");
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Single(violations);
-        Assert.Equal("MyLib.MyVoltage", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("MyLib.MyVoltage", findings[0].ModelName);
     }
 
     [Fact]
@@ -193,10 +193,10 @@ type MyVoltage = Real(unit = "V");
 type StandaloneType = Real(unit = "K");
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Single(violations);
-        Assert.Equal("StandaloneType", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("StandaloneType", findings[0].ModelName);
     }
 
     // ============================================================================
@@ -211,23 +211,23 @@ within MyLib;
 type Velocity = der(Position, time) "Velocity";
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
-    public void DerClassSpecifier_ViolationHasCorrectModelName()
+    public void DerClassSpecifier_FindingHasCorrectModelName()
     {
         var code = """
 within MyLib;
 type Velocity = der(Position, time);
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
-        Assert.Single(violations);
-        Assert.Equal("MyLib.Velocity", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("MyLib.Velocity", findings[0].ModelName);
     }
 
     // ============================================================================
@@ -238,7 +238,7 @@ type Velocity = der(Position, time);
     public void NestedClasses_SkippedByParentVisitor()
     {
         // Nested classes are checked independently via their own ModelNode,
-        // so the parent visitor should NOT report violations for them.
+        // so the parent visitor should NOT report findings for them.
         var code = """
 within Outer;
 package OuterPkg "outer package"
@@ -250,10 +250,10 @@ package OuterPkg "outer package"
 end OuterPkg;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
         // OuterPkg has a description; InnerModel is nested and skipped
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -269,10 +269,10 @@ equation
 end InnerModel;
 """;
 
-        var (violations, _) = RunVisitor(code, "Outer.OuterPkg");
+        var (findings, _) = RunVisitor(code, "Outer.OuterPkg");
 
-        Assert.Single(violations);
-        Assert.Equal("Outer.OuterPkg.InnerModel", violations[0].ModelName);
+        Assert.Single(findings);
+        Assert.Equal("Outer.OuterPkg.InnerModel", findings[0].ModelName);
     }
 
     [Fact]
@@ -290,10 +290,10 @@ package Level1 "level 1"
 end Level1;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
         // Level1 and Level2 have descriptions; Level3Model is nested and skipped
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -315,10 +315,10 @@ package Pkg "pkg"
 end Pkg;
 """;
 
-        var (violations, _) = RunVisitor(code);
+        var (findings, _) = RunVisitor(code);
 
         // Pkg has a description; M1 and M2 are nested and skipped
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     // ============================================================================
@@ -343,6 +343,6 @@ end WithInitialFirst;
         var visitor = new InitialEquationFirst(initialFirst: true, initialLast: false);
         visitor.Visit(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 }

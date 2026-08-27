@@ -547,7 +547,7 @@ public class CheckCommandTests
     [Fact]
     public void Console_MultiModelFile_ShowsEachModel()
     {
-        // One file, two models — the console must show which model each violation belongs to.
+        // One file, two models — the console must show which model each finding belongs to.
         using var lib = new TempLibrary()
             .WithModel("Two.mo",
                 "package P\n  model A\n    parameter Real x = 1.0;\n  end A;\n\n  model B\n    parameter Real y = 2.0;\n  end B;\nend P;")
