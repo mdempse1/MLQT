@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
 using MLQT.Services.Interfaces;
@@ -16,6 +17,17 @@ public sealed class StyleCheckContext
     public IReadOnlySet<string>? KnownModelNames { get; private init; }
     public SpellChecker? SpellChecker { get; private init; }
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
+
+    /// <summary>
+    /// Measures each class's coverage contribution as it is checked, or null when the caller does not
+    /// want coverage collected.
+    ///
+    /// <para>Checking already parses every class and throws the tree away; measuring there costs the
+    /// measurement alone and saves the dashboard a whole parse pass over the library. Off by default
+    /// because the measurement is real work — around a second per thousand classes — and a CI run that
+    /// never asks for coverage should not pay for it.</para>
+    /// </summary>
+    public CoverageMeasurer? Coverage { get; private init; }
 
     /// <summary>
     /// The naming rules in the form the visitor wants them. Derived purely from the settings, so it
@@ -36,14 +48,15 @@ public sealed class StyleCheckContext
         DirectedGraph graph,
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
-        string? repositoryRoot = null)
+        string? repositoryRoot = null,
+        bool collectCoverage = false)
     {
         SpellChecker? spellChecker = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
             spellChecker = SpellCheckerFactory.Build(
                 settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
-        return Build(settings, graph, spellChecker);
+        return Build(settings, graph, spellChecker, collectCoverage);
     }
 
     /// <summary>Context for checking loaded models against a graph, reusing an already-built spell
@@ -53,7 +66,8 @@ public sealed class StyleCheckContext
     public static StyleCheckContext Build(
         StyleCheckingSettings settings,
         DirectedGraph graph,
-        SpellChecker? spellChecker)
+        SpellChecker? spellChecker,
+        bool collectCoverage = false)
     {
         IReadOnlySet<string>? knownModelIds = null;
         if (settings.ValidateModelReferences)
@@ -72,6 +86,7 @@ public sealed class StyleCheckContext
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
+            Coverage = collectCoverage ? new CoverageMeasurer(graph) : null,
         };
     }
 

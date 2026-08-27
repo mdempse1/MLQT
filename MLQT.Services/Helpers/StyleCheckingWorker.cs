@@ -77,7 +77,9 @@ public class StyleCheckingWorker
             // Build the per-check context (known ids/names, icon callback) through the shared
             // StyleCheckContext so the GUI derives it identically to the CLI and MCP — reusing the
             // service's cached spell checker rather than rebuilding one.
-            var context = StyleCheckContext.Build(_settings, _currentGraph, _spellChecker);
+            // Coverage is measured alongside: this pass has parsed the class anyway, and the app's
+            // Coverage tab would otherwise parse every one of them again the first time it is opened.
+            var context = StyleCheckContext.Build(_settings, _currentGraph, _spellChecker, collectCoverage: true);
 
             // Process models in parallel with bounded concurrency
             var parallelOptions = new ParallelOptions

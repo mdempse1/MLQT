@@ -1703,6 +1703,12 @@
                 var graph = LibraryDataService.CombinedGraph;
                 var distinctSettings = modelToSettings.Values.Distinct().ToList();
 
+                // Coverage is measured in the same pass, for the same reason style checking is: the
+                // class has just been parsed and the tree is about to be released. Doing it here costs
+                // the measurement alone, inside a step that already runs for minutes, and leaves the
+                // Coverage tab with nothing to compute when the user opens it.
+                var coverage = new ModelicaGraph.Analysis.CoverageMeasurer(graph);
+
                 IReadOnlySet<string>? knownModelIds = distinctSettings.Any(s => s.ValidateModelReferences)
                     ? graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal)
                     : null;
@@ -1755,6 +1761,11 @@
                         foreach (var v in violations)
                             combinedViolations.Add(v);
                     }
+
+                    // Outside the settings check: a class in a library with no rules enabled still
+                    // counts towards coverage, which reports the state of the code rather than the
+                    // result of the rules.
+                    coverage.Measure(model);
                 };
             }
 

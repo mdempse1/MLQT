@@ -356,4 +356,36 @@ end Q;
         Assert.Equal(headless.IsCorrect("house"), app.IsCorrect("house"));
         Assert.Equal(headless.Suggest("hosue").Count > 0, app.Suggest("hosue").Count > 0);
     }
+
+    [Fact]
+    public void CheckingAClass_LeavesItsCoverageMeasured()
+    {
+        // The whole point: the app's style-checking pass has parsed the class anyway, so the Coverage
+        // tab finds the work done instead of parsing every class in the project again.
+        var data = new LibraryDataService();
+        data.AddLibraryFromFileAsync("P.mo", Library).GetAwaiter().GetResult();
+        var graph = data.CombinedGraph;
+        var node = graph.ModelNodes.First(m => m.Id == "P.A");
+        Assert.Null(node.Definition.Coverage);
+
+        var context = StyleCheckContext.Build(Settings(), graph, spellChecker: null, collectCoverage: true);
+        StyleCheckRunner.RunFindings(node, Settings(), context);
+
+        Assert.NotNull(node.Definition.Coverage);
+    }
+
+    [Fact]
+    public void CheckingWithoutAskingForCoverage_MeasuresNothing()
+    {
+        // A CI run that never reports coverage should not pay for measuring it.
+        var data = new LibraryDataService();
+        data.AddLibraryFromFileAsync("P.mo", Library).GetAwaiter().GetResult();
+        var graph = data.CombinedGraph;
+        var node = graph.ModelNodes.First(m => m.Id == "P.A");
+
+        var context = StyleCheckContext.Build(Settings(), graph, spellChecker: null);
+        StyleCheckRunner.RunFindings(node, Settings(), context);
+
+        Assert.Null(node.Definition.Coverage);
+    }
 }

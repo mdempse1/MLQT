@@ -21,7 +21,7 @@ public static class UnitResolver
     /// </summary>
     public static (bool IsRealDerived, bool HasUnit) Resolve(
         DirectedGraph graph, string ownerId, string? typeText,
-        IReadOnlyList<string>? imports, Dictionary<string, (bool, bool)>? cache = null)
+        IReadOnlyList<string>? imports, IDictionary<string, (bool, bool)>? cache = null)
     {
         var name = (typeText ?? string.Empty).TrimStart('.').Trim();
         if (name.Length == 0)
@@ -36,7 +36,7 @@ public static class UnitResolver
     }
 
     private static (bool, bool) ResolveNode(
-        DirectedGraph graph, ModelNode node, Dictionary<string, (bool, bool)>? cache, HashSet<string> visited, int depth)
+        DirectedGraph graph, ModelNode node, IDictionary<string, (bool, bool)>? cache, HashSet<string> visited, int depth)
     {
         if (cache is not null && cache.TryGetValue(node.Id, out var cached))
             return cached;

@@ -43,36 +43,119 @@ public static class MetricsCalculator
             .GroupBy(m => string.IsNullOrEmpty(m.ClassType) ? "unknown" : m.ClassType, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-        // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
-        var inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
+        var measurer = new CoverageMeasurer(graph);
 
         int withDescription = 0, withIcon = 0, components = 0;
         int paramTotal = 0, paramWithDesc = 0;
         int realTotal = 0, realWithUnit = 0;
 
-        // Memoises the (is-Real-derived, has-unit) verdict per resolved type class across the run.
-        var unitCache = new Dictionary<string, (bool, bool)>(StringComparer.Ordinal);
-
         foreach (var model in classes)
         {
-            var tree = model.Definition.EnsureParsed();
-            if (tree is null)
+            // Measured once per class and kept. The same class is measured for every scope the
+            // dashboard asks about — all libraries, then one sub-package, then each of them side by
+            // side — and measuring means parsing it and walking its interface again each time.
+            var facts = measurer.Measure(model);
+            if (facts is null)
                 continue;
 
-            try
+            if (facts.HasDescription) withDescription++;
+            if (facts.HasIcon) withIcon++;
+            components += facts.Components;
+            paramTotal += facts.ParameterTotal;
+            paramWithDesc += facts.ParametersWithDescription;
+            realTotal += facts.RealTotal;
+            realWithUnit += facts.RealWithUnit;
+        }
+
+        var coverage = new List<CoverageMetric>
+        {
+            new("Description", withDescription, total),
+            new("Icon", withIcon, total),
+            new("Parameter description", paramWithDesc, paramTotal),
+            new("Unit", realWithUnit, realTotal),
+        };
+
+        return new LibraryMetrics(total, byType, components, coverage);
+    }
+}
+
+/// <summary>
+/// Measures what one class contributes to coverage, and remembers it on the class.
+///
+/// <para>Built once per pass because two of its inputs are worth sharing: the inherited-icon walk
+/// memoises across classes, and the type resolver's verdicts are the same handful of SI types
+/// answering for most components in a library.</para>
+///
+/// <para>Anything holding a parsed class can hand it here — style checking does, while the tree it
+/// already needed is still in hand — so the dashboard finds the work done rather than doing it.</para>
+/// </summary>
+public sealed class CoverageMeasurer
+{
+    private readonly DirectedGraph _graph;
+    private readonly Func<string, string, bool>? _inheritedIcon;
+
+    // Memoises the (is-Real-derived, has-unit) verdict per resolved type class. Concurrent because
+    // style checking measures from its worker threads.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool, bool)> _unitCache =
+        new(StringComparer.Ordinal);
+
+    public CoverageMeasurer(DirectedGraph graph)
+    {
+        _graph = graph;
+        // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
+        _inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
+    }
+
+    /// <summary>
+    /// This class's contribution, measuring it if nobody has yet. Null for a class with nothing to
+    /// measure — a parse failure, a stub, or source that will not parse.
+    /// </summary>
+    public CoverageFacts? Measure(ModelNode? model)
+    {
+        if (model is null || model.IsParseFailurePlaceholder || model.IsExternalStub)
+            return null;
+
+        if (model.Definition.Coverage is { } already)
+            return already;
+
+        // Whoever owned the parse tree keeps it: releasing a tree the caller was still using would
+        // cost it the re-parse this class exists to avoid.
+        var borrowed = model.Definition.ParsedCode is not null;
+        var tree = model.Definition.EnsureParsed();
+        if (tree is null)
+            return null;
+
+        try
+        {
+            var facts = Extract(model, tree);
+            model.Definition.Coverage = facts;
+            return facts;
+        }
+        catch
+        {
+            // Skip a model that fails to analyse rather than break the whole dashboard.
+            return null;
+        }
+        finally
+        {
+            if (!borrowed)
+                model.Definition.ParsedCode = null;
+        }
+    }
+
+    private CoverageFacts Extract(ModelNode model, modelicaParser.Stored_definitionContext tree)
+    {
+        {
             {
                 var iface = ClassInterfaceExtractor.Extract(tree);
+                int components = 0, paramTotal = 0, paramWithDesc = 0, realTotal = 0, realWithUnit = 0;
 
                 // Has an icon if it declares its own Icon graphics or inherits one via extends. (Note:
                 // ModelNode.IconSvg is populated lazily on render, so it is not usable here.)
                 var hasIcon = IconExtractor.ExtractIcon(tree) is not null;
-                if (!hasIcon && inheritedIcon is not null)
+                if (!hasIcon && _inheritedIcon is not null)
                     hasIcon = iface.Elements.Any(e =>
-                        e.Kind == ClassElementKind.Extends && inheritedIcon(e.Type ?? string.Empty, model.Id));
-                if (hasIcon)
-                    withIcon++;
-                if (!string.IsNullOrWhiteSpace(iface.Description))
-                    withDescription++;
+                        e.Kind == ClassElementKind.Extends && _inheritedIcon(e.Type ?? string.Empty, model.Id));
 
                 var imports = iface.Elements
                     .Where(e => e.Kind == ClassElementKind.Import)
@@ -95,7 +178,7 @@ public static class MetricsCalculator
                             paramWithDesc++;
                     }
 
-                    var (isReal, typeHasUnit) = UnitResolver.Resolve(graph, model.Id, element.Type, imports, unitCache);
+                    var (isReal, typeHasUnit) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
                     if (!isReal)
                         continue;
                     realTotal++;
@@ -112,25 +195,16 @@ public static class MetricsCalculator
                     var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
                     realWithUnit += Math.Clamp(plainReals - missing, 0, plainReals);
                 }
-            }
-            catch
-            {
-                // Skip a model that fails to analyse rather than break the whole dashboard.
-            }
-            finally
-            {
-                model.Definition.ParsedCode = null;
+
+                return new CoverageFacts(
+                    HasDescription: !string.IsNullOrWhiteSpace(iface.Description),
+                    HasIcon: hasIcon,
+                    Components: components,
+                    ParameterTotal: paramTotal,
+                    ParametersWithDescription: paramWithDesc,
+                    RealTotal: realTotal,
+                    RealWithUnit: realWithUnit);
             }
         }
-
-        var coverage = new List<CoverageMetric>
-        {
-            new("Description", withDescription, total),
-            new("Icon", withIcon, total),
-            new("Parameter description", paramWithDesc, paramTotal),
-            new("Unit", realWithUnit, realTotal),
-        };
-
-        return new LibraryMetrics(total, byType, components, coverage);
     }
 }

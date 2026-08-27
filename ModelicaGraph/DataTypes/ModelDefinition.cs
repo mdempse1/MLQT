@@ -13,10 +13,31 @@ public class ModelDefinition
     /// </summary>
     public string Name { get; set; }
 
+    private string _modelicaCode = string.Empty;
+
     /// <summary>
     /// The Modelica source code for this model.
+    ///
+    /// <para>Replacing it drops anything measured from the old source — the parse tree's own staleness
+    /// is already handled by <see cref="EnsureParsed"/>, and <see cref="Coverage"/> would otherwise
+    /// describe code that is no longer here.</para>
     /// </summary>
-    public string ModelicaCode { get; set; }
+    public string ModelicaCode
+    {
+        get => _modelicaCode;
+        set
+        {
+            _modelicaCode = value;
+            Coverage = null;
+        }
+    }
+
+    /// <summary>
+    /// What this class contributes to the coverage figures, once something has measured it. Null until
+    /// then. Measuring means parsing the class and walking its interface, so the answer is kept: it is
+    /// the same for every scope the class appears in, and the dashboard asks for several.
+    /// </summary>
+    public CoverageFacts? Coverage { get; set; }
 
     /// <summary>
     /// Antlr4 code context for the class definition.
