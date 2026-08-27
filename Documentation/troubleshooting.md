@@ -26,7 +26,7 @@
 - **Encoding issues**: MLQT expects UTF-8 encoded files. Files with other encodings may cause parsing failures.
 - **Incomplete files**: If a file is being written by another tool while MLQT reads it, the parser may see incomplete content. Wait for the other tool to finish and click Refresh.
 
-**What to do:** Parser errors appear in the Code Review issues table. Click the error to see details, including the line number and the offending token. These errors don't prevent MLQT from loading the rest of the library.
+**What to do:** Parser errors appear in the Code Review findings table. Click the error to see details, including the line number and the offending token. These errors don't prevent MLQT from loading the rest of the library.
 
 ### Formatting Produces Unexpected Results
 
@@ -45,9 +45,9 @@
 3. After the initial pass, commit changes with a message like "Apply MLQT formatting rules" to make clear the changes are structural, not functional
 4. Discuss formatting rules with your team before enabling them on a shared repository
 
-### Style Checking Reports Too Many Issues
+### Style Checking Reports Too Many Findings
 
-**Symptom:** After enabling style rules, hundreds or thousands of issues appear.
+**Symptom:** After enabling style rules, hundreds or thousands of findings appear.
 
 **This is normal** for existing libraries that haven't been checked before. Common high-volume rules:
 
@@ -57,9 +57,9 @@
 
 **Recommendations:**
 
-1. Enable rules incrementally — start with one rule, fix the violations, then enable the next
-2. Use the "Only this model" toggle in the issues table to focus on one model at a time
-3. Use the search field to filter issues by type
+1. Enable rules incrementally — start with one rule, fix the findings, then enable the next
+2. Use the "Only this model" toggle in the findings table to focus on one model at a time
+3. Use the search field to filter findings by type
 4. Consider using less strict rules initially (e.g., just descriptions, not full documentation)
 
 ### Diff View Shows No Changes

@@ -104,7 +104,7 @@ During automatic refreshes, the file monitor is temporarily paused to avoid dete
 2. Save the files
 3. Switch to MLQT and notice the red badge on the Refresh button
 4. Click Refresh to process the changes
-5. Review the updated code, issues, and dependencies
+5. Review the updated code, findings, and dependencies
 
 ### You Don't Need to Refresh After...
 

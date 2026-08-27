@@ -106,11 +106,11 @@ For example, a repository that uses `main` instead of `trunk` and keeps release 
 
 ### Style Guidelines
 
-Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, any violation is reported as an issue in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
+Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, any finding is reported as an finding in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
 
 Each rule below has a per-rule severity selector — **Off / Info / Warning / Error** — rather than a plain on/off switch. **Off** disables it; **Error** fails the CI quality gate while **Warning**/**Info** are reported only. (The naming-convention check keeps a simple on/off switch because it drives its own settings panel.)
 
-Style guidelines are **passive** — they only report issues and never modify your code.
+Style guidelines are **passive** — they only report findings and never modify your code.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -128,7 +128,7 @@ Style guidelines are **passive** — they only report issues and never modify yo
 
 Formatting rules define structural ordering requirements for Modelica code. These rules serve a dual purpose:
 
-1. **As style checks** — When a formatting rule is enabled but "Apply formatting rules" is off, violations are reported as issues in the Code Review tab (just like style guidelines).
+1. **As style checks** — When a formatting rule is enabled but "Apply formatting rules" is off, findings are reported as findings in the Code Review tab (just like style guidelines).
 2. **As automatic formatting** — When "Apply formatting rules" is on, MLQT will automatically restructure your code to comply with the enabled formatting rules whenever files are saved.
 
 | Setting | Default | Description |
@@ -153,7 +153,7 @@ Individual models can be excluded from automatic formatting. This is useful for 
 
 | Setting | Description |
 |---------|-------------|
-| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style violations are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
+| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
 
 A helper method `IsModelExcludedFromFormatting(string modelId)` is available for checking whether a given model is in the exclusion list.
 
@@ -177,7 +177,7 @@ The reference validator handles several edge cases found in real Modelica librar
 - **HTML entity-encoded links** — Example markup that uses `&quot;modelica://...&quot;` (entity-encoded `href` attributes shown as visible documentation text) is ignored
 - **Plain text mentions** — Text like `Replace modelica://-URIs` that mentions the scheme without being inside an HTML attribute is ignored; only URIs inside attribute values (e.g., `href="modelica://..."`) are validated
 - **Hash fragments** — URIs with `#` fragments (e.g., `modelica://Model.Name#info`) are handled correctly, validating only the model path before the fragment
-- **Accurate line numbers** — Violations report the actual line within multi-line documentation strings where the broken reference appears, not the line where the annotation starts
+- **Accurate line numbers** — Findings report the actual line within multi-line documentation strings where the broken reference appears, not the line where the annotation starts
 
 ### Static Analysis Rules
 
@@ -297,7 +297,7 @@ A per-finding waiver can be written into the source with a `__MLQT(suppress="<ru
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica-specific terms (Modelica, Dymola, Jacobian, linearization, etc.) is also included. The possessive of an accepted word is accepted too, so a name in the repository's word list does not come back as a mistake the moment it is written as "Stodola's".
 
-Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, accept the word into the repository's word list, ignore the violation, or close the menu. See [Spell Checking](spell-checking.md) for full details.
+Spelling findings appear in the **Code Review** findings table with the line number where the misspelled word appears. Clicking a finding navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, accept the word into the repository's word list, ignore the finding, or close the menu. See [Spell Checking](spell-checking.md) for full details.
 
 #### Accepted Spellings
 
@@ -320,7 +320,7 @@ The **Apply formatting rules** setting is the most impactful setting in MLQT and
 The formatting rules (One of each section, Imports first, Components before classes, etc.) behave purely as **style checks**. MLQT will:
 
 - Analyze your code structure against the enabled rules
-- Report any violations as issues in the Code Review tab
+- Report any findings as findings in the Code Review tab
 - **Never modify your files**
 
 This is the safe default. You can see what your code looks like relative to the rules without any risk of changes.
@@ -364,7 +364,7 @@ MLQT assumes that once a repository has been formatted, it stays formatted. This
 
 5. **Initial formatting may produce large diffs.** When you first enable formatting rules on an existing library, use "Format All Files" to reformat the entire repository. Consider doing this on a new branch, reviewing the changes, and then merging.
 
-![Screenshot: The Code Review tab showing a model with style checking issues for formatting rule violations (e.g., "Multiple public sections found" or "Import statements should appear before other declarations").](Images/settings-reference-7.png)
+![Screenshot: The Code Review tab showing a model with style checking findings for formatting rule findings (e.g., "Multiple public sections found" or "Import statements should appear before other declarations").](Images/settings-reference-7.png)
 
 ---
 
@@ -480,7 +480,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 1. Start with all settings off (the default)
 2. As a team, decide which style guidelines matter for your project
-3. Enable the agreed-upon style guidelines and review the reported issues
+3. Enable the agreed-upon style guidelines and review the reported findings
 4. Once the team is comfortable, consider enabling formatting rules
 5. Enable "Apply formatting rules" and click **Format All Files** to do the initial formatting pass
 6. Review and commit the formatting changes on a dedicated branch
@@ -490,8 +490,8 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 ### For Existing Projects
 
 1. Load your repository in MLQT
-2. Enable style guidelines one at a time to assess the number of violations
-3. Fix violations incrementally or accept them
+2. Enable style guidelines one at a time to assess the number of findings
+3. Fix findings incrementally or accept them
 4. Only enable "Apply formatting rules" after the team has agreed on the structural rules
 5. Click **Format All Files** to do the initial formatting pass and commit it as a single change
 6. After the initial pass, MLQT only reformats files you modify — no more slow full-library formatting on every startup

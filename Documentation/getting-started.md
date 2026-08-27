@@ -171,9 +171,9 @@ When you are done making changes, click **Apply** to save them, or **Cancel** to
 
 ## Step 4: Explore Your Libraries
 
-With repositories loaded, you can explore your Modelica libraries using the tree view in the left panel. Click on any model to view its code, issues, and dependencies in the right panel tabs:
+With repositories loaded, you can explore your Modelica libraries using the tree view in the left panel. Click on any model to view its code, findings, and dependencies in the right panel tabs:
 
-- **Code Review** — Shows the Modelica source code with syntax highlighting and any style checking issues
+- **Code Review** — Shows the Modelica source code with syntax highlighting and any style checking findings
 - **Dependencies** — Shows an interactive dependency graph for the selected model
 - **External Resources** — Shows files and directories referenced by models (data files, C libraries, images, etc.)
 - **Settings** — Application and repository settings
@@ -191,8 +191,8 @@ Use the toggle button in the left panel toolbar to switch between:
 
 ### Using the Application
 - [Library Browser & Navigation](library-browser.md) — How the tree view works, VCS status indicators, repository vs library view
-- [Code Review](code-review.md) — Inspecting code, reviewing issues, comparing changes with diff view
-- [Spell Checking](spell-checking.md) — Language dictionaries, custom words, and reviewing spelling issues
+- [Code Review](code-review.md) — Inspecting code, reviewing findings, comparing changes with diff view
+- [Spell Checking](spell-checking.md) — Language dictionaries, custom words, and reviewing spelling findings
 - [Dependency Analysis](dependency-analysis.md) — Assessing the impact of changes across your libraries
 - [External Resources](external-resources.md) — Auditing data files, C libraries, and other non-Modelica dependencies
 - [File Monitoring & Refresh](file-monitoring.md) — How MLQT detects external file changes and when to refresh
@@ -211,4 +211,4 @@ Use the toggle button in the left panel toolbar to switch between:
 
 ### Reference
 - [Modelica Concepts](modelica-concepts.md) — Brief primer on Modelica language concepts relevant to MLQT
-- [Troubleshooting & FAQ](troubleshooting.md) — Common issues, solutions, and frequently asked questions
+- [Troubleshooting & FAQ](troubleshooting.md) — Common findings, solutions, and frequently asked questions

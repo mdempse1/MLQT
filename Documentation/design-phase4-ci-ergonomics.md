@@ -164,6 +164,6 @@ new `IFindingFormatter` implementations + switch arms in `CheckRunner`. No new o
 - **Known limitation / possible follow-up:** finding line numbers are relative to each model's
   extracted definition, not the source file, so for a model nested in a multi-model file (a
   `package.mo`) the line does not match the raw file. Acceptable for the console/JUnit views (which
-  now show the model, and users fix issues in a Modelica tool that navigates by model), but SARIF's
+  now show the model, and users fix findings in a Modelica tool that navigates by model), but SARIF's
   `region.startLine` would point at the wrong file line for GitHub code-scanning annotations.
   Revisit — mapping finding lines to file-absolute positions — if/when exact SARIF file lines matter.

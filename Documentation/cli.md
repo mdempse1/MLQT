@@ -5,7 +5,7 @@ findings. It runs the same checks as the MLQT desktop app, with no UI and no MAU
 works on Windows, Linux, and macOS and is suited to CI pipelines.
 
 > For a step-by-step guide to setting up the CI quality gate on a real library (enable rules,
-> baseline existing debt, gate on new issues, wire into TeamCity/GitHub), see
+> baseline existing debt, gate on new findings, wire into TeamCity/GitHub), see
 > [ci-quality-gate.md](ci-quality-gate.md). This page is the option reference.
 
 ## Install
@@ -176,7 +176,7 @@ of taste and every other rule silently under-reports on it:
 - **Cannot be suppressed** with a `__MLQT` annotation, and `baseline create` will not record them, so
   a baseline can never accept one.
 
-The same diagnostics appear in the desktop app's Issues panel and from the MCP server's `check_class`
+The same diagnostics appear in the desktop app's Findings panel and from the MCP server's `check_class`
 / `check_library`, with identical wording and line numbers.
 
 ### `MLQT.Check.Failed`
@@ -244,7 +244,7 @@ and macOS).
 ## Baseline / ratchet
 
 A large existing library usually has many findings that no one will fix all at once. A **baseline**
-records the current findings as *accepted debt* so CI fails only on **new** issues.
+records the current findings as *accepted debt* so CI fails only on **new** findings.
 
 ```bash
 mlqt baseline create <library-path>     # snapshot current findings -> <library-path>/.mlqt/baseline.json
@@ -264,7 +264,7 @@ $ mlqt check ./MyLibrary
 $ mlqt baseline create ./MyLibrary
 Wrote 101032 entries to .mlqt/baseline.json, covering 104447 finding(s).
 note: 3415 finding(s) share an entry with another. An entry is one rule + class + element + detail
-      with no line number, so repeats of the same violation within a class collapse into one — a
+      with no line number, so repeats of the same finding within a class collapse into one — a
       later check still reports and accepts every finding individually, so its accepted count is the
       larger number.
 
@@ -307,7 +307,7 @@ Pruned 1 entry now fixed from .mlqt/baseline.json; 1 entry remaining
 ```
 
 **`update` is a deliberate re-baseline** — for when you have enabled new rules and want their existing
-violations accepted in one go. Because accepting a violation nobody reviewed is the one way to defeat
+findings accepted in one go. Because accepting a finding nobody reviewed is the one way to defeat
 the ratchet by accident, it refuses unless you say so:
 
 ```
@@ -349,7 +349,7 @@ can tell how old the accepted debt is and diff from there:
 `rules` records which rules were in force. A later `check` compares them and warns when the
 configuration has moved on, because both ways it can differ are otherwise silent:
 
-- a rule **enabled since** the baseline reports its pre-existing violations as **new**, so a change
+- a rule **enabled since** the baseline reports its pre-existing findings as **new**, so a change
   looks like it caused a regression it had nothing to do with;
 - a rule **disabled since** leaves entries that can never match again.
 
@@ -358,7 +358,7 @@ $ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
 warning: the baseline was generated with a different rule set
          enabled since: MLQT.Doc.ClassDescription
          severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)
-         Pre-existing violations of a newly enabled rule are reported as new.
+         Pre-existing findings of a newly enabled rule are reported as new.
          `mlqt baseline update --force` would accept them.
 ```
 
@@ -375,7 +375,7 @@ revision fields are simply absent. A version-1 baseline (no metadata) still load
 **Commit `.mlqt/baseline.json` to the repository** — it is a reviewable debt ledger, and its size
 shrinking over time is your burndown.
 
-Then gate on new issues only:
+Then gate on new findings only:
 
 ```bash
 # Fail on NEW warnings; tolerate everything in the baseline
@@ -402,7 +402,7 @@ Works with Git and SVN. The three policies are:
 | `ignore` | no — counted as accepted debt | no |
 
 ```bash
-# Fail on new issues, and on pre-existing issues in models changed since main
+# Fail on new findings, and on pre-existing findings in models changed since main
 mlqt check ./MyLibrary --baseline .mlqt/baseline.json --changed-from main \
       --touched-debt fail --fail-on warning
 ```

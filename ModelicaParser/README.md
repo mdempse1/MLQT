@@ -197,7 +197,7 @@ Detected reference types:
 
 ### Style Rule Checking
 
-All style rules extend `VisitorWithModelNameTracking` and populate a `RuleViolations` list:
+All style rules extend `VisitorWithModelNameTracking` and populate a `RuleFindings` list:
 
 ```csharp
 using ModelicaParser.Helpers;
@@ -211,8 +211,8 @@ var rule = new CheckClassAnnotations(
     basePackage: "MyLibrary");
 rule.Visit(parseTree);
 
-foreach (var violation in rule.RuleViolations)
-    Console.WriteLine($"{violation.ModelName} line {violation.LineNumber}: {violation.Summary}");
+foreach (var finding in rule.RuleFindings)
+    Console.WriteLine($"{finding.ModelName} line {finding.LineNumber}: {finding.Summary}");
 ```
 
 #### VisitorWithModelNameTracking and Nested Class Skipping
@@ -221,7 +221,7 @@ All style rule visitors extend `VisitorWithModelNameTracking`, which provides mo
 
 - Style rule visitors only check the **outermost class definition** in the parse tree.
 - Nested class definitions are skipped when the depth exceeds 1, because each nested class has its own `ModelNode` in the graph and is checked independently.
-- This prevents duplicate violations when a parent package's code includes nested class source code.
+- This prevents duplicate findings when a parent package's code includes nested class source code.
 - The nesting-level counter is used to skip deeper class definitions (depth > 1) — **except** non-standalone classes (those with a `replaceable`/`redeclare`/`inner`/`outer` prefix), which are stored in their parent and so are still visited in place.
 
 Available style rules:

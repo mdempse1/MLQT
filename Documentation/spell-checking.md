@@ -59,7 +59,7 @@ Spell checking is controlled by two independent toggle switches, available in bo
    - **Spell check all documentation**
 3. Save settings
 
-Spell checking runs as part of the background style checking process. After enabling, violations appear in the **Code Review** issues table.
+Spell checking runs as part of the background style checking process. After enabling, findings appear in the **Code Review** findings table.
 
 ## Language Dictionaries
 
@@ -126,7 +126,7 @@ the **Accepted spellings** expandable section:
   are ignored.
 - **Export** — Save this repository's list to a text file, for example to seed another repository
 
-Words can also be added straight from a spelling violation — see below.
+Words can also be added straight from a spelling finding — see below.
 
 ### Words From an Earlier Version
 
@@ -139,7 +139,7 @@ whatever pace suits.
 
 ### Adding Words from Code Review
 
-The fastest way to accept a word is from a spelling violation on the Code Review page — right-click
+The fastest way to accept a word is from a spelling finding on the Code Review page — right-click
 the underlined word in the code view and choose **Add to Dictionary**. The word goes into the list of
 the repository that owns the class you are looking at, not into whichever repository is selected in
 settings. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
@@ -148,13 +148,13 @@ If the class belongs to no repository — a library loaded on its own, or one re
 vendor's encrypted documentation — there is nowhere to write the word that a check would read back,
 so **Add to Dictionary** is disabled and says why.
 
-## Reviewing Spelling Issues
+## Reviewing Spelling Findings
 
-Spelling violations appear in the **Code Review** issues table alongside other style checking issues. Each violation shows the misspelled word, which model it is in, and the line number where it appears.
+Spelling findings appear in the **Code Review** findings table alongside other style checking findings. Each finding shows the misspelled word, which model it is in, and the line number where it appears.
 
 ### Finding a Misspelled Word
 
-When you click a spelling violation in the issues table, MLQT opens the corresponding model and scrolls the code view so the misspelled word is brought into view — so you don't have to hunt for it. The word is **highlighted inline** with a wavy red underline in the rendered Modelica source.
+When you click a spelling finding in the findings table, MLQT opens the corresponding model and scrolls the code view so the misspelled word is brought into view — so you don't have to hunt for it. The word is **highlighted inline** with a wavy red underline in the rendered Modelica source.
 
 To act on the word — see suggestions, correct it, add it to your dictionary, or ignore it — **right-click the underlined word** in the code view. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
 
@@ -169,11 +169,11 @@ Misspelled words are **highlighted inline** (wavy red underline) in the rendered
    |--------|--------|
    | **Suggestions** | A list of possible correct spellings. Near matches from the repository's accepted spellings come first — mistype a term your team has accepted and the accepted spelling is what you want, not whatever the English dictionary makes of it — followed by the language dictionaries' own suggestions. Click one to apply it in place. |
    | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** violations it covers in that repository are removed. Disabled for classes that belong to no repository. |
-   | **Ignore** | Removes this single violation from the issues list without adding the word to the dictionary. The word will be flagged again on the next style check. |
+   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** findings it covers in that repository are removed. Disabled for classes that belong to no repository. |
+   | **Ignore** | Removes this single finding from the findings list without adding the word to the dictionary. The word will be flagged again on the next style check. |
    | **Close** | Closes the menu without taking any action. |
 
-3. When you apply a correction, MLQT replaces the word, **saves the file to disk**, re-parses it, and clears the resolved violation.
+3. When you apply a correction, MLQT replaces the word, **saves the file to disk**, re-parses it, and clears the resolved finding.
 
 The replacement is **whole-word and case-sensitive**, and is only applied inside description strings and documentation prose. Occurrences inside HTML links (`href`s) and `<code>`/`<pre>` blocks are deliberately left untouched, so correcting a word never breaks a link or a code example. If the correction would produce code that fails to parse, the change is aborted and the file is left unchanged.
 
@@ -185,15 +185,15 @@ After a correction is applied, the code view reloads but keeps your current scro
 
 ### Line Numbers
 
-Spelling violations report the actual line where the misspelled word appears, even within multi-line strings. For documentation annotations that span many lines of HTML, the line number points to the specific line containing the typo, not the line where the annotation starts.
+Spelling findings report the actual line where the misspelled word appears, even within multi-line strings. For documentation annotations that span many lines of HTML, the line number points to the specific line containing the typo, not the line where the annotation starts.
 
 ## Tips
 
-- **Enable spell checking after initial library setup.** For large libraries with many existing description strings, you may get a large number of violations initially. Consider reviewing and fixing them in batches, using "Add to Dictionary" liberally for domain-specific terms.
+- **Enable spell checking after initial library setup.** For large libraries with many existing description strings, you may get a large number of findings initially. Consider reviewing and fixing them in batches, using "Add to Dictionary" liberally for domain-specific terms.
 
 - **Build up the word list early, and commit it.** The first time you enable spell checking on a library, spend some time accepting your project's common terms. This significantly reduces noise in subsequent checks — and because `.mlqt/dictionary.txt` is committed, everyone on the team and every CI run starts from the same list rather than rebuilding it.
 
-- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the violation to jump to the word, right-click the underlined word, and choose "Add to Dictionary". It also puts the word in the right repository for you.
+- **Use "Add to Dictionary" from Code Review.** This is much faster than navigating to Settings each time — click the finding to jump to the word, right-click the underlined word, and choose "Add to Dictionary". It also puts the word in the right repository for you.
 
 - **Different languages for different repositories.** If your team maintains libraries documented in different languages, set the appropriate dictionaries per repository rather than at the application level.
 

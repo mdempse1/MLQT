@@ -1,17 +1,17 @@
 # Code Review
 
-The Code Review tab is MLQT's primary view for inspecting Modelica source code, reviewing style checking issues, comparing changes against the last committed version, and running model checks with external tools like Dymola and OpenModelica.
+The Code Review tab is MLQT's primary view for inspecting Modelica source code, reviewing style checking findings, comparing changes against the last committed version, and running model checks with external tools like Dymola and OpenModelica.
 
 To open this view, click on the **Code** tab (the code icon) in the right panel.
 
-![Screenshot: The full Code Review tab showing the toolbar at top, the code viewer in the middle with syntax-highlighted Modelica code, and the issues table at the bottom. A model should be selected in the left panel tree.](Images/code-review-1.png)
+![Screenshot: The full Code Review tab showing the toolbar at top, the code viewer in the middle with syntax-highlighted Modelica code, and the findings table at the bottom. A model should be selected in the left panel tree.](Images/code-review-1.png)
 
 ## Layout
 
 The Code Review tab is divided into two areas:
 
 1. **Code viewer** (upper area) — Displays the syntax-highlighted source code of the currently selected model
-2. **Issues table** (lower area) — Lists all detected issues from parsing, style checking, and external tool checks
+2. **Findings table** (lower area) — Lists all detected findings from parsing, style checking, and external tool checks
 
 ## Selecting a Model
 
@@ -50,7 +50,7 @@ The diff view:
 
 | Button | Icon | Description |
 |--------|------|-------------|
-| **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the issues table with the results. Always available. |
+| **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
 | **Exclude from Formatting** | FormatClear | Toggles formatting exclusion for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes, the file is reverted first to undo any prior formatting. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. |
 | **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, etc.) can be verbose — hiding them lets you focus on the functional code. This toggle also affects the diff view. |
 | **Check using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools. |
@@ -63,7 +63,7 @@ When you click the Dymola or OpenModelica button:
 - For a **single model**, the check runs immediately
 - For a **package**, a progress dialog appears showing which model is currently being checked and a progress bar
 - You can click **Stop** on the progress dialog to cancel the check
-- Any errors found are added to the issues table below
+- Any errors found are added to the findings table below
 
 ![Screenshot: The check progress dialog showing "Dymola Check Progress - x checked out of y" with a progress bar and the current model name being checked, and a Stop button.](Images/code-review-4.png)
 
@@ -86,34 +86,34 @@ The code viewer displays Modelica code with syntax highlighting. Each element ty
 
 The colors for each element type can be customized in **Settings > UI Settings > Syntax Highlighting**. You can choose from preset themes (VS Code, Dymola, OpenModelica) or define custom colors.
 
-## Issues Table
+## Findings Table
 
-The issues table at the bottom shows all detected problems across your loaded libraries. Issues come from three sources:
+The findings table at the bottom shows all detected problems across your loaded libraries. Findings come from three sources:
 
-1. **Parser errors** — Syntax errors found when parsing Modelica code. Recoverable syntax errors are labelled **Parser error** (severity *Error*); issues severe enough that the whole file could not be parsed are labelled **Fatal parse failure** (severity *Fatal*), and the file appears in the library browser as a placeholder node so you can still open and correct it.
-2. **Style checking violations** — Rules violations detected by the background style checker based on your repository settings
+1. **Parser errors** — Syntax errors found when parsing Modelica code. Recoverable syntax errors are labelled **Parser error** (severity *Error*); findings severe enough that the whole file could not be parsed are labelled **Fatal parse failure** (severity *Fatal*), and the file appears in the library browser as a placeholder node so you can still open and correct it.
+2. **Style checking findings** — Rules findings detected by the background style checker based on your repository settings
 3. **External tool errors** — Errors reported by Dymola or OpenModelica during model checking
 
 ### Table Columns
 
 | Column | Description |
 |--------|-------------|
-| **Model** | The fully qualified Modelica path of the model containing the issue. Long names are abbreviated with ellipsis (e.g., `MyLibrary...SubPackage.MyModel`). |
-| **Description** | A summary of what the issue is (e.g., "Class has no description", "Parser error", "Check Failed"). |
-| **Line Number** | The line number in the model's source code where the issue was found. For style issues that apply to the class as a whole, this may be 0. |
-| **Type** | The severity of the issue — typically "Error", "Warning", or "Info". |
+| **Model** | The fully qualified Modelica path of the model containing the finding. Long names are abbreviated with ellipsis (e.g., `MyLibrary...SubPackage.MyModel`). |
+| **Description** | A summary of what the finding is (e.g., "Class has no description", "Parser error", "Check Failed"). |
+| **Line Number** | The line number in the model's source code where the finding was found. For style findings that apply to the class as a whole, this may be 0. |
+| **Type** | The severity of the finding — typically "Error", "Warning", or "Info". |
 
-### Filtering Issues
+### Filtering Findings
 
-The issues table provides two filtering mechanisms:
+The findings table provides two filtering mechanisms:
 
-- **"Only this model" toggle** — When enabled, the table only shows issues for the currently selected model. When disabled (default), issues from all models are shown.
-- **Search field** — Type text to filter issues by model name, description, details, or severity. Multiple search terms (space-separated) are matched independently.
+- **"Only this model" toggle** — When enabled, the table only shows findings for the currently selected model. When disabled (default), findings from all models are shown.
+- **Search field** — Type text to filter findings by model name, description, details, or severity. Multiple search terms (space-separated) are matched independently.
 
-### Exporting the Issue List
+### Exporting the Finding List
 
-The download button in the issues toolbar writes every issue to a JSON file — you choose the folder,
-and it is saved as `mlqt-issues-<timestamp>.json`.
+The download button in the findings toolbar writes every finding to a JSON file — you choose the folder,
+and it is saved as `mlqt-findings-<timestamp>.json`.
 
 **The export always contains the whole list**, regardless of the search box, the "Only this model"
 toggle and the "Changes vs baseline" switch. That is deliberate: the usual reason to export is to
@@ -126,12 +126,12 @@ array — `RuleId`, `Severity`, `Status`, `Model`, `Element`, `Line`, `Message`,
 
 ```powershell
 mlqt check .\MyLibrary --format json --out cli.json
-.\build\Compare-Findings.ps1 cli.json .\mlqt-issues-20260824-141530.json
+.\build\Compare-Findings.ps1 cli.json .\mlqt-findings-20260824-141530.json
 ```
 
 `build/Compare-Findings.ps1` pairs the two up on model + rule + line and reports what each has that
 the other does not, grouped by rule and by library. It needs nothing installed — PowerShell reads
-JSON natively — and `-Detail` lists the individual issues rather than just the counts.
+JSON natively — and `-Detail` lists the individual findings rather than just the counts.
 
 ```
 CLI 103683    App 103516    difference 167
@@ -148,27 +148,27 @@ the cause: a rule enabled on one side only, a library loaded by one side only (o
 `ExcludedLibraries` in only one), parse diagnostics — which the CLI emits for its checked set
 regardless of which rules are enabled — or, when it is spread evenly, a filter left on in the app.
 
-### Interacting with Issues
+### Interacting with Findings
 
-- **Click a row** to navigate to the model containing that issue. The code viewer updates to show that model's code.
-- If the issue has **additional details**, clicking the row opens an **Issue Details dialog** showing the full summary, severity, line number, and detailed description.
-- In the Issue Details dialog, click **Resolve** to remove the issue from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the issue. For a spelling violation the dialog also offers **Add to Dictionary**, which accepts the flagged word into the word list of the repository that owns the class (`.mlqt/dictionary.txt`) so it is no longer reported there. It is disabled for a class that belongs to no repository, such as a library reconstructed from a vendor's encrypted documentation.
+- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code.
+- If the finding has **additional details**, clicking the row opens an **Finding Details dialog** showing the full summary, severity, line number, and detailed description.
+- In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. For a spelling finding the dialog also offers **Add to Dictionary**, which accepts the flagged word into the word list of the repository that owns the class (`.mlqt/dictionary.txt`) so it is no longer reported there. It is disabled for a class that belongs to no repository, such as a library reconstructed from a vendor's encrypted documentation.
 
-![Screenshot: The Issue Details dialog showing an issue with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
+![Screenshot: The Finding Details dialog showing an finding with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 
 #### Suppressing a Rule
 
-Each style-rule issue row (anything other than a spelling violation) has a **Suppress** button at the end of the row; the same action also appears in the Issue Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
+Each style-rule finding row (anything other than a spelling finding) has a **Suppress** button at the end of the row; the same action also appears in the Finding Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
 
-- MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the issue is about a specific component, onto that component.
-- The annotation is scoped to the element the issue is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class (but not for sibling classes in the same file).
-- The file is re-formatted and **saved to disk immediately**, then re-parsed, and the resolved issue is removed. If the result would fail to parse, the change is aborted and the file is left unchanged.
+- MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the finding is about a specific component, onto that component.
+- The annotation is scoped to the element the finding is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class (but not for sibling classes in the same file).
+- The file is re-formatted and **saved to disk immediately**, then re-parsed, and the resolved finding is removed. If the result would fail to parse, the change is aborted and the file is left unchanged.
 
 Because the waiver lives in the source, it survives re-formatting and is honoured everywhere findings are produced — the desktop app, the [`mlqt check` CLI](cli.md), and the [MCP server](mcp-server.md). This is the same suppression mechanism a reviewer or agent can apply headlessly; see the CI walk-through's suppression section in [CI Quality Gate](ci-quality-gate.md). `__MLQT` is a spec-sanctioned vendor annotation, so Dymola and OpenModelica ignore it.
 
-### Spelling Violations
+### Spelling Findings
 
-Spelling violations from the spell checker (issues starting with "Misspelled word") are handled differently from other issues. Clicking a spelling violation navigates to the model and scrolls the code viewer so the misspelled word is brought into view, **highlighted inline** with a wavy red underline. To act on the word, **right-click the underlined word** in the code viewer.
+Spelling findings from the spell checker (findings starting with "Misspelled word") are handled differently from other findings. Clicking a spelling finding navigates to the model and scrolls the code viewer so the misspelled word is brought into view, **highlighted inline** with a wavy red underline. To act on the word, **right-click the underlined word** in the code viewer.
 
 #### Correcting a Spelling Inline
 
@@ -178,36 +178,36 @@ To act on a misspelled word, right-click the highlighted word in the rendered co
 |--------|--------|
 | **Suggestions** | A scrollable list of similar words from the loaded language dictionaries. Click one to apply it in place. |
 | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-| **Add to Dictionary** | Accepts the word into the word list of the repository that owns this class. All violations for the word in that repository are immediately removed, and future checks — including CI, once `.mlqt/dictionary.txt` is committed — accept it. |
-| **Ignore** | Removes this single violation from the list. The word will be flagged again on the next style check run. |
+| **Add to Dictionary** | Accepts the word into the word list of the repository that owns this class. All findings for the word in that repository are immediately removed, and future checks — including CI, once `.mlqt/dictionary.txt` is committed — accept it. |
+| **Ignore** | Removes this single finding from the list. The word will be flagged again on the next style check run. |
 | **Close** | Closes the menu without taking any action. |
 
-When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk immediately**, re-parses it, and removes the resolved violation.
+When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk immediately**, re-parses it, and removes the resolved finding.
 
 The replacement is whole-word and case-sensitive, and is applied only inside description strings and documentation prose — occurrences inside HTML links and `<code>`/`<pre>` blocks are left untouched so a correction never breaks a link. If the result would fail to parse, the change is aborted and the file is left unchanged. (Repairing already-broken documentation links is a separate, planned feature.)
 
 For more details on configuring spell checking, language dictionaries, and each repository's accepted spellings, see [Spell Checking](spell-checking.md).
 
-### Naming Convention Violations
+### Naming Convention Findings
 
-When naming convention checking is enabled, violations appear in the issues table with messages like "Variable name 'MyVar' should be camelCase (public variable)" or "Class name 'simpleModel' should be PascalCase (model)". Clicking a naming violation navigates to the model containing the offending name.
+When naming convention checking is enabled, findings appear in the findings table with messages like "Variable name 'MyVar' should be camelCase (public variable)" or "Class name 'simpleModel' should be PascalCase (model)". Clicking a naming finding navigates to the model containing the offending name.
 
 For details on configuring naming conventions, presets, exception names, and underscore suffix handling, see [Naming Conventions](naming-conventions.md).
 
-### Issue Lifecycle
+### Finding Lifecycle
 
-- Issues are **cleared and recalculated** whenever a library is loaded or reloaded
+- Findings are **cleared and recalculated** whenever a library is loaded or reloaded
 - **Parser errors** are detected immediately during loading
-- **Style violations** are detected by a background process that runs after loading completes
+- **Style findings** are detected by a background process that runs after loading completes
 - **External tool errors** are added when you manually run a Dymola or OpenModelica check
-- Issues persist across model selections — switching models does not clear the issues list
-- Resolving an issue removes it from the list for the current session
+- Findings persist across model selections — switching models does not clear the findings list
+- Resolving an finding removes it from the list for the current session
 
 ## Filtering to what you have changed
 
-A mature library carries a lot of standing debt, and on a first look the Issues list is mostly that
+A mature library carries a lot of standing debt, and on a first look the Findings list is mostly that
 rather than anything you did. When the repository has a committed baseline
-(`.mlqt/baseline.json` — see [ci-quality-gate.md](ci-quality-gate.md)), the Issues toolbar offers a
+(`.mlqt/baseline.json` — see [ci-quality-gate.md](ci-quality-gate.md)), the Findings toolbar offers a
 **Changes vs baseline** switch, and each row gains a **Baseline** column:
 
 | Label | Meaning |
@@ -220,7 +220,7 @@ With the switch on, only `new` and `touched` are listed; `accepted` is hidden. T
 numbers, so the standing debt is never invisible:
 
 ```
-132 Issues to review (7 changed vs baseline)
+132 Findings to review (7 changed vs baseline)
 ```
 
 **"Touched" means pending commit, not a diff between commits.** A file counts as touched when the

@@ -19,7 +19,7 @@
 ## Purpose
 
 Make the CLI adoptable on a large legacy library: **tolerate the existing debt, fail only on new
-issues**, and optionally nudge cleanup of pre-existing issues in models a change touched. This is
+findings**, and optionally nudge cleanup of pre-existing findings in models a change touched. This is
 the adoption unlock — the reason the whole CI initiative exists.
 
 The mechanics are already specified (two orthogonal axes, `.mlqt/baseline.json` as a

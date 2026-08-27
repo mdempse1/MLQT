@@ -84,7 +84,7 @@ Updates your working copy to the latest revision from the SVN server. This is eq
 
 Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **directly to the server** — there is no separate push step.
 
-![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional issue ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
+![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional finding ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
 
 ### Dialog Fields
 
@@ -93,7 +93,7 @@ Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **direc
 | **Commit message** | Required. Describes what you changed. |
 | **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). |
 
-### Issue Number Handling
+### Finding Number Handling
 
 Same as Git — see [Git Operations: Committing Changes](git-operations.md#committing-changes) for details on issue number settings.
 

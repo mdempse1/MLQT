@@ -23,7 +23,7 @@ All services follow the pattern:
 | `LibraryDataService` | `ILibraryDataService` | Manages loaded Modelica libraries, combined graph, tree data |
 | `RepositoryService` | `IRepositoryService` | Git/SVN repository management, library discovery, VCS operations |
 | `FileMonitoringService` | `IFileMonitoringService` | FileSystemWatcher-based change detection with debouncing |
-| `CodeReviewService` | `ICodeReviewService` | Log messages and issues from parsing/style checking |
+| `CodeReviewService` | `ICodeReviewService` | Log messages and findings from parsing/style checking |
 | `StyleCheckingService` | `IStyleCheckingService` | Background style rule checking for models |
 | `ImpactAnalysisService` | `IImpactAnalysisService` | Dependency impact analysis with network graph visualization |
 | `ExternalResourceService` | `IExternalResourceService` | External resource analysis, validation, and monitoring |
@@ -168,7 +168,7 @@ List<LogMessage> messages = codeReviewService.LogMessages;
 
 ```csharp
 // Check a single model
-var violations = await styleCheckingService.CheckModelAsync(modelDefinition, settings);
+var findings = await styleCheckingService.CheckModelAsync(modelDefinition, settings);
 
 // Start background checking for a single repository (async)
 await styleCheckingService.StartBackgroundCheckingAsync(repository);
@@ -180,7 +180,7 @@ styleCheckingService.StartBackgroundChecking(repository);
 // OnProgressChanged fires true only after ALL repos finish (not per-repo)
 styleCheckingService.StartBackgroundCheckingForRepositories(repositories);
 
-// Re-check specific models after file changes (clears previous violations first)
+// Re-check specific models after file changes (clears previous findings first)
 await styleCheckingService.CheckModelsAsync(changedModelIds, graph);
 
 // Every entry point above runs BOTH the per-class rules and the whole-graph analyses
@@ -199,10 +199,10 @@ styleCheckingService.OnProgressChanged += (allComplete) =>
     if (allComplete) Console.WriteLine("All style checks finished");
 };
 
-// Subscribe to violation results
-styleCheckingService.OnViolationsFound += (violations) =>
+// Subscribe to finding results
+styleCheckingService.OnFindingsFound += (findings) =>
 {
-    foreach (var v in violations)
+    foreach (var v in findings)
         Console.WriteLine($"{v.ModelName}: {v.Summary}");
 };
 ```
@@ -335,7 +335,7 @@ foreach (var file in result.WrittenFiles)
 
 **Formatting Exclusion**: Models can be excluded from formatting at multiple levels:
 - `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts an `excludedModelIds` parameter — excluded models use their original `ModelicaCode` instead of being rendered through the formatter.
-- `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting violations.
+- `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
 - `SaveChangedFilesWithFormattingAsync` in `MainLayout` skips excluded models during incremental formatting after VCS operations.
 
 ## Data Types

@@ -419,7 +419,7 @@ The highest-severity failure mode is MLQT trying to **rewrite a vendor library i
 - `FileMonitoringService` — never monitor a reference library path
 - VCS status, commit dialog, `BaselineStatusService`
 - `LibraryCheckSession` reported set, `MetricsCalculator` coverage denominators
-- Code Review issue list
+- Code Review finding list
 
 ---
 

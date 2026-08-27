@@ -64,9 +64,9 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run |
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
-| **ICodeReviewService** | Log messages and issues from parsing/style checking |
+| **ICodeReviewService** | Log messages and findings from parsing/style checking |
 | **EncryptedLibraryDetector** | Recognises an encrypted library (`package.moe`) and reads its name/version — versioned directory name first, `libraryinfo.mos` as fallback |
-| **IBaselineStatusService** | Classifies issues against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff |
+| **IBaselineStatusService** | Classifies findings against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff |
 | **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
 | **IExternalResourceService** | External resource analysis, validation, and monitoring |
@@ -127,7 +127,7 @@ Use the following styling guidelines
 | `MLQT.Shared/Models/AppState.cs` | Application state and cross-component events |
 | `MLQT.Shared/Components/LibraryBrowser.razor` | Model tree navigation, VCS operation UI |
 | `MLQT.Shared/Components/SettingsRepositories.razor` | Repository settings with formatting/style rules |
-| `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, issues, external tool checks |
+| `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, findings, external tool checks |
 | `MLQT.Shared/Pages/Dependencies.razor` | Impact analysis with Cytoscape network graph |
 | `ModelicaParser/modelica.g4` | ANTLR grammar |
 | `ModelicaParser/Helpers/ModelicaParserHelper.cs` | Parser utilities |
@@ -184,7 +184,7 @@ Directed graph for tracking file/model relationships, dependencies, external res
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
 - `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
-- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule violations) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
+- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
 
 ```csharp
 var graph = new DirectedGraph();
@@ -254,7 +254,7 @@ User-facing documentation is in `Documentation/`:
 |----------|--------|
 | `getting-started.md` | Prerequisites, project/repo setup, first steps |
 | `library-browser.md` | Tree navigation, VCS status indicators, view modes |
-| `code-review.md` | Code viewer, diff, issues, external tool checks, formatting exclusion toggle |
+| `code-review.md` | Code viewer, diff, findings, external tool checks, formatting exclusion toggle |
 | `code-formatting.md` | Formatting rules, triggers, incremental vs full, exclusion |
 | `settings-reference.md` | All settings: style rules, formatting, spell check, SVN branch dirs, JSON schema |
 | `dependency-analysis.md` | Impact analysis, Cytoscape graph, layout options |
@@ -270,8 +270,8 @@ User-facing documentation is in `Documentation/`:
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
 | `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
 | `cli.md` | Headless `mlqt check` CLI: install, options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown), baseline/ratchet, exit codes |
-| `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new issues, wire into TeamCity/GitHub |
-| `troubleshooting.md` | Common issues, FAQ |
+| `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub |
+| `troubleshooting.md` | Common findings, FAQ |
 
 ## Documentation Maintenance
 

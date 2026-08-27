@@ -95,7 +95,7 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 | Page | Description |
 |------|-------------|
 | `Index.razor` | Main page with library browser and code viewer |
-| `CodeReview.razor` | Code review, style violations, and file change diffs |
+| `CodeReview.razor` | Code review, style findings, and file change diffs |
 | `Dependencies.razor` | Impact analysis with network graph visualization |
 | `ExternalResources.razor` | External resource tree with filtering and warnings |
 | `Settings.razor` | Application settings (UI, editor, tools, style rules) |

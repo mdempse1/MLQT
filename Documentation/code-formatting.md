@@ -14,7 +14,7 @@ Formatting behavior is controlled by the **Apply formatting rules** toggle in ea
 
 These three settings are the only ones that change layout during formatting. When **One of each section** is enabled the formatter always emits initial-equation and initial-algorithm blocks before the regular sections.
 
-> **Note:** The *Initial equation/algorithm first* and *Initial equation/algorithm last* options are **style-checking rules**, not formatting transforms — they only detect and report violations (see [Settings Reference](settings-reference.md)). Enabling them does not cause the formatter to move initial blocks.
+> **Note:** The *Initial equation/algorithm first* and *Initial equation/algorithm last* options are **style-checking rules**, not formatting transforms — they only detect and report findings (see [Settings Reference](settings-reference.md)). Enabling them does not cause the formatter to move initial blocks.
 
 If **Apply formatting rules** is disabled for a repository, MLQT will not modify any files in that repository during formatting operations.
 
@@ -93,9 +93,9 @@ Individual models can be excluded from auto-formatting using the **FormatClear**
 
 ### Effect on Style Checking
 
-Excluding a model from formatting affects which style violations are reported:
+Excluding a model from formatting affects which style findings are reported:
 
-- **Formatting-related style rules are suppressed** for excluded models. These are the rules that correspond to formatting operations (section ordering, import placement, component ordering, etc.), since violations would be unfixable without the formatter
+- **Formatting-related style rules are suppressed** for excluded models. These are the rules that correspond to formatting operations (section ordering, import placement, component ordering, etc.), since findings would be unfixable without the formatter
 - **Non-formatting style rules still apply** to excluded models. This includes description checks, documentation checks, icon checks, naming convention checks, spell checking, and model reference validation
 
 ### When to Use

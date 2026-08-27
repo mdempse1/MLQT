@@ -155,7 +155,7 @@ the baseline (Phase 3) arrive. `--fail-on warning` gives strict teams the strict
 
 ## Testing — `MLQT.Cli.Tests`
 
-- A small fixture library in a temp directory (a couple of `.mo` files with known violations),
+- A small fixture library in a temp directory (a couple of `.mo` files with known findings),
   plus a `.mlqt/settings.json` fixture.
 - Assert: finding count for enabled rules; each formatter's output shape (valid JUnit XML, JSON
   round-trips to the DTO, console contains the summary); exit codes for the three `--fail-on`

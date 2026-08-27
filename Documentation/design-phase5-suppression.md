@@ -24,7 +24,7 @@
 ## Purpose
 
 Let an author permanently and intentionally waive a rule at a specific class or component — for
-cases where a violation is deliberate (the motivating one: **declaration order that matters** for a
+cases where a finding is deliberate (the motivating one: **declaration order that matters** for a
 solver's nonlinear-system heuristics). Suppression is expressed as a **`__MLQT` vendor annotation**,
 not a comment, because:
 

@@ -124,7 +124,7 @@ libraries start low and the dashboard shows them climbing as debt is worked off.
 | **Metrics dashboard** (LOC, component/connection counts, inheritance depth, coverage %) | ⭐⭐⭐ | M | Confirmed. One aggregation layer over existing parse trees + graph; the burndown/review surface. |
 | **Cyclomatic / cognitive complexity** | ⭐⭐ | M | For algorithm sections and functions. |
 | **Duplicate / clone detection** | ⭐⭐ | L | Near-identical models/equation blocks via subtree hashing. |
-| **Quality gates** ("fail if doc coverage < 80%", "no new critical issues") | ⭐⭐⭐ | M | Governance layer that makes MLQT a CI gatekeeper. Depends on CLI (§1). |
+| **Quality gates** ("fail if doc coverage < 80%", "no new critical findings") | ⭐⭐⭐ | M | Governance layer that makes MLQT a CI gatekeeper. Depends on CLI (§1). |
 | **Trend tracking** (metric snapshots over commits) | ⭐⭐ | L | See quality improving/regressing over time. |
 
 ---
@@ -145,7 +145,7 @@ CI reads severity directly: warnings report but don't fail, errors fail (`--fail
 |------|-------|--------|-------|
 | **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | Foundation for the CI gate *and* extensibility. Migrates booleans: `true`→default severity, `false`→off. |
 | **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | Not comments — comments are position-bound and get orphaned when the formatter reorders declarations. Annotations ride on the element (like icons/docs, which already round-trip). Class- and component-level; carries a `reason`. Also the in-source, rename-safe replacement for the name-based `FormattingExcludedModels` list. See §5 design note. |
-| **Baseline / ratchet mode** (only fail on *new* violations) | ⭐⭐⭐ | M | Makes adopting a linter on a large legacy library viable. See §5 design note. |
+| **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | Makes adopting a linter on a large legacy library viable. See §5 design note. |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity. |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration. |
 | **Cross-repo shared rule profiles** (ESLint-`extends` style) | ⭐ | M | *Deferred / optional.* Only for orgs running many libraries wanting one house ruleset without drift. Per-repo config + existing naming presets cover the common cases. |

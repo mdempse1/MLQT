@@ -1,6 +1,6 @@
 # Setting up the MLQT CI quality gate
 
-A hands-on guide to running MLQT's style/analysis checks in CI and gating on **new** issues, so you
+A hands-on guide to running MLQT's style/analysis checks in CI and gating on **new** findings, so you
 can trial it on a real Modelica library. For the full option reference see [cli.md](cli.md).
 
 ## What it does — the ratchet
@@ -9,8 +9,8 @@ can trial it on a real Modelica library. For the full option reference see [cli.
 library will have many findings; nobody fixes them all at once. So you:
 
 1. **Baseline** the current findings — they become *accepted debt* and never fail the build.
-2. **Gate** on findings that are *not* in the baseline — only genuinely new issues fail CI.
-3. Optionally **escalate** pre-existing issues in models a change touched (the "boy-scout rule").
+2. **Gate** on findings that are *not* in the baseline — only genuinely new findings fail CI.
+3. Optionally **escalate** pre-existing findings in models a change touched (the "boy-scout rule").
 
 Parse errors are reported separately from all of this and always fail — see
 [Parse errors always fail](#parse-errors-always-fail).
@@ -205,7 +205,7 @@ both. Severity is irrelevant to what gets recorded; only
 
 ---
 
-## 5. Gate on new issues
+## 5. Gate on new findings
 
 This is the command CI runs:
 
@@ -214,7 +214,7 @@ mlqt check /path/to/MyLibrary --baseline .mlqt/baseline.json --fail-on warning
 ```
 
 Right after baselining, everything is accepted debt, so this **passes (exit 0)**. Introduce a new
-violation (e.g. add an undescribed public parameter) and it **fails (exit 1)** — only the new finding
+finding (e.g. add an undescribed public parameter) and it **fails (exit 1)** — only the new finding
 is reported as `new`.
 
 Exit codes: **0** = passed, **1** = findings at/above `--fail-on`, **2** = usage/load error.
@@ -227,7 +227,7 @@ the ratchet.
 
 ## 6. (Optional) Escalate debt in changed models
 
-To also push cleanup of pre-existing issues in models a change touched, diff against a ref:
+To also push cleanup of pre-existing findings in models a change touched, diff against a ref:
 
 ```bash
 mlqt check /path/to/MyLibrary --baseline .mlqt/baseline.json \
@@ -273,9 +273,9 @@ If `<ref>` can't be resolved (e.g. your checkout has `master`, or only `origin/m
 `0 model(s) changed`, the ref probably already contains your change — diff against a ref that is
 *behind* it (`--changed-from HEAD~1`, `origin/main`, …).
 
-With `--changed-from`, the report also lists issues you've **fixed** — baseline findings in changed
-models that are no longer present — as positive feedback, so you can see progress even while issues
-remain. Fixed issues appear in a "Fixed in changed models" section, in a `fixed` count in the
+With `--changed-from`, the report also lists findings you've **fixed** — baseline findings in changed
+models that are no longer present — as positive feedback, so you can see progress even while findings
+remain. Fixed findings appear in a "Fixed in changed models" section, in a `fixed` count in the
 console/markdown summary, in the JSON `fixed` array, and as a `mlqt.findings.fixed` TeamCity
 statistic (another burndown line).
 
@@ -338,12 +338,12 @@ can also **add**:
 | `mlqt baseline prune <root>` | yes | **no** — it can only ever shrink the baseline |
 | `mlqt baseline update <root>` | yes | **yes**, and only with `--force` |
 
-- **When you fix issues:** run `prune`. It banks the progress and cannot silently accept debt someone
+- **When you fix findings:** run `prune`. It banks the progress and cannot silently accept debt someone
   just added, so it is safe to run at any time or on a schedule. Commit the result. If findings exist
   that it left alone, it tells you how many still fail the gate.
 - **After deliberately accepting more debt** (e.g. you enabled new rules, or imported a large library):
   `mlqt baseline update <root> --force`. Without `--force` it refuses and tells you how many findings
-  it would have absorbed — accepting a violation nobody reviewed is the one way to defeat the ratchet
+  it would have absorbed — accepting a finding nobody reviewed is the one way to defeat the ratchet
   by accident. Review the resulting diff; the baseline growing should be visible in code review.
 - **Never run `update --force` from CI.** That turns the gate off one commit at a time. CI should only
   ever *read* the baseline.
@@ -462,14 +462,14 @@ The fix is always the same: correct the syntax. A common cause is a missing clos
 reports that as *"Unterminated string literal — no closing `"` before the end of the file"*, with the
 line where the string starts.
 
-The same diagnostics appear in the desktop app's Issues panel and from the MCP server, with identical
+The same diagnostics appear in the desktop app's Findings panel and from the MCP server, with identical
 wording and line numbers.
 
 ---
 
 ## Suppressing intentional findings
 
-Some violations are deliberate — most notably a **declaration order that matters** for a Modelica
+Some findings are deliberate — most notably a **declaration order that matters** for a Modelica
 tool's nonlinear-system heuristics. Waive a rule in the source with a **`__MLQT` vendor annotation**
 (these survive reformatting, unlike comments, and are ignored by Dymola/OpenModelica):
 
@@ -496,7 +496,7 @@ end Foo;
 
 - **Line numbers are relative to each model's definition, not the file.** For a model nested in a
   multi-model file (e.g. a `package.mo`), a finding's line number counts from the start of that
-  model's own definition, not from the top of the file. This is fine when you fix issues in a
+  model's own definition, not from the top of the file. This is fine when you fix findings in a
   Modelica tool (which navigates by model/class, so a line *within the model* is what you want), and
   reports now show the model each finding belongs to. It does mean the line won't line up with the
   raw file — most relevant for SARIF/GitHub code-scanning annotations, which are file-line based. A

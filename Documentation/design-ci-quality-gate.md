@@ -6,7 +6,7 @@
 ## Motivation
 
 Modelica teams have spent years building large libraries that almost certainly contain
-thousands of pre-existing style/analysis issues. No team will fix them all in one go
+thousands of pre-existing style/analysis findings. No team will fix them all in one go
 just to get a green CI check. For MLQT's quality checks to be adoptable in CI, the gate
 must:
 
@@ -14,15 +14,15 @@ must:
    no Actions yet). → generic CLI + standard report formats, no platform-specific
    integration required first.
 2. **Not** fail on the existing debt (baseline).
-3. Fail on **genuinely new** issues introduced by a change.
-4. Optionally nudge developers to clean up **pre-existing** issues **in models they
+3. Fail on **genuinely new** findings introduced by a change.
+4. Optionally nudge developers to clean up **pre-existing** findings **in models they
    touched** (the "boy-scout rule").
 
 ## Classification model — two orthogonal axes
 
 Every finding carries two independent booleans:
 
-- **`inBaseline`** — was this exact issue already recorded as accepted debt?
+- **`inBaseline`** — was this exact finding already recorded as accepted debt?
 - **`inChangedModel`** — is it in a model whose own source text changed in this commit/PR?
 
 | | Model unchanged | Model changed in this commit |
@@ -30,7 +30,7 @@ Every finding carries two independent booleans:
 | **Not in baseline (new)** | **FAIL** — regression | **FAIL** — regression |
 | **In baseline (existing debt)** | pass (accepted debt) | **warn by default** (configurable → fail for strict teams) |
 
-**Key correctness point:** newness and changed-ness are *independent*. A new issue can
+**Key correctness point:** newness and changed-ness are *independent*. A new finding can
 appear in a model whose own text never changed (e.g. editing a base class makes an
 inherited-annotation or naming check fire on a derived model). Therefore:
 
@@ -46,7 +46,7 @@ opt into fail.
 ## Stable finding identity (the crux)
 
 A baseline is only usable if each finding has a fingerprint that survives edits that
-aren't the issue itself — line shifts, **and a full reformat** (MLQT reformats code), and
+aren't the finding itself — line shifts, **and a full reformat** (MLQT reformats code), and
 a standalone class moving between `package.mo` and its own file.
 
 MLQT's advantage over textual linters (ESLint, Checkstyle) is that it has a parse tree
@@ -84,7 +84,7 @@ Lifecycle:
 - `mlqt baseline update` — regenerate; a PR that adds net-new entries is visible and can
   itself be gated ("baseline may not grow without approval").
 - **Stale-entry pruning** — baseline entries whose fingerprint no longer appears = fixed
-  issues; report and offer to prune. Never fail on these.
+  findings; report and offer to prune. Never fail on these.
 
 Ratchet property: the baseline is a **ceiling that only moves down** by default.
 Base-branch comparison can exist later as an optional mode for teams who don't want a
@@ -160,7 +160,7 @@ The central change is replacing `StyleCheckingSettings`' named on/off booleans w
 
 ## In-source suppression — `__MLQT` vendor annotations, not comments
 
-Some rule violations are intentional and permanent — most notably **declaration order**,
+Some rule findings are intentional and permanent — most notably **declaration order**,
 which can matter because Modelica tools' heuristics turn different orderings into
 more/less complex nonlinear systems. Authors need a way to say "this rule does not apply
 here, on purpose."

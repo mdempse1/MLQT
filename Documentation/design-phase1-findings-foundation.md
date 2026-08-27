@@ -13,7 +13,7 @@
 >   stays bool-based (unchanged `.mlqt/settings.json`), so old files migrate automatically via the
 >   facade setters and no `[OnDeserialized]` reconciliation is needed. The serialized map is
 >   deferred to Phase 4, where per-rule severity editing actually needs it.
-> - The base visitor keeps `RuleViolations` (projected `List<LogMessage>`) for the 14 existing
+> - The base visitor keeps `RuleFindings` (projected `List<LogMessage>`) for the 14 existing
 >   visitor-level test files, and adds `Findings` (`IReadOnlyList<Finding>`) as the real accumulator.
 
 ## Purpose
@@ -33,30 +33,30 @@ and the MCP tools produce byte-identical output.
 ## Current state (from a full pipeline map)
 
 - **One flat type, `LogMessage`** ([LogMessage.cs](../ModelicaParser/DataTypes/LogMessage.cs))
-  carries every issue (style, parser, external tool): `ModelName` (FQN — the correlation key),
+  carries every finding (style, parser, external tool): `ModelName` (FQN — the correlation key),
   `Summary`, `Details`, `Severity` (a free *string*, always `"Style warning"` for style rules),
   `LineNumber`, `Source` (`"StyleChecking"`/`"Parser"`/`"ExternalTool"`). No rule ID, no element
   field, no severity enum.
-- **Rules report via `AddViolation(line, message)`** in
+- **Rules report via `AddFinding(line, message)`** in
   [VisitorWithModelNameTracking.cs:46](../ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs#L46),
-  accumulating into `RuleViolations`. The FQN is available (`CurrentModelName`); the element
+  accumulating into `RuleFindings`. The FQN is available (`CurrentModelName`); the element
   name is a local (`variableName`/`name`/`className`) but is only interpolated into `Summary`.
 - **Orchestration** is a single static `StyleChecking.RunStyleChecking(...)`
   ([StyleChecking.cs:28](../ModelicaGraph/StyleChecking.cs#L28)) with one
   `if (settings.<Boolean>)` block per rule group; returns `List<LogMessage>`.
 - **Only two callers** consume that output: `StyleCheckingWorker` (raises the
-  `OnViolationsFound(List<LogMessage>)` event the GUI stores) and the MCP `StyleCheckRunner`
+  `OnFindingsFound(List<LogMessage>)` event the GUI stores) and the MCP `StyleCheckRunner`
   (mapped to DTOs in `StyleTools`). That is the entire projection surface.
 
 ### Load-bearing string contracts (must preserve or migrate in lockstep)
 
-1. Spelling `Summary` prefix `"Misspelled word '<w>'…"` — GUI `IsSpellingViolation` /
+1. Spelling `Summary` prefix `"Misspelled word '<w>'…"` — GUI `IsSpellingFinding` /
    `ExtractMisspelledWord` regex and dictionary-removal ([CodeReview.razor](../MLQT.Shared/Pages/CodeReview.razor)).
 2. Exact literals `"…in documentation info"` / `"…in documentation revisions"` /
    `"…in description"` — GUI dictionary-removal matches these verbatim.
 3. `Source == "StyleChecking"` — service clearing ([StyleCheckingService.cs:38](../MLQT.Services/StyleCheckingService.cs#L38))
    and MCP defaulting key off it.
-4. `Severity` free string — MCP `list_issues` does substring filtering on it.
+4. `Severity` free string — MCP `list_findings` does substring filtering on it.
 5. GUI table reads `ModelName`, `Summary`, `LineNumber`, `Severity`; details dialog opens
    only when `Details` is non-empty (so style findings must keep `Details == ""`).
 
@@ -179,9 +179,9 @@ Why this option (vs. a full dictionary cut, or bool+parallel-map):
 
 ## Producer refactor
 
-1. **Base visitor** — `RuleViolations` becomes `List<Finding>`; extend the reporting primitive:
+1. **Base visitor** — `RuleFindings` becomes `List<Finding>`; extend the reporting primitive:
    ```csharp
-   protected void AddViolation(int line, string message, string ruleId,
+   protected void AddFinding(int line, string message, string ruleId,
                                string? elementPath = null, string? discriminator = null);
    ```
    `Finding.ModelId` = `CurrentModelName`; `Severity` left at default here (stamped later).
@@ -200,7 +200,7 @@ Why this option (vs. a full dictionary cut, or bool+parallel-map):
 
 - **StyleCheckingWorker** and **MCP StyleCheckRunner** receive `List<Finding>` and call
   `.ToLogMessage()` to feed the existing `List<LogMessage>` event / DTO paths — output unchanged.
-- **Optional early win (additive, non-breaking):** enrich the MCP `StyleViolationDto` / `IssueItem`
+- **Optional early win (additive, non-breaking):** enrich the MCP `StyleFindingDto` / `FindingItem`
   with `RuleId` (and reuse `Finding` for the existing `Category`). MCP is the ideal first real
   consumer of structured findings and it costs almost nothing.
 - The GUI, `CodeReviewService`, `StyleCheckingService` events, and settings UI are **untouched** in
@@ -251,7 +251,7 @@ not `RunStyleChecking`) — they stay plain `bool`s and are **not** part of the 
 
 1. Add `Finding`, `RuleSeverity`, `FindingFingerprint`, `RuleIds`, `RuleDefinition`, `RuleCatalog`
    (all additive; nothing consumes them yet). Unit-test fingerprint stability/robustness.
-2. Base visitor: `RuleViolations` → `List<Finding>`; new `AddViolation` overload. Update every rule
+2. Base visitor: `RuleFindings` → `List<Finding>`; new `AddFinding` overload. Update every rule
    visitor to pass its rule id + element identity. (Broad but mechanical; existing tests guard message text.)
 3. `RunStyleChecking` → `List<Finding>`; map-driven activation; severity stamping; no-op suppressor seam.
 4. Add `IFindingSuppressor` (+ no-op default) and wire it.

@@ -100,7 +100,7 @@ flagship ⚠ item). Phase 6 stays inside the no-resolution-risk boundary.
   explicit `if (settings.X) { var v = new XVisitor(basePackage); v.VisitStored_definition(tree);
   findings.AddRange(v.Findings); }` block per rule. Each visitor extends
   `VisitorWithModelNameTracking` ([VisitorWithModelNameTracking.cs:12](../ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs#L12))
-  and emits via `AddViolation(line, message, ruleId, elementPath?, discriminator?)` — `ModelId` is
+  and emits via `AddFinding(line, message, ruleId, elementPath?, discriminator?)` — `ModelId` is
   injected from `CurrentModelName`. Severity is stamped afterward from `settings.SeverityFor(id)`
   (`StyleChecking.cs:162`); suppressions are filtered last via `MlqtSuppressionExtractor` on the
   same tree (`:171`).
@@ -245,7 +245,7 @@ Both sides already exist: the declared `ModelNode.PackageOrder` array vs the gro
 (incl. its import/extends exclusions). Report: entries with no matching class/file, classes/files
 missing from the order, order mismatches, and standalone-vs-nested placement mistakes
 (`CanBeStoredStandalone` gives the rule). `MLQT.Structure.PackageOrder`, **Warning**, element =
-package model id + a `Discriminator` naming the offending entry (so multiple issues in one package
+package model id + a `Discriminator` naming the offending entry (so multiple findings in one package
 fingerprint distinctly). Pure comparison logic; no new parsing.
 
 ### 6 — Missing-units  *(per-class visitor + type resolution; `MLQT.Units.MissingUnit`)*
@@ -282,7 +282,7 @@ fields):
 
 **Presentation:** MudBlazor `MudChart` (bar/donut) for per-dimension coverage and category
 breakdowns — available, currently unused, no new dependency. Grouping of findings by
-`RuleDefinition.Category` gives the issue-mix view (the `Category` seam Phase 1 built for exactly this).
+`RuleDefinition.Category` gives the finding-mix view (the `Category` seam Phase 1 built for exactly this).
 
 **Pipeline wiring:** add a deferred-aware metrics step to `MainLayout.RunStartUpAsync` (after external
 resources) and `OnProjectChanged`, mirroring the existing deferred pattern — new `AppState`

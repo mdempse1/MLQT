@@ -155,19 +155,19 @@ var settings = new StyleCheckingSettings
 
 // Run style checks on a model definition. RunStyleChecking is synchronous and
 // returns a List<LogMessage>; the model is identified by its fullModelId.
-List<LogMessage> violations = StyleChecking.RunStyleChecking(
+List<LogMessage> findings = StyleChecking.RunStyleChecking(
     modelDefinition, settings, fullModelId: "MyLibrary.MyModel");
 
 // Run style checks on a model excluded from formatting
 // When isExcludedFromFormatting is true, formatting-related rules are skipped:
 // ImportStatementsFirst, InitialEQAlgoFirst/Last, OneOfEachSection,
 // DontMixEquationAndAlgorithm, DontMixConnections
-violations = StyleChecking.RunStyleChecking(
+findings = StyleChecking.RunStyleChecking(
     modelDefinition, settings, fullModelId: "MyLibrary.MyModel",
     isExcludedFromFormatting: true);
 
-foreach (var violation in violations)
-    Console.WriteLine($"{violation.ModelName}: {violation.Summary}");
+foreach (var finding in findings)
+    Console.WriteLine($"{finding.ModelName}: {finding.Summary}");
 ```
 
 ### Traversing Dependencies
