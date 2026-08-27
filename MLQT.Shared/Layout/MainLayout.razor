@@ -1696,48 +1696,25 @@
                     SurfaceParserErrors(allModelIds);
                 }
 
-                // Build the same checking context the background worker uses (StyleCheckingWorker), so the
-                // combined pass yields the SAME violations. Without this, spelling, model-reference and
-                // inherited-icon rules were silently skipped here — making the combined count differ from
-                // the Code Review "run style check" (worker) count by hundreds of findings.
+                // One StyleCheckContext per repository, built by the same code the background worker
+                // and the CLI use. This pass used to derive the same inputs by hand — known ids,
+                // known names, the inherited-icon callback, the naming config, a spell checker each —
+                // and every one of them was a chance to drift from the paths it is meant to agree
+                // with. It had already drifted twice: spelling, model-reference and inherited-icon
+                // rules were once skipped here entirely, and the naming config was rebuilt per class.
                 var graph = LibraryDataService.CombinedGraph;
-                var distinctSettings = modelToSettings.Values.Distinct().ToList();
+                var defaultSettings = await SettingsService.GetAsync("StyleChecking", new StyleCheckingSettings());
 
-                // Coverage is measured in the same pass, for the same reason style checking is: the
-                // class has just been parsed and the tree is about to be released. Doing it here costs
-                // the measurement alone, inside a step that already runs for minutes, and leaves the
-                // Coverage tab with nothing to compute when the user opens it.
-                var coverage = new ModelicaGraph.Analysis.CoverageMeasurer(graph);
+                var contexts = new Dictionary<string, StyleCheckContext>(StringComparer.Ordinal);
+                foreach (var repo in RepositoryService.Repositories.Where(r => r.StyleSettings is not null))
+                    contexts[repo.Id] = StyleCheckContext.Build(
+                        repo.StyleSettings!, graph, StyleCheckingService.GetSpellCheckerIfNeeded(repo),
+                        collectCoverage: true);
 
-                IReadOnlySet<string>? knownModelIds = distinctSettings.Any(s => s.ValidateModelReferences)
-                    ? graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal)
-                    : null;
-                IReadOnlySet<string>? knownModelNames = distinctSettings.Any(s => s.SpellCheckDescription || s.SpellCheckDocumentation)
-                    ? graph.ModelNodes.Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
-                        .ToHashSet(StringComparer.Ordinal)   // Modelica is case sensitive
-                    : null;
-                var baseClassHasIcon = distinctSettings.Any(s => s.ClassHasIcon)
-                    ? StyleChecking.CreateBaseClassHasIconCallback(graph)
-                    : null;
-                // One per repository's settings rather than one per class: the naming rules are the
-                // same for every class checked under a given settings object, and rebuilding them —
-                // dictionaries, sets and all — for each of tens of thousands of classes is work whose
-                // answer never changes. Keyed by reference and thrown away with the pass, so a
-                // settings change cannot be read from a stale entry.
-                var namingConfigs = new Dictionary<StyleCheckingSettings, ModelicaParser.StyleRules.NamingConventionConfig>(
-                    ReferenceEqualityComparer.Instance as IEqualityComparer<StyleCheckingSettings>);
-                foreach (var s in distinctSettings)
-                    if (s.FollowNamingConvention)
-                        namingConfigs[s] = s.NamingConvention.ToConfig();
-                // Keyed by repository, not by settings: the accepted spellings live with the
-                // repository now, so two repositories sharing identical settings still need their own
-                // checker. Sharing one would let either repository's words silence the other's.
-                var spellCheckerByRepository = RepositoryService.Repositories
-                    .Where(r => r.StyleSettings is not null)
-                    .ToDictionary(
-                        r => r.Id,
-                        r => StyleCheckingService.GetSpellCheckerIfNeeded(r),
-                        StringComparer.Ordinal);
+                // For a class in a library that belongs to no repository: the tool's default rules, and
+                // no accepted spellings, because there is no repository to have accepted any.
+                contexts[""] = StyleCheckContext.Build(
+                    defaultSettings, graph, spellChecker: null, collectCoverage: true);
 
                 var repositoryByModel = BuildModelToRepositoryMap();
 
@@ -1747,25 +1724,24 @@
                     // CanBeStoredStandalone flag is a non-deterministic file-storage property, not a
                     // style-check gate, so filtering on it made GUI counts unstable and inconsistent with
                     // the CLI/MCP. All paths now check all classes.
-                    if (modelToSettings.TryGetValue(model.Id, out var settings) && settings.HasAnyStyleRuleEnabled)
-                    {
-                        ModelicaParser.SpellChecking.SpellChecker? spellChecker = null;
-                        if (repositoryByModel.TryGetValue(model.Id, out var repositoryId))
-                            spellCheckerByRepository.TryGetValue(repositoryId, out spellChecker);
-                        namingConfigs.TryGetValue(settings, out var namingConfig);
-                        var violations = StyleChecking.RunStyleChecking(model.Definition, settings, model.Id,
-                            knownModelIds, spellChecker, knownModelNames,
-                            isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(model.Id),
-                            baseClassHasIcon: baseClassHasIcon, namingConfig: namingConfig);
+                    if (!modelToSettings.TryGetValue(model.Id, out var settings))
+                        return;
 
-                        foreach (var v in violations)
+                    var repositoryId = repositoryByModel.TryGetValue(model.Id, out var id) ? id : "";
+                    if (!contexts.TryGetValue(repositoryId, out var context))
+                        context = contexts[""];
+
+                    if (settings.HasAnyStyleRuleEnabled)
+                    {
+                        foreach (var v in StyleCheckRunner.Run(model, settings, context))
                             combinedViolations.Add(v);
                     }
-
-                    // Outside the settings check: a class in a library with no rules enabled still
-                    // counts towards coverage, which reports the state of the code rather than the
-                    // result of the rules.
-                    coverage.Measure(model);
+                    else
+                    {
+                        // A class in a library with no rules enabled still counts towards coverage,
+                        // which reports the state of the code rather than the result of the rules.
+                        context.Coverage?.Measure(model);
+                    }
                 };
             }
 

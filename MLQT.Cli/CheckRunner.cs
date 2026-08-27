@@ -11,7 +11,10 @@ internal static class CheckRunner
         var load = await CheckPipeline.LoadAndCheckAsync(
             opts.LibraryPath, opts.ConfigPath, stderr,
             honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
-            allowVersionMismatch: opts.AllowVersionMismatch);
+            allowVersionMismatch: opts.AllowVersionMismatch,
+            // Only when this run is going to report coverage: the check has the parse tree in hand, so
+            // measuring here costs the measurement alone rather than a second pass over the library.
+            collectCoverage: opts.RecordMetrics);
         if (!load.Ok)
             return load.ExitCode;
 

@@ -17,6 +17,10 @@ namespace MLQT.Services.Checking;
 /// </summary>
 public static class LibraryCheckSession
 {
+    /// <param name="collectCoverage">Measure each class's coverage contribution while it is checked.
+    /// The check has parsed the class anyway and is about to release the tree, so this costs the
+    /// measurement alone and saves a later coverage report a whole parse pass over the library. Left
+    /// off unless the caller is going to report coverage.</param>
     public static IReadOnlyList<Finding> Check(
         DirectedGraph graph,
         IEnumerable<ModelNode> models,
@@ -25,7 +29,8 @@ public static class LibraryCheckSession
         IDictionaryManagerService dictionaryManager,
         bool honorSuppressions = true,
         bool? dependenciesAnalyzed = null,
-        string? repositoryRoot = null)
+        string? repositoryRoot = null,
+        bool collectCoverage = false)
     {
         // Classes recovered from an encrypted library's documentation are dropped here, at the one
         // place every surface goes through, rather than left to each caller to remember. They are
@@ -46,7 +51,7 @@ public static class LibraryCheckSession
             return parseFindings;
 
         var context = StyleCheckContext.Build(
-            settings, graph, customDictionary, dictionaryManager, repositoryRoot);
+            settings, graph, customDictionary, dictionaryManager, repositoryRoot, collectCoverage);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };

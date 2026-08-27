@@ -71,7 +71,8 @@ internal static class CheckPipeline
 
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
-        IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false)
+        IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false,
+        bool collectCoverage = false)
     {
         var isDir = Directory.Exists(libraryPath);
         var isMoFile = File.Exists(libraryPath) &&
@@ -235,7 +236,8 @@ internal static class CheckPipeline
         // the same list a developer's app does even when the settings cover several libraries.
         var findings = LibraryCheckSession
             .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
-                   dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot)
+                   dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot,
+                   collectCoverage: collectCoverage)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)
