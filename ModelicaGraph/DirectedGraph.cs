@@ -223,6 +223,20 @@ public class DirectedGraph
     /// </summary>
     public void AddFileContainsModel(string fileNodeId, string modelNodeId)
     {
+        // Under the graph lock, all of it. Libraries load in parallel, and a class that moves between
+        // files now touches the set belonging to the file it is leaving — a set another thread may be
+        // adding to for a file of its own. Two threads inside one HashSet do not merely race for an
+        // outcome: they corrupt it, and a corrupted set can spin forever on the next lookup, which
+        // presents as a load that never finishes rather than as an error.
+        lock (_lock)
+        {
+            AddFileContainsModelLocked(fileNodeId, modelNodeId);
+        }
+    }
+
+    /// <summary>Caller must hold the lock.</summary>
+    private void AddFileContainsModelLocked(string fileNodeId, string modelNodeId)
+    {
         var fileNode = GetNode<FileNode>(fileNodeId);
         var modelNode = GetNode<ModelNode>(modelNodeId);
 
@@ -302,7 +316,17 @@ public class DirectedGraph
         if (fileNode == null)
             return Enumerable.Empty<ModelNode>();
 
-        return fileNode.ContainedModelIds
+        // Copied under the lock rather than returned as a query over the live set: the caller decides
+        // when to enumerate, and a class moving between files mutates that set from a loading thread.
+        // An enumeration that outlives the lock is an enumeration of something that can change under
+        // it.
+        string[] ids;
+        lock (_lock)
+        {
+            ids = fileNode.ContainedModelIds.ToArray();
+        }
+
+        return ids
             .Select(id => GetNode<ModelNode>(id))
             .Where(node => node != null)
             .Cast<ModelNode>();
