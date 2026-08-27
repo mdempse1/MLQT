@@ -51,6 +51,26 @@ public class MetricsCalculatorTests
     }
 
     [Fact]
+    public void DescriptionCoverage_CountsAClassThatHasNoBodyToPutOneIn()
+    {
+        // A type alias declares its description in the trailing comment, having no composition to
+        // hold one. Scoring it as undocumented put the coverage dashboard at odds with the
+        // description rule, which does not flag it — and there are 684 such classes in MSL alone.
+        var models = new[]
+        {
+            Model("Gain", "type Gain = Real(min = 0) \"a dimensionless gain\";", "type"),
+            Model("Colour", "type Colour = enumeration(red, green) \"a colour\";", "type"),
+            Model("Derivative", "function df = der(f, x) \"the derivative\";", "function"),
+            Model("Plain", "type Plain = Real;", "type"),
+        };
+
+        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Description");
+
+        Assert.Equal(3, d.Compliant);
+        Assert.Equal(4, d.Eligible);
+    }
+
+    [Fact]
     public void IconCoverage_DetectsIconAnnotationInSource()
     {
         var models = new[]

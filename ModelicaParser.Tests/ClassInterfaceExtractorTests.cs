@@ -282,4 +282,38 @@ public class ClassInterfaceExtractorTests
         Assert.Equal("2", ext.Modifications!["T"]);
         Assert.False(ext.Modifications.ContainsKey("k"));
     }
+
+    // ── the description, in each form a class can declare one ──
+
+    [Theory]
+    [InlineData("type Gain = Real(min = 0) \"a dimensionless gain\";")]
+    [InlineData("type Colour = enumeration(red, green) \"a dimensionless gain\";")]
+    [InlineData("connector Pin = Interfaces.Pin \"a dimensionless gain\";")]
+    [InlineData("function df = der(f, x) \"a dimensionless gain\";")]
+    public void AClassWithNoBody_StillHasItsDescriptionRead(string code)
+    {
+        // A short or der class definition has no composition, so its description hangs off the
+        // trailing comment. Reading only the long form scored a described type as undocumented in the
+        // coverage metrics and handed an agent description: null over MCP — while the description
+        // rule, which does read all three forms, said nothing was missing.
+        Assert.Equal("a dimensionless gain", Extract(code).Description);
+    }
+
+    [Fact]
+    public void AShortClassWithNoDescription_StillHasNone()
+    {
+        Assert.Null(Extract("type Plain = Real;").Description);
+    }
+
+    [Theory]
+    [InlineData("type Gain = Real \"a nested description\";")]
+    [InlineData("function df = der(f, x) \"a nested description\";")]
+    [InlineData("model Inner \"a nested description\"\n  end Inner;")]
+    public void ANestedClassKeepsItsDescriptionWhicheverFormItIs(string nested)
+    {
+        var iface = Extract($"package P\n  {nested}\nend P;");
+
+        Assert.Equal("a nested description",
+            iface.Elements.Single(e => e.Kind == ClassElementKind.Class).Description);
+    }
 }

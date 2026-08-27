@@ -28,17 +28,12 @@ public static class ClassInterfaceExtractor
     public static ClassInterface ExtractFromClass(modelicaParser.Class_definitionContext cls)
     {
         var elements = new List<ClassElement>();
-        var longSpec = cls.class_specifier()?.long_class_specifier();
-        string? description = null;
+        var spec = cls.class_specifier();
 
-        if (longSpec is not null)
-        {
-            description = ReadStringComment(longSpec.string_comment());
-            if (longSpec.composition() is { } composition)
-                CollectComposition(composition, elements);
-        }
+        if (spec?.long_class_specifier()?.composition() is { } composition)
+            CollectComposition(composition, elements);
 
-        return new ClassInterface { Description = description, Elements = elements };
+        return new ClassInterface { Description = ClassDescription(spec), Elements = elements };
     }
 
     private static void CollectComposition(modelicaParser.CompositionContext composition, List<ClassElement> elements)
@@ -132,7 +127,7 @@ public static class ClassInterfaceExtractor
                 Kind = ClassElementKind.Class,
                 Name = ClassName(spec),
                 ClassType = GetClassType(nested.class_prefixes()),
-                Description = ReadStringComment(spec?.long_class_specifier()?.string_comment()),
+                Description = ClassDescription(spec),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
                 Line = element.Start.Line
@@ -277,6 +272,28 @@ public static class ClassInterfaceExtractor
             if (import.GetChild(i) is ITerminalNode t && t.GetText().Contains('*'))
                 return name + ".*";
         return name;
+    }
+
+    /// <summary>
+    /// The class's own description string, in whichever of the three forms declares it.
+    ///
+    /// <para>A long class definition carries it after the name; a short one (<c>type Gain = Real "a
+    /// gain"</c>) and a der one have no composition, so theirs lives in the trailing comment. Reading
+    /// only the long form scores a described type as undocumented in the coverage metrics and hands an
+    /// agent <c>description: null</c> over MCP, while the description rule — which does read all three
+    /// — correctly says nothing is missing. That disagreement is what this exists to prevent.</para>
+    /// </summary>
+    private static string? ClassDescription(modelicaParser.Class_specifierContext? spec)
+    {
+        if (spec is null)
+            return null;
+        if (spec.long_class_specifier() is { } lng)
+            return ReadStringComment(lng.string_comment());
+        if (spec.short_class_specifier() is { } sht)
+            return ReadStringComment(sht.comment()?.string_comment());
+        if (spec.der_class_specifier() is { } der)
+            return ReadStringComment(der.comment()?.string_comment());
+        return null;
     }
 
     private static string ClassName(modelicaParser.Class_specifierContext? spec)
