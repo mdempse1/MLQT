@@ -13,11 +13,15 @@ public sealed record CoverageMetric(string Dimension, int Compliant, int Eligibl
 }
 
 /// <summary>Aggregate metrics for a set of models: size counts and quality-coverage percentages.</summary>
+/// <param name="MeasuredNow">How many of the classes had to be measured during this report rather
+/// than having been measured already while they were checked. Zero is the intended state; a large
+/// number is why a report was slow.</param>
 public sealed record LibraryMetrics(
     int TotalClasses,
     IReadOnlyDictionary<string, int> ClassesByType,
     int TotalComponents,
-    IReadOnlyList<CoverageMetric> Coverage);
+    IReadOnlyList<CoverageMetric> Coverage,
+    int MeasuredNow = 0);
 
 /// <summary>
 /// Computes the metrics-dashboard figures over a set of models: class counts by kind, total component
@@ -75,7 +79,7 @@ public static class MetricsCalculator
             new("Unit", realWithUnit, realTotal),
         };
 
-        return new LibraryMetrics(total, byType, components, coverage);
+        return new LibraryMetrics(total, byType, components, coverage, measurer.MeasuredHere);
     }
 }
 
@@ -98,6 +102,15 @@ public sealed class CoverageMeasurer
     // style checking measures from its worker threads.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool, bool)> _unitCache =
         new(StringComparer.Ordinal);
+
+    private int _measured;
+
+    /// <summary>
+    /// How many classes this measurer had to work out for itself, rather than finding already done.
+    /// The difference between that and the number of classes reported on is what a coverage report
+    /// still costs, and it is the number to look at when the first one is slow.
+    /// </summary>
+    public int MeasuredHere => Volatile.Read(ref _measured);
 
     public CoverageMeasurer(DirectedGraph graph)
     {
@@ -129,6 +142,7 @@ public sealed class CoverageMeasurer
         {
             var facts = Extract(model, tree);
             model.Definition.Coverage = facts;
+            Interlocked.Increment(ref _measured);
             return facts;
         }
         catch

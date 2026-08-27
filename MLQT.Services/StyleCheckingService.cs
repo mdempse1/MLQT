@@ -414,7 +414,13 @@ public class StyleCheckingService : IStyleCheckingService
             anyWorkerStarted = true;
         }
 
-        if (anyWorkerStarted)
+        // Coverage for everything the workers will not reach: a repository with no rules enabled has
+        // no worker at all, and a library loaded for reference belongs to no repository. Those classes
+        // are still on the Coverage tab, and measuring them there means the user waits for it — the
+        // point of measuring during checking is that this step already runs for minutes.
+        var sweep = StartCoverageSweep();
+
+        if (anyWorkerStarted || sweep is not null)
         {
             OnProgressChanged?.Invoke(false);
             // Whole-graph analyses run alongside the per-model workers and deliver through the same
@@ -425,10 +431,59 @@ public class StyleCheckingService : IStyleCheckingService
         }
         else
         {
-            // Every repository was skipped, so there is nothing to wait for: CancelExistingWorkers
-            // above already released the previous run's signal.
+            // Every repository was skipped and there was nothing left to measure, so there is nothing
+            // to wait for: CancelExistingWorkers above already released the previous run's signal.
             OnProgressChanged?.Invoke(true);
         }
+    }
+
+    /// <summary>
+    /// Measures the coverage of every class no check has reached, as part of this run so the progress
+    /// dialog covers it. Returns null when there is nothing to do — every class already measured, which
+    /// is the state after a run that checked them all.
+    ///
+    /// <para>It reads the same facts the checked classes carry, so what the Coverage tab shows does not
+    /// depend on which classes happened to have rules enabled.</para>
+    /// </summary>
+    private Task? StartCoverageSweep()
+    {
+        var pending = _libraryDataService.GetAllModels()
+            .Where(m => m.Definition.Coverage is null && !m.IsExternalStub && !m.IsParseFailurePlaceholder)
+            .ToList();
+
+        if (pending.Count == 0)
+            return null;
+
+        Interlocked.Increment(ref _graphAnalysesRunning);
+        return Task.Run(() =>
+        {
+            try
+            {
+                var measurer = new CoverageMeasurer(_libraryDataService.CombinedGraph);
+                var options = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
+                };
+
+                LogProcessStart("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
+                Parallel.ForEach(pending, options, model =>
+                {
+                    if (_stopRequested)
+                        return;
+                    measurer.Measure(model);
+                });
+                LogProcessEnd("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
+            }
+            catch (Exception ex)
+            {
+                // Coverage is a report, not a gate: a failure here must not fail the check it rode in on.
+                Error("StyleCheckingService", "Coverage measurement failed", ex);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _graphAnalysesRunning);
+            }
+        });
     }
 
     // The rule ids owned by the whole-graph analyzers. Used to clear stale graph findings before an

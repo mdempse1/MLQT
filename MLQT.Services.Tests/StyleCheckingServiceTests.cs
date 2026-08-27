@@ -387,6 +387,9 @@ end TestModel;");
             ("Model2", "model Model2 end Model2;"));
 
         service.StartBackgroundCheckingForRepositories(new List<Repository> { repo1, repo2 });
+        // Asynchronous now: nothing has rules, but the classes are still measured for the Coverage
+        // tab, and completion means that work has finished too.
+        await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(completionSignal);
     }
@@ -619,6 +622,47 @@ epos\Alpha", new[] { "en_GB" });
         service.StartBackgroundCheckingForRepositories([repo]);
 
         await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task StyleChecking_MeasuresCoverageForClassesNoRuleReaches()
+    {
+        // A repository with no rules enabled gets no worker at all, and a library loaded for reference
+        // belongs to no repository — but both are on the Coverage tab, so the user would have waited
+        // for them there. Style checking already runs for minutes; this is where the wait belongs.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings(),   // nothing enabled
+            ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+        Assert.Null(node.Definition.Coverage);
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.NotNull(node.Definition.Coverage);
+    }
+
+    [Fact]
+    public async Task StyleChecking_DoesNotMeasureAClassTwice()
+    {
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+        var measured = node.Definition.Coverage;
+        Assert.NotNull(measured);
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.Same(measured, node.Definition.Coverage);
     }
 
     private static async Task WaitForCompletionAsync(StyleCheckingService service, int timeoutMs = 5000)

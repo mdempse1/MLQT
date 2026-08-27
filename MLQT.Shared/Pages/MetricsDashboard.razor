@@ -647,7 +647,13 @@
         try
         {
             var graph = LibraryDataService.CombinedGraph;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models));
+            // Says where a slow report went: classes measured here are ones no check had reached, so
+            // the number names the gap rather than leaving the wait unexplained.
+            MLQT.Services.LoggingService.Info("MetricsDashboard",
+                $"Coverage over {models.Count} class(es) took {watch.ElapsedMilliseconds} ms; " +
+                $"{_metrics.MeasuredNow} measured here, {models.Count - _metrics.MeasuredNow} already done");
             _cacheScope = _scope;
             _cacheSignature = LibrarySignature();
             _cacheMetrics = _metrics;

@@ -72,6 +72,9 @@ public class StyleCheckingNoRulesTests : IDisposable
         fixture.Service.OnProgressChanged += done => { if (done) Interlocked.Increment(ref completions); };
 
         fixture.Service.StartBackgroundCheckingForRepositories(fixture.Repositories);
+        // Asynchronous now: nothing has rules, but the classes still have to be measured for the
+        // Coverage tab, and completion means that work is done too.
+        await fixture.Service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(1, Volatile.Read(ref completions));
         Assert.False(fixture.Service.IsRunning);
@@ -101,6 +104,7 @@ public class StyleCheckingNoRulesTests : IDisposable
         fixture.Service.OnProgressChanged += done => { if (done) Interlocked.Increment(ref completions); };
 
         fixture.Service.StartBackgroundCheckingForRepositories([]);
+        await fixture.Service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(1, Volatile.Read(ref completions));
     }
