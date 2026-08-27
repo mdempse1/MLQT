@@ -1,5 +1,6 @@
 using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
+using MLQT.Services.Helpers;
 using System.Text.Json;
 using ModelicaGraph;
 using ModelicaParser.Helpers;
@@ -168,12 +169,17 @@ public class RepositoryService : IRepositoryService
         return localPath;
     }
 
+    /// <param name="isReferenceOnly">Code the user has no say over — loaded so references resolve,
+    /// never reported on or written to. Null asks the filesystem: a folder MLQT cannot write into is
+    /// one it cannot keep settings in either, which is the common case for a tool's library folder
+    /// under Program Files.</param>
     public async Task<AddRepositoryResult> AddRepositoryAsync(
         string pathOrUrl,
         string? checkoutPath = null,
         string? name = null,
         bool startMonitoring = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool? isReferenceOnly = null)
     {
         var result = new AddRepositoryResult();
 
@@ -225,6 +231,15 @@ public class RepositoryService : IRepositoryService
 
             // Detect the VCS working copy root (may differ from LocalPath for subdirectory repos)
             repository.VcsRootPath = DetectVcsRoot(repository.LocalPath, vcsType);
+
+            // What the caller said, or what the filesystem says. A folder MLQT cannot write into is
+            // one whose settings, baseline and accepted spellings could never be kept beside the code
+            // — a tool's library folder under Program Files being the case this exists for.
+            repository.IsReferenceOnly = isReferenceOnly
+                ?? !DirectoryWritability.CanWriteInto(repository.LocalPath);
+            if (repository.IsReferenceOnly && isReferenceOnly is null)
+                Info("RepositoryService",
+                    $"'{repository.Name}' is read-only on disk, so it is loaded for reference only");
 
             // Get current revision info
             await UpdateRevisionInfoAsync(repository);
@@ -563,8 +578,15 @@ public class RepositoryService : IRepositoryService
                     VcsType = repo.VcsType.ToString(),
                     PreferredRevision = repo.CurrentRevision,
                     AutoLoad = true,
+                    IsReferenceOnly = repo.IsReferenceOnly,
                     LibraryPaths = repo.DiscoveredLibraries.Keys.ToList()
                 });
+
+                // Nothing is written into a repository the user has no say over. Settings beside
+                // someone else's library are settings nobody will read — and under a tool's install
+                // folder the write fails anyway, once per repository per save.
+                if (repo.IsReferenceOnly)
+                    continue;
 
                 //Save the formatting settings into the repository so that every user gets the same
                 try
@@ -699,7 +721,8 @@ public class RepositoryService : IRepositoryService
                     null,
                     entry.Name,
                     startMonitoring: false,
-                    cancellationToken);
+                    cancellationToken,
+                    isReferenceOnly: entry.IsReferenceOnly);
 
                 if (result.Success && result.Repository != null)
                 {
@@ -844,7 +867,8 @@ public class RepositoryService : IRepositoryService
                     null,
                     entry.Name,
                     startMonitoring: false,
-                    cancellationToken);
+                    cancellationToken,
+                    isReferenceOnly: entry.IsReferenceOnly);
 
                 if (result.Success && result.Repository != null)
                 {

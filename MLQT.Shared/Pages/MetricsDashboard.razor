@@ -632,14 +632,29 @@
         _dimensions = _scopedHistory.SelectMany(s => s.Coverage.Keys).Distinct().ToList();
     }
 
+    /// <summary>
+    /// The classes these figures are about: the user's own code. A repository marked reference only is
+    /// loaded so references resolve and is nobody's to improve, so counting its descriptions and icons
+    /// would move the percentages for reasons no one here can act on — the same reason classes
+    /// recovered from an encrypted library are left out.
+    /// </summary>
+    private List<ModelNode> ReportableModels()
+    {
+        var referenceOnly = ReferenceOnlyScope.ModelIds(LibraryDataService, RepositoryService);
+        var all = LibraryDataService.GetAllModels();
+        return referenceOnly.Count == 0
+            ? all.ToList()
+            : all.Where(m => !referenceOnly.Contains(m.Id)).ToList();
+    }
+
     private async Task Compute()
     {
         EnsureAnalysisStarted();   // run dependency analysis + style checking if needed for a full count
         RecountViolations();
 
-        var all = LibraryDataService.GetAllModels();
+        var all = ReportableModels();
         var models = string.IsNullOrEmpty(_scope)
-            ? all.ToList()
+            ? all
             : all.Where(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)).ToList();
         _modelCount = models.Count;
         _loading = true;
@@ -670,7 +685,7 @@
     // inherits icons/units from outside its own subtree still scores correctly.
     private async Task ComputeSummary()
     {
-        var all = LibraryDataService.GetAllModels().ToList();
+        var all = ReportableModels();
         var children = SubPackages(all.Where(m => m.ClassType == "package").Select(m => m.Id));
         if (children.Count == 0)
         {

@@ -34,7 +34,8 @@ public interface IRepositoryService
         string? checkoutPath = null,
         string? name = null,
         bool startMonitoring = true,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool? isReferenceOnly = null);
 
     /// <summary>
     /// Detects the VCS type for a given path or URL.

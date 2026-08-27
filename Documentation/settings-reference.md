@@ -56,6 +56,25 @@ See [encrypted-libraries.md](encrypted-libraries.md) for what is recovered from 
 
 ## Repository Settings
 
+### Reference-only repositories
+
+Some repositories hold code you depend on but do not maintain: a tool's library folder, or another
+team's repository. Tick **Reference only** — when adding the repository, or later in
+**Settings > Repositories** — and MLQT loads it so that references into it resolve and leaves it
+alone otherwise:
+
+- it is not style-checked, so no findings are raised against code you cannot change;
+- its classes do not count towards coverage, so a vendor's descriptions and icons do not move your
+  percentages;
+- it is not formatted;
+- nothing is written into it — no `.mlqt` directory, and so no settings, baseline or accepted
+  spellings kept beside it.
+
+A folder MLQT cannot write into is offered as reference-only automatically when you add it, since it
+could never keep those files anyway. The tick is only ever suggested: you can untick it, and marking
+a perfectly writable repository as reference-only is the point of the setting — a Git repository you
+have read access to is exactly the case.
+
 Repository settings are edited through **Settings > Manage Repositories** by clicking on a repository row. Each repository has its own independent copy of all style, formatting, and commit settings.
 
 The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.

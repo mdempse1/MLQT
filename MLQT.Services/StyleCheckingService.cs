@@ -380,6 +380,14 @@ public class StyleCheckingService : IStyleCheckingService
 
         foreach (var repository in repositories)
         {
+            // Code the user has no say over is loaded so references resolve, and reported on never:
+            // findings against a vendor's library are findings nobody can act on.
+            if (repository.IsReferenceOnly)
+            {
+                LogProcessStart("StyleCheckingService", $"Skipping {repository.Name} — reference only");
+                continue;
+            }
+
             repository.StyleSettings ??= _settingsService.GetAsync("StyleChecking", new StyleCheckingSettings()).GetAwaiter().GetResult();
 
             if (!repository.StyleSettings.HasAnyStyleRuleEnabled)
@@ -458,8 +466,13 @@ public class StyleCheckingService : IStyleCheckingService
     {
         // Taken after the workers have finished, so it is the classes no check reached and not the
         // whole library: everything a worker checked measured itself while it had the parse tree.
+        // Reference-only repositories are excluded here as they are from checking: their coverage is
+        // a vendor's achievement or debt, and measuring tens of thousands of their classes is the
+        // largest thing this sweep could be asked to do for no one's benefit.
+        var referenceOnly = ReferenceOnlyScope.ModelIds(_libraryDataService, _repositoryService);
         var pending = _libraryDataService.GetAllModels()
-            .Where(m => m.Definition.Coverage is null && !m.IsExternalStub && !m.IsParseFailurePlaceholder)
+            .Where(m => m.Definition.Coverage is null && !m.IsExternalStub && !m.IsParseFailurePlaceholder
+                        && !referenceOnly.Contains(m.Id))
             .ToList();
 
         if (pending.Count == 0)

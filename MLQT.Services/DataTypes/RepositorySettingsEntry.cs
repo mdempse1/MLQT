@@ -49,6 +49,12 @@ public class RepositorySettingsEntry
     public bool AutoLoad { get; set; } = true;
 
     /// <summary>
+    /// Whether this repository is reference only — loaded so references resolve, never reported on or
+    /// written to. See <see cref="Repository.IsReferenceOnly"/>.
+    /// </summary>
+    public bool IsReferenceOnly { get; set; }
+
+    /// <summary>
     /// Relative paths to libraries within the repo to load.
     /// If empty, all discovered libraries are loaded.
     /// </summary>

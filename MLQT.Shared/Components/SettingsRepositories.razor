@@ -180,6 +180,24 @@
             <MudTextField Value="_selectedItem.VcsRootPath" Label="VCS Repository Root:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"
                 HelperText="Library path is a subdirectory of this VCS working copy. All VCS operations apply to the full repository." />
         }
+
+        <MudSwitch T="bool" Value="_selectedItem.IsReferenceOnly" ValueChanged="OnReferenceOnlyChanged"
+            Color="Color.Primary" Size="Size.Small" Class="mt-4"
+            Label="Reference only — code this team does not maintain" />
+        <MudText Typo="Typo.caption" Class="ml-8 mt-n2 mb-2">
+            Loaded so that references into it resolve. It is not style-checked, does not count towards
+            coverage, and nothing is written into it — no <code>.mlqt</code> directory, so no settings,
+            baseline or accepted spellings are kept beside it.
+        </MudText>
+
+        @if (_selectedItem.IsReferenceOnly)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                The settings below are kept but not applied: rules, formatting and spelling are for code
+                this team maintains.
+            </MudAlert>
+        }
+
         <MudText Typo="Typo.body1" Class="mt-4">Commit requirements</MudText>
         <MudSwitch @bind-Value="SelectedSettings.CommitRequiresIssueNumber" Color="Color.Primary" Size="Size.Small"
             Label="Require an issue number as part of the commit message" />
@@ -407,6 +425,21 @@
 </MudDialog>
 
 @code {
+    /// <summary>
+    /// Marking a repository reference only takes it out of checking, coverage and formatting, and
+    /// stops MLQT writing into it. Applied to the live repository at once so the rest of the app stops
+    /// treating it as the user's own code without waiting for Apply — which is also what makes the
+    /// panel below it disappear.
+    /// </summary>
+    private void OnReferenceOnlyChanged(bool value)
+    {
+        if (_selectedItem is null)
+            return;
+
+        _selectedItem.IsReferenceOnly = value;
+        StateHasChanged();
+    }
+
     private List<Repository> _repositories = new();
     private Repository _selectedItem = null!;
     private Repository _backupItem = null!;
