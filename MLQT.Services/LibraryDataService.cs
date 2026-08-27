@@ -47,11 +47,35 @@ public class LibraryDataService : ILibraryDataService
     public event Action? OnTreeDataChanged;
 
     /// <inheritdoc/>
-    public bool SuppressTreeDataChangedEvents { get; set; }
+    // Depth rather than a flag: a project switch suppresses across the whole switch while each
+    // repository's load suppresses within it, and only the outermost announcement is the one worth
+    // making.
+    private int _treeNotificationDepth;
+
+    /// <inheritdoc/>
+    public IDisposable SuppressTreeDataChanged()
+    {
+        Interlocked.Increment(ref _treeNotificationDepth);
+        return new TreeNotificationScope(this);
+    }
+
+    private sealed class TreeNotificationScope(LibraryDataService owner) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;   // disposing twice must not lift someone else's suppression
+
+            if (Interlocked.Decrement(ref owner._treeNotificationDepth) == 0)
+                owner.OnTreeDataChanged?.Invoke();
+        }
+    }
 
     private void RaiseTreeDataChanged()
     {
-        if (!SuppressTreeDataChangedEvents)
+        if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
     }
 

@@ -1238,16 +1238,12 @@ end TestPkg;
         var announcements = 0;
         service.OnTreeDataChanged += () => announcements++;
 
-        service.SuppressTreeDataChangedEvents = true;
-        try
+        using (service.SuppressTreeDataChanged())
         {
             for (var i = 0; i < 5; i++)
                 await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
-        }
-        finally
-        {
-            service.SuppressTreeDataChangedEvents = false;
-            service.NotifyTreeDataChanged();
+
+            Assert.Equal(0, announcements);   // nothing while the load is in progress
         }
 
         Assert.Equal(1, announcements);
@@ -1265,5 +1261,49 @@ end TestPkg;
             await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
 
         Assert.True(announcements >= 5, $"expected one per library, got {announcements}");
+    }
+
+    [Fact]
+    public async Task NestedSuppression_AnnouncesOnlyWhenTheOutermostFinishes()
+    {
+        // A project switch suppresses across the whole switch while each repository's load suppresses
+        // within it. A flag could not express that: whichever finished first lifted the suppression
+        // for the one still running, and the announcements resumed mid-load.
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        using (service.SuppressTreeDataChanged())
+        {
+            using (service.SuppressTreeDataChanged())
+            {
+                await service.AddLibraryFromFileAsync("A.mo", "model A \"a\"\nend A;");
+            }
+
+            Assert.Equal(0, announcements);   // the outer scope still holds
+            await service.AddLibraryFromFileAsync("B.mo", "model B \"b\"\nend B;");
+            Assert.Equal(0, announcements);
+        }
+
+        Assert.Equal(1, announcements);
+    }
+
+    [Fact]
+    public async Task ADisposedScopeDisposedAgain_DoesNotLiftSomeoneElsesSuppression()
+    {
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        var outer = service.SuppressTreeDataChanged();
+        var inner = service.SuppressTreeDataChanged();
+        inner.Dispose();
+        inner.Dispose();
+
+        await service.AddLibraryFromFileAsync("A.mo", "model A \"a\"\nend A;");
+        Assert.Equal(0, announcements);
+
+        outer.Dispose();
+        Assert.Equal(1, announcements);
     }
 }

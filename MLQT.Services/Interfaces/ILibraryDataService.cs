@@ -187,13 +187,21 @@ public interface ILibraryDataService
     /// side effects (VCS status queries) on every individual file reload.
     /// The caller must fire OnTreeDataChanged once after unsetting this flag.
     /// </summary>
-    bool SuppressTreeDataChangedEvents { get; set; }
+    /// <summary>
+    /// Holds back the per-library tree announcements until the returned scope is disposed, then makes
+    /// one. Each announcement costs every open library tree a working-copy status query and a full
+    /// rebuild, queued on the UI thread, so a load that brings in a hundred libraries queues a hundred
+    /// of those and everything after it waits for them.
+    ///
+    /// <para>Scopes nest: an outer bulk load keeps its suppression while an inner one comes and goes,
+    /// and only the outermost announces. A flag could not express that — whichever caller finished
+    /// first lifted the suppression for the one still running.</para>
+    /// </summary>
+    IDisposable SuppressTreeDataChanged();
 
     /// <summary>
-    /// Announces that the tree data has changed, once. For a caller that has just suppressed the
-    /// per-library announcements through a bulk load and wants the one refresh that reflects all of
-    /// them — each announcement costs every open library tree a working-copy status query and a full
-    /// rebuild, so a hundred of them during a load is a hundred of those, queued on the UI thread.
+    /// Announces that the tree data has changed, once. For a caller that has changed what the tree
+    /// shows outside a suppression scope.
     /// </summary>
     void NotifyTreeDataChanged();
 }

@@ -655,7 +655,7 @@
             // announces a hundred times, and the queue that builds up is then in front of everything
             // else the startup wants to do: the two minutes this used to spend were spent waiting for
             // that queue to drain, not doing the work each step was named for.
-            LibraryDataService.SuppressTreeDataChangedEvents = true;
+            var treeNotifications = LibraryDataService.SuppressTreeDataChanged();
             try
             {
                 LogProcessStart("MainLayout", "Loading repositories and libraries");
@@ -676,8 +676,7 @@
             }
             finally
             {
-                LibraryDataService.SuppressTreeDataChangedEvents = false;
-                LibraryDataService.NotifyTreeDataChanged();
+                treeNotifications.Dispose();   // the one announcement, now the tree is settled
             }
 
             // Surface any repositories that could not be loaded (e.g. their path no longer exists) as a
@@ -2665,15 +2664,10 @@
             var rootPath = firstRepo?.VcsRootPath ?? Path.GetDirectoryName(pendingChanges[0].FilePath) ?? "";
 
             // Batch update: remove stale models, re-parse changed files, rebuild library indexes
-            LibraryDataService.SuppressTreeDataChangedEvents = true;
             HashSet<string> affectedModelIds;
-            try
+            using (LibraryDataService.SuppressTreeDataChanged())
             {
                 affectedModelIds = await LibraryDataService.UpdateChangedFilesAsync(changedFilePaths, rootPath);
-            }
-            finally
-            {
-                LibraryDataService.SuppressTreeDataChangedEvents = false;
             }
 
             Info("MainLayout", $"File processing complete: {affectedModelIds.Count} affected models, {changedFilePaths.Count} changed files");

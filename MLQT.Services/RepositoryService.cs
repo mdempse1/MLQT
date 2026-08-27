@@ -822,6 +822,12 @@ public class RepositoryService : IRepositoryService
 
         Info("RepositoryService", $"Loading project '{project.Name}' with {project.Repositories.Count} repositories");
 
+        // One announcement for the whole switch. Without this every library in the new project told
+        // the tree separately, and each of those costs every open tree a working-copy status query
+        // and a full rebuild on the UI thread — four minutes of queued work for a project holding a
+        // tool's library folder, and everything after the switch waiting behind it.
+        using var treeNotifications = _libraryDataService.SuppressTreeDataChanged();
+
         // Load the new project's repos
         foreach (var entry in project.Repositories)
         {
