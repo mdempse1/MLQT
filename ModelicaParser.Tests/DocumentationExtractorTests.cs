@@ -51,4 +51,54 @@ public class DocumentationExtractorTests
         Assert.Null(info);
         Assert.Null(revisions);
     }
+
+    [Fact]
+    public void AnAnnotationWithNoArguments_YieldsNothing()
+    {
+        var (info, revisions) = DocumentationExtractor.ExtractFromCode("model M\n  annotation();\nend M;");
+
+        Assert.Null(info);
+        Assert.Null(revisions);
+    }
+
+    [Fact]
+    public void AnAnnotationThatIsNotDocumentation_YieldsNothing()
+    {
+        // Icon, Diagram and vendor annotations sit beside Documentation in the same argument list.
+        var (info, _) = DocumentationExtractor.ExtractFromCode(
+            "model M\n  annotation(Icon(graphics = {Text(textString = \"<html>x</html>\")}));\nend M;");
+
+        Assert.Null(info);
+    }
+
+    [Fact]
+    public void AnEmptyDocumentationAnnotation_YieldsNothing()
+    {
+        var (info, revisions) = DocumentationExtractor.ExtractFromCode(
+            "model M\n  annotation(Documentation());\nend M;");
+
+        Assert.Null(info);
+        Assert.Null(revisions);
+    }
+
+    [Fact]
+    public void ADocumentationFieldWithNoValue_YieldsNothingRatherThanAnEmptyString()
+    {
+        // "documented with an empty string" and "not documented" are different answers, and the
+        // documentation rules report on the second.
+        var (info, _) = DocumentationExtractor.ExtractFromCode(
+            "model M\n  annotation(Documentation(info));\nend M;");
+
+        Assert.Null(info);
+    }
+
+    [Fact]
+    public void ADocumentationFieldThatIsNeitherInfoNorRevisions_IsIgnored()
+    {
+        var (info, revisions) = DocumentationExtractor.ExtractFromCode(
+            "model M\n  annotation(Documentation(figures = {Figure(title = \"t\")}));\nend M;");
+
+        Assert.Null(info);
+        Assert.Null(revisions);
+    }
 }

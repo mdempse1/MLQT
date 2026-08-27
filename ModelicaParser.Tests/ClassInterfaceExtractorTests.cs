@@ -195,4 +195,53 @@ public class ClassInterfaceExtractorTests
         Assert.Equal(2, iface.Elements.Count(e => e.Causality == "input"));
         Assert.Equal(1, iface.Elements.Count(e => e.Causality == "output"));
     }
+
+    [Fact]
+    public void Import_ExplicitList_KeepsTheWholeList()
+    {
+        // `import A.{B, C}` names two classes in one clause. Reducing it to A would make both
+        // unresolvable, and a name that does not resolve is reported against correct code.
+        var iface = Extract("model M\n  import Modelica.Units.SI.{Voltage, Current};\n  Real x;\nend M;");
+
+        var import = iface.Elements.Single(e => e.Kind == ClassElementKind.Import);
+        Assert.Contains("Modelica.Units.SI", import.Name);
+        Assert.Contains("Voltage", import.Name);
+        Assert.Contains("Current", import.Name);
+    }
+
+    [Fact]
+    public void NestedShortClassDefinition_IsListedByName()
+    {
+        // A `type` alias is a class of the package like any other, and it is what most unit
+        // definitions in a library actually are.
+        var iface = Extract("package P\n  type Gain = Real(min = 0) \"a gain\";\nend P;");
+
+        var nested = iface.Elements.Single(e => e.Kind == ClassElementKind.Class);
+        Assert.Equal("Gain", nested.Name);
+        Assert.Equal("type", nested.ClassType);
+    }
+
+    [Fact]
+    public void NestedDerivativeClassDefinition_IsListedByName()
+    {
+        var iface = Extract("package P\n  function df = der(f, x) \"the derivative\";\nend P;");
+
+        Assert.Equal("df", iface.Elements.Single(e => e.Kind == ClassElementKind.Class).Name);
+    }
+
+    [Fact]
+    public void AnAssignedDefault_IsReadWithoutItsOperator()
+    {
+        // Dymola accepts `:=` in a declaration and libraries in the field use it. Keeping the
+        // operator in the value would show ":= 1" as the default everywhere it is displayed.
+        var iface = Extract("function f\n  input Real x;\nprotected\n  Real t := 1;\nend f;");
+
+        Assert.Equal("1", iface.Elements.Single(e => e.Name == "t").DefaultValue);
+    }
+
+    [Fact]
+    public void AComponentThatIsOnlyDeclared_HasNoDefault()
+    {
+        Assert.Null(Assert.Single(Extract("model M\n  Real x;\nend M;").Elements).DefaultValue);
+    }
 }

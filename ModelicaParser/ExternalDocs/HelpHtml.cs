@@ -90,25 +90,6 @@ internal static class HelpHtml
         text[tagStart..EndOfTag(text, tagStart)];
 
     /// <summary>
-    /// Inner content of the first <paramref name="tagName"/> element found at or after
-    /// <paramref name="start"/> and before <paramref name="limit"/>, or null when there is none.
-    /// Nesting of the same tag is not handled — none of the elements read here nest.
-    /// </summary>
-    public static string? InnerOf(string text, int start, int limit, string tagName)
-    {
-        var open = FindTag(text, start, tagName);
-        if (open < 0 || open >= limit)
-            return null;
-
-        var contentStart = EndOfTag(text, open);
-        var close = text.IndexOf("</" + tagName, contentStart, StringComparison.OrdinalIgnoreCase);
-        if (close < 0 || close > limit)
-            return null;
-
-        return text[contentStart..close];
-    }
-
-    /// <summary>
     /// Removes markup and decodes entities, collapsing runs of whitespace to single spaces.
     /// Used for text destined for description strings, which feed spell-checking — so the
     /// entities the generator emits (<c>&amp;#39;</c>, <c>&amp;quot;</c>, <c>&amp;reg;</c>) must

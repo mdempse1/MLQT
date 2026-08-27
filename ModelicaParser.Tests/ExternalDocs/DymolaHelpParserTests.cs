@@ -364,4 +364,153 @@ public class DymolaHelpParserTests
     }
 
     #endregion
+
+    #region Markup the generator produced but nothing else expects
+
+    [Fact]
+    public void ParseFile_HeadingThatIsNeverClosed_StillNamesItsClass()
+    {
+        // Truncated files exist — a build that ran out of disk, a copy that was interrupted. What was
+        // written before the truncation is still the only description of those classes we will get.
+        var result = DymolaHelpParser.ParseFile(Page(
+            "<h2><a name=\"Lib.Pack\"></a>Pack"));
+
+        Assert.Equal("Lib.Pack", Assert.Single(result.Classes).FullName);
+    }
+
+    [Fact]
+    public void ParseFile_AnchorsWithoutANameAreSkippedUntilTheOneThatHasIt()
+    {
+        // The breadcrumb links in a heading come before the anchor on some releases.
+        var result = DymolaHelpParser.ParseFile(Page(
+            "<h2><a href=\"Lib.html\">Lib</a><a name=\"Lib.Pack\"></a>.Pack</h2>"));
+
+        Assert.Equal("Lib.Pack", Assert.Single(result.Classes).FullName);
+    }
+
+    [Fact]
+    public void ParseFile_AHeadingWithNoAnchorAtAll_IsNotAClass()
+    {
+        // A vendor's own <h2> inside Documentation(info=…) is emitted verbatim. Treating it as a class
+        // boundary cuts the real class's section short and loses everything after it.
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2>Overview</h2><p>Author-written prose.</p>" +
+            "<table class=\"ModelicaTablePackageContent\">" +
+            "<tr><td><a href=\"x.html#Lib.Pack.Child\">Child</a></td><td>d</td></tr></table>"));
+
+        var pack = Assert.Single(result.Classes);
+        Assert.Equal("Lib.Pack", pack.FullName);
+        Assert.Contains("Lib.Pack.Child", pack.Children);
+    }
+
+    [Fact]
+    public void ParseFile_AContentRowWithNoImage_StillNamesItsChild()
+    {
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Sub\"></a>Sub</h2>" +
+            "<table class=\"ModelicaTablePackageContent\">" +
+            "<tr><td><a href=\"Lib_Pack_Sub.html#Lib.Pack.Sub.Leaf\">Leaf</a></td><td>d</td></tr></table>"));
+
+        var sub = result.Classes.Single(c => c.FullName == "Lib.Pack.Sub");
+        Assert.Equal(["Lib.Pack.Sub.Leaf"], sub.Children);
+        Assert.Empty(result.IconByClass);
+    }
+
+    [Fact]
+    public void ParseFile_AContentRowThatNamesNothing_IsSkipped()
+    {
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Sub\"></a>Sub</h2>" +
+            "<table class=\"ModelicaTablePackageContent\">" +
+            "<tr><td>&nbsp;</td><td>d</td></tr>" +
+            "<tr><td><a href=\"no-fragment.html\">Leaf</a></td><td>d</td></tr></table>"));
+
+        Assert.Empty(result.Classes.Single(c => c.FullName == "Lib.Pack.Sub").Children);
+    }
+
+    [Fact]
+    public void ParseFile_ABaseClassLinkWithNoFragment_FallsBackToItsText()
+    {
+        // Cross-library links are relative paths into another library's help; some releases write
+        // them without a fragment, and the visible text is then the only statement of the name.
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Thing\"></a>Thing</h2>" +
+            "<p><span class=\"ModelicaBaseClass\">Extends from " +
+            "<a href=\"../Other/Other.html\">Other.Base</a> (a base).</span></p>"));
+
+        var thing = result.Classes.Single(c => c.FullName == "Lib.Pack.Thing");
+        Assert.Equal(["Other.Base"], thing.ExtendsClasses);
+    }
+
+    [Fact]
+    public void ParseFile_ABaseClassSpanThatDoesNotSayExtendsFrom_LeavesInheritanceUnknown()
+    {
+        // Unknown is not the same as "extends nothing", and the difference decides whether a class
+        // recovered from documentation can be reported for a missing base class.
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Thing\"></a>Thing</h2>" +
+            "<p><span class=\"ModelicaBaseClass\">See also Other.Base.</span></p>"));
+
+        Assert.Null(result.Classes.Single(c => c.FullName == "Lib.Pack.Thing").ExtendsClasses);
+    }
+
+    [Fact]
+    public void ParseFile_APredefinedTypeIsNotListedAsABaseClass()
+    {
+        // "Extends from Real." is how the generator documents a type. Real is not a class we can
+        // resolve, and synthesizing `extends Real;` onto a model does not parse.
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Voltage\"></a>Voltage</h2>" +
+            "<p><span class=\"ModelicaBaseClass\">Extends from Real.</span></p>"));
+
+        Assert.Empty(result.Classes.Single(c => c.FullName == "Lib.Pack.Voltage").ExtendsClasses!);
+    }
+
+    [Fact]
+    public void ParseFile_AMemberRowWithNoName_IsSkipped()
+    {
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Thing\"></a>Thing</h2>" +
+            "<table class=\"ModelicaTableParameters\">" +
+            "<tr><td>&nbsp;</td><td>no name</td></tr>" +
+            "<tr><td>k</td><td>A gain [1]</td></tr></table>"));
+
+        var thing = result.Classes.Single(c => c.FullName == "Lib.Pack.Thing");
+        var parameter = Assert.Single(thing.Parameters);
+        Assert.Equal("k", parameter.Name);
+        Assert.Equal("1", parameter.Unit);
+    }
+
+    [Theory]
+    [InlineData("A plain description", null)]
+    [InlineData("Cut-force resolved in frame [N]", "N")]
+    [InlineData("An array of things []", null)]
+    [InlineData("A range [0, 1[", null)]
+    public void ParseFile_ATrailingUnit_IsSeparatedOnlyWhenItIsOne(string description, string? unit)
+    {
+        // The bracket is the generator's unit marker, but authors write brackets in prose too. A
+        // guess that swallowed one would put "0, 1" in the unit column of the coverage metrics.
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Thing\"></a>Thing</h2>" +
+            "<table class=\"ModelicaTableParameters\">" +
+            $"<tr><td>k</td><td>{description}</td></tr></table>"));
+
+        var parameter = Assert.Single(result.Classes.Single(c => c.FullName == "Lib.Pack.Thing").Parameters);
+        Assert.Equal(unit, parameter.Unit);
+    }
+
+    [Fact]
+    public void ParseFile_AGroupHeadingRowNamesNoMember()
+    {
+        var result = DymolaHelpParser.ParseFile(TwoClassPage(
+            "<h2><a name=\"Lib.Pack.Thing\"></a>Thing</h2>" +
+            "<table class=\"ModelicaTableParameters\">" +
+            "<tr><td colspan=\"2\">Group: Geometry</td></tr>" +
+            "<tr><td>k</td><td>A gain</td></tr></table>"));
+
+        Assert.Equal("k",
+            Assert.Single(result.Classes.Single(c => c.FullName == "Lib.Pack.Thing").Parameters).Name);
+    }
+
+    #endregion
 }

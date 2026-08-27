@@ -64,4 +64,65 @@ public class BehaviorExtractorTests
         Assert.False(b.HasAny);
         Assert.False(b.HasEquationSection);
     }
+
+    [Fact]
+    public void AClassWithNoBody_HasNoBehaviour()
+    {
+        // A short class definition (`type Gain = Real`) has no composition to read at all, and the
+        // renderer must not be handed a null to guard against on every call.
+        Assert.False(BehaviorExtractor.ExtractFromCode("type Gain = Real;").HasAny);
+    }
+
+    [Fact]
+    public void SourceThatIsNotAClass_HasNoBehaviour()
+    {
+        Assert.False(BehaviorExtractor.ExtractFromCode("this is not Modelica").HasAny);
+    }
+
+    [Fact]
+    public void ABlockCommentAboveAStatement_StaysWithIt()
+    {
+        // The formatter rewrites the algorithm section from what comes back here. A comment that got
+        // dropped would be deleted from the file on the next save.
+        const string code = """
+            model M
+              Real x;
+            algorithm
+              /* why this is done first */
+              x := 3;
+            end M;
+            """;
+
+        var behavior = BehaviorExtractor.ExtractFromCode(code);
+
+        var statement = Assert.Single(behavior.Statements);
+        Assert.Contains("why this is done first", string.Join("\n", statement.LeadingComments));
+    }
+
+    [Fact]
+    public void ABlockCommentAboveAnEquation_StaysWithIt()
+    {
+        const string code = """
+            model M
+              Real x;
+            equation
+              /* the balance */
+              x = 3;
+            end M;
+            """;
+
+        var equation = Assert.Single(BehaviorExtractor.ExtractFromCode(code).Equations);
+
+        Assert.Contains("the balance", string.Join("\n", equation.LeadingComments));
+    }
+
+    [Fact]
+    public void AnEmptyAlgorithmSection_CountsAsPresentWithNoStatements()
+    {
+        var behavior = BehaviorExtractor.ExtractFromCode("model M\n  Real x;\nalgorithm\nend M;");
+
+        Assert.True(behavior.HasAlgorithmSection);
+        Assert.Empty(behavior.Statements);
+        Assert.False(behavior.HasAny);
+    }
 }
