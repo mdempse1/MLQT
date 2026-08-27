@@ -86,4 +86,89 @@ public class AnalysisFailureReportingTests
 
         Assert.Contains("P.B", checked_);
     }
+
+    // ── the targeted pass, which is what a file change runs ──
+
+    [Fact]
+    public async Task AFailingCallback_IsReportedByTheTargetedPassToo()
+    {
+        // Editing a file re-analyses only that file's classes. The same class that would have been
+        // dropped in silence on startup must not be dropped in silence here.
+        var graph = TwoClasses();
+        var failures = new List<(string Model, string Error)>();
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph,
+            new HashSet<string> { "P.A", "P.B" },
+            postAnalysisAction: model =>
+            {
+                if (model.Id == "P.A")
+                    throw new InvalidOperationException("checking blew up");
+            },
+            onModelFailed: (model, ex) => failures.Add((model.Id, ex.Message)));
+
+        Assert.Equal("P.A", Assert.Single(failures).Model);
+    }
+
+    [Fact]
+    public async Task TheTargetedPass_KeepsTheEdgesOfAClassWhoseCheckThrew()
+    {
+        var graph = TwoClasses();
+        graph.GetNode<ModelNode>("P.A")!.Definition.ModelicaCode =
+            "model A\n  B b;\nequation\n  b.x = 1;\nend A;";
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph,
+            new HashSet<string> { "P.A" },
+            postAnalysisAction: _ => throw new InvalidOperationException("checking blew up"),
+            onModelFailed: (_, _) => { });
+
+        Assert.Contains("P.B", graph.GetNode<ModelNode>("P.A")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task TheTargetedPass_TouchesOnlyTheClassesItWasGiven()
+    {
+        // It runs on every save. Walking the whole graph instead would make an edit to one file cost
+        // what a startup costs.
+        var graph = TwoClasses();
+        var analysed = new List<string>();
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph,
+            new HashSet<string> { "P.A" },
+            postAnalysisAction: model => analysed.Add(model.Id));
+
+        Assert.Equal(["P.A"], analysed);
+    }
+
+    [Fact]
+    public async Task TheTargetedPass_WithNothingToDo_DoesNothing()
+    {
+        var graph = TwoClasses();
+        var analysed = new List<string>();
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph, new HashSet<string>(), postAnalysisAction: model => analysed.Add(model.Id));
+
+        Assert.Empty(analysed);
+    }
+
+    [Fact]
+    public async Task AClassThatIsNotInTheGraph_IsSkippedRatherThanFatal()
+    {
+        // The caller's list comes from a file on disk, which can name a class the graph dropped.
+        var graph = TwoClasses();
+        var analysed = new List<string>();
+        var failures = new List<string>();
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph,
+            new HashSet<string> { "P.A", "P.Vanished" },
+            postAnalysisAction: model => analysed.Add(model.Id),
+            onModelFailed: (model, _) => failures.Add(model.Id));
+
+        Assert.Equal(["P.A"], analysed);
+        Assert.Empty(failures);
+    }
 }
