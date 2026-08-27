@@ -23,6 +23,9 @@ public class StyleCheckingService : IStyleCheckingService
     private List<StyleCheckingWorker> _workers = new();
 
     private bool _isRunning;
+
+    // Set by a full run over every repository; cleared by the flush loop when it performs the sweep.
+    private bool _coverageSweepPending;
     private bool _stopRequested;
     private long _lastProgressTicks = 0;
 
@@ -418,9 +421,14 @@ public class StyleCheckingService : IStyleCheckingService
         // no worker at all, and a library loaded for reference belongs to no repository. Those classes
         // are still on the Coverage tab, and measuring them there means the user waits for it — the
         // point of measuring during checking is that this step already runs for minutes.
-        var sweep = StartCoverageSweep();
+        //
+        // Queued rather than started. Run alongside the workers it would measure the classes they are
+        // about to measure anyway — parsing every one of them a second time, on threads the workers
+        // want — which turned ten seconds of work into a minute of wall clock. It runs when they have
+        // finished, over whatever is left.
+        _coverageSweepPending = true;
 
-        if (anyWorkerStarted || sweep is not null)
+        if (anyWorkerStarted)
         {
             OnProgressChanged?.Invoke(false);
             // Whole-graph analyses run alongside the per-model workers and deliver through the same
@@ -431,9 +439,10 @@ public class StyleCheckingService : IStyleCheckingService
         }
         else
         {
-            // Every repository was skipped and there was nothing left to measure, so there is nothing
-            // to wait for: CancelExistingWorkers above already released the previous run's signal.
-            OnProgressChanged?.Invoke(true);
+            // No worker to wait for, but the sweep still has to happen: nothing has rules, and those
+            // classes are on the Coverage tab all the same.
+            BeginRun();
+            _ = Task.Run(ProcessQueueAsync);
         }
     }
 
@@ -445,45 +454,39 @@ public class StyleCheckingService : IStyleCheckingService
     /// <para>It reads the same facts the checked classes carry, so what the Coverage tab shows does not
     /// depend on which classes happened to have rules enabled.</para>
     /// </summary>
-    private Task? StartCoverageSweep()
+    private void RunCoverageSweep()
     {
+        // Taken after the workers have finished, so it is the classes no check reached and not the
+        // whole library: everything a worker checked measured itself while it had the parse tree.
         var pending = _libraryDataService.GetAllModels()
             .Where(m => m.Definition.Coverage is null && !m.IsExternalStub && !m.IsParseFailurePlaceholder)
             .ToList();
 
         if (pending.Count == 0)
-            return null;
+            return;
 
-        Interlocked.Increment(ref _graphAnalysesRunning);
-        return Task.Run(() =>
+        try
         {
-            try
+            var measurer = new CoverageMeasurer(_libraryDataService.CombinedGraph);
+            var options = new ParallelOptions
             {
-                var measurer = new CoverageMeasurer(_libraryDataService.CombinedGraph);
-                var options = new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
-                };
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
+            };
 
-                LogProcessStart("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
-                Parallel.ForEach(pending, options, model =>
-                {
-                    if (_stopRequested)
-                        return;
-                    measurer.Measure(model);
-                });
-                LogProcessEnd("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
-            }
-            catch (Exception ex)
+            LogProcessStart("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
+            Parallel.ForEach(pending, options, model =>
             {
-                // Coverage is a report, not a gate: a failure here must not fail the check it rode in on.
-                Error("StyleCheckingService", "Coverage measurement failed", ex);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref _graphAnalysesRunning);
-            }
-        });
+                if (_stopRequested)
+                    return;
+                measurer.Measure(model);
+            });
+            LogProcessEnd("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
+        }
+        catch (Exception ex)
+        {
+            // Coverage is a report, not a gate: a failure here must not fail the check it rode in on.
+            Error("StyleCheckingService", "Coverage measurement failed", ex);
+        }
     }
 
     // The rule ids owned by the whole-graph analyzers. Used to clear stale graph findings before an
@@ -811,13 +814,22 @@ public class StyleCheckingService : IStyleCheckingService
             }
             // Final flush when done
             FlushPendingViolations();
+
+            // The workers have finished, so what is left unmeasured is what no check reached. Inside
+            // the run, so the progress dialog covers it and completion still means everything is done.
+            if (Interlocked.Exchange(ref _coverageSweepPending, false))
+                RunCoverageSweep();
         }
         finally
         {
             _isRunning = false;
-            EndRun();
             LogProcessEnd("StyleCheckingService", "All background style checking completed");
+
+            // Observers first, waiters last. Releasing the wait before announcing completion let a
+            // caller that awaited the run resume and look at state the run had not finished telling
+            // anyone about — including the completion it was waiting for.
             OnProgressChanged?.Invoke(true);
+            EndRun();
         }
     }
 

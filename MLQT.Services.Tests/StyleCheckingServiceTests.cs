@@ -665,6 +665,26 @@ epos\Alpha", new[] { "en_GB" });
         Assert.Same(measured, node.Definition.Coverage);
     }
 
+    [Fact]
+    public async Task WaitForCompletionAsync_ReturnsOnlyAfterTheCompletionHasBeenAnnounced()
+    {
+        // Whoever awaits the run resumes to look at what the run produced, and the completion event is
+        // part of that. Releasing the wait first let the two race, which is the sort of failure that
+        // shows up once in twenty runs and reads as flakiness rather than as ordering.
+        var service = CreateService();
+        var announced = false;
+        service.OnProgressChanged += done => { if (done) announced = true; };
+
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A Real x; end A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.True(announced);
+    }
+
     private static async Task WaitForCompletionAsync(StyleCheckingService service, int timeoutMs = 5000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
