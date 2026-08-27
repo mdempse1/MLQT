@@ -395,4 +395,17 @@ public class ModelicaFileEncodingTests : IDisposable
     }
 
     #endregion
+
+    [Fact]
+    public void WhenTheFileCannotBeOpenedAtAll_TheFailureIsTheWritesNotTheGuess()
+    {
+        // The ASCII fast path peeks at the first bytes to look for a mark. When another tool holds
+        // the file outright, that peek fails first — and it must fall back rather than surface as
+        // a different, more confusing error than the one the write is about to raise.
+        var path = Write("exclusive.mo", Utf8NoBom("package P\nend P;\n"));
+        using var hold = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.Throws<IOException>(
+            () => ModelicaFileEncoding.WriteAllText(path, "package Q\nend Q;\n"));
+    }
 }

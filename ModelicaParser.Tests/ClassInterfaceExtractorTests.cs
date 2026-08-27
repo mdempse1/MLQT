@@ -244,4 +244,42 @@ public class ClassInterfaceExtractorTests
     {
         Assert.Null(Assert.Single(Extract("model M\n  Real x;\nend M;").Elements).DefaultValue);
     }
+
+    [Theory]
+    [InlineData("package Inner\n  end Inner;", "package")]
+    [InlineData("class Inner\n  end Inner;", "class")]
+    [InlineData("connector Inner\n  end Inner;", "connector")]
+    [InlineData("record Inner\n  end Inner;", "record")]
+    [InlineData("block Inner\n  end Inner;", "block")]
+    public void ANestedClassKeepsItsRestriction(string nested, string expected)
+    {
+        // The restriction decides which rules apply to it — a connector is not expected to have an
+        // icon, a record is not expected to have equations.
+        var iface = Extract($"package P\n  {nested}\nend P;");
+
+        Assert.Equal(expected, iface.Elements.Single(e => e.Kind == ClassElementKind.Class).ClassType);
+    }
+
+    [Fact]
+    public void ARedeclarationInAnExtendsClause_IsNotAScalarModification()
+    {
+        // `extends Base(redeclare package Medium = Water)` names no scalar parameter. Reading it as
+        // one would show "Medium" with a value that is a class, not a number.
+        var iface = Extract("model M\n  extends Base(redeclare package Medium = Water, k = 5);\nend M;");
+
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.Equal("5", ext.Modifications!["k"]);
+        Assert.False(ext.Modifications.ContainsKey("Medium"));
+    }
+
+    [Fact]
+    public void AnExtendsModifierWithNoValue_IsNotADefault()
+    {
+        // `extends Base(k)` breaks a modifier's binding rather than setting one.
+        var iface = Extract("model M\n  extends Base(k, T = 2);\nend M;");
+
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.Equal("2", ext.Modifications!["T"]);
+        Assert.False(ext.Modifications.ContainsKey("k"));
+    }
 }

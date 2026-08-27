@@ -355,4 +355,18 @@ public class MlqtSuppressionWriterTests
 
         Assert.False(set.HasFormattingOptOut);
     }
+
+    [Fact]
+    public void ADerivativeClassDefinition_CanBeSuppressedOnToo()
+    {
+        // It is a class of the library like any other and the rules fire on it, so there has to be
+        // a way to waive one — even though it has no body to put an annotation in.
+        Assert.True(MlqtSuppressionWriter.TryAddSuppression(
+            "function df = der(f, x);", null, null, "MLQT.Class.Description", null,
+            out var outCode, out var error));
+
+        Assert.Null(error);
+        Assert.True(Parses(outCode));
+        Assert.True(Suppresses(outCode, "df", null, "MLQT.Class.Description"));
+    }
 }
