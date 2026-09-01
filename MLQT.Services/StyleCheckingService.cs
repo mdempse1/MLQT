@@ -459,9 +459,32 @@ public class StyleCheckingService : IStyleCheckingService
         // a vendor's achievement or debt, and measuring tens of thousands of their classes is the
         // largest thing this sweep could be asked to do for no one's benefit.
         var referenceOnly = ReferenceOnlyScope.ModelIds(_libraryDataService, _repositoryService);
+
+        // What each class is measured for is its repository's business: the dimensions it tracks are
+        // the ones the Coverage tab will show for it, and every other one is a tree walk for a row
+        // nobody asked for. A class belonging to no repository is checked by no rules at all, so it
+        // is not measured either — the same reason its findings never appear.
+        var masks = new Dictionary<string, CoverageDimension>(StringComparer.Ordinal);
+        foreach (var repository in _repositoryService.Repositories)
+        {
+            if (repository.IsReferenceOnly || repository.StyleSettings is not { } settings)
+                continue;
+            var tracked = CoverageDimensions.TrackedFor(settings);
+            if (tracked == CoverageDimension.None)
+                continue;
+            var excludesAny = settings.FormattingExcludedModels.Count > 0;
+            foreach (var id in ModelIdsFor(repository))
+                masks[id] = excludesAny && settings.IsModelExcludedFromFormatting(id)
+                    ? tracked & ~CoverageDimension.Layout
+                    : tracked;
+        }
+
         var pending = _libraryDataService.GetAllModels()
-            .Where(m => m.Definition.Coverage is null && !m.IsExternalStub && !m.IsParseFailurePlaceholder
-                        && !referenceOnly.Contains(m.Id))
+            .Where(m => !m.IsExternalStub && !m.IsParseFailurePlaceholder && !referenceOnly.Contains(m.Id))
+            .Select(m => (Model: m, Mask: masks.GetValueOrDefault(m.Id)))
+            .Where(x => x.Mask != CoverageDimension.None
+                        && (x.Model.Definition.Coverage is not { } facts
+                            || (x.Mask & ~facts.Measured) != CoverageDimension.None))
             .ToList();
 
         if (pending.Count == 0)
@@ -476,11 +499,11 @@ public class StyleCheckingService : IStyleCheckingService
             };
 
             LogProcessStart("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
-            Parallel.ForEach(pending, options, model =>
+            Parallel.ForEach(pending, options, entry =>
             {
                 if (_stopRequested)
                     return;
-                measurer.Measure(model);
+                measurer.Measure(entry.Model, entry.Mask);
             });
             LogProcessEnd("StyleCheckingService", $"Measuring coverage for {pending.Count} class(es)");
         }

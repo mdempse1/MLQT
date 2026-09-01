@@ -86,7 +86,11 @@ public sealed class StyleCheckContext
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
-            Coverage = collectCoverage ? new CoverageMeasurer(graph) : null,
+            // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
+            // per class for a row the report will not show.
+            Coverage = collectCoverage
+                ? new CoverageMeasurer(graph, CoverageDimensions.TrackedFor(settings))
+                : null,
         };
     }
 

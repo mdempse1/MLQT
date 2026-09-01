@@ -25,14 +25,20 @@ public sealed record LibraryMetrics(
 
 /// <summary>
 /// Computes the metrics-dashboard figures over a set of models: class counts by kind, total component
-/// count, and quality-coverage percentages (description, icon, parameter description, unit). Coverage is
-/// a dedicated pass over each class's structure — independent of which rules are enabled and of whether
-/// style checking has run — so the dashboard is always available and shows the true state (waivers are
-/// ignored: a suppressed gap still counts as a gap). Pure and side-effect-free (parse trees released).
+/// count, and quality-coverage percentages. Coverage is a dedicated pass over each class's structure
+/// — never scraped from findings — so it shows the true state whether or not style checking has run
+/// and whatever has been waived. Which dimensions are reported is decided from each repository's rule
+/// settings (see <see cref="CoverageDimensions.TrackedFor"/>); pass no settings and everything is
+/// measured. Pure and side-effect-free (parse trees released).
 /// </summary>
 public static class MetricsCalculator
 {
-    public static LibraryMetrics Compute(DirectedGraph graph, IEnumerable<ModelNode> models)
+    /// <param name="settingsFor">The rule settings of the repository a class belongs to, or null for
+    /// a class in none. Omit the callback entirely to measure and report every dimension.</param>
+    public static LibraryMetrics Compute(
+        DirectedGraph graph,
+        IEnumerable<ModelNode> models,
+        Func<ModelNode, StyleCheckingSettings?>? settingsFor = null)
     {
         // Stubs are excluded from every count and every coverage denominator. They stand for classes
         // in an encrypted third-party library, so their description and icon coverage is neither the
@@ -48,36 +54,109 @@ public static class MetricsCalculator
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
         var measurer = new CoverageMeasurer(graph);
+        var dimensions = CoverageDimensions.Ordered;
+        var compliant = new int[dimensions.Count];
+        var eligible = new int[dimensions.Count];
+        var tracked = CoverageDimension.None;
+        var components = 0;
 
-        int withDescription = 0, withIcon = 0, components = 0;
-        int paramTotal = 0, paramWithDesc = 0;
-        int realTotal = 0, realWithUnit = 0;
+        // The settings object is the same for every class in a repository, and working out its
+        // dimensions means walking the rule list — so hold the last answer rather than repeating it
+        // tens of thousands of times. Only the per-model formatting exclusion varies within a repo.
+        StyleCheckingSettings? lastSettings = null;
+        var lastMask = CoverageDimension.All;
+        var seenSettings = false;
 
         foreach (var model in classes)
         {
+            CoverageDimension mask;
+            if (settingsFor is null)
+            {
+                mask = CoverageDimension.All;
+            }
+            else
+            {
+                var settings = settingsFor(model);
+                if (!seenSettings || !ReferenceEquals(settings, lastSettings))
+                {
+                    lastSettings = settings;
+                    // No repository, no rules: a class nothing checks is on no dimension's report.
+                    lastMask = settings is null
+                        ? CoverageDimension.None
+                        : CoverageDimensions.TrackedFor(settings);
+                    seenSettings = true;
+                }
+                mask = lastMask;
+                if (settings is not null
+                    && (mask & CoverageDimension.Layout) != 0
+                    && settings.FormattingExcludedModels.Count > 0
+                    && settings.IsModelExcludedFromFormatting(model.Id))
+                    mask &= ~CoverageDimension.Layout;
+            }
+
+            tracked |= mask;
+
             // Measured once per class and kept. The same class is measured for every scope the
             // dashboard asks about — all libraries, then one sub-package, then each of them side by
             // side — and measuring means parsing it and walking its interface again each time.
-            var facts = measurer.Measure(model);
+            var facts = measurer.Measure(model, mask);
             if (facts is null)
                 continue;
 
-            if (facts.HasDescription) withDescription++;
-            if (facts.HasIcon) withIcon++;
             components += facts.Components;
-            paramTotal += facts.ParameterTotal;
-            paramWithDesc += facts.ParametersWithDescription;
-            realTotal += facts.RealTotal;
-            realWithUnit += facts.RealWithUnit;
+
+            for (int i = 0; i < dimensions.Count; i++)
+            {
+                var dimension = dimensions[i].Dimension;
+                if ((mask & dimension) == 0)
+                    continue;
+
+                switch (dimension)
+                {
+                    case CoverageDimension.ClassDescription:
+                        eligible[i]++;
+                        if (facts.HasDescription) compliant[i]++;
+                        break;
+                    case CoverageDimension.DocumentationInfo:
+                        eligible[i]++;
+                        if (facts.HasDocumentationInfo) compliant[i]++;
+                        break;
+                    case CoverageDimension.DocumentationRevisions:
+                        eligible[i]++;
+                        if (facts.HasDocumentationRevisions) compliant[i]++;
+                        break;
+                    case CoverageDimension.Icon:
+                        eligible[i]++;
+                        if (facts.HasIcon) compliant[i]++;
+                        break;
+                    case CoverageDimension.ParameterDescription:
+                        eligible[i] += facts.ParameterTotal;
+                        compliant[i] += facts.ParametersWithDescription;
+                        break;
+                    case CoverageDimension.ConstantDescription:
+                        eligible[i] += facts.ConstantTotal;
+                        compliant[i] += facts.ConstantsWithDescription;
+                        break;
+                    case CoverageDimension.Unit:
+                        eligible[i] += facts.RealTotal;
+                        compliant[i] += facts.RealWithUnit;
+                        break;
+                    default:
+                        // A layout dimension: the class as a whole complies or it does not. Every
+                        // class counts, including one with nothing to order — it is complying.
+                        eligible[i]++;
+                        if ((facts.Failed & dimension) == 0) compliant[i]++;
+                        break;
+                }
+            }
         }
 
-        var coverage = new List<CoverageMetric>
+        var coverage = new List<CoverageMetric>();
+        for (int i = 0; i < dimensions.Count; i++)
         {
-            new("Description", withDescription, total),
-            new("Icon", withIcon, total),
-            new("Parameter description", paramWithDesc, paramTotal),
-            new("Unit", realWithUnit, realTotal),
-        };
+            if ((tracked & dimensions[i].Dimension) != 0)
+                coverage.Add(new CoverageMetric(dimensions[i].Name, compliant[i], eligible[i]));
+        }
 
         return new LibraryMetrics(total, byType, components, coverage, measurer.MeasuredHere);
     }
@@ -97,6 +176,7 @@ public sealed class CoverageMeasurer
 {
     private readonly DirectedGraph _graph;
     private readonly Func<string, string, bool>? _inheritedIcon;
+    private readonly CoverageDimension _dimensions;
 
     // Memoises the (is-Real-derived, has-unit) verdict per resolved type class. Concurrent because
     // style checking measures from its worker threads.
@@ -112,9 +192,13 @@ public sealed class CoverageMeasurer
     /// </summary>
     public int MeasuredHere => Volatile.Read(ref _measured);
 
-    public CoverageMeasurer(DirectedGraph graph)
+    /// <param name="dimensions">What to measure when <see cref="Measure(ModelNode?)"/> is called
+    /// without saying — for style checking, the dimensions its repository tracks, so a class is not
+    /// walked again for a rule nobody enabled.</param>
+    public CoverageMeasurer(DirectedGraph graph, CoverageDimension dimensions = CoverageDimension.All)
     {
         _graph = graph;
+        _dimensions = dimensions;
         // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
         _inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
     }
@@ -123,12 +207,20 @@ public sealed class CoverageMeasurer
     /// This class's contribution, measuring it if nobody has yet. Null for a class with nothing to
     /// measure — a parse failure, a stub, or source that will not parse.
     /// </summary>
-    public CoverageFacts? Measure(ModelNode? model)
+    public CoverageFacts? Measure(ModelNode? model) => Measure(model, _dimensions);
+
+    /// <summary>
+    /// As <see cref="Measure(ModelNode?)"/>, for the dimensions this caller needs. A kept measurement
+    /// is reused when it already answers for all of them, and widened — not replaced — when it does
+    /// not, so a class measured for one repository's rules is not re-walked from scratch for another's.
+    /// </summary>
+    public CoverageFacts? Measure(ModelNode? model, CoverageDimension needed)
     {
         if (model is null || model.IsParseFailurePlaceholder || model.IsExternalStub)
             return null;
 
-        if (model.Definition.Coverage is { } already)
+        var already = model.Definition.Coverage;
+        if (already is not null && (needed & ~already.Measured) == CoverageDimension.None)
             return already;
 
         // Whoever owned the parse tree keeps it: releasing a tree the caller was still using would
@@ -140,7 +232,7 @@ public sealed class CoverageMeasurer
 
         try
         {
-            var facts = Extract(model, tree);
+            var facts = Extract(model, tree, needed | (already?.Measured ?? CoverageDimension.None));
             model.Definition.Coverage = facts;
             Interlocked.Increment(ref _measured);
             return facts;
@@ -157,68 +249,159 @@ public sealed class CoverageMeasurer
         }
     }
 
-    private CoverageFacts Extract(ModelNode model, modelicaParser.Stored_definitionContext tree)
+    private CoverageFacts Extract(
+        ModelNode model, modelicaParser.Stored_definitionContext tree, CoverageDimension needed)
     {
+        var iface = ClassInterfaceExtractor.Extract(tree);
+        int components = 0, paramTotal = 0, paramWithDesc = 0, realTotal = 0, realWithUnit = 0;
+        int constantTotal = 0, constantWithDesc = 0;
+
+        // Has an icon if it declares its own Icon graphics or inherits one via extends. (Note:
+        // ModelNode.IconSvg is populated lazily on render, so it is not usable here.)
+        var hasIcon = false;
+        if ((needed & CoverageDimension.Icon) != 0)
         {
-            {
-                var iface = ClassInterfaceExtractor.Extract(tree);
-                int components = 0, paramTotal = 0, paramWithDesc = 0, realTotal = 0, realWithUnit = 0;
-
-                // Has an icon if it declares its own Icon graphics or inherits one via extends. (Note:
-                // ModelNode.IconSvg is populated lazily on render, so it is not usable here.)
-                var hasIcon = IconExtractor.ExtractIcon(tree) is not null;
-                if (!hasIcon && _inheritedIcon is not null)
-                    hasIcon = iface.Elements.Any(e =>
-                        e.Kind == ClassElementKind.Extends && _inheritedIcon(e.Type ?? string.Empty, model.Id));
-
-                var imports = iface.Elements
-                    .Where(e => e.Kind == ClassElementKind.Import)
-                    .Select(e => e.Name)
-                    .ToList();
-
-                // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity
-                // types that ultimately alias Real). A component is "united" if its type chain fixes a
-                // unit (SI types) or it writes an inline unit (plain Real, handled via MissingUnits).
-                var plainReals = 0;
-                foreach (var element in iface.Elements)
-                {
-                    if (element.Kind != ClassElementKind.Component)
-                        continue;
-                    components++;
-                    if (element.IsPublic && element.Variability == "parameter")
-                    {
-                        paramTotal++;
-                        if (!string.IsNullOrWhiteSpace(element.Description))
-                            paramWithDesc++;
-                    }
-
-                    var (isReal, typeHasUnit) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
-                    if (!isReal)
-                        continue;
-                    realTotal++;
-                    if ((element.Type ?? string.Empty).TrimStart('.').Trim() == "Real")
-                        plainReals++;              // unit decided by the inline modifier (below)
-                    else if (typeHasUnit)
-                        realWithUnit++;            // an SI/quantity type that fixes a unit
-                }
-
-                if (plainReals > 0)
-                {
-                    var unitVisitor = new MissingUnits();
-                    unitVisitor.VisitStored_definition(tree);
-                    var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
-                    realWithUnit += Math.Clamp(plainReals - missing, 0, plainReals);
-                }
-
-                return new CoverageFacts(
-                    HasDescription: !string.IsNullOrWhiteSpace(iface.Description),
-                    HasIcon: hasIcon,
-                    Components: components,
-                    ParameterTotal: paramTotal,
-                    ParametersWithDescription: paramWithDesc,
-                    RealTotal: realTotal,
-                    RealWithUnit: realWithUnit);
-            }
+            hasIcon = IconExtractor.ExtractIcon(tree) is not null;
+            if (!hasIcon && _inheritedIcon is not null)
+                hasIcon = iface.Elements.Any(e =>
+                    e.Kind == ClassElementKind.Extends && _inheritedIcon(e.Type ?? string.Empty, model.Id));
         }
+
+        var imports = iface.Elements
+            .Where(e => e.Kind == ClassElementKind.Import)
+            .Select(e => e.Name)
+            .ToList();
+
+        // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity
+        // types that ultimately alias Real). A component is "united" if its type chain fixes a
+        // unit (SI types) or it writes an inline unit (plain Real, handled via MissingUnits).
+        var wantsUnits = (needed & CoverageDimension.Unit) != 0;
+        var plainReals = 0;
+        foreach (var element in iface.Elements)
+        {
+            if (element.Kind != ClassElementKind.Component)
+                continue;
+            components++;
+            if (element.IsPublic && element.Variability == "parameter")
+            {
+                paramTotal++;
+                if (!string.IsNullOrWhiteSpace(element.Description))
+                    paramWithDesc++;
+            }
+            else if (element.IsPublic && element.Variability == "constant")
+            {
+                constantTotal++;
+                if (!string.IsNullOrWhiteSpace(element.Description))
+                    constantWithDesc++;
+            }
+
+            if (!wantsUnits)
+                continue;
+
+            var (isReal, typeHasUnit) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
+            if (!isReal)
+                continue;
+            realTotal++;
+            if ((element.Type ?? string.Empty).TrimStart('.').Trim() == "Real")
+                plainReals++;              // unit decided by the inline modifier (below)
+            else if (typeHasUnit)
+                realWithUnit++;            // an SI/quantity type that fixes a unit
+        }
+
+        if (plainReals > 0)
+        {
+            var unitVisitor = new MissingUnits();
+            unitVisitor.VisitStored_definition(tree);
+            var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
+            realWithUnit += Math.Clamp(plainReals - missing, 0, plainReals);
+        }
+
+        var (hasDocInfo, hasDocRevisions) = MeasureDocumentation(tree, needed);
+
+        return new CoverageFacts(
+            HasDescription: !string.IsNullOrWhiteSpace(iface.Description),
+            HasIcon: hasIcon,
+            Components: components,
+            ParameterTotal: paramTotal,
+            ParametersWithDescription: paramWithDesc,
+            RealTotal: realTotal,
+            RealWithUnit: realWithUnit,
+            HasDocumentationInfo: hasDocInfo,
+            HasDocumentationRevisions: hasDocRevisions,
+            ConstantTotal: constantTotal,
+            ConstantsWithDescription: constantWithDesc,
+            Measured: needed,
+            Failed: MeasureLayout(tree, needed));
+    }
+
+    /// <summary>
+    /// Documentation info/revisions, from the rule's own annotation walk — one traversal answering
+    /// for both, and only when either is wanted.
+    /// </summary>
+    private static (bool Info, bool Revisions) MeasureDocumentation(
+        modelicaParser.Stored_definitionContext tree, CoverageDimension needed)
+    {
+        var wantsInfo = (needed & CoverageDimension.DocumentationInfo) != 0;
+        var wantsRevisions = (needed & CoverageDimension.DocumentationRevisions) != 0;
+        if (!wantsInfo && !wantsRevisions)
+            return (false, false);
+
+        var visitor = new CheckClassAnnotations(wantsInfo, wantsRevisions, checkIcon: false);
+        visitor.VisitStored_definition(tree);
+        var missing = visitor.Findings.Select(f => f.RuleId).ToHashSet(StringComparer.Ordinal);
+        return (wantsInfo && !missing.Contains(RuleIds.ClassDocumentationInfo),
+                wantsRevisions && !missing.Contains(RuleIds.ClassDocumentationRevisions));
+    }
+
+    /// <summary>
+    /// The layout dimensions this class fails, by running the rules' own visitors rather than reading
+    /// their findings: the same verdict, but one that a waiver or a baseline cannot hide, which is
+    /// what makes it coverage rather than a second finding count. Each visitor is asked for only what
+    /// was requested, and one that nobody asked about is never run.
+    /// </summary>
+    private static CoverageDimension MeasureLayout(
+        modelicaParser.Stored_definitionContext tree, CoverageDimension needed)
+    {
+        var wanted = needed & CoverageDimension.Layout;
+        if (wanted == CoverageDimension.None)
+            return CoverageDimension.None;
+
+        var failed = CoverageDimension.None;
+        var broken = new HashSet<string>(StringComparer.Ordinal);
+
+        void Run(VisitorWithModelNameTracking visitor)
+        {
+            visitor.VisitStored_definition(tree);
+            foreach (var finding in visitor.Findings)
+                broken.Add(finding.RuleId);
+        }
+
+        if ((wanted & CoverageDimension.ImportsFirst) != 0)
+            Run(new ImportStatementsFirst(true));
+        if ((wanted & CoverageDimension.ExtendsAtTop) != 0)
+            Run(new ExtendsClausesAtTop(false));
+        if ((wanted & (CoverageDimension.InitialSectionsFirst | CoverageDimension.InitialSectionsLast)) != 0)
+            Run(new InitialEquationFirst(
+                (wanted & CoverageDimension.InitialSectionsFirst) != 0,
+                (wanted & CoverageDimension.InitialSectionsLast) != 0));
+        if ((wanted & (CoverageDimension.OneOfEachSection | CoverageDimension.EquationAlgorithmNotMixed)) != 0)
+        {
+            var sections = (wanted & CoverageDimension.OneOfEachSection) != 0;
+            Run(new OneOfEachSection(
+                sections, sections, sections, sections,
+                allowEquationAndAlgorithm: (wanted & CoverageDimension.EquationAlgorithmNotMixed) == 0));
+        }
+        if ((wanted & CoverageDimension.ConnectionsNotMixed) != 0)
+            Run(new MixConnectionsAndEquations());
+
+        if (broken.Contains(RuleIds.ImportStatementsFirst)) failed |= CoverageDimension.ImportsFirst;
+        if (broken.Contains(RuleIds.ExtendsAtTop)) failed |= CoverageDimension.ExtendsAtTop;
+        if (broken.Contains(RuleIds.OneOfEachSection)) failed |= CoverageDimension.OneOfEachSection;
+        if (broken.Contains(RuleIds.InitialEqAlgoFirst)) failed |= CoverageDimension.InitialSectionsFirst;
+        if (broken.Contains(RuleIds.InitialEqAlgoLast)) failed |= CoverageDimension.InitialSectionsLast;
+        if (broken.Contains(RuleIds.DontMixEquationAndAlgorithm)) failed |= CoverageDimension.EquationAlgorithmNotMixed;
+        if (broken.Contains(RuleIds.DontMixConnections)) failed |= CoverageDimension.ConnectionsNotMixed;
+
+        return failed & wanted;
     }
 }

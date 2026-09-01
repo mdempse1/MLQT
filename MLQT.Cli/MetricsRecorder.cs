@@ -27,6 +27,7 @@ internal static class MetricsRecorder
         DirectedGraph graph,
         IReadOnlyList<ModelNode> models,
         IReadOnlyList<Finding> findings,
+        StyleCheckingSettings settings,
         DateTime timestampUtc,
         VcsStamp stamp,
         bool force,
@@ -63,7 +64,10 @@ internal static class MetricsRecorder
 
             foreach (var (scope, scopeModels) in scopes)
             {
-                var metrics = MetricsCalculator.Compute(graph, scopeModels);
+                // The run's own settings decide the dimensions, so a point recorded by CI carries
+                // the same rows the desktop dashboard shows for the same library — a trend whose
+                // dimensions changed with who wrote the point would be unreadable.
+                var metrics = MetricsCalculator.Compute(graph, scopeModels, _ => settings);
 
                 // Match the dashboard's figure: active style findings in scope. Parse diagnostics are
                 // not style debt and would make the trend jump on a syntax error rather than quality.

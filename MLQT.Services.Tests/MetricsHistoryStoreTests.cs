@@ -18,7 +18,7 @@ public class MetricsHistoryStoreTests : IDisposable
     }
 
     private static MetricsSnapshot Snap(DateTime t, double desc)
-        => new(t, "All", 10, new Dictionary<string, double> { ["Description"] = desc });
+        => new(t, "All", 10, new Dictionary<string, double> { ["Class description"] = desc });
 
     [Fact]
     public void Load_MissingFile_ReturnsEmpty()
@@ -40,8 +40,8 @@ public class MetricsHistoryStoreTests : IDisposable
 
         var history = MetricsHistoryStore.Load(_path);
         Assert.Equal(2, history.Count);
-        Assert.Equal(40, history[0].Coverage["Description"]);
-        Assert.Equal(55, history[1].Coverage["Description"]);   // appended in order, oldest first
+        Assert.Equal(40, history[0].Coverage["Class description"]);
+        Assert.Equal(55, history[1].Coverage["Class description"]);   // appended in order, oldest first
     }
 
     [Fact]
@@ -55,11 +55,11 @@ public class MetricsHistoryStoreTests : IDisposable
     public void From_ProjectsCoveragePercentages()
     {
         var metrics = new LibraryMetrics(5, new Dictionary<string, int>(), 0,
-            new[] { new CoverageMetric("Description", 3, 4) });   // 75%
+            new[] { new CoverageMetric("Class description", 3, 4) });   // 75%
         var snap = MetricsSnapshot.From(metrics, "Modelica.Blocks", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         Assert.Equal("Modelica.Blocks", snap.Scope);
         Assert.Equal(5, snap.TotalClasses);
-        Assert.Equal(75.0, snap.Coverage["Description"]);
+        Assert.Equal(75.0, snap.Coverage["Class description"]);
     }
 
     // --- AppendIfChanged ------------------------------------------------------------------------
@@ -67,7 +67,7 @@ public class MetricsHistoryStoreTests : IDisposable
     // its own commit, and appending an identical point there would commit again, forever.
 
     private static MetricsSnapshot SnapRev(DateTime t, double desc, string? revision)
-        => new(t, "All", 10, new Dictionary<string, double> { ["Description"] = desc }, null, null, revision);
+        => new(t, "All", 10, new Dictionary<string, double> { ["Class description"] = desc }, null, null, revision);
 
     [Fact]
     public void AppendIfChanged_FirstPoint_IsAppended()
@@ -118,7 +118,7 @@ public class MetricsHistoryStoreTests : IDisposable
     {
         // A per-package snapshot must not make a whole-library one look unchanged.
         MetricsHistoryStore.Append(_path, new MetricsSnapshot(
-            new DateTime(2026, 1, 1), "Some.Package", 10, new Dictionary<string, double> { ["Description"] = 50 }));
+            new DateTime(2026, 1, 1), "Some.Package", 10, new Dictionary<string, double> { ["Class description"] = 50 }));
 
         var (outcome, _) = MetricsHistoryStore.AppendIfChanged(_path, SnapRev(new DateTime(2026, 1, 2), 50, "r1"));
 

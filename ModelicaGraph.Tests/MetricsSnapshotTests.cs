@@ -12,8 +12,8 @@ public class MetricsSnapshotTests
 
     private static MetricsSnapshot Snap(DateTime t, int classes, int compliant, int eligible)
         => new(t, "", classes,
-            new Dictionary<string, double> { ["Description"] = eligible == 0 ? 100.0 : Math.Round(100.0 * compliant / eligible, 1) },
-            new Dictionary<string, CoverageCount> { ["Description"] = new(compliant, eligible) });
+            new Dictionary<string, double> { ["Class description"] = eligible == 0 ? 100.0 : Math.Round(100.0 * compliant / eligible, 1) },
+            new Dictionary<string, CoverageCount> { ["Class description"] = new(compliant, eligible) });
 
     [Fact]
     public void AggregateByTimestamp_SameTimestamp_SumsCountsExactly()
@@ -24,9 +24,9 @@ public class MetricsSnapshotTests
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
 
         Assert.Equal(10, combined.TotalClasses);
-        Assert.Equal(40.0, combined.Coverage["Description"]);           // 4 compliant / 10 eligible, not (75+16.7)/2
-        Assert.Equal(4, combined.Counts!["Description"].Compliant);
-        Assert.Equal(10, combined.Counts["Description"].Eligible);
+        Assert.Equal(40.0, combined.Coverage["Class description"]);           // 4 compliant / 10 eligible, not (75+16.7)/2
+        Assert.Equal(4, combined.Counts!["Class description"].Compliant);
+        Assert.Equal(10, combined.Counts["Class description"].Eligible);
     }
 
     [Fact]
@@ -43,12 +43,12 @@ public class MetricsSnapshotTests
     {
         var withCounts = Snap(T, 10, 8, 10);   // 80%
         var legacy = new MetricsSnapshot(T, "", 30,
-            new Dictionary<string, double> { ["Description"] = 40.0 }, null);   // pre-counts snapshot
+            new Dictionary<string, double> { ["Class description"] = 40.0 }, null);   // pre-counts snapshot
 
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { withCounts, legacy }));
 
         // weighted by TotalClasses: (80*10 + 40*30) / 40 = 50
-        Assert.Equal(50.0, combined.Coverage["Description"]);
+        Assert.Equal(50.0, combined.Coverage["Class description"]);
         Assert.Null(combined.Counts);   // not exact, so counts are dropped
     }
 
@@ -63,8 +63,8 @@ public class MetricsSnapshotTests
     [Fact]
     public void AggregateByTimestamp_SumsFindings_WhenAllPresent()
     {
-        var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
-        var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, 5);
+        var a = new MetricsSnapshot(T, "", 4, new() { ["Class description"] = 75 }, null, 10);
+        var b = new MetricsSnapshot(T, "", 6, new() { ["Class description"] = 50 }, null, 5);
 
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
 
@@ -74,8 +74,8 @@ public class MetricsSnapshotTests
     [Fact]
     public void AggregateByTimestamp_NullFindings_WhenAnyMissing()
     {
-        var a = new MetricsSnapshot(T, "", 4, new() { ["Description"] = 75 }, null, 10);
-        var b = new MetricsSnapshot(T, "", 6, new() { ["Description"] = 50 }, null, null);
+        var a = new MetricsSnapshot(T, "", 4, new() { ["Class description"] = 75 }, null, 10);
+        var b = new MetricsSnapshot(T, "", 6, new() { ["Class description"] = 50 }, null, null);
 
         var combined = Assert.Single(MetricsSnapshot.AggregateByTimestamp(new[] { a, b }));
 
@@ -89,8 +89,8 @@ public class MetricsSnapshotTests
     private static MetricsSnapshot S(double desc, int classes = 10, int? findings = 3,
         (int compliant, int eligible)? counts = null)
         => new(new DateTime(2026, 1, 1), "", classes,
-            new Dictionary<string, double> { ["Description"] = desc },
-            counts is null ? null : new Dictionary<string, CoverageCount> { ["Description"] = new(counts.Value.compliant, counts.Value.eligible) },
+            new Dictionary<string, double> { ["Class description"] = desc },
+            counts is null ? null : new Dictionary<string, CoverageCount> { ["Class description"] = new(counts.Value.compliant, counts.Value.eligible) },
             findings);
 
     [Fact]

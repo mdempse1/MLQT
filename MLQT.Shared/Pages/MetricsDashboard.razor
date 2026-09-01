@@ -51,14 +51,14 @@
     else
     {
         <MudGrid Spacing="2" Class="mt-1">
-            <MudItem xs="12" md="7">
+            <MudItem xs="12" md="9">
                 <MudText Typo="Typo.body1" Class="mb-1">
                     Coverage — <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
                 </MudText>
                 @foreach (var c in _metrics.Coverage)
                 {
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
-                        <MudText Typo="Typo.body2" Style="width:150px;">@c.Dimension</MudText>
+                        <MudText Typo="Typo.body1" Style="width:220px;">@c.Dimension</MudText>
                         <MudProgressLinear Color="@CoverageColor(c.Percent)" Value="@c.Percent" Rounded="true"
                                            Class="flex-grow-1 mx-2" Style="height:14px;" />
                         <MudText Typo="Typo.body2" Style="width:120px; text-align:right;">
@@ -85,25 +85,39 @@
                                    OnClick="RunAnalysis" Class="ml-1">Run analysis</MudButton>
                     }
                 </MudStack>
-                <MudText Typo="Typo.caption" Class="mb-1">
-                    Findings still open after suppression — drops when a rule is fixed <b>or</b> deliberately
-                    suppressed. This is the measure that moves when the percentages barely do.
-                </MudText>
-                <MudText Typo="Typo.caption" Class="mt-1">
-                    True source state — in-source waivers do not raise it. <b>Icon</b> counts a class's own
-                    <code>Icon</code> graphics or one inherited via <code>extends</code>. <b>Unit</b> counts
-                    every Real-derived variable (plain <code>Real</code> and SI/quantity types) as united
-                    when its type fixes a unit or it declares one inline.
-                </MudText>
+                <MudStack Row="false" AlignItems="AlignItems.Start" Spacing="0" Class="mt-2 mb-1">
+                    <MudText Typo="Typo.caption" Class="mb-1">
+                        Findings still open after suppression — drops when a rule is fixed <b>or</b> deliberately
+                        suppressed. This is the measure that moves when the percentages barely do.
+                        True source state — in-source waivers do not raise it. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        A dimension is listed only where its rule is on — a rule set to Off is a decision that its gap is not worth tracking.
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        The layout dimensions (imports, extends, sections) drop off as well when the formatter rewrites them on save, since the number would
+                        measure the moment before the save. They count every class checked, so a class with nothing to order counts as complying.
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Icon</b> counts a class's own <code>Icon</code> graphics or one inherited via <code>extends</code>. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Parameter description</b> and <b>Constant description</b> count public declarations only — protected ones and plain variables are
+                        outside both the numerator and the denominator. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Unit</b> counts every Real-derived variable (plain <code>Real</code> and SI/quantity types), public and protected alike, as united when its type
+                        fixes a unit or it declares one inline.
+                    </MudText>
+                </MudStack>
             </MudItem>
 
-            <MudItem xs="12" md="5">
+            <MudItem xs="12" md="3">
                 <MudText Typo="Typo.body1" Class="mb-1">Size</MudText>
                 <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
                     <tbody>
-                        <tr><td>Classes</td><td style="text-align:right;">@_metrics.TotalClasses</td></tr>
-                        <tr><td>Components</td><td style="text-align:right;">@_metrics.TotalComponents</td></tr>
-                        @foreach (var kv in _metrics.ClassesByType.OrderByDescending(k => k.Value))
+                        <tr><td>Total Classes</td><td style="text-align:right;">@_metrics.TotalClasses</td></tr>
+                        @foreach (var kv in _metrics.ClassesByType.OrderByDescending(k => k.Key))
                         {
                             <tr>
                                 <td style="padding-left:20px; opacity:0.75;">@kv.Key</td>
@@ -142,10 +156,18 @@
                                          @onclick="@(() => OnScopeChanged(row.Package))">@ShortName(row.Package)</MudLink>
                             </td>
                             <td style="text-align:right;">@row.Metrics.TotalClasses</td>
-                            @foreach (var c in row.Metrics.Coverage)
+                            @foreach (var d in _summaryDimensions)
                             {
+                                var c = row.Metrics.Coverage.FirstOrDefault(x => x.Dimension == d);
                                 <td style="text-align:right;">
-                                    <MudText Typo="Typo.body2" Inline="true" Color="@CoverageColor(c.Percent)">@($"{c.Percent:0}%")</MudText>
+                                    @if (c is null)
+                                    {
+                                        <MudText Typo="Typo.body2" Inline="true">—</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Inline="true" Color="@CoverageColor(c.Percent)">@($"{c.Percent:0}%")</MudText>
+                                    }
                                 </td>
                             }
                         </tr>
@@ -233,7 +255,7 @@
     }
     else if (_metrics is not null)
     {
-        <MudText Typo="Typo.caption" Class="mt-3">
+        <MudText Typo="Typo.body1" Class="mt-4">
             Save snapshots over time to build a coverage-burndown trend for this scope.
         </MudText>
     }
@@ -277,10 +299,11 @@
         CodeReviewService.OnLogMessagesChanged += OnFindingsChanged;
         StyleCheckingService.OnProgressChanged += OnStyleCheckProgress;
 
-        // Restore the scope chosen earlier this session, but drop it if it no longer names a loaded
-        // package (e.g. after switching to a different project/library).
+        // Restore the scope chosen earlier this session, but drop it if it no longer names a package
+        // this report covers (e.g. after switching project, or after its repository was marked
+        // reference only).
         _scope = NavState.MetricsScope;
-        if (!string.IsNullOrEmpty(_scope) && !LibraryDataService.GetAllModels()
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels()
                 .Any(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)))
         {
             _scope = "";
@@ -405,8 +428,9 @@
     // invalidates itself; only this instance's displayed figures need clearing.)
     private void OnLibrariesChanged()
     {
-        // A remembered scope from the previous project may not exist any more.
-        if (!string.IsNullOrEmpty(_scope) && !LibraryDataService.GetAllModels().Any(m => m.Id == _scope))
+        // A remembered scope from the previous project may not exist any more, and a repository
+        // marked reference only since takes its packages out of this report.
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels().Any(m => m.Id == _scope))
         {
             _scope = string.Empty;
             NavState.MetricsScope = string.Empty;
@@ -421,16 +445,37 @@
         InvokeAsync(StateHasChanged);
     }
 
-    // Packages the user can scope to (matched against what they type). Capped so the list stays usable.
+    // Packages the user can scope to (matched against what they type). Only packages from
+    // <see cref="ReportableModels"/> — scoping to a reference-only library would measure nothing, so
+    // offering it is offering an empty report. Capped so the list stays usable.
     private Task<IEnumerable<string>> SearchScopes(string value, System.Threading.CancellationToken token)
     {
-        var packages = LibraryDataService.GetAllModels()
+        var packages = ReportableModels()
             .Where(m => m.ClassType == "package")
             .Select(m => m.Id);
         if (!string.IsNullOrWhiteSpace(value))
             packages = packages.Where(id => id.Contains(value, System.StringComparison.OrdinalIgnoreCase));
+
+        // Rank before capping. Sorting the matches alphabetically and taking the first fifty is what
+        // hid the library itself: in a library with fifty packages named after "Suspensions", the one
+        // actually called Suspensions sorts after every Chassis.*, Kinematics.* and Vehicle.* that
+        // mentions it, and falls off the end of the list. What the user typed goes first, then the
+        // packages named that, then the shallowest.
+        var term = (value ?? string.Empty).Trim();
         return Task.FromResult<IEnumerable<string>>(
-            packages.OrderBy(id => id, System.StringComparer.Ordinal).Take(50).ToList());
+            packages
+                .OrderBy(id => string.Equals(id, term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(id => string.Equals(LastSegment(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(id => id.Count(c => c == '.'))
+                .ThenBy(id => id, System.StringComparer.Ordinal)
+                .Take(50)
+                .ToList());
+    }
+
+    private static string LastSegment(string id)
+    {
+        var dot = id.LastIndexOf('.');
+        return dot < 0 ? id : id[(dot + 1)..];
     }
 
     private async Task OnScopeChanged(string? scope)
@@ -493,12 +538,13 @@
                     _loading = true;
                     StateHasChanged();
                     var graph = LibraryDataService.CombinedGraph;
+                    var settingsFor = StyleSettingsLookup();
                     var findingsReliable = !_analysisRunning && AnalysisComplete;
                     await Task.Run(() =>
                     {
                         foreach (var g in groups)
                         {
-                            var metrics = MetricsCalculator.Compute(graph, g.Models);
+                            var metrics = MetricsCalculator.Compute(graph, g.Models, settingsFor);
                             int? v = findingsReliable
                                 ? CountFindingsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
                                 : (int?)null;
@@ -549,6 +595,12 @@
             var repo = string.IsNullOrEmpty(lib.RepositoryId)
                 ? null
                 : RepositoryService.Repositories.FirstOrDefault(r => r.Id == lib.RepositoryId);
+
+            // Nothing is measured for a reference-only library, and nothing is written to its
+            // repository — a snapshot there would dirty a checkout the user marked hands-off with
+            // numbers about code that is not theirs to improve.
+            if (repo?.IsReferenceOnly == true)
+                continue;
 
             string path;
             if (repo is not null && !string.IsNullOrEmpty(repo.LocalPath))
@@ -610,7 +662,10 @@
         var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
         foreach (var repo in RepositoryService.Repositories)
         {
-            if (string.IsNullOrEmpty(repo.LocalPath))
+            // A reference-only repository may carry its owner's own history file. Its points describe
+            // classes this report does not measure, so merging them would move the trend — and, at the
+            // "all libraries" scope, be aggregated into our own points by timestamp.
+            if (string.IsNullOrEmpty(repo.LocalPath) || repo.IsReferenceOnly)
                 continue;
             var p = MetricsHistoryStore.RepoPath(repo.LocalPath);
             if (seen.Add(p))
@@ -641,10 +696,36 @@
     private List<ModelNode> ReportableModels()
     {
         var referenceOnly = ReferenceOnlyScope.ModelIds(LibraryDataService, RepositoryService);
-        var all = LibraryDataService.GetAllModels();
-        return referenceOnly.Count == 0
-            ? all.ToList()
-            : all.Where(m => !referenceOnly.Contains(m.Id)).ToList();
+        // Stubs go too, for the same reason and to the same end as in MetricsCalculator: a class
+        // rebuilt from a vendor's help HTML has no source to measure, so offering its package as a
+        // scope offers a report of nothing.
+        return LibraryDataService.GetAllModels()
+            .Where(m => !m.IsExternalStub && !referenceOnly.Contains(m.Id))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The rule settings that decide which dimensions each class is measured and reported for — its
+    /// repository's, or none for a class in no repository, which no rule checks either. Built as a
+    /// map up front: a per-class repository lookup scans every loaded library, which on a library of
+    /// tens of thousands of classes is the report.
+    /// </summary>
+    private Func<ModelNode, StyleCheckingSettings?> StyleSettingsLookup()
+    {
+        var byModel = new Dictionary<string, StyleCheckingSettings?>(System.StringComparer.Ordinal);
+        foreach (var library in LibraryDataService.Libraries)
+        {
+            var settings = string.IsNullOrEmpty(library.RepositoryId)
+                ? null
+                : RepositoryService.Repositories
+                    .FirstOrDefault(r => r.Id == library.RepositoryId)?.StyleSettings;
+            if (settings is null)
+                continue;   // absent means "no rules", which is what a missing entry already says
+            foreach (var id in library.ModelIds)
+                byModel[id] = settings;
+        }
+
+        return model => byModel.GetValueOrDefault(model.Id);
     }
 
     private async Task Compute()
@@ -663,7 +744,8 @@
         {
             var graph = LibraryDataService.CombinedGraph;
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models));
+            var settingsFor = StyleSettingsLookup();
+            _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models, settingsFor));
             // Says where a slow report went: classes measured here are ones no check had reached, so
             // the number names the gap rather than leaving the wait unexplained.
             MLQT.Services.LoggingService.Info("MetricsDashboard",
@@ -698,15 +780,21 @@
         try
         {
             var graph = LibraryDataService.CombinedGraph;
+            var settingsFor = StyleSettingsLookup();
             _summary = await Task.Run(() => children.Select(pkg =>
             {
                 var models = all.Where(m => m.Id == pkg
                     || m.Id.StartsWith(pkg + ".", System.StringComparison.Ordinal)).ToList();
-                return (pkg, MetricsCalculator.Compute(graph, models));
+                return (pkg, MetricsCalculator.Compute(graph, models, settingsFor));
             }).ToList());
-            _summaryDimensions = _summary.Count > 0
-                ? _summary[0].Metrics.Coverage.Select(c => c.Dimension).ToList()
-                : new();
+            // The union, not the first row's: sub-packages can sit in repositories with different
+            // rules, and a header taken from one of them would put another's numbers in its columns.
+            var present = _summary.SelectMany(r => r.Metrics.Coverage.Select(c => c.Dimension))
+                .ToHashSet(System.StringComparer.Ordinal);
+            _summaryDimensions = CoverageDimensions.Ordered
+                .Select(d => d.Name)
+                .Where(present.Contains)
+                .ToList();
         }
         finally
         {

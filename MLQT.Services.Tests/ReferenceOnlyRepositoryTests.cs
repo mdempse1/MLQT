@@ -156,6 +156,27 @@ public class ReferenceOnlyRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task AClassTheUserAlsoHasAsSource_IsNotOutOfScope()
+    {
+        // A tool ships the encrypted build of a library the user has checked out as source, so both
+        // claim the same class ids. The graph keeps the readable source; excluding the id because the
+        // vendor copy also has it left the user's own class unchecked, unmeasured, and absent from the
+        // Coverage scope list — with the vendor copy, which nobody can see, as the only explanation.
+        var h = Build();
+        var vendor = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(vendor.Repository!.Id);
+        var ours = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(ours.Repository!.Id);
+
+        var excluded = ReferenceOnlyScope.ModelIds(h.Libraries, h.Repositories);
+
+        Assert.DoesNotContain("P.A", excluded);
+        Assert.DoesNotContain("P", excluded);
+    }
+
+    [Fact]
     public void AFolderThatCannotBeWrittenTo_IsOfferedAsReferenceOnly()
     {
         // The answer comes from trying, because permissions are decided by more than the path.

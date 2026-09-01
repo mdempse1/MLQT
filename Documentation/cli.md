@@ -427,6 +427,14 @@ A point records the coverage percentages and their raw compliant/eligible counts
 active style-finding count, and the **revision and branch** it was measured at. Recording happens
 whatever the gate decides — a failing build is exactly the one whose numbers you want on the trend.
 
+**Which dimensions appear** follows the rules the run has enabled. A rule set to `Off` is a decision
+that its gap is not worth tracking, so it gets no dimension; enabling one later adds its dimension
+from that point on, and earlier points simply have no value for it. The layout dimensions (imports
+first, extends at top, sections, initial sections) are also left out when `applyFormattingRules` is on
+together with `oneOfEachSection`, because the formatter rewrites all four on save — the number would
+measure the moment before the save rather than the library. Coverage itself is measured from the
+source, never from findings, so a waived or baselined finding still counts as a gap.
+
 **Scopes.** One point is recorded for the whole checked set, plus one for each top-level library
 package, each counting only its own classes:
 

@@ -663,23 +663,42 @@ epos\Alpha", new[] { "en_GB" });
     }
 
     [Fact]
-    public async Task StyleChecking_MeasuresCoverageForClassesNoRuleReaches()
+    public async Task StyleChecking_DoesNotMeasureCoverage_ForARepositoryWithNoRules()
     {
-        // A repository with no rules enabled gets no worker at all, and a library loaded for reference
-        // belongs to no repository — but both are on the Coverage tab, so the user would have waited
-        // for them there. Style checking already runs for minutes; this is where the wait belongs.
+        // Coverage follows the rules. With everything Off the Coverage tab has no rows for this
+        // repository, so measuring its classes would be a tree walk each for a report nobody sees.
         var service = CreateService();
         var repo = await CreateRepositoryWithModelsAsync(
             new StyleCheckingSettings(),   // nothing enabled
             ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
 
         var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
-        Assert.Null(node.Definition.Coverage);
 
         service.StartBackgroundCheckingForRepositories([repo]);
         await service.WaitForCompletionAsync();
 
-        Assert.NotNull(node.Definition.Coverage);
+        Assert.Null(node.Definition.Coverage);
+    }
+
+    [Fact]
+    public async Task StyleChecking_MeasuresOnlyTheDimensionsTheRepositoryTracks()
+    {
+        // The sweep and the workers measure the same set — what this repository would show — so a
+        // class reached by neither still reports the same dimensions as one checked in full.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        var coverage = node.Definition.Coverage;
+        Assert.NotNull(coverage);
+        Assert.Equal(CoverageDimension.ClassDescription, coverage!.Measured);
+        Assert.True(coverage.HasDescription);
     }
 
     [Fact]

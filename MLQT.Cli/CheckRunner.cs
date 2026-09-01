@@ -125,10 +125,10 @@ internal static class CheckRunner
 
         // Record before formatting/exit-code so the point still lands when the gate fails — a failing
         // build is exactly the one whose numbers you want on the trend.
-        if (opts.RecordMetrics && load.Graph is not null && load.Models is not null)
+        if (opts.RecordMetrics && load.Graph is not null && load.Models is not null && load.Settings is not null)
         {
             MetricsRecorder.Record(
-                opts.ResolvedMetricsPath, load.Graph, load.Models, load.Findings,
+                opts.ResolvedMetricsPath, load.Graph, load.Models, load.Findings, load.Settings,
                 DateTime.UtcNow, VcsLocator.Stamp(opts.LibraryPath), opts.MetricsForce, stderr);
         }
 

@@ -37,21 +37,21 @@ public class MetricsCalculatorTests
     }
 
     [Fact]
-    public void DescriptionCoverage_CountsClassesWithADescription()
+    public void ClassDescriptionCoverage_CountsClassesWithADescription()
     {
         var models = new[]
         {
             Model("A", "model A \"has one\" end A;"),
             Model("B", "model B end B;"),
         };
-        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Description");
+        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Class description");
         Assert.Equal(1, d.Compliant);
         Assert.Equal(2, d.Eligible);
         Assert.Equal(50.0, d.Percent);
     }
 
     [Fact]
-    public void DescriptionCoverage_CountsAClassThatHasNoBodyToPutOneIn()
+    public void ClassDescriptionCoverage_CountsAClassThatHasNoBodyToPutOneIn()
     {
         // A type alias declares its description in the trailing comment, having no composition to
         // hold one. Scoring it as undocumented put the coverage dashboard at odds with the
@@ -64,7 +64,7 @@ public class MetricsCalculatorTests
             Model("Plain", "type Plain = Real;", "type"),
         };
 
-        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Description");
+        var d = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Class description");
 
         Assert.Equal(3, d.Compliant);
         Assert.Equal(4, d.Eligible);
@@ -105,6 +105,27 @@ public class MetricsCalculatorTests
         var p = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Parameter description");
         Assert.Equal(2, p.Eligible);   // two public parameters
         Assert.Equal(1, p.Compliant);  // only k has a description
+    }
+
+    [Fact]
+    public void ParameterDescriptionCoverage_ExcludesProtectedParametersConstantsAndVariables()
+    {
+        // The dimension is public parameters only — what a user of the model has to understand. A
+        // protected parameter, a constant or a plain variable is outside both numerator and denominator.
+        var models = new[]
+        {
+            Model("A",
+                "model A\n" +
+                "  parameter Real k = 1 \"gain\";\n" +
+                "  constant Real c = 2;\n" +
+                "  Real x;\n" +
+                "protected\n" +
+                "  parameter Real hidden = 3;\n" +
+                "end A;"),
+        };
+        var p = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Parameter description");
+        Assert.Equal(1, p.Eligible);   // only the public parameter k
+        Assert.Equal(1, p.Compliant);
     }
 
     [Fact]
@@ -177,6 +198,131 @@ public class MetricsCalculatorTests
         Assert.Equal(100.0, Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Parameter description").Percent);
     }
 
+    [Fact]
+    public void DocumentationCoverage_CountsInfoAndRevisionsSeparately()
+    {
+        var models = new[]
+        {
+            Model("Both",
+                "model Both\n" +
+                "  annotation(Documentation(info=\"<html>x</html>\", revisions=\"<html>v1</html>\"));\n" +
+                "end Both;"),
+            Model("InfoOnly",
+                "model InfoOnly\n" +
+                "  annotation(Documentation(info=\"<html>x</html>\"));\n" +
+                "end InfoOnly;"),
+            Model("Neither", "model Neither end Neither;"),
+        };
+        var metrics = MetricsCalculator.Compute(BuildGraph(models), models);
+
+        var info = Cov(metrics, "Documentation info");
+        Assert.Equal(3, info.Eligible);
+        Assert.Equal(2, info.Compliant);
+
+        var revisions = Cov(metrics, "Documentation revisions");
+        Assert.Equal(3, revisions.Eligible);
+        Assert.Equal(1, revisions.Compliant);
+    }
+
+    [Fact]
+    public void ConstantDescriptionCoverage_CountsPublicConstantsOnly()
+    {
+        // The same shape as parameter description, and one rule checks both — the dashboard used to
+        // report half of what PublicParametersAndConstantsHaveDescription looks at.
+        var models = new[]
+        {
+            Model("A",
+                "model A\n" +
+                "  constant Real c1 = 1 \"described\";\n" +
+                "  constant Real c2 = 2;\n" +
+                "  parameter Real k = 3;\n" +
+                "protected\n" +
+                "  constant Real hidden = 4;\n" +
+                "end A;"),
+        };
+        var c = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Constant description");
+        Assert.Equal(2, c.Eligible);    // c1 and c2; the protected constant and the parameter are not
+        Assert.Equal(1, c.Compliant);
+    }
+
+    [Fact]
+    public void LayoutCoverage_CountsEveryClass_CompliantUnlessTheRuleWouldFire()
+    {
+        var models = new[]
+        {
+            Model("Ordered",
+                "model Ordered\n" +
+                "  import Modelica.Units.SI;\n" +
+                "  Real x;\n" +
+                "end Ordered;"),
+            Model("Late",
+                "model Late\n" +
+                "  Real x;\n" +
+                "  import Modelica.Units.SI;\n" +
+                "end Late;"),
+            Model("NothingToOrder", "model NothingToOrder\n  Real x;\nend NothingToOrder;"),
+        };
+
+        var imports = Cov(MetricsCalculator.Compute(BuildGraph(models), models), "Imports first");
+
+        Assert.Equal(3, imports.Eligible);    // every class checked, not only those with imports
+        Assert.Equal(2, imports.Compliant);   // the class with nothing to order is complying
+    }
+
+    [Fact]
+    public void LayoutCoverage_MeasuresSectionsAndMixedBehaviour()
+    {
+        var models = new[]
+        {
+            Model("Twice",
+                "model Twice\n" +
+                "  Real x;\n" +
+                "public\n" +
+                "  Real y;\n" +
+                "end Twice;"),
+            Model("Mixed",
+                "model Mixed\n" +
+                "  Real x;\n" +
+                "equation\n" +
+                "  x = 1;\n" +
+                "algorithm\n" +
+                "  x := 1;\n" +
+                "end Mixed;"),
+        };
+        var metrics = MetricsCalculator.Compute(BuildGraph(models), models);
+
+        var sections = Cov(metrics, "One of each section");
+        Assert.Equal(2, sections.Eligible);
+        Assert.Equal(1, sections.Compliant);   // Twice has two public sections
+
+        var unmixed = Cov(metrics, "Equation/algorithm not mixed");
+        Assert.Equal(2, unmixed.Eligible);
+        Assert.Equal(1, unmixed.Compliant);    // Mixed has both an equation and an algorithm section
+    }
+
+    [Fact]
+    public void WideningTheTrackedSet_ReMeasures_RatherThanReadingAnUnmeasuredFactAsAGap()
+    {
+        // A class measured for one repository's rules must not answer "no icon" to a report that
+        // asks about icons: the fact was never measured, and a kept zero would read as a gap.
+        var models = new[]
+        {
+            Model("A",
+                "model A \"d\"\n" +
+                "  annotation(Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));\n" +
+                "end A;"),
+        };
+        var graph = BuildGraph(models);
+        var narrow = new StyleCheckingSettings { ClassHasDescription = true };
+        var wide = new StyleCheckingSettings { ClassHasDescription = true, ClassHasIcon = true };
+
+        MetricsCalculator.Compute(graph, models, _ => narrow);
+        var metrics = MetricsCalculator.Compute(graph, models, _ => wide);
+
+        var icon = Cov(metrics, "Icon");
+        Assert.Equal(1, icon.Eligible);
+        Assert.Equal(1, icon.Compliant);
+    }
     [Fact]
     public void CountsComponents()
     {
