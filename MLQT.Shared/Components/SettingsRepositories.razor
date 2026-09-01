@@ -148,15 +148,18 @@
     </TitleContent>
     <DialogContent>
         @{
+            string? lastCategory = null;
+
             // A rule row: an Off/Info/Warning/Error picker plus a label. Used for the style-guideline
             // and reference rules below (which keep their descriptive labels) and shares the severity
             // model with the data-driven Static analysis section.
-            RenderFragment<(string Id, string Label)> severityRow = item =>
+            @* RenderFragment<(string Id, string Label)> severityRow = item =>
                 @<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
+                    <MudText Typo="Typo.body1">@item.Label</MudText>
+                    <MudSpacer/>
                     <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.Id)"
                         ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))" />
-                    <MudText Typo="Typo.body1">@item.Label</MudText>
-                </MudStack>;
+                </MudStack>; *@
         }
         @if (_selectedItem.IsSettingsReadOnly)
         {
@@ -177,228 +180,239 @@
         <MudSwitch T="bool" Value="_selectedItem.IsReferenceOnly" ValueChanged="OnReferenceOnlyChanged"
             Color="Color.Primary" Size="Size.Small" Class="mt-4"
             Label="Reference only — code this team does not maintain" />
-        <MudText Typo="Typo.caption" Class="ml-8 mt-n2 mb-2">
+        <MudText Typo="Typo.caption" Class="mt-n2 mb-2">
             Loaded so that references into it resolve. It is not style-checked, does not count towards
             coverage, and nothing is written into it — no <code>.mlqt</code> directory, so no settings,
             baseline or accepted spellings are kept beside it.
         </MudText>
 
-        @if (_selectedItem.IsReferenceOnly)
+        @if (!_selectedItem.IsReferenceOnly)
         {
-            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
-                The settings below are kept but not applied: rules, formatting and spelling are for code
-                this team maintains.
-            </MudAlert>
-        }
 
-        <MudText Typo="Typo.body1" Class="mt-4">Commit requirements</MudText>
-        <MudSwitch @bind-Value="SelectedSettings.CommitRequiresIssueNumber" Color="Color.Primary" Size="Size.Small"
-            Label="Require an issue number as part of the commit message" />
-        <MudSwitch @bind-Value="SelectedSettings.IssueNumberAtEnd" Color="Color.Primary" Size="Size.Small" Disabled="!SelectedSettings.CommitRequiresIssueNumber"
-            Label="The issue number will be added before the commit message when disabled, after the commit message when enabled" />
-        <MudText Typo="Typo.body1" Class="mt-4">Style guidelines</MudText>
-        @foreach (var item in StyleGuidelineRules)
-        {
-            @severityRow(item)
-        }
+            <MudText Typo="Typo.body1" Class="mt-4">Commit requirements</MudText>
+            <MudSwitch @bind-Value="SelectedSettings.CommitRequiresIssueNumber" Color="Color.Primary" Size="Size.Small"
+                Label="Require an issue number as part of the commit message" />
+            <MudSwitch @bind-Value="SelectedSettings.IssueNumberAtEnd" Color="Color.Primary" Size="Size.Small" Disabled="!SelectedSettings.CommitRequiresIssueNumber"
+                Label="The issue number will be added before the commit message when disabled, after the commit message when enabled" />
 
-        <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small" Class="mt-2"
-            Label="Check that the naming convention is followed" />
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Formatting rules</MudText>
+            <MudSwitch @bind-Value="SelectedSettings.ApplyFormattingRules" Color="Color.Primary" Size="Size.Small"
+                Label="Apply formatting rules.  If off then just used as part of style guidelines" />
+            <MudSwitch @bind-Value="SelectedSettings.OneOfEachSection" Color="Color.Primary" Size="Size.Small"
+                Label="A class may only have 1 public, 1 protected, 1 equation or algorithm section" />
+            <MudSwitch @bind-Value="SelectedSettings.ImportStatementsFirst" Color="Color.Primary" Size="Size.Small"
+                Label="Composition must be imports first; then extends at the top of the public/protected sections" />
+            <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+                Label="Composition must have components before classes" />
+            <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Value="@SelectedSettings.InitialEQAlgoFirst" Color="Color.Primary" Size="Size.Small"
+                Label="If there is an initial equation/algorithm section it should appear before the equation/algorithm section"/>
+            <MudSwitch T="bool" ValueChanged="OnInitialEqLast" Value="@SelectedSettings.InitialEQAlgoLast" Color="Color.Primary" Size="Size.Small"
+                Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
 
-        @if (SelectedSettings.FollowNamingConvention)
-        {
-            <MudPaper Elevation="3" Class="pa-2 mt-2">
-                <MudSelect T="string" Label="Naming Convention Rules" Value="@SelectedSettings.NamingConvention.PresetName"
-                    ValueChanged="OnRepoPresetChanged" Dense="true" Margin="Margin.Dense"
-                    Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
-                    @foreach (var preset in NamingConventionPresets.All)
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Spell checking</MudText>
+            <MudSwitch @bind-Value="SelectedSettings.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
+                Label="Spell check every description string" />
+            <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
+                Label="Spell check all documentation" />
+
+            @* The accepted spellings belong to the repository and are committed with it, which is what
+            lets the app and CI agree on them — so they are configured here rather than in the tool
+            settings, next to the rules that use them. *@
+            <SettingsRepositoryDictionary Repository="_selectedItem" />
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Style guidelines</MudText>
+            <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small" Class="mt-2"
+                Label="Check that the naming convention is followed" />
+
+            @if (SelectedSettings.FollowNamingConvention)
+            {
+                <MudPaper Elevation="3" Class="pa-2 mt-2 mb-4">
+                    <MudSelect T="string" Label="Naming Convention Rules" Value="@SelectedSettings.NamingConvention.PresetName"
+                        ValueChanged="OnRepoPresetChanged" Dense="true" Margin="Margin.Dense"
+                        Variant="Variant.Outlined" Typo="Typo.body1" Style="max-width:300px;" Class="mb-2">
+                        @foreach (var preset in NamingConventionPresets.All)
+                        {
+                            <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
+                        }
+                        <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
+                    </MudSelect>
+
+                    <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
+                        Color="Color.Primary" Size="Size.Small"
+                        Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
+
+                    <MudText Typo="Typo.body1" Class="mb-1 mt-2">Names that bypass convention checks (e.g., product names)</MudText>
+                    <MudChipSet T="string" Class="mt-1">
+                        @foreach (var name in SelectedSettings.NamingConvention.ExceptionNames)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveRepoExceptionName(name)">@name</MudChip>
+                        }
+                    </MudChipSet>
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                        <MudTextField @bind-Value="_newRepoExceptionName" Placeholder="e.g. product names" 
+                            Variant="Variant.Outlined" Label="Add additional exceptions"
+                            Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
+                            OnClick="AddRepoExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newRepoExceptionName)" />
+                    </MudStack>
+
+                    @if (SelectedSettings.NamingConvention.PresetName == "Custom")
                     {
-                        <MudSelectItem T="string" Value="@preset.Name">@preset.Name</MudSelectItem>
-                    }
-                    <MudSelectItem T="string" Value="@("Custom")">Custom</MudSelectItem>
-                </MudSelect>
+                        <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
+                        <MudGrid>
+                            <MudItem xs="6">
+                                <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)"
+                                    SlotKey="@SlotKeys.Package" Patterns="@GetRepoPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Package, p))" />
+                                <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)"
+                                    SlotKey="@SlotKeys.Model" Patterns="@GetRepoPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Model, p))" />
+                                <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)"
+                                    SlotKey="@SlotKeys.Function" Patterns="@GetRepoPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Function, p))" />
+                                <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)"
+                                    SlotKey="@SlotKeys.Block" Patterns="@GetRepoPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Block, p))" />
+                                <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)"
+                                    SlotKey="@SlotKeys.Connector" Patterns="@GetRepoPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Connector, p))" />
+                            </MudItem>
+                            <MudItem xs="6">
+                                <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)"
+                                    SlotKey="@SlotKeys.Record" Patterns="@GetRepoPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Record, p))" />
+                                <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)"
+                                    SlotKey="@SlotKeys.Type" Patterns="@GetRepoPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Type, p))" />
+                                <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)"
+                                    SlotKey="@SlotKeys.Class" Patterns="@GetRepoPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Class, p))" />
+                                <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)"
+                                    SlotKey="@SlotKeys.Operator" Patterns="@GetRepoPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Operator, p))" />
+                            </MudItem>
+                        </MudGrid>
 
-                <MudSwitch @bind-Value="SelectedSettings.NamingConvention.AllowUnderscoreSuffixes"
-                    Color="Color.Primary" Size="Size.Small"
-                    Label="Allow underscore suffixes (e.g., pressure_in, T_a)" />
 
-                <MudText Typo="Typo.body1" Class="mb-1 mt-2">Names that bypass convention checks (e.g., product names)</MudText>
-                <MudChipSet T="string" Class="mt-1">
-                    @foreach (var name in SelectedSettings.NamingConvention.ExceptionNames)
-                    {
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveRepoExceptionName(name)">@name</MudChip>
+                        <MudGrid>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
+                                <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)"
+                                    SlotKey="@SlotKeys.PublicVariable" Patterns="@GetRepoPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicVariable, p))" />
+                                <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)"
+                                    SlotKey="@SlotKeys.PublicParameter" Patterns="@GetRepoPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicParameter, p))" />
+                                <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)"
+                                    SlotKey="@SlotKeys.PublicConstant" Patterns="@GetRepoPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicConstant, p))" />
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
+                                <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)"
+                                    SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetRepoPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedVariable, p))" />
+                                <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)"
+                                    SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetRepoPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedParameter, p))" />
+                                <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
+                                    ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)"
+                                    SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetRepoPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedConstant, p))" />
+                            </MudItem>
+                        </MudGrid>
                     }
-                </MudChipSet>
-                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-                    <MudTextField @bind-Value="_newRepoExceptionName" Placeholder="e.g. product names" 
-                        Variant="Variant.Outlined" Label="Add additional exceptions"
-                        Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
-                        OnClick="AddRepoExceptionName" Disabled="@string.IsNullOrWhiteSpace(_newRepoExceptionName)" />
+                </MudPaper>
+            }
+            @foreach (var item in StyleGuidelineRules)
+            {
+                <div class="mlqt-rule-row">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                        <MudTooltip Text="@("Rule ID = " + item.Id)">
+                            <MudText Typo="Typo.body1">@item.Label</MudText>
+                        </MudTooltip>
+                        <MudSpacer/>
+                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.Id)"
+                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))" />
+                    </MudStack>
+                </div>
+            }
+           
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Reference validation</MudText>
+            <div class="mlqt-rule-row">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                    <MudText Typo="Typo.body1">Validate modelica:// model references point to existing models</MudText>
+                    <MudSpacer/>
+                    <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(RuleIds.ModelReferences)"
+                        ValueChanged="@(v => SelectedSettings.SetRuleSeverity(RuleIds.ModelReferences, v))" />
                 </MudStack>
+            </div>
 
-                @if (SelectedSettings.NamingConvention.PresetName == "Custom")
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Static analysis</MudText>
+            <MudText Typo="Typo.body1" Class="mb-1">
+                Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI
+                quality gate, <b>Warning</b>/<b>Info</b> are reported only. The uses and unused-class checks
+                require dependency analysis to have run; they appear in Code Review, and in
+                <code>mlqt check</code> / the MCP server.
+            </MudText>
+            @foreach (var rule in AnalysisRules)
+            {
+                @if (rule.Category != lastCategory)
                 {
-                    <MudText Typo="Typo.subtitle2" Class="mt-2">Class Names</MudText>
-                    <MudGrid>
-                        <MudItem xs="6">
-                            <NamingStyleSelect Label="package" Value="SelectedSettings.NamingConvention.PackageNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PackageNaming = v)"
-                                SlotKey="@SlotKeys.Package" Patterns="@GetRepoPatterns(SlotKeys.Package)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Package, p))" />
-                            <NamingStyleSelect Label="model" Value="SelectedSettings.NamingConvention.ModelNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ModelNaming = v)"
-                                SlotKey="@SlotKeys.Model" Patterns="@GetRepoPatterns(SlotKeys.Model)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Model, p))" />
-                            <NamingStyleSelect Label="function" Value="SelectedSettings.NamingConvention.FunctionNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.FunctionNaming = v)"
-                                SlotKey="@SlotKeys.Function" Patterns="@GetRepoPatterns(SlotKeys.Function)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Function, p))" />
-                            <NamingStyleSelect Label="block" Value="SelectedSettings.NamingConvention.BlockNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.BlockNaming = v)"
-                                SlotKey="@SlotKeys.Block" Patterns="@GetRepoPatterns(SlotKeys.Block)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Block, p))" />
-                            <NamingStyleSelect Label="connector" Value="SelectedSettings.NamingConvention.ConnectorNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ConnectorNaming = v)"
-                                SlotKey="@SlotKeys.Connector" Patterns="@GetRepoPatterns(SlotKeys.Connector)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Connector, p))" />
-                        </MudItem>
-                        <MudItem xs="6">
-                            <NamingStyleSelect Label="record" Value="SelectedSettings.NamingConvention.RecordNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.RecordNaming = v)"
-                                SlotKey="@SlotKeys.Record" Patterns="@GetRepoPatterns(SlotKeys.Record)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Record, p))" />
-                            <NamingStyleSelect Label="type" Value="SelectedSettings.NamingConvention.TypeNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.TypeNaming = v)"
-                                SlotKey="@SlotKeys.Type" Patterns="@GetRepoPatterns(SlotKeys.Type)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Type, p))" />
-                            <NamingStyleSelect Label="class" Value="SelectedSettings.NamingConvention.ClassNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ClassNaming = v)"
-                                SlotKey="@SlotKeys.Class" Patterns="@GetRepoPatterns(SlotKeys.Class)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Class, p))" />
-                            <NamingStyleSelect Label="operator" Value="SelectedSettings.NamingConvention.OperatorNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.OperatorNaming = v)"
-                                SlotKey="@SlotKeys.Operator" Patterns="@GetRepoPatterns(SlotKeys.Operator)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.Operator, p))" />
-                        </MudItem>
-                    </MudGrid>
-
-
-                    <MudGrid>
-                        <MudItem xs="6">
-                            <MudText Typo="Typo.subtitle2" Class="mt-3">Public Elements</MudText>
-                            <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.PublicVariableNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicVariableNaming = v)"
-                                SlotKey="@SlotKeys.PublicVariable" Patterns="@GetRepoPatterns(SlotKeys.PublicVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicVariable, p))" />
-                            <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.PublicParameterNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicParameterNaming = v)"
-                                SlotKey="@SlotKeys.PublicParameter" Patterns="@GetRepoPatterns(SlotKeys.PublicParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicParameter, p))" />
-                            <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.PublicConstantNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.PublicConstantNaming = v)"
-                                SlotKey="@SlotKeys.PublicConstant" Patterns="@GetRepoPatterns(SlotKeys.PublicConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.PublicConstant, p))" />
-                        </MudItem>
-                        <MudItem xs="6">
-                            <MudText Typo="Typo.subtitle2" Class="mt-3">Protected Elements</MudText>
-                            <NamingStyleSelect Label="Variables" Value="SelectedSettings.NamingConvention.ProtectedVariableNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedVariableNaming = v)"
-                                SlotKey="@SlotKeys.ProtectedVariable" Patterns="@GetRepoPatterns(SlotKeys.ProtectedVariable)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedVariable, p))" />
-                            <NamingStyleSelect Label="Parameters" Value="SelectedSettings.NamingConvention.ProtectedParameterNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedParameterNaming = v)"
-                                SlotKey="@SlotKeys.ProtectedParameter" Patterns="@GetRepoPatterns(SlotKeys.ProtectedParameter)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedParameter, p))" />
-                            <NamingStyleSelect Label="Constants" Value="SelectedSettings.NamingConvention.ProtectedConstantNaming"
-                                ValueChanged="v => OnRepoNamingStyleChanged(() => SelectedSettings.NamingConvention.ProtectedConstantNaming = v)"
-                                SlotKey="@SlotKeys.ProtectedConstant" Patterns="@GetRepoPatterns(SlotKeys.ProtectedConstant)" PatternsChanged="@(p => OnRepoPatternsChanged(SlotKeys.ProtectedConstant, p))" />
-                        </MudItem>
-                    </MudGrid>
+                    lastCategory = rule.Category;
+                    <MudText Typo="Typo.subtitle2" Class="mt-2 mb-0">@rule.Category</MudText>
                 }
-            </MudPaper>
-        }
-        
-        <MudText Typo="Typo.body1" Class="mt-4">Formatting rules</MudText>
-        <MudSwitch @bind-Value="SelectedSettings.ApplyFormattingRules" Color="Color.Primary" Size="Size.Small"
-            Label="Apply formatting rules.  If off then just used as part of style guidelines" />
-        <MudSwitch @bind-Value="SelectedSettings.OneOfEachSection" Color="Color.Primary" Size="Size.Small"
-            Label="A class may only have 1 public, 1 protected, 1 equation or algorithm section" />
-        <MudSwitch @bind-Value="SelectedSettings.ImportStatementsFirst" Color="Color.Primary" Size="Size.Small"
-            Label="Composition must be imports first; then extends at the top of the public/protected sections" />
-        <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
-            Label="Composition must have components before classes" />
-
-        <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Value="@SelectedSettings.InitialEQAlgoFirst" Color="Color.Primary" Size="Size.Small"
-            Label="If there is an initial equation/algorithm section it should appear before the equation/algorithm section"/>
-        <MudSwitch T="bool" ValueChanged="OnInitialEqLast" Value="@SelectedSettings.InitialEQAlgoLast" Color="Color.Primary" Size="Size.Small"
-            Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
-
-        <MudText Typo="Typo.body1" Class="mt-4">Reference validation</MudText>
-        @severityRow((RuleIds.ModelReferences, "Validate modelica:// model references point to existing models"))
-
-        <MudText Typo="Typo.body1" Class="mt-4">Spell checking</MudText>
-        <MudSwitch @bind-Value="SelectedSettings.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
-            Label="Spell check every description string" />
-        <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
-            Label="Spell check all documentation" />
-
-        @* The accepted spellings belong to the repository and are committed with it, which is what
-           lets the app and CI agree on them — so they are configured here rather than in the tool
-           settings, next to the rules that use them. *@
-        <SettingsRepositoryDictionary Repository="_selectedItem" />
-
-        <MudText Typo="Typo.body1" Class="mt-4">Static analysis</MudText>
-        <MudText Typo="Typo.caption" Class="mb-1">
-            Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI
-            quality gate, <b>Warning</b>/<b>Info</b> are reported only. The uses and unused-class checks
-            require dependency analysis to have run; they appear in Code Review, and in
-            <code>mlqt check</code> / the MCP server.
-        </MudText>
-        @{
-            string? lastCategory = null;
-        }
-        @foreach (var rule in AnalysisRules)
-        {
-            @if (rule.Category != lastCategory)
-            {
-                lastCategory = rule.Category;
-                <MudText Typo="Typo.body2" Class="mt-2 mb-0" Style="opacity:0.7;">@rule.Category</MudText>
+                <div class="mlqt-rule-row">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                        <MudTooltip Text="@("Rule ID = " + rule.Id)">
+                            <MudText Typo="Typo.body1">@rule.Description</MudText>
+                        </MudTooltip>
+                        <MudSpacer />
+                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(rule.Id)"
+                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
+                    </MudStack>
+                </div>
             }
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
-                <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(rule.Id)"
-                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
-                <MudTooltip Text="@rule.Description" Placement="Placement.Right">
-                    <MudText Typo="Typo.body1">@rule.Title</MudText>
-                </MudTooltip>
-            </MudStack>
-        }
 
-        <MudText Typo="Typo.body1" Class="mt-4">Excluded libraries</MudText>
-        <MudText Typo="Typo.body1" Class="mt-2 mb-1">
-            Top-level library names that are loaded but never reported on — typically the test-case and
-            example libraries kept alongside the libraries under development. <b>*</b> is a wildcard, so
-            <b>*_Tests</b> covers Foo_Tests and Bar_Tests. An excluded library still counts as a user of
-            what it references, so excluding your tests will not make the code they exercise look unused.
-        </MudText>
-        <MudChipSet T="string" Class="mt-1">
-            @foreach (var name in SelectedSettings.ExcludedLibraries)
-            {
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExcludedLibrary(name)">@name</MudChip>
-            }
-        </MudChipSet>
-        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-            <MudTextField @bind-Value="_newExcludedLibrary" Placeholder="Library name or *_Tests" Variant="Variant.Outlined"
-                Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
-            <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
-                OnClick="AddExcludedLibrary" Disabled="@string.IsNullOrWhiteSpace(_newExcludedLibrary)" />
-        </MudStack>
-
-        @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
-        {
-            <MudText Typo="Typo.body1" Class="mt-4">SVN branch directories</MudText>
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>
             <MudText Typo="Typo.body1" Class="mt-2 mb-1">
-                Directory names used for listing and detecting branches.
-                The first entry is the trunk equivalent (no subdirectories).
+                Top-level library names that are loaded but never reported on — typically the test-case and
+                example libraries kept alongside the libraries under development. <b>*</b> is a wildcard, so
+                <b>*_Tests</b> covers Foo_Tests and Bar_Tests. An excluded library still counts as a user of
+                what it references, so excluding your tests will not make the code they exercise look unused.
             </MudText>
             <MudChipSet T="string" Class="mt-1">
-                @foreach (var dir in SelectedSettings.SvnBranchDirectories)
+                @foreach (var name in SelectedSettings.ExcludedLibraries)
                 {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveBranchDirectory(dir)">@dir</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveExcludedLibrary(name)">@name</MudChip>
                 }
             </MudChipSet>
             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
-                <MudTextField @bind-Value="_newBranchDirectory" Placeholder="Add directory name" Variant="Variant.Outlined"
+                <MudTextField @bind-Value="_newExcludedLibrary" Placeholder="Library name or *_Tests" Variant="Variant.Outlined"
                     Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
                 <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
-                    OnClick="AddBranchDirectory" Disabled="@string.IsNullOrWhiteSpace(_newBranchDirectory)" />
+                    OnClick="AddExcludedLibrary" Disabled="@string.IsNullOrWhiteSpace(_newExcludedLibrary)" />
             </MudStack>
+
+            @if (_selectedItem.VcsType == RepositoryVcsType.SVN)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-4">SVN branch directories</MudText>
+                <MudText Typo="Typo.body1" Class="mt-2 mb-1">
+                    Directory names used for listing and detecting branches.
+                    The first entry is the trunk equivalent (no subdirectories).
+                </MudText>
+                <MudChipSet T="string" Class="mt-1">
+                    @foreach (var dir in SelectedSettings.SvnBranchDirectories)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => RemoveBranchDirectory(dir)">@dir</MudChip>
+                    }
+                </MudChipSet>
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Style="width: fit-content;">
+                    <MudTextField @bind-Value="_newBranchDirectory" Placeholder="Add directory name" Variant="Variant.Outlined"
+                        Margin="Margin.Dense" Typo="Typo.body1" Style="width: 200px;" Immediate="true" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Add" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                        OnClick="AddBranchDirectory" Disabled="@string.IsNullOrWhiteSpace(_newBranchDirectory)" />
+                </MudStack>
+            }
         }
     </DialogContent>
     <DialogActions>
@@ -431,7 +445,7 @@
     private Repository _backupItem = null!;
     private StyleCheckingSettings SelectedSettings => _selectedItem.StyleSettings ??= new StyleCheckingSettings();
     private bool _editRepository = false;
-    private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
+    private readonly DialogOptions _dialogOptions = new() { FullWidth = false };
     private List<DictionaryInfo> _availableDictionaries = new();
     private string _newRepoExceptionName = "";
     private string _newBranchDirectory = "";

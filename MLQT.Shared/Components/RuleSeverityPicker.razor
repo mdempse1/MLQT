@@ -10,13 +10,16 @@
     the alternatives are both readable at a glance, down a column.
 *@
 
-<MudRadioGroup T="RuleSeverity" Value="@Value" ValueChanged="OnValueChanged"
-               Class="mlqt-severity-picker">
+@* No stylesheet of its own. MudRadioGroup lays its radios out in a row by inheriting a flex
+   display from whatever contains it — the MudStack of the row it sits in — so styling it from here
+   meant first rebuilding that chain through the four wrapper elements MudBlazor renders between the
+   group and each radio. It looks right without any of that. *@
+<MudRadioGroup T="RuleSeverity" Value="@Value" ValueChanged="OnValueChanged">
     @foreach (var severity in Levels)
     {
         <MudRadio T="RuleSeverity" Value="@severity" Dense="true" Size="Size.Small"
                   Color="@ColorFor(severity)">
-            <MudText Typo="Typo.body1">@severity</MudText>
+                  @severity
         </MudRadio>
     }
 </MudRadioGroup>
