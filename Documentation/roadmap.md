@@ -54,11 +54,15 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 | — *fallback host:* Blazor Server (+ desktop wrapper) | — | L | If in-process webview proves limiting; also opens a future hosted/browser option. |
 | **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | **Opens phase 7.** De-risk the Linux webview engine — it is **not** WebView2 — and gate before committing to the host. Originally to be pulled early; kept in phase 7 (decided 2026-09-02) since nothing in the CI work depends on its answer. |
 | **Platform-service ports** (file dialog, power/sleep, settings paths) | ⭐⭐ | M | Per-OS implementations behind the existing interfaces. Settings is mostly path differences. |
+| **GUI test harness** (phase 7a — bUnit, Playwright test host, `/selftest` route) | ⭐⭐⭐ | L | `MLQT.Shared` currently has **no tests**, so a host swap has no mechanical parity check. Must run **before** the port: the MAUI conformance baseline cannot be captured once MAUI is retired. See [design-phase7-gui-tests.md](design-phase7-gui-tests.md). |
 
-**Migration approach:** run the WebKitGTK spike first, then build the Photino host and port the
-platform services, then **validate on Windows first** (confirm feature parity against the known-good
-MAUI build before adding OS variables), then Linux, then macOS. When it lands, the `MLQT` MAUI project
-is superseded by a new desktop host project — update CLAUDE.md and docs accordingly.
+**Migration approach:** build the **GUI test harness (phase 7a)** first — "confirm feature parity
+against the known-good MAUI build" below is an empty promise while `MLQT.Shared` has no tests, and the
+conformance baseline it captures is only obtainable while MAUI still runs. Then run the WebKitGTK
+spike, then build the Photino host and port the platform services, then **validate on Windows first**
+(confirm feature parity against the known-good MAUI build before adding OS variables), then Linux,
+then macOS. When it lands, the `MLQT` MAUI project is superseded by a new desktop host project —
+update CLAUDE.md and docs accordingly.
 
 ---
 
@@ -251,6 +255,9 @@ across all workstreams — ✅ marks a phase whose implementation note records i
 7. **Desktop host migration (Photino, retire MAUI)** — delivers the **Linux UI**. Opens with the
    WebKitGTK interop spike to de-risk the engine, then host + platform-service ports, validated
    Windows-parity → Linux → macOS. **Starts once the backlog above is clear.**
+   Preceded by **phase 7a, the GUI test harness** — bUnit component tests, a Blazor Server test host
+   driven by Playwright, and a `/selftest` conformance route whose MAUI baseline must be captured
+   *before* the port begins. **Implementation plan:** [design-phase7-gui-tests.md](design-phase7-gui-tests.md).
 8. **Wave-2 analyses** — confidence-aware resolver, then broken references, connection
    integrity, deprecated-API, cyclic dependencies.
 9. **Extensibility, then flagships** — declarative custom rules → compiled plugins; finally
