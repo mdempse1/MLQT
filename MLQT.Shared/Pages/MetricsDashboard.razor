@@ -191,9 +191,14 @@
         </MudStack>
         @* The axis fits the data rather than starting at zero, and clicking a series in the chart's
            own legend hides it and refits to what is left. *@
-        <MudChart T="double" ChartType="ChartType.Timeseries" ChartSeries="_trendChartSeries"
-                  ChartOptions="_trendChartOptions" MatchBoundsToSize="true" CanHideSeries="true"
-                  Width="100%" Height="400px" Class="mb-1" />
+        @* The class sits on a wrapping div rather than on the MudChart: Blazor stamps its scope
+           attribute onto this component's own HTML elements only, never onto a child component, so
+           the scoped rule that sizes the legend could not reach it from there. *@
+        <div class="mlqt-trend-chart">
+            <MudChart T="double" ChartType="ChartType.Timeseries" ChartSeries="_trendChartSeries"
+                      ChartOptions="_trendChartOptions" MatchBoundsToSize="true" CanHideSeries="true"
+                      Width="100%" Height="400px" Class="mb-1" />
+        </div>
 
         <div style="overflow-x:auto;">
             <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">

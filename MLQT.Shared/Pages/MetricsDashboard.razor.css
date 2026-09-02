@@ -1,0 +1,12 @@
+/* MudBlazor renders the chart legend's series names at body2 — the class is written into the
+   component, with no parameter to change it — so the legend comes out a size smaller than the rest of
+   the page, which uses body1 throughout. Restate the same properties body1 sets, using MudBlazor's own
+   typography variables rather than fixed sizes, so the legend follows the app's theme (and any change
+   to it) exactly as a <MudText Typo="Typo.body1"> would. */
+.mlqt-trend-chart ::deep .mud-chart-legend .mud-typography {
+    font-size: var(--mud-typography-body1-size);
+    font-family: var(--mud-typography-body1-family);
+    font-weight: var(--mud-typography-body1-weight);
+    line-height: var(--mud-typography-body1-lineheight);
+    letter-spacing: var(--mud-typography-body1-letterspacing);
+}
