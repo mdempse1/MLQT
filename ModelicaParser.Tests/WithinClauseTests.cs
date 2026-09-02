@@ -150,6 +150,81 @@ public class WithinClauseTests
 
     #endregion
 
+    #region Set
+
+    [Fact]
+    public void Set_AddsTheClauseWhenSourceHasNone()
+    {
+        Assert.Equal("within My.Package;\nmodel M\nend M;", WithinClause.Set("model M\nend M;", "My.Package"));
+    }
+
+    [Fact]
+    public void Set_ReplacesAClauseNamingADifferentPackage()
+    {
+        // Creating or moving a class: the destination decides the clause, so one that arrived with
+        // the source would otherwise file the class under the wrong package.
+        var result = WithinClause.Set("within Somewhere.Else;\nmodel M\nend M;", "My.Package");
+
+        Assert.Equal("within My.Package;\nmodel M\nend M;", result);
+    }
+
+    [Fact]
+    public void Set_DoesNotAppendASecondClause()
+    {
+        var result = WithinClause.Set("within My.Package;\nmodel M\nend M;", "My.Package");
+
+        Assert.Equal("within My.Package;\nmodel M\nend M;", result);
+        Assert.Equal(1, result.Split("within").Length - 1);
+    }
+
+    [Fact]
+    public void Set_ReplacesABareClause()
+    {
+        Assert.Equal("within My.Package;\nmodel M\nend M;", WithinClause.Set("within;\nmodel M\nend M;", "My.Package"));
+    }
+
+    [Fact]
+    public void Set_WritesABareClauseForATopLevelLibrary()
+    {
+        Assert.Equal("within;\npackage P\nend P;", WithinClause.Set("within Old.Parent;\npackage P\nend P;", null));
+    }
+
+    [Fact]
+    public void Set_LeavesAnIdentifierThatStartsWithTheKeywordAlone()
+    {
+        var result = WithinClause.Set("model M\n  Real withinTolerance;\nend M;", "My.Package");
+
+        Assert.Equal("within My.Package;\nmodel M\n  Real withinTolerance;\nend M;", result);
+    }
+
+    [Fact]
+    public void Set_IsIdempotent()
+    {
+        var once = WithinClause.Set("model M\nend M;", "My.Package");
+
+        Assert.Equal(once, WithinClause.Set(once, "My.Package"));
+    }
+
+    #endregion
+
+    #region Has
+
+    [Theory]
+    [InlineData("within My.Package;\nmodel M\nend M;")]
+    [InlineData("within;\npackage P\nend P;")]
+    [InlineData("\n\nwithin My.Package;\nmodel M\nend M;")]
+    [InlineData("   within My.Package;")]
+    public void Has_IsTrueForAClause(string source) => Assert.True(WithinClause.Has(source));
+
+    [Theory]
+    [InlineData("model M\nend M;")]
+    [InlineData("withinTolerance = 1;")]
+    [InlineData("within_range = 1;")]
+    [InlineData("")]
+    public void Has_IsFalseWithoutAClause(string source) => Assert.False(WithinClause.Has(source));
+
+    #endregion
+
     [Theory]
     [InlineData("model M\nend M;", "My.Package")]
     [InlineData("package P\nend P;", null)]

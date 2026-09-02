@@ -59,6 +59,27 @@ public static class WithinClause
     }
 
     /// <summary>
+    /// Returns <paramref name="source"/> with its leading within clause replaced by
+    /// <c>within <paramref name="parent"/>;</c>, adding one if it had none.
+    /// <para>
+    /// Use this, not <see cref="Ensure"/>, wherever the caller decides which package the text
+    /// belongs to — creating a class under a known parent, or moving one to a new destination. The
+    /// clause must then name that destination: keeping a clause the source happened to arrive with
+    /// would file the class under the wrong package, and appending a second one is a syntax error.
+    /// <see cref="Ensure"/> is for the other case, where the text's own clause is the authority and
+    /// is only supplied when absent.
+    /// </para>
+    /// </summary>
+    public static string Set(string source, string? parent) => Ensure(Strip(source), parent);
+
+    /// <summary>
+    /// True when <paramref name="source"/> opens with a within clause. Leading whitespace is
+    /// ignored, and an identifier that merely starts with the keyword (<c>withinTolerance</c>) is
+    /// not one.
+    /// </summary>
+    public static bool Has(string source) => StartsWithClause(source, out _);
+
+    /// <summary>
     /// True when <paramref name="source"/> opens with a within clause, ignoring any leading
     /// whitespace — rendered and hand-edited text can start with a blank line, and reading that as
     /// "no clause" is what produced duplicates. <paramref name="keywordEnd"/> is the index just past

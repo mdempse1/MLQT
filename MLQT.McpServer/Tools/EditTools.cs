@@ -140,7 +140,7 @@ public sealed class EditTools
     {
         if (string.IsNullOrWhiteSpace(source))
             return new ToolError("source must be a complete Modelica class definition.");
-        if (source.TrimStart().StartsWith("within", StringComparison.Ordinal))
+        if (WithinClause.Has(source))
             return new ToolError("Provide just the class definition, without a 'within' clause (the parent is given by parent_id).");
 
         var (models, errors) = ModelicaParserHelper.ExtractModelsWithErrors(source);
@@ -208,7 +208,10 @@ public sealed class EditTools
     {
         var dir = Path.GetDirectoryName(packageMoPath)!;
         var parentId = newId[..newId.LastIndexOf('.')];
-        var content = $"within {parentId};\n{source.TrimEnd()}\n";
+
+        // newId decides where the class lands, so the file's clause names its parent — replacing any
+        // the caller sent with the source rather than adding a second one beside it.
+        var content = WithinClause.Set(source.TrimEnd(), parentId) + "\n";
 
         if (isPackage)
             return await CreateStandalonePackageAsync(newId, className, content, dir, packageMoPath, packageMembers, preview);
@@ -877,7 +880,9 @@ public sealed class EditTools
         {
             var dir = Path.GetDirectoryName(tgtCtx.FilePath)!;
             var newFilePath = Path.Combine(dir, leaf + ".mo");
-            await ModelicaFileEncoding.WriteAllTextAsync(newFilePath, $"within {newParentId};\n{classCode.TrimEnd()}\n");
+            // The move destination decides the clause, so replace whatever the class arrived with.
+            await ModelicaFileEncoding.WriteAllTextAsync(
+                newFilePath, WithinClause.Set(classCode.TrimEnd(), newParentId) + "\n");
             AppendToPackageOrder(dir, leaf);
             return await _libraries.ReloadFileAsync(newFilePath);
         }
