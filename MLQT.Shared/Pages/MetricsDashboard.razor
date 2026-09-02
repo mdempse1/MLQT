@@ -189,33 +189,12 @@
             <MudSwitch T="bool" Value="_showCounts" ValueChanged="OnShowCountsChanged" Color="Color.Primary"
                        Size="Size.Small" Label="Outstanding counts" />
         </MudStack>
-        @* The axis fits the data rather than starting at zero, and hiding a series refits it to what
-           is left. The legend is ours: MudBlazor renders none for a time-series chart, so its own
-           CanHideSeries has nothing to click. Toggling Visible on the series it was given does the
-           same job. *@
+        @* The axis fits the data rather than starting at zero, and clicking a series in the chart's
+           own legend hides it and refits to what is left. *@
         <MudChart T="double" ChartType="ChartType.Timeseries" ChartSeries="_trendChartSeries"
-                  ChartOptions="_trendChartOptions" MatchBoundsToSize="true"
+                  ChartOptions="_trendChartOptions" MatchBoundsToSize="true" CanHideSeries="true"
                   Width="100%" Height="400px" Class="mb-1" />
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
-            @for (var i = 0; i < _trendChartSeries.Count; i++)
-            {
-                var index = i;
-                var line = _trendChartSeries[i];
-                var colour = _trendChartOptions.ChartPalette[i % _trendChartOptions.ChartPalette.Length];
-                <div style="display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none;"
-                     title="@(line.Visible ? $"Hide {line.Name}" : $"Show {line.Name}")"
-                     @onclick="@(() => ToggleSeries(index))">
-                    <span style="display:inline-block; width:12px; height:12px; border-radius:2px; border:1px solid @colour; background:@(line.Visible ? colour : "transparent");"></span>
-                    <MudText Typo="Typo.caption"
-                             Style="@(line.Visible ? "" : "opacity:0.55; text-decoration:line-through;")">@line.Name</MudText>
-                </div>
-            }
-            @if (_trendChartSeries.Any(cs => !cs.Visible))
-            {
-                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                           OnClick="ShowAllSeries">Show all</MudButton>
-            }
-        </MudStack>
+
         <div style="overflow-x:auto;">
             <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
                 <thead>
@@ -292,7 +271,7 @@
     // render — see RebuildTrendChart. The options carry the palette, which the legend reads so that a
     // swatch cannot disagree with the line it stands for.
     private List<ChartSeries<double>> _trendChartSeries = new();
-    private TimeSeriesChartOptions _trendChartOptions = new() { ChartPalette = TrendPalette };
+    private TimeSeriesChartOptions _trendChartOptions = new() { ChartPalette = TrendPalette, XAxisLabelRotation = 60, YAxisLines = true, XAxisLines = true, ShowLegend = true };
 
     private int? _findings;          // active (unsuppressed) rule findings in scope; null until known
     private bool _analysisRunning;   // dependency analysis / style checking still in progress
@@ -894,20 +873,6 @@
             ? Outstanding(s, dim)
             : (s.Coverage.TryGetValue(dim, out var p) ? p : (double?)null);
 
-    // Hiding a series is a change to the object the chart already holds, so the chart redraws — and
-    // refits its axis to what is left — on the next render.
-    private void ToggleSeries(int index)
-    {
-        if (index >= 0 && index < _trendChartSeries.Count)
-            _trendChartSeries[index].Visible = !_trendChartSeries[index].Visible;
-    }
-
-    private void ShowAllSeries()
-    {
-        foreach (var line in _trendChartSeries)
-            line.Visible = true;
-    }
-
     // Percentages and outstanding counts are different scales and different series (the findings line
     // only exists in count mode), so the chart is rebuilt rather than re-pointed.
     private void OnShowCountsChanged(bool value)
@@ -944,7 +909,11 @@
             Name = sv.Label,
             Visible = !hidden.Contains(sv.Label),
             Data = new ChartData<double>(_scopedHistory
-                .Select(s => (Time: s.TimestampUtc.ToLocalTime(), Value: sv.Value(s)))
+                // Plotted in local time — a snapshot is remembered as "before lunch", not as 11:03Z.
+                // SpecifyKind because a timestamp read back from JSON need not still say it is UTC,
+                // and ToLocalTime on a value that has forgotten would be a no-op.
+                .Select(s => (Time: DateTime.SpecifyKind(s.TimestampUtc, DateTimeKind.Utc).ToLocalTime(),
+                              Value: sv.Value(s)))
                 .Where(point => point.Value.HasValue)
                 .Select(point => (point.Time, point.Value!.Value))
                 .ToList()),
@@ -960,11 +929,21 @@
         // — a burst during a cleanup, then nothing for a month. The label spacing has to come from the
         // range on screen: MudBlazor's default is five minutes, which over a year of history would ask
         // for a hundred thousand labels.
+        //
+        // Ten labels' worth of that range is a raw number like 84.7 minutes, and MudBlazor places its
+        // labels on multiples of whatever it is given — so the axis came out reading 18:24, 19:49,
+        // 21:14, which looks like the times belong to somewhere else. Rounding the spacing up first,
+        // to ten minutes or (once the ticks are a day or more apart) to whole days, puts the labels
+        // back on times a person would have chosen.
         var span = _scopedHistory[^1].TimestampUtc - _scopedHistory[0].TimestampUtc;
-        var spacing = span > TimeSpan.Zero
-            ? TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerMinute, span.Ticks / 5))
-            : TimeSpan.FromDays(1);
-        var dateOnly = span > TimeSpan.FromDays(3);
+        var raw = span > TimeSpan.Zero ? TimeSpan.FromTicks(span.Ticks / 10) : TimeSpan.FromDays(1);
+        var unit = raw < TimeSpan.FromDays(1) ? TimeSpan.FromMinutes(10) : TimeSpan.FromDays(1);
+        var spacing = TimeSpan.FromTicks((raw.Ticks + unit.Ticks - 1) / unit.Ticks * unit.Ticks);
+
+        // Whole days between ticks means every label is a different day, so the time says nothing and
+        // the date alone reads better — which is where a history spanning months or years always ends
+        // up. Below that the date would repeat across neighbouring labels, so the time stays.
+        var dateOnly = spacing >= TimeSpan.FromDays(1);
 
         _trendChartOptions = new TimeSeriesChartOptions
         {
@@ -978,10 +957,14 @@
             LineStrokeWidth = 2,
             TimeLabelSpacing = spacing,
             TimeLabelSpacingRounding = true,
-            TimeLabelFormat = dateOnly ? "yyyy-MM-dd" : "MM-dd HH:mm",
-            TooltipTimeLabelFormat = "yyyy-MM-dd HH:mm",
+            TimeLabelFormat = dateOnly ? "dd-MM-yy" : "dd-MM-yy HH:mm",
+            TooltipTimeLabelFormat = "dd-MM-yyyy HH:mm",
             ShowToolTips = true,
-            ShowLegend = false,   // the chart draws none for a time series; ours is below it
+            ShowLegend = true,
+            YAxisLines = true,
+            XAxisLines = true,
+            XAxisLabelRotation = 60,
+            ShowDataMarkers = true
         };
     }
 
