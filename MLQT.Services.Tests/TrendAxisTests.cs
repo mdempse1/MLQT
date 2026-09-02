@@ -4,95 +4,64 @@ using Xunit;
 namespace MLQT.Services.Tests;
 
 /// <summary>
-/// The trend chart's y-axis window. The behaviour worth pinning is that it fits the data rather than
-/// starting at zero — a hundred findings coming off a library of twenty-five thousand is the movement
-/// the chart exists to show, and a zero-based axis renders it as a flat line.
+/// The gridline interval handed to MudBlazor's chart. The behaviour worth pinning is that it comes
+/// from the data: a hundred findings coming off a library of twenty-five thousand is the movement the
+/// chart exists to show, and the chart's default interval of 20 renders it as a flat line between two
+/// labels.
 /// </summary>
 public class TrendAxisTests
 {
     [Fact]
-    public void ATightRangeHighAboveZero_GetsATightWindow()
+    public void ATightRangeHighAboveZero_GetsAnIntervalThatFitsIt()
     {
-        var (min, max, step) = TrendAxis.Window(new double[] { 25406, 25380, 25304 }, countMode: true);
-
-        Assert.Equal(25300, min);
-        Assert.Equal(25450, max);
-        Assert.Equal(50, step);
+        // 25,304–25,406 renders as 25,300 / 25,350 / 25,400 / 25,450 — the movement is visible.
+        Assert.Equal(50, TrendAxis.TickInterval(new double[] { 25406, 25380, 25304 }));
     }
 
     [Fact]
-    public void TheWindowEnclosesEveryValue()
+    public void PercentagesThatBarelyMove_GetTheFinestIntervalTheChartAccepts()
     {
-        var values = new double[] { 25406, 25380, 25304 };
-
-        var (min, max, _) = TrendAxis.Window(values, countMode: true);
-
-        Assert.True(min <= values.Min());
-        Assert.True(max >= values.Max());
+        // 78.4 → 79.1 is real progress on a documentation push. MudBlazor's default interval of 20
+        // draws it on a 60/80 axis with every point in between; 1 gives 78 / 79 / 80.
+        Assert.Equal(1, TrendAxis.TickInterval(new double[] { 78.4, 78.9, 79.1 }));
     }
 
     [Fact]
-    public void BoundsAreWholeStepsApart_SoGridlinesLandOnRoundNumbers()
+    public void AFullRangeOfPercentages_GetsACoarserInterval()
     {
-        var (min, max, step) = TrendAxis.Window(new double[] { 25406, 25304 }, countMode: true);
-
-        var intervals = (max - min) / step;
-        Assert.Equal(Math.Round(intervals), intervals, 6);
-        Assert.InRange(intervals, 1, 8);
-        Assert.Equal(0, min % step, 6);
+        // 4–99 spans the axis, so half-unit gridlines would be noise: 0 / 50 / 100 is the reading.
+        Assert.Equal(50, TrendAxis.TickInterval(new double[] { 4, 52, 99 }));
     }
 
     [Fact]
-    public void Percentages_GetASubUnitStep_WhenTheyBarelyMove()
+    public void IdenticalValues_GetAUsableInterval()
     {
-        // 78.4 → 79.1 is real progress on a documentation push; on a 0–100 axis it is nothing.
-        var (min, max, step) = TrendAxis.Window(new double[] { 78.4, 78.9, 79.1 }, countMode: false);
-
-        Assert.True(min >= 78);
-        Assert.True(max <= 80);
-        Assert.True(step <= 0.5);
+        // A metric that has not moved still has to be drawn against something.
+        Assert.Equal(1, TrendAxis.TickInterval(new double[] { 42, 42, 42 }));
     }
 
     [Fact]
-    public void Percentages_NeverExceedAHundred()
+    public void NoValues_GetAUsableInterval()
     {
-        var (min, max, _) = TrendAxis.Window(new double[] { 99.4, 99.8, 100 }, countMode: false);
-
-        Assert.Equal(100, max);
-        Assert.True(min < max);
+        // Every series switched off in the legend.
+        Assert.Equal(1, TrendAxis.TickInterval(Array.Empty<double>()));
     }
 
     [Fact]
-    public void NothingGoesBelowZero()
+    public void TheIntervalIsAlwaysARoundNumber_SoDoublingItStaysRound()
     {
-        var (min, _, _) = TrendAxis.Window(new double[] { 0, 1, 2 }, countMode: true);
-
-        Assert.Equal(0, min);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void IdenticalValues_StillGetAWindowWithHeight(bool countMode)
-    {
-        // A metric that has not moved must not collapse the axis — the caller divides by its height.
-        var (min, max, step) = TrendAxis.Window(new double[] { 42, 42, 42 }, countMode);
-
-        Assert.True(max > min);
-        Assert.True(step > 0);
-        Assert.True(min <= 42 && max >= 42);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void NoValues_GetADefaultWindow(bool countMode)
-    {
-        // Every series switched off in the legend. The gridlines still have to be labelled something.
-        var (min, max, step) = TrendAxis.Window(Array.Empty<double>(), countMode);
-
-        Assert.True(max > min);
-        Assert.True(step > 0);
+        // MudBlazor doubles the interval when the data needs more lines than it allows. Starting from
+        // a round number keeps the labels round; starting from 1 gives axes labelled in 16s.
+        foreach (var interval in new[]
+                 {
+                     TrendAxis.TickInterval(new double[] { 0, 970 }),
+                     TrendAxis.TickInterval(new double[] { 25304, 25406 }),
+                     TrendAxis.TickInterval(new double[] { 1200, 34329 }),
+                 })
+        {
+            var mantissa = interval / Math.Pow(10, Math.Floor(Math.Log10(interval)));
+            Assert.Contains(Math.Round(mantissa), new double[] { 1, 2, 5 });
+        }
     }
 
     [Theory]

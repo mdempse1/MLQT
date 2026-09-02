@@ -1,17 +1,13 @@
 namespace MLQT.Services.Helpers;
 
 /// <summary>
-/// The y-axis window for the coverage-trend chart: where the axis starts, where it ends, and the
-/// gridline step between.
+/// How far apart the coverage-trend chart's gridlines go.
 ///
-/// <para><b>The window fits the data and is not anchored at zero.</b> An outstanding-finding count
-/// that moves from 25,406 to 25,304 is a flat line on a 0–30,000 axis — the movement, which is the
-/// only thing a trend exists to show, rounds away to nothing. Fitting gives 25,300–25,450 and the
-/// same data becomes a visible slope. Zero-based is still one keystroke away: the chart's bounds are
-/// editable, and typing 0 pins the bottom.</para>
-///
-/// <para>Bounds are rounded outwards to whole steps of 1, 2 or 5 × 10ⁿ so the labels read as round
-/// numbers rather than as the data's own extremes.</para>
+/// <para>The chart itself is MudBlazor's, which fits the axis to the data and asks only for a tick
+/// interval. Left at its default of 20, a percentage trend from 78.4 to 79.1 is drawn on an axis
+/// labelled 60 and 80 — every point in the gap between two lines, which is the same as showing
+/// nothing. The interval therefore comes from the data, rounded to 1, 2 or 5 × 10ⁿ so that the labels
+/// are round numbers and stay round when MudBlazor doubles the interval to fit its tick limit.</para>
 /// </summary>
 public static class TrendAxis
 {
@@ -32,37 +28,27 @@ public static class TrendAxis
     }
 
     /// <summary>
-    /// The window enclosing <paramref name="values"/>.
+    /// The gridline interval to give a chart plotting <paramref name="values"/>.
+    ///
+    /// <para>MudBlazor takes a tick <i>interval</i> and scales it up — doubling — when the data would
+    /// need more lines than it allows. Doubling from a round number stays round, so the interval handed
+    /// over is chosen for the data rather than left at the default 20, which is what turned a 78.4–79.1
+    /// percentage trend into an axis labelled 60 and 80 with the whole series between them.</para>
+    ///
+    /// <para>Whole numbers only, because that is what the chart accepts: a range narrower than a couple
+    /// of units gets an interval of 1 and no finer.</para>
     /// </summary>
-    /// <param name="countMode">True when plotting outstanding counts, false for percentages — which
-    /// only changes the clamps: neither goes below zero, and a percentage stops at 100.</param>
-    public static (double Min, double Max, double Step) Window(IEnumerable<double> values, bool countMode)
+    /// <param name="values">Every value that will be plotted, across all series.</param>
+    public static int TickInterval(IEnumerable<double> values)
     {
         var list = values as IReadOnlyCollection<double> ?? values.ToList();
         if (list.Count == 0)
-            return countMode ? (0, 10, 2.5) : (0, 100, 25);
+            return 1;
 
-        double lo = list.Min(), hi = list.Max();
-        if (hi - lo < 1e-9)
-        {
-            // One value, or a run of identical ones: give it room rather than a window with no height.
-            var pad = Math.Max(Math.Abs(hi) * 0.01, countMode ? 1 : 0.5);
-            lo -= pad;
-            hi += pad;
-        }
+        var range = list.Max() - list.Min();
+        if (range <= 0)
+            return 1;
 
-        var step = NiceStep((hi - lo) / TargetIntervals);
-        var min = Math.Floor(lo / step) * step;
-        var max = Math.Ceiling(hi / step) * step;
-        if (max - min < step)
-            max = min + step;
-
-        min = Math.Max(0, min);              // neither a percentage nor a count goes below zero
-        if (!countMode)
-            max = Math.Min(100, max);
-        if (max <= min)
-            max = min + step;                // never a zero-height window: the caller divides by it
-
-        return (min, max, step);
+        return Math.Max(1, (int)Math.Round(NiceStep(range / TargetIntervals)));
     }
 }

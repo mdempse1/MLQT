@@ -186,58 +186,36 @@
                 <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
             </MudText>
             <MudSpacer />
-            <MudText Typo="Typo.caption" Class="mr-1">Y axis</MudText>
-            <MudNumericField T="double" Value="YWindowMin" ValueChanged="OnYMinChanged" Immediate="false"
-                             Margin="Margin.Dense" Variant="Variant.Text" HideSpinButtons="true"
-                             Format="0.##" Style="width:80px;" Typo="Typo.body2" />
-            <MudText Typo="Typo.caption" Class="mx-1">to</MudText>
-            <MudNumericField T="double" Value="YWindowMax" ValueChanged="OnYMaxChanged" Immediate="false"
-                             Margin="Margin.Dense" Variant="Variant.Text" HideSpinButtons="true"
-                             Format="0.##" Style="width:80px;" Typo="Typo.body2" />
-            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Class="ml-1"
-                       OnClick="FitYAxis" Disabled="_yAuto">Fit</MudButton>
             <MudSwitch T="bool" Value="_showCounts" ValueChanged="OnShowCountsChanged" Color="Color.Primary"
-                       Size="Size.Small" Class="ml-2" Label="Outstanding counts" />
+                       Size="Size.Small" Label="Outstanding counts" />
         </MudStack>
-        @* The axis labels are HTML in a gutter beside the plot, not text inside it: the SVG is
-           stretched to whatever width the window gives it, and anything inside it stretches too. *@
-        <div style="position:relative; padding-left:52px;">
-            @foreach (var line in TrendGridlines())
+        @* The axis fits the data rather than starting at zero, and hiding a series refits it to what
+           is left. The legend is ours: MudBlazor renders none for a time-series chart, so its own
+           CanHideSeries has nothing to click. Toggling Visible on the series it was given does the
+           same job. *@
+        <MudChart T="double" ChartType="ChartType.Timeseries" ChartSeries="_trendChartSeries"
+                  ChartOptions="_trendChartOptions" MatchBoundsToSize="true"
+                  Width="100%" Height="400px" Class="mb-1" />
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
+            @for (var i = 0; i < _trendChartSeries.Count; i++)
             {
-                <div style="position:absolute; left:0; width:46px; text-align:right; line-height:1;
-                            font-size:0.75rem; color:var(--mud-palette-text-secondary);
-                            top:@(line.Y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))px;
-                            transform:translateY(-50%);">@line.Label</div>
+                var index = i;
+                var line = _trendChartSeries[i];
+                var colour = _trendChartOptions.ChartPalette[i % _trendChartOptions.ChartPalette.Length];
+                <div style="display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none;"
+                     title="@(line.Visible ? $"Hide {line.Name}" : $"Show {line.Name}")"
+                     @onclick="@(() => ToggleSeries(index))">
+                    <span style="display:inline-block; width:12px; height:12px; border-radius:2px; border:1px solid @colour; background:@(line.Visible ? colour : "transparent");"></span>
+                    <MudText Typo="Typo.caption"
+                             Style="@(line.Visible ? "" : "opacity:0.55; text-decoration:line-through;")">@line.Name</MudText>
+                </div>
             }
-            @((MarkupString)BuildTrendSvg())
-        </div>
-        <div class="mb-1" style="display:flex; justify-content:space-between; padding-left:52px;
-                    font-size:0.75rem; color:var(--mud-palette-text-secondary);">
-            <span>@TrendFirstDate</span>
-            <span>@TrendLastDate</span>
-        </div>
-        <div>
-            @* Click a legend entry to drop its line — and with it its influence on the y axis. *@
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
-                @foreach (var sv in TrendSeries())
-                {
-                    var label = sv.Label;
-                    var shown = IsSeriesVisible(label);
-                    <div style="display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none;"
-                         title="@(shown ? $"Hide {label}" : $"Show {label}")"
-                         @onclick="@(() => ToggleSeries(label))">
-                        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; border:1px solid @sv.Color; background:@(shown ? sv.Color : "transparent");"></span>
-                        <MudText Typo="Typo.caption"
-                                 Style="@(shown ? "" : "opacity:0.55; text-decoration:line-through;")">@label</MudText>
-                    </div>
-                }
-                @if (_hiddenSeries.Count > 0)
-                {
-                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                               OnClick="ShowAllSeries">Show all</MudButton>
-                }
-            </MudStack>
-        </div>
+            @if (_trendChartSeries.Any(cs => !cs.Visible))
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           OnClick="ShowAllSeries">Show all</MudButton>
+            }
+        </MudStack>
         <div style="overflow-x:auto;">
             <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
                 <thead>
@@ -310,16 +288,11 @@
     private List<string> _dimensions = new();
     private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding count
 
-    // Series the user has clicked off in the legend, by label. Hidden lines leave the chart *and* the
-    // y-axis calculation: hiding the one series that spans a different order of magnitude is the
-    // quickest way to see the rest, and it only works if the axis follows.
-    private readonly HashSet<string> _hiddenSeries = new(System.StringComparer.Ordinal);
-
-    // The y-axis window. Auto fits the visible data (not anchored at zero); editing either bound
-    // switches to manual, which is the vertical zoom.
-    private bool _yAuto = true;
-    private double _yMin;
-    private double _yMax;
+    // The chart's own state. Which series are hidden is recorded on these objects, so they outlive a
+    // render — see RebuildTrendChart. The options carry the palette, which the legend reads so that a
+    // swatch cannot disagree with the line it stands for.
+    private List<ChartSeries<double>> _trendChartSeries = new();
+    private TimeSeriesChartOptions _trendChartOptions = new() { ChartPalette = TrendPalette };
 
     private int? _findings;          // active (unsuppressed) rule findings in scope; null until known
     private bool _analysisRunning;   // dependency analysis / style checking still in progress
@@ -741,6 +714,7 @@
             matching = MetricsSnapshot.AggregateByTimestamp(matching);
         _scopedHistory = matching.OrderBy(s => s.TimestampUtc).ToList();
         _dimensions = _scopedHistory.SelectMany(s => s.Coverage.Keys).Distinct().ToList();
+        RebuildTrendChart();
     }
 
     /// <summary>
@@ -920,151 +894,97 @@
             ? Outstanding(s, dim)
             : (s.Coverage.TryGetValue(dim, out var p) ? p : (double?)null);
 
-    private bool IsSeriesVisible(string label) => !_hiddenSeries.Contains(label);
-
-    // A typed window is left alone — the user asked for those bounds. Fit refits.
-    private void ToggleSeries(string label)
+    // Hiding a series is a change to the object the chart already holds, so the chart redraws — and
+    // refits its axis to what is left — on the next render.
+    private void ToggleSeries(int index)
     {
-        if (!_hiddenSeries.Remove(label))
-            _hiddenSeries.Add(label);
+        if (index >= 0 && index < _trendChartSeries.Count)
+            _trendChartSeries[index].Visible = !_trendChartSeries[index].Visible;
     }
 
-    private void ShowAllSeries() => _hiddenSeries.Clear();
-
-    /// <summary>
-    /// The y-axis window: bottom, top, and gridline step. Auto fits the values actually plotted — see
-    /// <see cref="TrendAxis"/> for why that is not anchored at zero; a typed window overrides it, which
-    /// is the vertical zoom.
-    /// </summary>
-    private (double Min, double Max, double Step) TrendWindow()
+    private void ShowAllSeries()
     {
-        // An inverted or equal pair means the user is mid-edit: fall back to the fit rather than
-        // handing py() a window with no height to divide by.
-        if (!_yAuto && _yMax > _yMin)
-            return (_yMin, _yMax, TrendAxis.NiceStep((_yMax - _yMin) / 4));
-
-        var values = TrendSeries()
-            .Where(sv => IsSeriesVisible(sv.Label))
-            .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
-            .Where(v => v.HasValue)
-            .Select(v => v!.Value);
-
-        return TrendAxis.Window(values, _showCounts);
+        foreach (var line in _trendChartSeries)
+            line.Visible = true;
     }
 
-    // The window shown in the two bound fields — the fitted one until the user edits it.
-    private double YWindowMin => TrendWindow().Min;
-    private double YWindowMax => TrendWindow().Max;
-
-    private void OnYMinChanged(double value)
-    {
-        var window = TrendWindow();
-        _yMax = window.Max;
-        _yMin = value;
-        _yAuto = false;
-    }
-
-    private void OnYMaxChanged(double value)
-    {
-        var window = TrendWindow();
-        _yMin = window.Min;
-        _yMax = value;
-        _yAuto = false;
-    }
-
-    private void FitYAxis() => _yAuto = true;
-
-    // Switching between percentages and counts changes the scale by orders of magnitude, so a window
-    // chosen for one is meaningless in the other.
+    // Percentages and outstanding counts are different scales and different series (the findings line
+    // only exists in count mode), so the chart is rebuilt rather than re-pointed.
     private void OnShowCountsChanged(bool value)
     {
         _showCounts = value;
-        _yAuto = true;
+        RebuildTrendChart();
     }
-
-    // The plotted area, in pixels. The SVG is given this height in CSS and the same height in its
-    // viewBox, so one y unit is one pixel however wide the window is.
-    private const double TrendHeight = 400;
-
-    // Keeps a line sitting exactly on the top or bottom bound from having half its stroke clipped
-    // away by the viewport edge.
-    private const double TrendInset = 2;
-
-    // Gridlines: how far down the plot each sits, and what it is labelled. Shared by the SVG, which
-    // draws the lines, and the HTML gutter beside it, which draws the labels — they have to agree,
-    // and the labels are HTML precisely so that stretching the SVG cannot stretch the text.
-    private List<(double Y, string Label)> TrendGridlines()
-    {
-        var (min, max, step) = TrendWindow();
-        var steps = Math.Clamp((int)Math.Round((max - min) / step), 1, 8);
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
-        var lines = new List<(double, string)>();
-        for (int g = 0; g <= steps; g++)
-        {
-            var value = max - (max - min) * g / steps;
-            var y = TrendInset + (double)g / steps * (TrendHeight - 2 * TrendInset);
-            lines.Add((y, _showCounts ? value.ToString("#,##0", ci) : value.ToString("0.#", ci)));
-        }
-        return lines;
-    }
-
-    private string TrendFirstDate => _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
-    private string TrendLastDate => _scopedHistory[^1].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
 
     /// <summary>
-    /// The trend chart as an inline SVG string — built in code rather than markup because a polyline
-    /// per series over every snapshot is unreadable as Razor.
+    /// Rebuilds the chart's series and options from the scoped history.
     ///
-    /// <para><b>It fills whatever width it is given.</b> The viewBox is 100 wide and the SVG is 100%
-    /// wide with <c>preserveAspectRatio="none"</c>, so x units are percentages of the container and the
-    /// chart follows the window with no measuring, no JavaScript and no resize handler. Stretching an
-    /// SVG normally distorts everything in it, so nothing that must not stretch is inside it: the axis
-    /// labels and dates are HTML positioned around it, and every stroke carries
-    /// <c>vector-effect="non-scaling-stroke"</c> so line weights stay put. Vertically nothing scales at
-    /// all — the viewBox height and the CSS height are both <see cref="TrendHeight"/> — so y units are
-    /// pixels and the HTML labels line up with the gridlines exactly.</para>
-    ///
-    /// <para>Values outside a zoomed y window fall outside the viewport, which clips them. That is the
-    /// intent: a line that leaves the window should leave the chart, not flatten along its edge where
-    /// it would read as data.</para>
-    ///
-    /// <para>Assumes <c>_scopedHistory.Count >= 2</c> (its only caller guards this).</para>
+    /// <para>The series objects are kept in a field rather than built during render because hidden-ness
+    /// lives <i>on them</i> — rebuilding them every render would silently un-hide everything on the next
+    /// redraw. For the same reason a rebuild carries the hidden set across: saving a snapshot should not
+    /// undo what the user switched off.</para>
     /// </summary>
-    private string BuildTrendSvg()
+    private void RebuildTrendChart()
     {
-        const double w = 100, h = TrendHeight;
-        int n = _scopedHistory.Count;
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
-        string F(double v) => v.ToString("0.###", ci);
-        double px(int i) => n == 1 ? 0 : (double)i / (n - 1) * w;
-
-        var series = TrendSeries().Where(sv => IsSeriesVisible(sv.Label)).ToList();
-        var (yMin, yMax, _) = TrendWindow();
-        double py(double v) => TrendInset + (1 - (v - yMin) / (yMax - yMin)) * (h - 2 * TrendInset);
-
-        var sb = new System.Text.StringBuilder();
-        sb.Append($"<svg viewBox=\"0 0 {F(w)} {F(h)}\" preserveAspectRatio=\"none\" role=\"img\" ")
-          .Append($"aria-label=\"Metric trend\" style=\"display:block;width:100%;height:{F(h)}px;\">");
-
-        foreach (var (y, _) in TrendGridlines())
-            sb.Append($"<line x1=\"0\" y1=\"{F(y)}\" x2=\"{F(w)}\" y2=\"{F(y)}\" stroke=\"var(--mud-palette-lines-default)\" stroke-width=\"1\" vector-effect=\"non-scaling-stroke\"/>");
-
-        foreach (var sv in series)
+        // Called from RebuildTrend, which also runs for a scope with no history at all.
+        if (_scopedHistory.Count == 0)
         {
-            var points = string.Join(" ", _scopedHistory
-                .Select((s, i) => (v: sv.Value(s), i))
-                .Where(t => t.v.HasValue)
-                .Select(t => $"{F(px(t.i))},{F(py(t.v!.Value))}"));
-            if (points.Length > 0)
-            {
-                var strokeWidth = sv.Color == FindingsColor ? "2.2" : "1.5";
-                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"/>");
-            }
+            _trendChartSeries = new();
+            return;
         }
 
-        sb.Append("</svg>");
-        return sb.ToString();
+        var hidden = _trendChartSeries
+            .Where(cs => !cs.Visible)
+            .Select(cs => cs.Name)
+            .ToHashSet(System.StringComparer.Ordinal);
+
+        var definitions = TrendSeries();
+        _trendChartSeries = definitions.Select(sv => new ChartSeries<double>
+        {
+            Name = sv.Label,
+            Visible = !hidden.Contains(sv.Label),
+            Data = new ChartData<double>(_scopedHistory
+                .Select(s => (Time: s.TimestampUtc.ToLocalTime(), Value: sv.Value(s)))
+                .Where(point => point.Value.HasValue)
+                .Select(point => (point.Time, point.Value!.Value))
+                .ToList()),
+        }).ToList();
+
+        var values = definitions
+            .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+
+        // Snapshots are taken when someone runs a check, so they are spaced by however the team works
+        // — a burst during a cleanup, then nothing for a month. The label spacing has to come from the
+        // range on screen: MudBlazor's default is five minutes, which over a year of history would ask
+        // for a hundred thousand labels.
+        var span = _scopedHistory[^1].TimestampUtc - _scopedHistory[0].TimestampUtc;
+        var spacing = span > TimeSpan.Zero
+            ? TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerMinute, span.Ticks / 5))
+            : TimeSpan.FromDays(1);
+        var dateOnly = span > TimeSpan.FromDays(3);
+
+        _trendChartOptions = new TimeSeriesChartOptions
+        {
+            ChartPalette = definitions.Select(sv => sv.Color).ToArray(),
+            YAxisRequireZeroPoint = false,   // fit the data: a burndown of 100 in 25,000 is invisible from zero
+            YAxisTicks = TrendAxis.TickInterval(values),
+            MaxNumYAxisTicks = 8,
+            YAxisToStringFunc = v => _showCounts
+                ? v.ToString("#,##0", System.Globalization.CultureInfo.CurrentCulture)
+                : v.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + "%",
+            LineStrokeWidth = 2,
+            TimeLabelSpacing = spacing,
+            TimeLabelSpacingRounding = true,
+            TimeLabelFormat = dateOnly ? "yyyy-MM-dd" : "MM-dd HH:mm",
+            TooltipTimeLabelFormat = "yyyy-MM-dd HH:mm",
+            ShowToolTips = true,
+            ShowLegend = false,   // the chart draws none for a time series; ours is below it
+        };
     }
+
     public void Dispose()
     {
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
