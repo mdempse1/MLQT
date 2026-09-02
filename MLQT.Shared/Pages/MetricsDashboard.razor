@@ -180,7 +180,7 @@
 
     @if (_scopedHistory.Count >= 2)
     {
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mt-4 mb-1">
+        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1" Class="mt-4 mb-1">
             <MudText Typo="Typo.body1">
                 @(_showCounts ? "Outstanding-finding burndown" : "Coverage trend") —
                 <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
@@ -194,14 +194,29 @@
             <MudNumericField T="double" Value="YWindowMax" ValueChanged="OnYMaxChanged" Immediate="false"
                              Margin="Margin.Dense" Variant="Variant.Text" HideSpinButtons="true"
                              Format="0.##" Style="width:80px;" Typo="Typo.body2" />
-            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="ml-1"
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Class="ml-1"
                        OnClick="FitYAxis" Disabled="_yAuto">Fit</MudButton>
             <MudSwitch T="bool" Value="_showCounts" ValueChanged="OnShowCountsChanged" Color="Color.Primary"
                        Size="Size.Small" Class="ml-2" Label="Outstanding counts" />
         </MudStack>
-        <div style="overflow-x:auto;">
-            @* Built as a MarkupString: SVG <text> collides with Razor's reserved <text> tag. *@
+        @* The axis labels are HTML in a gutter beside the plot, not text inside it: the SVG is
+           stretched to whatever width the window gives it, and anything inside it stretches too. *@
+        <div style="position:relative; padding-left:52px;">
+            @foreach (var line in TrendGridlines())
+            {
+                <div style="position:absolute; left:0; width:46px; text-align:right; line-height:1;
+                            font-size:0.75rem; color:var(--mud-palette-text-secondary);
+                            top:@(line.Y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))px;
+                            transform:translateY(-50%);">@line.Label</div>
+            }
             @((MarkupString)BuildTrendSvg())
+        </div>
+        <div class="mb-1" style="display:flex; justify-content:space-between; padding-left:52px;
+                    font-size:0.75rem; color:var(--mud-palette-text-secondary);">
+            <span>@TrendFirstDate</span>
+            <span>@TrendLastDate</span>
+        </div>
+        <div>
             @* Click a legend entry to drop its line — and with it its influence on the y axis. *@
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
                 @foreach (var sv in TrendSeries())
@@ -227,38 +242,38 @@
             <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
                 <thead>
                     <tr>
-                        <th style="text-align:left;">Snapshot</th>
-                        <th style="text-align:left;">Revision</th>
-                        <th style="text-align:right;">Classes</th>
+                        <th style="text-align:left;"><MudText Typo="Typo.caption"><strong>Snapshot</strong></MudText></th>
+                        <th style="text-align:left;"><MudText Typo="Typo.caption"><strong>Revision</strong></MudText></th>
+                        <th style="text-align:right;"><MudText Typo="Typo.caption"><strong>Classes</strong></MudText></th>
                         @foreach (var d in _dimensions)
                         {
-                            <th style="text-align:center;">@d</th>
+                            <th style="text-align:center;"><MudText Typo="Typo.caption"><strong>@d</strong></MudText></th>
                         }
-                        <th style="text-align:center;">Findings</th>
+                        <th style="text-align:center;"><MudText Typo="Typo.caption"><strong>Findings</strong></MudText></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var s in _scopedHistory.AsEnumerable().Reverse().Take(15))
                     {
                         <tr>
-                            <td>@s.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                            <td style="text-align:right;">@s.Revision</td>
-                            <td style="text-align:right;">@s.TotalClasses</td>
+                            <td><MudText Typo="Typo.caption">@s.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText></td>
+                            <td style="text-align:right;"><MudText Typo="Typo.caption">@s.Revision</MudText></td>
+                            <td style="text-align:right;"><MudText Typo="Typo.caption">@s.TotalClasses</MudText></td>
                             @foreach (var d in _dimensions)
                             {
                                 <td style="text-align:right;">
                                     @if (_showCounts)
                                     {
                                         var outstanding = Outstanding(s, d);
-                                        @(outstanding.HasValue ? outstanding.Value.ToString() : "—")
+                                        <MudText Typo="Typo.caption">@(outstanding.HasValue ? outstanding.Value.ToString() : "—")</MudText>
                                     }
                                     else
                                     {
-                                        @(s.Coverage.TryGetValue(d, out var v) ? $"{v:0.#}%" : "—")
+                                        <MudText Typo="Typo.caption">@(s.Coverage.TryGetValue(d, out var v) ? $"{v:0.#}%" : "—")</MudText>
                                     }
                                 </td>
                             }
-                            <td style="text-align:right;">@(s.Findings.HasValue ? s.Findings.Value.ToString() : "—")</td>
+                            <td style="text-align:right;"><MudText Typo="Typo.caption">@(s.Findings.HasValue ? s.Findings.Value.ToString() : "—")</MudText></td>
                         </tr>
                     }
                 </tbody>
@@ -967,43 +982,73 @@
         _yAuto = true;
     }
 
-    // The trend chart as an inline SVG string. Built in code (not markup) because SVG's <text> element
-    // collides with Razor's reserved <text> control-flow tag. One polyline per visible dimension over
-    // the scoped snapshots; x is snapshot order, y is the window from TrendWindow() in both modes.
-    // Lines are clipped to the plot rather than clamped to it, so a value outside a zoomed window
-    // leaves the chart instead of drawing a flat line along the edge that reads as data.
-    // Colours/axis use MudBlazor CSS vars so it tracks the theme.
-    // Assumes _scopedHistory.Count >= 2 (its only caller guards this).
+    // The plotted area, in pixels. The SVG is given this height in CSS and the same height in its
+    // viewBox, so one y unit is one pixel however wide the window is.
+    private const double TrendHeight = 400;
+
+    // Keeps a line sitting exactly on the top or bottom bound from having half its stroke clipped
+    // away by the viewport edge.
+    private const double TrendInset = 2;
+
+    // Gridlines: how far down the plot each sits, and what it is labelled. Shared by the SVG, which
+    // draws the lines, and the HTML gutter beside it, which draws the labels — they have to agree,
+    // and the labels are HTML precisely so that stretching the SVG cannot stretch the text.
+    private List<(double Y, string Label)> TrendGridlines()
+    {
+        var (min, max, step) = TrendWindow();
+        var steps = Math.Clamp((int)Math.Round((max - min) / step), 1, 8);
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var lines = new List<(double, string)>();
+        for (int g = 0; g <= steps; g++)
+        {
+            var value = max - (max - min) * g / steps;
+            var y = TrendInset + (double)g / steps * (TrendHeight - 2 * TrendInset);
+            lines.Add((y, _showCounts ? value.ToString("#,##0", ci) : value.ToString("0.#", ci)));
+        }
+        return lines;
+    }
+
+    private string TrendFirstDate => _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
+    private string TrendLastDate => _scopedHistory[^1].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
+
+    /// <summary>
+    /// The trend chart as an inline SVG string — built in code rather than markup because a polyline
+    /// per series over every snapshot is unreadable as Razor.
+    ///
+    /// <para><b>It fills whatever width it is given.</b> The viewBox is 100 wide and the SVG is 100%
+    /// wide with <c>preserveAspectRatio="none"</c>, so x units are percentages of the container and the
+    /// chart follows the window with no measuring, no JavaScript and no resize handler. Stretching an
+    /// SVG normally distorts everything in it, so nothing that must not stretch is inside it: the axis
+    /// labels and dates are HTML positioned around it, and every stroke carries
+    /// <c>vector-effect="non-scaling-stroke"</c> so line weights stay put. Vertically nothing scales at
+    /// all — the viewBox height and the CSS height are both <see cref="TrendHeight"/> — so y units are
+    /// pixels and the HTML labels line up with the gridlines exactly.</para>
+    ///
+    /// <para>Values outside a zoomed y window fall outside the viewport, which clips them. That is the
+    /// intent: a line that leaves the window should leave the chart, not flatten along its edge where
+    /// it would read as data.</para>
+    ///
+    /// <para>Assumes <c>_scopedHistory.Count >= 2</c> (its only caller guards this).</para>
+    /// </summary>
     private string BuildTrendSvg()
     {
-        const double w = 640, h = 240, padL = 40, padR = 12, padT = 10, padB = 26;
-        double plotW = w - padL - padR, plotH = h - padT - padB;
+        const double w = 100, h = TrendHeight;
         int n = _scopedHistory.Count;
         var ci = System.Globalization.CultureInfo.InvariantCulture;
-        string F(double v) => v.ToString("0.#", ci);
-        double px(int i) => padL + (n == 1 ? 0 : (double)i / (n - 1) * plotW);
+        string F(double v) => v.ToString("0.###", ci);
+        double px(int i) => n == 1 ? 0 : (double)i / (n - 1) * w;
 
         var series = TrendSeries().Where(sv => IsSeriesVisible(sv.Label)).ToList();
-
-        var (yMin, yMax, yStep) = TrendWindow();
-        var gridSteps = Math.Clamp((int)Math.Round((yMax - yMin) / yStep), 1, 8);
-        double py(double v) => padT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+        var (yMin, yMax, _) = TrendWindow();
+        double py(double v) => TrendInset + (1 - (v - yMin) / (yMax - yMin)) * (h - 2 * TrendInset);
 
         var sb = new System.Text.StringBuilder();
-        sb.Append("<svg viewBox=\"0 0 640 240\" role=\"img\" aria-label=\"Metric trend\" ")
-          .Append("style=\"width:100%;max-width:640px;height:auto;\">");
-        sb.Append($"<defs><clipPath id=\"mlqt-trend-plot\"><rect x=\"{F(padL)}\" y=\"{F(padT)}\" width=\"{F(plotW)}\" height=\"{F(plotH)}\"/></clipPath></defs>");
+        sb.Append($"<svg viewBox=\"0 0 {F(w)} {F(h)}\" preserveAspectRatio=\"none\" role=\"img\" ")
+          .Append($"aria-label=\"Metric trend\" style=\"display:block;width:100%;height:{F(h)}px;\">");
 
-        for (int g = 0; g <= gridSteps; g++)
-        {
-            double y = padT + (double)g / gridSteps * plotH;
-            var value = yMax - (yMax - yMin) * g / gridSteps;
-            var label = _showCounts ? value.ToString("#,##0", ci) : value.ToString("0.#", ci);
-            sb.Append($"<line x1=\"{F(padL)}\" y1=\"{F(y)}\" x2=\"{F(w - padR)}\" y2=\"{F(y)}\" stroke=\"var(--mud-palette-lines-default)\" stroke-width=\"0.5\"/>");
-            sb.Append($"<text x=\"{F(padL - 6)}\" y=\"{F(y + 3)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{label}</text>");
-        }
+        foreach (var (y, _) in TrendGridlines())
+            sb.Append($"<line x1=\"0\" y1=\"{F(y)}\" x2=\"{F(w)}\" y2=\"{F(y)}\" stroke=\"var(--mud-palette-lines-default)\" stroke-width=\"1\" vector-effect=\"non-scaling-stroke\"/>");
 
-        sb.Append("<g clip-path=\"url(#mlqt-trend-plot)\">");
         foreach (var sv in series)
         {
             var points = string.Join(" ", _scopedHistory
@@ -1013,19 +1058,13 @@
             if (points.Length > 0)
             {
                 var strokeWidth = sv.Color == FindingsColor ? "2.2" : "1.5";
-                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+                sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"/>");
             }
         }
-        sb.Append("</g>");
 
-        var first = _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
-        var last = _scopedHistory[^1].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
-        sb.Append($"<text x=\"{F(padL)}\" y=\"234\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{first}</text>");
-        sb.Append($"<text x=\"{F(w - padR)}\" y=\"234\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{last}</text>");
         sb.Append("</svg>");
         return sb.ToString();
     }
-
     public void Dispose()
     {
         NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
