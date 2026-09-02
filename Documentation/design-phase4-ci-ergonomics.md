@@ -13,6 +13,13 @@
 >   serializes as a string via `[JsonConverter(typeof(JsonStringEnumConverter<RuleSeverity>))]`.
 > - SARIF top level is built from a dictionary (to emit the `$schema` key); `informationUri` omitted.
 > - GUI severity editor deferred as planned — CI users set severities in `.mlqt/settings.json`.
+>   **Since shipped** (2026-09-01, ahead of Phase 7): per-repository Off/Info/Warning/Error selectors
+>   in `SettingsRepositories.razor`, so this deferral is closed.
+>
+> **Still open from this phase** (tracked in [roadmap.md](roadmap.md), "Backlog — finishing phases
+> 1–6"): B1 SARIF line numbers are model-relative, not file-absolute — the known limitation below,
+> which matters most for GitHub code-scanning annotations; B2 `--sarif-base` for repo-root-relative
+> URIs; B3 two outputs from one run, so a pipeline does not check the library twice.
 
 ## Purpose
 

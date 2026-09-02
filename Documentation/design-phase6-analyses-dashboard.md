@@ -60,11 +60,24 @@
 > (Follow-ons: incremental GUI re-checks don't yet re-run graph analyses; existing hand-written style
 > toggles aren't yet migrated to the data-driven list.)
 >
-> **Remaining:** unused parameters/constants/protected members (per-class, but needs an extends-aware
-> "is this class extended?" guard to avoid subclass-use false positives); resolver promotion +
-> inherited-member shadowing; the public/top-level "possibly unused API" Info case of unused-class;
-> SI-typed missing-unit resolution; graph analyses on the GUI/MCP paths; the data-driven settings UI
-> (6b); the metrics dashboard (6e); coverage trend (6f).
+> **The progress notes above are a running log, and their open items are now closed** — unused
+> members, resolver promotion and shadowing, the "possibly unused API" Info case, graph analyses on
+> GUI and MCP (and on incremental GUI re-checks), the data-driven settings UI (6b) with the
+> hand-written toggles migrated onto it, the dashboard (6e) and the coverage trend (6f) all shipped.
+> One item did not: **SI-typed missing-unit resolution**.
+> The Unit *coverage dimension* resolves alias and SI type chains through
+> `UnitResolver`, but `MLQT.Units.MissingUnit` still flags plain `Real` only, so the dashboard can
+> show a gap no finding names. Tracked as B5 in [roadmap.md](roadmap.md), "Backlog — finishing
+> phases 1–6".
+>
+> **Work since (2026-08-16 → 2026-09-01), all in this phase's surface area:** encrypted-library class
+> recovery feeding the reported set and the coverage denominators
+> ([design-encrypted-libraries.md](design-encrypted-libraries.md)); repositories markable as
+> reference only, excluded from checking, measurement, snapshot writes and the trend; coverage
+> measured while a class is checked rather than in a separate pass, with a sweep for the classes no
+> check reached; per-repository rule severities on Off/Info/Warning/Error selectors; and the
+> **coverage dimensions themselves made rule-driven** — fourteen dimensions of which a repository
+> shows only those whose rule is enabled and which the formatter does not rewrite on save.
 
 ## Purpose
 

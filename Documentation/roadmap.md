@@ -11,7 +11,22 @@ with those tools, and it stays optional.
 
 > Status legend — **Value**: ⭐ (nice) → ⭐⭐⭐ (flagship). **Effort**: S / M / L / XL.
 > **Boundary**: ⚠ marks items that approach (but should stay inside) the
-> no-translation/no-simulation line and need care.
+> no-translation/no-simulation line and need care. **✅ shipped** marks delivered work.
+
+## Where we are (2026-09-02)
+
+**Phases 1–6 of the locked sequencing are shipped**: the findings foundation, the headless CLI,
+baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
+metrics dashboard and coverage trend. Each has an implementation note recording what landed.
+
+**Current focus: finish the CI/CD toolchain before starting cross-platform.** What is left inside
+phases 1–6 is a short list of gaps rather than new workstreams — collected in
+[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. Cross-platform
+(§1) is deliberately last of the two: it is the big task, and it should start against a toolchain
+that is already complete rather than one still being finished.
+
+Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
+early, because the CI work ahead of it does not depend on the answer.
 
 ---
 
@@ -33,16 +48,16 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Headless CLI** (`mlqt-cli`) reusing the service layer | ⭐⭐⭐ | M | Ships first — Linux/macOS *headless* immediately; also the CI vehicle (§5). |
-| **MCP server on Linux/macOS** as a tested target | ⭐⭐ | S | Already headless stdio; likely close to working. |
+| **Headless CLI** (`mlqt`) reusing the service layer | ⭐⭐⭐ | M | **✅ shipped** — `mlqt check` + `mlqt baseline`, packaged as a `dotnet tool`. See [cli.md](cli.md). |
+| **MCP server on Linux/macOS** as a tested target | ⭐⭐ | S | Built and shipping on Windows; headless stdio, so likely close to working. Not yet *tested* on Linux/macOS — that claim belongs with the phase-7 work. |
 | **Single cross-platform desktop host (Photino.Blazor)** replacing MAUI | ⭐⭐⭐ | L | In-process webview → keeps direct filesystem + git/svn access, near drop-in reuse of `MLQT.Shared`. Reimplement the 3 platform services once. Retires MAUI. |
 | — *fallback host:* Blazor Server (+ desktop wrapper) | — | L | If in-process webview proves limiting; also opens a future hosted/browser option. |
-| **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | De-risk the Linux webview engine early — it is **not** WebView2. Gate before committing the host. |
+| **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | **Opens phase 7.** De-risk the Linux webview engine — it is **not** WebView2 — and gate before committing to the host. Originally to be pulled early; kept in phase 7 (decided 2026-09-02) since nothing in the CI work depends on its answer. |
 | **Platform-service ports** (file dialog, power/sleep, settings paths) | ⭐⭐ | M | Per-OS implementations behind the existing interfaces. Settings is mostly path differences. |
 
-**Migration approach:** build the Photino host and port the platform services, then
-**validate on Windows first** (confirm feature parity against the known-good MAUI build
-before adding OS variables), then Linux, then macOS. When it lands, the `MLQT` MAUI project
+**Migration approach:** run the WebKitGTK spike first, then build the Photino host and port the
+platform services, then **validate on Windows first** (confirm feature parity against the known-good
+MAUI build before adding OS variables), then Linux, then macOS. When it lands, the `MLQT` MAUI project
 is superseded by a new desktop host project — update CLAUDE.md and docs accordingly.
 
 ---
@@ -86,12 +101,12 @@ trust in CI before attempting resolution-dependent checks. *(All approved.)*
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Unused-element detection** (parameters, constants, components, imports, protected vars) | ⭐⭐⭐ | M | Modelica equivalent of dead-code/unused-import lints. |
-| **Unused-class detection** | ⭐⭐⭐ | M | Internal/nested/protected class never referenced → high-confidence. Unreferenced *public top-level* class → only "possibly unused API" (info): a downstream consumer we can't see may use it. |
-| **Duplicate / shadowing declarations** | ⭐⭐ | S | Same name twice in a class, duplicate import aliases, silently shadowed inherited members. Local, bug-class. |
-| **`uses` annotation hygiene** | ⭐⭐⭐ | M | Libraries used but not declared in `uses(...)`, and declared-but-unused deps. Library-maintainer gold; doubles as the "external namespace" allowlist above. |
-| **`package.order` / file-structure consistency** | ⭐⭐⭐ | M | Entries not matching classes/files, missing entries, standalone-vs-nested placement mistakes. Common real defect; pieces already exist. |
-| **Missing-units presence check** | ⭐⭐⭐ | M | `Real` vars/params with no `unit` where a physical quantity is implied; prefer `Modelica.Units.SI.*`. **Attribute-presence only, NOT dimensional analysis.** Cheap, huge burndown content. |
+| **Unused-element detection** (parameters, constants, components, imports, protected vars) | ⭐⭐⭐ | M | **✅ shipped** — `UnusedMembersAnalyzer`, `UnusedImportAnalyzer`. |
+| **Unused-class detection** | ⭐⭐⭐ | M | **✅ shipped** — `UnusedClassAnalyzer`, with the "possibly unused API" Info case for public top-level classes. |
+| **Duplicate / shadowing declarations** | ⭐⭐ | S | **✅ shipped** — `DuplicateDeclarations` rule + `ShadowingAnalyzer`. |
+| **`uses` annotation hygiene** | ⭐⭐⭐ | M | **✅ shipped** — `UsesHygieneAnalyzer`, conservative both ways. |
+| **`package.order` / file-structure consistency** | ⭐⭐⭐ | M | **✅ shipped** — `PackageOrderAnalyzer`. |
+| **Missing-units presence check** | ⭐⭐⭐ | M | **✅ shipped (plain `Real` only)** — `MLQT.Units.MissingUnit`. A user type that aliases `Real` without a unit is still missed, though the Unit coverage dimension resolves those; see the backlog. |
 
 ### Wave 2 — resolution-dependent (built on the confidence-aware resolver)
 
@@ -121,11 +136,11 @@ libraries start low and the dashboard shows them climbing as debt is worked off.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Metrics dashboard** (LOC, component/connection counts, inheritance depth, coverage %) | ⭐⭐⭐ | M | Confirmed. One aggregation layer over existing parse trees + graph; the burndown/review surface. |
+| **Metrics dashboard** (class counts by kind, coverage %) | ⭐⭐⭐ | M | **✅ shipped** — `MetricsDashboard.razor` + `MetricsCalculator`; coverage dimensions follow each repository's enabled rules. LOC, connection counts and inheritance depth were not built — no one asked for them. |
 | **Cyclomatic / cognitive complexity** | ⭐⭐ | M | For algorithm sections and functions. |
 | **Duplicate / clone detection** | ⭐⭐ | L | Near-identical models/equation blocks via subtree hashing. |
-| **Quality gates** ("fail if doc coverage < 80%", "no new critical findings") | ⭐⭐⭐ | M | Governance layer that makes MLQT a CI gatekeeper. Depends on CLI (§1). |
-| **Trend tracking** (metric snapshots over commits) | ⭐⭐ | L | See quality improving/regressing over time. |
+| **Quality gates** ("fail if doc coverage < 80%", "no new critical findings") | ⭐⭐⭐ | M | **Half shipped:** "no new findings" is the baseline/ratchet gate. Gating on a *metric threshold* is not built — see the backlog. |
+| **Trend tracking** (metric snapshots over commits) | ⭐⭐ | L | **✅ shipped** — `.mlqt/metrics-history.json`, written by the dashboard or `mlqt check --metrics`, plotted per scope. |
 
 ---
 
@@ -143,16 +158,16 @@ CI reads severity directly: warnings report but don't fail, errors fail (`--fail
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | Foundation for the CI gate *and* extensibility. Migrates booleans: `true`→default severity, `false`→off. |
-| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | Not comments — comments are position-bound and get orphaned when the formatter reorders declarations. Annotations ride on the element (like icons/docs, which already round-trip). Class- and component-level; carries a `reason`. Also the in-source, rename-safe replacement for the name-based `FormattingExcludedModels` list. See §5 design note. |
-| **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | Makes adopting a linter on a large legacy library viable. See §5 design note. |
+| **Per-rule severity map** (off/warning/error, rule-id-keyed) | ⭐⭐⭐ | M | **✅ shipped** — `RuleSeverities` in `.mlqt/settings.json`, with the per-repository Off/Info/Warning/Error selectors in the settings UI. |
+| **In-source suppression via `__MLQT` vendor annotations** | ⭐⭐⭐ | M | **✅ shipped** — with GUI and MCP authoring actions. Not comments — comments are position-bound and get orphaned when the formatter reorders declarations. Annotations ride on the element (like icons/docs, which already round-trip). Class- and component-level; carries a `reason`. Also the in-source, rename-safe replacement for the name-based `FormattingExcludedModels` list. See §5 design note. |
+| **Baseline / ratchet mode** (only fail on *new* findings) | ⭐⭐⭐ | M | **✅ shipped** — see §5. |
 | **Custom-rule authoring — declarative tier** (config-driven shape checks) | ⭐⭐ | L | The 80%: annotation-present, identifier-regex, banned-`extends`. No compilation; CI-safe. Registers a rule id + severity. |
 | **Custom-rule authoring — compiled-plugin tier** (`VisitorWithModelNameTracking`) | ⭐⭐ | XL | Full parse-tree power escape hatch. ⚠ Loading compiled code in CI is a supply-chain consideration. |
 | **Cross-repo shared rule profiles** (ESLint-`extends` style) | ⭐ | M | *Deferred / optional.* Only for orgs running many libraries wanting one house ruleset without drift. Per-repo config + existing naming presets cover the common cases. |
 
 ---
 
-## 5. CI/CD & automation integration ← current focus
+## 5. CI/CD & automation integration
 
 MLQT is GUI-first today; the ecosystem norm is "runs in the pipeline." This has become
 the leading initiative — see the deep-dive **[design-ci-quality-gate.md](design-ci-quality-gate.md)**
@@ -165,11 +180,11 @@ test UI, TeamCity service messages auto-graph baseline debt trend.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | The adoption unlock for large legacy libraries. See design note. |
-| **CLI + JUnit/exit-code contract** | ⭐⭐⭐ | M | Universal CI integration without per-platform work. Vehicle = CLI (§1). |
-| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | Thin serializers over the shared findings model. |
-| **Pre-commit hook / commit gate** | ⭐⭐ | S | Extends existing "commit requires issue number." |
-| **PR review annotations** | ⭐⭐ | M | Post findings as inline PR comments (markdown summary path). |
+| **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | **✅ shipped** — `mlqt baseline create/update/prune`, `--changed-from`, `--touched-debt warn\|fail\|ignore`. |
+| **CLI + JUnit/exit-code contract** | ⭐⭐⭐ | M | **✅ shipped** — `--format junit`, `--fail-on off\|warning\|error`, documented exit codes. |
+| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped.** SARIF has two known gaps (line mapping, base path) — see the backlog. |
+| **Pre-commit hook / commit gate** | ⭐⭐ | S | Not built. Today it is a documented recipe (`--changed-from BASE`), not a feature. In the backlog. |
+| **PR review annotations** | ⭐⭐ | M | Not built; the markdown summary path it would use exists. In the backlog. |
 
 ---
 
@@ -179,9 +194,31 @@ Building on existing spell-checking.
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Documentation coverage reporting** | ⭐⭐ | S | Which public classes/parameters lack info/revisions/descriptions. |
+| **Documentation coverage reporting** | ⭐⭐ | S | **✅ shipped** — class description, documentation info, documentation revisions, parameter and constant description are coverage dimensions; the Code Review findings name the classes. |
 | **HTML validity + broken-link checking** in doc strings | ⭐⭐ | M | Validate `modelica://` cross-references resolve to real classes. |
 | **Terminology consistency** | ⭐ | M | Flag inconsistent capitalization/naming of domain terms. |
+
+---
+
+## Backlog — finishing phases 1–6 (current focus)
+
+Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, or an item a
+phase half-delivered. None of it is a new workstream, and none of it is cross-platform (§1) — the
+point of the list is a CI/CD toolchain with nothing outstanding before the big migration starts.
+
+| # | Item | From | Value | Effort | What is missing |
+|---|------|------|-------|--------|-----------------|
+| B1 | **SARIF line numbers are model-relative** | Phase 4 known limitation | ⭐⭐⭐ | M | Finding lines are relative to each model's extracted definition, not the file. For a model nested in a `package.mo`, GitHub code-scanning annotations land on the wrong line — the one place a wrong line actively misleads rather than merely failing to help. Needs finding lines mapped to file-absolute positions. |
+| B2 | **`--sarif-base <path>`** | Phase 4 deferral | ⭐⭐ | S | SARIF URIs are relative to the library. A CI job whose library is a subdirectory of the repo needs them relative to the repo root, or the annotations attach to nothing. |
+| B3 | **Two outputs from one run** | Phase 4 non-goal | ⭐⭐ | S | One `--format` per invocation, so a pipeline wanting a readable log *and* a JUnit file checks the library twice — on a large library that is minutes, and the two runs can disagree if anything changed between them. |
+| B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | `--fail-on` gates on finding severity only. The coverage numbers and their history now exist, so "fail if class-description coverage is below 80%" — or below the last recorded snapshot, the ratchet applied to coverage — is the missing half of the governance story. |
+| B5 | **Missing-units rule vs the Unit dimension** | Phase 6 increment | ⭐⭐ | M | The rule flags only plain `Real`; the Unit coverage dimension resolves alias and SI type chains through `UnitResolver`. The dashboard therefore shows gaps the rule never reports, and no finding leads the user to them. Promote the rule onto the resolver. |
+| B6 | **Pre-commit hook / commit gate** | §5 | ⭐⭐ | S | A documented `--changed-from BASE` recipe today. As a feature it extends the existing "commit requires issue number" gate. |
+| B7 | **PR review annotations** | §5 | ⭐⭐ | M | Post findings as inline PR comments. The markdown summary path it would build on already exists. |
+
+**Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
+GitHub or TeamCity setup still needs hand-holding), so they come first; B4 next, since it is what
+turns the metrics work into a gate; then B5; B6 and B7 last, being conveniences rather than gaps.
 
 ---
 
@@ -189,37 +226,42 @@ Building on existing spell-checking.
 
 The CI quality gate (§5) is the leading initiative and commercial wedge; its own phased
 plan lives in [design-ci-quality-gate.md](design-ci-quality-gate.md). Full unified order
-across all workstreams:
+across all workstreams — ✅ marks a phase whose implementation note records it as shipped:
 
-1. **Findings foundation** — rule-ID registry, boolean→severity map, semantic
+1. ✅ **Findings foundation** — rule-ID registry, boolean→severity map, semantic
    fingerprints. Prerequisite for everything (CI, baseline, suppression, analyses); also
    improves the existing GUI Code Review. **Implementation plan:**
    [design-phase1-findings-foundation.md](design-phase1-findings-foundation.md).
-2. **Headless CLI MVP** — `mlqt check` reusing the service layer; console + exit code +
+2. ✅ **Headless CLI MVP** — `mlqt check` reusing the service layer; console + exit code +
    JUnit + JSON; `dotnet tool`. Linux/macOS **headless** starts here, running existing rules.
    **Implementation plan:** [design-phase2-cli.md](design-phase2-cli.md).
-3. **Baseline / ratchet** — `baseline create/update/prune`, new-vs-accepted classification,
+3. ✅ **Baseline / ratchet** — `baseline create/update/prune`, new-vs-accepted classification,
    changed-model warn-by-default. The adoption unlock for legacy libraries.
    **Implementation plan:** [design-phase3-baseline.md](design-phase3-baseline.md).
-4. **CI ergonomics** — SARIF, TeamCity service messages + debt-trend statistics, markdown
+4. ✅ **CI ergonomics** — SARIF, TeamCity service messages + debt-trend statistics, markdown
    summary. Lights up the first customer's TeamCity.
    **Implementation plan:** [design-phase4-ci-ergonomics.md](design-phase4-ci-ergonomics.md).
-5. **Suppression (`__MLQT` annotations)** — with GUI + MCP authoring actions. Lands before
+5. ✅ **Suppression (`__MLQT` annotations)** — with GUI + MCP authoring actions. Lands before
    the analysis wave generates intentional-exception cases (declaration-order case).
    **Implementation plan:** [design-phase5-suppression.md](design-phase5-suppression.md).
-6. **Wave-1 analyses + dashboard** — unused elements/classes, duplicate/shadowing, `uses`
+6. ✅ **Wave-1 analyses + dashboard** — unused elements/classes, duplicate/shadowing, `uses`
    hygiene, `package.order` consistency, missing-units; plus the metrics dashboard/burndown.
    The debt-ledger content that makes the ratchet compelling.
    **Implementation plan:** [design-phase6-analyses-dashboard.md](design-phase6-analyses-dashboard.md).
-7. **Desktop host migration (Photino, retire MAUI)** — delivers the **Linux UI**. Pull the
-   WebKitGTK interop spike *early* to de-risk; then host + platform-service ports, validated
-   Windows-parity → Linux → macOS.
+7. **Desktop host migration (Photino, retire MAUI)** — delivers the **Linux UI**. Opens with the
+   WebKitGTK interop spike to de-risk the engine, then host + platform-service ports, validated
+   Windows-parity → Linux → macOS. **Starts once the backlog above is clear.**
 8. **Wave-2 analyses** — confidence-aware resolver, then broken references, connection
    integrity, deprecated-API, cyclic dependencies.
 9. **Extensibility, then flagships** — declarative custom rules → compiled plugins; finally
    the boundary-brushing dimensional-analysis and structural equation-balance checks.
 
 **Placement notes:** desktop UI sits at #7, after the CI value that ships fastest to real
-customers — hedged by pulling its WebKitGTK spike early; swap earlier if the Linux UI
-becomes the harder customer commitment. Suppression (#5) precedes the analyses (#6) so
-intentional-exception handling exists before new rules generate exceptions.
+customers; swap earlier if the Linux UI becomes the harder customer commitment. Suppression (#5)
+precedes the analyses (#6) so intentional-exception handling exists before new rules generate
+exceptions.
+
+**Amendment (2026-09-02):** the WebKitGTK spike is no longer pulled early. It was hedging a
+sequencing risk that has gone — phases 1–6 are shipped, nothing in the backlog above depends on the
+spike's answer, and interleaving it would interrupt the CI work for a question that only matters
+once phase 7 starts. It opens phase 7 instead.
