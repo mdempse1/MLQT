@@ -186,19 +186,40 @@
                 <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
             </MudText>
             <MudSpacer />
-            <MudSwitch T="bool" @bind-Value="_showCounts" Color="Color.Primary" Size="Size.Small"
-                       Label="Outstanding counts" />
+            <MudText Typo="Typo.caption" Class="mr-1">Y axis</MudText>
+            <MudNumericField T="double" Value="YWindowMin" ValueChanged="OnYMinChanged" Immediate="false"
+                             Margin="Margin.Dense" Variant="Variant.Text" HideSpinButtons="true"
+                             Format="0.##" Style="width:80px;" Typo="Typo.body2" />
+            <MudText Typo="Typo.caption" Class="mx-1">to</MudText>
+            <MudNumericField T="double" Value="YWindowMax" ValueChanged="OnYMaxChanged" Immediate="false"
+                             Margin="Margin.Dense" Variant="Variant.Text" HideSpinButtons="true"
+                             Format="0.##" Style="width:80px;" Typo="Typo.body2" />
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="ml-1"
+                       OnClick="FitYAxis" Disabled="_yAuto">Fit</MudButton>
+            <MudSwitch T="bool" Value="_showCounts" ValueChanged="OnShowCountsChanged" Color="Color.Primary"
+                       Size="Size.Small" Class="ml-2" Label="Outstanding counts" />
         </MudStack>
         <div style="overflow-x:auto;">
             @* Built as a MarkupString: SVG <text> collides with Razor's reserved <text> tag. *@
             @((MarkupString)BuildTrendSvg())
+            @* Click a legend entry to drop its line — and with it its influence on the y axis. *@
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap mb-2">
                 @foreach (var sv in TrendSeries())
                 {
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:@sv.Color;"></span>
-                        <MudText Typo="Typo.caption">@sv.Label</MudText>
-                    </MudStack>
+                    var label = sv.Label;
+                    var shown = IsSeriesVisible(label);
+                    <div style="display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none;"
+                         title="@(shown ? $"Hide {label}" : $"Show {label}")"
+                         @onclick="@(() => ToggleSeries(label))">
+                        <span style="display:inline-block; width:12px; height:12px; border-radius:2px; border:1px solid @sv.Color; background:@(shown ? sv.Color : "transparent");"></span>
+                        <MudText Typo="Typo.caption"
+                                 Style="@(shown ? "" : "opacity:0.55; text-decoration:line-through;")">@label</MudText>
+                    </div>
+                }
+                @if (_hiddenSeries.Count > 0)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                               OnClick="ShowAllSeries">Show all</MudButton>
                 }
             </MudStack>
         </div>
@@ -207,12 +228,13 @@
                 <thead>
                     <tr>
                         <th style="text-align:left;">Snapshot</th>
+                        <th style="text-align:left;">Revision</th>
                         <th style="text-align:right;">Classes</th>
                         @foreach (var d in _dimensions)
                         {
-                            <th style="text-align:right;">@d</th>
+                            <th style="text-align:center;">@d</th>
                         }
-                        <th style="text-align:right;">Findings</th>
+                        <th style="text-align:center;">Findings</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -220,6 +242,7 @@
                     {
                         <tr>
                             <td>@s.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td style="text-align:right;">@s.Revision</td>
                             <td style="text-align:right;">@s.TotalClasses</td>
                             @foreach (var d in _dimensions)
                             {
@@ -272,6 +295,17 @@
     private List<string> _dimensions = new();
     private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding count
 
+    // Series the user has clicked off in the legend, by label. Hidden lines leave the chart *and* the
+    // y-axis calculation: hiding the one series that spans a different order of magnitude is the
+    // quickest way to see the rest, and it only works if the axis follows.
+    private readonly HashSet<string> _hiddenSeries = new(System.StringComparer.Ordinal);
+
+    // The y-axis window. Auto fits the visible data (not anchored at zero); editing either bound
+    // switches to manual, which is the vertical zoom.
+    private bool _yAuto = true;
+    private double _yMin;
+    private double _yMax;
+
     private int? _findings;          // active (unsuppressed) rule findings in scope; null until known
     private bool _analysisRunning;   // dependency analysis / style checking still in progress
 
@@ -281,9 +315,16 @@
     private List<(string Package, LibraryMetrics Metrics)> _summary = new();
     private List<string> _summaryDimensions = new();
 
-    // Line colours for the coverage-trend chart, one per dimension. Chosen to read on light and dark.
+    // Line colours for the coverage-trend chart, one per dimension. Chosen to read on light and dark,
+    // and long enough for every dimension: the palette used to hold six, so with fourteen dimensions
+    // available two lines could share a colour and the legend could not tell them apart — which now
+    // also decides which line a click switches off.
     private static readonly string[] TrendPalette =
-        { "#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4" };
+    {
+        "#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4",
+        "#3f51b5", "#009688", "#8bc34a", "#ff5722", "#607d8b", "#795548",
+        "#673ab7", "#afb42b"
+    };
 
     // Session cache of the last computed metrics, keyed by scope + a signature of the loaded libraries.
     // Static so it survives the tab panel being recreated on navigation — returning to the tab restores
@@ -864,20 +905,74 @@
             ? Outstanding(s, dim)
             : (s.Coverage.TryGetValue(dim, out var p) ? p : (double?)null);
 
-    // A "nice" axis maximum ≥ value, rounded up to 1/2/5×10ⁿ, so count-mode gridline labels are round.
-    private static double NiceMax(double value)
+    private bool IsSeriesVisible(string label) => !_hiddenSeries.Contains(label);
+
+    // A typed window is left alone — the user asked for those bounds. Fit refits.
+    private void ToggleSeries(string label)
     {
-        if (value <= 0) return 1;
-        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        var normalized = value / magnitude;
-        var nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-        return nice * magnitude;
+        if (!_hiddenSeries.Remove(label))
+            _hiddenSeries.Add(label);
+    }
+
+    private void ShowAllSeries() => _hiddenSeries.Clear();
+
+    /// <summary>
+    /// The y-axis window: bottom, top, and gridline step. Auto fits the values actually plotted — see
+    /// <see cref="TrendAxis"/> for why that is not anchored at zero; a typed window overrides it, which
+    /// is the vertical zoom.
+    /// </summary>
+    private (double Min, double Max, double Step) TrendWindow()
+    {
+        // An inverted or equal pair means the user is mid-edit: fall back to the fit rather than
+        // handing py() a window with no height to divide by.
+        if (!_yAuto && _yMax > _yMin)
+            return (_yMin, _yMax, TrendAxis.NiceStep((_yMax - _yMin) / 4));
+
+        var values = TrendSeries()
+            .Where(sv => IsSeriesVisible(sv.Label))
+            .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value);
+
+        return TrendAxis.Window(values, _showCounts);
+    }
+
+    // The window shown in the two bound fields — the fitted one until the user edits it.
+    private double YWindowMin => TrendWindow().Min;
+    private double YWindowMax => TrendWindow().Max;
+
+    private void OnYMinChanged(double value)
+    {
+        var window = TrendWindow();
+        _yMax = window.Max;
+        _yMin = value;
+        _yAuto = false;
+    }
+
+    private void OnYMaxChanged(double value)
+    {
+        var window = TrendWindow();
+        _yMin = window.Min;
+        _yMax = value;
+        _yAuto = false;
+    }
+
+    private void FitYAxis() => _yAuto = true;
+
+    // Switching between percentages and counts changes the scale by orders of magnitude, so a window
+    // chosen for one is meaningless in the other.
+    private void OnShowCountsChanged(bool value)
+    {
+        _showCounts = value;
+        _yAuto = true;
     }
 
     // The trend chart as an inline SVG string. Built in code (not markup) because SVG's <text> element
-    // collides with Razor's reserved <text> control-flow tag. One polyline per dimension over the scoped
-    // snapshots; x is snapshot order. In percentage mode y is a fixed 0–100%; in count mode y auto-scales
-    // to the largest outstanding count. Colours/axis use MudBlazor CSS vars so it tracks the theme.
+    // collides with Razor's reserved <text> control-flow tag. One polyline per visible dimension over
+    // the scoped snapshots; x is snapshot order, y is the window from TrendWindow() in both modes.
+    // Lines are clipped to the plot rather than clamped to it, so a value outside a zoomed window
+    // leaves the chart instead of drawing a flat line along the edge that reads as data.
+    // Colours/axis use MudBlazor CSS vars so it tracks the theme.
     // Assumes _scopedHistory.Count >= 2 (its only caller guards this).
     private string BuildTrendSvg()
     {
@@ -888,39 +983,27 @@
         string F(double v) => v.ToString("0.#", ci);
         double px(int i) => padL + (n == 1 ? 0 : (double)i / (n - 1) * plotW);
 
-        var series = TrendSeries();
+        var series = TrendSeries().Where(sv => IsSeriesVisible(sv.Label)).ToList();
 
-        // Y scale: fixed 0–100 for %, or 0–niceMax(largest plotted value, incl. findings) for counts.
-        const int gridSteps = 4;
-        double yMax;
-        if (_showCounts)
-        {
-            var maxVal = series
-                .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
-                .Where(v => v.HasValue).Select(v => v!.Value)
-                .DefaultIfEmpty(0).Max();
-            yMax = NiceMax(maxVal);
-        }
-        else
-        {
-            yMax = 100;
-        }
-        double py(double v) => padT + (1 - Math.Clamp(v, 0, yMax) / yMax) * plotH;
+        var (yMin, yMax, yStep) = TrendWindow();
+        var gridSteps = Math.Clamp((int)Math.Round((yMax - yMin) / yStep), 1, 8);
+        double py(double v) => padT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
 
         var sb = new System.Text.StringBuilder();
         sb.Append("<svg viewBox=\"0 0 640 240\" role=\"img\" aria-label=\"Metric trend\" ")
           .Append("style=\"width:100%;max-width:640px;height:auto;\">");
+        sb.Append($"<defs><clipPath id=\"mlqt-trend-plot\"><rect x=\"{F(padL)}\" y=\"{F(padT)}\" width=\"{F(plotW)}\" height=\"{F(plotH)}\"/></clipPath></defs>");
 
         for (int g = 0; g <= gridSteps; g++)
         {
             double y = padT + (double)g / gridSteps * plotH;
-            var label = _showCounts
-                ? ((int)Math.Round(yMax * (gridSteps - g) / gridSteps)).ToString(ci)
-                : (100 - g * 25).ToString(ci);
+            var value = yMax - (yMax - yMin) * g / gridSteps;
+            var label = _showCounts ? value.ToString("#,##0", ci) : value.ToString("0.#", ci);
             sb.Append($"<line x1=\"{F(padL)}\" y1=\"{F(y)}\" x2=\"{F(w - padR)}\" y2=\"{F(y)}\" stroke=\"var(--mud-palette-lines-default)\" stroke-width=\"0.5\"/>");
             sb.Append($"<text x=\"{F(padL - 6)}\" y=\"{F(y + 3)}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--mud-palette-text-secondary)\">{label}</text>");
         }
 
+        sb.Append("<g clip-path=\"url(#mlqt-trend-plot)\">");
         foreach (var sv in series)
         {
             var points = string.Join(" ", _scopedHistory
@@ -933,6 +1016,7 @@
                 sb.Append($"<polyline points=\"{points}\" fill=\"none\" stroke=\"{sv.Color}\" stroke-width=\"{strokeWidth}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
             }
         }
+        sb.Append("</g>");
 
         var first = _scopedHistory[0].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
         var last = _scopedHistory[^1].TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd");
