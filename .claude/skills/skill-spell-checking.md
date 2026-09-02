@@ -19,6 +19,7 @@ ModelicaParser (core logic, no service dependencies)
     TextExtractor.cs         - HTML stripping, tokenization, word filtering
     Dictionaries/            - Embedded .aff/.dic files + modelica_terms.txt
   StyleRules/
+    SpellCheckVisitorBase.cs   - Shared scope handling (names in scope, own + inherited)
     SpellCheckDescriptions.cs  - Visitor for description strings
     SpellCheckDocumentation.cs - Visitor for Documentation annotations
 
@@ -103,15 +104,24 @@ Static utility methods for preparing text before spell checking.
 
 ## Style Rule Visitors
 
-Both extend `VisitorWithModelNameTracking` and follow the standard style rule pattern.
+Both extend `SpellCheckVisitorBase` (itself a `VisitorWithModelNameTracking`) and follow the standard style rule pattern.
+
+### SpellCheckVisitorBase
+
+**File:** `ModelicaParser/StyleRules/SpellCheckVisitorBase.cs`
+
+Owns the names that count as valid words inside the class being checked, and the `IsSpelledCorrectly(word)` both visitors call.
+
+- **Collected up front.** On entering a class the base scans the class body's element lists for component names and nested class names, so the class's own description string and `Documentation` annotation — both written before the declarations are reached — see every name. Names are pushed/popped per class scope via `OnClassEntered`/`OnClassExited`; `AddNameToScope` still catches declarations the scan does not reach.
+- **Inherited names.** The optional `inheritedElementNames` callback, `Func<string modelId, IReadOnlySet<string>>`, supplies the names a class inherits through `extends`. Resolving a base class needs the dependency graph, so the callback comes from `ModelicaGraph.StyleChecking.CreateInheritedElementNamesCallback(graph)` (which uses `ClassElementResolver`, including protected members and the whole chain, cached per class). With no callback only the class's own declarations are known.
+- **`OnClassScopeReady(context)`** — hook called once the scope is populated and before the class body is walked; `SpellCheckDescriptions` checks the class description there.
+- **Known model names are not merged into the scope.** They are passed straight to `IsCorrect(word, knownModelNames)`; merging built a fresh copy of a set holding every class in the graph for every description string checked.
 
 ### SpellCheckDescriptions
 
 **File:** `ModelicaParser/StyleRules/SpellCheckDescriptions.cs`
 
-Checks `string_comment()` on classes and `comment().string_comment()` on components. Collects component/variable names per class scope as context words.
-
-**Scoped context words:** As the visitor traverses, it collects component names from `component_declaration.declaration.IDENT()` into a per-class `HashSet<string>`. These are passed to `IsCorrect(word, contextWords)` so references to local variables in descriptions are not flagged.
+Checks `string_comment()` on classes (via `OnClassScopeReady`) and `comment().string_comment()` on components. The names in scope come from `SpellCheckVisitorBase`, so references to the class's own and inherited members are not flagged.
 
 **Line number calculation:**
 ```csharp
@@ -125,7 +135,7 @@ var lineNumber = startLine + TextExtractor.CountNewlinesBefore(text, charOffset)
 
 Overrides `VisitElement_modification` to detect `Documentation` -> `info` / `revisions` annotation paths. Uses `StripHtmlPreservingNewlines()` for accurate line counting in multi-line HTML content.
 
-Same scoped component name collection as SpellCheckDescriptions. Same context words pattern.
+Uses the same scope handling as SpellCheckDescriptions, from `SpellCheckVisitorBase`.
 
 **Violation messages:**
 - `"Misspelled word '{word}' in description"` (from SpellCheckDescriptions)
@@ -143,10 +153,12 @@ public static List<LogMessage> RunStyleChecking(
     string fullModelId = "",
     IReadOnlySet<string>? knownModelIds = null,
     SpellChecker? spellChecker = null,
-    IReadOnlySet<string>? knownModelNames = null)
+    IReadOnlySet<string>? knownModelNames = null,
+    ...
+    Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
 ```
 
-Spell check visitors are instantiated at the end of the method when the corresponding setting is enabled and a `spellChecker` is provided.
+Spell check visitors are instantiated at the end of the method when the corresponding setting is enabled and a `spellChecker` is provided. `inheritedElementNames` is passed to both; `StyleCheckContext.InheritedElementNames` builds it once per check operation (GUI, CLI and MCP all go through `StyleCheckRunner`, so they agree).
 
 ## StyleCheckingSettings
 
@@ -316,6 +328,8 @@ Per-repository settings dialog includes the same language multi-select and impor
 | `ModelicaParser.Tests/SpellChecking/TextExtractorTests.cs` | HTML stripping, tokenization, ShouldSkipWord, line counting |
 | `ModelicaParser.Tests/StyleRuleChecks/SpellCheckDescriptionsTests.cs` | Description checking, component names, model names, multi-line |
 | `ModelicaParser.Tests/StyleRuleChecks/SpellCheckDocumentationTests.cs` | Documentation checking, HTML handling, code blocks, line numbers |
+| `ModelicaParser.Tests/StyleRuleChecks/SpellCheckInheritedNamesTests.cs` | Names in scope: declared in any order, inherited via the lookup, possessives |
+| `ModelicaGraph.Tests/InheritedElementNamesTests.cs` | `CreateInheritedElementNamesCallback` over a graph, and end-to-end with/without the chain |
 | `MLQT.Services.Tests/DictionaryManagerServiceTests.cs` | Import, remove, scan, display names, events |
 | `MLQT.Services.Tests/StyleCheckingServiceTests.cs` | End-to-end style checking with spell checker stubs |
 | `ModelicaGraph.Tests/StyleCheckingTests.cs` | HasAnyStyleRuleEnabled includes spell check settings |
@@ -323,7 +337,7 @@ Per-repository settings dialog includes the same language multi-select and impor
 ## Key Design Decisions
 
 1. **No `Suggest()` during background checking** — only called on-demand from the right-click correction menu to avoid performance overhead
-2. **Context words are per-call, not shared** — component names are scoped to the model being checked, model names are shared across all checks in a run
+2. **Context words are per-call, not shared** — element names are scoped to the class being checked (its own plus everything up its `extends` chain), model names are shared across all checks in a run
 3. **Spell checker is cached and invalidated** — recreated only when languages or dictionaries change, not per-model
 4. **Accepted words are separate from language dictionaries** — a repository's words are always included regardless of language selection
 5. **HTML entity handling** — decoded entities with non-ASCII characters (e.g., `\u0394` from `&Delta;`) are skipped entirely via `ShouldSkipWord`

@@ -19,6 +19,12 @@ public sealed class StyleCheckContext
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
 
     /// <summary>
+    /// The element names a class inherits, for the spell checkers' context words. Null when there is
+    /// no graph to resolve base classes with, in which case only a class's own declarations count.
+    /// </summary>
+    public Func<string, IReadOnlySet<string>>? InheritedElementNames { get; private init; }
+
+    /// <summary>
     /// Measures each class's coverage contribution as it is checked, or null when the caller does not
     /// want coverage collected.
     ///
@@ -85,6 +91,11 @@ public sealed class StyleCheckContext
             KnownModelNames = knownModelNames,
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,
+            // Descriptions and documentation name inherited members as freely as declared ones, so
+            // the chain is followed whenever anything is being spell checked.
+            InheritedElementNames = spellChecker != null && (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
+                ? StyleChecking.CreateInheritedElementNamesCallback(graph)
+                : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
             // per class for a row the report will not show.

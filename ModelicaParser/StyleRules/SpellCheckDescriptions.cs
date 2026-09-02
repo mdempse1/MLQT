@@ -4,74 +4,49 @@ using ModelicaParser.SpellChecking;
 namespace ModelicaParser.StyleRules;
 
 /// <summary>
-/// Visitor that spell checks description strings on classes and components.
-/// Collects component/variable names per class scope so that references to
-/// local identifiers in descriptions are not flagged as misspellings.
+/// Visitor that spell checks description strings on classes and components. The names in scope —
+/// the class's own elements and those it inherits — are supplied by
+/// <see cref="SpellCheckVisitorBase"/> so that references to them are not flagged as misspellings.
 /// </summary>
-public class SpellCheckDescriptions : VisitorWithModelNameTracking
+public class SpellCheckDescriptions : SpellCheckVisitorBase
 {
-    private readonly SpellChecker _spellChecker;
-    private readonly IReadOnlySet<string>? _knownModelNames;
-    private readonly Stack<HashSet<string>> _scopedNames = new();
-
     public SpellCheckDescriptions(
         SpellChecker spellChecker,
         IReadOnlySet<string>? knownModelNames = null,
-        string basePackage = "")
-        : base(basePackage)
+        string basePackage = "",
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
+        : base(spellChecker, knownModelNames, basePackage, inheritedElementNames)
     {
-        _spellChecker = spellChecker;
-        _knownModelNames = knownModelNames;
     }
 
-    protected override void OnClassEntered()
-    {
-        _scopedNames.Push(new HashSet<string>(StringComparer.Ordinal));
-    }
-
-    protected override void OnClassExited()
-    {
-        if (_scopedNames.Count > 0)
-            _scopedNames.Pop();
-    }
-
-    public override object? VisitLong_class_specifier([NotNull] modelicaParser.Long_class_specifierContext context)
-    {
-        CheckStringComment(context.string_comment(), context.Start.Line);
-        return base.VisitLong_class_specifier(context);
-    }
+    protected override void OnClassScopeReady(modelicaParser.Long_class_specifierContext context)
+        => CheckStringComment(context.string_comment());
 
     public override object? VisitShort_class_specifier([NotNull] modelicaParser.Short_class_specifierContext context)
     {
-        var stringComment = context.comment()?.string_comment();
-        CheckStringComment(stringComment, context.Start.Line);
+        CheckStringComment(context.comment()?.string_comment());
         return base.VisitShort_class_specifier(context);
     }
 
     public override object? VisitDer_class_specifier([NotNull] modelicaParser.Der_class_specifierContext context)
     {
-        var stringComment = context.comment()?.string_comment();
-        CheckStringComment(stringComment, context.Start.Line);
+        CheckStringComment(context.comment()?.string_comment());
         return base.VisitDer_class_specifier(context);
     }
 
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)
     {
-        // Collect the component name into the current scope
-        var declaration = context.declaration();
-        if (declaration?.IDENT() != null && _scopedNames.Count > 0)
-        {
-            _scopedNames.Peek().Add(declaration.IDENT().GetText());
-        }
+        // The class's own components are collected when the class is entered; this covers the ones
+        // declared somewhere the class scope scan does not reach, such as inside a nested class this
+        // visitor still walks.
+        AddNameToScope(context.declaration()?.IDENT()?.GetText());
 
-        // Spell check the component's description string
-        var stringComment = context.comment()?.string_comment();
-        CheckStringComment(stringComment, context.Start.Line);
+        CheckStringComment(context.comment()?.string_comment());
 
         return base.VisitComponent_declaration(context);
     }
 
-    private void CheckStringComment(modelicaParser.String_commentContext? stringComment, int fallbackLine)
+    private void CheckStringComment(modelicaParser.String_commentContext? stringComment)
     {
         if (stringComment == null)
             return;
@@ -79,9 +54,6 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
         var strings = stringComment.STRING();
         if (strings == null || strings.Length == 0)
             return;
-
-        // Build context words: scoped component names + known model names
-        var contextWords = BuildContextWords();
 
         foreach (var stringToken in strings)
         {
@@ -96,7 +68,7 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
                 if (TextExtractor.ShouldSkipWord(word))
                     continue;
 
-                if (!_spellChecker.IsCorrect(word, contextWords))
+                if (!IsSpelledCorrectly(word))
                 {
                     var lineNumber = startLine + TextExtractor.CountNewlinesBefore(text, charOffset);
                     AddFinding(lineNumber, SpellingMessage.For(word, SpellingMessage.InDescription),
@@ -104,36 +76,5 @@ public class SpellCheckDescriptions : VisitorWithModelNameTracking
                 }
             }
         }
-    }
-
-    private HashSet<string>? BuildContextWords()
-    {
-        var hasScoped = _scopedNames.Count > 0 && _scopedNames.Peek().Count > 0;
-        var hasModelNames = _knownModelNames != null && _knownModelNames.Count > 0;
-
-        if (!hasScoped && !hasModelNames)
-            return null;
-
-        // Ordinal: these are Modelica identifiers, and Modelica is case sensitive. Matching them
-        // loosely would let a real misspelling through whenever it differed from a name in scope
-        // only by case.
-        var context = new HashSet<string>(StringComparer.Ordinal);
-
-        if (hasScoped)
-        {
-            foreach (var scope in _scopedNames)
-            {
-                foreach (var name in scope)
-                    context.Add(name);
-            }
-        }
-
-        if (_knownModelNames != null)
-        {
-            foreach (var name in _knownModelNames)
-                context.Add(name);
-        }
-
-        return context;
     }
 }

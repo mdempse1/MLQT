@@ -45,7 +45,8 @@ The spell checker is designed to minimize false positives. The following are aut
 | **HTML tag names** | `html`, `body`, `div`, `pre` (inside documentation) |
 | **Content inside `<code>` and `<pre>` blocks** | Code examples are not prose |
 | **HTML entities** | `&Delta;`, `&zeta;`, `&rho;` and their decoded Unicode characters |
-| **Component and variable names in scope** | If a model declares `Real rflx`, the word "rflx" is valid within that model's descriptions |
+| **Component and variable names in scope** | If a model declares `Real rflx`, the word "rflx" is valid within that model's descriptions, wherever in the class it is declared |
+| **Names inherited from base classes** | Everything the model inherits through `extends`, at any depth, counts too — so a description referring to a port or parameter that a base class declares is not flagged |
 | **Model names from loaded libraries** | Any model name from any loaded library (e.g., "Step", "Integrator", "PID") is treated as a valid word |
 | **Modelica-specific terms** | Terms like "Modelica", "Dymola", "OpenModelica", "Jacobian", "linearization" are built in |
 

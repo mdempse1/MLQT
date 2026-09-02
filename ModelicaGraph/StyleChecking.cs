@@ -4,6 +4,7 @@ using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
 using ModelicaParser.Visitors;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -13,6 +14,7 @@ namespace ModelicaGraph;
 /// </summary>
 public static class StyleChecking
 {
+    private static readonly IReadOnlySet<string> NoInheritedNames = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
     /// Applies the style checks to a model and returns the results as legacy
@@ -31,9 +33,11 @@ public static class StyleChecking
         IReadOnlySet<string>? knownModelNames = null,
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null,
-        NamingConventionConfig? namingConfig = null)
+        NamingConventionConfig? namingConfig = null,
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
         => RunStyleCheckingFindings(_currentModel, settings, fullModelId, knownModelIds, spellChecker,
-                knownModelNames, isExcludedFromFormatting, baseClassHasIcon, namingConfig: namingConfig)
+                knownModelNames, isExcludedFromFormatting, baseClassHasIcon, namingConfig: namingConfig,
+                inheritedElementNames: inheritedElementNames)
             .Select(f => f.ToLogMessage())
             .ToList();
 
@@ -55,7 +59,8 @@ public static class StyleChecking
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null,
         bool honorSuppressions = true,
-        NamingConventionConfig? namingConfig = null)
+        NamingConventionConfig? namingConfig = null,
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -147,13 +152,13 @@ public static class StyleChecking
         }
         if (settings.SpellCheckDescription && spellChecker != null)
         {
-            var visitor = new SpellCheckDescriptions(spellChecker, knownModelNames, basePackage);
+            var visitor = new SpellCheckDescriptions(spellChecker, knownModelNames, basePackage, inheritedElementNames);
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);
         }
         if (settings.SpellCheckDocumentation && spellChecker != null)
         {
-            var visitor = new SpellCheckDocumentation(spellChecker, knownModelNames, basePackage);
+            var visitor = new SpellCheckDocumentation(spellChecker, knownModelNames, basePackage, inheritedElementNames);
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);
         }
@@ -217,6 +222,52 @@ public static class StyleChecking
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// Creates a lookup giving the element names a class inherits — the components and nested classes
+    /// declared anywhere up its <c>extends</c> chain — for use as spell-check context words.
+    /// Returns null if the graph is null, in which case only a class's own declarations are known.
+    ///
+    /// <para>Descriptions and documentation routinely name inherited members ("Temperature at
+    /// port_a"), and port_a is declared in a base class two packages away. Without the chain those
+    /// names are unknown words, so a library built on shared base classes reports a spelling finding
+    /// for every one of them.</para>
+    ///
+    /// <para>Answered once per class and cached: the class is checked by both spell-check visitors,
+    /// and resolving the chain parses each base class it reaches.</para>
+    /// </summary>
+    public static Func<string, IReadOnlySet<string>>? CreateInheritedElementNamesCallback(DirectedGraph? graph)
+    {
+        if (graph == null) return null;
+
+        // Shared across the parallel per-class checks, hence concurrent.
+        var inheritedNames = new ConcurrentDictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+
+        return modelId => inheritedNames.GetOrAdd(modelId, id => CollectInheritedElementNames(graph, id));
+    }
+
+    private static IReadOnlySet<string> CollectInheritedElementNames(DirectedGraph graph, string modelId)
+    {
+        var node = graph.GetNode<ModelNode>(modelId);
+        if (node == null)
+            return NoInheritedNames;
+
+        // Protected members are visible to a derived class, so they are names its prose can use.
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var element in ClassElementResolver.Collect(
+                     graph, node, includeProtected: true, includeInherited: true))
+        {
+            // Only what came from a base class: the class's own declarations are collected by the
+            // visitor, which also has them for classes the graph does not know.
+            if (element.InheritedFrom == null)
+                continue;
+
+            if (element.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
+                names.Add(element.Element.Name);
+        }
+
+        return names.Count == 0 ? NoInheritedNames : names;
     }
 
     /// <summary>

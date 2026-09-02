@@ -28,7 +28,7 @@ public static class StyleCheckRunner
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
             baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions,
-            namingConfig: context.NamingConfig);
+            namingConfig: context.NamingConfig, inheritedElementNames: context.InheritedElementNames);
 
         // While the tree is still here. The dashboard would otherwise parse this class again to ask
         // the same questions, once for every scope it appears in.
@@ -47,7 +47,8 @@ public static class StyleCheckRunner
         var findings = StyleChecking.RunStyleChecking(
             node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: context.BaseClassHasIcon, namingConfig: context.NamingConfig);
+            baseClassHasIcon: context.BaseClassHasIcon, namingConfig: context.NamingConfig,
+            inheritedElementNames: context.InheritedElementNames);
 
         // While the tree is still here — see RunFindings.
         context.Coverage?.Measure(node);
