@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ModelicaGraph;
+using MLQT.Services;
 
 namespace MLQT.Cli;
 
@@ -19,10 +20,10 @@ internal static class SettingsResolver
     /// the library meant <c>mlqt check &lt;repo&gt;/MyLib</c> silently fell back to built-in defaults
     /// while the app checked the same library against the team's rules.</para>
     ///
-    /// <para>The returned <c>DictionaryRoot</c> is the directory the settings were found under, so a
-    /// run reads the accepted spellings that belong with the rules it is using. Resolved separately,
-    /// <c>--config &lt;repo&gt;/.mlqt/settings.json</c> checked a sub-library against the repository's
-    /// rules but none of its words, and CI then reported every term the team had accepted.</para>
+    /// <para>The returned <c>DictionaryRoot</c> is where this run's accepted spellings live — the
+    /// settings file's own <c>.mlqt</c> when it has a word list, else the nearest one at or above the
+    /// library. See <see cref="DictionaryRootFor"/> for why it is not simply the settings
+    /// directory.</para>
     /// </summary>
     public static ResolvedSettings Resolve(string libraryPath, string? configPath)
     {
@@ -35,13 +36,14 @@ internal static class SettingsResolver
             var json = File.ReadAllText(path);
             var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(json)
                 ?? throw new InvalidOperationException($"could not parse settings from '{path}'");
-            return new ResolvedSettings(settings, path, RootOf(path, libraryPath));
+            return new ResolvedSettings(settings, path, DictionaryRootFor(path, libraryPath));
         }
 
         if (configPath is not null)
             throw new FileNotFoundException($"config file not found: '{path}'");
 
-        return new ResolvedSettings(new StyleCheckingSettings(), "built-in defaults", libraryPath);
+        return new ResolvedSettings(
+            new StyleCheckingSettings(), "built-in defaults", NearestDictionaryRoot(libraryPath) ?? libraryPath);
     }
 
     /// <summary>
@@ -51,7 +53,27 @@ internal static class SettingsResolver
     /// so a checkout can never pick up a settings file belonging to something outside it, such as one
     /// left in a shared parent folder or a home directory.</para>
     /// </summary>
-    private static string? NearestSettingsFile(string libraryPath)
+    private static string? NearestSettingsFile(string libraryPath) =>
+        NearestMlqtFile(libraryPath, "settings.json");
+
+    /// <summary>
+    /// The directory holding the nearest <c>.mlqt/dictionary.txt</c> at or above the library, or null
+    /// if there is none. Walks by the same rule as the settings lookup.
+    /// </summary>
+    private static string? NearestDictionaryRoot(string libraryPath)
+    {
+        var file = NearestMlqtFile(libraryPath, CustomDictionaryService.DictionaryFileName);
+        return file is null ? null : Path.GetDirectoryName(Path.GetDirectoryName(file));
+    }
+
+    /// <summary>
+    /// The nearest <c>.mlqt/&lt;name&gt;</c> at or above the library, or null if there is none.
+    ///
+    /// <para>The walk stops at a working-copy root — a directory holding <c>.git</c> or <c>.svn</c> —
+    /// so a checkout can never pick up a file belonging to something outside it, such as one left in
+    /// a shared parent folder or a home directory.</para>
+    /// </summary>
+    private static string? NearestMlqtFile(string libraryPath, string fileName)
     {
         var directory = Directory.Exists(libraryPath)
             ? new DirectoryInfo(libraryPath)
@@ -59,7 +81,7 @@ internal static class SettingsResolver
 
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory.FullName, ".mlqt", "settings.json");
+            var candidate = Path.Combine(directory.FullName, ".mlqt", fileName);
             if (File.Exists(candidate))
                 return candidate;
 
@@ -74,10 +96,27 @@ internal static class SettingsResolver
     }
 
     /// <summary>
-    /// The directory a settings file's <c>.mlqt</c> sits in. A config kept somewhere else entirely —
-    /// a shared rules file outside any repository — has no accepted spellings of its own, so the
-    /// library being checked stays the place to look.
+    /// Where this run's accepted spellings live: the directory the settings file's <c>.mlqt</c> sits
+    /// in, when that directory has a word list of its own.
+    ///
+    /// <para>Otherwise the nearest <c>.mlqt/dictionary.txt</c> at or above the library. The settings
+    /// and the words are two files that usually sit together but need not: a run pointed at a shared
+    /// rules file with <c>--config</c>, or one falling back to built-in defaults, was reading the
+    /// repository's code against nobody's word list, and reported every term the team had accepted
+    /// with nothing in the output to say why. The rules being shared is no reason for the repository
+    /// to lose its own vocabulary.</para>
     /// </summary>
+    private static string DictionaryRootFor(string settingsPath, string libraryPath)
+    {
+        var beside = RootOf(settingsPath, libraryPath);
+        if (File.Exists(Path.Combine(beside, ".mlqt", CustomDictionaryService.DictionaryFileName)))
+            return beside;
+
+        return NearestDictionaryRoot(libraryPath) ?? beside;
+    }
+
+    /// <summary>The directory a settings file's <c>.mlqt</c> sits in, or the library when the file is
+    /// kept somewhere else entirely — a shared rules file outside any repository.</summary>
     private static string RootOf(string settingsPath, string libraryPath)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(settingsPath));

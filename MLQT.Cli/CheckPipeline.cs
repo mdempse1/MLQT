@@ -69,6 +69,31 @@ internal static class CheckPipeline
             stderr.WriteLine($"warning: {warning}");
     }
 
+    /// <summary>
+    /// Says which accepted-spellings file the run is using, and how many words came out of it.
+    ///
+    /// <para>Named even when there is none. A word list that is not found looks exactly like a word
+    /// list that is empty — every accepted term reported as a misspelling — and until this line the
+    /// output offered nothing to tell the two apart, or to say which path was tried. That is a bad
+    /// way to spend an afternoon when the file is one directory above where the run looked.</para>
+    /// </summary>
+    private static void ReportDictionary(
+        StyleCheckingSettings settings, ICustomDictionaryService customDictionary,
+        string dictionaryRoot, TextWriter stderr)
+    {
+        if (!settings.SpellCheckDescription && !settings.SpellCheckDocumentation)
+            return;
+
+        // Full path: the library argument reaches here exactly as it was typed, and a note naming
+        // "MyLib\.mlqt\dictionary.txt" is no help to someone working out which directory was tried.
+        var path = Path.GetFullPath(customDictionary.PathFor(dictionaryRoot));
+        var count = customDictionary.WordsFor(dictionaryRoot).Count;
+
+        stderr.WriteLine(File.Exists(path)
+            ? $"note: {Plural.AcceptedSpellings(count)} from {path}"
+            : $"note: no accepted spellings; there is no {path}");
+    }
+
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
         IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false,
@@ -231,9 +256,10 @@ internal static class CheckPipeline
         // spell-check, say, French prose against an English dictionary — a wrong answer that looks
         // like a real finding. Say so instead.
         WarnAboutMissingDictionaries(settings, dictionaryManager, stderr);
+        ReportDictionary(settings, customDictionary, dictionaryRoot, stderr);
 
-        // The accepted spellings live beside the settings that were resolved for this run, so CI reads
-        // the same list a developer's app does even when the settings cover several libraries.
+        // The accepted spellings come from the repository the library is in, so CI reads the same list
+        // a developer's app does — see SettingsResolver.DictionaryRootFor for how it is located.
         var findings = LibraryCheckSession
             .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
                    dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot,

@@ -227,6 +227,43 @@ public class CheckPipelineTests : IDisposable
         Assert.DoesNotContain("zz_ZZ", stderr);
     }
 
+    // ── the repository's accepted spellings ──
+
+    [Fact]
+    public void TheRepositorysAcceptedWords_AreReadEvenWithASharedConfig()
+    {
+        // The rules can be shared across repositories; the vocabulary cannot. Reading the words from
+        // wherever the rules were found meant a team's --config silently checked their code against
+        // no word list at all, and every term they had accepted came back as a misspelling.
+        var repo = NewDirectory("repo");
+        var lib = Path.Combine(repo, "MyLib");
+        Directory.CreateDirectory(lib);
+        Write(lib, "package.mo", "package MyLib \"Vehicle kinemtics and hendling\"\nend MyLib;");
+        Write(repo, ".mlqt/dictionary.txt", "kinemtics\n");
+        Write(repo, "shared-rules.json", """{ "SpellCheckDescription": true }""");
+
+        var (_, stdout, stderr) = Run("check", lib, "--config", Path.Combine(repo, "shared-rules.json"));
+
+        Assert.Contains("1 accepted spelling", stderr);
+        Assert.DoesNotContain("kinemtics", stdout);
+        Assert.Contains("hendling", stdout);
+    }
+
+    [Fact]
+    public void AMissingWordList_SaysWhereItLooked()
+    {
+        // An unfound word list and an empty one produce identical findings, so the run has to name
+        // the path it tried — otherwise the only symptom is accepted terms being reported, and
+        // nothing at all to say the file one directory up was never read.
+        var lib = Library(NewDirectory());
+        Write(lib, ".mlqt/settings.json", """{ "SpellCheckDescription": true }""");
+
+        var (_, _, stderr) = Run("check", lib);
+
+        Assert.Contains("no accepted spellings", stderr);
+        Assert.Contains(Path.Combine(lib, ".mlqt", "dictionary.txt"), stderr);
+    }
+
     // ── work the run only pays for when a rule asks for it ──
 
     [Fact]

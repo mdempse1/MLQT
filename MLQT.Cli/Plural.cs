@@ -8,4 +8,7 @@ namespace MLQT.Cli;
 internal static class Plural
 {
     public static string Entries(int count) => count == 1 ? "1 entry" : $"{count} entries";
+
+    public static string AcceptedSpellings(int count) =>
+        count == 1 ? "1 accepted spelling" : $"{count} accepted spellings";
 }

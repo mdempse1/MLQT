@@ -109,6 +109,11 @@ a CI run of `mlqt check` read the same file, so they accept the same words and r
 spelling findings. A list kept on one machine could not do that — a word accepted on a developer's
 laptop was still a finding in CI, with nothing in either result to explain the difference.
 
+`mlqt check` looks for the list in the `.mlqt` its settings came from and then upwards from the
+library, and names the file it used (or the path it tried) in its stderr notes — so if a CI run
+reports words you know are accepted, its own output says which list it read. See
+[cli.md](cli.md#accepted-spellings).
+
 The trade-off is that a word applies only to the repository it was added to. A term used in three
 libraries in three repositories has to be accepted in all three. There is no shared list.
 

@@ -220,13 +220,33 @@ Values are `Off`, `Info`, `Warning`, or `Error`. The map wins over the on/off bo
 ### Accepted spellings
 
 When spell checking is enabled, the words your library uses that no dictionary knows are read from
-the `.mlqt` directory the **settings** came from — `<library>/.mlqt/dictionary.txt` by default, or
-`<repo>/.mlqt/dictionary.txt` when `--config <repo>/.mlqt/settings.json` points there. It is the same
-file the desktop app writes when someone chooses **Add to Dictionary**. One word per line; blank
-lines and `#` comments are ignored. Commit it, and CI accepts exactly the words your team accepted.
+`dictionary.txt` in the `.mlqt` directory the **settings** came from, if there is one there —
+otherwise from the nearest `.mlqt/dictionary.txt` at or above the library, found by the same upward
+walk as the settings and stopping at the same working-copy root. It is the same file the desktop app
+writes when someone chooses **Add to Dictionary**. One word per line; blank lines and `#` comments are
+ignored. Commit it, and CI accepts exactly the words your team accepted.
 
-The two travel together on purpose: a repository whose settings cover several libraries keeps one
-word list for all of them, so pointing `--config` at it brings the vocabulary as well as the rules.
+Settings and words usually sit in the same `.mlqt`, and then there is nothing to choose between: a
+repository whose settings cover several libraries keeps one word list for all of them. But they are
+separate files, and the words are found whether or not the settings were — a shared rules file passed
+with `--config`, or no settings file at all, still checks your library against your repository's own
+vocabulary.
+
+**Every run says which list it used**, so a job that reports words you know are accepted tells you why
+in its own output rather than leaving you to guess:
+
+```
+note: 214 accepted spellings from /build/MyRepo/.mlqt/dictionary.txt
+```
+
+or, when there is none:
+
+```
+note: no accepted spellings; there is no /build/MyRepo/MyLibrary/.mlqt/dictionary.txt
+```
+
+If that path is not the one you expected — a checkout that dropped the file, or a `.mlqt` above the
+working-copy root the walk stops at — that line is the whole diagnosis.
 
 The language dictionaries themselves are not in the repository. If the settings ask for a language the
 build agent has no dictionary installed for, the words are checked against the remaining languages and
