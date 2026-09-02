@@ -685,8 +685,7 @@ end WithWithin;
         var parseTree = ModelicaParserHelper.Parse(code);
 
         Assert.NotNull(parseTree.name());
-        Assert.NotEmpty(parseTree.name());
-        Assert.Equal("MyLib.Sub", parseTree.name()[0].GetText());
+        Assert.Equal("MyLib.Sub", parseTree.name().GetText());
     }
 
     [Fact]
@@ -1469,10 +1468,8 @@ equation
 end FinalModel;
 """;
         var parseTree = ModelicaParserHelper.Parse(code);
-        // Call name() accessors (covers the within-name path)
-        var names = parseTree.name();
-        for (int i = 0; i < names.Length; i++)
-            _ = parseTree.name(i);
+        // Call name() accessor (covers the within-name path)
+        Assert.Equal("SomePackage", parseTree.name().GetText());
         // Call class_definition() accessors
         var classDefs = parseTree.class_definition();
         for (int i = 0; i < classDefs.Length; i++)
@@ -1501,9 +1498,8 @@ end CommentedModel;
         var cComments = parseTree.c_comment();
         for (int i = 0; i < cComments.Length; i++)
             _ = parseTree.c_comment(i);
-        var names = parseTree.name();
         Assert.NotEmpty(cComments);
-        Assert.NotEmpty(names);
+        Assert.NotNull(parseTree.name());
     }
 
     [Fact]

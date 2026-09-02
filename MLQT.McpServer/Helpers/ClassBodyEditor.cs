@@ -80,7 +80,7 @@ internal static class ClassBodyEditor
         ILibraryDataService libraries, IExternalResourceService resources, SessionState session,
         ModelNode fileOwner, string filePath, string newOwnerCode, bool preview, string operation)
     {
-        var fileContent = PrependWithinClause(newOwnerCode, fileOwner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, fileOwner.ParentModelName);
 
         var (_, errors) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errors.Count > 0)
@@ -123,15 +123,6 @@ internal static class ClassBodyEditor
         var affected = await libraries.ReloadFileAsync(filePath);
         await GraphRefresh.RefreshAfterEditAsync(affected, libraries, resources, session);
         return new ClassEditResult(filePath, PreviewOnly: false, affected.Count, null);
-    }
-
-    private static string PrependWithinClause(string ownerCode, string? parentModelName)
-    {
-        if (ownerCode.StartsWith("within", StringComparison.Ordinal))
-            return ownerCode;
-        return string.IsNullOrEmpty(parentModelName)
-            ? "within;\n" + ownerCode
-            : $"within {parentModelName};\n{ownerCode}";
     }
 
     private static int CountOccurrences(string haystack, string needle)

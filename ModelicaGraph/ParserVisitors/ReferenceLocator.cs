@@ -79,9 +79,10 @@ public sealed class ReferenceLocator : modelicaBaseVisitor<object?>
 
     public override object? VisitStored_definition(modelicaParser.Stored_definitionContext context)
     {
-        var names = context.name();
-        if (names is { Length: > 0 })
-            _withinPrefix = string.Join(".", names[0].IDENT().Select(t => t.GetText()));
+        // A file carries at most one within clause, and none for a top-level library.
+        var name = context.name();
+        if (name is not null)
+            _withinPrefix = string.Join(".", name.IDENT().Select(t => t.GetText()));
         return base.VisitStored_definition(context);
     }
 

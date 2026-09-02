@@ -2774,7 +2774,7 @@
         var componentsBeforeClasses = effectiveSettings.ComponentsBeforeClasses;
 
         // Build list of files to process with their model nodes
-        var filesToProcess = new List<(string FilePath, List<ModelNode> Models)>();
+        var filesToProcess = new List<(string FilePath, List<ModelNode> Models, ModelNode Owner)>();
         foreach (var filePath in changedFilePaths)
         {
             if (!File.Exists(filePath))
@@ -2795,7 +2795,26 @@
             if (modelNodes.Count == 0)
                 continue;
 
-            filesToProcess.Add((filePath, modelNodes));
+            // A file is reformatted whole or not at all: the renderer works on the file's parse tree,
+            // so there is no way to reformat some of its classes and leave a nested sibling untouched.
+            // Excluding the whole file is the safe reading of the exclusion — never reformat a model
+            // the user has opted out.
+            if (modelNodes.Any(m => effectiveSettings.IsModelExcludedFromFormatting(m.Id)))
+            {
+                Debug("MainLayout", $"Skipping {filePath}: it holds a model excluded from formatting");
+                continue;
+            }
+
+            // The file owner is the topmost model stored in the file: it has no parent, or its parent
+            // lives in another file. Only its within clause describes the file, and only when the file
+            // itself carries none.
+            var owner = modelNodes.FirstOrDefault(m =>
+                string.IsNullOrEmpty(m.ParentModelName)
+                || graph.GetNode<ModelNode>(m.ParentModelName)?.ContainingFileId != fileId);
+            if (owner == null)
+                continue;
+
+            filesToProcess.Add((filePath, modelNodes, owner));
         }
 
         // Parse and render in parallel (CPU-bound), then write files
@@ -2807,13 +2826,38 @@
             {
                 try
                 {
+                    // Render the file from its own text on disk, never by concatenating the stored code
+                    // of the models it holds. A model's ModelicaCode is not a file slice: a package has
+                    // had its inline standalone children trimmed out of it (PackageCodeTrimmer), nested
+                    // classes have their own nodes but live inside their parent's source, and a model
+                    // that has been through a full library save carries a within clause while a freshly
+                    // loaded one does not. Reassembling from those pieces duplicated the within clause
+                    // and re-emitted every nested class as a top-level sibling.
+                    var fileSource = ModelicaFileEncoding.ReadAllTextOnly(fileEntry.FilePath);
+
+                    var formatted = ModelicaPackageSaver.RenderFileSource(
+                        fileSource, fileEntry.Owner.ParentModelName,
+                        oneOfEachSection, importsFirst, componentsBeforeClasses,
+                        out var parserErrors);
+
+                    // Reformatting invalid Modelica produces unreliable output, and this path overwrites
+                    // the file in place. Leave a file we cannot parse exactly as the user left it — the
+                    // style check reports the syntax error, which is the actionable result.
+                    if (parserErrors.Count > 0)
+                    {
+                        Warn("MainLayout", $"Not formatting {fileEntry.FilePath}: {parserErrors.Count} syntax error(s), first at line {parserErrors[0].Line}: {parserErrors[0].Message}");
+                        return;
+                    }
+
+                    formattedFiles[fileEntry.FilePath] = formatted.TrimEnd() + "\n";
+
+                    // Bring each model's stored code up to date with what is about to be written, so
+                    // style checking and the code viewer see the formatted source without waiting for a
+                    // reload. Stored without a within clause, which is the representation the rest of
+                    // the graph expects — keeping one would shift every finding's line number by one.
                     foreach (var modelNode in fileEntry.Models)
                     {
-                        // Skip formatting for models excluded from reformatting
-                        if (effectiveSettings.IsModelExcludedFromFormatting(modelNode.Id))
-                            continue;
-
-                        var parseTree = ModelicaParserHelper.Parse(modelNode.Definition.ModelicaCode);
+                        var modelTree = ModelicaParserHelper.Parse(modelNode.Definition.ModelicaCode);
                         var visitor = new ModelicaRenderer(
                             renderForCodeEditor: false,
                             showAnnotations: true,
@@ -2823,31 +2867,9 @@
                             oneOfEachSection: oneOfEachSection,
                             importsFirst: importsFirst,
                             componentsBeforeClasses: componentsBeforeClasses);
-                        visitor.Visit(parseTree);
-                        modelNode.Definition.ModelicaCode = string.Join("\n", visitor.Code);
+                        visitor.Visit(modelTree);
+                        modelNode.Definition.ModelicaCode = WithinClause.Strip(string.Join("\n", visitor.Code));
                     }
-
-                    // Build file content
-                    var fileContent = new System.Text.StringBuilder();
-                    var firstModel = fileEntry.Models.FirstOrDefault();
-                    if (firstModel != null)
-                    {
-                        var lastDotIndex = firstModel.Id.LastIndexOf('.');
-                        if (lastDotIndex > 0)
-                        {
-                            var withinClause = firstModel.Id.Substring(0, lastDotIndex);
-                            fileContent.AppendLine($"within {withinClause};");
-                            fileContent.AppendLine();
-                        }
-                    }
-
-                    foreach (var modelNode in fileEntry.Models)
-                    {
-                        fileContent.AppendLine(modelNode.Definition.ModelicaCode);
-                        fileContent.AppendLine();
-                    }
-
-                    formattedFiles[fileEntry.FilePath] = fileContent.ToString().TrimEnd() + "\n";
                 }
                 catch (Exception ex)
                 {

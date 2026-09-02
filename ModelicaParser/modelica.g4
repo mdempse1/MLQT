@@ -36,8 +36,11 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 grammar modelica;
 
 //Added support for C-style comments before within statement - used in ExternData
+// A file has at most ONE within clause (Modelica spec 13.2.2.2). Accepting a repeated clause here
+// let a file that had been written with a duplicated 'within' parse clean, so nothing downstream
+// ever reported it and reformatting preserved the damage instead of flagging it.
 stored_definition
-    : c_comment* ('within' (name)? ';')* (('final')? class_definition ';')* EOF
+    : c_comment* ('within' (name)? ';')? (('final')? class_definition ';')* EOF
     ;
 
 class_definition

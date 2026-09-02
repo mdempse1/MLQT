@@ -52,7 +52,6 @@ end TestModel;";
         // Assert
         Assert.NotNull(parseTree);
         Assert.NotNull(parseTree.name());
-        Assert.NotEmpty(parseTree.name());
     }
 
     [Fact]

@@ -74,18 +74,9 @@ public static class PackageCodeTrimmer
                 if (standaloneNames.Count == 0)
                     return;
 
-                var code = model.Definition.ModelicaCode;
-
                 // Prepend a within clause only so the class parses in isolation (required by the grammar
                 // for name resolution during rendering).
-                string codeToParse = code;
-                if (!code.StartsWith("within"))
-                {
-                    var parent = model.ParentModelName;
-                    codeToParse = !string.IsNullOrEmpty(parent)
-                        ? string.Concat("within ", parent, ";\n", code)
-                        : "within;\n" + code;
-                }
+                var codeToParse = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
 
                 var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(codeToParse);
                 if (parseTree == null || errors.Count > 0)
@@ -109,14 +100,7 @@ public static class PackageCodeTrimmer
                 var trimmedCode = string.Join("\n", visitor.Code);
 
                 // Drop the leading within line so stored line numbers align with the source file.
-                if (trimmedCode.StartsWith("within"))
-                {
-                    var nl = trimmedCode.IndexOf('\n');
-                    if (nl >= 0)
-                        trimmedCode = trimmedCode[(nl + 1)..];
-                }
-
-                model.Definition.ModelicaCode = trimmedCode;
+                model.Definition.ModelicaCode = WithinClause.Strip(trimmedCode);
                 model.Definition.ParsedCode = null; // release the parse tree
             }
             catch

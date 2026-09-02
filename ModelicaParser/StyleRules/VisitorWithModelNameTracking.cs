@@ -83,11 +83,10 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 
     public override object? VisitStored_definition([NotNull] modelicaParser.Stored_definitionContext context)
     {
-        var nameContexts = context.name();
+        var nameContext = context.name();
 
-        if (nameContexts != null && nameContexts.Length > 0)
+        if (nameContext != null)
         {
-            var nameContext = nameContexts[0];
             var identTokens = nameContext.IDENT();
             if (identTokens != null && identTokens.Length > 0)
             {

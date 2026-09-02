@@ -28,14 +28,12 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
 
     public override object? VisitStored_definition([NotNull] modelicaParser.Stored_definitionContext context)
     {
-        // Extract the package name from the 'within' statement
-        var nameContexts = context.name();
+        // Extract the package name from the 'within' statement. A file has at most one, and a
+        // top-level library has none (or a bare "within;"), so this is null there.
+        var nameContext = context.name();
 
-        if (nameContexts != null && nameContexts.Length > 0)
+        if (nameContext != null)
         {
-            // Get the first 'name' context (there may be multiple 'within' statements)
-            var nameContext = nameContexts[0];
-
             // Build the full package name from the IDENT tokens
             var identTokens = nameContext.IDENT();
             if (identTokens != null && identTokens.Length > 0)

@@ -700,9 +700,11 @@ end AnnotatedModel;";
   }
 
   [Fact]
-  public void ExtractModels_MultipleWithinStatements_UsesFirst()
+  public void ExtractModels_SecondWithinStatement_IsReportedAsASyntaxError()
   {
-    // Arrange
+    // A file carries at most one within clause (Modelica spec 13.2.2.2). The grammar used to accept
+    // a repeated clause, so a file written with a duplicated 'within' parsed clean and nothing
+    // downstream ever reported it — a formatter could then rewrite the file and preserve the damage.
     var code = @"
 within Package1;
 within Package2;
@@ -711,11 +713,10 @@ model TestModel
 end TestModel;";
 
     // Act
-    var models = ExtractModels(code);
+    var (_, errors) = ModelicaParserHelper.ParseWithErrors(code);
 
     // Assert
-    Assert.Single(models);
-    Assert.Equal("Package1", models[0].ParentModelName);
+    Assert.NotEmpty(errors);
   }
 
   [Fact]

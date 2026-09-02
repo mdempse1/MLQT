@@ -101,7 +101,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, oldClassCode, newSource);
         }
 
-        var fileContent = PrependWithinClause(newOwnerCode, owner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, owner.ParentModelName);
 
         if (preview)
             return new UpdateClassSourceResult(classId, ctx.FilePath, PreviewOnly: true, Changed: false, 0, fileContent);
@@ -281,7 +281,7 @@ public sealed class EditTools
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
 
-        var fileContent = PrependWithinClause(newOwnerCode, ctx.FileOwner.ParentModelName);
+        var fileContent = WithinClause.Ensure(newOwnerCode, ctx.FileOwner.ParentModelName);
 
         var (_, errs) = ModelicaParserHelper.ParseWithErrors(fileContent);
         if (errs.Count > 0)
@@ -350,7 +350,7 @@ public sealed class EditTools
             var classCode = node.Definition.ModelicaCode ?? string.Empty;
             if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
                 return new ToolError("Could not uniquely locate the class within its file (cached source may be stale). Reload the library and retry.");
-            var content = PrependWithinClause(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+            var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
             var (_, errs) = ModelicaParserHelper.ParseWithErrors(content);
             if (errs.Count > 0)
                 return new ToolError($"Removing the class would make '{ctx.FilePath}' unparseable ({DescribeErrors(errs)}). Nothing was deleted.");
@@ -857,7 +857,7 @@ public sealed class EditTools
         var classCode = node.Definition.ModelicaCode ?? string.Empty;
         if (string.IsNullOrEmpty(classCode) || CountOccurrences(ownerCode, classCode) != 1)
             return new ToolError("Could not uniquely locate the class within its source file to move it.");
-        var content = PrependWithinClause(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
+        var content = WithinClause.Ensure(CollapseBlankLines(ReplaceFirst(ownerCode, classCode, "")), ctx.FileOwner.ParentModelName);
         await ModelicaFileEncoding.WriteAllTextAsync(ctx.FilePath, content);
         if (string.Equals(Path.GetFileName(ctx.FilePath), "package.mo", StringComparison.OrdinalIgnoreCase))
             RemoveFromPackageOrder(Path.GetDirectoryName(ctx.FilePath)!, node.Name);
@@ -900,7 +900,7 @@ public sealed class EditTools
                 return new ToolError("Could not uniquely locate the destination within its file.");
             newOwnerCode = ReplaceFirst(ownerCode, parentCode, inserted);
         }
-        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, PrependWithinClause(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
+        await ModelicaFileEncoding.WriteAllTextAsync(tgtCtx.FilePath, WithinClause.Ensure(newOwnerCode, tgtCtx.FileOwner.ParentModelName));
         if (parentIsDirectoryPackage)
             AppendToPackageOrder(Path.GetDirectoryName(tgtCtx.FilePath)!, leaf);
         return await _libraries.ReloadFileAsync(tgtCtx.FilePath);
@@ -1144,15 +1144,6 @@ public sealed class EditTools
             lines.RemoveAt(lines.Count - 1);
         lines.Add(className);
         ModelicaFileEncoding.WriteAllLines(path, lines);
-    }
-
-    private static string PrependWithinClause(string ownerCode, string? parentModelName)
-    {
-        if (ownerCode.StartsWith("within", StringComparison.Ordinal))
-            return ownerCode;
-        return string.IsNullOrEmpty(parentModelName)
-            ? "within;\n" + ownerCode
-            : $"within {parentModelName};\n{ownerCode}";
     }
 
     private static int CountOccurrences(string haystack, string needle)
