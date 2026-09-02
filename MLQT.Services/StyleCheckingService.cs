@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using ModelicaGraph;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
@@ -34,10 +35,12 @@ public class StyleCheckingService : IStyleCheckingService
     // is the final count rather than a partial one that grows a moment later.
     private int _graphAnalysesRunning;
 
-    // Bumped whenever a run is cancelled. A graph-analysis pass captures the value before it awaits
-    // dependency analysis (which can take minutes) and abandons its findings if the run it belongs
-    // to has since been superseded.
+    // Bumped whenever a whole-project run is cancelled, and per repository when only that
+    // repository's run is. A graph-analysis pass captures both before it awaits dependency analysis
+    // (which can take minutes) and abandons the findings a newer run has taken over — all of them
+    // for a global cancel, and for a scoped one only those of the repository that was re-started.
     private int _runGeneration;
+    private readonly ConcurrentDictionary<string, int> _repositoryGenerations = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Cancels any in-flight workers, clears pending findings, and removes
@@ -73,6 +76,54 @@ public class StyleCheckingService : IStyleCheckingService
             _pendingFindings.Clear();
         }
     }
+
+    /// <summary>
+    /// Cancels the work in flight for one repository and removes that repository's already-delivered
+    /// style findings, leaving every other repository's run and findings alone. Used by the
+    /// single-repository entry points.
+    ///
+    /// <para>A project can hold several repositories, each with rules of its own, and applying
+    /// settings to one of them re-checks only that one. Cancelling everything and clearing every
+    /// finding — which is what the whole-project cancel does — therefore emptied the Code Review list
+    /// for the other repositories and left nothing to put their findings back.</para>
+    /// </summary>
+    private void CancelWorkFor(Repository repository)
+    {
+        var modelIds = ModelIdsFor(repository);
+
+        _repositoryGenerations.AddOrUpdate(repository.Id, 1, (_, generation) => generation + 1);
+
+        lock (_workerLock)
+        {
+            foreach (var worker in _workers.Where(w => w.RepositoryId == repository.Id).ToList())
+            {
+                worker.CancelProcessing();
+                _workers.Remove(worker);
+            }
+        }
+
+        lock (_pendingFindingsLock)
+        {
+            // Only this repository's unflushed findings: another repository's worker may still be
+            // running, and those findings are the only copy there is.
+            _pendingFindings.RemoveAll(m => modelIds.Contains(m.ModelName));
+        }
+
+        _codeReviewService.RemoveLogMessagesByPredicate(
+            m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
+
+        // Nothing is left of the run that was cancelled, and the caller may yet decide there is no
+        // work to start — release whoever was waiting on it rather than leaving them waiting on a run
+        // that has ended.
+        bool anyWorkersLeft;
+        lock (_workerLock)
+            anyWorkersLeft = _workers.Count > 0;
+        if (!anyWorkersLeft && Volatile.Read(ref _graphAnalysesRunning) == 0)
+            EndRun();
+    }
+
+    /// <summary>The generation of the run currently owning a repository's findings.</summary>
+    private int GenerationFor(string repositoryId) => _repositoryGenerations.GetValueOrDefault(repositoryId);
 
     /// <inheritdoc/>
     public event Action<bool>? OnProgressChanged;
@@ -258,7 +309,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public async Task StartBackgroundCheckingAsync(Repository repository)
     {
-        CancelExistingWorkers();
+        CancelWorkFor(repository);
         _stopRequested = false;
 
         // A repository is loaded with settings of its own; this is only for one that somehow arrived
@@ -280,7 +331,8 @@ public class StyleCheckingService : IStyleCheckingService
         //Create worker for this repository
         int queuedModels = 0;
         var spellChecker = GetSpellCheckerIfNeeded(repository);
-        var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
+        var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings,
+            repository.Name, spellChecker, repository.Id);
         worker.OnFindingFound += FindingsFound;
         worker.OnProgressChanged += ProgressChanged;
         worker.OnWorkCompleted += WorkerCompletedChecks;
@@ -311,7 +363,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// <inheritdoc/>
     public void StartBackgroundChecking(Repository repository)
     {
-        CancelExistingWorkers();
+        CancelWorkFor(repository);
         _stopRequested = false;
 
         repository.StyleSettings ??= new StyleCheckingSettings();
@@ -331,7 +383,8 @@ public class StyleCheckingService : IStyleCheckingService
         //Create worker for this repository
         int queuedModels = 0;
         var spellChecker = GetSpellCheckerIfNeeded(repository);
-        var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
+        var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings,
+            repository.Name, spellChecker, repository.Id);
         worker.OnFindingFound += FindingsFound;
         worker.OnProgressChanged += ProgressChanged;
         worker.OnWorkCompleted += WorkerCompletedChecks;
@@ -389,7 +442,8 @@ public class StyleCheckingService : IStyleCheckingService
             EnsureTrimmedForChecking(ModelIdsFor(repository));
 
             var spellChecker = GetSpellCheckerIfNeeded(repository);
-            var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings, repository.Name, spellChecker);
+            var worker = new StyleCheckingWorker(_libraryDataService.CombinedGraph, repository.StyleSettings,
+                repository.Name, spellChecker, repository.Id);
             worker.OnFindingFound += FindingsFound;
             worker.OnProgressChanged += ProgressChanged;
             worker.OnWorkCompleted += WorkerCompletedChecks;
@@ -591,6 +645,7 @@ public class StyleCheckingService : IStyleCheckingService
     private async Task RunGraphAnalysesAsync(IReadOnlyList<Repository> repositories, bool removeStaleFirst)
     {
         var generation = Volatile.Read(ref _runGeneration);
+        var repositoryGenerations = repositories.Select(r => (r.Id, Generation: GenerationFor(r.Id))).ToList();
 
         if (repositories.Any(r => r.StyleSettings is not null
                 && GraphAnalysisRunner.RequiresDependencyAnalysis(r.StyleSettings)))
@@ -611,7 +666,15 @@ public class StyleCheckingService : IStyleCheckingService
         if (Volatile.Read(ref _runGeneration) != generation)
             return;
 
-        RunGraphAnalyses(repositories, removeStaleFirst);
+        // The same, one repository at a time: applying settings to one repository re-starts it alone,
+        // and this pass must stop speaking for it without dropping the repositories it still covers.
+        var current = repositories
+            .Where((_, i) => GenerationFor(repositoryGenerations[i].Id) == repositoryGenerations[i].Generation)
+            .ToList();
+        if (current.Count == 0)
+            return;
+
+        RunGraphAnalyses(current, removeStaleFirst);
     }
 
     private void RunGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst = false)
@@ -774,7 +837,7 @@ public class StyleCheckingService : IStyleCheckingService
             // No repository means no word list to apply — the classes are not in one, so there is
             // nowhere their accepted spellings could have been stored.
             var spellChecker = repo is not null ? GetSpellCheckerIfNeeded(repo) : null;
-            var worker = new StyleCheckingWorker(graph, settings, workerName, spellChecker);
+            var worker = new StyleCheckingWorker(graph, settings, workerName, spellChecker, repoId);
             worker.OnFindingFound += FindingsFound;
             worker.OnProgressChanged += ProgressChanged;
             worker.OnWorkCompleted += WorkerCompletedChecks;

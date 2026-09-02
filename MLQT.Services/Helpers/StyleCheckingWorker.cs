@@ -27,12 +27,20 @@ public class StyleCheckingWorker
     public event Action? OnProgressChanged;
     public event EventHandler<string>? OnWorkCompleted;
 
-    public StyleCheckingWorker(DirectedGraph graph, StyleCheckingSettings settings, string repositoryName, SpellChecker? spellChecker = null)
+    /// <summary>
+    /// The repository whose classes this worker checks, or empty for classes that belong to none.
+    /// Lets the service cancel one repository's work without touching another's.
+    /// </summary>
+    public string RepositoryId { get; }
+
+    public StyleCheckingWorker(DirectedGraph graph, StyleCheckingSettings settings, string repositoryName,
+        SpellChecker? spellChecker = null, string repositoryId = "")
     {
         _currentGraph = graph;
         _repositoryName = repositoryName;
         _settings = settings;
         _spellChecker = spellChecker;
+        RepositoryId = repositoryId;
     }
 
     public void AddToQueue(string modelID)

@@ -469,6 +469,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 - **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used.
 - **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application preferences.
+- **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 
 > **Tip:** Add the `.mlqt/` directory to your version control system. You may want to add `.mlqt/settings.json` to your repository's tracked files and commit it so your team shares the same settings. If individual developers need to override settings locally, they can change them in MLQT — the changes will appear as local modifications that they can choose not to commit.

@@ -742,6 +742,96 @@ epos\Alpha", new[] { "en_GB" });
         Assert.True(announced);
     }
 
+    /// <summary>
+    /// Two repositories, each with rules of its own, and one of them re-checked. Applying settings to
+    /// a repository re-checks that repository alone, so the other one's findings have to survive it —
+    /// nothing would put them back.
+    /// </summary>
+    private async Task<(StyleCheckingService Service, Repository First, Repository Second,
+        IReadOnlyList<string> FirstModels, IReadOnlyList<string> SecondModels)> TwoCheckedRepositoriesAsync()
+    {
+        var service = CreateService();
+        service.OnFindingsFound += v => _codeReviewService.AddLogMessages(v);
+
+        var first = new Repository
+        {
+            Name = "FirstRepo",
+            StyleSettings = new StyleCheckingSettings { ClassHasDescription = true }
+        };
+        var firstLibrary = await _libraryDataService.AddLibraryFromFileAsync(
+            "Model1.mo", "model Model1 Real x; end Model1;");
+        firstLibrary.RepositoryId = first.Id;
+
+        var second = new Repository
+        {
+            Name = "SecondRepo",
+            StyleSettings = new StyleCheckingSettings { ClassHasDescription = true }
+        };
+        var secondLibrary = await _libraryDataService.AddLibraryFromFileAsync(
+            "Model2.mo", "model Model2 Real y; end Model2;");
+        secondLibrary.RepositoryId = second.Id;
+
+        service.StartBackgroundCheckingForRepositories([first, second]);
+        await WaitForCompletionAsync(service);
+
+        return (service, first, second, firstLibrary.ModelIds.ToList(), secondLibrary.ModelIds.ToList());
+    }
+
+    private int FindingCountFor(IEnumerable<string> modelIds)
+    {
+        var ids = modelIds.ToHashSet(StringComparer.Ordinal);
+        return _codeReviewService.LogMessages.Count(m => ids.Contains(m.ModelName));
+    }
+
+    [Fact]
+    public async Task StartBackgroundChecking_ForOneRepository_KeepsTheOtherRepositorysFindings()
+    {
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var firstCount = FindingCountFor(firstModels);
+        var secondCount = FindingCountFor(secondModels);
+        Assert.True(firstCount > 0, "The first repository should have findings to re-check");
+        Assert.True(secondCount > 0, "The second repository should have findings to preserve");
+
+        service.StartBackgroundChecking(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+        Assert.Equal(firstCount, FindingCountFor(firstModels));   // re-checked, not duplicated
+    }
+
+    [Fact]
+    public async Task StartBackgroundCheckingAsync_ForOneRepository_KeepsTheOtherRepositorysFindings()
+    {
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var firstCount = FindingCountFor(firstModels);
+        var secondCount = FindingCountFor(secondModels);
+
+        await service.StartBackgroundCheckingAsync(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+        Assert.Equal(firstCount, FindingCountFor(firstModels));
+    }
+
+    [Fact]
+    public async Task StartBackgroundChecking_WithNoRulesEnabled_StillKeepsTheOtherRepositorysFindings()
+    {
+        // Turning every rule off for a repository clears its findings and starts nothing. The early
+        // return that path takes must not have taken the other repository's findings with it.
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var secondCount = FindingCountFor(secondModels);
+        first.StyleSettings = new StyleCheckingSettings();
+
+        service.StartBackgroundChecking(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(0, FindingCountFor(firstModels));
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+    }
+
     private static async Task WaitForCompletionAsync(StyleCheckingService service, int timeoutMs = 5000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
