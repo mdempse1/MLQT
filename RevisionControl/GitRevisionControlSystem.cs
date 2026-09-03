@@ -390,7 +390,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
                     entries.Add(new VcsLogEntry
                     {
                         Revision = commit.Sha,
-                        ShortRevision = commit.Sha[..Math.Min(7, commit.Sha.Length)],
+                        ShortRevision = RevisionId.Shorten(commit.Sha),
                         Author = commit.Author.Name,
                         AuthorEmail = commit.Author.Email,
                         Date = commit.Author.When,
@@ -448,7 +448,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
                 var entry = new VcsLogEntry
                 {
                     Revision = commit.Sha,
-                    ShortRevision = commit.Sha.Length >= 7 ? commit.Sha.Substring(0, 7) : commit.Sha,
+                    ShortRevision = RevisionId.Shorten(commit.Sha),
                     Author = commit.Author.Name,
                     AuthorEmail = commit.Author.Email,
                     Date = commit.Author.When,

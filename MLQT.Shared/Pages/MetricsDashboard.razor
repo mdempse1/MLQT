@@ -1,4 +1,5 @@
 @using ModelicaGraph.Analysis
+@using RevisionControl
 @using ModelicaGraph.DataTypes
 @using MLQT.Services.Helpers
 @using MudBlazor
@@ -219,7 +220,13 @@
                     {
                         <tr>
                             <td><MudText Typo="Typo.caption">@s.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText></td>
-                            <td style="text-align:right;"><MudText Typo="Typo.caption">@s.Revision</MudText></td>
+                            <td style="text-align:left;">
+                                @* A Git hash is shown short, as it is everywhere else in the app; the
+                                   full one is a hover away. An SVN revision number is already short. *@
+                                <MudTooltip Text="@s.Revision" Disabled="@(!RevisionId.IsCommitHash(s.Revision))">
+                                    <MudText Typo="Typo.caption">@RevisionId.Shorten(s.Revision)</MudText>
+                                </MudTooltip>
+                            </td>
                             <td style="text-align:right;"><MudText Typo="Typo.caption">@s.TotalClasses</MudText></td>
                             @foreach (var d in _dimensions)
                             {

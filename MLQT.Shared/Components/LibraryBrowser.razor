@@ -147,7 +147,7 @@ else if (Repository != null)
                     {
                         case RepositoryVcsType.Git:
                             <MudTooltip Text="@Repository.CurrentRevision">
-                                <MudText Typo="Typo.body1">Commit: <strong>@TruncateRevision(Repository.CurrentRevision)</strong></MudText>
+                                <MudText Typo="Typo.body1">Commit: <strong>@RevisionId.Shorten(Repository.CurrentRevision)</strong></MudText>
                             </MudTooltip>
                             break;
                         case RepositoryVcsType.SVN:
@@ -854,18 +854,6 @@ else if (Repository != null)
             _isLoading = false;
             StateHasChanged();
         }
-    }
-
-    private string TruncateRevision(string? revision)
-    {
-        if (string.IsNullOrEmpty(revision))
-            return "";
-
-        // Truncate long commit hashes
-        if (revision.Length > 7)
-            return revision.Substring(0, 7);
-
-        return revision;
     }
 
     private async Task ShowHistory() {
