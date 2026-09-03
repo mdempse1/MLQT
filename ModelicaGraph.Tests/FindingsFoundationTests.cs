@@ -59,6 +59,86 @@ public class FindingsFoundationTests
         Assert.False(s.RuleSeverities.ContainsKey(RuleIds.UnusedImport));
     }
 
+    // ---- deterministic settings file ----------------------------------------------------------
+
+    [Fact]
+    public void RuleSeverities_AreWrittenInAlphabeticalOrder()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Warning);
+        settings.SetRuleSeverity(RuleIds.ClassIcon, RuleSeverity.Error);
+        settings.SetRuleSeverity(RuleIds.DuplicateImport, RuleSeverity.Warning);
+
+        var written = RuleIdsInWrittenOrder(JsonSerializer.Serialize(settings));
+
+        Assert.Equal(written.OrderBy(id => id, StringComparer.Ordinal), written);
+    }
+
+    [Fact]
+    public void SameRules_ReachedInADifferentOrder_SerializeIdentically()
+    {
+        // .mlqt/settings.json is committed, so the file has to be a function of the settings and
+        // nothing else. A plain Dictionary enumerates in insertion order until a removal frees a
+        // slot to reuse — after which the order records which rules the user happened to toggle,
+        // and saving unchanged settings still produced a diff with every rule moved.
+        var first = new StyleCheckingSettings();
+        first.SetRuleSeverity(RuleIds.ClassIcon, RuleSeverity.Error);
+        first.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Warning);
+        first.SetRuleSeverity(RuleIds.DuplicateImport, RuleSeverity.Warning);
+
+        var second = new StyleCheckingSettings();
+        second.SetRuleSeverity(RuleIds.DuplicateImport, RuleSeverity.Warning);
+        second.SetRuleSeverity(RuleIds.PackageOrder, RuleSeverity.Error);
+        second.SetRuleSeverity(RuleIds.UnusedImport, RuleSeverity.Warning);
+        second.SetRuleSeverity(RuleIds.PackageOrder, RuleSeverity.Off);   // the removal
+        second.SetRuleSeverity(RuleIds.ClassIcon, RuleSeverity.Error);
+
+        Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(second));
+    }
+
+    [Fact]
+    public void ReadingAndWritingBackUnchangedSettings_ProducesTheSameFile()
+    {
+        var settings = new StyleCheckingSettings { ClassHasIcon = true, FollowNamingConvention = true };
+        settings.SetRuleSeverity(RuleIds.PackageOrder, RuleSeverity.Error);
+        settings.SetRuleSeverity(RuleIds.DuplicateImport, RuleSeverity.Warning);
+        settings.NamingConvention.AdditionalPatterns["model"] = ["^[A-Z]"];
+        settings.NamingConvention.AdditionalPatterns["function"] = ["^get_"];
+
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        var written = JsonSerializer.Serialize(settings, options);
+        var rewritten = JsonSerializer.Serialize(
+            JsonSerializer.Deserialize<StyleCheckingSettings>(written)!, options);
+
+        Assert.Equal(written, rewritten);
+    }
+
+    [Fact]
+    public void AdditionalPatterns_AreWrittenInAlphabeticalOrder()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.NamingConvention.AdditionalPatterns["record"] = ["^R"];
+        settings.NamingConvention.AdditionalPatterns["block"] = ["^B"];
+        settings.NamingConvention.AdditionalPatterns["model"] = ["^M"];
+
+        var json = JsonSerializer.Serialize(settings);
+
+        Assert.True(json.IndexOf("\"block\"", StringComparison.Ordinal)
+                    < json.IndexOf("\"model\"", StringComparison.Ordinal));
+        Assert.True(json.IndexOf("\"model\"", StringComparison.Ordinal)
+                    < json.IndexOf("\"record\"", StringComparison.Ordinal));
+    }
+
+    /// <summary>The rule ids of the serialized RuleSeverities map, in the order they were written.</summary>
+    private static List<string> RuleIdsInWrittenOrder(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("RuleSeverities")
+            .EnumerateObject()
+            .Select(p => p.Name)
+            .ToList();
+    }
+
     // ---- JSON migration / round-trip -----------------------------------------------------------
 
     [Fact]

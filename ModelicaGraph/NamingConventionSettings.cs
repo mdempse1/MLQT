@@ -46,7 +46,9 @@ public class NamingConventionSettings
     /// <see cref="NamingConventionConfig.SlotKeys"/>. Each list contains regex pattern strings.
     /// A name is valid if it matches the base style OR any pattern for its slot.
     /// </summary>
-    public Dictionary<string, List<string>> AdditionalPatterns { get; set; } = new();
+    // Sorted for the same reason as RuleSeverities: it is serialized into a committed settings file,
+    // and a dictionary's order is not something the user chose.
+    public SortedDictionary<string, List<string>> AdditionalPatterns { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Converts to the parser-layer config for the naming convention visitor.
@@ -105,7 +107,7 @@ public class NamingConventionSettings
                AdditionalPatternsEqual(other.AdditionalPatterns);
     }
 
-    private bool AdditionalPatternsEqual(Dictionary<string, List<string>> other)
+    private bool AdditionalPatternsEqual(IDictionary<string, List<string>> other)
     {
         var thisKeys = AdditionalPatterns
             .Where(kvp => kvp.Value.Count > 0)
@@ -149,8 +151,8 @@ public class NamingConventionSettings
         ProtectedConstantNaming = ProtectedConstantNaming,
         AllowUnderscoreSuffixes = AllowUnderscoreSuffixes,
         ExceptionNames = new List<string>(ExceptionNames),
-        AdditionalPatterns = AdditionalPatterns.ToDictionary(
-            kvp => kvp.Key,
-            kvp => new List<string>(kvp.Value))
+        AdditionalPatterns = new SortedDictionary<string, List<string>>(
+            AdditionalPatterns.ToDictionary(kvp => kvp.Key, kvp => new List<string>(kvp.Value)),
+            StringComparer.Ordinal)
     };
 }

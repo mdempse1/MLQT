@@ -30,8 +30,13 @@ public class StyleCheckingSettings
     // ---------------------------------------------------------------------------------------------
     // Populate (merge into) the existing dictionary on deserialize rather than replacing it, so
     // bool-derived entries and explicit map entries combine instead of one clobbering the other.
+    //
+    // Sorted, because this is written to .mlqt/settings.json and that file is committed. A plain
+    // Dictionary enumerates in insertion order until a removal frees a slot, after which the order
+    // depends on the sequence of rules the user happened to toggle — so saving a repository whose
+    // settings had not changed still produced a diff, with every rule moved and nothing to review.
     [JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
-    public Dictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
+    public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Resolves the configured severity for a rule id (Off when disabled/absent).</summary>
     public RuleSeverity SeverityFor(string ruleId)

@@ -385,7 +385,7 @@ public class NamingConventionSettingsTests
     {
         var settings = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -415,7 +415,7 @@ public class NamingConventionSettingsTests
     {
         var settings = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = [],
                 ["function"] = ["^get_"]
@@ -438,7 +438,7 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -446,7 +446,7 @@ public class NamingConventionSettingsTests
         };
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["function"] = ["^get_"],
                 ["model"] = ["^I[A-Z]", "^[A-Z]{2,}$"]
@@ -461,14 +461,14 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
         };
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[a-z]+$"]
             }
@@ -483,7 +483,7 @@ public class NamingConventionSettingsTests
         var a = new NamingConventionSettings();
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
@@ -506,7 +506,7 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = []
             }
@@ -525,7 +525,7 @@ public class NamingConventionSettingsTests
     {
         var original = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -545,7 +545,7 @@ public class NamingConventionSettingsTests
     {
         var original = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
@@ -571,7 +571,7 @@ public class NamingConventionSettingsTests
         var original = new NamingConventionSettings
         {
             RecordNaming = NamingStyle.PascalCase,
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["record"] = [
                     @"^[A-Z][a-zA-Z]*(_rec)$",
@@ -601,7 +601,7 @@ public class NamingConventionSettingsTests
         {
             RecordNaming = NamingStyle.PascalCase,
             AllowUnderscoreSuffixes = true,
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["record"] = [
                     @"^[A-Z][a-zA-Z]*(_rec)$",
@@ -642,7 +642,7 @@ public class NamingConventionSettingsTests
             {
                 RecordNaming = NamingStyle.PascalCase,
                 AllowUnderscoreSuffixes = true,
-                AdditionalPatterns = new Dictionary<string, List<string>>
+                AdditionalPatterns =
                 {
                     ["record"] = [
                         @"^[A-Z][a-zA-Z]*(_rec)$",
