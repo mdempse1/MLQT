@@ -562,6 +562,72 @@ public class GitRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
+    /// The lines this branch added or rewrote since <paramref name="sinceRevision"/>, keyed by
+    /// absolute file path, with the line numbers counted in the working copy.
+    ///
+    /// <para>Unlike <see cref="GetChangedFilePathsSince"/>, which diffs the named ref's tree
+    /// directly, this diffs from the <em>merge base</em> of that ref and HEAD. That is what a forge
+    /// means by "the diff" of a pull request, and the difference is not cosmetic: once the base
+    /// branch moves ahead, a direct diff also reports every line someone else changed on it, and a
+    /// review comment placed on one of those is rejected by GitHub — which fails the whole review,
+    /// not just that comment.</para>
+    ///
+    /// <para>Deleted lines are absent by construction: they exist in the base, and there is nothing
+    /// in the working copy to point at. An empty result means no line changed, which is different
+    /// from the failure case — that comes back as null, so a caller can tell "nothing to say" from
+    /// "could not be worked out".</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlySet<int>>? GetChangedLinesSince(
+        string repositoryPath, string sinceRevision)
+    {
+        try
+        {
+            using var repo = new Repository(repositoryPath);
+
+            var since = ResolveToCommit(repo, sinceRevision);
+            var head = repo.Head?.Tip;
+            if (since == null || head == null)
+                return null;
+
+            // An unborn branch, or a ref with no common history (an unrelated repository grafted in):
+            // there is no base to diff from, and inventing one would put comments anywhere.
+            var mergeBase = repo.ObjectDatabase.FindMergeBase(since, head);
+            if (mergeBase == null)
+                return null;
+
+            var patch = repo.Diff.Compare<Patch>(
+                mergeBase.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+
+            var root = repo.Info.WorkingDirectory;
+            var result = new Dictionary<string, IReadOnlySet<int>>(
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+            foreach (var entry in patch)
+            {
+                if (entry.Status == ChangeKind.Deleted || entry.IsBinaryComparison)
+                    continue;
+
+                var lines = new HashSet<int>();
+                foreach (var line in entry.AddedLines)
+                    lines.Add(line.LineNumber);
+
+                if (lines.Count == 0)
+                    continue;   // a rename or a mode change moves no line
+
+                var relative = entry.Path.Replace('/', Path.DirectorySeparatorChar);
+                result[Path.GetFullPath(Path.Combine(root, relative))] = lines;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetChangedLinesSince", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Cleans a workspace by reverting all changes and removing untracked files.
     /// </summary>
     public bool CleanWorkspace(string checkoutPath)

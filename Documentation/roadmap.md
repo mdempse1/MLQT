@@ -19,11 +19,11 @@ with those tools, and it stays optional.
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
 
-**Current focus: finish the CI/CD toolchain before starting cross-platform.** What is left inside
-phases 1–6 is a short list of gaps rather than new workstreams — collected in
-[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. Cross-platform
-(§1) is deliberately last of the two: it is the big task, and it should start against a toolchain
-that is already complete rather than one still being finished.
+**The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
+[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below, and as of
+2026-09-03 every one of them is closed. Cross-platform (§1) was deliberately kept last of the two:
+it is the big task, and the point was to start it against a toolchain that is complete rather than
+one still being finished — which is now the case.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
@@ -201,9 +201,9 @@ test UI, TeamCity service messages auto-graph baseline debt trend.
 |------|-------|--------|-------|
 | **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | **✅ shipped** — `mlqt baseline create/update/prune`, `--changed-from`, `--touched-debt warn\|fail\|ignore`. |
 | **CLI + JUnit/exit-code contract** | ⭐⭐⭐ | M | **✅ shipped** — `--format junit`, `--fail-on off\|warning\|error`, documented exit codes. |
-| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped.** SARIF's two original gaps (line mapping, base path) are closed; conformance and the rule metadata GitHub renders are not — see B8–B11 in the backlog. |
-| **Pre-commit hook / commit gate** | ⭐⭐ | S | Not built. Today it is a documented recipe (`--changed-from BASE`), not a feature. In the backlog. |
-| **PR review annotations** | ⭐⭐ | M | Not built; the markdown summary path it would use exists. In the backlog. |
+| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped**, and since validated: the two original gaps (line mapping, base path) plus schema conformance, the rule metadata GitHub renders, and a confirmed ingest — B8–B11. |
+| **Pre-commit hook / commit gate** | ⭐⭐ | S | **✅ shipped** — `mlqt hook install` writes a git pre-commit hook that runs the same check. See B6. |
+| **PR review annotations** | ⭐⭐ | M | **✅ shipped** — `--format review` writes a GitHub pull-request review body (summary + inline comments on changed lines), posted with `gh api --input`. See B7. |
 
 ---
 
@@ -235,7 +235,7 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 | B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | **✅ shipped (2026-09-03)** — `--min-coverage <percent>` and `--min-coverage <dimension>=<percent>` gate on a figure; `--coverage-ratchet` gates on the last recorded snapshot, so a legacy library can adopt it without meeting any particular number. Independent of `--fail-on`, and a dimension the repository does not track is warned about rather than silently checked. |
 | B5 | **Missing-units rule vs the Unit dimension** | Phase 6 increment | ⭐⭐ | M | **✅ shipped (2026-09-03)** — the rule takes the same `UnitResolver` lookup the dimension uses, so a type that fixes no unit anywhere in its chain is reported like a bare `Real`. The dimension's compliance is now *defined* as "the rule does not flag it", so the two cannot drift again. Without a graph (a snippet check) the rule still judges plain `Real` only — all it can honestly say. On MSL it adds one finding: the library is disciplined about SI types, which is exactly why the gap went unnoticed. |
 | B6 | **Pre-commit hook / commit gate** | §5 | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `mlqt hook install\|uninstall\|status` writes a git `pre-commit` hook that runs the same check with the same settings and baseline, so a finding is caught while the fix is still a keystroke away. It exits immediately when the staged change has no `.mo` file in it (a hook that taxes every commit gets uninstalled), and blocks on exit `2` as well as `1`, since a check that could not run has approved nothing. Two decisions worth recording: `--no-verify` is left working on purpose — an unskippable hook is one people delete, and the durable waiver is `__MLQT(suppress=)`, which is reviewed with the code and holds in CI; and a `pre-commit` mlqt did not write is refused rather than overwritten, for both install and uninstall. Git only, and it says so — SVN runs its hooks on the server. The repository is found by walking up from the library, following the `.git` *file* a worktree or submodule has. |
-| B7 | **PR review annotations** | §5 | ⭐⭐ | M | Post findings as inline PR comments. The markdown summary path it would build on already exists. |
+| B7 | **PR review annotations** | §5 | ⭐⭐ | M | **✅ shipped (2026-09-03)** — `--format review` writes the body of a GitHub pull-request review: a summary plus one inline comment per changed line that has a finding on it, posted with `gh api ... --input`. MLQT holds no token and speaks no HTTP, which is the same "machine-readable output *is* the integration" line the rest of §5 takes — and it is the path for a repository that cannot use code scanning at all, which B11 showed is any private one without a Code Security licence. The engineering is in what may be said and where: GitHub accepts a comment only on a line in the pull request's diff and rejects the *whole* review over one that is not, so a finding elsewhere goes in the summary instead, accepted debt is never commented on, several findings on a line become one comment, and there is a cap. The diff is measured from the **merge base**, not the ref — diffing the ref directly reports the base branch's own later commits as this branch's work, and a comment on one of those is the rejection above. Needs `fetch-depth: 0`; a diff that cannot be worked out stops the run rather than posting an empty review. Always `COMMENT`, never `REQUEST_CHANGES`: the exit code is the gate, and a tool that blocks a human's merge button loses its token. |
 | B8 | **SARIF conformance is asserted, never validated** | Phase 4 risk, never discharged | ⭐⭐⭐ | S | **✅ shipped (2026-09-03)** — `build/validate-sarif.ps1` generates a report from the committed fixture at `TestFixtures/SarifSmoke/Libraries/Smoke`, checks the paths came out relative to the repository root (so `--sarif-base` is exercised by the same step), and runs `sarif validate`, failing on warnings as well as errors. Wired into `build-and-test.yml`, which also builds and tests `MLQT.Cli` — it did neither before. Validation immediately found two real defects, both fixed here: the driver carried no `informationUri` and no version (SARIF2005). |
 | B9 | **SARIF rule metadata is too thin to be useful in GitHub** | Phase 4 gap | ⭐⭐⭐ | S | **✅ shipped (2026-09-03)** — every rule now carries `shortDescription` (the title), `fullDescription` (what the rule wants), `help.text` and `help.markdown` (the alert body: title, description, rule id, category, and where to configure it), a `helpUri` to the settings reference, and its category as a tag. The smoke script checks each of these on the generated report, so an alert cannot go back to naming an id and saying nothing. (The driver's missing `version` and `informationUri` were part of this item and were fixed under B8, since the validator flags them.) |
 | B10 | **Accepted debt arrives in GitHub as an open alert** | Phase 4 decision, contradicted | ⭐⭐ | S | **✅ decided and shipped (2026-09-03)** — confirmed against GitHub's documented subset: it supports neither `baselineState` nor `suppressions`, and its own docs say a suppressed result still becomes an alert. So accepted debt is omitted from SARIF by default, with `--sarif-include-accepted` for a consumer that honours `baselineState`, and the run reports how many it left out. The findings are still tagged, and every other format is unchanged — this is a decision about one consumer's display, not about what MLQT found. The same commit warns at GitHub's 25,000-result rejection and 5,000-result display caps, which a library the size of MSL crosses silently. |
@@ -246,13 +246,14 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
 turns the metrics work into a gate; B6 and B7 last, being conveniences rather than gaps.
 
-**B1–B6 and B8–B12 are done — only B7 is left.** B8–B11 (added 2026-09-03) came out of asking how the SARIF work would be tested,
-and they change the claim that phase 4 is closed: the output has never been validated, and the one
-consumer it was written for renders almost none of what it carries. **B6 and B7 are what remain**, both conveniences rather than gaps: a pre-commit hook, and posting
-findings as inline PR comments. B11 is run once B8–B10 land, as
-confirmation rather than development. **B12** came out of B5 the same way B8–B11 came out of the
-SARIF work: it is a correctness bug that inflates every rule's count, so it belongs before the two
-conveniences (B6, B7).
+**The backlog is complete: B1–B12 are all done (2026-09-03).** B8–B11 came out of asking how the
+SARIF work would be tested, and they were what actually closed phase 4: until then the output had
+never been validated, and the one consumer it was written for rendered almost none of what it
+carried. B11 was run once B8–B10 landed, as confirmation rather than development — and what it found
+(code scanning needs a public repository or a paid licence) is why B7 matters more than "convenience"
+suggested: for a private repository the pull-request review is the only route findings have into a
+review. **B12** came out of B5 the same way: a correctness bug that inflated every rule's count, so
+it went before the two conveniences (B6, B7), which closed the list.
 
 ---
 

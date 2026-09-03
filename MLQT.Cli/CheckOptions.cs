@@ -1,6 +1,6 @@
 namespace MLQT.Cli;
 
-internal enum OutputFormat { Console, Json, JUnit, Sarif, TeamCity, Markdown }
+internal enum OutputFormat { Console, Json, JUnit, Sarif, TeamCity, Markdown, Review }
 
 internal enum FailOnLevel { Off, Warning, Error }
 
@@ -186,7 +186,7 @@ internal sealed record CheckOptions
                     if (!Next(args, ref i, out var fmt, out error)) return false;
                     if (!TryParseFormat(fmt!, out format))
                     {
-                        error = $"invalid --format '{fmt}' (expected console|json|junit|sarif|teamcity|markdown)";
+                        error = $"invalid --format '{fmt}' (expected console|json|junit|sarif|teamcity|markdown|review)";
                         return false;
                     }
                     break;
@@ -336,7 +336,7 @@ internal sealed record CheckOptions
 
         if (!TryParseFormat(formatText, out var format))
         {
-            error = $"invalid --report format '{formatText}' (expected console|json|junit|sarif|teamcity|markdown)";
+            error = $"invalid --report format '{formatText}' (expected console|json|junit|sarif|teamcity|markdown|review)";
             return false;
         }
 
@@ -354,6 +354,7 @@ internal sealed record CheckOptions
             case "sarif": format = OutputFormat.Sarif; return true;
             case "teamcity": format = OutputFormat.TeamCity; return true;
             case "markdown": format = OutputFormat.Markdown; return true;
+            case "review": format = OutputFormat.Review; return true;
             default: format = OutputFormat.Console; return false;
         }
     }

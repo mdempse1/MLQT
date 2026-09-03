@@ -377,7 +377,42 @@ login does not include it.
 
 ---
 
-## 8. Catch it before the commit
+## 8. Comment on the pull request
+
+Alerts in a Security tab are read by whoever goes looking. A review comment on the line itself is read
+by the person who wrote the line, while they are still looking at it. `--format review` writes the
+body of a GitHub pull-request review — a summary plus inline comments — and `gh` posts it:
+
+```bash
+mlqt check ./MyLibrary --changed-from origin/main       --baseline .mlqt/baseline.json --fail-on warning       --format review --out review.json
+
+gh api --method POST /repos/OWNER/REPO/pulls/$PR/reviews --input review.json
+```
+
+MLQT writes the payload and stops there: no token, no HTTP, nothing to maintain when the API moves.
+It needs `--changed-from`, naming the pull request's base branch.
+
+This is the path for a repository that **cannot use code scanning** — a private repository without a
+GitHub Code Security licence answers 403 to the SARIF upload (see [section 7](#7-wire-it-into-ci)),
+and a review comment needs nothing but a token that can write to the pull request.
+
+Three things worth knowing before you wire it up, each of which fails quietly or loudly in its own way:
+
+- **A comment must be on a line in the diff.** GitHub rejects a review containing even one comment
+  outside it — and rejects the *whole* review, not that comment. So findings on lines this change did
+  not touch go in the summary body instead. Nothing is dropped; it is just not inline.
+- **The checkout needs history.** The diff is measured from the merge base of the base ref and `HEAD`,
+  which a shallow clone does not have: `actions/checkout` needs `fetch-depth: 0`. Without it the run
+  stops with exit `2` rather than posting an empty review.
+- **The review never requests changes.** It is always a comment; the exit code is what fails the
+  build. Full detail in [the CLI reference](cli.md#commenting-on-a-pull-request).
+
+Accepted debt is never commented on. Touched debt is, marked *(pre-existing)* — so the boy-scout rule
+from [section 6](#6-optional-escalate-debt-in-changed-models) shows up where the change is being read.
+
+---
+
+## 9. Catch it before the commit
 
 CI is the gate that counts, because it is the one nobody can skip. It is also the slowest place to
 learn that a description is missing: by then the change is pushed, a build has run, and the fix is a
@@ -407,7 +442,7 @@ from the configured directory, so an installed one would sit unused.
 
 ---
 
-## 9. Maintaining the baseline
+## 10. Maintaining the baseline
 
 Both maintenance commands drop entries whose findings you have fixed. The difference is whether they
 can also **add**:
@@ -438,7 +473,9 @@ can also **add**:
 ```
 mlqt check <library-path> [--baseline <path>] [--changed-from <ref>]
                           [--touched-debt warn|fail|ignore]
-                          [--config <path>] [--format console|json|junit|sarif|teamcity|markdown]
+                          [--config <path>]
+                          [--format console|json|junit|sarif|teamcity|markdown|review]
+        # --format review: a GitHub pull-request review body; needs --changed-from and Git
                           [--out <file>] [--fail-on off|warning|error] [--no-color]
                           [--no-suppress] [--dependency <path>]
                           [--metrics] [--metrics-out <path>] [--metrics-force]

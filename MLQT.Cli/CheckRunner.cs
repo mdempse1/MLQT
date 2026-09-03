@@ -26,6 +26,35 @@ internal static class CheckRunner
                 stderr.WriteLine("note: --sarif-base only affects SARIF output");
         }
 
+        // The line-level diff review comments have to land inside. Resolved before the library is
+        // loaded, for the same reason --sarif-base is checked here: an invocation that cannot produce
+        // what it asked for is a mistake to report now, not after several minutes of checking. It is
+        // also a separate question from the model-level --changed-from above, and measured
+        // differently - from the merge base rather than the ref itself. See ChangedLineResolver.
+        ChangedLineResult? diff = null;
+        if (WritesReview(opts))
+        {
+            if (opts.ChangedFrom is null)
+            {
+                stderr.WriteLine(
+                    "error: review output needs --changed-from <base-ref>. A review comment has to sit " +
+                    "on a line the change touched, and without a diff there is no such line");
+                return ExitCodes.Error;
+            }
+
+            diff = ChangedLineResolver.Resolve(opts.LibraryPath, opts.ChangedFrom);
+            if (!diff.Ok)
+            {
+                stderr.WriteLine($"error: {diff.Error}");
+                return ExitCodes.Error;
+            }
+
+            var changedLines = diff.LinesByFile.Values.Sum(l => l.Count);
+            stderr.WriteLine(
+                $"note: review diff covers {changedLines} changed line(s) in " +
+                $"{diff.LinesByFile.Count} file(s) since the merge base with {opts.ChangedFrom}");
+        }
+
         var load = await CheckPipeline.LoadAndCheckAsync(
             opts.LibraryPath, opts.ConfigPath, stderr,
             honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
@@ -155,7 +184,7 @@ internal static class CheckRunner
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
             baseline is not null, gateFailureCount, fixedEntries, sarifBase, coverageResults,
-            opts.SarifIncludeAccepted);
+            opts.SarifIncludeAccepted, diff);
 
         if (WritesSarif(opts))
             ReportSarifConsequences(opts, report, stderr);
@@ -249,6 +278,9 @@ internal static class CheckRunner
     private static bool WritesSarif(CheckOptions opts) =>
         opts.Format == OutputFormat.Sarif || opts.Reports.Any(r => r.Format == OutputFormat.Sarif);
 
+    private static bool WritesReview(CheckOptions opts) =>
+        opts.Format == OutputFormat.Review || opts.Reports.Any(r => r.Format == OutputFormat.Review);
+
     /// <summary>
     /// Says what SARIF will and will not carry, because both are silent otherwise.
     ///
@@ -283,6 +315,7 @@ internal static class CheckRunner
         OutputFormat.Sarif => new SarifFindingFormatter(),
         OutputFormat.TeamCity => new TeamCityFindingFormatter(),
         OutputFormat.Markdown => new MarkdownFindingFormatter(),
+        OutputFormat.Review => new ReviewFindingFormatter(),
         _ => new ConsoleFindingFormatter(useColor)
     };
 

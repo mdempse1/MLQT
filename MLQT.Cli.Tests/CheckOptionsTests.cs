@@ -73,4 +73,21 @@ public class CheckOptionsTests
     [Fact]
     public void TouchedDebt_Invalid_Fails()
         => Assert.False(CheckOptions.TryParse(["lib", "--touched-debt", "nope"], out _, out _));
+
+    [Fact]
+    public void Review_IsAFormat_AndAReportTarget()
+    {
+        Assert.True(CheckOptions.TryParse(["lib", "--format", "review"], out var o, out _));
+        Assert.Equal(OutputFormat.Review, o!.Format);
+
+        Assert.True(CheckOptions.TryParse(["lib", "--report", "review:r.json"], out var r, out _));
+        Assert.Equal(OutputFormat.Review, r!.Reports.Single().Format);
+    }
+
+    [Fact]
+    public void AnInvalidFormat_ListsTheOnesThereAre()
+    {
+        Assert.False(CheckOptions.TryParse(["lib", "--format", "reviews"], out _, out var error));
+        Assert.Contains("review", error);
+    }
 }

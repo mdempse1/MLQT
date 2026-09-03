@@ -14,7 +14,8 @@ internal sealed record CheckReport(
     IReadOnlyList<BaselineEntry> FixedEntries,
     string? SarifBasePath = null,
     IReadOnlyList<CoverageGateResult>? CoverageGate = null,
-    bool SarifIncludeAccepted = false)
+    bool SarifIncludeAccepted = false,
+    ChangedLineResult? Diff = null)
 {
     /// <summary>The source file for a finding's model, or null if unknown.</summary>
     public string? FileFor(Finding f) => Locations.TryGetValue(f.ModelId, out var l) ? l.FilePath : null;

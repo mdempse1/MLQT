@@ -60,7 +60,9 @@ internal static class CliEntry
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
           --baseline <path>             Classify findings against a baseline (new vs accepted debt)
           --touched-debt warn|fail|ignore  Existing debt in a changed model (default: warn)
-          --format <fmt>                console|json|junit|sarif|teamcity|markdown (default: console)
+          --format <fmt>                console|json|junit|sarif|teamcity|markdown|review
+                                        (default: console). `review` is a GitHub pull-request
+                                        review body and needs --changed-from - see `review:` below
           --sarif-base <path>           Directory SARIF file paths are written relative to
                                         (default: the library). Set it to the repository root when
                                         the library is a subdirectory, or code-scanning annotations
@@ -107,6 +109,15 @@ internal static class CliEntry
                   when the baseline recorded a dependency this run did not load. A loaded copy that
                   is NOT the version the library's uses(...) declares STOPS the run (exit 2): the
                   findings would not be real. Override with --allow-version-mismatch.
+
+        review:   --format review writes the body of a GitHub pull-request review: a summary plus one
+                  inline comment per changed line that has a finding on it. Post it with
+                    gh api --method POST /repos/OWNER/REPO/pulls/N/reviews --input review.json
+                  Needs --changed-from <base-ref>, and Git - a pull request is a Git-forge feature.
+                  A finding NOT on a line the change added or rewrote goes in the summary instead:
+                  GitHub rejects a comment placed outside the diff, and the rejection loses the
+                  whole review, not just that comment. Always posted as a comment, never as
+                  REQUEST_CHANGES - the exit code is the gate.
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.

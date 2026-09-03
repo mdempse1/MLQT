@@ -40,7 +40,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
-| `--format console\|json\|junit\|sarif\|teamcity\|markdown` | Output format ([details](#output-formats)) | `console` |
+| `--format console\|json\|junit\|sarif\|teamcity\|markdown\|review` | Output format ([details](#output-formats)) | `console` |
 | `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
 | `--sarif-include-accepted` | Keep accepted debt in SARIF output. Off by default — see [SARIF and GitHub](#sarif-and-github) | off |
 | `--out <file>` | Write the primary output to a file instead of stdout | stdout |
@@ -534,6 +534,9 @@ safe without them, but with them the extra build never happens at all.
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.
 - **markdown** — a PR-comment-ready summary table (counts, gate result, actionable findings).
+- **review** — the body of a GitHub pull-request review: a summary plus one inline comment per
+  changed line that has a finding on it. Needs `--changed-from` and Git — see
+  [Commenting on a pull request](#commenting-on-a-pull-request).
 
 ### SARIF and GitHub
 
@@ -639,6 +642,60 @@ mlqt check ./MyLibrary --fail-on warning --format junit --out mlqt-results.xml
 # Machine-readable output for custom processing
 mlqt check ./MyLibrary --format json --out findings.json
 ```
+
+## Commenting on a pull request
+
+`--format review` writes the body of a GitHub pull-request review: a summary, plus one inline comment
+on each changed line that has a finding on it. MLQT does not post it — it writes the exact JSON the
+API wants, and `gh` sends it:
+
+```bash
+mlqt check ./MyLibrary --changed-from origin/main       --baseline .mlqt/baseline.json --fail-on warning       --format review --out review.json
+
+gh api --method POST /repos/OWNER/REPO/pulls/$PR/reviews --input review.json
+```
+
+That split is deliberate: MLQT holds no token, speaks no HTTP, and has nothing to keep working when
+the API changes. It also means the same file can be posted by anything that can make a request.
+
+**`--changed-from` is required**, and names the base branch of the pull request. A review comment has
+to sit on a line the change touched; without a diff there is no such line.
+
+### What goes inline and what does not
+
+**GitHub accepts a review comment only on a line that appears in the pull request's diff.** A single
+comment it will not take fails the *whole* review with a 422 — the other forty go with it. So:
+
+- A finding on a line the change added or rewrote becomes an inline comment.
+- Everything else — a finding elsewhere in a changed file, or in a file the change never touched —
+  is listed in the summary body instead, under "not on a changed line". Nothing is dropped.
+- **Accepted debt is never commented on**, inline or otherwise. It is agreed history, and a comment
+  on it asks the wrong person to fix it. Touched debt *is* commented on, marked *(pre-existing)*.
+- Several findings on one line become one comment, not several.
+- At most 50 inline comments; the rest join the summary. A review of hundreds of comments is not read
+  by anyone, and it is where GitHub starts refusing the request outright.
+
+### The diff is measured from the merge base
+
+Unlike `--changed-from`'s model-level escalation, which diffs the named ref directly, the review diff
+is taken from the **merge base** of that ref and `HEAD` — what a forge means by "the diff" of a pull
+request. Once the base branch moves ahead, a direct diff also reports every line someone else changed
+on it, and a comment on one of those is outside the pull request's diff: the 422 above.
+
+This needs real history. A shallow CI checkout has neither the base ref nor a common ancestor, so
+`actions/checkout` needs `fetch-depth: 0`. When the diff cannot be worked out the run stops with exit
+`2` and says so, before the library is even loaded — it does not quietly post an empty review.
+
+### It comments, it does not block
+
+The review is always submitted as `COMMENT`, never `REQUEST_CHANGES`. The gate is the **exit code**,
+which is what CI acts on. A tool that also blocks a human's merge button is one that gets its
+permissions taken away.
+
+### Git only
+
+A pull request is a Git-forge feature. SVN has nothing to attach a line comment to, and the command
+says so rather than writing an empty review.
 
 ## Running the check before each commit
 
