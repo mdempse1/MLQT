@@ -239,6 +239,14 @@ Available style rules:
 | `FollowNamingConvention` | Checks class/element names against configurable naming conventions |
 | `SpellCheckDescriptions` | Spell checks description strings on classes and components |
 | `SpellCheckDocumentation` | Spell checks Documentation annotation HTML content |
+| `CheckModelReferences` | Referenced classes must exist among the loaded libraries |
+| `DuplicateDeclarations` | No duplicate declarations, and no duplicate imports, in a class |
+| `MissingUnits` | A plain `Real` variable or parameter should declare a unit |
+
+Both spell-check visitors extend `SpellCheckVisitorBase`, which owns the names that count as words
+inside the class being checked: everything it declares, collected before any of its text is checked,
+plus everything it inherits (supplied by the caller — resolving a base class needs the dependency
+graph, which this layer does not have).
 
 ### Spell Checking
 
@@ -273,6 +281,48 @@ foreach (var (word, offset) in TextExtractor.TokenizeToWords(plainText))
         Console.WriteLine($"Misspelled: {word} at offset {offset}");
 }
 ```
+
+#### Built-in term lists
+
+`SpellChecking/Dictionaries/modelica_terms.txt` is the vocabulary every Modelica library needs and
+no English dictionary carries — the language and its tools, and the engineering, thermodynamic,
+electrical and mathematical terms the bundled en_US/en_GB dictionaries lack. It is always loaded,
+alongside `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt`, which hold the spellings that
+differ between dialects and are loaded only for the languages the caller asked for — so a repository
+that has settled on one dialect is not handed the other's spelling.
+
+The lists take `#` comments and have no affix rules: a form the dictionaries cannot derive (a
+plural, a participle) needs its own line. Nothing belongs in them that the bundled dictionaries
+already accept.
+
+### In-source suppression (`__MLQT` annotations)
+
+A finding can be waived where it occurs, with a Modelica vendor annotation that survives reformatting
+and is ignored by Dymola and OpenModelica.
+
+```csharp
+using ModelicaParser.StyleRules;
+
+// Read the directives out of a parse tree
+var extractor = new MlqtSuppressionExtractor(basePackage);
+extractor.VisitStored_definition(parseTree);
+SuppressionSet suppressions = extractor.Build();
+bool waived = suppressions.IsSuppressed(finding);
+
+// Write one: a rule for a class or one of its components...
+MlqtSuppressionWriter.TryAddSuppressionToFile(
+    fileContent, classPath, component, ruleId, reason, out var newContent, out var error);
+
+// ...or a single word, accepted as spelled correctly in that class alone
+MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+    fileContent, classPath, word, reason, out newContent, out error);
+```
+
+Recognised arguments: `suppress="<rule ids>"` (comma-separated, `*` for all), `spelling="<words>"`,
+and `preserveOrder=true` / `format=false` for a class whose declaration order is deliberate. An
+optional `reason="…"` records why. The writer merges into an existing annotation rather than adding
+a second one, and the caller is expected to persist through a path that re-parses, so a malformed
+splice is caught rather than written.
 
 ### File Encoding
 

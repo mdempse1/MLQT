@@ -39,7 +39,7 @@ library has that another does not.
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
-| `--format console\|json\|junit` | Output format | `console` |
+| `--format console\|json\|junit\|sarif\|teamcity\|markdown` | Output format ([details](#output-formats)) | `console` |
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |

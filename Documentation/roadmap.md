@@ -13,7 +13,7 @@ with those tools, and it stays optional.
 > **Boundary**: ⚠ marks items that approach (but should stay inside) the
 > no-translation/no-simulation line and need care. **✅ shipped** marks delivered work.
 
-## Where we are (2026-09-02)
+## Where we are (2026-09-03)
 
 **Phases 1–6 of the locked sequencing are shipped**: the findings foundation, the headless CLI,
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
@@ -27,6 +27,19 @@ that is already complete rather than one still being finished.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
+
+**Nothing in the backlog has been started yet.** The work since the list was written has been
+bug-driven or user-driven rather than planned, and none of it is a backlog item:
+
+| Landed | What |
+|--------|------|
+| `mlqt compare` | A third CLI command: the classes one copy of a library has that another does not, matched on full Modelica name so a restructure on disk is not a difference. Not a roadmap item — it answers "did that refactor lose anything". |
+| Spell-check accuracy | Names inherited through `extends` are in scope; the shipped term list carries the engineering vocabulary the dictionaries lack, split so a repository is not given the other dialect's spelling; **Ignore** now records `__MLQT(spelling="…")` in the source, so a waiver holds for the app, the CLI and MCP alike. |
+| Formatter correctness | The incremental formatter was corrupting the files it reformatted (duplicate `within` clauses); a new standalone file now takes its `within` from where it is written. |
+| Deterministic settings file | `RuleSeverities` is written in alphabetical order — saving unchanged settings used to rewrite every rule to a new line. |
+
+The point of recording them here: the tool has moved since the backlog was drawn up, and the
+backlog has not.
 
 ---
 
@@ -48,7 +61,7 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Headless CLI** (`mlqt`) reusing the service layer | ⭐⭐⭐ | M | **✅ shipped** — `mlqt check` + `mlqt baseline`, packaged as a `dotnet tool`. See [cli.md](cli.md). |
+| **Headless CLI** (`mlqt`) reusing the service layer | ⭐⭐⭐ | M | **✅ shipped** — `mlqt check`, `mlqt baseline` and `mlqt compare`, packaged as a `dotnet tool`. See [cli.md](cli.md). |
 | **MCP server on Linux/macOS** as a tested target | ⭐⭐ | S | Built and shipping on Windows; headless stdio, so likely close to working. Not yet *tested* on Linux/macOS — that claim belongs with the phase-7 work. |
 | **Single cross-platform desktop host (Photino.Blazor)** replacing MAUI | ⭐⭐⭐ | L | In-process webview → keeps direct filesystem + git/svn access, near drop-in reuse of `MLQT.Shared`. Reimplement the 3 platform services once. Retires MAUI. |
 | — *fallback host:* Blazor Server (+ desktop wrapper) | — | L | If in-process webview proves limiting; also opens a future hosted/browser option. |
@@ -199,8 +212,10 @@ Building on existing spell-checking.
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Documentation coverage reporting** | ⭐⭐ | S | **✅ shipped** — class description, documentation info, documentation revisions, parameter and constant description are coverage dimensions; the Code Review findings name the classes. |
+| **Spell-check accuracy** (what counts as a word) | ⭐⭐ | M | **✅ shipped** (2026-09-03) — inherited element names are in scope, the shipped term list carries the engineering vocabulary no English dictionary has (dialect-split), and a word can be waived for one class in source. On MSL this removed 41% of the spelling findings without accepting a single new word. |
+| **Preferred English variant** (dialect consistency) | ⭐⭐ | M | Not built. Consistency is currently a side effect of choosing one dictionary: an `en_US` repository reports "modelling" as *misspelled*, which is true but says the wrong thing, and enabling en_GB alongside would accept both spellings everywhere. A rule with a variant map would name the actual problem ("British spelling — this repository uses American") and let a repository take en_GB's vocabulary without its spellings. |
 | **HTML validity + broken-link checking** in doc strings | ⭐⭐ | M | Validate `modelica://` cross-references resolve to real classes. |
-| **Terminology consistency** | ⭐ | M | Flag inconsistent capitalization/naming of domain terms. |
+| **Terminology consistency** | ⭐ | M | Flag inconsistent capitalization/naming of domain terms. Overlaps the variant rule above — the same machinery, a different word list. |
 
 ---
 

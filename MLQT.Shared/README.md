@@ -77,9 +77,13 @@ public class AppSettings
     public SyntaxHighlightingSettings SyntaxHighlighting { get; set; } // Color scheme
     public DymolaSettings Dymola { get; set; }                     // Dymola connection config
     public OpenModelicaSettings OpenModelica { get; set; }         // OMC path config
-    public StyleCheckingSettings StyleChecking { get; set; }       // Active style rules
+    public ReferenceLibrarySettings ReferenceLibraries { get; set; } // Libraries loaded for reference only
 }
 ```
+
+Style rules are **not** here. They belong to the repository, in its own `.mlqt/settings.json`
+(`Repository.StyleSettings`), so they are committed with the library and CI checks it by the same
+rules the app does. There is no application-wide rule set to fall back on.
 
 Predefined syntax themes are available:
 
@@ -98,7 +102,8 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 | `CodeReview.razor` | Code review, style findings, and file change diffs |
 | `Dependencies.razor` | Impact analysis with network graph visualization |
 | `ExternalResources.razor` | External resource tree with filtering and warnings |
-| `Settings.razor` | Application settings (UI, editor, tools, style rules) |
+| `MetricsDashboard.razor` | Coverage by dimension, the debt burndown trend, and the snapshot history |
+| `Settings.razor` | Application settings (UI, external tools, reference libraries, repositories) |
 
 ### Components
 
@@ -110,11 +115,19 @@ var omTheme = SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode: false);
 | `BranchSelector.razor` | Branch selection and management widget |
 | `ChangeReview.razor` | Review uncommitted file changes |
 | `ColorPicker.razor` | Color selection for syntax highlighting |
+| `CurrentModelDisplay.razor` | The selected class, shown in the toolbar |
+| `CytoscapeGraph.razor` | Interactive network graph (Cytoscape.js) for dependencies and impact |
 | `SettingsUI.razor` | UI preference controls (theme, custom colors, and syntax-highlighting color scheme) |
 | `NamingStyleSelect.razor` | Naming-style dropdown used by the style-checking settings |
-| `SettingsStyleChecking.razor` | Style rule toggles, spell check settings, language dictionaries, custom dictionary management |
+| `RuleSeverityPicker.razor` | Off / Info / Warning / Error selector for one rule |
 | `SettingsExternalTools.razor` | Dymola/OpenModelica configuration |
-| `SettingsRepositories.razor` | Repository management |
+| `SettingsReferenceLibraries.razor` | Libraries loaded so references resolve, never reported on |
+| `SettingsRepositories.razor` | Repositories and their per-repository rules: style, formatting, naming, spell-check languages |
+| `SettingsRepositoryDictionary.razor` | A repository's accepted spellings (`.mlqt/dictionary.txt`) |
+
+There is no application-wide style-rule page: the rules belong to each repository and are edited in
+`SettingsRepositories.razor`, which is what keeps them committed with the library and identical in
+CI. `SettingsStyleChecking.razor` was the global page and has been removed.
 
 ### UI Guidelines
 

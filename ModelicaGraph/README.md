@@ -241,12 +241,50 @@ GraphNode (abstract base)
 DirectedGraph           - Node/edge management, relationship queries
 GraphBuilder (static)   - File loading and dependency analysis (model queries live on DirectedGraph)
 ExternalStubBuilder     - Nodes for encrypted libraries, from vendor documentation
-StyleChecking (static)  - Style rule execution
-StyleCheckingSettings   - Configurable rule toggles and additional settings
+StyleChecking (static)  - Style rule execution, and the base-class icon / inherited-element lookups
+StyleCheckingSettings   - Rule severities, formatter flags, naming, spell-check languages
+GraphAnalysisRunner     - The whole-graph analyses (see below)
+MetricsCalculator       - Coverage by dimension, and the snapshots behind the burndown
 ModelDefinition         - Name, ModelicaCode, ParsedCode
 ResourceEdge            - ModelId, ResourceNodeId, RawPath, ReferenceType
 LibraryInfo             - Library metadata (name, path, root package)
 ```
+
+### Whole-graph analyses (`Analysis/`)
+
+The style rules judge a class from its own source. These judge it from its place in the graph — a
+question no single class can answer — and run per repository alongside the per-class checks, through
+`GraphAnalysisRunner`.
+
+| Analyzer | Answers |
+|----------|---------|
+| `UnusedImportAnalyzer` | An import nothing below it references (the referencing class is often another file, so this cannot be decided class by class) |
+| `UnusedClassAnalyzer` | A protected nested class nothing references; separately, a public one nothing *loaded* references, at lower confidence |
+| `UnusedMembersAnalyzer` | A protected member never referenced in its class — asked only where the answer is safe (nothing extends the class, and it has no nested classes that could reference the name) |
+| `ShadowingAnalyzer` | A declaration that silently shadows an inherited member |
+| `UsesHygieneAnalyzer` | A library referenced but not declared in `uses(...)`, or declared and never used |
+| `PackageOrderAnalyzer` | `package.order` entries that do not match the package's contents |
+
+They need dependency edges, so the runner arranges for `DirectedGraph.DependenciesAnalyzed` to be
+true first; without the edges the edge-dependent ones are skipped rather than guessing.
+
+Resolution shared with the analyses and the MCP tooling: `TypeResolver` (a type name → the class it
+means, through imports and the package hierarchy), `ClassElementResolver` (a class's full element
+set with inheritance merged in, derived declarations shadowing inherited ones) and `UnitResolver`
+(whether a declared type carries a unit, through alias and SI type chains).
+
+### Metrics and coverage (`Analysis/`)
+
+`CoverageDimension` names what can be measured — class description, documentation info and
+revisions, icon, parameter and constant description, unit, and the layout dimensions the formatter
+can rewrite — and `CoverageDimensions.TrackedFor(settings)` narrows that to what a repository's own
+rules ask for: a rule nobody enabled is not a gap anyone should be shown. `MetricsCalculator` and
+`CoverageMeasurer` do the measuring. Measurement
+happens while a class is being checked, since the parse tree is already in hand.
+
+`MetricsSnapshot` is a point in the burndown: coverage by dimension plus the raw compliant/eligible
+counts, so snapshots from several repositories combine exactly rather than by averaging percentages.
+They are appended to `.mlqt/metrics-history.json` by the dashboard or by `mlqt check --metrics`.
 
 ### External Stubs
 

@@ -27,10 +27,30 @@ All services follow the pattern:
 | `StyleCheckingService` | `IStyleCheckingService` | Background style rule checking for models |
 | `ImpactAnalysisService` | `IImpactAnalysisService` | Dependency impact analysis with network graph visualization |
 | `ExternalResourceService` | `IExternalResourceService` | External resource analysis, validation, and monitoring |
-| `CustomDictionaryService` | `ICustomDictionaryService` | User custom word list for spell checking |
+| `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
+| `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |
+
+### The shared check pipeline (`Checking/`)
+
+Every surface that reports findings — the app's background workers, `mlqt check`, and the MCP
+server — goes through the same primitives, so the same library and settings give all three the same
+count. A change belongs in the primitive, not in one tool's path.
+
+| Type | Purpose |
+|------|---------|
+| `StyleCheckContext` | The inputs a check needs, built **once** per run: known class ids and names, the spell checker, the inherited-icon and inherited-element lookups, the naming config, optional coverage collection |
+| `StyleCheckRunner` | Checks one class against that context. The single per-model entry point, which is why the guard against reporting on a class reconstructed from an encrypted library lives here |
+| `LibraryCheckSession` | A whole-library run: load, trim, check, and the whole-graph analyses, in the order they depend on each other |
+| `Baseline` / `FindingClassifier` | The accepted-debt file and the new / touched / accepted classification the ratchet gates on |
+| `ChangedModelResolver` | Which classes a VCS ref touched, for `--changed-from` |
+| `DictionaryScope` | Which repository's accepted spellings apply to a class |
+| `SpellCheckerFactory` / `DictionaryAvailability` | Builds a spell checker for the chosen languages, and says so when the machine has no dictionary for one |
+| `ReferenceOnlyScope` | The classes loaded only so references resolve, which are never reported on |
+| `ParserErrorReporter` | Parse failures as findings, with real file line numbers |
+| `UsesVersionChecker` / `VcsStamp` | Dependency version mismatches, and the revision a report was produced at |
 
 ### Static Helpers
 
@@ -207,29 +227,35 @@ styleCheckingService.OnFindingsFound += (findings) =>
 };
 ```
 
-### Custom Dictionary (ICustomDictionaryService)
+### Accepted Spellings (ICustomDictionaryService)
+
+Every call names the repository whose list it means. The words live in
+`<repo>/.mlqt/dictionary.txt` and are committed with the code, which is what makes the desktop app
+and `mlqt check` in CI accept the same words — a machine-wide list could only be seen by one of them.
 
 ```csharp
-// Load custom dictionary from disk
-await customDictionaryService.LoadAsync();
+// The words accepted for a repository (read on first use, then cached)
+IReadOnlyCollection<string> words = customDictionaryService.WordsFor(repositoryRoot);
 
-// Add a word
-await customDictionaryService.AddWordAsync("Dymola");
+// Where they are stored
+string path = customDictionaryService.PathFor(repositoryRoot);
 
-// Remove a word
-await customDictionaryService.RemoveWordAsync("typo");
+// Add and remove
+await customDictionaryService.AddWordAsync(repositoryRoot, "Pacejka");
+await customDictionaryService.RemoveWordAsync(repositoryRoot, "typo");
 
-// Access current words
-IReadOnlyCollection<string> words = customDictionaryService.CustomWords;
+// Re-read from disk, merge another list in, or write one out
+IReadOnlyCollection<string> reloaded = await customDictionaryService.LoadAsync(repositoryRoot);
+int added = await customDictionaryService.MergeFromAsync(repositoryRoot, @"C:\words.txt");
+await customDictionaryService.ExportAsync(repositoryRoot, @"C:\export.txt");
 
-// Import/export/merge word lists
-await customDictionaryService.ImportAsync(@"C:\words.txt");    // replaces
-await customDictionaryService.MergeAsync(@"C:\more-words.txt"); // unions
-await customDictionaryService.ExportAsync(@"C:\export.txt");
-
-// Subscribe to changes
-customDictionaryService.OnDictionaryChanged += () => { /* reload spell checker */ };
+// Fires with the repository root whose list changed — drop that repository's spell checker
+customDictionaryService.OnDictionaryChanged += root => { /* rebuild for `root` */ };
 ```
+
+Which repository's list applies to a given class is decided by `Checking/DictionaryScope`, so the
+app, the CLI and the MCP server all answer that question the same way. Words that every Modelica
+library needs are not here at all — they ship with the parser, in `modelica_terms.txt`.
 
 ### Dictionary Management (IDictionaryManagerService)
 
