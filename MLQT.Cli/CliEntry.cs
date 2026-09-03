@@ -62,6 +62,9 @@ internal static class CliEntry
                                         the library is a subdirectory, or code-scanning annotations
                                         attach to nothing
           --out <file>                  Write output to a file instead of stdout
+          --report <fmt>:<file>         Also write this format to this file (repeatable), so one
+                                        run can produce a readable log and a machine-readable
+                                        report instead of checking the library twice
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output
           --no-suppress                 Ignore __MLQT suppression annotations (audit)

@@ -19,8 +19,9 @@ internal static class CheckRunner
                 return ExitCodes.Error;
             }
 
-            if (opts.Format != OutputFormat.Sarif)
-                stderr.WriteLine("note: --sarif-base only affects --format sarif");
+            // Any SARIF output counts, including one asked for with --report.
+            if (opts.Format != OutputFormat.Sarif && !opts.Reports.Any(r => r.Format == OutputFormat.Sarif))
+                stderr.WriteLine("note: --sarif-base only affects SARIF output");
         }
 
         var load = await CheckPipeline.LoadAndCheckAsync(
@@ -151,29 +152,15 @@ internal static class CheckRunner
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
             baseline is not null, gateFailureCount, fixedEntries, sarifBase);
 
-        IFindingFormatter formatter = opts.Format switch
-        {
-            OutputFormat.Json => new JsonFindingFormatter(),
-            OutputFormat.JUnit => new JUnitFindingFormatter(),
-            OutputFormat.Sarif => new SarifFindingFormatter(),
-            OutputFormat.TeamCity => new TeamCityFindingFormatter(),
-            OutputFormat.Markdown => new MarkdownFindingFormatter(),
-            _ => new ConsoleFindingFormatter(
-                useColor: !opts.NoColor && opts.OutPath is null && !Console.IsOutputRedirected)
-        };
-        var output = formatter.Format(report);
+        // Written to a file: colour codes would be in the file rather than on a terminal.
+        var toTerminal = opts.OutPath is null;
+        var output = Formatter(opts.Format, useColor: toTerminal && !opts.NoColor && !Console.IsOutputRedirected)
+            .Format(report);
 
         if (opts.OutPath is not null)
         {
-            try
-            {
-                await File.WriteAllTextAsync(opts.OutPath, output);
-            }
-            catch (Exception ex)
-            {
-                stderr.WriteLine($"error: failed to write '{opts.OutPath}': {ex.Message}");
+            if (!await TryWriteAsync(opts.OutPath, output, stderr))
                 return ExitCodes.Error;
-            }
         }
         else
         {
@@ -182,7 +169,45 @@ internal static class CheckRunner
                 await stdout.WriteLineAsync();
         }
 
+        // The extra reports, formatted from the same run. Checking the library again to produce a
+        // second format costs minutes on a large one, and the two runs can disagree if anything on
+        // disk moved between them — which is exactly the moment a report is being trusted.
+        foreach (var extra in opts.Reports)
+        {
+            var text = Formatter(extra.Format, useColor: false).Format(report);
+            if (!await TryWriteAsync(extra.Path, text, stderr))
+                return ExitCodes.Error;
+        }
+
         return report.GatePassed ? ExitCodes.Ok : ExitCodes.GateFailed;
+    }
+
+    private static IFindingFormatter Formatter(OutputFormat format, bool useColor) => format switch
+    {
+        OutputFormat.Json => new JsonFindingFormatter(),
+        OutputFormat.JUnit => new JUnitFindingFormatter(),
+        OutputFormat.Sarif => new SarifFindingFormatter(),
+        OutputFormat.TeamCity => new TeamCityFindingFormatter(),
+        OutputFormat.Markdown => new MarkdownFindingFormatter(),
+        _ => new ConsoleFindingFormatter(useColor)
+    };
+
+    /// <summary>
+    /// Writes one report, saying which one failed if it does. A pipeline that asked for two files and
+    /// silently got one would carry the gap into whatever reads them.
+    /// </summary>
+    private static async Task<bool> TryWriteAsync(string path, string text, TextWriter stderr)
+    {
+        try
+        {
+            await File.WriteAllTextAsync(path, text);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"error: failed to write '{path}': {ex.Message}");
+            return false;
+        }
     }
 
     private static bool FailsGate(ClassifiedFinding c, CheckOptions opts)

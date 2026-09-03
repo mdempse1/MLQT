@@ -16,10 +16,9 @@
 >   **Since shipped** (2026-09-01, ahead of Phase 7): per-repository Off/Info/Warning/Error selectors
 >   in `SettingsRepositories.razor`, so this deferral is closed.
 >
-> **Still open from this phase** (tracked in [roadmap.md](roadmap.md), "Backlog — finishing phases
-> 1–6"): B3 two outputs from one run, so a pipeline does not check the library twice. B1
-> (model-relative line numbers) and B2 (`--sarif-base`) were closed on 2026-09-03 — see the notes
-> below.
+> **Nothing from this phase is still open.** B1 (model-relative line numbers), B2 (`--sarif-base`)
+> and B3 (several reports from one run, via `--report <format>:<path>`) were all closed on
+> 2026-09-03 — see the notes below.
 
 ## Purpose
 

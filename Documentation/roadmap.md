@@ -28,8 +28,8 @@ that is already complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1 and B2 shipped, B3 next.** Before that started, the work since the list was written
-had been bug-driven or user-driven rather than planned:
+**Backlog: B1, B2 and B3 shipped; B4 next.** Before that started, the work since the list was
+written had been bug-driven or user-driven rather than planned:
 
 | Landed | What |
 |--------|------|
@@ -229,7 +229,7 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 |---|------|------|-------|--------|-----------------|
 | B1 | **SARIF line numbers are model-relative** | Phase 4 known limitation | ⭐⭐⭐ | M | **✅ shipped (2026-09-03)** — findings still carry class-relative lines (what a rule can know, and what the code viewer wants), and every report maps them through `ClassLocation` to the line in the file. It also settled a split nobody had noticed: the whole-graph analyses and the parser were emitting file lines while the rules emitted class lines, so the app scrolled to the wrong place for the first two. A package whose stored source was trimmed is reported at its declaration rather than at a confidently wrong line. |
 | B2 | **`--sarif-base <path>`** | Phase 4 deferral | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `--sarif-base <path>` writes SARIF file paths relative to that directory instead of the library. Resolved against the library like the other path options, and refused up front when it does not contain the library, since the report would then have to point outside it — which GitHub rejects, the same silent non-attachment reached from the other side. |
-| B3 | **Two outputs from one run** | Phase 4 non-goal | ⭐⭐ | S | One `--format` per invocation, so a pipeline wanting a readable log *and* a JUnit file checks the library twice — on a large library that is minutes, and the two runs can disagree if anything changed between them. |
+| B3 | **Two outputs from one run** | Phase 4 non-goal | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `--report <format>:<path>`, repeatable, writes extra reports alongside the primary output from the same findings. `--format`/`--out` are unchanged, so existing invocations are untouched. |
 | B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | `--fail-on` gates on finding severity only. The coverage numbers and their history now exist, so "fail if class-description coverage is below 80%" — or below the last recorded snapshot, the ratchet applied to coverage — is the missing half of the governance story. |
 | B5 | **Missing-units rule vs the Unit dimension** | Phase 6 increment | ⭐⭐ | M | The rule flags only plain `Real`; the Unit coverage dimension resolves alias and SI type chains through `UnitResolver`. The dashboard therefore shows gaps the rule never reports, and no finding leads the user to them. Promote the rule onto the resolver. |
 | B6 | **Pre-commit hook / commit gate** | §5 | ⭐⭐ | S | A documented `--changed-from BASE` recipe today. As a feature it extends the existing "commit requires issue number" gate. |
@@ -238,7 +238,8 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needs hand-holding), so they come first; B4 next, since it is what
 turns the metrics work into a gate; then B5; B6 and B7 last, being conveniences rather than gaps.
-**B1 and B2 are done**; B3 is next.
+**B1, B2 and B3 are done** — with them, nothing from phase 4 is outstanding and a real pipeline needs
+no hand-holding. **B4 is next**, and is the one that turns the metrics work into a gate.
 
 ---
 

@@ -6,6 +6,14 @@ internal enum FailOnLevel { Off, Warning, Error }
 
 internal enum TouchedDebtPolicy { Warn, Fail, Ignore }
 
+/// <summary>
+/// One extra report to write alongside the primary output: a format and where to put it. A pipeline
+/// usually wants two — something a person reads and something a machine does — and producing them
+/// from one run is not just faster on a large library, it is the only way they are guaranteed to
+/// describe the same code.
+/// </summary>
+internal sealed record ReportOutput(OutputFormat Format, string Path);
+
 /// <summary>Parsed options for the `check` command.</summary>
 internal sealed record CheckOptions
 {
@@ -24,6 +32,12 @@ internal sealed record CheckOptions
     /// which is right only when the library is the repository — see <see cref="SarifBase"/>.
     /// </summary>
     public string? SarifBasePath { get; init; }
+
+    /// <summary>
+    /// Extra reports to write to files, on top of the primary output. Empty by default: one run, one
+    /// report, exactly as before.
+    /// </summary>
+    public IReadOnlyList<ReportOutput> Reports { get; init; } = [];
 
     /// <summary>How to treat pre-existing (baseline) findings in a model the change touched.</summary>
     public TouchedDebtPolicy TouchedDebt { get; init; } = TouchedDebtPolicy.Warn;
@@ -75,6 +89,7 @@ internal sealed record CheckOptions
 
         string? path = null, config = null, outPath = null, baseline = null, changedFrom = null;
         string? sarifBase = null;
+        var reports = new List<ReportOutput>();
         var format = OutputFormat.Console;
         var failOn = FailOnLevel.Error;
         var touchedDebt = TouchedDebtPolicy.Warn;
@@ -102,6 +117,18 @@ internal sealed record CheckOptions
                     break;
                 case "--sarif-base":
                     if (!Next(args, ref i, out sarifBase, out error)) return false;
+                    break;
+                case "--report":
+                    if (!Next(args, ref i, out var report, out error)) return false;
+                    if (!TryParseReport(report!, out var parsedReport, out error)) return false;
+                    if (reports.Any(r => string.Equals(r.Path, parsedReport!.Path, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        // Two formats into one file: the second would overwrite the first, and the
+                        // pipeline would carry on believing it had both.
+                        error = $"--report writes '{parsedReport!.Path}' more than once";
+                        return false;
+                    }
+                    reports.Add(parsedReport!);
                     break;
                 case "--no-color":
                     noColor = true;
@@ -186,6 +213,7 @@ internal sealed record CheckOptions
             NoColor = noColor,
             BaselinePath = baseline,
             SarifBasePath = sarifBase,
+            Reports = reports,
             TouchedDebt = touchedDebt,
             ChangedFrom = changedFrom,
             NoSuppress = noSuppress,
@@ -208,6 +236,40 @@ internal sealed record CheckOptions
             return false;
         }
         value = args[++i];
+        return true;
+    }
+
+    /// <summary>
+    /// Parses <c>&lt;format&gt;:&lt;path&gt;</c>. Split at the first colon only, so a Windows path
+    /// keeps its drive letter.
+    /// </summary>
+    private static bool TryParseReport(string value, out ReportOutput? report, out string? error)
+    {
+        report = null;
+        error = null;
+
+        var separator = value.IndexOf(':');
+        if (separator <= 0 || separator == value.Length - 1)
+        {
+            error = $"invalid --report '{value}' (expected <format>:<path>, e.g. junit:results.xml)";
+            return false;
+        }
+
+        var formatText = value[..separator];
+        var path = value[(separator + 1)..].Trim();
+        if (path.Length == 0)
+        {
+            error = $"invalid --report '{value}' (expected <format>:<path>, e.g. junit:results.xml)";
+            return false;
+        }
+
+        if (!TryParseFormat(formatText, out var format))
+        {
+            error = $"invalid --report format '{formatText}' (expected console|json|junit|sarif|teamcity|markdown)";
+            return false;
+        }
+
+        report = new ReportOutput(format, path);
         return true;
     }
 

@@ -41,7 +41,8 @@ library has that another does not.
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit\|sarif\|teamcity\|markdown` | Output format ([details](#output-formats)) | `console` |
 | `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
-| `--out <file>` | Write output to a file instead of stdout | stdout |
+| `--out <file>` | Write the primary output to a file instead of stdout | stdout |
+| `--report <fmt>:<file>` | Also write this format to this file. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
@@ -527,6 +528,27 @@ safe without them, but with them the extra build never happens at all.
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.
 - **markdown** — a PR-comment-ready summary table (counts, gate result, actionable findings).
+
+### Several reports from one run
+
+A pipeline usually wants two reports: one a person reads in the build log, one a machine reads.
+`--report <format>:<path>` writes an extra one to a file alongside the primary output, and can be
+repeated:
+
+```bash
+# A readable log on stdout, a JUnit file for the test UI, and SARIF for code scanning — one check
+mlqt check ./MyLibrary --fail-on warning \
+      --report junit:mlqt-results.xml --report "sarif:mlqt.sarif"
+```
+
+Running the check twice to get two formats costs the load and the check twice over — minutes on a
+large library — and the two runs can disagree if anything on disk changed between them, which is
+precisely when the reports are being trusted. Both files come from the same findings here.
+
+`--format`/`--out` still control the primary output, so existing invocations are unchanged. Paths are
+taken as given (relative to the working directory, like `--out`); two reports may not name the same
+file. A `console` report written to a file carries no colour codes. The exit code is the gate's, no
+matter how many reports were written.
 
 ### CI examples
 

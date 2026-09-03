@@ -148,7 +148,23 @@ public class SarifBaseTests
             "check", repo.LibraryPath, "--sarif-base", repo.Root, "--no-color", "--fail-on", "off");
 
         Assert.Equal(0, code);
-        Assert.Contains("--sarif-base only affects --format sarif", stderr);
+        Assert.Contains("--sarif-base only affects SARIF output", stderr);
+    }
+
+    [Fact]
+    public void WithSarifAsAnExtraReport_ItStillApplies()
+    {
+        // The note about doing nothing must not fire when the SARIF is coming from --report.
+        using var repo = new TempRepo();
+        var sarifPath = System.IO.Path.Combine(repo.Root, "mlqt.sarif");
+
+        var (code, _, stderr) = Run(
+            "check", repo.LibraryPath, "--no-color", "--fail-on", "off",
+            "--sarif-base", repo.Root, "--report", $"sarif:{sarifPath}");
+
+        Assert.Equal(0, code);
+        Assert.DoesNotContain("--sarif-base only affects", stderr);
+        Assert.Equal(["Libraries/Fix/Undescribed.mo"], UrisIn(File.ReadAllText(sarifPath)));
     }
 
     [Fact]
