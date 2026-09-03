@@ -19,20 +19,21 @@ with those tools, and it stays optional.
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
 
-**The CI/CD toolchain is feature-complete.** The gaps left inside phases 1–6 were collected in
-[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below, and B1–B12 are
-all closed. Reviewing the branch end to end before merging it then opened **B13–B24**: four
-correctness defects, three pieces of duplication and structure, and the rest documentation that had
-drifted from the code. None of them blocks the merge — they are things the work exposed rather than
-things it broke — but B20 is sequenced into phase 7a rather than after it, because it is what makes
-7a expensive. Cross-platform (§1) was deliberately kept last of the two: it is the big task, and the
-point was to start it against a toolchain that is complete rather than one still being finished.
+**The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
+[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. B1–B12 closed
+the feature list; reviewing the branch end to end before merging it opened **B13–B25**, and those are
+closed too — five correctness defects, two pieces of duplication, and documentation that had drifted
+from the code. **The one item left is B20**, and it is deliberately left: it belongs inside phase 7a,
+because the logic sitting in the two largest pages is what makes a GUI test harness expensive to
+build. Cross-platform (§1) was kept last of the two on purpose — it is the big task, and the point
+was to start it against a toolchain that is complete rather than one still being finished.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1–B12 are shipped; B13–B24 were opened by the end-of-branch review on 2026-09-03**
-(see [Branch review](#branch-review-2026-09-03)). B8–B11 had been added earlier the same day after
+**Backlog: B1–B19 and B21–B25 are shipped; only B20 is open, and it belongs to phase 7a.** B13–B25
+were opened by the end-of-branch review on 2026-09-03 (see
+[Branch review](#branch-review-2026-09-03)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -277,14 +278,21 @@ conveniences (B6, B7), which closed the original list.
 ### Branch review (2026-09-03)
 
 **B13–B24 came out of reviewing `ci-cd-integration` end to end before merging it** — 205 commits,
-361 files. They are ordered by what they cost rather than by what they are: **B13–B15 first** (a
-wrong line handed to an agent, a broken diff that reads as a clean one, and a diff that blames the
-wrong author), then **B16–B17**, then the duplication and documentation items, with **B20 sequenced
-into phase 7a** rather than after it because it is what makes 7a expensive.
+361 files — and **B25 came out of fixing B13**. All of them are done except **B20**, which is
+sequenced into phase 7a rather than before it, because it is what makes 7a expensive.
 
-Four of them are things the branch *exposed* rather than things it broke. B13 is B1 unapplied to
-MCP; B15 is the correction B7 needed for review comments, not yet applied to the ratchet; B14 and
-B17 are both older than this branch. Two — B18 and B24 — are B7's own, found the same day it landed.
+They were taken in cost order: **B13–B15 first** (a wrong line handed to an agent, a broken diff
+that reads as a clean one, and a diff that blames the wrong author), then **B16–B17**, then the
+duplication and documentation items.
+
+Most were things the branch *exposed* rather than things it broke. B13 is B1 unapplied to MCP; B15
+is the correction B7 needed for review comments, not yet applied to the ratchet; B14, B17 and B25
+are all older than this branch. Two — B18 and B24 — are B7's own, found the day after it landed.
+
+Two of them only existed because something else was written down: B16 was a claim that had been true
+when B9 made it, and B22 a design note describing an `AppState` surface that was never added. Both
+now have a test or a correction rather than a good intention, and B16's is the kind that matters — it
+fails when the catalog knows a rule the documentation does not.
 
 What the review covered, so the gaps in it are on the record too: every CLI flag against `cli.md` and
 `--help`; every rule id and every setting against `settings-reference.md`; the phase 1–6 design notes
