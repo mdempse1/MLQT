@@ -158,6 +158,10 @@ public class ReviewFindingFormatterTests
         var body = comment.GetProperty("body").GetString()!;
         Assert.Contains("no description", body);
         Assert.Contains("no icon", body);
+
+        // ...and the summary counts findings, not comments. Saying "1 finding" over a comment
+        // carrying two is wrong in the one place a reader is checking the numbers add up.
+        Assert.Contains("2 findings are commented", Body(report));
     }
 
     [Fact]

@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using ModelicaParser.DataTypes;
 using MLQT.Services.Checking;
 
 namespace MLQT.Cli;
@@ -78,7 +77,9 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
 
         var review = new
         {
-            body = Summary(report, inline.Count, unplaceable, overflow),
+            // The number of findings commented on, not the number of comments: several findings on
+            // one line are deliberately merged into one comment, and the summary says "findings".
+            body = Summary(report, inline.Sum(g => g.Count()), unplaceable, overflow),
             @event = "COMMENT",
             comments
         };
@@ -98,7 +99,7 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
             var status = c.Status == FindingStatus.TouchedDebt ? " _(pre-existing)_" : "";
             if (list.Count > 1)
                 sb.Append("- ");
-            sb.AppendLine($"**{Severity(f.Severity)}** `{f.RuleId}`{status} — {f.Message}");
+            sb.AppendLine($"**{Markdown.Severity(f.Severity)}** `{f.RuleId}`{status} — {f.Message}");
         }
 
         return sb.ToString().TrimEnd();
@@ -106,7 +107,7 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
 
     private static string Summary(
         CheckReport report,
-        int inlineCount,
+        int commentedFindings,
         IReadOnlyList<ClassifiedFinding> unplaceable,
         IReadOnlyList<ClassifiedFinding> overflow)
     {
@@ -129,9 +130,9 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
         else
         {
             sb.AppendLine(
-                inlineCount == 1
+                commentedFindings == 1
                     ? "1 finding is commented on the diff below."
-                    : $"{inlineCount} findings are commented on the diff below.");
+                    : $"{commentedFindings} findings are commented on the diff below.");
         }
 
         // Everything the review could not point at. Said plainly, because a reader who sees only the
@@ -146,15 +147,7 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
             sb.AppendLine("They are not on a line this change added or rewrote, so a review comment");
             sb.AppendLine("cannot be attached to them.");
             sb.AppendLine();
-            sb.AppendLine("| Severity | Status | Rule | Model | Line | Message |");
-            sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
-            foreach (var c in elsewhere)
-            {
-                var f = c.Finding;
-                sb.AppendLine(
-                    $"| {Severity(f.Severity)} | {c.Status} | {f.RuleId} | {Cell(f.ModelId)} | " +
-                    $"{report.LineFor(f)} | {Cell(f.Message)} |");
-            }
+            sb.Append(Markdown.FindingsTable(report, elsewhere));
             sb.AppendLine();
             sb.AppendLine("</details>");
         }
@@ -162,18 +155,9 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
         if (report.FixedEntries.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"**Fixed in changed models ({report.FixedEntries.Count}):**");
-            sb.AppendLine();
-            foreach (var e in report.FixedEntries
-                         .OrderBy(e => e.Model, StringComparer.Ordinal)
-                         .ThenBy(e => e.RuleId, StringComparer.Ordinal))
-                sb.AppendLine($"- {e.RuleId} — {Cell(e.Model)}: {Cell(e.Message)}");
+            sb.Append(Markdown.FixedEntries(report.FixedEntries));
         }
 
         return sb.ToString().TrimEnd();
     }
-
-    private static string Severity(RuleSeverity severity) => severity.ToString().ToLowerInvariant();
-
-    private static string Cell(string s) => s.Replace("|", "\\|").Replace("\n", " ").Replace("\r", " ");
 }

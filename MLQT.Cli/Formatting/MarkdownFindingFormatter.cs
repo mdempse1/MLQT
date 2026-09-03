@@ -26,35 +26,16 @@ internal sealed class MarkdownFindingFormatter : IFindingFormatter
             .ToList();
 
         if (actionable.Count == 0)
-        {
             sb.AppendLine("No new findings.");
-        }
         else
-        {
-            sb.AppendLine("| Severity | Status | Rule | Model | Line | Message |");
-            sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
-            foreach (var c in actionable)
-            {
-                var f = c.Finding;
-                sb.AppendLine(
-                    $"| {f.Severity.ToString().ToLowerInvariant()} | {c.Status} | {f.RuleId} | " +
-                    $"{Cell(f.ModelId)} | {report.LineFor(f)} | {Cell(f.Message)} |");
-            }
-        }
+            sb.Append(Markdown.FindingsTable(report, actionable));
 
         if (fixedCount > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"**Fixed in changed models ({fixedCount}):**");
-            sb.AppendLine();
-            foreach (var e in report.FixedEntries
-                         .OrderBy(e => e.Model, StringComparer.Ordinal)
-                         .ThenBy(e => e.RuleId, StringComparer.Ordinal))
-                sb.AppendLine($"- {e.RuleId} — {Cell(e.Model)}: {Cell(e.Message)}");
+            sb.Append(Markdown.FixedEntries(report.FixedEntries));
         }
 
         return sb.ToString();
     }
-
-    private static string Cell(string s) => s.Replace("|", "\\|").Replace("\n", " ").Replace("\r", " ");
 }
