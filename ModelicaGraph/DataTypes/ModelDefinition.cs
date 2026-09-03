@@ -65,7 +65,12 @@ public class ModelDefinition
         // string literal"). Re-parsing this one class in isolation re-derives the same problem with
         // class-relative positions and less context — overwriting with that used to replace the
         // useful message with a bare "mismatched input ';'" as soon as anything checked the class.
-        if (ParserErrors.Count == 0)
+        //
+        // And record nothing at all when the load already dealt with this file's errors. The whole
+        // file was parsed once and each error attributed to the innermost class whose text it is in;
+        // every class enclosing that one fails to parse for the same reason, so letting each record
+        // its own copy gives one problem as many owners as it has ancestors.
+        if (MayRecordParserErrors && ParserErrors.Count == 0)
             ParserErrors = errors;
 
         return ParsedCode;
@@ -85,6 +90,20 @@ public class ModelDefinition
     /// Parser errors encountered when parsing this model
     /// </summary>
     public List<ParserError> ParserErrors { get; set; } = new();
+
+    /// <summary>
+    /// Whether parsing this class's stored code may record <see cref="ParserErrors"/> against it.
+    ///
+    /// <para>Cleared for every class in a file that failed to parse, because the load has already
+    /// attributed each of that file's errors to the innermost class whose text it is in. Every class
+    /// enclosing that one contains the same broken text and fails for the same reason, so letting
+    /// each record its own copy on first parse gave one problem as many owners as it had ancestors —
+    /// and every surface that walks the graph then reported it that many times.</para>
+    ///
+    /// <para>Left set for a class from a file that parsed cleanly: if its own stored source somehow
+    /// does not parse, that is news, and it is how a class held only in memory reports at all.</para>
+    /// </summary>
+    public bool MayRecordParserErrors { get; set; } = true;
 
     public ModelDefinition(string name, string modelicaCode = "")
     {

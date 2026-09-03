@@ -107,6 +107,7 @@ public static class PackageCodeTrimmer
                 // text is no longer the file's line. Reports fall back to the class declaration
                 // rather than pointing confidently at the wrong line — see ModelNode.SourceMatchesFile.
                 model.SourceMatchesFile = false;
+
             }
             catch
             {

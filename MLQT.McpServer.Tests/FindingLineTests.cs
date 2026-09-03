@@ -103,6 +103,32 @@ public class FindingLineTests
     }
 
     [Fact]
+    public void AParseErrorStaysOwnedByOneClass()
+    {
+        // Checking a package replaces its stored source with a rendering that leaves out the children
+        // stored in their own files. Parsing that rendering used to record its diagnostics as the
+        // package's parser errors, on top of the ones the load had already attributed to the nested
+        // class the broken text is actually in - one problem, two owners, reported twice by every
+        // surface that walks the graph.
+        using var host = BrokenLibrary();
+        var style = Style(host);
+
+        var before = OwnersOfParseErrors(host);
+        style.CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+            .GetAwaiter().GetResult();
+
+        Assert.NotEmpty(before);
+        Assert.Equal(before, OwnersOfParseErrors(host));
+    }
+
+    private static List<string> OwnersOfParseErrors(TestHost host) =>
+        host.Libraries.GetAllModels()
+            .Where(m => m.Definition.ParserErrors.Count > 0)
+            .Select(m => m.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+    [Fact]
     public void ExcludingParseErrorsExcludesThemAfterACheckToo()
     {
         // They used to come back anyway, through the review list a check had written them to.

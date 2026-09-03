@@ -135,6 +135,19 @@ public static class GraphBuilder
             // This makes errors available immediately after loading (before EnsureParsed runs).
             if (fileParserErrors.Count > 0)
             {
+                // The file's diagnosis is settled here, and it is the good one: whole-file context,
+                // real line numbers. Every class in the file is therefore barred from recording its
+                // own copy when something parses it later — which each enclosing class would
+                // otherwise do, since they all contain the broken text and all fail for the same
+                // reason. See ModelDefinition.MayRecordParserErrors.
+                foreach (var modelInfo in models)
+                {
+                    var id = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
+                    var node = graph.GetNode<ModelNode>(id);
+                    if (node is not null)
+                        node.Definition.MayRecordParserErrors = false;
+                }
+
                 foreach (var error in fileParserErrors)
                 {
                     // Find the model whose line range contains this error
