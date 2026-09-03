@@ -49,12 +49,14 @@ copy of a library has that another does not, and `mlqt hook`
 | `--min-coverage <spec>` | Fail when coverage is below a percentage — see [Gating on coverage](#gating-on-coverage). Repeatable | none |
 | `--coverage-ratchet` | Fail when any dimension is below the last recorded snapshot | off |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
+| `--no-suppress` | Ignore `__MLQT` suppression annotations, to audit what has been waived — see [Suppressing intentional findings](ci-quality-gate.md#suppressing-intentional-findings) | off |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
 | `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `-h`, `--help` | Show help | |
+| `--version` | Print the tool's version and exit. Used on its own, not with `check` | |
 
 ### Exit codes
 

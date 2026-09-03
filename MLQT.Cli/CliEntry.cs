@@ -55,6 +55,7 @@ internal static class CliEntry
                                                            [--dependency <path>] [--force]
           mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
           mlqt hook install|uninstall|status [<library-path>] [options]
+          mlqt --version
 
         check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)

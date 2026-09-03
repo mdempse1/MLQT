@@ -297,10 +297,19 @@ fields):
 breakdowns — available, currently unused, no new dependency. Grouping of findings by
 `RuleDefinition.Category` gives the finding-mix view (the `Category` seam Phase 1 built for exactly this).
 
-**Pipeline wiring:** add a deferred-aware metrics step to `MainLayout.RunStartUpAsync` (after external
-resources) and `OnProjectChanged`, mirroring the existing deferred pattern — new `AppState`
-`HasMetricsComputed` flag + `OnRunDeferredMetrics` event + `RunDeferredMetricsAsync()`/`MetricsComputed()`
-marker, subscribed in `MainLayout.OnInitializedAsync`. On big libraries it defers like the other analyses.
+**Pipeline wiring:** *(planned, and deliberately not built — corrected 2026-09-03)*. The plan was a
+deferred-aware metrics step in `MainLayout.RunStartUpAsync` and `OnProjectChanged`, mirroring the
+other analyses: an `AppState.HasMetricsComputed` flag, an `OnRunDeferredMetrics` event and a
+`RunDeferredMetricsAsync()`/`MetricsComputed()` pair.
+
+None of that exists. `MetricsDashboard.razor` computes when it is opened instead, which turned out to
+be the better answer for the same reason the deferred pattern exists at all: nobody pays for metrics
+they are not looking at, and the page is the only thing that wants them. The deferred machinery would
+have added three `AppState` members and a startup step to arrive at the same place.
+
+Recorded here because the note is what a reader trusts when they come back to this, and it described
+an `AppState` surface that was never added. If a second consumer ever needs the numbers before the
+page is opened, this is the plan to pick back up.
 
 **Headless reuse:** because the service lives in `MLQT.Services` and needs only the graph, expose it
 as an MCP `get_metrics` tool and a CLI `mlqt metrics` summary (or a `--metrics` addition to the check
