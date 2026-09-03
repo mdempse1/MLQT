@@ -37,8 +37,9 @@ MLQT.Services (lifecycle, persistence)
 MLQT.Shared (UI)
   Pages/CodeReview.razor     - Click issue -> scroll/underline word; right-click word -> correction menu (Suggestions, Replace with, Add to Dictionary, Ignore, Close)
     Ignore writes __MLQT(spelling="word") onto the class (MlqtSuppressionWriter) and saves the file
-  Components/SettingsStyleChecking.razor  - Default language selection
-  Components/SettingsRepositories.razor   - Per-repo language selection
+  Components/SettingsRepositories.razor   - Per-repo language selection + Import Language, with a
+                                            warning when a chosen language has no dictionary here
+                                            (DictionaryAvailability.WarningFor)
   Components/SettingsRepositoryDictionary.razor - Per-repo accepted spellings (add/remove/filter/import/export)
 ```
 

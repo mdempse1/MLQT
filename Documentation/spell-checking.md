@@ -52,7 +52,7 @@ The spell checker is designed to minimize false positives. The following are aut
 
 ## Enabling Spell Checking
 
-Spell checking is controlled by two independent toggle switches, available in both the default settings and per-repository settings:
+Spell checking is controlled by two independent toggle switches, set per repository:
 
 1. Navigate to **Settings > Manage Repositories** and click the repository
 2. Under **Spell checking**, enable one or both:
@@ -68,9 +68,13 @@ MLQT ships with English (US) and English (UK) dictionaries. You can select which
 
 ### Selecting Active Dictionaries
 
-Below the spell checking toggles, a **Language Dictionaries** multi-select dropdown shows all available dictionaries. Select the languages you want to check against — a word is considered correct if it appears in **any** of the selected dictionaries.
+In **Settings > Manage Repositories**, click the repository and look under **Spell checking**: below the two toggles a **Language dictionaries** multi-select dropdown shows all available dictionaries. Select the languages this repository should be checked against — a word is considered correct if it appears in **any** of the selected dictionaries.
 
-By default, both English (US) and English (UK) are selected.
+By default, both English (US) and English (UK) are selected; selecting none falls back to those two.
+
+The choice belongs to the repository and is saved to its `.mlqt/settings.json`, so a library of German documentation and a library of English documentation can each be checked properly, and `mlqt check` in CI uses the same dictionaries the app did.
+
+The dictionaries themselves are installed per machine, though, while the setting is committed. If this machine has no dictionary for a language the settings ask for, MLQT says so beneath the dropdown — without the warning the words would quietly be judged by whatever languages remain, or by nothing at all.
 
 ### Importing a New Language
 

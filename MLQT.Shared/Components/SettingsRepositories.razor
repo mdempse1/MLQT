@@ -3,6 +3,7 @@
 @using ModelicaParser.StyleRules
 @using ModelicaParser.DataTypes
 @using ModelicaGraph
+@using MLQT.Services.Checking
 @using static ModelicaParser.StyleRules.NamingConventionConfig
 
 @inject IRepositoryService RepositoryService
@@ -214,6 +215,34 @@
                 Label="Spell check every description string" />
             <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
                 Label="Spell check all documentation" />
+
+            @* Which dictionaries the checker loads for this repository. Chosen per repository because
+            the choice is committed with the code: a library of German documentation and one of English
+            are checked against different words, and CI has to make the same choice the app did. *@
+            <MudStack Row="true" AlignItems="AlignItems.Start" Class="mt-2" Style="gap:8px;">
+                <MudSelect T="string" Label="Language dictionaries" MultiSelection="true" Dense="true"
+                    Margin="Margin.Dense" Typo="Typo.body1" Variant="Variant.Outlined"
+                    SelectedValues="@SelectedSettings.SpellCheckLanguages"
+                    SelectedValuesChanged="OnRepoLanguagesChanged"
+                    HelperText="@LanguageHelperText"
+                    Style="max-width:400px;">
+                    @foreach (var option in LanguageOptions)
+                    {
+                        <MudSelectItem T="string" Value="@option.Code">@option.Label</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                    OnClick="ImportRepoLanguageDictionary" Style="height:40px;">Import Language</MudButton>
+            </MudStack>
+
+            @* A language named in the committed settings that this machine has no dictionary for is
+            otherwise silent: the words are judged by whatever languages are left, or by none at all. *@
+            @if (MissingLanguageWarning is { } warning)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" Style="max-width:640px;">
+                    @warning
+                </MudAlert>
+            }
 
             @* The accepted spellings belong to the repository and are committed with it, which is what
             lets the app and CI agree on them — so they are configured here rather than in the tool
@@ -755,6 +784,47 @@
         SelectedSettings.SpellCheckLanguages = selected.ToList();
     }
 
+    /// <summary>
+    /// The dictionaries to offer: the ones installed here, plus any language the settings already
+    /// ask for that is not.
+    ///
+    /// <para>A language with no item behind it is one the user cannot see in the list and cannot
+    /// remove, and the setting is committed — so it is listed, marked, and left to them to decide
+    /// about.</para>
+    /// </summary>
+    private List<(string Code, string Label)> LanguageOptions
+    {
+        get
+        {
+            var options = _availableDictionaries
+                .Select(d => (Code: d.LanguageCode, Label: d.IsBundled ? d.DisplayName : $"{d.DisplayName} (imported)"))
+                .ToList();
+
+            var known = options.Select(o => o.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var code in SelectedSettings.SpellCheckLanguages)
+            {
+                if (!string.IsNullOrWhiteSpace(code) && known.Add(code))
+                    options.Add((code, $"{code} (not installed)"));
+            }
+
+            return options;
+        }
+    }
+
+    /// <summary>What an empty selection means, so nobody reads it as "no spell checking".</summary>
+    private string LanguageHelperText =>
+        SelectedSettings.SpellCheckLanguages.Count == 0
+            ? "None selected — the bundled en_US and en_GB are used."
+            : "Saved to the repository's .mlqt/settings.json, so CI checks with the same dictionaries.";
+
+    /// <summary>
+    /// Says so when this machine has no dictionary for a language the settings ask for. The languages
+    /// are committed but the dictionaries are installed per machine, so this is the gap between a
+    /// colleague's results and yours — the CLI has always warned about it.
+    /// </summary>
+    private string? MissingLanguageWarning =>
+        DictionaryAvailability.WarningFor(SelectedSettings.SpellCheckLanguages, DictionaryManagerService);
+
     private async Task ImportRepoLanguageDictionary()
     {
         var result = await FilePickerService.PickModelicaFileAsync(".aff");
@@ -773,8 +843,10 @@
         var langCode = await DictionaryManagerService.ImportDictionaryAsync(affPath, dicPath);
         if (langCode != null)
         {
+            // A new list rather than an Add: the select redraws off the instance, and the change
+            // detection that decides whether to re-check compares against a clone of the old one.
             if (!SelectedSettings.SpellCheckLanguages.Contains(langCode))
-                SelectedSettings.SpellCheckLanguages.Add(langCode);
+                SelectedSettings.SpellCheckLanguages = [.. SelectedSettings.SpellCheckLanguages, langCode];
 
             Snackbar.Add($"Imported dictionary: {langCode}", Severity.Success);
         }
