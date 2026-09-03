@@ -450,6 +450,7 @@ public class ModelicaPackageSaver
             // The within clause is stripped back off: it belongs to the file just written, not
             // to the class, and every other path stores class source without one.
             model.Definition.ModelicaCode = WithinClause.Strip(code);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
 
             // Get children for this package
             childrenByParent.TryGetValue(model.Id, out var children);
@@ -517,6 +518,7 @@ public class ModelicaPackageSaver
             // The within clause is stripped back off: it belongs to the file just written, not
             // to the class, and every other path stores class source without one.
             model.Definition.ModelicaCode = WithinClause.Strip(code);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
 
             // Update non-standalone children embedded in this model (e.g., nested classes
             // inside a model/block/connector) so their displayed code matches what was saved
@@ -547,7 +549,10 @@ public class ModelicaPackageSaver
         savedModels.Add(model.Id);
         result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
+        {
             model.Definition.ModelicaCode = WithinClause.Strip(childCode);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+        }
 
         // Recurse into this model's own nested children
         if (childrenByParent.TryGetValue(model.Id, out var grandchildren))

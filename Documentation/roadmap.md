@@ -28,8 +28,8 @@ that is already complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Nothing in the backlog has been started yet.** The work since the list was written has been
-bug-driven or user-driven rather than planned, and none of it is a backlog item:
+**Backlog: B1 shipped, B2 next.** Before it started, the work since the list was written had been
+bug-driven or user-driven rather than planned:
 
 | Landed | What |
 |--------|------|
@@ -227,7 +227,7 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
-| B1 | **SARIF line numbers are model-relative** | Phase 4 known limitation | ⭐⭐⭐ | M | Finding lines are relative to each model's extracted definition, not the file. For a model nested in a `package.mo`, GitHub code-scanning annotations land on the wrong line — the one place a wrong line actively misleads rather than merely failing to help. Needs finding lines mapped to file-absolute positions. |
+| B1 | **SARIF line numbers are model-relative** | Phase 4 known limitation | ⭐⭐⭐ | M | **✅ shipped (2026-09-03)** — findings still carry class-relative lines (what a rule can know, and what the code viewer wants), and every report maps them through `ClassLocation` to the line in the file. It also settled a split nobody had noticed: the whole-graph analyses and the parser were emitting file lines while the rules emitted class lines, so the app scrolled to the wrong place for the first two. A package whose stored source was trimmed is reported at its declaration rather than at a confidently wrong line. |
 | B2 | **`--sarif-base <path>`** | Phase 4 deferral | ⭐⭐ | S | SARIF URIs are relative to the library. A CI job whose library is a subdirectory of the repo needs them relative to the repo root, or the annotations attach to nothing. |
 | B3 | **Two outputs from one run** | Phase 4 non-goal | ⭐⭐ | S | One `--format` per invocation, so a pipeline wanting a readable log *and* a JUnit file checks the library twice — on a large library that is minutes, and the two runs can disagree if anything changed between them. |
 | B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | `--fail-on` gates on finding severity only. The coverage numbers and their history now exist, so "fail if class-description coverage is below 80%" — or below the last recorded snapshot, the ratchet applied to coverage — is the missing half of the governance story. |
@@ -238,6 +238,7 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needs hand-holding), so they come first; B4 next, since it is what
 turns the metrics work into a gate; then B5; B6 and B7 last, being conveniences rather than gaps.
+**B1 is done**; B2 is next.
 
 ---
 

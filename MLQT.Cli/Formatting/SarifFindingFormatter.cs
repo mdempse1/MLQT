@@ -47,7 +47,7 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
                         physicalLocation = new
                         {
                             artifactLocation = new { uri = RelativeUri(report, f) },
-                            region = new { startLine = Math.Max(1, f.LineNumber) }
+                            region = new { startLine = report.LineFor(f) }
                         }
                     }
                 }

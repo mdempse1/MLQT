@@ -499,14 +499,12 @@ end Foo;
 
 ## Known limitations
 
-- **Line numbers are relative to each model's definition, not the file.** For a model nested in a
-  multi-model file (e.g. a `package.mo`), a finding's line number counts from the start of that
-  model's own definition, not from the top of the file. This is fine when you fix findings in a
-  Modelica tool (which navigates by model/class, so a line *within the model* is what you want), and
-  reports now show the model each finding belongs to. It does mean the line won't line up with the
-  raw file — most relevant for SARIF/GitHub code-scanning annotations, which are file-line based. A
-  future change may map finding lines to file-absolute positions; revisit if SARIF annotations need
-  to point at exact file lines.
+- **A trimmed package is reported at its declaration.** Every report names the line in the file,
+  including SARIF annotations for a class nested deep in a `package.mo`. The one exception is a
+  finding about a *package* class: MLQT stores a package's source without the child classes that have
+  their own files, so a line inside it is no longer the file's line. Rather than point confidently at
+  the wrong line, such a finding is reported at the package's own declaration. Findings about the
+  classes themselves — the overwhelming majority — carry exact file lines.
 - **Dependencies aren't loaded** — see `ValidateModelReferences` above.
 
 ## Troubleshooting

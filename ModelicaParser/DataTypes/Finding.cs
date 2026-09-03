@@ -33,7 +33,17 @@ public sealed record Finding
     /// <summary>Human-readable message. Preserved verbatim from the rule visitor.</summary>
     public required string Message { get; init; }
 
-    /// <summary>Source line for display only — deliberately NOT part of the fingerprint.</summary>
+    /// <summary>
+    /// Source line <b>within the class's own source</b>, where line 1 is the class declaration.
+    /// Display only — deliberately NOT part of the fingerprint.
+    ///
+    /// <para>Class-relative rather than file-absolute because that is what a rule can know: a visitor
+    /// is handed one class's text and has no idea where in a file it sits. Surfaces that show the
+    /// class — the app's code viewer, the MCP tools — want this number as it is; a report about files
+    /// maps it with <c>ClassLocation</c>, which knows where the class starts. Producers that happen to
+    /// know a file line (the whole-graph analyses, the parser) convert to this convention rather than
+    /// leaving the meaning to depend on which rule emitted the finding.</para>
+    /// </summary>
     public int LineNumber { get; init; }
 
     /// <summary>

@@ -72,6 +72,12 @@ public static class ParserErrorReporter
             if (model?.Definition?.ParserErrors is not { Count: > 0 } errors)
                 continue;
 
+            // The parser reads whole files, so its line is the file's. Findings carry class-relative
+            // lines (see Finding.LineNumber), and for a class nested in a package.mo the two are
+            // hundreds of lines apart — which is how a parse error came to point at an unrelated line
+            // of the class the app was showing.
+            var classStart = model.StartLine > 0 ? model.StartLine : 1;
+
             foreach (var error in errors)
             {
                 // A fatal failure means the file could not be parsed at all and a placeholder stands
@@ -85,7 +91,7 @@ public static class ParserErrorReporter
                     Discriminator = error.Message,
                     Message = error.Message +
                               (error.OffendingToken is not null ? $" (token: '{error.OffendingToken}')" : ""),
-                    LineNumber = error.Line,
+                    LineNumber = Math.Max(1, error.Line - classStart + 1),
                     Severity = RuleSeverity.Error
                 });
             }

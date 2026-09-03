@@ -38,6 +38,7 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
                 c.Status.ToString(),
                 c.Finding.ModelId,
                 c.Finding.ElementPath,
+                report.LineFor(c.Finding),
                 c.Finding.LineNumber,
                 c.Finding.Message,
                 c.Finding.Fingerprint,
@@ -46,9 +47,13 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
         return JsonSerializer.Serialize(payload, Options);
     }
 
+    /// <param name="Line">The line in <paramref name="File"/> — what an editor or annotation wants.</param>
+    /// <param name="ModelLine">The same finding's line within the class's own source, which is what a
+    /// tool navigating by class (or the desktop app's code viewer) wants. The two differ for a class
+    /// nested in a package.mo.</param>
     private sealed record FindingJson(
         string RuleId, string Severity, string Status, string Model, string? Element,
-        int Line, string Message, string Fingerprint, string? File);
+        int Line, int ModelLine, string Message, string Fingerprint, string? File);
 
     private sealed record FixedJson(
         string RuleId, string Model, string? Element, string Message, string Fingerprint);

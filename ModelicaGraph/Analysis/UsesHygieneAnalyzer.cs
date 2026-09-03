@@ -69,7 +69,8 @@ public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
                             ElementPath = lib,
                             Discriminator = "undeclared",
                             Message = $"library '{lib}' is referenced but not declared in the uses(...) of {root.Definition.Name}",
-                            LineNumber = root.StartLine
+                            // The library root class as a whole; lines are class-relative.
+                            LineNumber = 1
                         });
 
             if (checkUnused && declared is not null)
@@ -82,7 +83,7 @@ public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
                             ElementPath = lib,
                             Discriminator = "unused",
                             Message = $"uses(...) of {root.Definition.Name} declares '{lib}', but nothing references it",
-                            LineNumber = root.StartLine
+                            LineNumber = 1
                         });
         }
 

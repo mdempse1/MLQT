@@ -37,7 +37,7 @@ public class MarkdownFindingFormatterTests
             LibraryPath: @"C:\lib",
             ModelsChecked: 10,
             Findings: (findings ?? []).ToList(),
-            ModelToFile: new Dictionary<string, string>(),
+            Locations: new Dictionary<string, ClassLocation>(),
             HasBaseline: true,
             GateFailureCount: gateFailures,
             FixedEntries: (fixedEntries ?? []).ToList());

@@ -83,7 +83,7 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
             foreach (var c in group)
             {
                 var status = showStatus ? StatusTag(c.Status) + " " : string.Empty;
-                sb.AppendLine($"  {status}{Severity(c.Finding.Severity)} {c.Finding.RuleId} (line {c.Finding.LineNumber}): {c.Finding.Message}");
+                sb.AppendLine($"  {status}{Severity(c.Finding.Severity)} {c.Finding.RuleId} (line {report.LineFor(c.Finding)}): {c.Finding.Message}");
             }
             sb.AppendLine();
         }

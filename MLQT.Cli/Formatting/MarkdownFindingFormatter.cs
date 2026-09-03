@@ -38,7 +38,7 @@ internal sealed class MarkdownFindingFormatter : IFindingFormatter
                 var f = c.Finding;
                 sb.AppendLine(
                     $"| {f.Severity.ToString().ToLowerInvariant()} | {c.Status} | {f.RuleId} | " +
-                    $"{Cell(f.ModelId)} | {f.LineNumber} | {Cell(f.Message)} |");
+                    $"{Cell(f.ModelId)} | {report.LineFor(f)} | {Cell(f.Message)} |");
             }
         }
 

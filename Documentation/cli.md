@@ -510,7 +510,8 @@ safe without them, but with them the extra build never happens at all.
   per-severity summary.
 - **json** — an object with `tool`, `library`, `modelsChecked`, `findingCount`, a `summary` (new /
   accepted / touched counts), and a `findings` array. Each finding includes its `Fingerprint`, `Status`
-  (`New`/`AcceptedDebt`/`TouchedDebt`), and `File`.
+  (`New`/`AcceptedDebt`/`TouchedDebt`), `File`, `Line` (the line in that file) and `ModelLine` (the
+  same finding's line within the class's own source, for a tool that navigates by class).
 - **junit** — JUnit XML where each actionable finding is a failing test case. Renders in the native
   test-report UI of most CI systems (TeamCity, Jenkins, GitLab, Azure DevOps) with no extra integration.
 - **sarif** — SARIF 2.1.0 for GitHub code scanning / Azure DevOps. `level` reflects the rule's

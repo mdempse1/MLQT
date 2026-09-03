@@ -17,9 +17,9 @@
 >   in `SettingsRepositories.razor`, so this deferral is closed.
 >
 > **Still open from this phase** (tracked in [roadmap.md](roadmap.md), "Backlog — finishing phases
-> 1–6"): B1 SARIF line numbers are model-relative, not file-absolute — the known limitation below,
-> which matters most for GitHub code-scanning annotations; B2 `--sarif-base` for repo-root-relative
-> URIs; B3 two outputs from one run, so a pipeline does not check the library twice.
+> 1–6"): B2 `--sarif-base` for repo-root-relative URIs; B3 two outputs from one run, so a pipeline
+> does not check the library twice. B1 (model-relative line numbers) was closed on 2026-09-03 — see
+> the note below.
 
 ## Purpose
 
@@ -168,9 +168,9 @@ new `IFindingFormatter` implementations + switch arms in `CheckRunner`. No new o
   case flagged in Phase 1; contained to `StyleCheckingSettings` with a dedicated test.
 - **Risk:** SARIF schema conformance — validate output against the 2.1.0 shape in tests; keep the
   document minimal (driver + rules + results) rather than exhaustive.
-- **Known limitation / possible follow-up:** finding line numbers are relative to each model's
-  extracted definition, not the source file, so for a model nested in a multi-model file (a
-  `package.mo`) the line does not match the raw file. Acceptable for the console/JUnit views (which
-  now show the model, and users fix findings in a Modelica tool that navigates by model), but SARIF's
-  `region.startLine` would point at the wrong file line for GitHub code-scanning annotations.
-  Revisit — mapping finding lines to file-absolute positions — if/when exact SARIF file lines matter.
+- **Resolved (2026-09-03, backlog B1):** finding line numbers were relative to each model's
+  extracted definition, so SARIF's `region.startLine` pointed at the wrong line of a `package.mo`.
+  Findings still carry class-relative lines — that is what a rule can know, and what the app's code
+  viewer wants — and every report now maps them through `ClassLocation`, which knows where the class
+  starts in its file. A package whose stored source was trimmed cannot be mapped line-for-line and is
+  reported at its declaration instead.

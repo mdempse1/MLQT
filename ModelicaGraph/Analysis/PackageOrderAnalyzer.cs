@@ -60,7 +60,9 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
                             ElementPath = entry,
                             Discriminator = "stale",
                             Message = $"package.order lists '{entry}', which is not a class or member of {package.Definition.Name}",
-                            LineNumber = package.StartLine
+                            // The package as a whole — package.order is a separate file, and finding
+                            // lines are class-relative (see Finding.LineNumber).
+                            LineNumber = 1
                         });
             }
 
@@ -75,7 +77,7 @@ public sealed class PackageOrderAnalyzer : IGraphAnalyzer
                         ElementPath = childName,
                         Discriminator = "missing",
                         Message = $"class '{childName}' is not listed in the package.order of {package.Definition.Name}",
-                        LineNumber = package.StartLine
+                        LineNumber = 1
                     });
         }
 

@@ -23,7 +23,7 @@ internal sealed class TeamCityFindingFormatter : IFindingFormatter
         {
             var f = c.Finding;
             var status = f.Severity == RuleSeverity.Error ? "ERROR" : "WARNING";
-            var text = $"{f.RuleId} [{f.ModelId}:{f.LineNumber}] {f.Message}";
+            var text = $"{f.RuleId} [{f.ModelId}:{report.LineFor(f)}] {f.Message}";
             sb.AppendLine($"##teamcity[message text='{Escape(text)}' status='{status}']");
         }
 

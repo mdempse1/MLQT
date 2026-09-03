@@ -13,6 +13,7 @@ internal sealed record LoadResult(
     int ExitCode,
     IReadOnlyList<Finding> Findings,
     IReadOnlyDictionary<string, string> ModelToFile,
+    IReadOnlyDictionary<string, ClassLocation> Locations,
     int ModelsChecked,
     DirectedGraph? Graph = null,
     IReadOnlyList<ModelNode>? Models = null,
@@ -20,7 +21,8 @@ internal sealed record LoadResult(
     IReadOnlyList<string>? DependencyLibraries = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
-    public static LoadResult Failed(int code) => new(code, [], new Dictionary<string, string>(), 0);
+    public static LoadResult Failed(int code) =>
+        new(code, [], new Dictionary<string, string>(), new Dictionary<string, ClassLocation>(), 0);
 }
 
 /// <summary>Shared load + check pipeline used by both `check` and the `baseline` commands.</summary>
@@ -270,10 +272,10 @@ internal static class CheckPipeline
             .ThenBy(f => f.ElementPath ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 
-        var modelToFile = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var file in graph.FileNodes)
-            foreach (var model in graph.GetModelsInFile(file.Id))
-                modelToFile[model.Id] = file.FilePath;
+        // Where each class lives, and where in its file it starts — the second half is what lets a
+        // report turn a finding's class-relative line into the line a reader (or GitHub) will open.
+        var locations = ClassLocation.ForGraph(graph);
+        var modelToFile = locations.ToDictionary(kv => kv.Key, kv => kv.Value.FilePath, StringComparer.Ordinal);
 
         // A dependency on the machine that is not the version the library targets resolves references
         // against classes that may have moved, been renamed or changed signature between versions. The
@@ -317,6 +319,6 @@ internal static class CheckPipeline
         // The graph and model list are carried out so `--metrics` can compute coverage over exactly
         // the set that was checked, without loading the library a second time.
         return new LoadResult(
-            ExitCodes.Ok, findings, modelToFile, modelsChecked, graph, models, settings, dependencyLibraries);
+            ExitCodes.Ok, findings, modelToFile, locations, modelsChecked, graph, models, settings, dependencyLibraries);
     }
 }

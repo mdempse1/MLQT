@@ -133,7 +133,7 @@ internal static class CheckRunner
         }
 
         var report = new CheckReport(
-            opts.LibraryPath, load.ModelsChecked, classified, load.ModelToFile,
+            opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
             baseline is not null, gateFailureCount, fixedEntries);
 
         IFindingFormatter formatter = opts.Format switch

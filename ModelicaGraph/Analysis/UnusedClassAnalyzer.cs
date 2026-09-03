@@ -77,7 +77,8 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
                         RuleId = RuleIdsRef.UnusedClass,
                         ModelId = node.Id,
                         Message = $"protected class {node.Definition.Name} is never used",
-                        LineNumber = node.StartLine
+                        // The class as a whole; finding lines are class-relative (see Finding.LineNumber).
+                        LineNumber = 1
                     });
             }
             else if (checkPublic)
@@ -87,7 +88,7 @@ public sealed class UnusedClassAnalyzer : IGraphAnalyzer
                     RuleId = RuleIdsRef.UnusedPublicClass,
                     ModelId = node.Id,
                     Message = $"public class {node.Definition.Name} may be unused — nothing in the loaded libraries references it",
-                    LineNumber = node.StartLine
+                    LineNumber = 1
                 });
             }
         }

@@ -49,6 +49,41 @@ public class ParserErrorReporterTests
     }
 
     [Fact]
+    public void AnErrorInAClassNestedInAFile_IsReportedRelativeToThatClass()
+    {
+        // The parser read a package.mo and put the error on line 120. The class it belongs to starts
+        // at line 118, so within that class — which is what the app renders and what every other
+        // finding is measured against — the error is on line 3.
+        var node = NodeWith("Lib.Late", new ParserError
+        {
+            Line = 120,
+            Message = "mismatched input ';'",
+            Severity = ParserErrorSeverity.RecoveredSyntax
+        });
+        node.StartLine = 118;
+
+        var finding = Assert.Single(ParserErrorReporter.ToFindings([node]));
+
+        Assert.Equal(3, finding.LineNumber);
+    }
+
+    [Fact]
+    public void AnErrorAboveTheClassItIsAttachedTo_LandsOnTheClassDeclaration()
+    {
+        // Defensive: the parser recovers where it can, so an error can be attributed to a class that
+        // starts after it. A negative line would be nonsense in every report.
+        var node = NodeWith("Lib.Late", new ParserError
+        {
+            Line = 4,
+            Message = "mismatched input ';'",
+            Severity = ParserErrorSeverity.RecoveredSyntax
+        });
+        node.StartLine = 118;
+
+        Assert.Equal(1, Assert.Single(ParserErrorReporter.ToFindings([node])).LineNumber);
+    }
+
+    [Fact]
     public void FatalParseFailure_IsDistinguishedFromARecoveredError()
     {
         var node = NodeWith("Lib.A", new ParserError

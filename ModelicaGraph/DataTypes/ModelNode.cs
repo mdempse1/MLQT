@@ -54,6 +54,19 @@ public class ModelNode : GraphNode
     public int StartLine { get; set; }
 
     /// <summary>
+    /// True while the stored <c>Definition.ModelicaCode</c> is still the verbatim slice of the file
+    /// that starts at <see cref="StartLine"/> — which is what lets a line inside the class be mapped
+    /// back to a line in the file by adding the offset.
+    ///
+    /// <para>False once something has rewritten the stored source: trimming a package's inline
+    /// children, or re-rendering a class through the formatter. The text is then still correct
+    /// Modelica, but its lines are the renderer's, not the file's, and a report that added the offset
+    /// anyway would point at a real line that says something else. Consumers fall back to the class
+    /// declaration, which is never wrong about which class is meant.</para>
+    /// </summary>
+    public bool SourceMatchesFile { get; set; } = true;
+
+    /// <summary>
     /// Ending line number in the source file.
     /// </summary>
     public int StopLine { get; set; }
