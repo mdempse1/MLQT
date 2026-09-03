@@ -789,7 +789,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
+    public IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
     {
         var result = new List<string>();
 
@@ -802,7 +802,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             {
                 RevisionControlLogger.Error("GetChangedFilePathsSince",
                     new SvnCliException("diff", res.ExitCode, res.StdErr));
-                return result;
+                return null;   // svn said no; an empty list would read as "nothing changed"
             }
 
             var doc = XDocument.Parse(res.StdOut);
@@ -819,6 +819,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         catch (Exception ex)
         {
             RevisionControlLogger.Error("GetChangedFilePathsSince", ex);
+            return null;
         }
 
         return result;

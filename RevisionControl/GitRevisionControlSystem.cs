@@ -527,7 +527,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
+    public IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
     {
         var result = new List<string>();
 
@@ -536,7 +536,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
             using var repo = new Repository(repositoryPath);
             var since = ResolveToCommit(repo, sinceRevision);
             if (since == null)
-                return result;
+                return null;   // an unresolvable ref is a failure, not an empty diff
 
             // Diff the ref's tree against the current working state (staged + unstaged), so we
             // capture everything changed on this branch since the ref, committed or not.
@@ -556,6 +556,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         catch (Exception ex)
         {
             RevisionControlLogger.Error("GetChangedFilePathsSince", ex);
+            return null;
         }
 
         return result;

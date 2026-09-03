@@ -30,7 +30,7 @@ public static class ChangedModelResolver
         if (vcs.ResolveRevision(root, sinceRevision) is null)
             return Failed($"could not resolve revision '{sinceRevision}' in {root}");
 
-        IReadOnlyList<string> changedPaths;
+        IReadOnlyList<string>? changedPaths;
         try
         {
             changedPaths = vcs.GetChangedFilePathsSince(root, sinceRevision);
@@ -38,6 +38,17 @@ public static class ChangedModelResolver
         catch (Exception ex)
         {
             return Failed($"could not diff against '{sinceRevision}': {ex.Message}");
+        }
+
+        // A diff that could not be taken is not a diff with nothing in it. Treating the two alike
+        // meant a failure in CI escalated no touched debt, credited no fixed entry, and passed the
+        // build looking exactly like a run with nothing to say.
+        if (changedPaths is null)
+        {
+            return Failed(
+                $"could not diff against '{sinceRevision}' in {root}. The ref must exist locally and " +
+                "share history with the working copy - a shallow CI checkout has neither " +
+                "(actions/checkout needs fetch-depth: 0). See the log for what the VCS reported");
         }
 
         var changedMoFiles = changedPaths

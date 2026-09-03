@@ -119,10 +119,17 @@ public interface IRevisionControlSystem
     /// For Git: diffs the ref's tree against the working directory + index.
     /// For SVN: <c>svn diff --summarize -r &lt;rev&gt;</c> against the working copy.
     /// </summary>
-    /// <param name="repositoryPath">Path to the repository or working copy</param>
+/// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="sinceRevision">The revision to diff against (branch, tag, hash, or number)</param>
-    /// <returns>Absolute paths of changed files, or an empty list if retrieval failed</returns>
-    IReadOnlyList<string> GetChangedFilePathsSince(string repositoryPath, string sinceRevision);
+    /// <returns>
+    /// Absolute paths of changed files, or <c>null</c> if the diff could not be taken.
+    ///
+    /// <para>Null and empty are different answers and must stay so. This feeds the ratchet's
+    /// touched-debt escalation, where "no file changed" means there is nothing to escalate and the
+    /// build passes — exactly what a diff that failed used to return, so a broken diff in CI passed
+    /// the build looking like a clean one.</para>
+    /// </returns>
+    IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision);
 
     /// <summary>
     /// Updates the working copy to the latest version from the remote.
