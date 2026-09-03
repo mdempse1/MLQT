@@ -11,7 +11,8 @@ internal sealed record CheckReport(
     IReadOnlyDictionary<string, ClassLocation> Locations,
     bool HasBaseline,
     int GateFailureCount,
-    IReadOnlyList<BaselineEntry> FixedEntries)
+    IReadOnlyList<BaselineEntry> FixedEntries,
+    string? SarifBasePath = null)
 {
     /// <summary>The source file for a finding's model, or null if unknown.</summary>
     public string? FileFor(Finding f) => Locations.TryGetValue(f.ModelId, out var l) ? l.FilePath : null;

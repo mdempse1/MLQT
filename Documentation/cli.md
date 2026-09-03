@@ -40,6 +40,7 @@ library has that another does not.
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit\|sarif\|teamcity\|markdown` | Output format ([details](#output-formats)) | `console` |
+| `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
 | `--out <file>` | Write output to a file instead of stdout | stdout |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
@@ -516,7 +517,12 @@ safe without them, but with them the extra build never happens at all.
   test-report UI of most CI systems (TeamCity, Jenkins, GitLab, Azure DevOps) with no extra integration.
 - **sarif** — SARIF 2.1.0 for GitHub code scanning / Azure DevOps. `level` reflects the rule's
   configured severity, `baselineState` marks new vs unchanged, and `partialFingerprints` lets viewers
-  match results across runs.
+  match results across runs. File paths are relative to the library; when the library is a
+  subdirectory of the repository, pass `--sarif-base <repo-root>` so they are relative to the root the
+  reader resolves against — otherwise GitHub attaches the annotations to nothing. A relative
+  `--sarif-base` is resolved against the library (`--sarif-base ..` for a library one level down), and
+  a base that does not contain the library is refused rather than written as `../…`, which GitHub
+  rejects.
 - **teamcity** — TeamCity service messages: `buildStatisticValue` lines (so TeamCity graphs the
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.

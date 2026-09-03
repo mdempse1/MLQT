@@ -17,9 +17,9 @@
 >   in `SettingsRepositories.razor`, so this deferral is closed.
 >
 > **Still open from this phase** (tracked in [roadmap.md](roadmap.md), "Backlog — finishing phases
-> 1–6"): B2 `--sarif-base` for repo-root-relative URIs; B3 two outputs from one run, so a pipeline
-> does not check the library twice. B1 (model-relative line numbers) was closed on 2026-09-03 — see
-> the note below.
+> 1–6"): B3 two outputs from one run, so a pipeline does not check the library twice. B1
+> (model-relative line numbers) and B2 (`--sarif-base`) were closed on 2026-09-03 — see the notes
+> below.
 
 ## Purpose
 

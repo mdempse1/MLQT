@@ -19,6 +19,12 @@ internal sealed record CheckOptions
     /// <summary>Baseline file to classify findings against (new vs accepted debt). Null = no baseline.</summary>
     public string? BaselinePath { get; init; }
 
+    /// <summary>
+    /// Directory the file paths in SARIF output are written relative to. Null = the library itself,
+    /// which is right only when the library is the repository — see <see cref="SarifBase"/>.
+    /// </summary>
+    public string? SarifBasePath { get; init; }
+
     /// <summary>How to treat pre-existing (baseline) findings in a model the change touched.</summary>
     public TouchedDebtPolicy TouchedDebt { get; init; } = TouchedDebtPolicy.Warn;
 
@@ -68,6 +74,7 @@ internal sealed record CheckOptions
         error = null;
 
         string? path = null, config = null, outPath = null, baseline = null, changedFrom = null;
+        string? sarifBase = null;
         var format = OutputFormat.Console;
         var failOn = FailOnLevel.Error;
         var touchedDebt = TouchedDebtPolicy.Warn;
@@ -92,6 +99,9 @@ internal sealed record CheckOptions
                     break;
                 case "--baseline":
                     if (!Next(args, ref i, out baseline, out error)) return false;
+                    break;
+                case "--sarif-base":
+                    if (!Next(args, ref i, out sarifBase, out error)) return false;
                     break;
                 case "--no-color":
                     noColor = true;
@@ -121,7 +131,7 @@ internal sealed record CheckOptions
                     if (!Next(args, ref i, out var fmt, out error)) return false;
                     if (!TryParseFormat(fmt!, out format))
                     {
-                        error = $"invalid --format '{fmt}' (expected console|json|junit)";
+                        error = $"invalid --format '{fmt}' (expected console|json|junit|sarif|teamcity|markdown)";
                         return false;
                     }
                     break;
@@ -175,6 +185,7 @@ internal sealed record CheckOptions
             FailOn = failOn,
             NoColor = noColor,
             BaselinePath = baseline,
+            SarifBasePath = sarifBase,
             TouchedDebt = touchedDebt,
             ChangedFrom = changedFrom,
             NoSuppress = noSuppress,

@@ -82,12 +82,17 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
     private static string BaselineState(FindingStatus status) =>
         status == FindingStatus.New ? "new" : "unchanged";
 
+    /// <summary>
+    /// The file path a SARIF reader will resolve against its own root — the checked-out repository,
+    /// for GitHub code scanning. Relative to <c>--sarif-base</c> when given, and to the library
+    /// otherwise, which is the same thing when the library is the repository.
+    /// </summary>
     private static string RelativeUri(CheckReport report, Finding f)
     {
         var abs = report.FileFor(f);
         if (abs is null)
             return f.ModelId;
-        var relative = Path.GetRelativePath(report.LibraryPath, abs);
+        var relative = Path.GetRelativePath(report.SarifBasePath ?? report.LibraryPath, abs);
         return relative.Replace('\\', '/');
     }
 }

@@ -8,6 +8,21 @@ internal static class CheckRunner
 {
     public static async Task<int> RunAsync(CheckOptions opts, TextWriter stdout, TextWriter stderr)
     {
+        // Checked before the library is loaded: a base that cannot work is a mistake in the
+        // invocation, and finding out after several minutes of checking helps nobody.
+        string? sarifBase = null;
+        if (opts.SarifBasePath is not null)
+        {
+            if (!SarifBase.TryResolve(opts.LibraryPath, opts.SarifBasePath, out sarifBase, out var baseError))
+            {
+                stderr.WriteLine($"error: {baseError}");
+                return ExitCodes.Error;
+            }
+
+            if (opts.Format != OutputFormat.Sarif)
+                stderr.WriteLine("note: --sarif-base only affects --format sarif");
+        }
+
         var load = await CheckPipeline.LoadAndCheckAsync(
             opts.LibraryPath, opts.ConfigPath, stderr,
             honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
@@ -134,7 +149,7 @@ internal static class CheckRunner
 
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
-            baseline is not null, gateFailureCount, fixedEntries);
+            baseline is not null, gateFailureCount, fixedEntries, sarifBase);
 
         IFindingFormatter formatter = opts.Format switch
         {

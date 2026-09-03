@@ -317,8 +317,14 @@ You get:
 - **With code scanning / Actions:** emit SARIF and upload it, so findings appear as PR annotations:
   ```bash
   mlqt check ./MyLibrary --baseline .mlqt/baseline.json --fail-on warning \
-        --format sarif --out mlqt.sarif
+        --format sarif --sarif-base .. --out mlqt.sarif
   ```
+  `--sarif-base` names the directory the paths in the report are relative to, and GitHub resolves
+  them against the root of the checkout. With the library in a subdirectory — `./MyLibrary` here —
+  leaving it out writes `Model.mo` where GitHub needs `MyLibrary/Model.mo`, and every annotation
+  silently attaches to nothing. Like `--config` and `--baseline`, a relative path is resolved
+  **against the library**, so `..` is the repository root here; in a workflow,
+  `--sarif-base "$GITHUB_WORKSPACE"` says it outright whatever the depth.
 - **Without Actions:** emit a markdown summary and post it as a PR comment from your runner/script:
   ```bash
   mlqt check ./MyLibrary --baseline .mlqt/baseline.json --fail-on warning \

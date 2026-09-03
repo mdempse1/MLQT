@@ -57,6 +57,10 @@ internal static class CliEntry
           --baseline <path>             Classify findings against a baseline (new vs accepted debt)
           --touched-debt warn|fail|ignore  Existing debt in a changed model (default: warn)
           --format <fmt>                console|json|junit|sarif|teamcity|markdown (default: console)
+          --sarif-base <path>           Directory SARIF file paths are written relative to
+                                        (default: the library). Set it to the repository root when
+                                        the library is a subdirectory, or code-scanning annotations
+                                        attach to nothing
           --out <file>                  Write output to a file instead of stdout
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
           --no-color                    Disable coloured console output
