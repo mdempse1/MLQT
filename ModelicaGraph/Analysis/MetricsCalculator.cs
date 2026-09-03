@@ -272,11 +272,11 @@ public sealed class CoverageMeasurer
             .Select(e => e.Name)
             .ToList();
 
-        // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity
-        // types that ultimately alias Real). A component is "united" if its type chain fixes a
-        // unit (SI types) or it writes an inline unit (plain Real, handled via MissingUnits).
+        // Unit coverage counts every Real-derived numeric quantity (plain Real and SI/quantity types
+        // that ultimately alias Real). Which of them are united is decided by the MissingUnits rule
+        // below, run with the same type lookup — so a gap on the dashboard is a finding in the report
+        // and the other way round. Counting it here on its own terms is how the two came to disagree.
         var wantsUnits = (needed & CoverageDimension.Unit) != 0;
-        var plainReals = 0;
         foreach (var element in iface.Elements)
         {
             if (element.Kind != ClassElementKind.Component)
@@ -298,22 +298,21 @@ public sealed class CoverageMeasurer
             if (!wantsUnits)
                 continue;
 
-            var (isReal, typeHasUnit) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
-            if (!isReal)
-                continue;
-            realTotal++;
-            if ((element.Type ?? string.Empty).TrimStart('.').Trim() == "Real")
-                plainReals++;              // unit decided by the inline modifier (below)
-            else if (typeHasUnit)
-                realWithUnit++;            // an SI/quantity type that fixes a unit
+            var (isReal, _) = UnitResolver.Resolve(_graph, model.Id, element.Type, imports, _unitCache);
+            if (isReal)
+                realTotal++;
         }
 
-        if (plainReals > 0)
+        if (realTotal > 0)
         {
-            var unitVisitor = new MissingUnits();
+            // The rule's verdict, not a second opinion: united means "the rule does not flag it".
+            var unitVisitor = new MissingUnits(
+                basePackage: string.Empty,
+                unitLookup: (_, typeName) =>
+                    UnitResolver.Resolve(_graph, model.Id, typeName, imports, _unitCache));
             unitVisitor.VisitStored_definition(tree);
             var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
-            realWithUnit += Math.Clamp(plainReals - missing, 0, plainReals);
+            realWithUnit = Math.Clamp(realTotal - missing, 0, realTotal);
         }
 
         var (hasDocInfo, hasDocRevisions) = MeasureDocumentation(tree, needed);

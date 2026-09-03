@@ -34,10 +34,11 @@ public static class StyleChecking
         bool isExcludedFromFormatting = false,
         Func<string, string, bool>? baseClassHasIcon = null,
         NamingConventionConfig? namingConfig = null,
-        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
+        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
         => RunStyleCheckingFindings(_currentModel, settings, fullModelId, knownModelIds, spellChecker,
                 knownModelNames, isExcludedFromFormatting, baseClassHasIcon, namingConfig: namingConfig,
-                inheritedElementNames: inheritedElementNames)
+                inheritedElementNames: inheritedElementNames, unitLookup: unitLookup)
             .Select(f => f.ToLogMessage())
             .ToList();
 
@@ -60,7 +61,8 @@ public static class StyleChecking
         Func<string, string, bool>? baseClassHasIcon = null,
         bool honorSuppressions = true,
         NamingConventionConfig? namingConfig = null,
-        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
+        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -180,7 +182,7 @@ public static class StyleChecking
         }
         if (settings.CheckMissingUnits)
         {
-            var visitor = new MissingUnits(basePackage);
+            var visitor = new MissingUnits(basePackage, unitLookup);
             visitor.VisitStored_definition(parsedCode);
             findings.AddRange(visitor.Findings);
         }
@@ -222,6 +224,45 @@ public static class StyleChecking
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// Creates the type lookup the missing-unit rule needs: for a type as written in a class, whether
+    /// it is a Real-derived quantity and whether its type chain fixes a unit. Returns null if the
+    /// graph is null, leaving the rule to judge plain <c>Real</c> only.
+    ///
+    /// <para>The same <see cref="UnitResolver"/> the Unit coverage dimension uses, with the same
+    /// per-class import scope, so the rule and the dashboard cannot disagree about what counts as a
+    /// quantity or as united. A library's SI types resolve once and are then cached: the alias chains
+    /// are shallow but they are asked about for every declaration in the library.</para>
+    /// </summary>
+    public static Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? CreateUnitLookup(
+        DirectedGraph? graph)
+    {
+        if (graph == null) return null;
+
+        var unitCache = new ConcurrentDictionary<string, (bool, bool)>(StringComparer.Ordinal);
+        var importsByModel = new ConcurrentDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+        return (modelId, typeName) =>
+        {
+            var imports = importsByModel.GetOrAdd(modelId, id => ImportsOf(graph, id));
+            return UnitResolver.Resolve(graph, modelId, typeName, imports, unitCache);
+        };
+    }
+
+    /// <summary>The import clauses of a class, which decide what a short type name means in it.</summary>
+    private static IReadOnlyList<string> ImportsOf(DirectedGraph graph, string modelId)
+    {
+        var node = graph.GetNode<ModelNode>(modelId);
+        var tree = node?.Definition.EnsureParsed();
+        if (tree is null)
+            return [];
+
+        return ClassInterfaceExtractor.Extract(tree).Elements
+            .Where(e => e.Kind == ClassElementKind.Import)
+            .Select(e => e.Name)
+            .ToList();
     }
 
     /// <summary>

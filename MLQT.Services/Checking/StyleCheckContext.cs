@@ -25,6 +25,13 @@ public sealed class StyleCheckContext
     public Func<string, IReadOnlySet<string>>? InheritedElementNames { get; private init; }
 
     /// <summary>
+    /// Whether a declared type is a Real-derived quantity and whether it fixes a unit, for the
+    /// missing-unit rule. Null when there is no graph, leaving the rule to judge plain <c>Real</c>
+    /// only — all a snippet check can honestly say.
+    /// </summary>
+    public Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? UnitLookup { get; private init; }
+
+    /// <summary>
     /// Measures each class's coverage contribution as it is checked, or null when the caller does not
     /// want coverage collected.
     ///
@@ -96,6 +103,9 @@ public sealed class StyleCheckContext
             InheritedElementNames = spellChecker != null && (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
                 ? StyleChecking.CreateInheritedElementNamesCallback(graph)
                 : null,
+            // The rule resolves types the same way the Unit coverage dimension does, so the findings
+            // and the dashboard describe the same gaps.
+            UnitLookup = settings.CheckMissingUnits ? StyleChecking.CreateUnitLookup(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
             // per class for a row the report will not show.
