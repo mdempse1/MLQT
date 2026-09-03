@@ -509,6 +509,31 @@ end Foo;
   waiver; the baseline is *temporary debt*.
 - Run `mlqt check … --no-suppress` to **audit** — it ignores the annotations and reports everything.
 
+## Gating on coverage, not just findings
+
+The baseline gate stops *new findings*. It says nothing about whether the library is getting better,
+which is the question behind a documentation push. The coverage numbers answer that, and they gate:
+
+```bash
+# nothing may go backwards — the ratchet, applied to coverage
+mlqt check ./MyLibrary --coverage-ratchet --metrics
+
+# and once a team has picked a bar, hold it there
+mlqt check ./MyLibrary --min-coverage 80 --min-coverage class-description=95
+```
+
+`--coverage-ratchet` compares each dimension against the last snapshot in
+`.mlqt/metrics-history.json`; with `--metrics` on the same run, every build records the point the
+next one is measured against. This is the coverage counterpart of the baseline: a legacy library
+adopts it on day one, because it demands no particular number — only that the number stops falling.
+
+A coverage gate is independent of `--fail-on`, and either failing exits `1`. Both write their reason
+to stderr, so a failed build says which dimension and by how much:
+
+```
+error: coverage gate: Class description 75% is below the required 80%
+```
+
 ## Known limitations
 
 - **A trimmed package is reported at its declaration.** Every report names the line in the file,

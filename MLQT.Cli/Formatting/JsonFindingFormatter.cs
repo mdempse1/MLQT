@@ -32,6 +32,10 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
             @fixed = report.FixedEntries
                 .Select(e => new FixedJson(e.RuleId, e.Model, e.Element, e.Message, e.Fingerprint))
                 .ToList(),
+            coverageGate = report.CoverageGate?.Select(r => new CoverageGateJson(
+                r.Dimension, r.Percent, r.Required,
+                r.Requirement == CoverageRequirement.Threshold ? "threshold" : "previous",
+                r.Passed)).ToList(),
             findings = report.Findings.Select(c => new FindingJson(
                 c.Finding.RuleId,
                 c.Finding.Severity.ToString(),
@@ -54,6 +58,11 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
     private sealed record FindingJson(
         string RuleId, string Severity, string Status, string Model, string? Element,
         int Line, int ModelLine, string Message, string Fingerprint, string? File);
+
+    /// <param name="Requirement">"threshold" for a --min-coverage figure, "previous" for the
+    /// --coverage-ratchet comparison against the last recorded snapshot.</param>
+    private sealed record CoverageGateJson(
+        string Dimension, double Percent, double Required, string Requirement, bool Passed);
 
     private sealed record FixedJson(
         string RuleId, string Model, string? Element, string Message, string Fingerprint);

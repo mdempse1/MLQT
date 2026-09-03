@@ -44,6 +44,8 @@ library has that another does not.
 | `--out <file>` | Write the primary output to a file instead of stdout | stdout |
 | `--report <fmt>:<file>` | Also write this format to this file. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
+| `--min-coverage <spec>` | Fail when coverage is below a percentage — see [Gating on coverage](#gating-on-coverage). Repeatable | none |
+| `--coverage-ratchet` | Fail when any dimension is below the last recorded snapshot | off |
 | `--no-color` | Disable coloured console output (also honours `NO_COLOR`) | colour on a TTY |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
@@ -528,6 +530,47 @@ safe without them, but with them the extra build never happens at all.
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.
 - **markdown** — a PR-comment-ready summary table (counts, gate result, actionable findings).
+
+### Gating on coverage
+
+`--fail-on` answers "did this change introduce findings". The coverage numbers answer a different
+question — "is this library documented well enough" — and `--min-coverage` gates on it:
+
+```bash
+mlqt check ./MyLibrary --min-coverage 80                        # every tracked dimension
+mlqt check ./MyLibrary --min-coverage 80 --min-coverage class-description=95
+```
+
+A named dimension overrides the blanket figure, which is the shape a real policy takes ("80%
+everywhere, 95% on descriptions"). Dimensions are named as the dashboard shows them, however you
+prefer to spell it: `class-description`, `ClassDescription` and `"Class description"` all resolve to
+the same one. The names are `class-description`, `documentation-info`, `documentation-revisions`,
+`icon`, `parameter-description`, `constant-description`, `unit`, and the layout dimensions
+(`imports-first`, `extends-at-top`, `one-of-each-section`, `initial-sections-first`,
+`initial-sections-last`, `equation-algorithm-not-mixed`, `connections-not-mixed`).
+
+**The ratchet, applied to coverage.** For a legacy library, a threshold it does not meet yet is not
+much use. `--coverage-ratchet` requires only that nothing goes backwards:
+
+```bash
+mlqt check ./MyLibrary --coverage-ratchet --metrics
+```
+
+It compares each dimension against the last snapshot recorded for the whole checked set in
+`.mlqt/metrics-history.json` (or `--metrics-out`), so pair it with `--metrics` — each run records
+the point the next one is measured against. With no history yet it says so and passes: the first run
+has nothing to go backwards from.
+
+Notes:
+
+- A coverage gate is **independent of `--fail-on`**. Switching findings off with `--fail-on off`
+  says findings do not fail this build; it does not withdraw a coverage requirement you also asked
+  for. Either gate failing exits `1`.
+- A dimension a repository does not track — its rule is switched off — is **warned about**, not
+  silently skipped: a requirement that checks nothing is the failure a quality gate can least
+  afford. An unknown dimension name is a usage error (exit `2`).
+- The verdicts appear in the JSON report as a `coverageGate` array (dimension, percent, required,
+  `threshold`/`previous`, passed), and on stderr as one line per failure.
 
 ### Several reports from one run
 

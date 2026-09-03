@@ -28,8 +28,8 @@ that is already complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1, B2 and B3 shipped; B4 next.** Before that started, the work since the list was
-written had been bug-driven or user-driven rather than planned:
+**Backlog: B1–B4 shipped; B5 next.** Before that started, the work since the list was written had
+been bug-driven or user-driven rather than planned:
 
 | Landed | What |
 |--------|------|
@@ -156,7 +156,7 @@ libraries start low and the dashboard shows them climbing as debt is worked off.
 | **Metrics dashboard** (class counts by kind, coverage %) | ⭐⭐⭐ | M | **✅ shipped** — `MetricsDashboard.razor` + `MetricsCalculator`; coverage dimensions follow each repository's enabled rules. LOC, connection counts and inheritance depth were not built — no one asked for them. |
 | **Cyclomatic / cognitive complexity** | ⭐⭐ | M | For algorithm sections and functions. |
 | **Duplicate / clone detection** | ⭐⭐ | L | Near-identical models/equation blocks via subtree hashing. |
-| **Quality gates** ("fail if doc coverage < 80%", "no new critical findings") | ⭐⭐⭐ | M | **Half shipped:** "no new findings" is the baseline/ratchet gate. Gating on a *metric threshold* is not built — see the backlog. |
+| **Quality gates** ("fail if doc coverage < 80%", "no new critical findings") | ⭐⭐⭐ | M | **✅ shipped** — "no new findings" is the baseline/ratchet gate; `--min-coverage` and `--coverage-ratchet` gate on the coverage numbers. |
 | **Trend tracking** (metric snapshots over commits) | ⭐⭐ | L | **✅ shipped** — `.mlqt/metrics-history.json`, written by the dashboard or `mlqt check --metrics`, plotted per scope. |
 
 ---
@@ -230,7 +230,7 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 | B1 | **SARIF line numbers are model-relative** | Phase 4 known limitation | ⭐⭐⭐ | M | **✅ shipped (2026-09-03)** — findings still carry class-relative lines (what a rule can know, and what the code viewer wants), and every report maps them through `ClassLocation` to the line in the file. It also settled a split nobody had noticed: the whole-graph analyses and the parser were emitting file lines while the rules emitted class lines, so the app scrolled to the wrong place for the first two. A package whose stored source was trimmed is reported at its declaration rather than at a confidently wrong line. |
 | B2 | **`--sarif-base <path>`** | Phase 4 deferral | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `--sarif-base <path>` writes SARIF file paths relative to that directory instead of the library. Resolved against the library like the other path options, and refused up front when it does not contain the library, since the report would then have to point outside it — which GitHub rejects, the same silent non-attachment reached from the other side. |
 | B3 | **Two outputs from one run** | Phase 4 non-goal | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `--report <format>:<path>`, repeatable, writes extra reports alongside the primary output from the same findings. `--format`/`--out` are unchanged, so existing invocations are untouched. |
-| B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | `--fail-on` gates on finding severity only. The coverage numbers and their history now exist, so "fail if class-description coverage is below 80%" — or below the last recorded snapshot, the ratchet applied to coverage — is the missing half of the governance story. |
+| B4 | **Metric-threshold gates** | §3 quality gates | ⭐⭐⭐ | M | **✅ shipped (2026-09-03)** — `--min-coverage <percent>` and `--min-coverage <dimension>=<percent>` gate on a figure; `--coverage-ratchet` gates on the last recorded snapshot, so a legacy library can adopt it without meeting any particular number. Independent of `--fail-on`, and a dimension the repository does not track is warned about rather than silently checked. |
 | B5 | **Missing-units rule vs the Unit dimension** | Phase 6 increment | ⭐⭐ | M | The rule flags only plain `Real`; the Unit coverage dimension resolves alias and SI type chains through `UnitResolver`. The dashboard therefore shows gaps the rule never reports, and no finding leads the user to them. Promote the rule onto the resolver. |
 | B6 | **Pre-commit hook / commit gate** | §5 | ⭐⭐ | S | A documented `--changed-from BASE` recipe today. As a feature it extends the existing "commit requires issue number" gate. |
 | B7 | **PR review annotations** | §5 | ⭐⭐ | M | Post findings as inline PR comments. The markdown summary path it would build on already exists. |
@@ -238,8 +238,9 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needs hand-holding), so they come first; B4 next, since it is what
 turns the metrics work into a gate; then B5; B6 and B7 last, being conveniences rather than gaps.
-**B1, B2 and B3 are done** — with them, nothing from phase 4 is outstanding and a real pipeline needs
-no hand-holding. **B4 is next**, and is the one that turns the metrics work into a gate.
+**B1–B4 are done** — nothing from phase 4 is outstanding, a real pipeline needs no hand-holding, and
+the metrics have a gate. **B5 is next**: the missing-units rule reports less than the Unit coverage
+dimension measures, so the dashboard shows gaps no finding leads you to.
 
 ---
 

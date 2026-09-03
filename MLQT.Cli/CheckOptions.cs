@@ -39,6 +39,12 @@ internal sealed record CheckOptions
     /// </summary>
     public IReadOnlyList<ReportOutput> Reports { get; init; } = [];
 
+    /// <summary>
+    /// Gate on the coverage numbers as well as on findings — a threshold, a ratchet against the last
+    /// recorded snapshot, or both. Inactive unless asked for.
+    /// </summary>
+    public CoverageGate Coverage { get; init; } = new(null, new Dictionary<string, double>(), false);
+
     /// <summary>How to treat pre-existing (baseline) findings in a model the change touched.</summary>
     public TouchedDebtPolicy TouchedDebt { get; init; } = TouchedDebtPolicy.Warn;
 
@@ -90,6 +96,9 @@ internal sealed record CheckOptions
         string? path = null, config = null, outPath = null, baseline = null, changedFrom = null;
         string? sarifBase = null;
         var reports = new List<ReportOutput>();
+        double? minCoverageForAll = null;
+        var minCoverageByDimension = new Dictionary<string, double>(StringComparer.Ordinal);
+        var coverageRatchet = false;
         var format = OutputFormat.Console;
         var failOn = FailOnLevel.Error;
         var touchedDebt = TouchedDebtPolicy.Warn;
@@ -117,6 +126,14 @@ internal sealed record CheckOptions
                     break;
                 case "--sarif-base":
                     if (!Next(args, ref i, out sarifBase, out error)) return false;
+                    break;
+                case "--min-coverage":
+                    if (!Next(args, ref i, out var minCoverage, out error)) return false;
+                    if (!TryParseMinCoverage(minCoverage!, ref minCoverageForAll, minCoverageByDimension, out error))
+                        return false;
+                    break;
+                case "--coverage-ratchet":
+                    coverageRatchet = true;
                     break;
                 case "--report":
                     if (!Next(args, ref i, out var report, out error)) return false;
@@ -214,6 +231,7 @@ internal sealed record CheckOptions
             BaselinePath = baseline,
             SarifBasePath = sarifBase,
             Reports = reports,
+            Coverage = new CoverageGate(minCoverageForAll, minCoverageByDimension, coverageRatchet),
             TouchedDebt = touchedDebt,
             ChangedFrom = changedFrom,
             NoSuppress = noSuppress,
@@ -236,6 +254,47 @@ internal sealed record CheckOptions
             return false;
         }
         value = args[++i];
+        return true;
+    }
+
+    /// <summary>
+    /// Parses <c>&lt;percent&gt;</c> (every dimension) or <c>&lt;dimension&gt;=&lt;percent&gt;</c>
+    /// (one of them). A dimension nobody can spell is refused rather than ignored: a quality gate
+    /// that silently checks nothing is worse than no gate at all.
+    /// </summary>
+    private static bool TryParseMinCoverage(
+        string value, ref double? forAll, Dictionary<string, double> byDimension, out string? error)
+    {
+        error = null;
+
+        var separator = value.IndexOf('=');
+        var percentText = separator < 0 ? value : value[(separator + 1)..];
+        var dimensionText = separator < 0 ? null : value[..separator].Trim();
+
+        if (!double.TryParse(percentText.Trim().TrimEnd('%'),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var percent)
+            || percent < 0 || percent > 100)
+        {
+            error = $"invalid --min-coverage '{value}' (expected a percentage 0-100, " +
+                    "optionally as <dimension>=<percent>)";
+            return false;
+        }
+
+        if (dimensionText is null)
+        {
+            forAll = percent;
+            return true;
+        }
+
+        if (CoverageGate.ResolveDimension(dimensionText) is not { } dimension)
+        {
+            error = $"unknown coverage dimension '{dimensionText}' (expected one of: " +
+                    $"{CoverageGate.KnownDimensions()})";
+            return false;
+        }
+
+        byDimension[CoverageGate.Normalize(dimension)] = percent;
         return true;
     }
 

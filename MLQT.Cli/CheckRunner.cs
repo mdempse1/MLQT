@@ -1,5 +1,7 @@
+using ModelicaGraph.Analysis;
 using ModelicaParser.DataTypes;
 using MLQT.Services.Checking;
+using MLQT.Services.Helpers;
 
 namespace MLQT.Cli;
 
@@ -28,9 +30,9 @@ internal static class CheckRunner
             opts.LibraryPath, opts.ConfigPath, stderr,
             honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
             allowVersionMismatch: opts.AllowVersionMismatch,
-            // Only when this run is going to report coverage: the check has the parse tree in hand, so
-            // measuring here costs the measurement alone rather than a second pass over the library.
-            collectCoverage: opts.RecordMetrics);
+            // Only when this run is going to report or judge coverage: the check has the parse tree in
+            // hand, so measuring here costs the measurement alone rather than a second pass.
+            collectCoverage: opts.RecordMetrics || opts.Coverage.IsActive);
         if (!load.Ok)
             return load.ExitCode;
 
@@ -148,9 +150,11 @@ internal static class CheckRunner
                 DateTime.UtcNow, VcsLocator.Stamp(opts.LibraryPath), opts.MetricsForce, stderr);
         }
 
+        var coverageResults = EvaluateCoverageGate(opts, load, stderr);
+
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
-            baseline is not null, gateFailureCount, fixedEntries, sarifBase);
+            baseline is not null, gateFailureCount, fixedEntries, sarifBase, coverageResults);
 
         // Written to a file: colour codes would be in the file rather than on a terminal.
         var toTerminal = opts.OutPath is null;
@@ -179,7 +183,63 @@ internal static class CheckRunner
                 return ExitCodes.Error;
         }
 
-        return report.GatePassed ? ExitCodes.Ok : ExitCodes.GateFailed;
+        return report.GatePassed && report.CoverageGatePassed ? ExitCodes.Ok : ExitCodes.GateFailed;
+    }
+
+    /// <summary>
+    /// Measures coverage and judges it against whatever the caller asked for, saying on stderr what
+    /// failed and why. Null when no coverage gate was requested — the ordinary case, which must not
+    /// pay for the measurement.
+    ///
+    /// <para>Separate from the findings gate on purpose. "Did this change introduce findings" and "is
+    /// this library documented well enough" are different questions, and a team that has switched the
+    /// first off with <c>--fail-on off</c> has not thereby agreed to lose the second.</para>
+    /// </summary>
+    private static IReadOnlyList<CoverageGateResult>? EvaluateCoverageGate(
+        CheckOptions opts, LoadResult load, TextWriter stderr)
+    {
+        if (!opts.Coverage.IsActive || load.Graph is null || load.Models is null || load.Settings is null)
+            return null;
+
+        var settings = load.Settings;
+        var metrics = MetricsCalculator.Compute(load.Graph, load.Models, _ => settings);
+
+        if (metrics.Coverage.Count == 0)
+        {
+            stderr.WriteLine(
+                "warning: --min-coverage/--coverage-ratchet asked for, but this repository tracks no " +
+                "coverage dimensions — every rule they follow is switched off, so there is nothing to gate on");
+            return [];
+        }
+
+        foreach (var unmatched in opts.Coverage.UnmatchedDimensions(metrics))
+            stderr.WriteLine(
+                $"warning: --min-coverage names '{unmatched}', which this run does not measure — " +
+                "its rule is switched off for this repository, so the requirement checks nothing");
+
+        MetricsSnapshot? previous = null;
+        if (opts.Coverage.Ratchet)
+        {
+            // The whole checked set: the history also holds a point per library, and a gate that
+            // silently compared against one library's numbers would be answering another question.
+            previous = MetricsHistoryStore.Load(opts.ResolvedMetricsPath)
+                .Where(s => s.Scope.Length == 0)
+                .LastOrDefault();
+
+            if (previous is null)
+                stderr.WriteLine(
+                    $"note: --coverage-ratchet has nothing to compare against yet — no snapshot in " +
+                    $"{opts.ResolvedMetricsPath}. Record one with --metrics.");
+        }
+
+        var results = opts.Coverage.Evaluate(metrics, previous);
+        foreach (var failure in results.Where(r => !r.Passed))
+            stderr.WriteLine($"error: coverage gate: {failure.Describe()}");
+
+        if (results.Count > 0 && results.All(r => r.Passed))
+            stderr.WriteLine($"note: coverage gate passed ({results.Count} requirement(s) met)");
+
+        return results;
     }
 
     private static IFindingFormatter Formatter(OutputFormat format, bool useColor) => format switch

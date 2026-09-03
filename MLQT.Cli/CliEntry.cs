@@ -66,6 +66,11 @@ internal static class CliEntry
                                         run can produce a readable log and a machine-readable
                                         report instead of checking the library twice
           --fail-on off|warning|error   Exit non-zero when findings reach this level (default: error)
+          --min-coverage <spec>         Fail when coverage is below a percentage. <spec> is a number
+                                        for every tracked dimension, or <dimension>=<percent> for one
+                                        (repeatable), e.g. --min-coverage 80
+                                        --min-coverage class-description=95
+          --coverage-ratchet            Fail when any dimension is below the last recorded snapshot
           --no-color                    Disable coloured console output
           --no-suppress                 Ignore __MLQT suppression annotations (audit)
           --changed-from <ref>          VCS ref to diff against, for touched-debt escalation

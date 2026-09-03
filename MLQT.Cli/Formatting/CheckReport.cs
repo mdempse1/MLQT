@@ -12,7 +12,8 @@ internal sealed record CheckReport(
     bool HasBaseline,
     int GateFailureCount,
     IReadOnlyList<BaselineEntry> FixedEntries,
-    string? SarifBasePath = null)
+    string? SarifBasePath = null,
+    IReadOnlyList<CoverageGateResult>? CoverageGate = null)
 {
     /// <summary>The source file for a finding's model, or null if unknown.</summary>
     public string? FileFor(Finding f) => Locations.TryGetValue(f.ModelId, out var l) ? l.FilePath : null;
@@ -31,6 +32,9 @@ internal sealed record CheckReport(
     public int CountOfStatus(FindingStatus status) => Findings.Count(c => c.Status == status);
 
     public bool GatePassed => GateFailureCount == 0;
+
+    /// <summary>True when no coverage requirement was asked for, or every one of them was met.</summary>
+    public bool CoverageGatePassed => CoverageGate is null || CoverageGate.All(r => r.Passed);
 }
 
 internal interface IFindingFormatter
