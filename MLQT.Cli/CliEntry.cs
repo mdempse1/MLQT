@@ -61,6 +61,9 @@ internal static class CliEntry
                                         (default: the library). Set it to the repository root when
                                         the library is a subdirectory, or code-scanning annotations
                                         attach to nothing
+          --sarif-include-accepted      Keep accepted debt in SARIF. Off by default: GitHub shows
+                                        every result as an open alert, so accepted debt would be
+                                        indistinguishable from new findings
           --out <file>                  Write output to a file instead of stdout
           --report <fmt>:<file>         Also write this format to this file (repeatable), so one
                                         run can produce a readable log and a machine-readable

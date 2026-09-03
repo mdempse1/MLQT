@@ -325,6 +325,12 @@ You get:
   silently attaches to nothing. Like `--config` and `--baseline`, a relative path is resolved
   **against the library**, so `..` is the repository root here; in a workflow,
   `--sarif-base "$GITHUB_WORKSPACE"` says it outright whatever the depth.
+  Accepted debt is left out of the SARIF automatically: GitHub has no way to show a result as
+  accepted, so uploading the baseline would fill the Security tab with alerts nobody is expected to
+  act on. The run says how many it omitted, and `--sarif-include-accepted` overrides it. Note also
+  that GitHub rejects more than 25,000 results in one upload and shows the first 5,000 — MLQT warns
+  at both thresholds, which is worth knowing before wondering why a big library's alerts never
+  appeared.
 - **One run, both:** the SARIF for annotations and a markdown summary for the PR comment come from
   a single check — `--report` writes an extra format to a file alongside the primary output:
   ```bash

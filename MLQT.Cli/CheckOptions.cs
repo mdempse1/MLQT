@@ -34,6 +34,13 @@ internal sealed record CheckOptions
     public string? SarifBasePath { get; init; }
 
     /// <summary>
+    /// Keep accepted debt in SARIF output. Off by default: GitHub supports neither
+    /// <c>baselineState</c> nor <c>suppressions</c>, so an accepted finding written to SARIF arrives
+    /// as an open alert indistinguishable from a new one.
+    /// </summary>
+    public bool SarifIncludeAccepted { get; init; }
+
+    /// <summary>
     /// Extra reports to write to files, on top of the primary output. Empty by default: one run, one
     /// report, exactly as before.
     /// </summary>
@@ -99,6 +106,7 @@ internal sealed record CheckOptions
         double? minCoverageForAll = null;
         var minCoverageByDimension = new Dictionary<string, double>(StringComparer.Ordinal);
         var coverageRatchet = false;
+        var sarifIncludeAccepted = false;
         var format = OutputFormat.Console;
         var failOn = FailOnLevel.Error;
         var touchedDebt = TouchedDebtPolicy.Warn;
@@ -134,6 +142,9 @@ internal sealed record CheckOptions
                     break;
                 case "--coverage-ratchet":
                     coverageRatchet = true;
+                    break;
+                case "--sarif-include-accepted":
+                    sarifIncludeAccepted = true;
                     break;
                 case "--report":
                     if (!Next(args, ref i, out var report, out error)) return false;
@@ -230,6 +241,7 @@ internal sealed record CheckOptions
             NoColor = noColor,
             BaselinePath = baseline,
             SarifBasePath = sarifBase,
+            SarifIncludeAccepted = sarifIncludeAccepted,
             Reports = reports,
             Coverage = new CoverageGate(minCoverageForAll, minCoverageByDimension, coverageRatchet),
             TouchedDebt = touchedDebt,

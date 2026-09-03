@@ -41,6 +41,7 @@ library has that another does not.
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit\|sarif\|teamcity\|markdown` | Output format ([details](#output-formats)) | `console` |
 | `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
+| `--sarif-include-accepted` | Keep accepted debt in SARIF output. Off by default — see [SARIF and GitHub](#sarif-and-github) | off |
 | `--out <file>` | Write the primary output to a file instead of stdout | stdout |
 | `--report <fmt>:<file>` | Also write this format to this file. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
@@ -532,6 +533,37 @@ safe without them, but with them the extra build never happens at all.
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.
 - **markdown** — a PR-comment-ready summary table (counts, gate result, actionable findings).
+
+### SARIF and GitHub
+
+GitHub code scanning reads a documented subset of SARIF, and two things about that subset change what
+MLQT writes.
+
+**Accepted debt is left out by default.** GitHub supports neither `baselineState` nor `suppressions`,
+so a finding written to SARIF becomes an open alert whatever it is tagged with. Uploading accepted
+debt therefore fills the Security tab with alerts for debt the team has already agreed to, and buries
+the findings the run is about. When a baseline is in use, SARIF carries the new and touched-debt
+findings only, and the run says how many it left out:
+
+```
+note: 5 accepted-debt finding(s) left out of the SARIF - GitHub has no way to show them as
+      accepted, so they would arrive as open alerts. --sarif-include-accepted keeps them
+```
+
+Pass `--sarif-include-accepted` for a consumer that does honour `baselineState` — the findings are
+still tagged with it either way. Every other format (console, JSON, JUnit, markdown, TeamCity)
+reports accepted debt as it always did; this is a display decision about one consumer, not about the
+findings.
+
+**Result limits.** GitHub rejects an upload of more than 25,000 results and displays only the first
+5,000 of a run. MLQT says so when a report crosses either threshold, because the symptom otherwise is
+an empty Security tab with nothing to explain it. A baseline is usually the answer: it is the
+difference between uploading a library's whole history and uploading what a change did.
+
+**Rule metadata.** Each rule carries `shortDescription`, `fullDescription` and `help.text` /
+`help.markdown` — the last is what renders in the alert body, so an alert says what the rule wants
+and where to configure it rather than only naming an id. The `helpUri` points at the settings
+reference, and the rule's category is emitted as a tag so alerts can be filtered by it.
 
 ### Gating on coverage
 

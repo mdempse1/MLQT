@@ -154,7 +154,11 @@ internal static class CheckRunner
 
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
-            baseline is not null, gateFailureCount, fixedEntries, sarifBase, coverageResults);
+            baseline is not null, gateFailureCount, fixedEntries, sarifBase, coverageResults,
+            opts.SarifIncludeAccepted);
+
+        if (WritesSarif(opts))
+            ReportSarifConsequences(opts, report, stderr);
 
         // Written to a file: colour codes would be in the file rather than on a terminal.
         var toTerminal = opts.OutPath is null;
@@ -240,6 +244,36 @@ internal static class CheckRunner
             stderr.WriteLine($"note: coverage gate passed ({results.Count} requirement(s) met)");
 
         return results;
+    }
+
+    private static bool WritesSarif(CheckOptions opts) =>
+        opts.Format == OutputFormat.Sarif || opts.Reports.Any(r => r.Format == OutputFormat.Sarif);
+
+    /// <summary>
+    /// Says what SARIF will and will not carry, because both are silent otherwise.
+    ///
+    /// <para>Accepted debt is left out by default (GitHub has no way to show it as accepted), and a
+    /// run that quietly reported fewer findings than the console did would read as a bug. GitHub also
+    /// rejects a run of more than 25,000 results and displays only the first 5,000 — a library the
+    /// size of MSL passes both thresholds without anything saying so, and the symptom is an empty
+    /// Security tab.</para>
+    /// </summary>
+    private static void ReportSarifConsequences(CheckOptions opts, CheckReport report, TextWriter stderr)
+    {
+        var accepted = report.CountOfStatus(FindingStatus.AcceptedDebt);
+        if (accepted > 0 && !opts.SarifIncludeAccepted)
+            stderr.WriteLine(
+                $"note: {accepted} accepted-debt finding(s) left out of the SARIF — GitHub has no way to " +
+                "show them as accepted, so they would arrive as open alerts. --sarif-include-accepted keeps them");
+
+        var reported = opts.SarifIncludeAccepted ? report.Findings.Count : report.Findings.Count - accepted;
+        if (reported > 25_000)
+            stderr.WriteLine(
+                $"warning: the SARIF carries {reported} results; GitHub rejects an upload of more than " +
+                "25,000 and displays only the first 5,000. Narrow the run, or use a baseline");
+        else if (reported > 5_000)
+            stderr.WriteLine(
+                $"note: the SARIF carries {reported} results; GitHub displays the first 5,000 of a run");
     }
 
     private static IFindingFormatter Formatter(OutputFormat format, bool useColor) => format switch

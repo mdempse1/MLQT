@@ -9,7 +9,7 @@
     document that is well-formed by our lights and rejected by a consumer's. This script is that
     validation, and CI runs it on every push.
 
-    It checks three things, because a schema-valid document can still be useless:
+    It checks four things, because a schema-valid document can still be useless:
 
       1. `sarif validate` reports no errors and no warnings. Warnings are treated as failures on
          purpose  -  the report is clean today, and the cheapest moment to fix one is the build that
@@ -17,7 +17,9 @@
       2. The file paths are relative to the repository root, not to the library. The fixture lives at
          TestFixtures/SarifSmoke/Libraries/Smoke, so a report that named `package.mo` would be one a
          consumer resolves against nothing.
-      3. Some results arrived. The fixture is deliberately imperfect; an empty report would mean it
+      3. Every rule carries the metadata a consumer renders - fullDescription, and help.markdown,
+         which is the body of a GitHub alert. Without it an alert names a rule and says nothing.
+      4. Some results arrived. The fixture is deliberately imperfect; an empty report would mean it
          had quietly stopped testing anything.
 
 .PARAMETER OutputPath
@@ -67,7 +69,22 @@ if ($uris -notcontains $expected) {
     throw "SARIF paths are not relative to the repository root. Expected '$expected', got: $($uris -join ', ')"
 }
 
-# --- 3. the fixture is still testing something ----------------------------------------------------
+# --- 3. the rule metadata a consumer renders ------------------------------------------------------
+# GitHub documents fullDescription and help as required on a rule, and help.markdown is what renders
+# in the alert body. A report can validate against the schema and still arrive as an alert that names
+# a rule and says nothing about it.
+$rules = @($report.runs[0].tool.driver.rules)
+if ($rules.Count -eq 0) { throw "no rules were described in the report" }
+foreach ($rule in $rules) {
+    foreach ($required in @('shortDescription', 'fullDescription')) {
+        if (-not $rule.$required.text) { throw "rule '$($rule.id)' has no $required.text" }
+    }
+    if (-not $rule.help.text) { throw "rule '$($rule.id)' has no help.text" }
+    if (-not $rule.help.markdown) { throw "rule '$($rule.id)' has no help.markdown (the alert body)" }
+}
+Write-Host "  $($rules.Count) rule(s), each with a description and an alert body."
+
+# --- 4. the fixture is still testing something ----------------------------------------------------
 $resultCount = @($report.runs[0].results).Count
 if ($resultCount -eq 0) { throw "the smoke fixture produced no findings  -  it has stopped testing anything" }
 Write-Host "  $resultCount result(s), paths relative to the repository root."
