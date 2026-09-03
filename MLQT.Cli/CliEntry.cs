@@ -36,6 +36,9 @@ internal static class CliEntry
             case "compare":
                 return await CompareCommand.RunAsync(args[1..], stdout, stderr);
 
+            case "hook":
+                return await HookCommand.RunAsync(args[1..], stdout, stderr);
+
             default:
                 stderr.WriteLine($"error: unknown command '{args[0]}'");
                 stderr.WriteLine(Usage);
@@ -51,6 +54,7 @@ internal static class CliEntry
           mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
                                                            [--dependency <path>] [--force]
           mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
+          mlqt hook install|uninstall|status [<library-path>] [options]
 
         check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
@@ -119,6 +123,19 @@ internal static class CliEntry
                   --no-added               List only what is missing, not what was added
 
                   Exit codes: 0 = nothing missing, 1 = classes missing, 2 = usage/load error
+
+        hook:     installs `mlqt check` as a git pre-commit hook, so findings are caught before
+                  the commit rather than by CI afterwards. The library defaults to the current
+                  directory; the repository is found by walking up from it. The hook skips any
+                  commit that stages no .mo file, and `git commit --no-verify` bypasses it.
+                  A pre-commit hook mlqt did not write is left alone unless --force.
+                  Git only - SVN runs its hooks on the server.
+
+                  --fail-on off|warning|error  What blocks the commit (default: error)
+                  --baseline <path>            Classify against a baseline
+                  --changed-from <ref>         Escalate debt in models changed since this ref
+                  --dependency <path>          Load another library (repeatable)
+                  --force                      Replace or delete a hook mlqt did not write
 
         Exit codes: 0 = passed, 1 = findings at/above --fail-on (new; touched debt if --touched-debt fail),
                     2 = usage/load/setup error (bad path, unreadable config, dependency version mismatch)

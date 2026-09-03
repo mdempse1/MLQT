@@ -29,9 +29,10 @@ mlqt check <library-path> [options]
 `<library-path>` is a Modelica library directory (a package with a `package.mo`, or a flat folder
 of `.mo` files) or a single `.mo` file.
 
-There are two other commands: `mlqt baseline` ([below](#baseline--ratchet)) manages the accepted-debt
-file, and `mlqt compare` ([below](#comparing-two-copies-of-a-library)) lists the classes one copy of a
-library has that another does not.
+There are three other commands: `mlqt baseline` ([below](#baseline--ratchet)) manages the
+accepted-debt file, `mlqt compare` ([below](#comparing-two-copies-of-a-library)) lists the classes one
+copy of a library has that another does not, and `mlqt hook`
+([below](#running-the-check-before-each-commit)) installs the check as a git pre-commit hook.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -638,6 +639,58 @@ mlqt check ./MyLibrary --fail-on warning --format junit --out mlqt-results.xml
 # Machine-readable output for custom processing
 mlqt check ./MyLibrary --format json --out findings.json
 ```
+
+## Running the check before each commit
+
+The gate in CI is the one that counts, but it is the slowest place to find out. `mlqt hook` installs
+the same check as a git `pre-commit` hook, so a finding is caught while the fix is still a keystroke
+away rather than a second commit after a build has failed.
+
+```bash
+mlqt hook install ./MyLibrary            # from anywhere; the repository is found from the library
+mlqt hook status ./MyLibrary
+mlqt hook uninstall ./MyLibrary
+```
+
+The library path defaults to the current directory, so standing in your repository `mlqt hook install`
+is usually the whole command. The repository is located by walking up from the library, so a library
+in a subdirectory needs nothing extra, and a worktree or submodule (whose `.git` is a file) is
+followed to the directory git actually reads hooks from.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--fail-on off\|warning\|error` | What blocks the commit | `error` |
+| `--baseline <path>` | Classify against a baseline, so accepted debt does not block every commit | none |
+| `--changed-from <ref>` | Escalate debt in models changed since this ref | none |
+| `--dependency <path>` | Load another library so references resolve. Repeatable | none |
+| `--force` | Replace (or delete) a `pre-commit` hook mlqt did not write | off |
+
+The options are baked into the generated script; re-run `mlqt hook install` to change them.
+
+**What the hook does.** It exits immediately unless the staged change touches a `.mo` file, so
+commits it has nothing to say about cost nothing. Otherwise it runs `mlqt check` over the library
+with the options above and blocks the commit on a non-zero exit — including exit `2`, because a check
+that could not run has not approved anything.
+
+**Getting past it.** `git commit --no-verify` skips every hook, and that is the deliberate escape
+hatch: a hook that cannot be bypassed gets deleted instead. For a finding that is correct behaviour
+rather than a mistake, waive it in the source with `__MLQT(suppress="<rule>")` — see
+[Suppressing intentional findings](ci-quality-gate.md#suppressing-intentional-findings) — so the
+waiver is reviewed with the code and holds in CI too.
+
+**Hooks are local.** `.git/hooks` is not committed, so each person installs their own; the hook is a
+convenience for the author, never the enforcement. Keep the CI gate.
+
+**A hook someone else wrote is left alone.** Install and uninstall both refuse when the existing
+`pre-commit` does not carry mlqt's marker line, rather than overwriting a colleague's or a
+framework's. Add the check to that script yourself, or pass `--force`. If your repository uses
+`core.hooksPath` (husky, pre-commit, lefthook), call `mlqt check` from your existing configuration
+instead — git reads hooks only from the configured directory, and the one installed here would sit
+unused.
+
+**Git only.** SVN has no client-side hooks: a pre-commit hook there runs on the server and would need
+MLQT installed on it. Outside a git working copy the command says so rather than writing a file
+nothing will read. For SVN, the desktop app's commit dialog is where the check runs.
 
 ## Comparing two copies of a library
 

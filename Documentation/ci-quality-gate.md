@@ -377,7 +377,37 @@ login does not include it.
 
 ---
 
-## 8. Maintaining the baseline
+## 8. Catch it before the commit
+
+CI is the gate that counts, because it is the one nobody can skip. It is also the slowest place to
+learn that a description is missing: by then the change is pushed, a build has run, and the fix is a
+second commit. `mlqt hook` installs the same check as a git `pre-commit` hook, using the settings and
+baseline you have just set up:
+
+```bash
+mlqt hook install ./MyLibrary --fail-on warning --baseline .mlqt/baseline.json
+```
+
+The hook skips any commit that stages no `.mo` file, so it costs nothing on the others. It blocks a
+commit whose findings reach `--fail-on`, and also one where the check could not run at all — a check
+that did not run has approved nothing. `git commit --no-verify` bypasses it, deliberately: a hook that
+cannot be got past is a hook that gets deleted. Full options in
+[the CLI reference](cli.md#running-the-check-before-each-commit).
+
+Two things to be clear about:
+
+- **It does not replace the CI gate.** `.git/hooks` is not committed, so every person installs their
+  own and anyone can skip one. The hook shortens the feedback loop; CI is what holds the line.
+- **It is git-only.** SVN's pre-commit hooks run on the server and would need MLQT installed there.
+  For SVN, the desktop app checks before its commit dialog.
+
+If your repository already runs hooks through husky, pre-commit or lefthook (anything that sets
+`core.hooksPath`), add the `mlqt check` line to that configuration instead — git reads hooks only
+from the configured directory, so an installed one would sit unused.
+
+---
+
+## 9. Maintaining the baseline
 
 Both maintenance commands drop entries whose findings you have fixed. The difference is whether they
 can also **add**:
@@ -417,6 +447,12 @@ mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <
                                                  [--dependency <path>] [--force]
         # --force: create = overwrite an existing file; update = accept new findings as debt
         # --dependency: repeatable; must match between baseline and check
+
+mlqt hook install|uninstall|status [<library-path>] [--fail-on off|warning|error]
+                                   [--baseline <path>] [--changed-from <ref>]
+                                   [--dependency <path>] [--force]
+        # installs the check as a git pre-commit hook; the library defaults to the current directory
+        # --force: replace or delete a pre-commit hook mlqt did not write
 ```
 
 `--config` defaults to `<library-path>/.mlqt/settings.json`; `--baseline` for the `baseline` commands
