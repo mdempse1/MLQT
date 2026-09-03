@@ -354,15 +354,16 @@
     private string _contextWord = "";
     private string _customCorrection = "";
 
-    // Scroll offsets (top, left) captured when a spelling correction is applied, restored after the
-    // file reloads and re-renders so the user stays where they were instead of jumping to the
-    // top-left. Null means "nothing pending".
+    // Scroll offsets (top, left) captured before an edit to the open file — a spelling correction, or
+    // an __MLQT annotation from Ignore/Suppress — and restored after the file reloads and re-renders,
+    // so the user stays where they were instead of jumping to the top-left. Null means "nothing
+    // pending". See CaptureScrollForReloadAsync.
     private (double Top, double Left)? _pendingScroll;
 
     // Baseline for the scroll restore: the _highlightedCode list reference at the moment of capture
-    // (i.e. the OLD content). The correction reload assigns a brand-new list when the corrected
-    // content renders, so we restore only on the render where _highlightedCode differs from this
-    // baseline. This reliably distinguishes the new-content render from any render of the old
+    // (i.e. the OLD content). The reload invalidates the render cache, so a brand-new list is
+    // assigned when the edited content renders — we restore only on the render where
+    // _highlightedCode differs from this baseline. This reliably distinguishes the new-content render from any render of the old
     // content that fires between capture and the re-render — without depending on catching the
     // transient loading spinner, which coalesces away for small/fast files.
     private List<string>? _scrollBaselineCode;
@@ -495,8 +496,8 @@
                 NavState.ChangeModelID(NavState.SelectedModelIDs.First());
         }
 
-        // Restore the scroll position captured before a spelling correction, but only once the
-        // *corrected* content has rendered. The reload assigns a brand-new _highlightedCode list,
+        // Restore the scroll position captured before an edit to the open file, but only once the
+        // *edited* content has rendered. The reload assigns a brand-new _highlightedCode list,
         // so a reference change from the captured baseline means the new content is now mounted.
         // Any render of the old content that fires between capture and the re-render keeps the same
         // reference and is correctly skipped. (Catching the transient loading spinner instead is
@@ -1745,6 +1746,10 @@ document.head.appendChild(style);
             FileMonitoringService.NotifyFileActivity(repoId!);
         }
 
+        // The annotation goes in at the end of the class, so everything the user can see is where it
+        // was — put them back there instead of at the top.
+        await CaptureScrollForReloadAsync();
+
         NavState.ModelContentChanged(affected);
         _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
         return true;
@@ -1807,6 +1812,34 @@ document.head.appendChild(style);
         {
             _suppressing = false;
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Remembers where the user is looking, so the re-render that follows an edit to the open file
+    /// puts them back rather than at the top of the class.
+    ///
+    /// <para>Call it past every early return and immediately before the re-render is triggered: the
+    /// offsets are then the ones on screen, and a pending offset can never leak into ordinary
+    /// navigation. <c>_scrollBaselineCode</c> records the current (old) content list so the restore
+    /// fires on the render that mounts the new content — see OnAfterRenderAsync.</para>
+    ///
+    /// <para>The offsets survive because every edit that uses this adds or changes text without
+    /// moving what is above it: a correction swaps one word, and an <c>__MLQT</c> annotation is
+    /// written at the end of the class.</para>
+    /// </summary>
+    private async Task CaptureScrollForReloadAsync()
+    {
+        try
+        {
+            var offsets = await JSRuntime.InvokeAsync<double[]>("spellCheck.getScroll", ".code-viewer");
+            _pendingScroll = offsets is { Length: >= 2 } ? (offsets[0], offsets[1]) : null;
+            _scrollBaselineCode = _highlightedCode;
+        }
+        catch (Exception)
+        {
+            // No view to read (not rendered yet, or torn down) — land wherever the re-render lands.
+            _pendingScroll = null;
         }
     }
 
@@ -2192,23 +2225,8 @@ document.head.appendChild(style);
             FileMonitoringService.NotifyFileActivity(repoId!);   // file is now genuinely modified
         }
 
-        // Capture the current scroll position so it can be restored after the reload re-renders
-        // the code view (the correction changes only a word, so the same offsets stay valid).
-        // Captured here — past every early-return and just before the re-render is triggered — so
-        // a stale pending offset can never leak into ordinary navigation. The scroll position is
-        // unchanged by the sync edit and the off-thread file write above, so it still reflects
-        // where the user was looking. _scrollBaselineCode records the current (old) content list so
-        // the restore fires only when the corrected content renders (see OnAfterRenderAsync).
-        try
-        {
-            var offsets = await JSRuntime.InvokeAsync<double[]>("spellCheck.getScroll", ".code-viewer");
-            _pendingScroll = offsets is { Length: >= 2 } ? (offsets[0], offsets[1]) : null;
-            _scrollBaselineCode = _highlightedCode;
-        }
-        catch (Exception)
-        {
-            _pendingScroll = null;
-        }
+        // The correction changes only a word, so the offsets the user is looking at stay valid.
+        await CaptureScrollForReloadAsync();
 
         // Invalidate cached renders for every model that lived in the file, then re-fetch the
         // current node (reload replaced the old instances).
