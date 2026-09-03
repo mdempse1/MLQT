@@ -44,33 +44,18 @@ public class FileLineReportingTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-lines-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-lines");
 
         public TempLibrary(string packageSource, string order)
-        {
-            Directory.CreateDirectory(System.IO.Path.Combine(Path, "Fix"));
-            File.WriteAllText(System.IO.Path.Combine(Path, "Fix", "package.mo"), packageSource);
-            File.WriteAllText(System.IO.Path.Combine(Path, "Fix", "package.order"), order);
-            var settings = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(settings);
-            File.WriteAllText(System.IO.Path.Combine(settings, "settings.json"), Settings);
-        }
+            => _workspace
+                .Write(System.IO.Path.Combine("Fix", "package.mo"), packageSource)
+                .Write(System.IO.Path.Combine("Fix", "package.order"), order)
+                .WithSettings(Settings);
 
-        public string LibraryPath => System.IO.Path.Combine(Path, "Fix");
+        public string Path => _workspace.Root;
+        public string LibraryPath => _workspace.PathTo("Fix");
 
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static TempLibrary Fixture() =>
@@ -78,7 +63,7 @@ public class FileLineReportingTests
 
     private static List<JsonElement> FindingsFor(string libraryPath, string model)
     {
-        var (_, stdout, _) = Run("check", libraryPath, "--format", "json", "--fail-on", "off");
+        var (_, stdout, _) = Cli.Run("check", libraryPath, "--format", "json", "--fail-on", "off");
         using var document = JsonDocument.Parse(stdout);
         return document.RootElement.GetProperty("findings")
             .EnumerateArray()
@@ -133,10 +118,10 @@ public class FileLineReportingTests
         // GitHub annotation must land in the same place.
         using var lib = Fixture();
 
-        var (_, console, _) = Run("check", lib.LibraryPath, "--no-color", "--fail-on", "off");
+        var (_, console, _) = Cli.Run("check", lib.LibraryPath, "--no-color", "--fail-on", "off");
         Assert.Contains("MLQT.Doc.ClassDescription (line 12)", console);
 
-        var (_, sarif, _) = Run("check", lib.LibraryPath, "--format", "sarif", "--fail-on", "off");
+        var (_, sarif, _) = Cli.Run("check", lib.LibraryPath, "--format", "sarif", "--fail-on", "off");
         using var document = JsonDocument.Parse(sarif);
         var result = document.RootElement.GetProperty("runs")[0].GetProperty("results")
             .EnumerateArray()

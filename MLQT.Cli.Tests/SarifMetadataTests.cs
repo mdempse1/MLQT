@@ -32,32 +32,14 @@ public class SarifMetadataTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-sarif-meta-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new TempWorkspace("mlqt-sarif-meta")
+            .Write("Undescribed.mo", Model)
+            .WithSettings(Settings);
 
-        public TempLibrary()
-        {
-            Directory.CreateDirectory(Path);
-            File.WriteAllText(System.IO.Path.Combine(Path, "Undescribed.mo"), Model);
-            var settingsDir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(settingsDir);
-            File.WriteAllText(System.IO.Path.Combine(settingsDir, "settings.json"), Settings);
-        }
+        public string Path => _workspace.Root;
+        public string At(string name) => _workspace.PathTo(name);
 
-        public string At(string name) => System.IO.Path.Combine(Path, name);
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static JsonElement Sarif(string text)
@@ -73,7 +55,7 @@ public class SarifMetadataTests
     {
         using var lib = new TempLibrary();
 
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
 
         var rules = Sarif(stdout).GetProperty("runs")[0].GetProperty("tool")
             .GetProperty("driver").GetProperty("rules").EnumerateArray().ToList();
@@ -96,7 +78,7 @@ public class SarifMetadataTests
         // the reader to go and look the rule up, which is the state B9 existed to fix.
         using var lib = new TempLibrary();
 
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
 
         var rule = Sarif(stdout).GetProperty("runs")[0].GetProperty("tool")
             .GetProperty("driver").GetProperty("rules").EnumerateArray()
@@ -122,9 +104,9 @@ public class SarifMetadataTests
         // would otherwise show five open alerts for debt the team has already agreed to.
         using var lib = new TempLibrary();
         var baseline = lib.At("baseline.json");
-        Run("baseline", "create", lib.Path, "--baseline", baseline);
+        Cli.Run("baseline", "create", lib.Path, "--baseline", baseline);
 
-        var (_, stdout, stderr) = Run(
+        var (_, stdout, stderr) = Cli.Run(
             "check", lib.Path, "--baseline", baseline, "--format", "sarif", "--fail-on", "off");
 
         Assert.Empty(Sarif(stdout).GetProperty("runs")[0].GetProperty("results").EnumerateArray());
@@ -136,9 +118,9 @@ public class SarifMetadataTests
     {
         using var lib = new TempLibrary();
         var baseline = lib.At("baseline.json");
-        Run("baseline", "create", lib.Path, "--baseline", baseline);
+        Cli.Run("baseline", "create", lib.Path, "--baseline", baseline);
 
-        var (_, stdout, stderr) = Run(
+        var (_, stdout, stderr) = Cli.Run(
             "check", lib.Path, "--baseline", baseline, "--format", "sarif",
             "--sarif-include-accepted", "--fail-on", "off");
 
@@ -153,7 +135,7 @@ public class SarifMetadataTests
     {
         using var lib = new TempLibrary();
 
-        var (_, stdout, stderr) = Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+        var (_, stdout, stderr) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
 
         Assert.NotEmpty(Sarif(stdout).GetProperty("runs")[0].GetProperty("results").EnumerateArray());
         Assert.DoesNotContain("left out of the SARIF", stderr);
@@ -166,9 +148,9 @@ public class SarifMetadataTests
         // would be harmless but misleading in a viewer that lists rules.
         using var lib = new TempLibrary();
         var baseline = lib.At("baseline.json");
-        Run("baseline", "create", lib.Path, "--baseline", baseline);
+        Cli.Run("baseline", "create", lib.Path, "--baseline", baseline);
 
-        var (_, stdout, _) = Run(
+        var (_, stdout, _) = Cli.Run(
             "check", lib.Path, "--baseline", baseline, "--format", "sarif", "--fail-on", "off");
 
         Assert.Empty(Sarif(stdout).GetProperty("runs")[0].GetProperty("tool")

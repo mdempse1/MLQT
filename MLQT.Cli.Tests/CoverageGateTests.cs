@@ -26,42 +26,27 @@ public class CoverageGateTests
     private const string Settings =
         """{ "RuleSeverities": { "MLQT.Doc.ClassDescription": "Warning" } }""";
 
+    /// <summary>The library in a subdirectory, so the metrics history sits beside it, not in it.</summary>
     private sealed class TempLibrary : IDisposable
     {
-        public string Root { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-coverage-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-coverage");
 
         public TempLibrary(string source = Library, string order = "A\nB\nC\n")
         {
-            Directory.CreateDirectory(Path);
-            File.WriteAllText(System.IO.Path.Combine(Path, "package.mo"), source);
-            File.WriteAllText(System.IO.Path.Combine(Path, "package.order"), order);
-            var settingsDir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(settingsDir);
-            File.WriteAllText(System.IO.Path.Combine(settingsDir, "settings.json"), Settings);
+            _workspace.WithSettings(Settings, under: "Cov");
+            Replace(source, order);
         }
 
-        public string Path => System.IO.Path.Combine(Root, "Cov");
+        public string Root => _workspace.Root;
+        public string Path => _workspace.PathTo("Cov");
 
         /// <summary>Rewrites the library, to move the numbers between runs.</summary>
         public void Replace(string source, string order)
-        {
-            File.WriteAllText(System.IO.Path.Combine(Path, "package.mo"), source);
-            File.WriteAllText(System.IO.Path.Combine(Path, "package.order"), order);
-        }
+            => _workspace
+                .Write(System.IO.Path.Combine("Cov", "package.mo"), source)
+                .Write(System.IO.Path.Combine("Cov", "package.order"), order);
 
-        public void Dispose()
-        {
-            try { Directory.Delete(Root, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     // ---- thresholds ----------------------------------------------------------------------------
@@ -71,7 +56,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (code, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "80");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "80");
 
         Assert.Equal(1, code);
         Assert.Contains("coverage gate: Class description 75% is below the required 80%", stderr);
@@ -82,7 +67,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (code, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "75");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "75");
 
         Assert.Equal(0, code);
         Assert.Contains("coverage gate passed", stderr);
@@ -94,7 +79,7 @@ public class CoverageGateTests
         // "80% everywhere, but 50% is enough on descriptions" — the shape a real policy takes.
         using var lib = new TempLibrary();
 
-        var (code, _, _) = Run(
+        var (code, _, _) = Cli.Run(
             "check", lib.Path, "--fail-on", "off",
             "--min-coverage", "80", "--min-coverage", "class-description=50");
 
@@ -110,7 +95,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (code, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--min-coverage", spec);
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--min-coverage", spec);
 
         Assert.Equal(1, code);
         Assert.Contains("Class description", stderr);
@@ -123,7 +108,7 @@ public class CoverageGateTests
         // checks nothing is the failure a quality gate can least afford.
         using var lib = new TempLibrary();
 
-        var (code, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "icon=100");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "icon=100");
 
         Assert.Equal(0, code);
         Assert.Contains("which this run does not measure", stderr);
@@ -147,7 +132,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (code, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
 
         Assert.Equal(0, code);
         Assert.Contains("nothing to compare against yet", stderr);
@@ -167,14 +152,14 @@ public class CoverageGateTests
             end Cov;
             """, "A\nB\n");
 
-        Run("check", lib.Path, "--fail-on", "off", "--metrics");                     // 100%
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--metrics");                     // 100%
 
-        var (unchanged, _, _) = Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
+        var (unchanged, _, _) = Cli.Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
         Assert.Equal(0, unchanged);
 
         lib.Replace(Library, "A\nB\nC\n");                                            // now 75%
 
-        var (dropped, _, stderr) = Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
+        var (dropped, _, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
         Assert.Equal(1, dropped);
         Assert.Contains("is below the last recorded 100%", stderr);
     }
@@ -183,7 +168,7 @@ public class CoverageGateTests
     public void TheRatchetAllowsAnImprovement()
     {
         using var lib = new TempLibrary();
-        Run("check", lib.Path, "--fail-on", "off", "--metrics");                      // 75%
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--metrics");                      // 75%
 
         lib.Replace(
             """
@@ -198,7 +183,7 @@ public class CoverageGateTests
             end Cov;
             """, "A\nB\nC\n");
 
-        var (code, _, _) = Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--fail-on", "off", "--coverage-ratchet");
 
         Assert.Equal(0, code);
     }
@@ -212,7 +197,7 @@ public class CoverageGateTests
         // does the coverage requirement I also asked for".
         using var lib = new TempLibrary();
 
-        var (code, _, _) = Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "80");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--fail-on", "off", "--min-coverage", "80");
 
         Assert.Equal(1, code);
     }
@@ -222,7 +207,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (code, stdout, stderr) = Run("check", lib.Path, "--fail-on", "off", "--format", "json");
+        var (code, stdout, stderr) = Cli.Run("check", lib.Path, "--fail-on", "off", "--format", "json");
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("coverage gate", stderr);
@@ -237,7 +222,7 @@ public class CoverageGateTests
     {
         using var lib = new TempLibrary();
 
-        var (_, stdout, _) = Run(
+        var (_, stdout, _) = Cli.Run(
             "check", lib.Path, "--fail-on", "off", "--format", "json", "--min-coverage", "80");
 
         using var document = JsonDocument.Parse(stdout);

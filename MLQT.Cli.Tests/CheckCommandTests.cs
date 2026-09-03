@@ -18,45 +18,25 @@ public class CheckCommandTests
     /// <summary>Temp library fixture: a directory with a .mo file and optional .mlqt/settings.json.</summary>
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-cli-test-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-check");
 
-        public TempLibrary() => Directory.CreateDirectory(Path);
+        public string Path => _workspace.Root;
 
-        public TempLibrary WithModel(string fileName, string content)
+        public TempLibrary WithModel(string fileName, string content) => WithFile(fileName, content);
+
+        public TempLibrary WithFile(string relativePath, string content)
         {
-            File.WriteAllText(System.IO.Path.Combine(Path, fileName), content);
+            _workspace.Write(relativePath, content);
             return this;
         }
 
         public TempLibrary WithSettings(string json)
         {
-            var dir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(System.IO.Path.Combine(dir, "settings.json"), json);
+            _workspace.WithSettings(json);
             return this;
         }
 
-        public TempLibrary WithFile(string relativePath, string content)
-        {
-            var full = System.IO.Path.Combine(Path, relativePath);
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-            File.WriteAllText(full, content);
-            return this;
-        }
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static TempLibrary DefaultFixture() =>
@@ -68,7 +48,7 @@ public class CheckCommandTests
     public void Console_ReportsFinding_ExitsZeroByDefault()
     {
         using var lib = DefaultFixture();
-        var (code, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Equal(0, code); // default --fail-on error; the finding is a warning
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
@@ -80,7 +60,7 @@ public class CheckCommandTests
     public void FailOnWarning_ExitsOne()
     {
         using var lib = DefaultFixture();
-        var (code, _, _) = Run("check", lib.Path, "--fail-on", "warning", "--no-color");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--fail-on", "warning", "--no-color");
         Assert.Equal(1, code);
     }
 
@@ -88,7 +68,7 @@ public class CheckCommandTests
     public void FailOnOff_ExitsZero()
     {
         using var lib = DefaultFixture();
-        var (code, _, _) = Run("check", lib.Path, "--fail-on", "off", "--no-color");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--fail-on", "off", "--no-color");
         Assert.Equal(0, code);
     }
 
@@ -96,7 +76,7 @@ public class CheckCommandTests
     public void Json_HasFindingCountAndFingerprint()
     {
         using var lib = DefaultFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "json");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "json");
 
         using var doc = JsonDocument.Parse(stdout);
         var root = doc.RootElement;
@@ -113,7 +93,7 @@ public class CheckCommandTests
     public void Junit_IsValidXmlWithOneFailure()
     {
         using var lib = DefaultFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "junit");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "junit");
 
         var doc = XDocument.Parse(stdout);
         var suites = doc.Root!;
@@ -128,7 +108,7 @@ public class CheckCommandTests
     {
         using var lib = DefaultFixture();
         var outPath = System.IO.Path.Combine(lib.Path, "results.json");
-        var (code, stdout, _) = Run("check", lib.Path, "--format", "json", "--out", outPath);
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--format", "json", "--out", outPath);
 
         Assert.True(File.Exists(outPath));
         Assert.Contains("findingCount", File.ReadAllText(outPath));
@@ -140,7 +120,7 @@ public class CheckCommandTests
     public void NoSettings_ProducesNoFindings()
     {
         using var lib = new TempLibrary().WithModel("TestModel.mo", ModelWithOneUndescribedParam);
-        var (code, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Equal(0, code);
         Assert.Contains("No findings", stdout);
@@ -153,7 +133,7 @@ public class CheckCommandTests
         var configPath = System.IO.Path.Combine(lib.Path, "custom.json");
         File.WriteAllText(configPath, ParamDescriptionSettings);
 
-        var (_, stdout, _) = Run("check", lib.Path, "--config", configPath, "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--config", configPath, "--no-color");
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
     }
 
@@ -161,14 +141,14 @@ public class CheckCommandTests
     public void MissingConfig_ExitsTwo()
     {
         using var lib = new TempLibrary().WithModel("TestModel.mo", ModelWithOneUndescribedParam);
-        var (code, _, _) = Run("check", lib.Path, "--config", "no-such-file.json");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--config", "no-such-file.json");
         Assert.Equal(2, code);
     }
 
     [Fact]
     public void BadPath_ExitsTwo()
     {
-        var (code, _, stderr) = Run("check", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "no-such-dir-xyz"));
+        var (code, _, stderr) = Cli.Run("check", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "no-such-dir-xyz"));
         Assert.Equal(2, code);
         Assert.Contains("not found", stderr);
     }
@@ -176,7 +156,7 @@ public class CheckCommandTests
     [Fact]
     public void Help_ExitsZero()
     {
-        var (code, stdout, _) = Run("--help");
+        var (code, stdout, _) = Cli.Run("--help");
         Assert.Equal(0, code);
         Assert.Contains("mlqt check", stdout);
     }
@@ -184,14 +164,14 @@ public class CheckCommandTests
     [Fact]
     public void NoArgs_ExitsTwo()
     {
-        var (code, _, _) = Run();
+        var (code, _, _) = Cli.Run();
         Assert.Equal(2, code);
     }
 
     [Fact]
     public void UnknownCommand_ExitsTwo()
     {
-        var (code, _, _) = Run("frobnicate");
+        var (code, _, _) = Cli.Run("frobnicate");
         Assert.Equal(2, code);
     }
 
@@ -211,13 +191,13 @@ public class CheckCommandTests
     public void BaselineCreate_ThenCheck_AcceptsExistingDebt()
     {
         using var lib = DefaultFixture();
-        var (createCode, createOut, _) = Run("baseline", "create", lib.Path);
+        var (createCode, createOut, _) = Cli.Run("baseline", "create", lib.Path);
         Assert.Equal(0, createCode);
         Assert.True(File.Exists(BaselinePathIn(lib)));
         Assert.Contains("Wrote 1", createOut);
 
         // The pre-existing finding is now accepted debt — even a strict warning gate passes.
-        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
         Assert.Equal(0, code);
         Assert.Contains("accepted", stdout);
     }
@@ -226,12 +206,12 @@ public class CheckCommandTests
     public void NewFindingAfterBaseline_FailsAtWarning()
     {
         using var lib = DefaultFixture();
-        Run("baseline", "create", lib.Path); // baselines the undescribed `x`
+        Cli.Run("baseline", "create", lib.Path); // baselines the undescribed `x`
 
         // Introduce a new undescribed parameter `z`; `x` stays accepted debt.
         lib.WithModel("TestModel.mo", ModelWithNewAndBaselinedParam);
 
-        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
         Assert.Equal(1, code);
         Assert.Contains("new", stdout);
         Assert.Contains("parameter z", stdout);
@@ -241,25 +221,25 @@ public class CheckCommandTests
     public void BaselineCreate_RefusesOverwriteWithoutForce()
     {
         using var lib = DefaultFixture();
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
-        var (code, _, stderr) = Run("baseline", "create", lib.Path);
+        var (code, _, stderr) = Cli.Run("baseline", "create", lib.Path);
         Assert.Equal(2, code);
         Assert.Contains("already exists", stderr);
 
-        Assert.Equal(0, Run("baseline", "create", lib.Path, "--force").code);
+        Assert.Equal(0, Cli.Run("baseline", "create", lib.Path, "--force").code);
     }
 
     [Fact]
     public void BaselinePrune_RemovesFixedEntry()
     {
         using var lib = DefaultFixture();
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
         // Fix the finding by describing x → its baseline entry becomes stale.
         lib.WithModel("TestModel.mo", "model TestModel\n  parameter Real x = 1.0 \"now described\";\nend TestModel;");
 
-        var (code, stdout, _) = Run("baseline", "prune", lib.Path);
+        var (code, stdout, _) = Cli.Run("baseline", "prune", lib.Path);
         Assert.Equal(0, code);
         Assert.Contains("Pruned 1", stdout);
     }
@@ -268,9 +248,9 @@ public class CheckCommandTests
     public void CheckWithBaseline_Json_HasStatusAndSummary()
     {
         using var lib = DefaultFixture();
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
-        var (_, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--format", "json");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--format", "json");
         using var doc = JsonDocument.Parse(stdout);
         Assert.True(doc.RootElement.GetProperty("hasBaseline").GetBoolean());
         Assert.Equal("AcceptedDebt", doc.RootElement.GetProperty("findings")[0].GetProperty("Status").GetString());
@@ -281,13 +261,13 @@ public class CheckCommandTests
     public void Reformatting_KeepsFindingAccepted()
     {
         using var lib = DefaultFixture();
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
         // Reformat: add blank lines so the finding's line number shifts, semantics unchanged.
         lib.WithModel("TestModel.mo",
             "model TestModel\n\n\n  parameter Real x = 1.0;\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
-        var (code, _, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--fail-on", "warning", "--no-color");
         Assert.Equal(0, code); // fingerprint excludes line number → still accepted
     }
 
@@ -295,7 +275,7 @@ public class CheckCommandTests
     public void CheckWithMissingBaselineFile_ExitsTwo()
     {
         using var lib = DefaultFixture();
-        var (code, _, stderr) = Run("check", lib.Path, "--baseline", System.IO.Path.Combine(lib.Path, "nope.json"));
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--baseline", System.IO.Path.Combine(lib.Path, "nope.json"));
         Assert.Equal(2, code);
         Assert.Contains("baseline not found", stderr);
     }
@@ -312,17 +292,17 @@ public class CheckCommandTests
         repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
         var baseRev = repo.Head.Tip.Sha;
 
-        Run("baseline", "create", lib.Path);                // `x` becomes accepted debt
+        Cli.Run("baseline", "create", lib.Path);                // `x` becomes accepted debt
         lib.WithModel("TestModel.mo",                       // touch the model (comment added)
             "model TestModel\n  parameter Real x = 1.0;\n  // touched\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
         // Touched-debt in a changed model: fail policy gates, warn policy does not.
-        var fail = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+        var fail = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "fail", "--fail-on", "warning", "--no-color");
         Assert.Equal(1, fail.code);
         Assert.Contains("model(s) changed since", fail.stderr); // the diagnostic note
 
-        var warnCode = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+        var warnCode = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "warn", "--fail-on", "warning", "--no-color").code;
         Assert.Equal(0, warnCode);
     }
@@ -341,15 +321,15 @@ public class CheckCommandTests
         repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
         var baseRev = repo.Head.Tip.Sha;
 
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         lib.WithModel("TestModel.mo",
             "model TestModel\n  parameter Real x = 1.0;\n  // touched\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
-        var warn = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+        var warn = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "warn", "--no-color");
         Assert.Contains("[touched]", warn.stdout);
 
-        var ignore = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+        var ignore = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "ignore", "--fail-on", "warning", "--no-color");
 
         Assert.Equal(0, ignore.code);
@@ -371,12 +351,12 @@ public class CheckCommandTests
         repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
         var baseRev = repo.Head.Tip.Sha;
 
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         lib.WithModel("TestModel.mo",                       // `z` is undescribed and not in the baseline
             "model TestModel\n  parameter Real x = 1.0;\n  parameter Real z = 3.0;\n" +
             "  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
-        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib),
             "--changed-from", baseRev, "--touched-debt", "ignore", "--fail-on", "warning", "--no-color");
 
         Assert.Equal(1, code);
@@ -393,9 +373,9 @@ public class CheckCommandTests
         LibGit2Sharp.Commands.Stage(repo, "*");
         var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
         repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
-        var (code, _, stderr) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", "no-such-branch");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", "no-such-branch");
         Assert.Equal(2, code);
         Assert.Contains("could not resolve revision", stderr);
     }
@@ -412,18 +392,18 @@ public class CheckCommandTests
         repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
         var baseRev = repo.Head.Tip.Sha;
 
-        Run("baseline", "create", lib.Path); // baselines the `x` finding
+        Cli.Run("baseline", "create", lib.Path); // baselines the `x` finding
 
         // Fix x (add a description) — the finding disappears, and the model was touched.
         lib.WithModel("TestModel.mo",
             "model TestModel\n  parameter Real x = 1.0 \"described now\";\n  parameter Real y = 2.0 \"described\";\nend TestModel;");
 
-        var (_, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--no-color");
         Assert.Contains("Fixed in changed models", stdout);
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
         Assert.Contains("1 fixed", stdout);
 
-        var (_, json, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--format", "json");
+        var (_, json, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--changed-from", baseRev, "--format", "json");
         using var doc = JsonDocument.Parse(json);
         Assert.Equal(1, doc.RootElement.GetProperty("summary").GetProperty("fixed").GetInt32());
         Assert.Equal(1, doc.RootElement.GetProperty("fixed").GetArrayLength());
@@ -441,7 +421,7 @@ public class CheckCommandTests
     public void ErrorSeverity_FailsGateAtError()
     {
         using var lib = ErrorSeverityFixture();
-        var (code, _, _) = Run("check", lib.Path, "--fail-on", "error", "--no-color");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--fail-on", "error", "--no-color");
         Assert.Equal(1, code); // the rule is configured as an error in .mlqt/settings.json
     }
 
@@ -449,7 +429,7 @@ public class CheckCommandTests
     public void Sarif_IsValid_WithLevelBaselineStateAndFingerprint()
     {
         using var lib = DefaultFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif");
 
         using var doc = JsonDocument.Parse(stdout);
         var root = doc.RootElement;
@@ -469,7 +449,7 @@ public class CheckCommandTests
     public void Sarif_ErrorSeverity_MapsToErrorLevel()
     {
         using var lib = ErrorSeverityFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "sarif");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif");
         using var doc = JsonDocument.Parse(stdout);
         Assert.Equal("error", doc.RootElement.GetProperty("runs")[0]
             .GetProperty("results")[0].GetProperty("level").GetString());
@@ -479,7 +459,7 @@ public class CheckCommandTests
     public void TeamCity_EmitsStatisticsAndBuildProblemOnFailure()
     {
         using var lib = DefaultFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "teamcity", "--fail-on", "warning");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "teamcity", "--fail-on", "warning");
         Assert.Contains("buildStatisticValue key='mlqt.findings.new' value='1'", stdout);
         Assert.Contains("buildProblem", stdout);
     }
@@ -488,7 +468,7 @@ public class CheckCommandTests
     public void TeamCity_NoBuildProblem_WhenGatePasses()
     {
         using var lib = DefaultFixture(); // one warning finding
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "teamcity", "--fail-on", "error");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "teamcity", "--fail-on", "error");
         Assert.DoesNotContain("buildProblem", stdout);
     }
 
@@ -496,7 +476,7 @@ public class CheckCommandTests
     public void Markdown_HasHeaderAndTable()
     {
         using var lib = DefaultFixture();
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "markdown");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "markdown");
         Assert.Contains("## MLQT check", stdout);
         Assert.Contains("| Severity | Status | Rule | Model | Line | Message |", stdout);
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout);
@@ -512,7 +492,7 @@ public class CheckCommandTests
             .WithFile("LibB/package.mo", "package LibB\n  model MB\n    parameter Real b = 2.0;\n  end MB;\nend LibB;")
             .WithSettings(ParamDescriptionSettings); // one .mlqt/settings.json at the repo root
 
-        var (_, stdout, _) = Run("check", repo.Path, "--format", "json");
+        var (_, stdout, _) = Cli.Run("check", repo.Path, "--format", "json");
         using var doc = JsonDocument.Parse(stdout);
         var models = doc.RootElement.GetProperty("findings").EnumerateArray()
             .Select(f => f.GetProperty("Model").GetString())
@@ -521,11 +501,11 @@ public class CheckCommandTests
         Assert.Contains(models, m => m is not null && m.EndsWith(".MB"));
 
         // One baseline at the repo root covers both libraries.
-        Assert.Equal(0, Run("baseline", "create", repo.Path).code);
+        Assert.Equal(0, Cli.Run("baseline", "create", repo.Path).code);
         var baselinePath = System.IO.Path.Combine(repo.Path, ".mlqt", "baseline.json");
         Assert.True(File.Exists(baselinePath));
 
-        var (checkCode, _, _) = Run("check", repo.Path, "--baseline", baselinePath, "--fail-on", "warning", "--no-color");
+        var (checkCode, _, _) = Cli.Run("check", repo.Path, "--baseline", baselinePath, "--fail-on", "warning", "--no-color");
         Assert.Equal(0, checkCode); // both libraries' findings are accepted
     }
 
@@ -537,10 +517,10 @@ public class CheckCommandTests
                 "model TestModel\n  parameter Real x = 1.0 annotation(__MLQT(suppress=\"Doc.ParameterDescription\"));\nend TestModel;")
             .WithSettings(ParamDescriptionSettings);
 
-        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
         Assert.Contains("No findings", stdout); // the only finding is suppressed
 
-        var (_, auditOut, _) = Run("check", lib.Path, "--no-suppress", "--no-color");
+        var (_, auditOut, _) = Cli.Run("check", lib.Path, "--no-suppress", "--no-color");
         Assert.Contains("MLQT.Doc.ParameterDescription", auditOut); // audit mode reveals it
     }
 
@@ -553,7 +533,7 @@ public class CheckCommandTests
                 "package P\n  model A\n    parameter Real x = 1.0;\n  end A;\n\n  model B\n    parameter Real y = 2.0;\n  end B;\nend P;")
             .WithSettings(ParamDescriptionSettings);
 
-        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
         Assert.Contains("P.A", stdout);
         Assert.Contains("P.B", stdout);
     }
@@ -564,10 +544,10 @@ public class CheckCommandTests
     public void RelativeBaselinePath_ResolvesAgainstLibraryPath()
     {
         using var lib = DefaultFixture();
-        Assert.Equal(0, Run("baseline", "create", lib.Path).code); // writes <lib>/.mlqt/baseline.json
+        Assert.Equal(0, Cli.Run("baseline", "create", lib.Path).code); // writes <lib>/.mlqt/baseline.json
 
         // A relative --baseline must resolve against lib.Path, not the test runner's CWD.
-        var (code, stdout, _) = Run("check", lib.Path, "--baseline", ".mlqt/baseline.json",
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--baseline", ".mlqt/baseline.json",
             "--fail-on", "warning", "--no-color");
         Assert.Equal(0, code); // found it → the existing finding is accepted debt
         Assert.Contains("accepted", stdout);
@@ -579,7 +559,7 @@ public class CheckCommandTests
         using var lib = new TempLibrary().WithModel("TestModel.mo", ModelWithOneUndescribedParam);
         File.WriteAllText(System.IO.Path.Combine(lib.Path, "myconfig.json"), ParamDescriptionSettings);
 
-        var (_, stdout, _) = Run("check", lib.Path, "--config", "myconfig.json", "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--config", "myconfig.json", "--no-color");
         Assert.Contains("MLQT.Doc.ParameterDescription", stdout); // config found relative to lib → rule ran
     }
 
@@ -587,7 +567,7 @@ public class CheckCommandTests
     public void BaselineCreate_RelativePath_ResolvesAgainstLibraryPath()
     {
         using var lib = DefaultFixture();
-        Assert.Equal(0, Run("baseline", "create", lib.Path, "--baseline", "custom/base.json").code);
+        Assert.Equal(0, Cli.Run("baseline", "create", lib.Path, "--baseline", "custom/base.json").code);
         Assert.True(File.Exists(System.IO.Path.Combine(lib.Path, "custom", "base.json")));
     }
 
@@ -596,9 +576,9 @@ public class CheckCommandTests
     {
         using var lib = DefaultFixture();
         var abs = System.IO.Path.Combine(lib.Path, "abs-baseline.json");
-        Assert.Equal(0, Run("baseline", "create", lib.Path, "--baseline", abs).code);
+        Assert.Equal(0, Cli.Run("baseline", "create", lib.Path, "--baseline", abs).code);
         Assert.True(File.Exists(abs));
-        Assert.Equal(0, Run("check", lib.Path, "--baseline", abs, "--fail-on", "warning", "--no-color").code);
+        Assert.Equal(0, Cli.Run("check", lib.Path, "--baseline", abs, "--fail-on", "warning", "--no-color").code);
     }
 
     // ---- excluded libraries ---------------------------------------------------------------------
@@ -631,12 +611,12 @@ public class CheckCommandTests
             .WithModel("Tests.mo", TestLibrary)
             .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        var before = Run("check", lib.Path, "--no-color");
+        var before = Cli.Run("check", lib.Path, "--no-color");
         Assert.Contains("Lib", before.stdout);
         Assert.Contains("Tests", before.stdout);
 
         lib.WithSettings("""{ "ParameterHasDescription": true, "ExcludedLibraries": ["Tests"] }""");
-        var (_, stdout, stderr) = Run("check", lib.Path, "--no-color");
+        var (_, stdout, stderr) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Contains("Lib", stdout);
         Assert.DoesNotContain("Tests", stdout);
@@ -652,7 +632,7 @@ public class CheckCommandTests
             .WithModel("Foo_Tests.mo", WildcardNamedTestLibrary)
             .WithSettings("""{ "ParameterHasDescription": true, "ExcludedLibraries": ["*_Tests"] }""");
 
-        var (_, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Contains("Lib", stdout);
         Assert.DoesNotContain("Foo_Tests", stdout);

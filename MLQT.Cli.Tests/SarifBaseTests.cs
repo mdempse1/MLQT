@@ -20,34 +20,17 @@ public class SarifBaseTests
         """{ "RuleSeverities": { "MLQT.Doc.ClassDescription": "Warning" } }""";
 
     /// <summary>A repository with the library in <c>Libraries/Fix</c>, as a real one usually has.</summary>
+    /// <summary>The library nested under a repository root, which is what --sarif-base is for.</summary>
     private sealed class TempRepo : IDisposable
     {
-        public string Root { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-sarif-base-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new TempWorkspace("mlqt-sarif-base")
+            .Write(Path.Combine("Libraries", "Fix", "Undescribed.mo"), Model)
+            .WithSettings(Settings, under: Path.Combine("Libraries", "Fix"));
 
-        public TempRepo()
-        {
-            Directory.CreateDirectory(LibraryPath);
-            File.WriteAllText(System.IO.Path.Combine(LibraryPath, "Undescribed.mo"), Model);
-            var settingsDir = System.IO.Path.Combine(LibraryPath, ".mlqt");
-            Directory.CreateDirectory(settingsDir);
-            File.WriteAllText(System.IO.Path.Combine(settingsDir, "settings.json"), Settings);
-        }
+        public string Root => _workspace.Root;
+        public string LibraryPath => _workspace.PathTo("Libraries", "Fix");
 
-        public string LibraryPath => System.IO.Path.Combine(Root, "Libraries", "Fix");
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Root, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static List<string> UrisIn(string sarif)
@@ -66,7 +49,7 @@ public class SarifBaseTests
     {
         using var repo = new TempRepo();
 
-        var (_, stdout, _) = Run("check", repo.LibraryPath, "--format", "sarif", "--fail-on", "off");
+        var (_, stdout, _) = Cli.Run("check", repo.LibraryPath, "--format", "sarif", "--fail-on", "off");
 
         Assert.Equal(["Undescribed.mo"], UrisIn(stdout));
     }
@@ -76,7 +59,7 @@ public class SarifBaseTests
     {
         using var repo = new TempRepo();
 
-        var (code, stdout, _) = Run(
+        var (code, stdout, _) = Cli.Run(
             "check", repo.LibraryPath, "--format", "sarif", "--sarif-base", repo.Root, "--fail-on", "off");
 
         Assert.Equal(0, code);
@@ -90,7 +73,7 @@ public class SarifBaseTests
         // it is checking without knowing where the job happens to be running from.
         using var repo = new TempRepo();
 
-        var (_, stdout, _) = Run(
+        var (_, stdout, _) = Cli.Run(
             "check", repo.LibraryPath, "--format", "sarif", "--sarif-base", "../..", "--fail-on", "off");
 
         Assert.Equal(["Libraries/Fix/Undescribed.mo"], UrisIn(stdout));
@@ -105,7 +88,7 @@ public class SarifBaseTests
         var elsewhere = System.IO.Path.Combine(repo.Root, "Elsewhere");
         Directory.CreateDirectory(elsewhere);
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--format", "sarif", "--sarif-base", elsewhere, "--fail-on", "off");
 
         Assert.Equal(2, code);
@@ -117,7 +100,7 @@ public class SarifBaseTests
     {
         using var repo = new TempRepo();
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--format", "sarif",
             "--sarif-base", System.IO.Path.Combine(repo.Root, "nope"), "--fail-on", "off");
 
@@ -130,7 +113,7 @@ public class SarifBaseTests
     {
         using var repo = new TempRepo();
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--format", "sarif",
             "--sarif-base", System.IO.Path.Combine(repo.LibraryPath, "Undescribed.mo"), "--fail-on", "off");
 
@@ -144,7 +127,7 @@ public class SarifBaseTests
         // Silently ignoring it would leave a pipeline believing its paths had been rebased.
         using var repo = new TempRepo();
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--sarif-base", repo.Root, "--no-color", "--fail-on", "off");
 
         Assert.Equal(0, code);
@@ -158,7 +141,7 @@ public class SarifBaseTests
         using var repo = new TempRepo();
         var sarifPath = System.IO.Path.Combine(repo.Root, "mlqt.sarif");
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--no-color", "--fail-on", "off",
             "--sarif-base", repo.Root, "--report", $"sarif:{sarifPath}");
 
@@ -176,7 +159,7 @@ public class SarifBaseTests
         // needing the external tool.
         using var repo = new TempRepo();
 
-        var (_, stdout, _) = Run("check", repo.LibraryPath, "--format", "sarif", "--fail-on", "off");
+        var (_, stdout, _) = Cli.Run("check", repo.LibraryPath, "--format", "sarif", "--fail-on", "off");
 
         using var document = JsonDocument.Parse(stdout);
         var driver = document.RootElement.GetProperty("runs")[0]

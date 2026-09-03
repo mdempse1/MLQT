@@ -26,37 +26,23 @@ public class ParseDiagnosticsTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-parse-test-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-parse");
 
-        public TempLibrary() => Directory.CreateDirectory(Path);
+        public string Path => _workspace.Root;
 
         public TempLibrary WithModel(string fileName, string content)
         {
-            File.WriteAllText(System.IO.Path.Combine(Path, fileName), content);
+            _workspace.Write(fileName, content);
             return this;
         }
 
         public TempLibrary WithSettings(string json)
         {
-            var dir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(System.IO.Path.Combine(dir, "settings.json"), json);
+            _workspace.WithSettings(json);
             return this;
         }
 
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static string BaselinePathIn(TempLibrary lib) =>
@@ -69,7 +55,7 @@ public class ParseDiagnosticsTests
             .WithModel("TestModel.mo", UnterminatedString)
             .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        var (code, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         // Errors, unlike every style rule (which defaults to warning), trip the default --fail-on error.
         Assert.Equal(1, code);
@@ -86,7 +72,7 @@ public class ParseDiagnosticsTests
             .WithModel("TestModel.mo", UnterminatedString)
             .WithSettings("{}");
 
-        var (code, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Equal(1, code);
         Assert.Contains("MLQT.Parse.SyntaxError", stdout);
@@ -99,7 +85,7 @@ public class ParseDiagnosticsTests
             .WithModel("TestModel.mo", CleanModel)
             .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        var (code, stdout, _) = Run("check", lib.Path, "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("MLQT.Parse.", stdout);
@@ -114,12 +100,12 @@ public class ParseDiagnosticsTests
             .WithModel("TestModel.mo", UnterminatedString)
             .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         var baselineJson = File.ReadAllText(BaselinePathIn(lib));
         Assert.DoesNotContain("MLQT.Parse.", baselineJson);
 
         // ...and it still fails the gate on the next run despite the baseline.
-        var (code, stdout, _) = Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--no-color");
+        var (code, stdout, _) = Cli.Run("check", lib.Path, "--baseline", BaselinePathIn(lib), "--no-color");
 
         Assert.Equal(1, code);
         Assert.Contains("MLQT.Parse.SyntaxError", stdout);
@@ -133,7 +119,7 @@ public class ParseDiagnosticsTests
             .WithModel("TestModel.mo", UnterminatedString)
             .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        var (_, stdout, _) = Run("check", lib.Path, "--format", "json");
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "json");
 
         using var doc = JsonDocument.Parse(stdout);
         var parse = doc.RootElement.GetProperty("findings").EnumerateArray()

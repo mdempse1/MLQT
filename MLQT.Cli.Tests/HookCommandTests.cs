@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using MLQT.Cli;
 
 namespace MLQT.Cli.Tests;
@@ -10,64 +9,29 @@ namespace MLQT.Cli.Tests;
 /// </summary>
 public class HookCommandTests
 {
-    private sealed class TempRepo : IDisposable
+    /// <summary>A repository with the library in a subdirectory, as a real one usually has.</summary>
+    private sealed class TempRepo(bool initGit = true, string settings = ErrorOnMissingDescription)
+        : IDisposable
     {
-        public string Root { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-hook-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = Build(initGit, settings);
 
-        /// <summary>A repository with the library in a subdirectory, as a real one usually has.</summary>
-        public TempRepo(bool initGit = true, string settings = ErrorOnMissingDescription)
+        private static TempWorkspace Build(bool initGit, string settings)
         {
-            Directory.CreateDirectory(LibraryPath);
-            File.WriteAllText(System.IO.Path.Combine(LibraryPath, "package.mo"), GoodLibrary);
-            File.WriteAllText(System.IO.Path.Combine(LibraryPath, "package.order"), "Good\n");
-            Directory.CreateDirectory(System.IO.Path.Combine(Root, ".mlqt"));
-            File.WriteAllText(System.IO.Path.Combine(Root, ".mlqt", "settings.json"), settings);
+            var workspace = new TempWorkspace("mlqt-hook")
+                .Write(Path.Combine("Lib", "package.mo"), GoodLibrary)
+                .Write(Path.Combine("Lib", "package.order"), "Good\n")
+                .WithSettings(settings);
 
-            if (initGit)
-            {
-                Git("init -q");
-                Git("config user.email test@example.com");
-                Git("config user.name Test");
-                Git("add -A");
-                Git("commit -qm initial");
-            }
+            return initGit ? workspace.InitGit() : workspace;
         }
 
-        public string LibraryPath => System.IO.Path.Combine(Root, "Lib");
-        public string HookPath => System.IO.Path.Combine(Root, ".git", "hooks", "pre-commit");
+        public string Root => _workspace.Root;
+        public string LibraryPath => _workspace.PathTo("Lib");
+        public string HookPath => _workspace.PathTo(".git", "hooks", "pre-commit");
 
-        public (int Code, string Output) Git(string arguments)
-        {
-            var info = new ProcessStartInfo("git", arguments)
-            {
-                WorkingDirectory = Root,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
+        public (int Code, string Output) Git(string arguments) => _workspace.Git(arguments);
 
-            // The hook falls back to `mlqt` on PATH, because the process installing it here is a test
-            // host rather than the tool. The build output holds mlqt.exe, so that is the PATH to give.
-            info.Environment["PATH"] =
-                AppContext.BaseDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
-            using var process = Process.Start(info)!;
-            var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return (process.ExitCode, output);
-        }
-
-        public void Dispose()
-        {
-            try
-            {
-                // git marks objects read-only, which stops a plain recursive delete.
-                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
-                    File.SetAttributes(file, FileAttributes.Normal);
-                Directory.Delete(Root, recursive: true);
-            }
-            catch { /* best effort */ }
-        }
+        public void Dispose() => _workspace.Dispose();
     }
 
     private const string GoodLibrary = """
@@ -108,14 +72,6 @@ public class HookCommandTests
         }
     }
 
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
-    }
-
     // ---- installing ----------------------------------------------------------------------------
 
     [Fact]
@@ -123,7 +79,7 @@ public class HookCommandTests
     {
         using var repo = new TempRepo();
 
-        var (code, stdout, _) = Run("hook", "install", repo.LibraryPath);
+        var (code, stdout, _) = Cli.Run("hook", "install", repo.LibraryPath);
 
         Assert.Equal(0, code);
         Assert.True(File.Exists(repo.HookPath));
@@ -137,7 +93,7 @@ public class HookCommandTests
         // The library is Root/Lib; the hook belongs to the repository above it.
         using var repo = new TempRepo();
 
-        Run("hook", "install", repo.LibraryPath);
+        Cli.Run("hook", "install", repo.LibraryPath);
 
         Assert.True(File.Exists(repo.HookPath));
     }
@@ -147,7 +103,7 @@ public class HookCommandTests
     {
         using var repo = new TempRepo();
 
-        Run("hook", "install", repo.LibraryPath, "--fail-on", "warning");
+        Cli.Run("hook", "install", repo.LibraryPath, "--fail-on", "warning");
 
         var hook = File.ReadAllText(repo.HookPath);
         Assert.Contains("--fail-on warning", hook);   // as documented, not as the enum prints
@@ -158,9 +114,9 @@ public class HookCommandTests
     {
         using var repo = new TempRepo();
 
-        Assert.Contains("No pre-commit hook", Run("hook", "status", repo.LibraryPath).stdout);
-        Run("hook", "install", repo.LibraryPath);
-        Assert.Contains("mlqt pre-commit hook installed", Run("hook", "status", repo.LibraryPath).stdout);
+        Assert.Contains("No pre-commit hook", Cli.Run("hook", "status", repo.LibraryPath).stdout);
+        Cli.Run("hook", "install", repo.LibraryPath);
+        Assert.Contains("mlqt pre-commit hook installed", Cli.Run("hook", "status", repo.LibraryPath).stdout);
     }
 
     // ---- not trampling anything ----------------------------------------------------------------
@@ -172,8 +128,8 @@ public class HookCommandTests
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(repo.HookPath)!);
         File.WriteAllText(repo.HookPath, "#!/bin/sh\necho mine\n");
 
-        var (installCode, _, installError) = Run("hook", "install", repo.LibraryPath);
-        var (uninstallCode, _, uninstallError) = Run("hook", "uninstall", repo.LibraryPath);
+        var (installCode, _, installError) = Cli.Run("hook", "install", repo.LibraryPath);
+        var (uninstallCode, _, uninstallError) = Cli.Run("hook", "uninstall", repo.LibraryPath);
 
         Assert.Equal(2, installCode);
         Assert.Equal(2, uninstallCode);
@@ -189,7 +145,7 @@ public class HookCommandTests
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(repo.HookPath)!);
         File.WriteAllText(repo.HookPath, "#!/bin/sh\necho mine\n");
 
-        Assert.Equal(0, Run("hook", "install", repo.LibraryPath, "--force").code);
+        Assert.Equal(0, Cli.Run("hook", "install", repo.LibraryPath, "--force").code);
         Assert.Contains("\"$MLQT\" check", File.ReadAllText(repo.HookPath));
     }
 
@@ -197,9 +153,9 @@ public class HookCommandTests
     public void UninstallRemovesOurs()
     {
         using var repo = new TempRepo();
-        Run("hook", "install", repo.LibraryPath);
+        Cli.Run("hook", "install", repo.LibraryPath);
 
-        Assert.Equal(0, Run("hook", "uninstall", repo.LibraryPath).code);
+        Assert.Equal(0, Cli.Run("hook", "uninstall", repo.LibraryPath).code);
         Assert.False(File.Exists(repo.HookPath));
     }
 
@@ -210,7 +166,7 @@ public class HookCommandTests
     {
         using var repo = new TempRepo(initGit: false);
 
-        var (code, _, stderr) = Run("hook", "install", repo.LibraryPath);
+        var (code, _, stderr) = Cli.Run("hook", "install", repo.LibraryPath);
 
         Assert.Equal(2, code);
         Assert.Contains("not inside a git working copy", stderr);
@@ -220,7 +176,7 @@ public class HookCommandTests
     [Fact]
     public void AMissingLibraryIsRefused()
     {
-        var (code, _, stderr) = Run("hook", "install", System.IO.Path.Combine(Path.GetTempPath(), "nope-" + Guid.NewGuid()));
+        var (code, _, stderr) = Cli.Run("hook", "install", System.IO.Path.Combine(Path.GetTempPath(), "nope-" + Guid.NewGuid()));
 
         Assert.Equal(2, code);
         Assert.Contains("library not found", stderr);
@@ -233,7 +189,7 @@ public class HookCommandTests
     {
         var args = action.Length == 0 ? new[] { "hook" } : ["hook", action];
 
-        var (code, _, stderr) = Run(args);
+        var (code, _, stderr) = Cli.Run(args);
 
         Assert.Equal(2, code);
         Assert.Contains("install|uninstall|status", stderr);
@@ -247,7 +203,7 @@ public class HookCommandTests
         using var repo = new TempRepo();
         if (!GitIsAvailable(repo)) return;   // no git, nothing to gate — see GitIsAvailable
 
-        Run("hook", "install", repo.LibraryPath);
+        Cli.Run("hook", "install", repo.LibraryPath);
 
         File.WriteAllText(System.IO.Path.Combine(repo.LibraryPath, "package.mo"), LibraryWithAnUndescribedClass);
         File.WriteAllText(System.IO.Path.Combine(repo.LibraryPath, "package.order"), "Good\nSloppy\n");
@@ -266,7 +222,7 @@ public class HookCommandTests
         using var repo = new TempRepo();
         if (!GitIsAvailable(repo)) return;   // no git, nothing to gate — see GitIsAvailable
 
-        Run("hook", "install", repo.LibraryPath);
+        Cli.Run("hook", "install", repo.LibraryPath);
 
         File.WriteAllText(System.IO.Path.Combine(repo.Root, "README.md"), "notes");
         repo.Git("add -A");

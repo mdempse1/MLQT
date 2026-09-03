@@ -27,39 +27,24 @@ public class MetricsCommandTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-metrics-test-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-metrics");
 
-        public TempLibrary() => Directory.CreateDirectory(Path);
+        public string Path => _workspace.Root;
+        public string MetricsPath => _workspace.PathTo(".mlqt", "metrics-history.json");
 
         public TempLibrary WithModel(string fileName, string content)
         {
-            File.WriteAllText(System.IO.Path.Combine(Path, fileName), content);
+            _workspace.Write(fileName, content);
             return this;
         }
 
         public TempLibrary WithSettings(string json)
         {
-            var dir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(System.IO.Path.Combine(dir, "settings.json"), json);
+            _workspace.WithSettings(json);
             return this;
         }
 
-        public string MetricsPath => System.IO.Path.Combine(Path, ".mlqt", "metrics-history.json");
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     private static JsonElement[] Points(string path)
@@ -74,7 +59,7 @@ public class MetricsCommandTests
     public void WithoutTheFlag_NoHistoryIsWritten()
     {
         using var lib = Fixture();
-        Run("check", lib.Path, "--no-color");
+        Cli.Run("check", lib.Path, "--no-color");
 
         Assert.False(File.Exists(lib.MetricsPath));
     }
@@ -83,7 +68,7 @@ public class MetricsCommandTests
     public void Metrics_WritesAPointToTheSharedMlqtFile()
     {
         using var lib = Fixture();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         // Scope "" is the whole checked set — what the dashboard's "all libraries" view reads.
         var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
@@ -123,7 +108,7 @@ public class MetricsCommandTests
         // The dashboard's scope filter matches a snapshot's Scope against the selected package id
         // exactly, so without these a library shows current coverage but an empty trend.
         using var lib = TwoLibraries();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         var scopes = Points(lib.MetricsPath).Select(p => p.GetProperty("Scope").GetString()).ToList();
 
@@ -138,7 +123,7 @@ public class MetricsCommandTests
         // A flat folder of loose classes has no library packages, so only the whole-set point is
         // recorded — a scope per class could never be selected in the dashboard anyway.
         using var lib = Fixture();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         var point = Assert.Single(Points(lib.MetricsPath));
         Assert.Equal("", point.GetProperty("Scope").GetString());
@@ -148,7 +133,7 @@ public class MetricsCommandTests
     public void Metrics_EachLibraryScopeCountsOnlyItsOwnClasses()
     {
         using var lib = TwoLibraries();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         var whole = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
         var one = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "One");
@@ -161,7 +146,7 @@ public class MetricsCommandTests
     {
         // One undescribed class => one finding, and the trend should show it.
         using var lib = Fixture(TwoClassesPlusUndocumented);
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         var point = Assert.Single(Points(lib.MetricsPath), p => p.GetProperty("Scope").GetString() == "");
         Assert.Equal(1, point.GetProperty("Findings").GetInt32());
@@ -175,7 +160,7 @@ public class MetricsCommandTests
         var outside = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"mlqt-hist-{Guid.NewGuid():N}.json");
         try
         {
-            Run("check", lib.Path, "--metrics-out", outside, "--no-color");
+            Cli.Run("check", lib.Path, "--metrics-out", outside, "--no-color");
 
             Assert.True(File.Exists(outside));
             Assert.False(File.Exists(lib.MetricsPath));
@@ -189,10 +174,10 @@ public class MetricsCommandTests
         // The loop breaker. A CI job that commits this file triggers a build of its own commit; if that
         // build appended an identical point it would commit again, forever.
         using var lib = Fixture();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
         var afterFirst = File.ReadAllText(lib.MetricsPath);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--metrics", "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         Assert.Equal(afterFirst, File.ReadAllText(lib.MetricsPath));
         Assert.Contains("unchanged", stderr);
@@ -202,9 +187,9 @@ public class MetricsCommandTests
     public void MetricsForce_RecordsEvenWhenUnchanged()
     {
         using var lib = Fixture();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
-        Run("check", lib.Path, "--metrics-force", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics-force", "--no-color");
 
         // Every scope is re-recorded, so the count doubles.
         Assert.Equal(2, Points(lib.MetricsPath).Length);
@@ -214,10 +199,10 @@ public class MetricsCommandTests
     public void ChangedLibrary_RecordsANewPoint()
     {
         using var lib = Fixture();
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         lib.WithModel("Lib.mo", TwoClassesPlusUndocumented);   // coverage drops
-        Run("check", lib.Path, "--metrics", "--no-color");
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
 
         Assert.Equal(2, Points(lib.MetricsPath).Count(p => p.GetProperty("Scope").GetString() == ""));
     }
@@ -228,7 +213,7 @@ public class MetricsCommandTests
         // A failing build is exactly the one whose numbers you want on the trend.
         using var lib = Fixture(TwoClassesPlusUndocumented);
 
-        var (code, _, _) = Run("check", lib.Path, "--metrics", "--fail-on", "warning", "--no-color");
+        var (code, _, _) = Cli.Run("check", lib.Path, "--metrics", "--fail-on", "warning", "--no-color");
 
         Assert.Equal(1, code);
         Assert.NotEmpty(Points(lib.MetricsPath));
@@ -241,7 +226,7 @@ public class MetricsCommandTests
         using var lib = Fixture();
         var badPath = System.IO.Path.Combine(lib.Path, "no-such-dir\0bad", "history.json");
 
-        var (code, _, stderr) = Run("check", lib.Path, "--metrics-out", badPath, "--no-color");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--metrics-out", badPath, "--no-color");
 
         Assert.Equal(0, code);
         Assert.Contains("could not record metrics", stderr);

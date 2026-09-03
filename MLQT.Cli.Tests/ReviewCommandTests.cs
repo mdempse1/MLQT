@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using MLQT.Cli;
 
@@ -11,61 +10,30 @@ namespace MLQT.Cli.Tests;
 /// </summary>
 public class ReviewCommandTests
 {
-    private sealed class TempRepo : IDisposable
+    private sealed class TempRepo(bool initGit = true) : IDisposable
     {
-        public string Root { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-review-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = Build(initGit);
 
-        public TempRepo(bool initGit = true)
+        private static TempWorkspace Build(bool initGit)
         {
-            Directory.CreateDirectory(LibraryPath);
-            Directory.CreateDirectory(System.IO.Path.Combine(Root, ".mlqt"));
-            File.WriteAllText(System.IO.Path.Combine(Root, ".mlqt", "settings.json"), Settings);
-            Write(BaseLibrary, "Good\nOld\n");
-
-            if (!initGit)
-                return;
-
-            Git("init -q -b main");
-            Git("config user.email test@example.com");
-            Git("config user.name Test");
-            Git("add -A");
-            Git("commit -qm initial");
+            var workspace = new TempWorkspace("mlqt-review").WithSettings(Settings);
+            WriteLibrary(workspace, BaseLibrary, "Good\nOld\n");
+            return initGit ? workspace.InitGit() : workspace;
         }
 
-        public string LibraryPath => System.IO.Path.Combine(Root, "Lib");
+        private static void WriteLibrary(TempWorkspace workspace, string packageMo, string order)
+            => workspace
+                .Write(Path.Combine("Lib", "package.mo"), packageMo)
+                .Write(Path.Combine("Lib", "package.order"), order);
 
-        public void Write(string packageMo, string packageOrder)
-        {
-            File.WriteAllText(System.IO.Path.Combine(LibraryPath, "package.mo"), packageMo);
-            File.WriteAllText(System.IO.Path.Combine(LibraryPath, "package.order"), packageOrder);
-        }
+        public string Root => _workspace.Root;
+        public string LibraryPath => _workspace.PathTo("Lib");
 
-        public (int Code, string Output) Git(string arguments)
-        {
-            var info = new ProcessStartInfo("git", arguments)
-            {
-                WorkingDirectory = Root,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-            using var process = Process.Start(info)!;
-            var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return (process.ExitCode, output);
-        }
+        public void Write(string packageMo, string order) => WriteLibrary(_workspace, packageMo, order);
 
-        public void Dispose()
-        {
-            try
-            {
-                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
-                    File.SetAttributes(file, FileAttributes.Normal);
-                Directory.Delete(Root, recursive: true);
-            }
-            catch { /* best effort */ }
-        }
+        public (int Code, string Output) Git(string arguments) => _workspace.Git(arguments);
+
+        public void Dispose() => _workspace.Dispose();
     }
 
     private const string Settings =
@@ -95,14 +63,6 @@ public class ReviewCommandTests
         end Lib;
         """;
 
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
-    }
-
     /// <summary>A repository whose branch adds one undescribed class on top of one already there.</summary>
     private static TempRepo BranchWithOneNewClass()
     {
@@ -119,7 +79,7 @@ public class ReviewCommandTests
     {
         using var repo = BranchWithOneNewClass();
 
-        var (_, stdout, _) = Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
+        var (_, stdout, _) = Cli.Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
 
         var review = JsonDocument.Parse(stdout).RootElement;
         var comment = Assert.Single(review.GetProperty("comments").EnumerateArray().ToArray());
@@ -138,7 +98,7 @@ public class ReviewCommandTests
     {
         using var repo = BranchWithOneNewClass();
 
-        var (code, _, _) = Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
+        var (code, _, _) = Cli.Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
 
         Assert.Equal(1, code);   // two errors; the review itself is only ever a comment
     }
@@ -148,7 +108,7 @@ public class ReviewCommandTests
     {
         using var repo = BranchWithOneNewClass();
 
-        var (code, _, stderr) = Run("check", repo.LibraryPath, "--format", "review");
+        var (code, _, stderr) = Cli.Run("check", repo.LibraryPath, "--format", "review");
 
         Assert.Equal(2, code);
         Assert.Contains("--changed-from", stderr);
@@ -160,7 +120,7 @@ public class ReviewCommandTests
     {
         using var repo = new TempRepo(initGit: false);
 
-        var (code, _, stderr) = Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
+        var (code, _, stderr) = Cli.Run("check", repo.LibraryPath, "--changed-from", "main", "--format", "review");
 
         Assert.Equal(2, code);
         Assert.Contains("not inside a Git working copy", stderr);
@@ -174,7 +134,7 @@ public class ReviewCommandTests
         // this reads as a defect in the diff.
         using var repo = BranchWithOneNewClass();
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", repo.LibraryPath, "--changed-from", "no-such-branch", "--format", "review");
 
         Assert.Equal(2, code);
@@ -187,7 +147,7 @@ public class ReviewCommandTests
         using var repo = BranchWithOneNewClass();
         var path = System.IO.Path.Combine(repo.Root, "review.json");
 
-        var (_, stdout, _) = Run(
+        var (_, stdout, _) = Cli.Run(
             "check", repo.LibraryPath, "--changed-from", "main", "--no-color", "--report", $"review:{path}");
 
         Assert.Contains("Lib.Fresh", stdout);   // the console output is unchanged

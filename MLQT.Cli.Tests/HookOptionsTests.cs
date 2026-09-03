@@ -39,21 +39,16 @@ public class HookOptionsTests
     {
         // As everywhere else in the CLI: a relative path means relative to the library, not to
         // whatever directory the hook happens to run from.
-        var library = Path.Combine(Path.GetTempPath(), "mlqt-hookopts-" + Guid.NewGuid().ToString("N"), "Lib");
+        using var workspace = new TempWorkspace("mlqt-hookopts");
+        var library = workspace.PathTo("Lib");
         Directory.CreateDirectory(library);
-        try
-        {
-            var options = Parse(library, "--baseline", ".mlqt/baseline.json", "--dependency", "../Other");
 
-            Assert.Equal(Path.GetFullPath(Path.Combine(library, ".mlqt/baseline.json")), options.BaselinePath);
-            Assert.Equal(
-                Path.GetFullPath(Path.Combine(library, "../Other")),
-                Assert.Single(options.DependencyPaths));
-        }
-        finally
-        {
-            Directory.Delete(Path.GetDirectoryName(library)!, recursive: true);
-        }
+        var options = Parse(library, "--baseline", ".mlqt/baseline.json", "--dependency", "../Other");
+
+        Assert.Equal(Path.GetFullPath(Path.Combine(library, ".mlqt/baseline.json")), options.BaselinePath);
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(library, "../Other")),
+            Assert.Single(options.DependencyPaths));
     }
 
     [Fact]

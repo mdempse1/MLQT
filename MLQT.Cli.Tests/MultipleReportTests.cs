@@ -20,32 +20,14 @@ public class MultipleReportTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-reports-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new TempWorkspace("mlqt-reports")
+            .Write("Undescribed.mo", Model)
+            .WithSettings(Settings);
 
-        public TempLibrary()
-        {
-            Directory.CreateDirectory(Path);
-            File.WriteAllText(System.IO.Path.Combine(Path, "Undescribed.mo"), Model);
-            var settingsDir = System.IO.Path.Combine(Path, ".mlqt");
-            Directory.CreateDirectory(settingsDir);
-            File.WriteAllText(System.IO.Path.Combine(settingsDir, "settings.json"), Settings);
-        }
+        public string Path => _workspace.Root;
+        public string At(string name) => _workspace.PathTo(name);
 
-        public string At(string name) => System.IO.Path.Combine(Path, name);
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     [Fact]
@@ -55,7 +37,7 @@ public class MultipleReportTests
         var junit = lib.At("mlqt.xml");
         var sarif = lib.At("mlqt.sarif");
 
-        var (code, stdout, _) = Run(
+        var (code, stdout, _) = Cli.Run(
             "check", lib.Path, "--no-color", "--fail-on", "off",
             "--report", $"junit:{junit}", "--report", $"sarif:{sarif}");
 
@@ -72,8 +54,8 @@ public class MultipleReportTests
         var viaReport = lib.At("via-report.xml");
         var viaOut = lib.At("via-out.xml");
 
-        Run("check", lib.Path, "--fail-on", "off", "--report", $"junit:{viaReport}");
-        Run("check", lib.Path, "--fail-on", "off", "--format", "junit", "--out", viaOut);
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--report", $"junit:{viaReport}");
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--format", "junit", "--out", viaOut);
 
         Assert.Equal(File.ReadAllText(viaOut), File.ReadAllText(viaReport));
     }
@@ -85,7 +67,7 @@ public class MultipleReportTests
         var primary = lib.At("primary.json");
         var extra = lib.At("extra.md");
 
-        var (code, stdout, _) = Run(
+        var (code, stdout, _) = Cli.Run(
             "check", lib.Path, "--fail-on", "off",
             "--format", "json", "--out", primary, "--report", $"markdown:{extra}");
 
@@ -101,7 +83,7 @@ public class MultipleReportTests
         using var lib = new TempLibrary();
         var log = lib.At("log.txt");
 
-        Run("check", lib.Path, "--fail-on", "off", "--report", $"console:{log}");
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--report", $"console:{log}");
 
         Assert.DoesNotContain('\u001b', File.ReadAllText(log));
     }
@@ -111,7 +93,7 @@ public class MultipleReportTests
     {
         using var lib = new TempLibrary();
 
-        var (code, _, _) = Run(
+        var (code, _, _) = Cli.Run(
             "check", lib.Path, "--fail-on", "warning", "--report", $"junit:{lib.At("g.xml")}");
 
         Assert.Equal(1, code);
@@ -128,7 +110,7 @@ public class MultipleReportTests
         var asDirectory = lib.At("taken.xml");
         Directory.CreateDirectory(asDirectory);
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", lib.Path, "--fail-on", "off", "--report", $"junit:{asDirectory}");
 
         Assert.Equal(2, code);

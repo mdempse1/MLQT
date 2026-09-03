@@ -27,51 +27,33 @@ public class BaselineMaintenanceTests
 
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-baseline-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new TempWorkspace("mlqt-baseline")
+            .WithSettings("""{ "ParameterHasDescription": true }""");
 
-        public TempLibrary()
-        {
-            Directory.CreateDirectory(System.IO.Path.Combine(Path, ".mlqt"));
-            File.WriteAllText(
-                System.IO.Path.Combine(Path, ".mlqt", "settings.json"),
-                """{ "ParameterHasDescription": true }""");
-        }
+        public string Path => _workspace.Root;
+        public string BaselineFile => _workspace.PathTo(".mlqt", "baseline.json");
+        public string BaselineText => File.ReadAllText(BaselineFile);
 
         public TempLibrary WithSettings(string json)
         {
-            File.WriteAllText(System.IO.Path.Combine(Path, ".mlqt", "settings.json"), json);
+            _workspace.WithSettings(json);
             return this;
         }
 
         public TempLibrary WithModel(string content)
         {
-            File.WriteAllText(System.IO.Path.Combine(Path, "Lib.mo"), content);
+            _workspace.Write("Lib.mo", content);
             return this;
         }
 
-        public string BaselineFile => System.IO.Path.Combine(Path, ".mlqt", "baseline.json");
-        public string BaselineText => File.ReadAllText(BaselineFile);
-
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { }
-        }
-    }
-
-    private static (int code, string stdout, string stderr) Run(params string[] args)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var code = CliEntry.RunAsync(args, stdout, stderr).GetAwaiter().GetResult();
-        return (code, stdout.ToString(), stderr.ToString());
+        public void Dispose() => _workspace.Dispose();
     }
 
     /// <summary>Baselines two findings, then fixes one and introduces another.</summary>
     private static TempLibrary Drifted()
     {
         var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         lib.WithModel(OneFixedOneNew);
         return lib;
     }
@@ -81,7 +63,7 @@ public class BaselineMaintenanceTests
     {
         using var lib = Drifted();
 
-        var (code, stdout, _) = Run("baseline", "prune", lib.Path);
+        var (code, stdout, _) = Cli.Run("baseline", "prune", lib.Path);
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("\"element\": \"a\"", lib.BaselineText);   // fixed → dropped
@@ -96,7 +78,7 @@ public class BaselineMaintenanceTests
         using var lib = Drifted();
         var before = lib.BaselineText;
 
-        var (code, _, stderr) = Run("baseline", "update", lib.Path);
+        var (code, _, stderr) = Cli.Run("baseline", "update", lib.Path);
 
         Assert.Equal(2, code);
         Assert.Equal(before, lib.BaselineText);   // untouched
@@ -109,7 +91,7 @@ public class BaselineMaintenanceTests
     {
         using var lib = Drifted();
 
-        var (code, stdout, _) = Run("baseline", "update", lib.Path, "--force");
+        var (code, stdout, _) = Cli.Run("baseline", "update", lib.Path, "--force");
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("\"element\": \"a\"", lib.BaselineText);
@@ -124,7 +106,7 @@ public class BaselineMaintenanceTests
         var lib = new TempLibrary().WithModel(TwoUndescribed);
         using (lib)
         {
-            Run("baseline", "create", lib.Path);
+            Cli.Run("baseline", "create", lib.Path);
             lib.WithModel("""
                 model Lib "described"
                   parameter Real a = 1.0 "now described";
@@ -132,7 +114,7 @@ public class BaselineMaintenanceTests
                 end Lib;
                 """);
 
-            var (code, stdout, _) = Run("baseline", "update", lib.Path);
+            var (code, stdout, _) = Cli.Run("baseline", "update", lib.Path);
 
             Assert.Equal(0, code);
             Assert.Contains("absorbed 0 entries as accepted debt, dropped 1 entry now fixed", stdout);
@@ -165,7 +147,7 @@ public class BaselineMaintenanceTests
             .WithSettings(RepeatedFindingSettings)
             .WithModel(RepeatedFinding);
 
-        var (code, stdout, stderr) = Run("baseline", "create", lib.Path);
+        var (code, stdout, stderr) = Cli.Run("baseline", "create", lib.Path);
 
         Assert.Equal(0, code);
         Assert.Contains("Wrote 1 entry to", stdout);
@@ -179,9 +161,9 @@ public class BaselineMaintenanceTests
         using var lib = new TempLibrary()
             .WithSettings(RepeatedFindingSettings)
             .WithModel(RepeatedFinding);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
-        var (code, stdout, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (code, stdout, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Equal(0, code);
         Assert.Contains("baseline holds 1 entry", stderr);
@@ -199,7 +181,7 @@ public class BaselineMaintenanceTests
             end Lib;
             """);
 
-        var (code, _, stderr) = Run("baseline", "create", lib.Path);
+        var (code, _, stderr) = Cli.Run("baseline", "create", lib.Path);
 
         Assert.Equal(0, code);
         Assert.Contains("parse diagnostic(s) were not recorded", stderr);
@@ -212,12 +194,12 @@ public class BaselineMaintenanceTests
         // Why they look interchangeable most of the time: with no new findings they produce the
         // same file. The divergence only shows when something new has appeared.
         using var pruned = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", pruned.Path);
+        Cli.Run("baseline", "create", pruned.Path);
         using var updated = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", updated.Path);
+        Cli.Run("baseline", "create", updated.Path);
 
-        Run("baseline", "prune", pruned.Path);
-        Run("baseline", "update", updated.Path);
+        Cli.Run("baseline", "prune", pruned.Path);
+        Cli.Run("baseline", "update", updated.Path);
 
         // Compare the entry lists; the files differ only by their generation timestamp.
         static string Entries(string json) =>
@@ -234,10 +216,10 @@ public class BaselineMaintenanceTests
         // The silent failure this catches: the newly enabled rule's pre-existing findings are
         // reported as new, so the change looks like it caused a regression it had nothing to do with.
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
         lib.WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""");
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Contains("different configuration", stderr);
         Assert.Contains("enabled since: MLQT.Doc.ClassDescription", stderr);
@@ -250,10 +232,10 @@ public class BaselineMaintenanceTests
         using var lib = new TempLibrary()
             .WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""")
             .WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
         lib.WithSettings("""{ "ParameterHasDescription": true }""");
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Contains("disabled since: MLQT.Doc.ClassDescription", stderr);
     }
@@ -262,13 +244,13 @@ public class BaselineMaintenanceTests
     public void Check_WarnsWhenASeverityChanged()
     {
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
         lib.WithSettings("""
             { "ParameterHasDescription": true,
               "RuleSeverities": { "MLQT.Doc.ParameterDescription": "Error" } }
             """);
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Contains("severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)", stderr);
     }
@@ -277,9 +259,9 @@ public class BaselineMaintenanceTests
     public void Check_SaysNothingWhenTheRulesAreUnchanged()
     {
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.DoesNotContain("different configuration", stderr);
         Assert.DoesNotContain("predates configuration recording", stderr);
@@ -291,12 +273,12 @@ public class BaselineMaintenanceTests
         // An older file has nothing to compare against; say so once rather than warn about a
         // difference that cannot be established.
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         File.WriteAllText(lib.BaselineFile, """
             { "version": 2, "findings": [] }
             """);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Contains("predates configuration recording", stderr);
         Assert.DoesNotContain("different configuration", stderr);
@@ -307,11 +289,11 @@ public class BaselineMaintenanceTests
     {
         // Both rewrite the file, so both should clear the drift they were run to resolve.
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
-        Run("baseline", "create", lib.Path);
+        Cli.Run("baseline", "create", lib.Path);
         lib.WithSettings("""{ "ParameterHasDescription": true, "ClassHasDescription": true }""");
 
-        Run("baseline", "prune", lib.Path);
-        var (_, _, afterPrune) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        Cli.Run("baseline", "prune", lib.Path);
+        var (_, _, afterPrune) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
         Assert.DoesNotContain("different configuration", afterPrune);
 
         Assert.Contains("\"MLQT.Doc.ClassDescription\"", lib.BaselineText);
@@ -332,10 +314,10 @@ public class BaselineMaintenanceTests
             """);
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
 
-        Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+        Cli.Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
         Assert.Contains("\"dependencies\"", lib.BaselineText);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--baseline", lib.BaselineFile, "--no-color");
 
         Assert.Contains("different configuration", stderr);
         Assert.Contains("not loaded this time", stderr);
@@ -353,8 +335,8 @@ public class BaselineMaintenanceTests
             """);
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
 
-        Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
-        var (_, _, stderr) = Run(
+        Cli.Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+        var (_, _, stderr) = Cli.Run(
             "check", lib.Path, "--baseline", lib.BaselineFile, "--dependency", dependency.Path, "--no-color");
 
         Assert.DoesNotContain("different configuration", stderr);
@@ -371,8 +353,8 @@ public class BaselineMaintenanceTests
             """);
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
 
-        Run("baseline", "create", lib.Path);
-        var (_, _, stderr) = Run(
+        Cli.Run("baseline", "create", lib.Path);
+        var (_, _, stderr) = Cli.Run(
             "check", lib.Path, "--baseline", lib.BaselineFile, "--dependency", dependency.Path, "--no-color");
 
         Assert.Contains("loaded this time but not when baselined", stderr);
@@ -383,7 +365,7 @@ public class BaselineMaintenanceTests
     {
         using var lib = new TempLibrary().WithModel(TwoUndescribed);
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", lib.Path, "--dependency", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nope-xyz"));
 
         Assert.Equal(2, code);
@@ -417,7 +399,7 @@ public class BaselineMaintenanceTests
         using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
         using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
 
-        var (code, stdout, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+        var (code, stdout, stderr) = Cli.Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
 
         // 2 = setup error, not 1 = gate failed. In CI those mean different things: fix your
         // invocation versus fix your code.
@@ -436,7 +418,7 @@ public class BaselineMaintenanceTests
         using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
         using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
 
-        var (code, _, stderr) = Run(
+        var (code, _, stderr) = Cli.Run(
             "check", lib.Path, "--dependency", dependency.Path, "--allow-version-mismatch", "--no-color");
 
         Assert.Equal(0, code);
@@ -452,7 +434,7 @@ public class BaselineMaintenanceTests
         using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
         using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
 
-        var (code, _, stderr) = Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
+        var (code, _, stderr) = Cli.Run("baseline", "create", lib.Path, "--dependency", dependency.Path);
 
         Assert.Equal(2, code);
         Assert.Contains("dependency version mismatch", stderr);
@@ -472,7 +454,7 @@ public class BaselineMaintenanceTests
             """);
         using var lib = new TempLibrary().WithModel(LibraryDeclaringOne);
 
-        var (code, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("version mismatch", stderr);
@@ -496,7 +478,7 @@ public class BaselineMaintenanceTests
             end Lib;
             """);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
 
         Assert.DoesNotContain("version mismatch", stderr);
     }
@@ -513,7 +495,7 @@ public class BaselineMaintenanceTests
             end Lib;
             """);
 
-        var (_, _, stderr) = Run("check", lib.Path, "--no-color");
+        var (_, _, stderr) = Cli.Run("check", lib.Path, "--no-color");
 
         Assert.DoesNotContain("version mismatch", stderr);
     }

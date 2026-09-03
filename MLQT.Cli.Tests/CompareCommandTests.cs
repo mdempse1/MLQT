@@ -35,23 +35,17 @@ public class CompareCommandTests
     /// <summary>A temp directory holding one or more Modelica libraries.</summary>
     private sealed class TempLibrary : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "mlqt-compare-test-" + Guid.NewGuid().ToString("N"));
+        private readonly TempWorkspace _workspace = new("mlqt-compare");
 
-        public TempLibrary() => Directory.CreateDirectory(Path);
+        public string Path => _workspace.Root;
 
         public TempLibrary WithFile(string relativePath, string content)
         {
-            var full = System.IO.Path.Combine(Path, relativePath);
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-            File.WriteAllText(full, content);
+            _workspace.Write(relativePath, content);
             return this;
         }
 
-        public void Dispose()
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
-        }
+        public void Dispose() => _workspace.Dispose();
     }
 
     /// <summary>Demo.Blocks with both classes inline in one Blocks.mo, the way it started.</summary>
