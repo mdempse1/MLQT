@@ -1,8 +1,11 @@
 name: Build and Test
 
 on:
+  # Every branch, not just main/develop. A long-lived working branch used to build nowhere until the
+  # pull request that merged it, so 205 commits of the CI/CD work reached their first CI run at the
+  # moment they were being merged - which is the worst time to learn the build is broken.
   push:
-    branches: [main, develop]
+    branches: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch: # Allow manual trigger
@@ -49,6 +52,12 @@ jobs:
           dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
           dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
           dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
+          # Built but not run, for the same reason as the SVN integration tests below: these drive a
+          # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
+          # rather than self-skipping. Building them still catches the thing CI can catch - a change
+          # to the interfaces that stops them compiling, which would otherwise reach main unnoticed.
+          dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
+          dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
 
       - name: Run ModelicaParser tests
         run: dotnet test ModelicaParser.Tests -c Release --no-build --logger "trx;LogFileName=parser.trx" --results-directory ${{ github.workspace }}/TestResults
