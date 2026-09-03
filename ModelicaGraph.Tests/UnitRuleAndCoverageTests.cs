@@ -83,6 +83,33 @@ public class UnitRuleAndCoverageTests
     }
 
     [Fact]
+    public void ANestedClassesComponentsAreNotCountedAgainstItsParent()
+    {
+        // The measurer decides compliance by running the rule, whose visitors walk into a nested
+        // `replaceable` class. Its components belong to that class's own measurement, so counting
+        // their misses here subtracted them from a denominator that never included them - and a
+        // parent whose own quantities were all united could report 0% coverage.
+        var graph = Library();
+        const string outerCode = """
+            model Outer "Everything of its own is united"
+              Length ell;
+              replaceable model Inner
+                Real deep;
+              end Inner;
+            end Outer;
+            """;
+        var outer = new ModelNode("U.Outer", "Outer", outerCode) { ClassType = "model", ParentModelName = "U" };
+        graph.AddNode(outer);
+
+        var measurer = new CoverageMeasurer(graph, CoverageDimension.Unit);
+        measurer.Measure(outer);
+        var facts = outer.Definition.Coverage!;
+
+        Assert.Equal(1, facts.RealTotal);        // ell; `deep` belongs to Inner
+        Assert.Equal(1, facts.RealWithUnit);     // and it is united, so the class is at 100%
+    }
+
+    [Fact]
     public void TheCoverageDimensionCountsExactlyWhatTheRuleReports()
     {
         // The invariant B5 exists for: a gap on the dashboard is a finding in the report.

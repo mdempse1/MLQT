@@ -14,6 +14,13 @@ namespace MLQT.Services.Checking;
 public sealed class StyleCheckContext
 {
     public IReadOnlySet<string>? KnownModelIds { get; private init; }
+
+    /// <summary>
+    /// Every class the graph holds, which is every class that gets a check of its own. Null for a
+    /// check with no graph behind it (a snippet), where nothing else will report a nested class and
+    /// its parent's walk is all there is. See <see cref="StyleCheckRunner"/>.
+    /// </summary>
+    public IReadOnlySet<string>? ClassesCheckedSeparately { get; private init; }
     public IReadOnlySet<string>? KnownModelNames { get; private init; }
     public SpellChecker? SpellChecker { get; private init; }
     public Func<string, string, bool>? BaseClassHasIcon { get; private init; }
@@ -82,9 +89,10 @@ public sealed class StyleCheckContext
         SpellChecker? spellChecker,
         bool collectCoverage = false)
     {
-        IReadOnlySet<string>? knownModelIds = null;
-        if (settings.ValidateModelReferences)
-            knownModelIds = graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+        // Every class in the graph. Needed unconditionally (see ClassesCheckedSeparately), and the
+        // reference-validation rule wants the same set, so it is built once.
+        var classIds = graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+        IReadOnlySet<string>? knownModelIds = settings.ValidateModelReferences ? classIds : null;
 
         IReadOnlySet<string>? knownModelNames = null;
         if ((settings.SpellCheckDescription || settings.SpellCheckDocumentation) && spellChecker != null)
@@ -95,6 +103,7 @@ public sealed class StyleCheckContext
         return new StyleCheckContext
         {
             KnownModelIds = knownModelIds,
+            ClassesCheckedSeparately = classIds,
             KnownModelNames = knownModelNames,
             SpellChecker = spellChecker,
             BaseClassHasIcon = settings.ClassHasIcon ? StyleChecking.CreateBaseClassHasIconCallback(graph) : null,

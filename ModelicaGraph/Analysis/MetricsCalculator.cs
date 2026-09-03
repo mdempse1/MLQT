@@ -306,12 +306,18 @@ public sealed class CoverageMeasurer
         if (realTotal > 0)
         {
             // The rule's verdict, not a second opinion: united means "the rule does not flag it".
+            //
+            // Counted for this class only. The visitor walks into a nested class carrying
+            // `replaceable`, and those components are measured with the nested class's own node, so
+            // counting them here would subtract them from a denominator that never included them.
+            var basePackage = model.Id.LastIndexOf('.') is var dot && dot > 0 ? model.Id[..dot] : string.Empty;
             var unitVisitor = new MissingUnits(
-                basePackage: string.Empty,
+                basePackage,
                 unitLookup: (_, typeName) =>
                     UnitResolver.Resolve(_graph, model.Id, typeName, imports, _unitCache));
             unitVisitor.VisitStored_definition(tree);
-            var missing = unitVisitor.Findings.Count(f => f.RuleId == RuleIds.MissingUnit);
+            var missing = unitVisitor.Findings.Count(
+                f => f.RuleId == RuleIds.MissingUnit && f.ModelId == model.Id);
             realWithUnit = Math.Clamp(realTotal - missing, 0, realTotal);
         }
 
