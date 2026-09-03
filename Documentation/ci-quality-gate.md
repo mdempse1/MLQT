@@ -314,6 +314,37 @@ You get:
 
 ### GitHub
 
+Confirmed end to end on 2026-09-03: a report of 34 findings uploaded to a public repository was
+accepted (`processing_status: complete`, no errors) and rendered as alerts carrying each rule's
+description, help body and category. Two things to get right, both of which fail quietly:
+
+- **The repository must be public**, or have a GitHub Code Security licence. A private repository
+  without one answers `403 Code scanning is not enabled for this repository` however the token is
+  scoped, and the advice to "enable code scanning in the repository settings" cannot be followed
+  without the licence.
+- **The `commit_sha` must be a commit GitHub has.** Name a SHA that has not been pushed and the
+  upload is accepted, processing completes, and nothing appears — indistinguishable from success.
+
+Uploading by hand, without the CodeQL action (`gh` reports what the API says, which is the point):
+
+```powershell
+$bytes = [IO.File]::ReadAllBytes('mlqt.sarif')
+$ms = New-Object IO.MemoryStream
+$gz = New-Object IO.Compression.GZipStream($ms, [IO.Compression.CompressionMode]::Compress)
+$gz.Write($bytes, 0, $bytes.Length); $gz.Close()
+
+gh api --method POST /repos/OWNER/REPO/code-scanning/sarifs `
+  -f commit_sha=$(git rev-parse HEAD) -f ref=refs/heads/main `
+  -f sarif=$([Convert]::ToBase64String($ms.ToArray()))
+
+# the answer is here, not in the 202 above
+gh api /repos/OWNER/REPO/code-scanning/sarifs/<id>
+```
+
+The `sarif` field is gzipped **and then** base64-encoded, and `gh` does not do that for you. A token
+needs the `security_events` scope (`gh auth refresh -h github.com -s security_events`); a normal
+login does not include it.
+
 - **With code scanning / Actions:** emit SARIF and upload it, so findings appear as PR annotations:
   ```bash
   mlqt check ./MyLibrary --baseline .mlqt/baseline.json --fail-on warning \
