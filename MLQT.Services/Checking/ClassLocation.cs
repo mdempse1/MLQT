@@ -18,6 +18,23 @@ namespace MLQT.Services.Checking;
 public sealed record ClassLocation(string FilePath, int StartLine, bool LinesMapToFile)
 {
     /// <summary>
+    /// Where the class's file is, always as an absolute path.
+    ///
+    /// <para>A <c>FileNode</c>'s path follows the library path the run was given, so
+    /// <c>mlqt check Lib</c> stores <c>Lib\package.mo</c> and <c>mlqt check C:\…\Lib</c> stores an
+    /// absolute one — the same class, two spellings, depending on how somebody typed the command.
+    /// Every consumer then has to know that: one comparing paths as dictionary keys silently matched
+    /// nothing, and phase 3 listed the mismatch as a risk before either existed. Normalising in the
+    /// constructor is the one place that covers every way a location gets made.</para>
+    ///
+    /// <para>What a <em>report</em> shows is a separate question, and a different answer per format:
+    /// relative to the library for the console and JSON, to <c>--sarif-base</c> for SARIF, to the
+    /// repository root for a review comment.</para>
+    /// </summary>
+    public string FilePath { get; init; } =
+        string.IsNullOrEmpty(FilePath) ? FilePath : Path.GetFullPath(FilePath);
+
+    /// <summary>
     /// The line in the file for a class-relative line.
     ///
     /// <para>When the stored source is no longer the file's own text — a package whose inline

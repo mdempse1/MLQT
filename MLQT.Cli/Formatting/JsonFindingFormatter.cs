@@ -46,7 +46,7 @@ internal sealed class JsonFindingFormatter : IFindingFormatter
                 c.Finding.LineNumber,
                 c.Finding.Message,
                 c.Finding.Fingerprint,
-                report.FileFor(c.Finding))).ToList()
+                report.RelativeFileFor(c.Finding))).ToList()
         };
         return JsonSerializer.Serialize(payload, Options);
     }

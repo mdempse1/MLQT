@@ -20,7 +20,7 @@ internal sealed class JUnitFindingFormatter : IFindingFormatter
         var testcases = actionable.Select(c =>
         {
             var f = c.Finding;
-            var file = report.FileFor(f);
+            var file = report.RelativeFileFor(f);
             var line = report.LineFor(f);
             var name = f.ElementPath is null
                 ? $"{f.RuleId} (line {line})"

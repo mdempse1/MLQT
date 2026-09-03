@@ -78,8 +78,8 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
                      .GroupBy(c => c.Finding.ModelId)
                      .OrderBy(g => g.Key, StringComparer.Ordinal))
         {
-            var file = report.FileFor(group.First().Finding);
-            sb.AppendLine(file is null ? group.Key : $"{group.Key}  ({RelativeFile(report, file)})");
+            var file = report.RelativeFileFor(group.First().Finding);
+            sb.AppendLine(file is null ? group.Key : $"{group.Key}  ({file})");
             foreach (var c in group)
             {
                 var status = showStatus ? StatusTag(c.Status) + " " : string.Empty;
@@ -87,12 +87,6 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
             }
             sb.AppendLine();
         }
-    }
-
-    private static string RelativeFile(CheckReport report, string file)
-    {
-        try { return Path.GetRelativePath(report.LibraryPath, file).Replace('\\', '/'); }
-        catch { return file; }
     }
 
     private static string StatusTag(FindingStatus status) => status switch

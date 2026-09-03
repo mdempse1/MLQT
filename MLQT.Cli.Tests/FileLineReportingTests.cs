@@ -88,6 +88,30 @@ public class FileLineReportingTests
     }
 
     [Fact]
+    public void TheReportedPathIsTheSameHoweverTheLibraryWasNamed()
+    {
+        // A FileNode's path follows the library path the run was given, so the same class used to be
+        // reported as "Fix/package.mo" or as an absolute path depending on how somebody typed the
+        // command - and any consumer comparing paths had to know it.
+        using var lib = Fixture();
+        var previous = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(lib.Path);
+
+            var byRelative = FindingsFor("Fix", "Fix.Late").First().GetProperty("File").GetString();
+            var byAbsolute = FindingsFor(lib.LibraryPath, "Fix.Late").First().GetProperty("File").GetString();
+
+            Assert.Equal(byRelative, byAbsolute);
+            Assert.Equal("package.mo", byRelative);   // relative to the library, forward slashes
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+        }
+    }
+
+    [Fact]
     public void AClassLateInAPackageFile_IsReportedAtItsLineInThatFile()
     {
         using var lib = Fixture();

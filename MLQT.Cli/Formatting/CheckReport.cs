@@ -17,8 +17,31 @@ internal sealed record CheckReport(
     bool SarifIncludeAccepted = false,
     ChangedLineResult? Diff = null)
 {
-    /// <summary>The source file for a finding's model, or null if unknown.</summary>
+    /// <summary>The source file for a finding's model — an absolute path — or null if unknown.</summary>
     public string? FileFor(Finding f) => Locations.TryGetValue(f.ModelId, out var l) ? l.FilePath : null;
+
+    /// <summary>
+    /// The file as a report shows it: relative to the library, with forward slashes. Absolute paths
+    /// are an accident of how the command was typed and are noise in a report that already names the
+    /// library it checked — and a path relative to the library is the one a reader can act on.
+    /// Falls back to the absolute path when the file is outside the library (a dependency) or the
+    /// two cannot be related at all (different drives).
+    /// </summary>
+    public string? RelativeFileFor(Finding f)
+    {
+        if (FileFor(f) is not { } file)
+            return null;
+
+        try
+        {
+            var relative = Path.GetRelativePath(LibraryPath, file);
+            return Path.IsPathRooted(relative) ? file : relative.Replace('\\', '/');
+        }
+        catch
+        {
+            return file;
+        }
+    }
 
     /// <summary>
     /// The line in the file to report a finding at. Findings carry class-relative lines; a report

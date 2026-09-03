@@ -47,9 +47,7 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
 
         foreach (var c in actionable)
         {
-            // A location's file path follows the library path it was given, so it is relative when
-            // that was; the diff is keyed absolutely. Resolving here is what makes the two comparable.
-            var file = report.FileFor(c.Finding) is { } f ? Path.GetFullPath(f) : null;
+            var file = report.FileFor(c.Finding);
             var line = report.LineFor(c.Finding);
             var path = file is null ? null : report.Diff?.RepositoryRelativePath(file);
 
