@@ -28,8 +28,10 @@ that is already complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1–B4 shipped; B5 next.** Before that started, the work since the list was written had
-been bug-driven or user-driven rather than planned:
+**Backlog: B1–B4 shipped; B8 and B9 next.** B8–B11 were added on 2026-09-03 after asking how the
+SARIF work would actually be tested — it has never been checked against the 2.1.0 schema or against
+the one consumer it was written for. Before B4 started, the work since the list was written had been
+bug-driven or user-driven rather than planned:
 
 | Landed | What |
 |--------|------|
@@ -199,7 +201,7 @@ test UI, TeamCity service messages auto-graph baseline debt trend.
 |------|-------|--------|-------|
 | **Baseline / ratchet mode** (new-vs-existing, warn on touched debt) | ⭐⭐⭐ | M | **✅ shipped** — `mlqt baseline create/update/prune`, `--changed-from`, `--touched-debt warn\|fail\|ignore`. |
 | **CLI + JUnit/exit-code contract** | ⭐⭐⭐ | M | **✅ shipped** — `--format junit`, `--fail-on off\|warning\|error`, documented exit codes. |
-| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped.** SARIF has two known gaps (line mapping, base path) — see the backlog. |
+| **SARIF + TeamCity + markdown serializers** | ⭐⭐ | S | **✅ shipped.** SARIF's two original gaps (line mapping, base path) are closed; conformance and the rule metadata GitHub renders are not — see B8–B11 in the backlog. |
 | **Pre-commit hook / commit gate** | ⭐⭐ | S | Not built. Today it is a documented recipe (`--changed-from BASE`), not a feature. In the backlog. |
 | **PR review annotations** | ⭐⭐ | M | Not built; the markdown summary path it would use exists. In the backlog. |
 
@@ -234,13 +236,22 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 | B5 | **Missing-units rule vs the Unit dimension** | Phase 6 increment | ⭐⭐ | M | The rule flags only plain `Real`; the Unit coverage dimension resolves alias and SI type chains through `UnitResolver`. The dashboard therefore shows gaps the rule never reports, and no finding leads the user to them. Promote the rule onto the resolver. |
 | B6 | **Pre-commit hook / commit gate** | §5 | ⭐⭐ | S | A documented `--changed-from BASE` recipe today. As a feature it extends the existing "commit requires issue number" gate. |
 | B7 | **PR review annotations** | §5 | ⭐⭐ | M | Post findings as inline PR comments. The markdown summary path it would build on already exists. |
+| B8 | **SARIF conformance is asserted, never validated** | Phase 4 risk, never discharged | ⭐⭐⭐ | S | The CLI tests check the shape *we* expect (`CheckCommandTests`, `SarifBaseTests`, `FileLineReportingTests`) — nothing checks the document against the SARIF 2.1.0 schema, which is the risk Phase 4 recorded and then closed by inspection. Run `Sarif.Multitool`'s `sarif validate` in `build-and-test.yml` over a report generated from a small fixture library committed at a *nested* path, so the same step exercises `--sarif-base` and proves the URIs resolve. |
+| B9 | **SARIF rule metadata is too thin to be useful in GitHub** | Phase 4 gap | ⭐⭐⭐ | S | Each rule carries only `shortDescription`. GitHub documents `fullDescription.text` and `help.text`/`help.markdown` as required on a `reportingDescriptor`, and `help.markdown` is what renders in the alert body — so every alert would arrive near-empty and say nothing about what to do. `RuleCatalog.BuiltIn` already holds the title, description and category; the driver's `version` is absent too. |
+| B10 | **Accepted debt arrives in GitHub as an open alert** | Phase 4 decision, contradicted | ⭐⭐ | S | Phase 4 chose to emit every finding tagged with `baselineState` so viewers could dedupe as they preferred. GitHub's supported-property list contains neither `baselineState` nor `suppressions`, so accepted debt is indistinguishable from new findings in the Security tab and the ratchet's whole point is lost at the point of display. The likely answer is to omit accepted debt from SARIF by default with a flag to keep it — a behaviour decision, not a patch, so it wants deciding before B8's fixture is written. |
+| B11 | **Nothing has ever been ingested by GitHub** | Phase 4 claim, unproven | ⭐⭐ | S | A one-off confirmation rather than a feature: check out a small **public** smoke repository holding a deliberately imperfect library at a nested path, generate SARIF locally, and POST it to `/repos/…/code-scanning/sarifs` with `gh api`, which names its rejections instead of leaving a blank Security tab. This needs no Action and no way of shipping the build to CI — the two problems are independent. Deliberately *not* the private MSL repository: code scanning on a private repository needs a Code Security licence, and MSL's ~34k findings exceed both the 25,000-per-run cap and the 5,000 GitHub actually ingests, so it would test truncation rather than the format. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
-GitHub or TeamCity setup still needs hand-holding), so they come first; B4 next, since it is what
-turns the metrics work into a gate; then B5; B6 and B7 last, being conveniences rather than gaps.
-**B1–B4 are done** — nothing from phase 4 is outstanding, a real pipeline needs no hand-holding, and
-the metrics have a gate. **B5 is next**: the missing-units rule reports less than the Unit coverage
-dimension measures, so the dashboard shows gaps no finding leads you to.
+GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
+turns the metrics work into a gate; B6 and B7 last, being conveniences rather than gaps.
+
+**B1–B4 are done.** B8–B11 (added 2026-09-03) came out of asking how the SARIF work would be tested,
+and they change the claim that phase 4 is closed: the output has never been validated, and the one
+consumer it was written for renders almost none of what it carries. **B8 and B9 are next** — both
+small, and both defects in shipped output rather than gaps in coverage — with B10 decided alongside
+them because it determines what B8's fixture should contain. **B5 follows**: the missing-units rule
+reports less than the Unit coverage dimension measures, so the dashboard shows gaps no finding leads
+you to. B11 is run once B8–B10 land, as confirmation rather than development.
 
 ---
 

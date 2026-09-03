@@ -16,9 +16,12 @@
 >   **Since shipped** (2026-09-01, ahead of Phase 7): per-repository Off/Info/Warning/Error selectors
 >   in `SettingsRepositories.razor`, so this deferral is closed.
 >
-> **Nothing from this phase is still open.** B1 (model-relative line numbers), B2 (`--sarif-base`)
-> and B3 (several reports from one run, via `--report <format>:<path>`) were all closed on
-> 2026-09-03 — see the notes below.
+> **B1 (model-relative line numbers), B2 (`--sarif-base`) and B3 (several reports from one run, via
+> `--report <format>:<path>`) were all closed on 2026-09-03** — see the notes below. **Four items
+> reopened the same day** (backlog B8–B11), from asking how the SARIF output would actually be
+> tested: the conformance risk recorded below was closed by inspection rather than by a validator,
+> the rules carry none of the description fields GitHub renders in an alert, and the `baselineState`
+> decision below turns out to be addressed to a property GitHub does not read.
 
 ## Purpose
 
@@ -161,12 +164,18 @@ new `IFindingFormatter` implementations + switch arms in `CheckRunner`. No new o
 - **Decision:** persist the severity map (config-level) in Phase 4; defer the GUI editor.
 - **Decision:** SARIF includes all findings tagged with `baselineState` (not new-only) so viewers can
   dedupe/surface as they prefer.
+  **Superseded (2026-09-03, backlog B10):** GitHub's supported-property list contains neither
+  `baselineState` nor `suppressions`, so on the format's principal consumer this tags nothing and
+  accepted debt reads as an open alert. What a viewer may prefer is not what GitHub does.
 - **Decision:** relative-to-library URIs in SARIF for portability; document that CI may need paths
   relative to the repo root (a `--sarif-base <path>` option is a possible later refinement).
 - **Risk:** the `RuleSeverities` reconciliation (map vs bools, JSON property order) — the same fiddly
   case flagged in Phase 1; contained to `StyleCheckingSettings` with a dedicated test.
 - **Risk:** SARIF schema conformance — validate output against the 2.1.0 shape in tests; keep the
   document minimal (driver + rules + results) rather than exhaustive.
+  **Not discharged (found 2026-09-03, backlog B8/B9):** the tests assert the shape *we* expect, not
+  conformance to the schema, and "minimal" went one field too far — the rules carry no
+  `fullDescription` or `help`, which is what GitHub puts on the alert page.
 - **Resolved (2026-09-03, backlog B1):** finding line numbers were relative to each model's
   extracted definition, so SARIF's `region.startLine` pointed at the wrong line of a `package.mo`.
   Findings still carry class-relative lines — that is what a rule can know, and what the app's code
