@@ -64,32 +64,20 @@ public sealed class SuppressionTools
         if (node.IsParseFailurePlaceholder)
             return new ToolError($"Class '{classId}' failed to parse and cannot be edited.");
 
-        var owner = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
-        if (owner is null)
-            return new ToolError($"Could not locate the source file for '{classId}'.");
-
-        // Path from the file's top class to the target class. We edit the on-disk file text (the ground
-        // truth, always holding the full nested structure), located by name path — robust for a nested
-        // class and a short-class `type`, and safe when the package node's stored code is a formatting
-        // "shell" that omits nested standalone classes.
-        string[]? classPath = null;
-        if (!string.Equals(owner.FileOwner.Id, node.Id, StringComparison.Ordinal))
-        {
-            var prefix = owner.FileOwner.Id + ".";
-            if (!node.Id.StartsWith(prefix, StringComparison.Ordinal))
-                return new ToolError($"Could not locate '{classId}' within '{owner.FilePath}'.");
-            classPath = node.Id[prefix.Length..].Split('.');
-        }
+        var located = LocateInFile(node, classId);
+        if (located.Error is not null)
+            return located.Error;
+        var (owner, classPath, _) = located;
 
         string fileContent;
         try
         {
             // Read raw so the write is a minimal edit that keeps the file's existing line endings.
-            fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(owner.FilePath);
+            fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(owner!.FilePath);
         }
         catch (Exception ex)
         {
-            return new ToolError($"Could not read '{owner.FilePath}': {ex.Message}");
+            return new ToolError($"Could not read '{owner!.FilePath}': {ex.Message}");
         }
 
         if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, ruleId, reason, out var newFileContent, out var writeError))
@@ -102,7 +90,7 @@ public sealed class SuppressionTools
             note = $"Note: '{ruleId}' is not a known built-in rule id — check the id from the finding if you did not intend a custom rule.";
 
         var outcome = await ClassBodyEditor.PersistFileContentAsync(
-            _libraries, _resources, _session, owner.FilePath, newFileContent, preview,
+            _libraries, _resources, _session, owner!.FilePath, newFileContent, preview,
             component is null ? $"suppress '{ruleId}' on '{classId}'" : $"suppress '{ruleId}' on '{classId}.{component}'");
 
         if (outcome is ToolError)
@@ -110,4 +98,86 @@ public sealed class SuppressionTools
         var r = (ClassEditResult)outcome;
         return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, note);
     }
+
+    [McpServerTool(Name = "accept_spelling_in_class")]
+    [Description("Accept a word as correctly spelled in one class by adding a " +
+                "'__MLQT(spelling=\"<word>\")' vendor annotation to its source. Use this for a term that is " +
+                "right here but is not the library's vocabulary generally — it silences the spelling findings " +
+                "for that word in that class only, and leaves every other misspelling in the class reported. " +
+                "For a term the whole repository uses, add it to the repository's accepted spellings " +
+                "(.mlqt/dictionary.txt) instead; to waive spelling for a class entirely, suppress " +
+                "'MLQT.Spelling.Description' / 'MLQT.Spelling.Documentation' with suppress_rule. The possessive " +
+                "of an accepted word is accepted too, so pass the word itself ('Stodola', not \"Stodola's\"). " +
+                "Merges into any existing '__MLQT' annotation. Set preview=true to see the file text without writing.")]
+    public async Task<object> AcceptSpellingInClass(
+        [Description("Fully-qualified id of the class the misspelling was reported in.")] string classId,
+        [Description("The word to accept, exactly as it appears in the text.")] string word,
+        [Description("Optional human-readable reason, recorded as reason=\"…\" in the annotation.")]
+        string? reason = null,
+        [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
+    {
+        if (string.IsNullOrWhiteSpace(word))
+            return new ToolError("word is required — the word to accept in this class.");
+        word = word.Trim();
+
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse and cannot be edited.");
+
+        var located = LocateInFile(node, classId);
+        if (located.Error is not null)
+            return located.Error;
+        var (owner, classPath, _) = located;
+
+        string fileContent;
+        try
+        {
+            fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(owner!.FilePath);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not read '{owner!.FilePath}': {ex.Message}");
+        }
+
+        if (!MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+                fileContent, classPath, word, reason, out var newFileContent, out var writeError))
+            return new ToolError(writeError ?? "Could not add the spelling annotation.");
+
+        var outcome = await ClassBodyEditor.PersistFileContentAsync(
+            _libraries, _resources, _session, owner.FilePath, newFileContent, preview,
+            $"accept the spelling '{word}' in '{classId}'");
+
+        if (outcome is ToolError)
+            return outcome;
+        var r = (ClassEditResult)outcome;
+        return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, null);
+    }
+
+    /// <summary>
+    /// The file a class lives in and the path from that file's top class down to it.
+    ///
+    /// <para>We edit the on-disk file text (the ground truth, always holding the full nested
+    /// structure), located by name path — robust for a nested class and a short-class <c>type</c>, and
+    /// safe when the package node's stored code is a formatting "shell" that omits nested standalone
+    /// classes.</para>
+    /// </summary>
+    private LocatedClass LocateInFile(ModelicaGraph.DataTypes.ModelNode node, string classId)
+    {
+        var owner = ModelFilePersistence.ResolveFileOwner(_libraries, classId);
+        if (owner is null)
+            return new LocatedClass(null, null, new ToolError($"Could not locate the source file for '{classId}'."));
+
+        if (string.Equals(owner.FileOwner.Id, node.Id, StringComparison.Ordinal))
+            return new LocatedClass(owner, null, null);
+
+        var prefix = owner.FileOwner.Id + ".";
+        if (!node.Id.StartsWith(prefix, StringComparison.Ordinal))
+            return new LocatedClass(null, null, new ToolError($"Could not locate '{classId}' within '{owner.FilePath}'."));
+
+        return new LocatedClass(owner, node.Id[prefix.Length..].Split('.'), null);
+    }
+
+    private readonly record struct LocatedClass(ModelFilePersistence.FileOwnerContext? Owner, string[]? ClassPath, ToolError? Error);
 }

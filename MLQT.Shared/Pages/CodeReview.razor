@@ -257,8 +257,11 @@
                         Disabled="@(!CanAddToDictionary)"
                         OnClick="AddToDictionary">Add to Dictionary</MudButton>
                 </MudTooltip>
-                <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                    OnClick="IgnoreSpellingFinding">Ignore</MudButton>
+                <MudTooltip Text="Accept this word in this class only, recorded in the source as an __MLQT annotation">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                        Disabled="@_suppressing"
+                        OnClick="IgnoreSpellingFinding">Ignore</MudButton>
+                </MudTooltip>
                 <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                     OnClick="CloseContextMenu">Close</MudButton>
             </MudStack>
@@ -1614,26 +1617,35 @@ document.head.appendChild(style);
     private bool _suppressing;
 
     // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
-    // Spelling findings are excluded — they have their own dictionary/ignore workflow, and blanket
-    // suppression of the spelling rule is rarely what the user wants there.
+    // Spelling findings are excluded — a blanket waiver of the spelling rule would silence every
+    // other misspelling in the class, so they get the word-scoped Ignore in the correction menu.
     private static bool CanSuppressRule(LogMessage? finding)
         => finding is { Source: "StyleChecking" } && !string.IsNullOrEmpty(finding.RuleId) && !IsSpellingFinding(finding);
 
     /// <summary>
-    /// Waive the current finding's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the
-    /// class (or the finding's component) and saving the file — the same in-source suppression the CLI
-    /// and MCP server honour. Persists through the single-file save path used by spelling corrections.
+    /// A class as it exists on disk: the node, the class that owns the file it lives in, that file's
+    /// path, and the path from the file's top class down to this one.
     /// </summary>
-    private async Task SuppressRuleForFinding(LogMessage? finding)
-    {
-        if (finding is null || string.IsNullOrEmpty(finding.RuleId) || _suppressing)
-            return;
+    private sealed record ClassSourceTarget(ModelNode Node, ModelNode FileOwner, string FilePath, string[]? ClassPath);
 
-        var targetNode = LibraryDataService.GetModelById(finding.ModelName);
+    /// <summary>
+    /// Locates the source file and in-file class path for a model, or returns null having said in a
+    /// snackbar why it could not.
+    ///
+    /// <para>The annotation is placed onto the target class within the on-disk file text — the ground
+    /// truth, which always holds the full nested structure. We deliberately do NOT edit the in-memory
+    /// class slice: a package node's stored ModelicaCode can be a formatting "shell" that omits nested
+    /// standalone classes, so a nested type (e.g. Modelica.Units.SI.Molarity) would not be found there.
+    /// Locating by name path also avoids any substring matching and works for short-class `type`
+    /// definitions.</para>
+    /// </summary>
+    private ClassSourceTarget? ResolveClassSourceTarget(string? modelId)
+    {
+        var targetNode = string.IsNullOrEmpty(modelId) ? null : LibraryDataService.GetModelById(modelId);
         if (targetNode is null)
         {
-            Snackbar.Add("Cannot locate the model to suppress the rule in.", MudBlazor.Severity.Warning);
-            return;
+            Snackbar.Add("Cannot locate the model to annotate.", MudBlazor.Severity.Warning);
+            return null;
         }
 
         var graph = LibraryDataService.CombinedGraph;
@@ -1642,19 +1654,9 @@ document.head.appendChild(style);
         if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath))
         {
             Snackbar.Add("Cannot locate the file on disk to edit.", MudBlazor.Severity.Warning);
-            return;
+            return null;
         }
 
-        // Scope to the component when the finding names a simple one; otherwise waive it for the class.
-        var component = finding.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
-        var filePath = fileNode.FilePath;
-
-        // Path from the file's top class to the target class. The annotation is placed onto the target
-        // class within the on-disk file text — the ground truth, which always holds the full nested
-        // structure. We deliberately do NOT edit the in-memory class slice: a package node's stored
-        // ModelicaCode can be a formatting "shell" that omits nested standalone classes, so a nested
-        // type (e.g. Modelica.Units.SI.Molarity) would not be found there. Locating by name path also
-        // avoids any substring matching and works for short-class `type` definitions.
         var fileOwner = graph.GetModelsInFile(fileId!)
             .Where(m => targetNode.Id == m.Id || targetNode.Id.StartsWith(m.Id + ".", StringComparison.Ordinal))
             .OrderBy(m => m.Id.Length)
@@ -1668,35 +1670,116 @@ document.head.appendChild(style);
             {
                 Snackbar.Add("Could not locate the class within its file; reload the library and retry.",
                     MudBlazor.Severity.Warning);
-                return;
+                return null;
             }
             classPath = targetNode.Id[prefix.Length..].Split('.');
         }
 
+        return new ClassSourceTarget(targetNode, fileOwner, fileNode.FilePath, classPath);
+    }
+
+    /// <summary>
+    /// Reads a target's file as it is on disk, so an annotation can be spliced in without rewriting
+    /// the whole file (which would otherwise show as hundreds of unrelated line-ending changes on a
+    /// CRLF library). Returns null having reported the failure.
+    /// </summary>
+    private async Task<string?> ReadTargetFileAsync(ClassSourceTarget target)
+    {
+        try
+        {
+            return await ModelicaFileEncoding.ReadAllTextOnlyAsync(target.FilePath);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to read {target.FilePath} for annotation", ex);
+            Snackbar.Add($"Failed to read the file: {ex.Message}", MudBlazor.Severity.Error);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Validates the annotated file text, saves it, and reloads the file so the graph matches what is
+    /// on disk. The monitor is paused across the write so MLQT's own edit does not come back as a
+    /// change to process. Returns false having reported the failure.
+    /// </summary>
+    private async Task<bool> SaveAnnotatedFileAsync(ClassSourceTarget target, string newContent)
+    {
+        // Never persist broken code.
+        var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(newContent);
+        if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
+        {
+            Snackbar.Add("The annotation was not applied: the result failed to parse.", MudBlazor.Severity.Error);
+            return false;
+        }
+
+        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(target.FileOwner.Id));
+        var repository = string.IsNullOrEmpty(library?.RepositoryId)
+            ? null : RepositoryService.GetRepository(library.RepositoryId);
+        var repoId = repository?.Id;
+        var monitoredRoot = repository?.VcsRootPath;
+        bool monitorPaused = false;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(repoId))
+            {
+                FileMonitoringService.StopMonitoring(repoId);
+                monitorPaused = true;
+            }
+            await ModelicaFileEncoding.WriteAllTextAsync(target.FilePath, newContent);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to write annotation to {target.FilePath}", ex);
+            Snackbar.Add($"Failed to save: {ex.Message}", MudBlazor.Severity.Error);
+            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+            return false;
+        }
+
+        // Re-parse the file from disk so all model nodes are rebuilt from the saved content.
+        var affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
+        if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
+        {
+            FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
+            FileMonitoringService.NotifyFileActivity(repoId!);
+        }
+
+        NavState.ModelContentChanged(affected);
+        _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
+        return true;
+    }
+
+    /// <summary>
+    /// Waive the current finding's rule by writing a <c>__MLQT(suppress="…")</c> annotation onto the
+    /// class (or the finding's component) and saving the file — the same in-source suppression the CLI
+    /// and MCP server honour. Persists through the single-file save path used by spelling corrections.
+    /// </summary>
+    private async Task SuppressRuleForFinding(LogMessage? finding)
+    {
+        if (finding is null || string.IsNullOrEmpty(finding.RuleId) || _suppressing)
+            return;
+
+        var target = ResolveClassSourceTarget(finding.ModelName);
+        if (target is null)
+            return;
+
+        // Scope to the component when the finding names a simple one; otherwise waive it for the class.
+        var component = finding.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
+
         _suppressing = true;
         try
         {
-            string fileContent;
-            try
-            {
-                // Read the raw file so we can make a minimal edit that preserves its existing line
-                // endings — the annotation is spliced in without rewriting the whole file (which would
-                // otherwise show as hundreds of unrelated line-ending changes on a CRLF library).
-                fileContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(filePath);
-            }
-            catch (Exception ex)
-            {
-                LoggingService.Error("CodeReview", $"Failed to read {filePath} for suppression", ex);
-                Snackbar.Add($"Failed to read the file: {ex.Message}", MudBlazor.Severity.Error);
+            var fileContent = await ReadTargetFileAsync(target);
+            if (fileContent is null)
                 return;
-            }
 
-            if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, component, finding.RuleId!, null, out var newContent, out var writeError))
+            if (!MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, target.ClassPath, component, finding.RuleId!, null, out var newContent, out var writeError))
             {
                 // A component target that can't be located (e.g. an inherited element) falls back to
                 // suppressing at the class level so the action still succeeds.
                 if (component is null ||
-                    !MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, classPath, null, finding.RuleId!, null, out newContent, out writeError))
+                    !MlqtSuppressionWriter.TryAddSuppressionToFile(fileContent, target.ClassPath, null, finding.RuleId!, null, out newContent, out writeError))
                 {
                     Snackbar.Add($"Could not add the suppression: {writeError}", MudBlazor.Severity.Error);
                     return;
@@ -1704,49 +1787,8 @@ document.head.appendChild(style);
                 component = null;
             }
 
-            // Never persist broken code.
-            var (_, parseErrors) = ModelicaParserHelper.ParseWithErrors(newContent);
-            if (parseErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure))
-            {
-                Snackbar.Add("Suppression was not applied: the result failed to parse.", MudBlazor.Severity.Error);
+            if (!await SaveAnnotatedFileAsync(target, newContent))
                 return;
-            }
-
-            var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(fileOwner.Id));
-            var repository = string.IsNullOrEmpty(library?.RepositoryId)
-                ? null : RepositoryService.GetRepository(library.RepositoryId);
-            var repoId = repository?.Id;
-            var monitoredRoot = repository?.VcsRootPath;
-            bool monitorPaused = false;
-
-            try
-            {
-                if (!string.IsNullOrEmpty(repoId))
-                {
-                    FileMonitoringService.StopMonitoring(repoId);
-                    monitorPaused = true;
-                }
-                await ModelicaFileEncoding.WriteAllTextAsync(filePath, newContent);
-            }
-            catch (Exception ex)
-            {
-                LoggingService.Error("CodeReview", $"Failed to write suppression to {filePath}", ex);
-                Snackbar.Add($"Failed to save suppression: {ex.Message}", MudBlazor.Severity.Error);
-                if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-                    FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-                return;
-            }
-
-            // Re-parse the file from disk so all model nodes are rebuilt from the saved content.
-            var affected = await LibraryDataService.ReloadFileAsync(filePath);
-            if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
-            {
-                FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
-                FileMonitoringService.NotifyFileActivity(repoId!);
-            }
-
-            NavState.ModelContentChanged(affected);
-            _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
 
             // Drop the now-waived finding(s) for this rule on this model — a re-check would not report
             // them. Scoped to the target model (a class-level waiver doesn't affect sibling classes) and,
@@ -1894,15 +1936,103 @@ document.head.appendChild(style);
             ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(flagged) ?? flagged,
             acceptedWord, StringComparison.OrdinalIgnoreCase);
 
-    private void IgnoreSpellingFinding()
+    /// <summary>
+    /// Accept the right-clicked word as spelled correctly <em>in this class</em>, by writing
+    /// <c>__MLQT(spelling="…")</c> into the source and saving the file.
+    ///
+    /// <para>Recorded in the source rather than remembered in the session, so the word stays accepted
+    /// through the next check and is honoured wherever findings are produced — the app, the CLI and
+    /// the MCP server all read the annotation. It is scoped to the word and the class, which is what
+    /// sits between the two blunter options: suppressing the spelling rule silences every other
+    /// misspelling in the class, and adding the word to the dictionary accepts it everywhere in the
+    /// repository.</para>
+    ///
+    /// <para>A class MLQT cannot locate on disk (a snippet, an encrypted library's reconstruction)
+    /// has nowhere to record it, so the finding is dismissed for now and the user is told it will
+    /// come back.</para>
+    /// </summary>
+    private async Task IgnoreSpellingFinding()
+    {
+        if (_suppressing)
+            return;
+
+        var word = ExtractMisspelledWord(_currentFinding) ?? (_contextMenuOpen ? _contextWord : null);
+        var modelId = _currentFinding?.ModelName;
+        if (string.IsNullOrEmpty(modelId))
+            modelId = NavState.ModelID;
+
+        if (string.IsNullOrEmpty(word) || string.IsNullOrEmpty(modelId))
+        {
+            DismissSpellingFindingWithoutRecording();
+            return;
+        }
+
+        // Record the word itself, not a possessive of it — "Stodola's" is accepted once "Stodola" is,
+        // and the annotation is something the team reads in the source. Same rule as the dictionary.
+        var accepted = ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(word) ?? word;
+
+        var target = ResolveClassSourceTarget(modelId);
+        if (target is null)
+        {
+            DismissSpellingFindingWithoutRecording();
+            Snackbar.Add(
+                $"'{accepted}' could not be recorded in the source, so it will be reported again on the next check.",
+                MudBlazor.Severity.Warning);
+            return;
+        }
+
+        _suppressing = true;
+        try
+        {
+            var fileContent = await ReadTargetFileAsync(target);
+            if (fileContent is null)
+                return;
+
+            if (!MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+                    fileContent, target.ClassPath, accepted, null, out var newContent, out var writeError))
+            {
+                Snackbar.Add($"Could not record the word: {writeError}", MudBlazor.Severity.Error);
+                return;
+            }
+
+            if (!await SaveAnnotatedFileAsync(target, newContent))
+                return;
+
+            // Clear what the annotation now covers: this word, and its possessive, in this class.
+            // Other classes still report it — the waiver is this class's, which is the whole point of
+            // recording it here rather than in the repository's word list.
+            CodeReviewService.RemoveLogMessagesByPredicate(m =>
+                m.ModelName == modelId && IsSpellingFinding(m) &&
+                IsNowAccepted(accepted, ExtractMisspelledWord(m)));
+
+            CloseSpellingMenu();
+            _findingDetailsVisible = false;
+            OnModelSelected();   // re-render with the annotated content and refresh VCS status
+            Snackbar.Add($"'{accepted}' is now accepted in {modelId}.", MudBlazor.Severity.Success);
+        }
+        finally
+        {
+            _suppressing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Removes the finding from the list without recording anything — it returns on the next check.</summary>
+    private void DismissSpellingFindingWithoutRecording()
     {
         if (_currentFinding != null)
             CodeReviewService.RemoveLogMessage(_currentFinding);
 
+        CloseSpellingMenu();
+        RecomputeMisspelledWords();
+        StateHasChanged();
+    }
+
+    private void CloseSpellingMenu()
+    {
         _contextMenuOpen = false;
         _suggestions = null;
         RecomputeMisspelledWords();
-        StateHasChanged();
     }
 
     /// <summary>

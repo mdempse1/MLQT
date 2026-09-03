@@ -36,6 +36,7 @@ MLQT.Services (lifecycle, persistence)
 
 MLQT.Shared (UI)
   Pages/CodeReview.razor     - Click issue -> scroll/underline word; right-click word -> correction menu (Suggestions, Replace with, Add to Dictionary, Ignore, Close)
+    Ignore writes __MLQT(spelling="word") onto the class (MlqtSuppressionWriter) and saves the file
   Components/SettingsStyleChecking.razor  - Default language selection
   Components/SettingsRepositories.razor   - Per-repo language selection
   Components/SettingsRepositoryDictionary.razor - Per-repo accepted spellings (add/remove/filter/import/export)
@@ -320,6 +321,31 @@ Per-repository settings dialog includes the same language multi-select and impor
 5. Update `StyleCheckingSettings.SpellCheckLanguages` default if it should be enabled by default
 6. Optionally add a display name mapping in `DictionaryManagerService.FormatDisplayName()`
 
+## Accepting a Word: Three Scopes
+
+| Scope | Where it lives | Written by |
+|-------|----------------|------------|
+| One class | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
+| One repository | `<repo>/.mlqt/dictionary.txt` | Code Review's **Add to Dictionary**, the repository dictionary settings page |
+| Every check, every repository | `modelica_terms.txt` (embedded) | Editing ModelicaParser |
+
+`__MLQT(spelling="…")` is a comma-separated list on the class, read by `MlqtSuppressionExtractor`
+into `SuppressionSet` and applied in `StyleChecking.RunStyleCheckingFindings`'s suppression pass —
+so the GUI, the CLI and MCP all honour it, and `mlqt check --no-suppress` audits past it.
+
+- **Word-scoped, not rule-scoped.** Suppressing `MLQT.Spelling.Description` for the class would
+  silence every other misspelling in it. `spelling` waives only the listed words.
+- **The word comes from the finding's message** (`SpellingMessage.WordFrom`), not its
+  `Discriminator`: a documentation finding's discriminator carries the section as well as the word,
+  and its shape is part of the fingerprint baselines are keyed on.
+- **Case-insensitive, and covers the possessive**, exactly as the repository word list does.
+- **Written on a component, read as the class's.** A spelling finding names no element, so a
+  component-scoped list could never match one; reading it as the class's keeps such an annotation
+  from silently doing nothing.
+- `MlqtSuppressionWriter.TryAddSpellingException(ToFile)` writes it, merging into an existing
+  `__MLQT`, an existing `spelling` list, or an existing plain annotation. Words carrying a quote or
+  a comma are refused — the list is a comma-separated Modelica string.
+
 ## Test Files
 
 | Test File | Coverage |
@@ -333,6 +359,9 @@ Per-repository settings dialog includes the same language multi-select and impor
 | `MLQT.Services.Tests/DictionaryManagerServiceTests.cs` | Import, remove, scan, display names, events |
 | `MLQT.Services.Tests/StyleCheckingServiceTests.cs` | End-to-end style checking with spell checker stubs |
 | `ModelicaGraph.Tests/StyleCheckingTests.cs` | HasAnyStyleRuleEnabled includes spell check settings |
+| `ModelicaGraph.Tests/SpellingSuppressionTests.cs` | `__MLQT(spelling="…")` end to end: word scope, class scope, possessives, `--no-suppress` |
+| `ModelicaParser.Tests/StyleRuleChecks/MlqtSuppressionWriterTests.cs` | Writing and merging the annotation, including the spelling list |
+| `MLQT.McpServer.Tests/SuppressionToolsTests.cs` | `accept_spelling_in_class` |
 
 ## Key Design Decisions
 

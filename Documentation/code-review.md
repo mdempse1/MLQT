@@ -179,7 +179,7 @@ To act on a misspelled word, right-click the highlighted word in the rendered co
 | **Suggestions** | A scrollable list of similar words from the loaded language dictionaries. Click one to apply it in place. |
 | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
 | **Add to Dictionary** | Accepts the word into the word list of the repository that owns this class. All findings for the word in that repository are immediately removed, and future checks — including CI, once `.mlqt/dictionary.txt` is committed — accept it. |
-| **Ignore** | Removes this single finding from the list. The word will be flagged again on the next style check run. |
+| **Ignore** | Accepts the word **in this class only**, by writing `__MLQT(spelling="<word>")` into the class and saving the file. Every finding for the word in that class is removed, and because the waiver lives in the source it holds through later checks and is honoured by the CLI and MCP server too. Other classes still report the word. If the class has no file MLQT can edit, the finding is dismissed for now and MLQT says so. |
 | **Close** | Closes the menu without taking any action. |
 
 When you apply a correction, MLQT replaces the word, re-formats and **saves the file to disk immediately**, re-parses it, and removes the resolved finding.

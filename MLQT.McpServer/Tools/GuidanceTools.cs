@@ -253,6 +253,11 @@ public sealed class GuidanceTools
             - correct_spelling(classId, oldWord, newWord): whole-word, case-sensitive replacement across
               the file's prose (HTML tags, hrefs and code/pre blocks are preserved). By default it writes
               the file to disk and refreshes the graph; pass preview=true to just see the result.
+            - When the word is right and the checker is wrong, pick the narrowest waiver:
+              accept_spelling_in_class(classId, word) writes __MLQT(spelling="word") and accepts it in
+              that class alone; the repository's .mlqt/dictionary.txt accepts it everywhere in the
+              repository; suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation
+              waives spell checking for a whole class, which silences its other misspellings too.
             """,
 
         ["formatting"] = """

@@ -131,4 +131,56 @@ public class SuppressionToolsTests
         Assert.Contains("__MLQT", res.NewFileContent!);
         Assert.DoesNotContain("__MLQT", Source(host, "P.M")); // original untouched
     }
+
+    [Fact]
+    public async Task AcceptSpellingInClass_WritesAnnotation()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await Load(host).AcceptSpellingInClass("P.M", "wibbler", reason: "vendor term"));
+
+        Assert.True(res.Changed);
+        var src = Source(host, "P.M");
+        Assert.Contains("__MLQT(spelling=\"wibbler\"", src);
+        Assert.Contains("reason=\"vendor term\"", src);
+    }
+
+    [Fact]
+    public async Task AcceptSpellingInClass_MergesASecondWord()
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.AcceptSpellingInClass("P.M", "wibbler"));
+        ToolAssert.Ok<StructureEditResult>(await tools.AcceptSpellingInClass("P.M", "frimbo"));
+
+        Assert.Contains("spelling=\"wibbler,frimbo\"", Source(host, "P.M"));
+    }
+
+    [Fact]
+    public async Task AcceptSpellingInClass_EmptyWord_Errors()
+    {
+        using var host = new TestHost();
+        var err = ToolAssert.Error(await Load(host).AcceptSpellingInClass("P.M", "  "));
+        Assert.Contains("word is required", err.Error);
+    }
+
+    [Fact]
+    public async Task AcceptSpellingInClass_UnknownClass_Errors()
+    {
+        using var host = new TestHost();
+        ToolAssert.Error(await Load(host).AcceptSpellingInClass("P.Nope", "wibbler"));
+    }
+
+    [Fact]
+    public async Task AcceptSpellingInClass_Preview_DoesNotWrite()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<StructureEditResult>(
+            await Load(host).AcceptSpellingInClass("P.M", "wibbler", preview: true));
+
+        Assert.True(res.PreviewOnly);
+        Assert.False(res.Changed);
+        Assert.Contains("spelling=\"wibbler\"", res.NewFileContent!);
+        Assert.DoesNotContain("__MLQT", Source(host, "P.M"));
+    }
 }

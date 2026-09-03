@@ -4,8 +4,8 @@ namespace ModelicaParser.StyleRules;
 
 /// <summary>
 /// Collects <c>__MLQT(...)</c> vendor-annotation suppression directives from a parse tree:
-/// class-level and component-level <c>suppress</c> lists, and <c>preserveOrder</c> /
-/// <c>format=false</c> formatting opt-outs. Extends <see cref="VisitorWithModelNameTracking"/> so
+/// class-level and component-level <c>suppress</c> lists, <c>spelling</c> word lists, and
+/// <c>preserveOrder</c> / <c>format=false</c> formatting opt-outs. Extends <see cref="VisitorWithModelNameTracking"/> so
 /// directives are keyed by the same fully qualified model name that findings carry (and so nested
 /// standalone classes — checked independently — are skipped the same way).
 /// </summary>
@@ -14,10 +14,13 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
     private readonly Dictionary<string, HashSet<string>> _classLevel = new(StringComparer.Ordinal);
     private readonly Dictionary<(string, string), HashSet<string>> _componentLevel = new();
     private readonly HashSet<string> _preserveFormatting = new(StringComparer.Ordinal);
+    // Case-insensitive, as the repository's accepted spellings are: a word accepted in one casing is
+    // accepted in any.
+    private readonly Dictionary<string, HashSet<string>> _spellingWords = new(StringComparer.Ordinal);
 
     public MlqtSuppressionExtractor(string basePackage = "") : base(basePackage) { }
 
-    public SuppressionSet Build() => new(_classLevel, _componentLevel, _preserveFormatting);
+    public SuppressionSet Build() => new(_classLevel, _componentLevel, _preserveFormatting, _spellingWords);
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
@@ -78,6 +81,12 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
                     case "suppress":
                         AddTokens(component, ParseList(value));
                         break;
+                    // Recorded against the class even when written on a component: a spelling finding
+                    // names no element, so a component-scoped word list would match nothing and would
+                    // read as the annotation being ignored.
+                    case "spelling":
+                        AddSpellingWords(ParseList(value));
+                        break;
                     case "preserveOrder":
                         if (component is null && IsTrue(value)) MarkPreserveFormatting();
                         break;
@@ -105,6 +114,15 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
         RuleIds.OneOfEachSection, RuleIds.DontMixEquationAndAlgorithm,
         RuleIds.DontMixConnections
     ];
+
+    private void AddSpellingWords(IEnumerable<string> words)
+    {
+        if (!_spellingWords.TryGetValue(CurrentModelName, out var set))
+            _spellingWords[CurrentModelName] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var word in words)
+            set.Add(word);
+    }
 
     private void AddTokens(string? component, IEnumerable<string> tokens)
     {

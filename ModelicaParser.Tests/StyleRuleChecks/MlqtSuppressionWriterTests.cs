@@ -369,4 +369,140 @@ public class MlqtSuppressionWriterTests
         Assert.True(Parses(outCode));
         Assert.True(Suppresses(outCode, "df", null, "MLQT.Class.Description"));
     }
+
+    // ---- spelling exceptions: __MLQT(spelling="…") ----
+
+    // Round-trip: is this word accepted in this class by the code's annotations?
+    private static bool AcceptsSpelling(string code, string modelFqn, string word, string basePackage = "")
+    {
+        var extractor = new MlqtSuppressionExtractor(basePackage);
+        extractor.VisitStored_definition(ModelicaParserHelper.Parse(code));
+        return extractor.Build().IsSuppressed(new Finding
+        {
+            RuleId = RuleIds.SpellingDescription,
+            ModelId = modelFqn,
+            Message = ModelicaParser.SpellChecking.SpellingMessage.For(
+                word, ModelicaParser.SpellChecking.SpellingMessage.InDescription),
+        });
+    }
+
+    [Fact]
+    public void SpellingException_CreatesAnnotation_ThatAcceptsTheWord()
+    {
+        var code = "model Foo \"Uses the wibbler\"\n  Real x;\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingException(code, "wibbler", null, out var outCode, out var error));
+
+        Assert.Null(error);
+        Assert.Contains("__MLQT(spelling=\"wibbler\")", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(AcceptsSpelling(outCode, "Foo", "wibbler"));
+    }
+
+    [Fact]
+    public void SpellingException_RecordsAReasonWhenGiven()
+    {
+        var code = "model Foo\n  Real x;\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingException(code, "wibbler", "vendor term", out var outCode, out _));
+
+        Assert.Contains("__MLQT(spelling=\"wibbler\", reason=\"vendor term\")", outCode);
+        Assert.True(Parses(outCode));
+    }
+
+    [Fact]
+    public void SpellingException_MergesIntoAnExistingList()
+    {
+        var code = "model Foo\n  Real x;\n  annotation(__MLQT(spelling=\"frimbo\"));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingException(code, "wibbler", null, out var outCode, out _));
+
+        Assert.Contains("spelling=\"frimbo,wibbler\"", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(AcceptsSpelling(outCode, "Foo", "frimbo"));
+        Assert.True(AcceptsSpelling(outCode, "Foo", "wibbler"));
+    }
+
+    [Fact]
+    public void SpellingException_MergesIntoAnExistingMlqtAnnotation()
+    {
+        // A class that already waives a rule keeps that waiver — the word goes in beside it rather
+        // than into a second __MLQT the grammar would take but nothing merges into.
+        var code = "model Foo\n  Real x;\n  annotation(__MLQT(suppress=\"A\"));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingException(code, "wibbler", null, out var outCode, out _));
+
+        Assert.Contains("spelling=\"wibbler\"", outCode);
+        Assert.Contains("suppress=\"A\"", outCode);
+        Assert.Equal(1, CountOccurrences(outCode, "__MLQT("));
+        Assert.True(Parses(outCode));
+        Assert.True(AcceptsSpelling(outCode, "Foo", "wibbler"));
+        Assert.True(Suppresses(outCode, "Foo", null, "MLQT.A"));
+    }
+
+    [Fact]
+    public void SpellingException_MergesIntoAnExistingNonMlqtAnnotation()
+    {
+        var code = "model Foo\n  Real x;\n  annotation(Icon(graphics={}));\nend Foo;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingException(code, "wibbler", null, out var outCode, out _));
+
+        Assert.Contains("Icon(graphics={})", outCode);
+        Assert.True(Parses(outCode));
+        Assert.True(AcceptsSpelling(outCode, "Foo", "wibbler"));
+    }
+
+    [Fact]
+    public void SpellingException_TargetsANestedClassByPath()
+    {
+        var code = "package Lib\n  model Inner \"Uses the wibbler\"\n  end Inner;\nend Lib;";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+            code, ["Inner"], "wibbler", null, out var outCode, out var error));
+
+        Assert.Null(error);
+        Assert.True(Parses(outCode));
+
+        // The annotation lands inside Inner, not on the package around it.
+        var innerStart = outCode.IndexOf("model Inner", StringComparison.Ordinal);
+        var innerEnd = outCode.IndexOf("end Inner;", StringComparison.Ordinal) + "end Inner;".Length;
+        Assert.InRange(outCode.IndexOf("__MLQT(spelling=\"wibbler\")", StringComparison.Ordinal), innerStart, innerEnd);
+
+        // And it is read back for the class that carries it. A nested standalone class is checked on
+        // its own — its own slice, with the package as the base — which is where the word has to land.
+        Assert.True(AcceptsSpelling(outCode[innerStart..innerEnd], "Lib.Inner", "wibbler", basePackage: "Lib"));
+        Assert.False(AcceptsSpelling(outCode[innerStart..innerEnd], "Lib", "wibbler", basePackage: "Lib"));
+    }
+
+    [Fact]
+    public void SpellingExceptionToFile_KeepsTheFilesLineEndings()
+    {
+        var code = "model Foo\r\n  Real x;\r\nend Foo;\r\n";
+        Assert.True(MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+            code, null, "wibbler", null, out var outCode, out _));
+
+        Assert.DoesNotContain(outCode.Replace("\r\n", ""), "\n");
+        Assert.True(Parses(outCode));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("has,comma")]
+    [InlineData("has\"quote")]
+    public void SpellingException_RefusesAWordItCannotRecord(string word)
+    {
+        // The list is a comma-separated Modelica string: one of these would break the file, the other
+        // would silently become two entries.
+        var code = "model Foo\n  Real x;\nend Foo;";
+        Assert.False(MlqtSuppressionWriter.TryAddSpellingException(code, word, null, out var outCode, out var error));
+
+        Assert.Equal(code, outCode);
+        Assert.NotNull(error);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+        return count;
+    }
 }

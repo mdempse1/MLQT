@@ -487,6 +487,11 @@ end Foo;
   that component.
 - **`preserveOrder=true`** (or `format=false`) on a class waives the ordering/formatting rules —
   the in-source way to mark an order-sensitive class. Include a `reason`.
+- **`spelling`** is a comma-separated list of words the class accepts as spelled correctly, e.g.
+  `annotation(__MLQT(spelling="Stodola,Pacejka"));`. It waives only the spelling findings for those
+  words in that class, so the rest of the class is still spell checked. The desktop app writes one
+  when you choose **Ignore** on a misspelled word. For a term the whole repository uses, put it in
+  `.mlqt/dictionary.txt` instead.
 - Suppressed findings are **never emitted** — they don't appear in reports, don't enter the baseline,
   and don't gate. This is different from the baseline: a suppression is a *permanent, intentional*
   waiver; the baseline is *temporary debt*.
