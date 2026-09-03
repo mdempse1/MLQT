@@ -168,6 +168,31 @@ public class SarifBaseTests
     }
 
     [Fact]
+    public void TheDriverNamesItselfItsVersionAndWhereToLearnMore()
+    {
+        // SARIF2005: a consumer uses these to tell one run's results from another's and to point a
+        // developer at the tool. The validator reported both as warnings until they were added, and
+        // the CI validation step now fails on a warning — this test says the same thing without
+        // needing the external tool.
+        using var repo = new TempRepo();
+
+        var (_, stdout, _) = Run("check", repo.LibraryPath, "--format", "sarif", "--fail-on", "off");
+
+        using var document = JsonDocument.Parse(stdout);
+        var driver = document.RootElement.GetProperty("runs")[0]
+            .GetProperty("tool").GetProperty("driver");
+
+        Assert.Equal("mlqt", driver.GetProperty("name").GetString());
+        Assert.StartsWith("https://", driver.GetProperty("informationUri").GetString()!);
+        Assert.False(string.IsNullOrWhiteSpace(driver.GetProperty("version").GetString()));
+
+        // semanticVersion is defined as semver, so the build metadata a CI stamp adds is not part of it.
+        var semantic = driver.GetProperty("semanticVersion").GetString()!;
+        Assert.DoesNotContain('+', semantic);
+        Assert.Matches(@"^\d+\.\d+\.\d+", semantic);
+    }
+
+    [Fact]
     public void WithoutAValue_ItIsAUsageError()
     {
         Assert.False(CheckOptions.TryParse(["lib", "--sarif-base"], out _, out var error));

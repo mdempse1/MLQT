@@ -526,6 +526,8 @@ safe without them, but with them the extra build never happens at all.
   `--sarif-base` is resolved against the library (`--sarif-base ..` for a library one level down), and
   a base that does not contain the library is refused rather than written as `../…`, which GitHub
   rejects.
+  The document is validated against the SARIF 2.1.0 schema on every push — see
+  `build/validate-sarif.ps1`, which also runs locally.
 - **teamcity** — TeamCity service messages: `buildStatisticValue` lines (so TeamCity graphs the
   baseline-debt trend over builds), a message per actionable finding, and a `buildProblem` when the
   gate fails.

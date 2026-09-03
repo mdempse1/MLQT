@@ -15,7 +15,15 @@
     <PackageId>MLQT.Cli</PackageId>
     <Version>0.1.0</Version>
     <Description>Headless CLI for MLQT: style-check a Modelica library and report findings.</Description>
+    <PackageProjectUrl>https://github.com/mdempse1/MLQT</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mdempse1/MLQT</RepositoryUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Read back by ToolInfo, so the package and the SARIF documents the tool writes cannot end up
+         naming different places. -->
+    <AssemblyMetadata Include="ProjectUrl" Value="$(PackageProjectUrl)" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="MLQT.Cli.Tests" />

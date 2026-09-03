@@ -223,7 +223,7 @@ internal static class CheckRunner
             // The whole checked set: the history also holds a point per library, and a gate that
             // silently compared against one library's numbers would be answering another question.
             previous = MetricsHistoryStore.Load(opts.ResolvedMetricsPath)
-                .Where(s => s.Scope.Length == 0)
+                .Where(s => string.IsNullOrEmpty(s.Scope))   // a snapshot written before Scope existed carries none
                 .LastOrDefault();
 
             if (previous is null)

@@ -63,7 +63,17 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
             {
                 new
                 {
-                    tool = new { driver = new { name = "mlqt", rules } },
+                    tool = new
+                    {
+                        driver = new
+                        {
+                            name = ToolInfo.Name,
+                            informationUri = ToolInfo.InformationUri,
+                            version = ToolInfo.Version,
+                            semanticVersion = ToolInfo.SemanticVersion,
+                            rules
+                        }
+                    },
                     results
                 }
             }

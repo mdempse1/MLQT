@@ -286,6 +286,13 @@ Update relevant skill files for specialized subsystem changes.
 
 Update project readme files when changes are made.
 
+## Test Fixtures
+
+`TestFixtures/SarifSmoke/` is a deliberately imperfect Modelica library committed at a **nested**
+path (`Libraries/Smoke`). `build/validate-sarif.ps1` checks a report generated from it against the
+SARIF 2.1.0 schema with `Sarif.Multitool`, and the nesting is what proves `--sarif-base` writes paths
+a consumer can resolve. Run on every push by `build-and-test.yml`; run it locally the same way.
+
 ## Test Cases
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.

@@ -18,7 +18,7 @@ internal static class CliEntry
                 return ExitCodes.Ok;
 
             case "--version":
-                stdout.WriteLine("mlqt 0.1.0");
+                stdout.WriteLine($"{ToolInfo.Name} {ToolInfo.Version}");
                 return ExitCodes.Ok;
 
             case "check":

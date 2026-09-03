@@ -39,6 +39,7 @@ jobs:
           dotnet build DymolaInterface/DymolaInterface.csproj -c Release --no-restore
           dotnet build OpenModelicaInterface/OpenModelicaInterface.csproj -c Release --no-restore
           dotnet build MLQT.McpServer/MLQT.McpServer.csproj -c Release --no-restore
+          dotnet build MLQT.Cli/MLQT.Cli.csproj -c Release --no-restore
 
       - name: Build test projects
         run: |
@@ -47,6 +48,7 @@ jobs:
           dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release --no-restore
           dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
           dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
+          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
 
       - name: Run ModelicaParser tests
         run: dotnet test ModelicaParser.Tests -c Release --no-build --logger "trx;LogFileName=parser.trx" --results-directory ${{ github.workspace }}/TestResults
@@ -69,6 +71,16 @@ jobs:
 
       - name: Run MLQT.McpServer tests
         run: dotnet test MLQT.McpServer.Tests -c Release --no-build --logger "trx;LogFileName=mcpserver.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Cli tests
+        run: dotnet test MLQT.Cli.Tests -c Release --no-build --logger "trx;LogFileName=cli.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      # The CLI tests assert the shape we expect of a SARIF document, which cannot catch one that is
+      # well-formed by our lights and rejected by a consumer's. This validates a report generated from
+      # a committed fixture against the SARIF 2.1.0 schema, and — because the fixture sits at a nested
+      # path — proves in the same step that --sarif-base writes paths a consumer can resolve.
+      - name: Validate SARIF output
+        run: pwsh -File build/validate-sarif.ps1
 
       - name: Upload test results
         uses: actions/upload-artifact@v6
