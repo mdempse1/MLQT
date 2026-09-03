@@ -155,11 +155,22 @@ public sealed record CheckResult(
     IReadOnlyList<StyleFindingDto> Findings,
     bool Truncated);
 
+/// <summary>
+/// One finding, with both line numbers it has. <see cref="Line"/> is the line in
+/// <see cref="FilePath"/> — the pair to use when editing the file. <see cref="ModelLine"/> is the
+/// same finding's line within the class's own source, for a caller that fetched the class by id.
+///
+/// <para>They are separate fields because they are different numbers: a class nested a thousand
+/// lines down a <c>package.mo</c> has findings whose two lines are a thousand apart. The names match
+/// the CLI's JSON report (<c>Line</c>, <c>ModelLine</c>, <c>File</c>) so the two surfaces cannot be
+/// read as meaning different things.</para>
+/// </summary>
 public sealed record FindingItem(
     string ModelId,
     string Category,
     string Severity,
     int Line,
+    int ModelLine,
     string Summary,
     string Details,
     string Source,

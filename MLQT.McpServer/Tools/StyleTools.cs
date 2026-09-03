@@ -279,7 +279,9 @@ public sealed class StyleTools
     [Description("List findings currently known for the loaded libraries: parse errors (available " +
                 "immediately after loading) plus style/spell findings from any check that has been run " +
                 "(check_class / check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +
-                "or a specific class id, and page with limit/offset.")]
+                "or a specific class id, and page with limit/offset. Each item carries two line numbers: " +
+                "'line' is the line in 'filePath' - use that pair to edit the file - and 'modelLine' is " +
+                "the line within the class's own source, for a caller working from get_class_source.")]
     public object ListFindings(
         [Description("Filter by severity substring (case-insensitive), e.g. 'Error', 'Warning'.")]
         string? severity = null,
@@ -299,28 +301,31 @@ public sealed class StyleTools
 
         if (includeParseErrors)
         {
-            foreach (var node in _libraries.GetAllModels())
+            // Derived from the graph, through the same converter the GUI and CLI use, so a parse
+            // error reads identically on all three and carries a class-relative line like every
+            // other finding. Reading ParserErrors here directly used to give it the *file* line,
+            // which then sat next to filePath in one array with style findings counted from the
+            // class - one field, two conventions.
+            foreach (var finding in ParserErrorReporter.ToFindings(_libraries.GetAllModels()))
             {
-                var errors = node.Definition.ParserErrors;
-                if (errors.Count == 0)
-                    continue;
-                var filePath = ResolveFilePath(node);
-                foreach (var e in errors)
-                {
-                    findings.Add(new FindingItem(
-                        node.Id, "parse",
-                        e.Severity == ParserErrorSeverity.FatalParseFailure ? "FatalParseError" : "SyntaxError",
-                        e.Line, e.Message, e.OffendingToken ?? string.Empty, "Parser", filePath));
-                }
+                findings.Add(Item(
+                    finding.ModelId, "parse",
+                    finding.RuleId == RuleIds.ParseFailure ? "FatalParseError" : "SyntaxError",
+                    finding.LineNumber, finding.Message, string.Empty, ParserErrorReporter.SourceName));
             }
         }
 
         foreach (var m in _codeReview.LogMessages)
         {
-            findings.Add(new FindingItem(
+            // Parse errors are taken from the graph above whether or not a check has run, and a
+            // check records them here as well - so reporting both returned every parse error twice
+            // once check_class or check_library had been called.
+            if (string.Equals(m.Source, ParserErrorReporter.SourceName, StringComparison.Ordinal))
+                continue;
+
+            findings.Add(Item(
                 m.ModelName, "style", m.Severity, m.LineNumber, m.Summary, m.Details,
-                string.IsNullOrEmpty(m.Source) ? "StyleChecking" : m.Source,
-                ResolveFilePath(_libraries.GetModelById(m.ModelName))));
+                string.IsNullOrEmpty(m.Source) ? "StyleChecking" : m.Source));
         }
 
         IEnumerable<FindingItem> filtered = findings;
@@ -376,11 +381,37 @@ public sealed class StyleTools
     private StyleCheckingSettings? SingleRepoSettings()
         => _repositories.Repositories.Count == 1 ? _repositories.Repositories[0].StyleSettings : null;
 
-    private string? ResolveFilePath(ModelNode? node)
+    /// <summary>
+    /// One finding, with its class-relative line mapped to the line in the file it sits in. A caller
+    /// given a path and a line will edit that line, so the two have to be counted from the same place.
+    /// </summary>
+    private FindingItem Item(
+        string modelId, string category, string severity, int modelLine,
+        string summary, string details, string source)
+    {
+        var location = ResolveLocation(_libraries.GetModelById(modelId));
+
+        return new FindingItem(
+            modelId, category, severity,
+            location?.FileLine(modelLine) ?? modelLine, modelLine,
+            summary, details, source, location?.FilePath);
+    }
+
+    /// <summary>
+    /// Where a class sits on disk and how its lines map to the file's, or null when that is unknown
+    /// (a class with no file, a snippet). Built per class rather than through
+    /// <c>ClassLocation.ForGraph</c>, which walks every file in the graph - too much work when a
+    /// reference set of tens of thousands of classes is loaded and a handful have findings.
+    /// </summary>
+    private ClassLocation? ResolveLocation(ModelNode? node)
     {
         if (node?.ContainingFileId is null)
             return null;
-        return _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId)?.FilePath;
+
+        var file = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId);
+        return string.IsNullOrEmpty(file?.FilePath)
+            ? null
+            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile);
     }
 
     private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)

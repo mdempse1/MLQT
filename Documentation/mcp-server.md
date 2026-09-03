@@ -65,7 +65,15 @@ The server returns a short set of instructions to the client on connect, and a `
 
 4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules. **Parse errors are not opt-in**: `check_class` and `check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine".
 
-5. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
+5. **A finding carries two line numbers, and they are not interchangeable.** `list_findings`
+returns `line` — the line in `filePath` — alongside `modelLine`, the same finding's line within the
+class's own source. For a class nested a long way down a `package.mo` they are hundreds of lines
+apart. Use `line` with `filePath` when editing the file; use `modelLine` when working from
+`get_class_source`. The names match the CLI's JSON report so the two surfaces cannot be read as
+meaning different things. (`check_class` and `check_library` return the class-relative number only,
+under `line`, because they answer a question about a class rather than about a file.)
+
+6. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
 ## What the tools cover
 
