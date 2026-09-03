@@ -51,6 +51,78 @@ public class SpellCheckerTests
         Assert.True(checker.IsCorrect("xyzzyplugh"));
     }
 
+    [Theory]
+    // Modelica and its ecosystem
+    [InlineData("Modelica")]
+    [InlineData("Dymola")]
+    [InlineData("FMUs")]
+    [InlineData("redeclaration")]
+    [InlineData("subpackages")]
+    // engineering vocabulary neither bundled dictionary carries
+    [InlineData("revolute")]
+    [InlineData("airgap")]
+    [InlineData("setpoint")]
+    [InlineData("multibody")]
+    [InlineData("psychrometric")]
+    [InlineData("polytropic")]
+    [InlineData("magnetomotive")]
+    [InlineData("thyristor")]
+    [InlineData("quaternions")]
+    [InlineData("Hessenberg")]
+    [InlineData("nullspace")]
+    public void IsCorrect_BuiltInTerm_ReturnsTrue(string word)
+        => Assert.True(SpellChecker.Create().IsCorrect(word), $"'{word}' should be a built-in term");
+
+    [Fact]
+    public void IsCorrect_PolytropicIsSpelledCorrectly()
+    {
+        // The list carried "polytrophic" — a biology word — so the thermodynamic term beside it was
+        // reported and the misspelling was not.
+        var checker = SpellChecker.Create();
+        Assert.True(checker.IsCorrect("polytropic"));
+        Assert.False(checker.IsCorrect("polytrophic"));
+    }
+
+    [Fact]
+    public void BuiltInTerms_AreDialectScoped()
+    {
+        // A term whose spelling differs between dialects is only accepted in the dialect that was
+        // chosen. Accepting both would quietly undo the consistency a single-language repository is
+        // relying on the spell checker for.
+        var american = SpellChecker.Create(["en_US"]);
+        var british = SpellChecker.Create(["en_GB"]);
+
+        Assert.True(american.IsCorrect("linearization"));
+        Assert.False(american.IsCorrect("linearisation"));
+
+        Assert.True(british.IsCorrect("linearisation"));
+        Assert.False(british.IsCorrect("linearization"));
+    }
+
+    [Fact]
+    public void BuiltInTerms_DialectNeutralOnesApplyToEveryLanguage()
+    {
+        foreach (var checker in new[]
+                 {
+                     SpellChecker.Create(["en_US"]), SpellChecker.Create(["en_GB"]), SpellChecker.Create(),
+                 })
+        {
+            Assert.True(checker.IsCorrect("revolute"));
+            Assert.True(checker.IsCorrect("Modelica"));
+        }
+    }
+
+    [Fact]
+    public void BuiltInTerms_CommentLinesAreNotWords()
+    {
+        // The lists carry section headings and an explanation of what they are for.
+        Assert.DoesNotContain(SpellChecker.Create().CustomWords, w => w.StartsWith('#'));
+    }
+
+    [Fact]
+    public void BuiltInTerms_PossessiveOfATermIsAccepted()
+        => Assert.True(SpellChecker.Create().IsCorrect("Dymola's"));
+
     [Fact]
     public void IsCorrect_ModelicaTerm_ReturnsTrue()
     {

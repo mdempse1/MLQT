@@ -85,22 +85,42 @@ public class SpellChecker
             }
         }
 
-        // Load built-in Modelica terms
-        var termsResourceName = "ModelicaParser.SpellChecking.Dictionaries.modelica_terms.txt";
-        using var termsStream = assembly.GetManifestResourceStream(termsResourceName);
-        if (termsStream != null)
-        {
-            using var reader = new StreamReader(termsStream);
-            string? line;
-            while ((line = reader.ReadLine()) != null)
-            {
-                line = line.Trim();
-                if (!string.IsNullOrEmpty(line))
-                    words.Add(line);
-            }
-        }
+        // The built-in Modelica terms: the dialect-neutral list, plus the list for each chosen
+        // language. The dialect lists are the American and British spellings of terms neither
+        // dictionary carries — loading only the chosen one is what keeps a repository that has
+        // settled on one spelling from being handed the other.
+        LoadTerms(assembly, "modelica_terms.txt", words);
+        foreach (var code in codes)
+            LoadTerms(assembly, $"modelica_terms_{code}.txt", words);
 
         return new SpellChecker(dictionaries, words);
+    }
+
+    /// <summary>
+    /// Adds the words from an embedded term list, skipping blank lines and <c>#</c> comments so the
+    /// lists can carry their own explanation and be grouped by subject. A list that does not exist
+    /// (no dialect list for this language) is simply not there to load.
+    ///
+    /// <para>The dialect lists are named <c>modelica_terms_en_US.txt</c>, not
+    /// <c>modelica_terms.en_US.txt</c>: MSBuild reads a language between two dots as a culture and
+    /// compiles the file into a satellite assembly, where it is not an embedded resource of this one
+    /// and never loads.</para>
+    /// </summary>
+    private static void LoadTerms(Assembly assembly, string fileName, HashSet<string> words)
+    {
+        using var stream = assembly.GetManifestResourceStream(
+            $"ModelicaParser.SpellChecking.Dictionaries.{fileName}");
+        if (stream is null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            line = line.Trim();
+            if (line.Length > 0 && line[0] != '#')
+                words.Add(line);
+        }
     }
 
     /// <summary>

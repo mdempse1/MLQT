@@ -1,0 +1,25 @@
+# British spellings of the terms in modelica_terms_en_US.txt. Loaded only when en_GB is among the
+# repository's chosen languages. en_GB already carries most -isation forms; these are the ones it
+# does not, so a British repository is not flagged for its own spelling.
+linearisation
+linearise
+linearised
+linearises
+linearising
+lineariser
+discretisation
+discretise
+discretised
+discretises
+discretising
+discretiser
+parametrisation
+parametrise
+parametrised
+parametrising
+reparametrise
+parameterisation
+initialiser
+reinitialisation
+vectorised
+stabilisable

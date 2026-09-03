@@ -1,0 +1,25 @@
+# American spellings of terms that neither bundled dictionary carries. Loaded only when en_US is
+# among the repository's chosen languages, so a repository set to British English is not quietly
+# given the American form. The British counterparts are in modelica_terms_en_GB.txt.
+linearization
+linearize
+linearized
+linearizes
+linearizing
+linearizer
+discretization
+discretize
+discretized
+discretizes
+discretizing
+discretizer
+parametrization
+parametrize
+parametrized
+parametrizing
+reparametrize
+parameterization
+initializer
+reinitialization
+vectorized
+stabilizable

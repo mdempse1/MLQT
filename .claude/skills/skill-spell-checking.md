@@ -17,7 +17,7 @@ ModelicaParser (core logic, no service dependencies)
   SpellChecking/
     SpellChecker.cs          - Hunspell wrapper, thread-safe word checking
     TextExtractor.cs         - HTML stripping, tokenization, word filtering
-    Dictionaries/            - Embedded .aff/.dic files + modelica_terms.txt
+    Dictionaries/            - Embedded .aff/.dic files + modelica_terms*.txt
   StyleRules/
     SpellCheckVisitorBase.cs   - Shared scope handling (names in scope, own + inherited)
     SpellCheckDescriptions.cs  - Visitor for description strings
@@ -71,7 +71,9 @@ Key design decisions:
 - `WordList.Check()` is thread-safe for concurrent reads
 - Accepted words use `HashSet<string>(StringComparer.OrdinalIgnoreCase)` with a `lock` for thread-safe adds
 - Embedded dictionaries loaded via `Assembly.GetManifestResourceStream()`
-- `modelica_terms.txt` embedded resource provides built-in Modelica-specific terms
+- `modelica_terms.txt` (embedded) provides the built-in Modelica/engineering vocabulary, and
+  `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt` the dialect-specific spellings — see
+  **Built-in Term Lists** below
 - `contextWords` parameter allows callers to pass model-scoped valid words without modifying shared state
 - `DictionarySource` record: `(string AffixFilePath, string DictionaryFilePath)` for file-based dictionaries
 
@@ -322,13 +324,43 @@ Per-repository settings dialog includes the same language multi-select and impor
 5. Update `StyleCheckingSettings.SpellCheckLanguages` default if it should be enabled by default
 6. Optionally add a display name mapping in `DictionaryManagerService.FormatDisplayName()`
 
+## Built-in Term Lists
+
+**Files:** `ModelicaParser/SpellChecking/Dictionaries/modelica_terms.txt`,
+`modelica_terms_en_US.txt`, `modelica_terms_en_GB.txt` (embedded resources, loaded in
+`SpellChecker.Create` into the same accepted-word set as a repository's `.mlqt/dictionary.txt`).
+
+The vocabulary every Modelica library needs and no English dictionary has: the language and its
+tools, and the engineering, thermodynamic, electrical and mathematical terms the bundled
+en_US/en_GB dictionaries do not carry. It exists so the same words are not accepted repository by
+repository, one `.mlqt/dictionary.txt` entry at a time.
+
+- **Always loaded**, whichever languages a repository selected; `#` starts a comment, so the lists
+  carry their own explanation and are grouped by subject.
+- **No affix rules.** A form the dictionaries cannot derive — a plural, a participle — needs its own
+  line, which is why `linearize`, `linearized` and `linearizing` are all listed.
+- **Dialect-split.** A term whose American and British spellings differ, and that *neither*
+  dictionary carries, lives in `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt`, loaded only
+  when that language is among the repository's chosen ones. A repository that has settled on one
+  dialect is not handed the other's spelling by the tool — an `en_US` repository accepts
+  `linearization` and still reports `linearisation`, and the reverse for `en_GB`.
+- **No duplication with the dictionaries.** Nothing belongs in these lists that the bundled
+  dictionaries already accept; that only makes the list look bigger than the gap it fills. The
+  bundled en_GB is roughly twice the size of en_US (94k vs 48k entries) and carries a lot of
+  technical vocabulary en_US lacks — that vocabulary belongs here, where every repository gets it,
+  rather than being had by enabling en_GB, which would also accept every British spelling.
+
+**Naming:** the dialect files are `modelica_terms_en_US.txt`, not `modelica_terms.en_US.txt` —
+MSBuild reads a language between two dots as a culture and compiles the file into a satellite
+assembly, where it is not an embedded resource of ModelicaParser and never loads.
+
 ## Accepting a Word: Three Scopes
 
 | Scope | Where it lives | Written by |
 |-------|----------------|------------|
 | One class | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
 | One repository | `<repo>/.mlqt/dictionary.txt` | Code Review's **Add to Dictionary**, the repository dictionary settings page |
-| Every check, every repository | `modelica_terms.txt` (embedded) | Editing ModelicaParser |
+| Every check, every repository | `modelica_terms.txt` (+ the dialect list for the chosen language) | Editing ModelicaParser |
 
 `__MLQT(spelling="…")` is a comma-separated list on the class, read by `MlqtSuppressionExtractor`
 into `SuppressionSet` and applied in `StyleChecking.RunStyleCheckingFindings`'s suppression pass —

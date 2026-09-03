@@ -48,7 +48,7 @@ The spell checker is designed to minimize false positives. The following are aut
 | **Component and variable names in scope** | If a model declares `Real rflx`, the word "rflx" is valid within that model's descriptions, wherever in the class it is declared |
 | **Names inherited from base classes** | Everything the model inherits through `extends`, at any depth, counts too — so a description referring to a port or parameter that a base class declares is not flagged |
 | **Model names from loaded libraries** | Any model name from any loaded library (e.g., "Step", "Integrator", "PID") is treated as a valid word |
-| **Modelica-specific terms** | Terms like "Modelica", "Dymola", "OpenModelica", "Jacobian", "linearization" are built in |
+| **Modelica and engineering terms** | A built-in list covers the vocabulary no English dictionary has: the language and its tools ("Modelica", "Dymola", "FMUs", "redeclaration"), and engineering, thermodynamic, electrical and mathematical terms ("revolute", "enthalpy", "isentropic", "thyristor", "airgap", "quaternions", "Hessenberg"). Terms whose British and American spellings differ are only accepted in the [language you selected](#language-dictionaries) — an `en_US` repository accepts "linearization" and still reports "linearisation" |
 
 ## Enabling Spell Checking
 
