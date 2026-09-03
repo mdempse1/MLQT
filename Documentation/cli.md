@@ -29,6 +29,10 @@ mlqt check <library-path> [options]
 `<library-path>` is a Modelica library directory (a package with a `package.mo`, or a flat folder
 of `.mo` files) or a single `.mo` file.
 
+There are two other commands: `mlqt baseline` ([below](#baseline--ratchet)) manages the accepted-debt
+file, and `mlqt compare` ([below](#comparing-two-copies-of-a-library)) lists the classes one copy of a
+library has that another does not.
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above the library, else built-in defaults |
@@ -527,4 +531,85 @@ mlqt check ./MyLibrary --fail-on warning --format junit --out mlqt-results.xml
 ```bash
 # Machine-readable output for custom processing
 mlqt check ./MyLibrary --format json --out findings.json
+```
+
+## Comparing two copies of a library
+
+```
+mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
+```
+
+Lists the classes `<library-a>` has that `<library-b>` does not. It is for the question that follows a
+bulk edit — a reformat, a restructure, a big merge — when the class count has dropped and you need to
+know *which* classes went, out of several thousand.
+
+Classes are matched on their **full Modelica name** (`Modelica.Blocks.Continuous.PID`) and on nothing
+else. How they are laid out on disk is free to have changed completely: splitting a package file into
+a directory with one file per class, or collapsing one back, produces no differences at all.
+
+No settings are read and no style rules are run. Both libraries are simply loaded and their class
+inventories compared, so the command is much faster than a check.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--format console\|json` | Output format | `console` |
+| `--out <file>` | Write the report to a file instead of stdout | stdout |
+| `--no-added` | List only what is missing, not what B gained | both are listed |
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Every class in A is present in B |
+| `1` | Classes are missing from B |
+| `2` | Usage or load error (bad path, no library found there) |
+
+Classes that only B has never fail the command — gaining a class is not a loss.
+
+### Reading the report
+
+```
+Comparing class inventories
+  A  C:/Libraries/MyLibrary-before
+     8534 classes in MyLibrary
+  B  C:/Libraries/MyLibrary-after
+     8501 classes in MyLibrary
+
+warning: 1 file(s) in B could not be parsed, so every class they hold is counted as absent:
+           MyLibrary/Blocks/Continuous.mo
+
+33 classes are missing from B:
+
+  MyLibrary.Blocks.Continuous.PID    model     MyLibrary/Blocks/Continuous.mo:412
+  MyLibrary.Blocks.LimPID            model     MyLibrary/Blocks.mo:88
+      -> B has a new class of this name: LimPID
+
+1 class is only in B:
+
+  LimPID                             model     MyLibrary/Blocks/LimPID.mo:1
+      -> A has a class of this name that B is missing: MyLibrary.Blocks.LimPID
+
+8534 classes in A, 8501 in B - 33 missing, 1 added
+```
+
+Three things in that report are worth knowing about:
+
+- **The file and line are A's**, not B's — they say where the class was, which is where you go to get
+  it back.
+- **`->` lines are leads, not conclusions.** A class listed as missing whose simple name turns up as a
+  *new* class in B is usually the same class re-rooted: most often its `within` clause was lost, so
+  `MyLibrary.Blocks.LimPID` came back as plain `LimPID`. That is one class showing up twice — once as
+  missing, once as added — and it is why the added list is on by default.
+- **Unparseable files are called out first.** A file the parser cannot get a class out of looks exactly
+  like a file whose classes were all deleted, and a bulk edit is the most likely thing to have left
+  one. Fix those before reading anything else in the list.
+
+```bash
+# Did the reformat lose anything?
+mlqt compare ./MyLibrary-before ./MyLibrary-after --out missing.txt
+```
+
+```bash
+# Machine-readable, for a script that has to act on the list
+mlqt compare ./MyLibrary-before ./MyLibrary-after --format json --out missing.json
 ```

@@ -33,6 +33,9 @@ internal static class CliEntry
             case "baseline":
                 return await BaselineCommand.RunAsync(args[1..], stdout, stderr);
 
+            case "compare":
+                return await CompareCommand.RunAsync(args[1..], stdout, stderr);
+
             default:
                 stderr.WriteLine($"error: unknown command '{args[0]}'");
                 stderr.WriteLine(Usage);
@@ -47,6 +50,7 @@ internal static class CliEntry
           mlqt check <library-path> [options]
           mlqt baseline create|prune|update <library-path> [--baseline <path>] [--config <path>]
                                                            [--dependency <path>] [--force]
+          mlqt compare <library-a> <library-b> [--format console|json] [--out <file>] [--no-added]
 
         check options:
           --config <path>               Settings file (default: <library-path>/.mlqt/settings.json)
@@ -87,6 +91,19 @@ internal static class CliEntry
 
         metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.
+
+        compare:  lists the classes <library-a> has that <library-b> does not — for checking that a
+                  reformat, restructure or merge did not lose any. Classes are matched on their full
+                  Modelica name only, so how they are laid out on disk is free to have changed.
+                  Also lists the classes only <library-b> has (--no-added to suppress), because a
+                  class that lost its within clause shows up as one missing name and one added name.
+                  No settings are read and no rules are run.
+
+                  --format console|json    Output format (default: console)
+                  --out <file>             Write output to a file instead of stdout
+                  --no-added               List only what is missing, not what was added
+
+                  Exit codes: 0 = nothing missing, 1 = classes missing, 2 = usage/load error
 
         Exit codes: 0 = passed, 1 = findings at/above --fail-on (new; touched debt if --touched-debt fail),
                     2 = usage/load/setup error (bad path, unreadable config, dependency version mismatch)
