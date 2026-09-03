@@ -216,38 +216,41 @@
             <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
                 Label="Spell check all documentation" />
 
-            @* Which dictionaries the checker loads for this repository. Chosen per repository because
-            the choice is committed with the code: a library of German documentation and one of English
-            are checked against different words, and CI has to make the same choice the app did. *@
-            <MudStack Row="true" AlignItems="AlignItems.Start" Class="mt-2" Style="gap:8px;">
-                <MudSelect T="string" Label="Language dictionaries" MultiSelection="true" Dense="true"
-                    Margin="Margin.Dense" Typo="Typo.body1" Variant="Variant.Outlined"
-                    SelectedValues="@SelectedSettings.SpellCheckLanguages"
-                    SelectedValuesChanged="OnRepoLanguagesChanged"
-                    HelperText="@LanguageHelperText"
-                    Style="max-width:400px;">
-                    @foreach (var option in LanguageOptions)
-                    {
-                        <MudSelectItem T="string" Value="@option.Code">@option.Label</MudSelectItem>
-                    }
-                </MudSelect>
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                    OnClick="ImportRepoLanguageDictionary" Style="height:40px;">Import Language</MudButton>
-            </MudStack>
-
-            @* A language named in the committed settings that this machine has no dictionary for is
-            otherwise silent: the words are judged by whatever languages are left, or by none at all. *@
-            @if (MissingLanguageWarning is { } warning)
+            @if (SelectedSettings.SpellCheckDescription || SelectedSettings.SpellCheckDocumentation) 
             {
-                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" Style="max-width:640px;">
-                    @warning
-                </MudAlert>
-            }
+                @* Which dictionaries the checker loads for this repository. Chosen per repository because
+                the choice is committed with the code: a library of German documentation and one of English
+                are checked against different words, and CI has to make the same choice the app did. *@
+                <MudStack Row="true" AlignItems="AlignItems.Start" Class="mt-2" Style="gap:8px;">
+                    <MudSelect T="string" Label="Language dictionaries" MultiSelection="true" Dense="true"
+                        Margin="Margin.Dense" Typo="Typo.body1" Variant="Variant.Outlined"
+                        SelectedValues="@SelectedSettings.SpellCheckLanguages"
+                        SelectedValuesChanged="OnRepoLanguagesChanged"
+                        HelperText="@LanguageHelperText"
+                        Style="max-width:400px;">
+                        @foreach (var option in LanguageOptions)
+                        {
+                            <MudSelectItem T="string" Value="@option.Code">@option.Label</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                        OnClick="ImportRepoLanguageDictionary" Style="height:40px;">Import Language</MudButton>
+                </MudStack>
 
-            @* The accepted spellings belong to the repository and are committed with it, which is what
-            lets the app and CI agree on them — so they are configured here rather than in the tool
-            settings, next to the rules that use them. *@
-            <SettingsRepositoryDictionary Repository="_selectedItem" />
+                @* A language named in the committed settings that this machine has no dictionary for is
+                otherwise silent: the words are judged by whatever languages are left, or by none at all. *@
+                @if (MissingLanguageWarning is { } warning)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" Style="max-width:640px;">
+                        @warning
+                    </MudAlert>
+                }
+
+                @* The accepted spellings belong to the repository and are committed with it, which is what
+                lets the app and CI agree on them — so they are configured here rather than in the tool
+                settings, next to the rules that use them. *@
+                <SettingsRepositoryDictionary Repository="_selectedItem" />
+            }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Style guidelines</MudText>
             <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small" Class="mt-2"
