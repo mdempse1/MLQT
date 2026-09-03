@@ -23,6 +23,8 @@ Modelon
 Dynasim
 Maplesoft
 Claytex
+Dassault
+Systemes
 Scilab
 ANTLR
 Grafcet
