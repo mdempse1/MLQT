@@ -4,10 +4,12 @@ using RevisionControl;
 namespace RevisionControl.Tests;
 
 /// <summary>
-/// <see cref="GitRevisionControlSystem.GetChangedLinesSince"/> — the line-level diff a PR review
-/// needs. A comment placed on a line that is not in the pull request's diff is rejected by the
-/// forge, and the rejection fails the whole review, so what this returns has to be exact rather
-/// than approximately right.
+/// What "changed since a revision" means: the line-level diff a PR review needs
+/// (<see cref="GitRevisionControlSystem.GetChangedLinesSince"/>) and the file-level one the ratchet
+/// runs off. Both are measured from the merge base, and both have to be exact rather than
+/// approximately right — a comment on a line outside the pull request's diff is rejected by the
+/// forge, and the rejection fails the whole review; a file wrongly reported as changed escalates
+/// somebody else's debt to this author.
 /// </summary>
 public class GitChangedLinesTests : IDisposable
 {
@@ -127,6 +129,40 @@ public class GitChangedLinesTests : IDisposable
 
         Assert.Contains(Path.GetFullPath(Path.Combine(repoPath, "mine.txt")), changed!.Keys);
         Assert.DoesNotContain(Path.GetFullPath(Path.Combine(repoPath, "shared.txt")), changed.Keys);
+    }
+
+    [Fact]
+    public void TheFileLevelDiffIsMeasuredFromTheMergeBaseToo()
+    {
+        // The ratchet's touched-debt escalation runs off GetChangedFilePathsSince. Diffing the named
+        // ref directly reported every file the base branch changed after the branch point, so the
+        // boy-scout rule asked this author to clean up somebody else's models.
+        var repoPath = NewRepo();
+        Commit(repoPath, "shared.txt", Lines("one", "two"), "base");
+
+        using (var repo = new Repository(repoPath))
+        {
+            repo.CreateBranch("feature");
+            Commands.Checkout(repo, "feature");
+        }
+        Commit(repoPath, "mine.txt", Lines("mine"), "my work");
+
+        string main;
+        using (var repo = new Repository(repoPath))
+        {
+            main = repo.Branches["master"] is not null ? "master" : "main";
+            Commands.Checkout(repo, repo.Branches[main]);
+            File.WriteAllText(Path.Combine(repoPath, "shared.txt"), Lines("one", "two", "theirs"));
+            Commands.Stage(repo, "shared.txt");
+            repo.Commit("their work", Who, Who);
+            Commands.Checkout(repo, repo.Branches["feature"]);
+        }
+
+        var changed = _git.GetChangedFilePathsSince(repoPath, main);
+
+        Assert.NotNull(changed);
+        Assert.Contains(Path.GetFullPath(Path.Combine(repoPath, "mine.txt")), changed!);
+        Assert.DoesNotContain(Path.GetFullPath(Path.Combine(repoPath, "shared.txt")), changed);
     }
 
     [Fact]

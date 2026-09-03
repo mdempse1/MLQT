@@ -423,7 +423,18 @@ Parse diagnostics are never captured in a baseline and are always classified **n
 ### Changed-model escalation (the "boy-scout rule")
 
 With `--changed-from <ref>`, existing debt in a model the change touched becomes **touched debt**.
-Works with Git and SVN. The three policies are:
+Works with Git and SVN.
+
+> **What "changed since" means.** On Git the comparison is against the **merge base** of the named
+> ref and `HEAD` — what you changed, not what the branch you named has done since you left it. Name
+> `main` on a branch that has been open a week and comparing against the ref itself would report
+> every model anybody merged to `main` in that week, escalating their debt to you. This needs real
+> history, so a shallow CI checkout will not do (`actions/checkout` needs `fetch-depth: 0`), and a
+> diff that cannot be taken stops the run with exit `2` rather than reporting that nothing changed.
+> SVN has no merge base to ask for, so there the comparison is against the revision itself and a
+> long-lived branch will see trunk's later changes in it.
+
+The three policies are:
 
 | Policy | Listed in the report? | Fails the gate? |
 |--------|----------------------|-----------------|
@@ -677,10 +688,10 @@ comment it will not take fails the *whole* review with a 422 — the other forty
 
 ### The diff is measured from the merge base
 
-Unlike `--changed-from`'s model-level escalation, which diffs the named ref directly, the review diff
-is taken from the **merge base** of that ref and `HEAD` — what a forge means by "the diff" of a pull
-request. Once the base branch moves ahead, a direct diff also reports every line someone else changed
-on it, and a comment on one of those is outside the pull request's diff: the 422 above.
+The review diff is taken from the **merge base** of the named ref and `HEAD` — what a forge means by
+"the diff" of a pull request — as `--changed-from`'s model-level escalation now is. Once the base
+branch moves ahead, comparing against the ref itself also reports every line someone else changed on
+it, and a comment on one of those is outside the pull request's diff: the 422 above.
 
 This needs real history. A shallow CI checkout has neither the base ref nor a common ancestor, so
 `actions/checkout` needs `fetch-depth: 0`. When the diff cannot be worked out the run stops with exit

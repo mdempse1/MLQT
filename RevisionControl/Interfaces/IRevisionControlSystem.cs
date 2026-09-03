@@ -116,8 +116,12 @@ public interface IRevisionControlSystem
     /// current working state (both committed and uncommitted changes). Deleted files are excluded
     /// (they can no longer be checked). Used to scope the "changed models" for the baseline
     /// ratchet's touched-debt escalation.
-    /// For Git: diffs the ref's tree against the working directory + index.
-    /// For SVN: <c>svn diff --summarize -r &lt;rev&gt;</c> against the working copy.
+    /// For Git: diffs the working directory + index against the <em>merge base</em> of that ref and
+    /// HEAD, so a base branch that has moved ahead does not report its own later commits as this
+    /// change's work — which would escalate somebody else's debt to this author.
+    /// For SVN: <c>svn diff --summarize -r &lt;rev&gt;</c> against the working copy. SVN has no merge
+    /// base to ask for; on a branch this reports what the branch changed *and* what trunk changed
+    /// after the branch point.
     /// </summary>
 /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="sinceRevision">The revision to diff against (branch, tag, hash, or number)</param>

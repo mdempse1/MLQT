@@ -534,14 +534,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         try
         {
             using var repo = new Repository(repositoryPath);
-            var since = ResolveToCommit(repo, sinceRevision);
-            if (since == null)
-                return null;   // an unresolvable ref is a failure, not an empty diff
+            var baseCommit = ResolveDiffBase(repo, sinceRevision);
+            if (baseCommit == null)
+                return null;
 
-            // Diff the ref's tree against the current working state (staged + unstaged), so we
-            // capture everything changed on this branch since the ref, committed or not.
+            // Against the current working state (staged + unstaged), so we capture everything this
+            // branch changed since the base, committed or not.
             var changes = repo.Diff.Compare<TreeChanges>(
-                since.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+                baseCommit.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
 
             var root = repo.Info.WorkingDirectory;
             foreach (var change in changes)
@@ -563,15 +563,36 @@ public class GitRevisionControlSystem : IRevisionControlSystem
     }
 
     /// <summary>
+    /// The commit to diff a working copy against when asked for what changed "since" a revision:
+    /// the <em>merge base</em> of that revision and HEAD, not the revision itself.
+    ///
+    /// <para>The distinction only shows up once the base branch moves ahead, and then it decides
+    /// who gets blamed. Diffing the named ref directly reports every file someone else changed on
+    /// that branch after this one left it, as though this change had touched them — so the ratchet
+    /// escalates their debt to this author, and a review comment lands on a line outside the pull
+    /// request's diff, which GitHub rejects along with the rest of the review. The merge base is
+    /// what a forge means by "the diff", and what a person means by "what I changed".</para>
+    ///
+    /// <para>Null when there is nothing to diff from: an unresolvable ref, an unborn branch, or two
+    /// histories with no common ancestor. All three are failures rather than empty diffs — see
+    /// <see cref="GetChangedFilePathsSince"/>.</para>
+    /// </summary>
+    private Commit? ResolveDiffBase(Repository repo, string sinceRevision)
+    {
+        var since = ResolveToCommit(repo, sinceRevision);
+        var head = repo.Head?.Tip;
+        if (since == null || head == null)
+            return null;
+
+        return repo.ObjectDatabase.FindMergeBase(since, head);
+    }
+
+    /// <summary>
     /// The lines this branch added or rewrote since <paramref name="sinceRevision"/>, keyed by
     /// absolute file path, with the line numbers counted in the working copy.
     ///
-    /// <para>Unlike <see cref="GetChangedFilePathsSince"/>, which diffs the named ref's tree
-    /// directly, this diffs from the <em>merge base</em> of that ref and HEAD. That is what a forge
-    /// means by "the diff" of a pull request, and the difference is not cosmetic: once the base
-    /// branch moves ahead, a direct diff also reports every line someone else changed on it, and a
-    /// review comment placed on one of those is rejected by GitHub — which fails the whole review,
-    /// not just that comment.</para>
+    /// <para>Measured from the merge base, like <see cref="GetChangedFilePathsSince"/> — see
+    /// <see cref="ResolveDiffBase"/> for why that matters.</para>
     ///
     /// <para>Deleted lines are absent by construction: they exist in the base, and there is nothing
     /// in the working copy to point at. An empty result means no line changed, which is different
@@ -585,19 +606,12 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         {
             using var repo = new Repository(repositoryPath);
 
-            var since = ResolveToCommit(repo, sinceRevision);
-            var head = repo.Head?.Tip;
-            if (since == null || head == null)
-                return null;
-
-            // An unborn branch, or a ref with no common history (an unrelated repository grafted in):
-            // there is no base to diff from, and inventing one would put comments anywhere.
-            var mergeBase = repo.ObjectDatabase.FindMergeBase(since, head);
-            if (mergeBase == null)
+            var baseCommit = ResolveDiffBase(repo, sinceRevision);
+            if (baseCommit == null)
                 return null;
 
             var patch = repo.Diff.Compare<Patch>(
-                mergeBase.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+                baseCommit.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
 
             var root = repo.Info.WorkingDirectory;
             var result = new Dictionary<string, IReadOnlySet<int>>(
