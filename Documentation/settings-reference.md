@@ -113,17 +113,23 @@ Each rule below sets its severity on a row of four buttons — **Off / Info / Wa
 
 Style guidelines are **passive** — they only report findings and never modify your code.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Every class must have a description** | Off | Checks that every Modelica class (model, package, block, etc.) has a description string. Descriptions appear after the class name, e.g., `model MyModel "A short description"`. Missing descriptions make libraries harder to browse and understand. |
-| **Every class must have documentation info** | Off | Checks that every class has an `annotation(Documentation(info="..."))` section. The info section typically contains HTML documentation explaining the purpose and usage of the class. |
-| **Every class must have documentation revisions** | Off | Checks that every class has an `annotation(Documentation(revisions="..."))` section. The revisions section documents the change history of the class. |
-| **Every class must have an icon** | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
-| **Every public parameter must have a description** | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
-| **Every public constant must have a description** | Off | Checks that every public `constant` declaration includes a description string. |
-| **Check that the naming convention is followed** | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When enabled, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
-| **Don't mix equation and algorithm sections** | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
-| **Do not mix connections and equations** | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
+The **Rule id** column is the identifier the rule reports under everywhere outside this app: in
+`RuleSeverities`, in a `__MLQT(suppress="…")` annotation, in the CLI's output and in a SARIF alert,
+whose "learn more" link comes to this page. Every id MLQT can report is on this page except the parse
+diagnostics, which are not settings — see
+[Parse diagnostics](cli.md#parse-diagnostics).
+
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Every class must have a description** | `MLQT.Doc.ClassDescription` | Off | Checks that every Modelica class (model, package, block, etc.) has a description string. Descriptions appear after the class name, e.g., `model MyModel "A short description"`. Missing descriptions make libraries harder to browse and understand. |
+| **Every class must have documentation info** | `MLQT.Doc.ClassDocumentationInfo` | Off | Checks that every class has an `annotation(Documentation(info="..."))` section. The info section typically contains HTML documentation explaining the purpose and usage of the class. |
+| **Every class must have documentation revisions** | `MLQT.Doc.ClassDocumentationRevisions` | Off | Checks that every class has an `annotation(Documentation(revisions="..."))` section. The revisions section documents the change history of the class. |
+| **Every class must have an icon** | `MLQT.Doc.ClassIcon` | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
+| **Every public parameter must have a description** | `MLQT.Doc.ParameterDescription` | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
+| **Every public constant must have a description** | `MLQT.Doc.ConstantDescription` | Off | Checks that every public `constant` declaration includes a description string. |
+| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When enabled, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
+| **Don't mix equation and algorithm sections** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
+| **Do not mix connections and equations** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
 
 ### Formatting Rules
 
@@ -132,14 +138,14 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 1. **As style checks** — When a formatting rule is enabled but "Apply formatting rules" is off, findings are reported as findings in the Code Review tab (just like style guidelines).
 2. **As automatic formatting** — When "Apply formatting rules" is on, MLQT will automatically restructure your code to comply with the enabled formatting rules whenever files are saved.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Apply formatting rules** | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
-| **One of each section** | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Imports first, extends at top** | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
-| **Components before classes** | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
-| **Initial equation/algorithm first** | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
-| **Initial equation/algorithm last** | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
+| **One of each section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
+| **Imports first, extends at top** | `MLQT.Style.ImportStatementsFirst`, `MLQT.Style.ExtendsAtTop` | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
+| **Components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
+| **Initial equation/algorithm first** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
+| **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". |
 
 #### Mutually Exclusive Settings
 
@@ -168,9 +174,9 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 
 ### Reference Validation
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Validate modelica:// model references** | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Validate modelica:// model references** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
 The reference validator handles several edge cases found in real Modelica libraries:
 
@@ -290,11 +296,11 @@ A per-finding waiver can be written into the source with a `__MLQT(suppress="<ru
 
 ### Spell Checking
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Spell check every description string** | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
-| **Spell check all documentation** | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
-| **Language dictionaries** | English (US), English (UK) | Multi-select dropdown, just below the two toggles, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Spell check every description string** | `MLQT.Spelling.Description` | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
+| **Spell check all documentation** | `MLQT.Spelling.Documentation` | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
+| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two toggles, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica and engineering terms (Modelica, Dymola, Jacobian, revolute, enthalpy, thyristor, linearization, etc.) is also included, in the spelling of the language you selected. The possessive of an accepted word is accepted too, so a name in the repository's word list does not come back as a mistake the moment it is written as "Stodola's".
 
