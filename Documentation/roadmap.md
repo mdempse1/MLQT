@@ -19,19 +19,23 @@ with those tools, and it stays optional.
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
 
-**The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
-[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below, and as of
-2026-09-03 every one of them is closed. Cross-platform (§1) was deliberately kept last of the two:
-it is the big task, and the point was to start it against a toolchain that is complete rather than
-one still being finished — which is now the case.
+**The CI/CD toolchain is feature-complete.** The gaps left inside phases 1–6 were collected in
+[Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below, and B1–B12 are
+all closed. Reviewing the branch end to end before merging it then opened **B13–B24**: four
+correctness defects, three pieces of duplication and structure, and the rest documentation that had
+drifted from the code. None of them blocks the merge — they are things the work exposed rather than
+things it broke — but B20 is sequenced into phase 7a rather than after it, because it is what makes
+7a expensive. Cross-platform (§1) was deliberately kept last of the two: it is the big task, and the
+point was to start it against a toolchain that is complete rather than one still being finished.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1–B4 shipped; B8 and B9 next.** B8–B11 were added on 2026-09-03 after asking how the
-SARIF work would actually be tested — it has never been checked against the 2.1.0 schema or against
-the one consumer it was written for. Before B4 started, the work since the list was written had been
-bug-driven or user-driven rather than planned:
+**Backlog: B1–B12 are shipped; B13–B24 were opened by the end-of-branch review on 2026-09-03**
+(see [Branch review](#branch-review-2026-09-03)). B8–B11 had been added earlier the same day after
+asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
+schema or against the one consumer it was written for. Before B4 started, the work since the list was
+written had been bug-driven or user-driven rather than planned:
 
 | Landed | What |
 |--------|------|
@@ -223,9 +227,11 @@ Building on existing spell-checking.
 
 ## Backlog — finishing phases 1–6 (current focus)
 
-Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, or an item a
-phase half-delivered. None of it is a new workstream, and none of it is cross-platform (§1) — the
-point of the list is a CI/CD toolchain with nothing outstanding before the big migration starts.
+Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
+half-delivered, or — for B13–B24 — a defect the end-of-branch review found in what was delivered.
+None of it is a new workstream, and none of it is cross-platform (§1). The point of the list is a
+CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
+feature-complete, and B13–B24 are what a careful read of the result turned up.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -239,21 +245,53 @@ point of the list is a CI/CD toolchain with nothing outstanding before the big m
 | B8 | **SARIF conformance is asserted, never validated** | Phase 4 risk, never discharged | ⭐⭐⭐ | S | **✅ shipped (2026-09-03)** — `build/validate-sarif.ps1` generates a report from the committed fixture at `TestFixtures/SarifSmoke/Libraries/Smoke`, checks the paths came out relative to the repository root (so `--sarif-base` is exercised by the same step), and runs `sarif validate`, failing on warnings as well as errors. Wired into `build-and-test.yml`, which also builds and tests `MLQT.Cli` — it did neither before. Validation immediately found two real defects, both fixed here: the driver carried no `informationUri` and no version (SARIF2005). |
 | B9 | **SARIF rule metadata is too thin to be useful in GitHub** | Phase 4 gap | ⭐⭐⭐ | S | **✅ shipped (2026-09-03)** — every rule now carries `shortDescription` (the title), `fullDescription` (what the rule wants), `help.text` and `help.markdown` (the alert body: title, description, rule id, category, and where to configure it), a `helpUri` to the settings reference, and its category as a tag. The smoke script checks each of these on the generated report, so an alert cannot go back to naming an id and saying nothing. (The driver's missing `version` and `informationUri` were part of this item and were fixed under B8, since the validator flags them.) |
 | B10 | **Accepted debt arrives in GitHub as an open alert** | Phase 4 decision, contradicted | ⭐⭐ | S | **✅ decided and shipped (2026-09-03)** — confirmed against GitHub's documented subset: it supports neither `baselineState` nor `suppressions`, and its own docs say a suppressed result still becomes an alert. So accepted debt is omitted from SARIF by default, with `--sarif-include-accepted` for a consumer that honours `baselineState`, and the run reports how many it left out. The findings are still tagged, and every other format is unchanged — this is a decision about one consumer's display, not about what MLQT found. The same commit warns at GitHub's 25,000-result rejection and 5,000-result display caps, which a library the size of MSL crosses silently. |
-| B12 | **A `replaceable` nested class is checked twice** | found while doing B5 | ⭐⭐ | M | **✅ shipped (2026-09-03)** — `StyleCheckRunner` reports only findings about the class it was given, dropping the parent's copy when the nested class is in the graph and so gets a check of its own. The walk itself is unchanged, so a check with no graph behind it (a snippet, a test) still sees such a class — which is what the guard was protecting and what three tests had encoded. The duplicate copy also carried a line counted from the parent's source while naming the nested class, so a report mapped it to a line belonging to something else; that goes with it. The same walk was corrupting the Unit coverage numbers (a parent whose own quantities were all united could read 0%), fixed alongside. On MSL: 5,328 findings became 5,176, which is exactly what the dashboard counts — the two agree to the finding now. |
 | B11 | **Nothing has ever been ingested by GitHub** | Phase 4 claim, unproven | ⭐⭐ | S | **✅ confirmed (2026-09-03)** — a 34-finding report from `ModelicaEditorTests` uploaded to `/code-scanning/sarifs` came back `processing_status: complete` with `errors: null`, and the alerts carry the rule metadata B9 added: `full_description`, a rendered `help` body, `help_uri` and the category tag. Two things it taught us, both now recorded in the CI guide: the upload needs a **public** repository (a private one answers 403 "Code scanning is not enabled" whatever the token's scopes, because it wants a Code Security licence) and the named `commit_sha` must be one GitHub has — an unpushed SHA is accepted and then displays nothing, which reads exactly like success. |
+| B12 | **A `replaceable` nested class is checked twice** | found while doing B5 | ⭐⭐ | M | **✅ shipped (2026-09-03)** — `StyleCheckRunner` reports only findings about the class it was given, dropping the parent's copy when the nested class is in the graph and so gets a check of its own. The walk itself is unchanged, so a check with no graph behind it (a snippet, a test) still sees such a class — which is what the guard was protecting and what three tests had encoded. The duplicate copy also carried a line counted from the parent's source while naming the nested class, so a report mapped it to a line belonging to something else; that goes with it. The same walk was corrupting the Unit coverage numbers (a parent whose own quantities were all united could read 0%), fixed alongside. On MSL: 5,328 findings became 5,176, which is exactly what the dashboard counts — the two agree to the finding now. |
+| B13 | **MCP hands an agent a file path and a line that do not match** | branch review 2026-09-03 | ⭐⭐⭐ | S | `list_findings` returns `FilePath` alongside `Line`, and the two are counted from different places. A style finding's line is class-relative (what `Finding.LineNumber` is, everywhere), so for a class nested in a `package.mo` it names a line in the wrong part of the file — exactly the defect B1 fixed for the CLI by mapping through `ClassLocation`, which MCP never adopted. Worse, the same list mixes bases: parse errors are added straight from `node.Definition.ParserErrors`, whose lines *are* file lines. So one array carries two conventions under one field name. The GUI is unaffected — it shows the class, which is what a class-relative line is for — but MCP's consumer is an agent that will edit the line it is given. `ClassLocation.ForGraph` already exists and the fix is to use it. |
+| B14 | **A failed VCS diff reads as "nothing changed"** | branch review 2026-09-03 | ⭐⭐⭐ | S | `GetChangedFilePathsSince` logs and returns an empty list on any exception, in both the Git and SVN implementations, and `ChangedModelResolver` cannot tell that from a genuinely clean diff. So a diff that breaks in CI silently escalates nothing: touched debt is not reported, `fixed` entries are not credited, and the build passes looking exactly like a build with nothing to say. The ref is resolved first, which catches the common typo, but nothing after that. `ChangedLineResolver` (B7) returns null on the same failures and the CLI stops — the two paths disagree on whether a broken diff is an error, and the older one has it backwards. |
+| B15 | **`--changed-from` compares against the ref, not the merge base** | branch review 2026-09-03 | ⭐⭐ | S | The ratchet's touched-debt escalation diffs the named ref's tree directly against the working copy. Once the base branch moves ahead — which it does, continuously, on any shared branch — that also reports every model somebody else changed on the base, and their debt is escalated as if this change had touched it. The boy-scout rule then asks the wrong author to fix the wrong code, and a long-lived branch gets steadily noisier for reasons unrelated to itself. B7 needed the correct answer for review comments and added `GetChangedLinesSince`, which diffs from the merge base; this is the same correction applied to the file-level question. Deliberately not changed as part of B7: it moves a shipped gate's behaviour, so it wants its own change and its own note in the CI guide. |
+| B16 | **A SARIF alert's "learn more" link lands on a page that does not mention the rule** | branch review 2026-09-03 | ⭐⭐ | S | B9 gave every rule a `helpUri` pointing at `settings-reference.md`, on the reasoning that a page listing every rule id beats a per-rule anchor that may not exist. The page does not list every rule id: it carries 11 of 31. The Wave-1 analyses are there by id; the doc, style, naming and spelling rules are described only by their GUI checkbox label, and their ids live in `ci-quality-gate.md`'s settings-to-rule table instead. So the alert most people will see first — a missing description — links to a page that never says `MLQT.Doc.ClassDescription`. Either put the ids on the settings page or point `helpUri` at the table that has them. |
+| B17 | **A finding's file path is relative or absolute depending on how the library was named** | branch review 2026-09-03 | ⭐⭐ | S | `ClassLocation.FilePath` is whatever `FileNode.FilePath` holds, which follows the library path the run was given: `mlqt check Lib` yields `Lib\package.mo`, `mlqt check C:\...\Lib` yields an absolute path. Every consumer that compares paths has to know this. SARIF survives it by accident — `Path.GetRelativePath` resolves both sides against the working directory — but B7's changed-line lookup is a dictionary keyed absolutely, and it silently matched nothing until the paths were normalised at the point of use. Phase 3 flagged exactly this ("path normalisation between VCS output and graph `FileNode.FilePath`") and centralised it in `ChangedModelResolver`; the graph side was never normalised. Do it once, when the location map is built. |
+| B18 | **The markdown summary is written twice** | branch review 2026-09-03 | ⭐ | S | `MarkdownFindingFormatter` and `ReviewFindingFormatter` (B7) carry the same findings table, the same fixed-entries list and a byte-identical `Cell` escaper. They will drift: a column added to one is a column missing from the other, and the pipe-escaping bug fixed in one stays in the other. One shared markdown helper, two callers. |
+| B19 | **Every CLI test file builds its own fixture** | branch review 2026-09-03 | ⭐⭐ | M | Twelve of the sixteen files in `MLQT.Cli.Tests` define their own `TempLibrary`/`TempRepo`, and eleven their own `Run(params string[])`. They have already diverged — some force-clear read-only attributes before deleting, some do not; some seed settings, some do not — so a fixture fixed in one place stays broken in eleven others, and a new test file starts by copying whichever one was nearest. One shared fixture, with the repository-shaped variant B6 and B7 need as an option on it. |
+| B20 | **The two largest pages hold the logic phase 7a has to test** | branch review 2026-09-03 | ⭐⭐⭐ | L | `CodeReview.razor` is 2,252 lines and `MetricsDashboard.razor` 990, both with analysis, VCS and persistence logic inline — against this repository's own instruction to keep business logic in services, not Razor components. It has not hurt yet because nothing tests them. Phase 7a is bUnit component tests plus a `/selftest` conformance route, and both are far harder against a component of that size: the logic can only be reached by rendering the whole page and driving the UI. This is the cheapest it will ever be to extract — before the tests are written against the current shape, and before the Photino port moves the same code again. Sequence it into 7a, not after. |
+| B21 | **CI has never seen this work** | branch review 2026-09-03 | ⭐⭐ | S | `build-and-test.yml` triggers on pushes to `main`/`develop` and pull requests targeting `main`. `ci-cd-integration` is neither, so its 205 commits have only ever been built on one developer's machine; the first CI run of the whole CI/CD toolchain will be the pull request that merges it. Separately, `DymolaInterface.Tests` (207 tests) and `OpenModelicaInterface.Tests` (45) are neither built nor run by the workflow — they pass locally, so a compile break in either would reach `main` unnoticed. Add the working branch to the push trigger, or open the PR early and let it build. |
+| B22 | **The phase 6 note describes wiring that was never built** | branch review 2026-09-03 | ⭐ | S | `design-phase6-analyses-dashboard.md` specifies a deferred-aware metrics step in `MainLayout.RunStartUpAsync`, with `AppState.HasMetricsComputed`, `OnRunDeferredMetrics` and `RunDeferredMetricsAsync()`. None of those exist: `MetricsDashboard.razor` computes on open instead, which is arguably the better answer — nobody pays for metrics they do not look at. The code is fine; the note is wrong, and it is the note a reader trusts when they come back to this in six months. Correct it to what shipped and say why. |
+| B23 | **Two flags are implemented and absent from the reference** | branch review 2026-09-03 | ⭐ | S | `cli.md` calls itself the full option reference. Its table is missing `--no-suppress` (documented only in `ci-quality-gate.md`) and `--version` (documented nowhere, and absent from `--help`'s own usage text as well, though the command works). |
+| B24 | **The review summary counts comments and calls them findings** | branch review 2026-09-03 | ⭐ | S | `ReviewFindingFormatter` says "N findings are commented on the diff below" where N is the number of comments. Two findings on one line are deliberately merged into one comment (B7), so the sentence under-reports itself whenever that happens — in the one place a reader is counting on the two numbers agreeing. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
 turns the metrics work into a gate; B6 and B7 last, being conveniences rather than gaps.
 
-**The backlog is complete: B1–B12 are all done (2026-09-03).** B8–B11 came out of asking how the
-SARIF work would be tested, and they were what actually closed phase 4: until then the output had
-never been validated, and the one consumer it was written for rendered almost none of what it
-carried. B11 was run once B8–B10 landed, as confirmation rather than development — and what it found
-(code scanning needs a public repository or a paid licence) is why B7 matters more than "convenience"
-suggested: for a private repository the pull-request review is the only route findings have into a
-review. **B12** came out of B5 the same way: a correctness bug that inflated every rule's count, so
-it went before the two conveniences (B6, B7), which closed the list.
+**B1–B12 are all done (2026-09-03).** B8–B11 came out of asking how the SARIF work would be tested,
+and they were what actually closed phase 4: until then the output had never been validated, and the
+one consumer it was written for rendered almost none of what it carried. B11 was run once B8–B10
+landed, as confirmation rather than development — and what it found (code scanning needs a public
+repository or a paid licence) is why B7 matters more than "convenience" suggested: for a private
+repository the pull-request review is the only route findings have into a review. **B12** came out of
+B5 the same way: a correctness bug that inflated every rule's count, so it went before the two
+conveniences (B6, B7), which closed the original list.
+
+### Branch review (2026-09-03)
+
+**B13–B24 came out of reviewing `ci-cd-integration` end to end before merging it** — 205 commits,
+361 files. They are ordered by what they cost rather than by what they are: **B13–B15 first** (a
+wrong line handed to an agent, a broken diff that reads as a clean one, and a diff that blames the
+wrong author), then **B16–B17**, then the duplication and documentation items, with **B20 sequenced
+into phase 7a** rather than after it because it is what makes 7a expensive.
+
+Four of them are things the branch *exposed* rather than things it broke. B13 is B1 unapplied to
+MCP; B15 is the correction B7 needed for review comments, not yet applied to the ratchet; B14 and
+B17 are both older than this branch. Two — B18 and B24 — are B7's own, found the same day it landed.
+
+What the review covered, so the gaps in it are on the record too: every CLI flag against `cli.md` and
+`--help`; every rule id and every setting against `settings-reference.md`; the phase 1–6 design notes
+against the code that claims to implement them; who uses the shared check primitives; the CI
+workflow's triggers and steps; and `MLQT.Cli` line coverage (94.5%, lowest class `HookCommand` at
+82.2%, all above the 80% bar). What it did **not** do is read all 44,000 changed lines — the reading
+was targeted at the CI/CD surface this branch is about, the seams between GUI, CLI and MCP, and the
+places the design notes said a risk lived.
 
 ---
 
