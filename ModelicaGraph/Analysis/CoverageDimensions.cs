@@ -34,9 +34,11 @@ public static class CoverageDimensions
         (CoverageDimension.ConnectionsNotMixed, "Connections not mixed"),
     ];
 
-    /// <summary>The rule whose severity decides whether a dimension is tracked. ExtendsAtTop has no
-    /// toggle of its own — the style checker runs it alongside ImportStatementsFirst — so it follows
-    /// the same rule here rather than one that is always Off.</summary>
+    /// <summary>The rule whose severity decides whether a dimension is tracked. Each dimension names
+    /// its own rule, including the ones with no setting of their own: <c>ExtendsAtTop</c> is governed
+    /// by <c>ImportStatementsFirst</c>, and <c>StyleCheckingSettings.SeverityFor</c> resolves that
+    /// (see <see cref="RuleDefinition.GovernedBy"/>). Naming the governor here instead would state the
+    /// same coupling a second time, in a file that would not be edited when it changed.</summary>
     private static string RuleFor(CoverageDimension dimension) => dimension switch
     {
         CoverageDimension.ClassDescription => RuleIds.ClassDescription,
@@ -47,7 +49,7 @@ public static class CoverageDimensions
         CoverageDimension.ConstantDescription => RuleIds.ConstantDescription,
         CoverageDimension.Unit => RuleIds.MissingUnit,
         CoverageDimension.ImportsFirst => RuleIds.ImportStatementsFirst,
-        CoverageDimension.ExtendsAtTop => RuleIds.ImportStatementsFirst,
+        CoverageDimension.ExtendsAtTop => RuleIds.ExtendsAtTop,
         CoverageDimension.OneOfEachSection => RuleIds.OneOfEachSection,
         CoverageDimension.InitialSectionsFirst => RuleIds.InitialEqAlgoFirst,
         CoverageDimension.InitialSectionsLast => RuleIds.InitialEqAlgoLast,

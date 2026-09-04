@@ -34,7 +34,7 @@ complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: everything is shipped except B20, which belongs to phase 7a.**
+**Backlog: everything is shipped except B20, which belongs to phase 7a, and B36, opened by the work on B28.**
 B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Branch review](#branch-review-2026-09-03)) and B26–B35 by the second read on 2026-09-04 (see
 [Second review](#second-review-2026-09-04)). B8–B11 had been added earlier the same day after
@@ -276,6 +276,7 @@ B26–B35 what the second one did.
 | B33 | **The pre-commit hook checks the working tree, not what is being committed** | second review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — documented rather than changed, in `cli.md` and in the generated hook's own header. A partial commit is judged on the unstaged remainder too, and a fix made but not staged will not block the commit that still contains the problem; both are now stated, with why it is a trade (checking the index means materialising it, which taxes every commit for a case that is rare in Modelica work) rather than an oversight. |
 | B34 | **The Coverage dashboard has no user documentation** | second review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — `metrics-dashboard.md`: what each of the fourteen dimensions counts, the three reasons one is not listed, why the finding count moves when the percentages barely do, and why coverage and the finding list disagree about a waived finding. Writing it turned up that the tab is called Metrics in the app and “the Coverage dashboard” in the documentation, the CLI help and a dozen comments; it is Metrics everywhere now. |
 | B35 | **CLAUDE.md does not mention the roadmap or any design note** | second review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — CLAUDE.md has a Planning and Design Notes section naming `roadmap.md` and all eight design notes, and says to read the roadmap before starting anything substantial. Its maintenance rules now ask for the backlog and the phase notes to be kept up: an item finished but still open reads as outstanding work, and a note describing something planned and not built is worse than no note. `IBaselineStatusService` moves to `MLQT.Services/Interfaces/`, and the instruction says “always there, even when the implementation lives in a subfolder” — which is the case that drifted. |
+| B36 | **Switching a rule off in the GUI forgets the severity it was set to** | found while doing B28 | ⭐⭐ | S | `SetRuleEnabled(false)` removes the rule's entry outright, so an explicit severity is not remembered: switching it back on re-seeds the catalog default and a repository's `"Error"` has become `"Warning"`, with the dialog looking exactly as it did before and nothing written down about it. It reaches only the rules the settings dialog shows as an on/off switch rather than as an Off/Info/Warning/Error picker — the four formatting rules, spelling and naming — but those are among the likeliest to have been raised to Error for a CI gate, and B28 widened the blast radius, since `MLQT.Style.ExtendsAtTop` now follows `ImportStatementsFirst` down as well. Current behaviour is pinned by `GovernedRuleTests.SwitchingOffAndOnAgainCurrentlyLosesAnExplicitSeverity`, which names this item and should assert `Error` once it is fixed. Two ways out, and it is a UI decision rather than a mechanical one: give those rules the same four-button picker as every other rule (consistent, but the formatting section mixes rule severities with formatter-only switches like **Components before classes**, which have no rule id and stay checkboxes), or keep the switch and remember the severity across an off/on within the dialog. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -321,7 +322,7 @@ places the design notes said a risk lived.
 
 **B26–B35 came out of a second read of the branch**, asked for after B13–B25 closed: phases 1–6
 against the roadmap and the design notes, then the code for duplication, missing tests, logic
-implemented twice, and the documentation against what shipped. **All ten are now closed.**
+implemented twice, and the documentation against what shipped. **All ten are now closed**, and fixing B28 opened one more: **B36**, where the GUI's on/off switches forget an explicit severity.
 
 **Phases 1–6 verify as delivered.** Every claim in the six implementation notes has code behind it,
 the whole solution builds, and all 4,714 tests pass (ModelicaParser 1835, Services 747, ModelicaGraph

@@ -1,3 +1,5 @@
+using ModelicaGraph.Analysis;
+using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
 using Xunit;
@@ -127,5 +129,73 @@ public class GovernedRuleTests
             Assert.True(RuleCatalog.IsConfigurable(governor),
                 $"{id} is governed by {governor}, which has no setting of its own");
         }
+    }
+
+    /// <summary>
+    /// The settings dialog offers the formatting rules as plain on/off switches rather than the
+    /// four-button severity control the other rules get, because they interlock and drive the
+    /// formatter. Switching one on gives it the catalog default, which for every built-in style rule
+    /// is Warning — and now gives the same to the rule it governs.
+    /// </summary>
+    [Fact]
+    public void TheGuiSwitchEnablesAtTheCatalogDefault()
+    {
+        var settings = new StyleCheckingSettings();
+
+        settings.ImportStatementsFirst = true;   // what the MudSwitch binds to
+
+        Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ImportStatementsFirst));
+        Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ExtendsAtTop));
+    }
+
+    [Fact]
+    public void SwitchingOnDoesNotOverwriteASeverityAlreadySet()
+    {
+        // A repository that sets Error in .mlqt/settings.json must not have it demoted just because
+        // the dialog rendered the switch and wrote back the value it read.
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleSeverity(RuleIds.ImportStatementsFirst, RuleSeverity.Error);
+
+        settings.ImportStatementsFirst = true;
+
+        Assert.Equal(RuleSeverity.Error, settings.SeverityFor(RuleIds.ImportStatementsFirst));
+        Assert.Equal(RuleSeverity.Error, settings.SeverityFor(RuleIds.ExtendsAtTop));
+    }
+
+    /// <summary>
+    /// KNOWN DEFECT, tracked as B36 — this test records what happens today, not what should.
+    ///
+    /// <para>Switching a rule off removes its entry outright, so an explicit <c>Error</c> is not
+    /// remembered: switching it back on re-seeds the catalog default and the repository's severity is
+    /// gone, with the dialog looking exactly as it did before. It only bites the rules the dialog
+    /// shows as a switch rather than as a severity picker, but those are the ones a CI gate is most
+    /// likely to have raised to Error. When B36 is fixed this test should assert Error on both lines.</para>
+    /// </summary>
+    [Fact]
+    public void SwitchingOffAndOnAgainCurrentlyLosesAnExplicitSeverity()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleSeverity(RuleIds.ImportStatementsFirst, RuleSeverity.Error);
+
+        settings.ImportStatementsFirst = false;
+        settings.ImportStatementsFirst = true;
+
+        Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ImportStatementsFirst));
+        Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ExtendsAtTop));
+    }
+
+    /// <summary>
+    /// The coverage dimensions ask about their own rule, not about its governor. Naming the governor
+    /// there would state the same coupling a second time, in a file nobody would edit when it changed.
+    /// </summary>
+    [Fact]
+    public void TheExtendsCoverageDimensionFollowsTheSameSwitch()
+    {
+        var settings = new StyleCheckingSettings();
+        Assert.False(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.ExtendsAtTop));
+
+        settings.ImportStatementsFirst = true;
+
+        Assert.True(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.ExtendsAtTop));
     }
 }
