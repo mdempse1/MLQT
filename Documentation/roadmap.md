@@ -78,7 +78,10 @@ reviews existed only in the review transcripts, and are now four tests that run 
 thirteenth read closed **B98–B99**, both documentation, and both found by turning the review on its
 own output: what the twelve commits had made the docs wrong about (almost nothing — the docs had been
 right and the code wrong), and what twelve reviews had taken on trust (**B99** — the encrypted-library
-accuracy figures are not, and never were, "checked on every build").
+accuracy figures are not, and never were, "checked on every build"). **A fourteenth read added
+nothing** — it read the last unreviewed subsystem, the Dymola help parser, and found nothing to
+report; every sweep came back clean; and the backlog checks out at 99 items with one open. The loop
+stops there.
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
@@ -103,7 +106,8 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Tenth review](#tenth-review-2026-09-04)), B93–B94 by the eleventh (see
 [Eleventh review](#eleventh-review-2026-09-04)), B95–B97 by the twelfth (see
 [Twelfth review](#twelfth-review-2026-09-04)) and B98–B99 by the thirteenth (see
-[Thirteenth review](#thirteenth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Thirteenth review](#thirteenth-review-2026-09-04)). A
+[fourteenth read](#fourteenth-review-2026-09-04--no-new-items) added nothing. B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -1135,6 +1139,57 @@ review process rather than on the code.
 did not exercise the desktop app; and it did not read the Dymola help parsing, which is covered on
 every build by 82 fixture tests over the shapes it handles, and compared against real vendor output
 only on a machine with Dymola installed.
+
+
+### Fourteenth review (2026-09-04) — **no new items**
+
+**A fourteenth read added nothing to the backlog.** That is the result, and it is what the previous
+thirteen were working towards; it is recorded here so the next person knows the loop terminated rather
+than being abandoned.
+
+**Phases 1–6 verify as delivered.** Release build **0 warnings**; all six gated suites pass —
+**4,715 tests** (ModelicaParser 1871, ModelicaGraph 819, Services 800, RevisionControl 651, McpServer
+291, CLI 283); the coverage gate passes at **86.9%** with 148 classes gated, 14 accepted entries and a
+reason on every one; `build/validate-sarif.ps1` validates a generated report against the SARIF 2.1.0
+schema. The backlog itself checks out: 99 items, no gaps, no duplicates, one open — **B20**, which
+belongs to phase 7a.
+
+**What this read did, given the previous thirteen had already done the obvious things.**
+
+*Read the last unread subsystem.* Every section from the fifth onwards closed by saying it had not
+read the Dymola help parsing. **B99** removed the excuse — the accuracy figures are not checked on
+every build — so this read `HelpHtml` and `DymolaHelpParser` end to end, 675 lines. **Nothing to
+report.** Every non-obvious decision carries the reason it was made: why the scanning is tag-oriented
+and not line-oriented (a 2024x generator regression that emits junk where newlines belong), why a
+class heading is identified by its anchor rather than by being an `<h2>` (vendors put their own
+headings inside `Documentation(info=)`), why an icon is matched on `alt` rather than on file name (the
+generator deduplicates icons behind mangled names), and why "extends nothing" and "inheritance not
+known" are kept as different answers. The two things a reader might question — a class attribute
+appearing inside author-written documentation HTML, and a description ending in a bracket being read
+as a unit — are both bounded by evidence the design note records: 37,686 classes across 53 libraries,
+0 invented, 2 descriptions in 5129 differing.
+
+*Re-ran every sweep.* All clean. Four of them are now tests (**B97**), so they stay that way without
+anyone remembering.
+
+*Checked the artefact.* The backlog table has no numbering gaps or duplicates, and exactly one item
+without a shipped mark.
+
+**What thirteen reviews cost and produced**, for whoever decides how many to run next time. Eighty-six
+items opened after the branch was first thought finished (B13–B99), of which four would have destroyed
+or corrupted a user's data — the MCP tools overwriting an encrypted `package.moe` (**B85**), the
+incremental formatter reordering classes that had opted out (**B65**), the accepted-spellings list
+mangled on every edit (**B89**), and `set_style_settings` switching off every rule an agent did not
+name (**B37**). None of the four was found by the review that shipped the feature. The yield per read
+fell from thirteen items to two and then to none, and the *method* changed on the way: the early reads
+found things by reading code, the late ones by taking a sentence the project states about itself and
+checking every case it claims to cover — and then by writing that check down as a test.
+
+**The gaps that remain, stated so they are on the record rather than implied:** no read has covered all
+47,000 changed lines; none has exercised the desktop application as an application, so every GUI fix
+in this series is verified by tests, sweeps and the build rather than by using it; and the
+encrypted-library accuracy figures are re-measured only on a machine with Dymola installed. The first
+two are what **phase 7a** exists to change.
 
 
 ---
