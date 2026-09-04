@@ -1,0 +1,89 @@
+﻿{
+    "_comment":  "Classes below the coverage bar, accepted as existing debt. The build fails if one goes further backwards, or if a class arrives below the bar and is not listed here. Regenerate with build/check-coverage.ps1 -UpdateBaseline and review the diff.",
+    "minimumLines":  25,
+    "bars":  {
+                 "RevisionControl":  80,
+                 "mlqt":  80,
+                 "ModelicaGraph":  80,
+                 "MLQT.McpServer":  80,
+                 "MLQT.Services":  80,
+                 "ModelicaParser":  95
+             },
+    "classes":  {
+                    "MLQT.McpServer::MLQT.McpServer.Helpers.ClassBodyEditor":  {
+                                                                                   "coverage":  78.9,
+                                                                                   "lines":  57,
+                                                                                   "bar":  80
+                                                                               },
+                    "MLQT.McpServer::MLQT.McpServer.Helpers.EntityResolver":  {
+                                                                                  "coverage":  79.4,
+                                                                                  "lines":  34,
+                                                                                  "bar":  80
+                                                                              },
+                    "MLQT.McpServer::MLQT.McpServer.Services.ToolUsageLogger":  {
+                                                                                    "coverage":  65.5,
+                                                                                    "lines":  61,
+                                                                                    "bar":  80
+                                                                                },
+                    "MLQT.McpServer::MLQT.McpServer.Tools.FormattingTools":  {
+                                                                                 "coverage":  78.4,
+                                                                                 "lines":  88,
+                                                                                 "bar":  80
+                                                                             },
+                    "MLQT.McpServer::MLQT.McpServer.Tools.SuppressionTools":  {
+                                                                                  "coverage":  73.6,
+                                                                                  "lines":  76,
+                                                                                  "bar":  80
+                                                                              },
+                    "MLQT.McpServer::Program":  {
+                                                    "coverage":  0,
+                                                    "lines":  52,
+                                                    "bar":  80
+                                                },
+                    "MLQT.Services::MLQT.Services.DymolaCheckingService":  {
+                                                                               "coverage":  33.6,
+                                                                               "lines":  184,
+                                                                               "bar":  80
+                                                                           },
+                    "MLQT.Services::MLQT.Services.OpenModelicaCheckingService":  {
+                                                                                     "coverage":  33.5,
+                                                                                     "lines":  185,
+                                                                                     "bar":  80
+                                                                                 },
+                    "ModelicaParser::ModelicaParser.ExternalDocs.DymolaHelpReader":  {
+                                                                                         "coverage":  87.8,
+                                                                                         "lines":  74,
+                                                                                         "bar":  95
+                                                                                     },
+                    "ModelicaParser::ModelicaParser.Helpers.ModelicaFileEncoding":  {
+                                                                                        "coverage":  94.1,
+                                                                                        "lines":  68,
+                                                                                        "bar":  95
+                                                                                    },
+                    "ModelicaParser::ModelicaParser.Helpers.ModelicaParserHelper":  {
+                                                                                        "coverage":  85.7,
+                                                                                        "lines":  91,
+                                                                                        "bar":  95
+                                                                                    },
+                    "ModelicaParser::ModelicaParser.StyleRules.MlqtSuppressionWriter":  {
+                                                                                            "coverage":  94.3,
+                                                                                            "lines":  123,
+                                                                                            "bar":  95
+                                                                                        },
+                    "RevisionControl::RevisionControl.SvnCli":  {
+                                                                    "coverage":  0,
+                                                                    "lines":  66,
+                                                                    "bar":  80
+                                                                },
+                    "RevisionControl::RevisionControl.SvnRevisionControlSystem":  {
+                                                                                      "coverage":  0.9,
+                                                                                      "lines":  819,
+                                                                                      "bar":  80
+                                                                                  },
+                    "RevisionControl::RevisionControl.SvnToolLocator":  {
+                                                                            "coverage":  0,
+                                                                            "lines":  32,
+                                                                            "bar":  80
+                                                                        }
+                }
+}

@@ -392,3 +392,9 @@ MLQT/svn-tools/win-x64/
 # generated, machine-specific and large — one full run over a sizeable library is tens of megabytes.
 /cli.json
 /mlqt-issues-*.json
+
+# Coverage output from build/check-coverage.ps1. The baseline it gates against is the one coverage
+# file that IS committed - it is a reviewable record of accepted debt, like .mlqt/baseline.json.
+CoverageResults/
+CoverageReport/
+!build/coverage-baseline.json

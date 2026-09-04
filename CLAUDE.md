@@ -329,3 +329,25 @@ a consumer can resolve. Run on every push by `build-and-test.yml`; run it locall
 ## Test Cases
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.
+
+**CI enforces this** — `build/check-coverage.ps1` runs all six suites, merges their reports, and fails
+the build per class. Run it locally the same way:
+
+```powershell
+dotnet build MLQT.slnx -c Release
+./build/check-coverage.ps1                 # gate
+./build/check-coverage.ps1 -SkipTests      # re-judge coverage already collected
+./build/check-coverage.ps1 -UpdateBaseline # re-record accepted debt; review the diff
+```
+
+It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its users one: some debt
+predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need a working copy
+and a server no runner has. `build/coverage-baseline.json` records the classes currently below their
+bar, and the build fails when one goes further backwards, when a class that met the bar stops meeting
+it, or when a new class arrives below it. That file is a debt ledger: adding to it needs the same
+justification as any other accepted debt.
+
+Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
+lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
+assert nothing), as is source-generated code. `MLQT.Shared` has no tests at all until phase 7a builds
+the harness — see `Documentation/design-phase7-gui-tests.md`.

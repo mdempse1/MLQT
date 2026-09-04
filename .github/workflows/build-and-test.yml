@@ -143,29 +143,31 @@ jobs:
       - name: Install MAUI workload
         run: dotnet workload install maui-windows
 
+      # Every suite that contributes coverage, not the three this job used to build. MLQT.Cli,
+      # RevisionControl and MLQT.McpServer were measured nowhere, so the per-class bar CLAUDE.md sets
+      # was unverified for exactly the code the CI/CD work added.
       - name: Restore and build
         run: |
           dotnet restore MLQT.slnx
           dotnet build ModelicaParser.Tests -c Release --no-restore
           dotnet build ModelicaGraph.Tests -c Release --no-restore
           dotnet build MLQT.Services.Tests -c Release --no-restore
-
-      - name: Run tests with coverage
-        run: |
-          dotnet test ModelicaParser.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/parser
-          dotnet test ModelicaGraph.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/graph
-          dotnet test MLQT.Services.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/services
+          dotnet build MLQT.Cli.Tests -c Release --no-restore
+          dotnet build MLQT.McpServer.Tests -c Release --no-restore
+          dotnet build RevisionControl.Tests -c Release --no-restore
 
       - name: Install ReportGenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool
 
-      - name: Generate coverage report
-        run: |
-          reportgenerator -reports:"CoverageResults/**/coverage.cobertura.xml" -targetdir:CoverageReport -reporttypes:"TextSummary;HtmlSummary" -assemblyfilters:"-DymolaInterface;-OpenModelicaInterface"
-          Get-Content CoverageReport\Summary.txt
+      # Runs the suites, merges the six reports, and fails when a class drops below what
+      # build/coverage-baseline.json records - see the script header for why it is a ratchet rather
+      # than a flat threshold.
+      - name: Run tests with coverage and gate on it
+        run: pwsh -File build/check-coverage.ps1
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v6
+        if: always()
         with:
           name: coverage-report
           path: CoverageReport/
