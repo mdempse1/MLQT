@@ -779,7 +779,7 @@
                     await dependencyTask;
                     // Record it: the deferred pipeline was the only thing setting this, so on a library
                     // below the defer threshold the app behaved all session as if dependencies had never
-                    // been analysed — which also kept the Coverage dashboard from ever considering the
+                    // been analysed — which also kept the Metrics tab from ever considering the
                     // analysis complete.
                     NavState.DependencyAnalysisCompleted();
                     LogProcessEnd("MainLayout", "Analyzing dependencies");

@@ -471,7 +471,7 @@ public class StyleCheckingService : IStyleCheckingService
 
         // Coverage for everything the workers will not reach: a repository with no rules enabled has
         // no worker at all, and a library loaded for reference belongs to no repository. Those classes
-        // are still on the Coverage tab, and measuring them there means the user waits for it — the
+        // are still on the Metrics tab, and measuring them there means the user waits for it — the
         // point of measuring during checking is that this step already runs for minutes.
         //
         // Queued rather than started. Run alongside the workers it would measure the classes they are
@@ -492,7 +492,7 @@ public class StyleCheckingService : IStyleCheckingService
         else
         {
             // No worker to wait for, but the sweep still has to happen: nothing has rules, and those
-            // classes are on the Coverage tab all the same.
+            // classes are on the Metrics tab all the same.
             BeginRun();
             _ = Task.Run(ProcessQueueAsync);
         }
@@ -503,7 +503,7 @@ public class StyleCheckingService : IStyleCheckingService
     /// dialog covers it. Returns null when there is nothing to do — every class already measured, which
     /// is the state after a run that checked them all.
     ///
-    /// <para>It reads the same facts the checked classes carry, so what the Coverage tab shows does not
+    /// <para>It reads the same facts the checked classes carry, so what the Metrics tab shows does not
     /// depend on which classes happened to have rules enabled.</para>
     /// </summary>
     private void RunCoverageSweep()
@@ -516,7 +516,7 @@ public class StyleCheckingService : IStyleCheckingService
         var referenceOnly = ReferenceOnlyScope.ModelIds(_libraryDataService, _repositoryService);
 
         // What each class is measured for is its repository's business: the dimensions it tracks are
-        // the ones the Coverage tab will show for it, and every other one is a tree walk for a row
+        // the ones the Metrics tab will show for it, and every other one is a tree walk for a row
         // nobody asked for. A class belonging to no repository is checked by no rules at all, so it
         // is not measured either — the same reason its findings never appear.
         var masks = new Dictionary<string, CoverageDimension>(StringComparer.Ordinal);

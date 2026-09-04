@@ -506,7 +506,8 @@ version-1 file written before that still loads.
 ## Tracking the trend from CI
 
 `mlqt check --metrics` appends a point to `<root>/.mlqt/metrics-history.json` — the file the desktop
-app's **Coverage** dashboard plots. Add it to the CI job and the burndown builds itself, one point per
+app's **Metrics** tab plots ([metrics-dashboard.md](metrics-dashboard.md)). Add it to the CI job and
+the burndown builds itself, one point per
 commit that actually moved the numbers, each stamped with its revision and branch.
 
 ```bash

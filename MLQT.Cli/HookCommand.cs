@@ -212,6 +212,10 @@ internal static class HookCommand
             #
             # Blocks a commit that would introduce findings at or above '{options.FailOn.ToString().ToLowerInvariant()}'.
             # Re-run `mlqt hook install` to change the options; `git commit --no-verify` skips it.
+            #
+            # Note: whether to run is decided from the staged change, but the check itself reads the
+            # library as it stands on disk - so a partial commit is judged on the unstaged remainder
+            # too. See the `hook` section of Documentation/cli.md.
 
             # Nothing Modelica in this commit: nothing for the checker to say.
             if ! git diff --cached --name-only --diff-filter=ACM | grep -q '\.mo$'; then

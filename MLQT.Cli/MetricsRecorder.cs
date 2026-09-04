@@ -11,7 +11,7 @@ namespace MLQT.Cli;
 
 /// <summary>
 /// Records a coverage snapshot into the same <c>.mlqt/metrics-history.json</c> the desktop app's
-/// Coverage dashboard reads, so a CI run per commit builds the burndown automatically instead of
+/// Metrics tab reads, so a CI run per commit builds the burndown automatically instead of
 /// relying on someone remembering to press "Save snapshot".
 /// </summary>
 internal static class MetricsRecorder

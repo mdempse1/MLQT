@@ -51,7 +51,8 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 3. Register in `MLQT/MauiProgram.cs`
 
 **Pattern for reusable .NET services:**
-1. Define interface in `MLQT.Services/Interfaces/`
+1. Define interface in `MLQT.Services/Interfaces/` — **always there**, even when the implementation
+   lives in a subfolder such as `Checking/`. One folder answers "what services are there?"
 2. Implement in `MLQT.Services/`
 3. Register as singleton in `MauiProgram.cs`
 
@@ -260,6 +261,7 @@ User-facing documentation is in `Documentation/`:
 | `settings-reference.md` | All settings: style rules, formatting, spell check, SVN branch dirs, JSON schema |
 | `dependency-analysis.md` | Impact analysis, Cytoscape graph, layout options |
 | `external-resources.md` | Resource tracking, tree view, file type filters |
+| `metrics-dashboard.md` | Metrics tab: coverage dimensions, scope and sub-library comparison, the trend and its snapshots |
 | `encrypted-libraries.md` | Commercial `package.moe` libraries: what is recovered from vendor help HTML, accuracy, reference-library setup |
 | `external-tools.md` | Dymola and OpenModelica configuration |
 | `naming-conventions.md` | Naming styles, presets, exception names |
@@ -274,6 +276,28 @@ User-facing documentation is in `Documentation/`:
 | `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
 | `troubleshooting.md` | Common findings, FAQ |
 
+## Planning and Design Notes
+
+Not user documentation — the record of what was decided and what shipped. **Read the roadmap before
+starting anything substantial**: it holds the agreed sequencing, the decisions behind it, and the
+backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
+
+| Document | Covers |
+|----------|--------|
+| `Documentation/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
+| `Documentation/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
+| `Documentation/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
+| `Documentation/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
+| `Documentation/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
+| `Documentation/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
+| `Documentation/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
+| `Documentation/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
+| `Documentation/design-phase7-gui-tests.md` | Phase 7a — the GUI test harness that must precede the desktop-host migration |
+| `Documentation/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
+
+Each phase note records what actually landed, including where the implementation deviated from the
+sketch — so when the note and the code disagree, that is a defect in one of them, not a detail.
+
 ## Documentation Maintenance
 
 Update this file when:
@@ -281,6 +305,15 @@ Update this file when:
 - Changing architectural patterns
 - Modifying service interfaces
 - Adding/removing NuGet packages
+
+Update `Documentation/roadmap.md` when:
+- A backlog item is finished, or a new one is found — the backlog is the working list, and an item
+  that is done but still open reads as outstanding work to whoever picks it up next
+- A phase ships, or a decision changes the agreed sequencing
+
+Update the phase's design note when its implementation deviates from what the note describes. The
+notes are read as the record of what was built; a note describing something that was planned and not
+built is worse than no note.
 
 Update relevant skill files for specialized subsystem changes.
 

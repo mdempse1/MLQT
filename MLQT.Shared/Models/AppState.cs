@@ -79,7 +79,7 @@ public class AppState
     // ========== Library Content State ==========
 
     /// <summary>
-    /// The scope (package id, or "" for all loaded libraries) selected on the Metrics/Coverage tab.
+    /// The scope (package id, or "" for all loaded libraries) selected on the Metrics tab.
     /// Held here so it survives the tab panel being recreated when the user navigates away and back.
     /// Session-only — not persisted to disk.
     /// </summary>

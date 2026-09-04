@@ -147,7 +147,7 @@ internal static class CliEntry
                   whole review, not just that comment. Always posted as a comment, never as
                   REQUEST_CHANGES - the exit code is the gate.
 
-        metrics:  --metrics appends a point to the history the desktop Coverage dashboard reads.
+        metrics:  --metrics appends a point to the history the desktop app's Metrics tab reads.
                   An unchanged point is skipped, so a CI job that commits the file cannot loop.
 
         compare:  lists the classes <library-a> has that <library-b> does not — for checking that a

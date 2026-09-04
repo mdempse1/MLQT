@@ -13,27 +13,31 @@ with those tools, and it stays optional.
 > **Boundary**: ⚠ marks items that approach (but should stay inside) the
 > no-translation/no-simulation line and need care. **✅ shipped** marks delivered work.
 
-## Where we are (2026-09-03)
+## Where we are (2026-09-04)
 
 **Phases 1–6 of the locked sequencing are shipped**: the findings foundation, the headless CLI,
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
 
-**The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
+**The CI/CD toolchain is feature-complete.** The gaps left inside phases 1–6 were collected in
 [Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. B1–B12 closed
 the feature list; reviewing the branch end to end before merging it opened **B13–B25**, and those are
-closed too — five correctness defects, two pieces of duplication, and documentation that had drifted
-from the code. **The one item left is B20**, and it is deliberately left: it belongs inside phase 7a,
-because the logic sitting in the two largest pages is what makes a GUI test harness expensive to
-build. Cross-platform (§1) was kept last of the two on purpose — it is the big task, and the point
-was to start it against a toolchain that is complete rather than one still being finished.
+closed — five correctness defects, two pieces of duplication, and documentation that had drifted from
+the code. A second read on 2026-09-04 opened **B26–B35**, all open: it confirmed every phase 1–6
+claim against the code and a green build of all 4,714 tests, and found one exception path outside the
+documented exit codes, two rule-classification mistakes, and a set of test and documentation gaps.
+**B20 is deliberately left**: it belongs inside phase 7a, because the logic sitting in the two largest
+pages is what makes a GUI test harness expensive to build. Cross-platform (§1) was kept last of the
+two on purpose — it is the big task, and the point was to start it against a toolchain that is
+complete rather than one still being finished.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1–B19 and B21–B25 are shipped; only B20 is open, and it belongs to phase 7a.** B13–B25
-were opened by the end-of-branch review on 2026-09-03 (see
-[Branch review](#branch-review-2026-09-03)). B8–B11 had been added earlier the same day after
+**Backlog: B1–B19 and B21–B25 are shipped; B20 and B26–B35 are open.** B20 belongs to phase 7a.
+B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
+[Branch review](#branch-review-2026-09-03)) and B26–B35 by the second read on 2026-09-04 (see
+[Second review](#second-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -229,10 +233,11 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13–B24 — a defect the end-of-branch review found in what was delivered.
-None of it is a new workstream, and none of it is cross-platform (§1). The point of the list is a
-CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
-feature-complete, and B13–B24 are what a careful read of the result turned up.
+half-delivered, or — for B13–B25 and B26–B35 — a defect one of the two end-of-branch reviews found
+in what was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The
+point of the list is a CI/CD toolchain with nothing outstanding before the big migration starts;
+B1–B12 got it feature-complete, B13–B25 are what the first careful read of the result turned up, and
+B26–B35 what the second one did.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -261,6 +266,16 @@ feature-complete, and B13–B24 are what a careful read of the result turned up.
 | B23 | **Two flags are implemented and absent from the reference** | branch review 2026-09-03 | ⭐ | S | **✅ shipped (2026-09-03)** — `--no-suppress` and `--version` are in the option table, and `--version` is in the tool's own usage text, which had never mentioned it either. |
 | B24 | **The review summary counts comments and calls them findings** | branch review 2026-09-03 | ⭐ | S | **✅ shipped (2026-09-03)** — it counts findings. Two on one line are still one comment, which is the point of the merging, but the sentence now agrees with the table beneath it. |
 | B25 | **A parse error ends up owned by two classes** | found while doing B13 | ⭐⭐ | M | **✅ shipped (2026-09-03)** — the load owns a broken file's diagnosis, and says so: it attributes each error to the innermost class whose text it is in, then clears `MayRecordParserErrors` on every class in that file. First parse of an enclosing class no longer records its own copy — which it used to, since every ancestor contains the broken text and fails for the same reason, giving one problem as many owners as it had ancestors. A class from a file that parsed cleanly is unaffected: if its own stored source will not parse, that is news, and it is how a class held only in memory reports at all. |
+| B26 | **`MLQT.Check.Failed` is style debt everywhere the parse diagnostics are not** | second review 2026-09-04 | ⭐⭐ | S | `RuleIds.IsParseDiagnostic` is true for `SyntaxError` and `ParseFailure` only, while `RuleCatalog` files all three under the `Parse` category and its comment says of all three that they "are never enabled or disabled — see `RuleIds.IsParseDiagnostic`". The code and the comment disagree, and the consequences are not cosmetic: `baseline create` writes a `MLQT.Check.Failed` entry, so the one finding that means *these results are incomplete* is the one a baseline can silence for good, and `MetricsRecorder` counts it in the trend's finding total, so a defect in MLQT reads as the library's quality moving. Decide which side it is on and put it there once. |
+| B27 | **An unexpected exception breaks the exit-code contract in the CLI and loses every graph finding in the GUI** | second review 2026-09-04 | ⭐⭐⭐ | S | `Program.cs` is one `return await CliEntry.RunAsync(...)` with nothing around it, and `LibraryCheckSession` runs the graph analyzers *outside* the try/catch that turns a per-class failure into a `MLQT.Check.Failed`. An analyzer that throws — or a report file that cannot be written — exits with a .NET unhandled-exception code and a stack trace, where `cli.md` promises `0`/`1`/`2` and an `error:` line. The GUI has the mirror image: `StyleCheckingService.RunGraphAnalyses` catches, logs and returns, so every graph finding for every repository disappears with nothing on the Issues list to say so. The same answer serves both — report the failure as a finding, keep the rest of the run — and it is the answer the per-class path already reached. |
+| B28 | **`MLQT.Style.ExtendsAtTop` accepts a severity nobody honours** | second review 2026-09-04 | ⭐⭐ | S | It is in the catalog, in the rule-id column B16 added, and it is suppressible and baselineable — but it has no setting of its own: `StyleChecking` runs it whenever `ImportStatementsFirst` is on, and stamps the catalog default whenever the map resolves `Off`. So `"MLQT.Style.ExtendsAtTop": "Off"` in `.mlqt/settings.json` is read, accepted, and does nothing, while `"Error"` on the same key works — a key that half-works is worse than one that is refused. Either give the rule its own toggle or reject the id where the map is loaded. |
+| B29 | **Nothing checks that a rule in the catalog is reachable in the settings UI** | second review 2026-09-04 | ⭐⭐ | S | B16 made a test fail when the catalog knows a rule `settings-reference.md` does not. The settings dialog needs the same guard: `SettingsRepositories.razor` renders only the `Correctness`/`Units`/`Unused`/`Structure` categories from `RuleCatalog` and takes everything else from three hand-written lists. A rule added under `Documentation`, `Ordering`, `Spelling`, `Naming` or `Reference` — or under a category nobody thought to add — is documented, gateable from CI, invisible in the app, and nothing fails. |
+| B30 | **Small duplications in the places most likely to drift** | second review 2026-09-04 | ⭐⭐ | M | Three hand-built copies of the "checking this class failed" report (`LibraryCheckSession`, `StyleCheckingWorker`, `MainLayout.razor`), two of them with the message string copied verbatim. Two implementations of "which VCS owns this path" — `VcsLocator.Find`, whose comment says it uses "the same rule `RepositoryService` uses", and `RepositoryService.DetectVcsType`, which asks `IsValidRepository` before walking up where `VcsLocator` walks up first. And "the base package of a model id" (`id[..id.LastIndexOf('.')]`) open-coded in `GraphAnalysisRunner`, `MetricsCalculator`, `UnusedImportAnalyzer`, `StyleChecking` and more. None of these is a bug today; each is the shape that becomes one. |
+| B31 | **CI measures coverage for the assemblies this branch did not add** | second review 2026-09-04 | ⭐⭐ | S | The `code-coverage` job collects from `ModelicaParser.Tests`, `ModelicaGraph.Tests` and `MLQT.Services.Tests` only. `MLQT.Cli`, `RevisionControl` and `MLQT.McpServer` are built and their tests run, but never measured — so the >80%-per-class bar CLAUDE.md sets is unverified for exactly the code phases 1–6 wrote, and the 94.5% the branch review quoted for `MLQT.Cli` was a local number nothing reproduces. The report is printed and never gated, which is a peculiar position for a tool whose selling point is `--min-coverage`. |
+| B32 | **Gaps in the tests behind the fixes that were made** | second review 2026-09-04 | ⭐⭐ | M | Three specifics. The TeamCity escaper has no test, though the phase-4 note asked for one by name; both existing tests assert the statistics lines and `buildProblem` and nothing else, so `\|`/`'`/`[`/`]`/newline handling is shipped unchecked. `ChangedModelResolver`'s null-diff branch — the whole of B14 — is untested, because the resolver reaches the VCS through the static `VcsLocator` and cannot be handed one that fails; only the layer beneath it (`GitRevisionControlSystem`) is covered. And `SvnRevisionControlSystem.GetChangedFilePathsSince` has no test at all where Git has four, so `--changed-from` on SVN ships on inspection — which is what phase 3 said it would do, and it is still true. |
+| B33 | **The pre-commit hook checks the working tree, not what is being committed** | second review 2026-09-04 | ⭐ | S | The generated hook decides *whether* to run from `git diff --cached`, then runs `mlqt check` over the library as it stands on disk. So a `git add -p` commit is gated on the unstaged remainder, and a commit of one file is blocked by a finding in a file the author deliberately left out. That may well be the right trade — checking the index means materialising it — but `cli.md` says only that it "runs `mlqt check` over the library", which is not enough to predict the behaviour. Say it, or check the index. |
+| B34 | **The Coverage dashboard has no user documentation** | second review 2026-09-04 | ⭐⭐ | S | Phase 6e/6f shipped a whole desktop surface — class counts by kind, fourteen coverage dimensions, per-library and sub-library scoping, the comparison view, the trend chart, **Save snapshot** — and `Documentation/` has no page for it. It appears only in passing from `cli.md` and `ci-quality-gate.md`, both of which describe how CI *writes* the history rather than how anyone reads it. Every other tab has a page; this is the one the ratchet's payoff is supposed to be visible on. |
+| B35 | **CLAUDE.md does not mention the roadmap or any design note** | second review 2026-09-04 | ⭐⭐ | S | The file loaded into every session lists twenty user documents and eight skills and never names `roadmap.md` — where the sequencing, the decisions and this backlog live — or the seven `design-phase*.md` notes recording what each phase shipped. It also still instructs that service interfaces go in `MLQT.Services/Interfaces/`, while `IBaselineStatusService` sits beside its implementation in `Checking/`; one of the two should change. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -301,6 +316,45 @@ workflow's triggers and steps; and `MLQT.Cli` line coverage (94.5%, lowest class
 82.2%, all above the 80% bar). What it did **not** do is read all 44,000 changed lines — the reading
 was targeted at the CI/CD surface this branch is about, the seams between GUI, CLI and MCP, and the
 places the design notes said a risk lived.
+
+### Second review (2026-09-04)
+
+**B26–B35 came out of a second read of the branch**, asked for after B13–B25 closed: phases 1–6
+against the roadmap and the design notes, then the code for duplication, missing tests, logic
+implemented twice, and the documentation against what shipped. **All ten are open.**
+
+**Phases 1–6 verify as delivered.** Every claim in the six implementation notes has code behind it,
+the whole solution builds, and all 4,714 tests pass (ModelicaParser 1835, Services 747, ModelicaGraph
+706, RevisionControl 645, McpServer 276, CLI 253, Dymola 207, OpenModelica 45 — the last two run here
+because this machine has the tools; a runner still cannot). Every `mlqt` flag in the source is in
+`cli.md` and in `--help`, and every configurable rule id is on the settings page, held there by
+B16's test. Nothing on the list below unships a phase.
+
+What it found instead is one correctness defect worth taking seriously (**B27** — an exception ends a
+CLI run outside the documented exit codes, and ends a GUI graph pass with no findings and no notice),
+two classification mistakes that are quiet by design (**B26**, `MLQT.Check.Failed` baselineable and
+counted as debt; **B28**, a rule id that accepts a severity nothing reads), and a set of gaps that are
+each individually small: a guard the settings UI never got that the documentation did (**B29**),
+duplication in the three or four places most likely to drift (**B30**), coverage measured in CI for
+the assemblies this branch did not write (**B31**), tests missing from under three fixes that were
+made (**B32**), and three documentation gaps — the hook's real subject (**B33**), the Coverage
+dashboard's missing page (**B34**), and CLAUDE.md never naming the roadmap it is sequenced by
+(**B35**).
+
+The pattern across B26–B29 is worth naming, because it is the same one: a *catalogued* thing —
+a rule id, a category — carries an implicit promise that some other surface honours it, and no test
+holds anyone to that promise. B16 built exactly that test for the documentation. The catalog needs
+the same test pointed at the settings UI, at the severity map, and at what may be baselined.
+
+What this review covered, so its gaps are on the record too: the six design notes claim by claim
+against the code; the rule catalog against `RuleIds`, `settings-reference.md`, the settings UI and
+the severity map; every CLI flag against `cli.md` and the usage text; every MCP tool name against
+both READMEs; the check pipeline's four entry points (CLI, MCP, GUI worker, GUI graph pass) against
+each other; a full build and test run; and the `Documentation/` set against the features that
+shipped. What it did **not** do, again, is read all 44,000 changed lines, and it did not review
+`CodeReview.razor` or `MetricsDashboard.razor` in detail — that is B20's subject and belongs to
+phase 7a.
+
 
 ---
 

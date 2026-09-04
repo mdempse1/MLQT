@@ -476,7 +476,8 @@ mlqt check ./ExternData --baseline .mlqt/baseline.json --changed-from main \
 ## Recording the coverage trend
 
 `--metrics` appends a point to `<library-path>/.mlqt/metrics-history.json` — the same file the desktop
-app's **Coverage** dashboard plots. Running it per commit in CI builds the burndown automatically,
+app's **Metrics** tab plots ([metrics-dashboard.md](metrics-dashboard.md)). Running it per commit in
+CI builds the burndown automatically,
 instead of it depending on someone remembering to press **Save snapshot**.
 
 A point records the coverage percentages and their raw compliant/eligible counts, the class count, the
@@ -755,6 +756,20 @@ The options are baked into the generated script; re-run `mlqt hook install` to c
 commits it has nothing to say about cost nothing. Otherwise it runs `mlqt check` over the library
 with the options above and blocks the commit on a non-zero exit — including exit `2`, because a check
 that could not run has not approved anything.
+
+**What it checks is the working tree, not the staged snapshot.** The decision to *run* comes from
+`git diff --cached`, but the check that follows reads the files as they are on disk. Two consequences
+worth knowing before it surprises you:
+
+- a partial commit (`git add -p`, or staging one of several edited files) is judged on the unstaged
+  remainder as well, so it can be blocked by a finding you deliberately left out of the commit;
+- conversely, a finding you have already fixed in the working tree but not staged will not block the
+  commit that still contains it.
+
+This is a deliberate trade rather than an oversight — checking the index means materialising it
+somewhere first, which makes every commit slower for a case that is rare in Modelica work, where a
+class is usually committed whole. If it gets in your way, `git commit --no-verify` is the escape
+hatch below, and the CI gate still sees the real thing.
 
 **Getting past it.** `git commit --no-verify` skips every hook, and that is the deliberate escape
 hatch: a hook that cannot be bypassed gets deleted instead. For a finding that is correct behaviour
