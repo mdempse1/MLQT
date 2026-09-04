@@ -60,7 +60,10 @@ and closed them: it took one sentence the documentation states as an absolute �
 "never checked, formatted, committed or written to" — and walked its verbs, finding that three of the
 four held nowhere (**B84**), and separately that **B85**, the MCP edit tools, would overwrite a
 vendor's encrypted `package.moe` with Modelica text whenever the library happened to sit somewhere
-writable. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+writable. An eighth read, on the same day, opened **B87–B88** and closed them: turning the same lens
+on CLAUDE.md's own absolutes found that `WithinClause` really is the only place that handles a within
+clause and that it got the clause wrong — a file with a licence header above it was read as having
+none, so **every such file was silently never formatted** (**B87**). **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -77,8 +80,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Third review](#third-review-2026-09-04)), B50–B64 by the fourth (see
 [Fourth review](#fourth-review-2026-09-04)), B65–B78 by the fifth (see
 [Fifth review](#fifth-review-2026-09-04)), B79–B83 by the sixth (see
-[Sixth review](#sixth-review-2026-09-04)) and B84–B86 by the seventh (see
-[Seventh review](#seventh-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Sixth review](#sixth-review-2026-09-04)), B84–B86 by the seventh (see
+[Seventh review](#seventh-review-2026-09-04)) and B87–B88 by the eighth (see
+[Eighth review](#eighth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -277,12 +281,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the seven end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the eight end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
-second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth, and
-B84–B86 the seventh.
+second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
+B84–B86 the seventh, and B87–B88 the eighth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -372,6 +376,8 @@ B84–B86 the seventh.
 | B84 | **"Never formatted, committed or written to" holds for none of the three** | seventh review 2026-09-04 | ⭐⭐⭐ | M | `settings-reference.md` and `encrypted-libraries.md` both promise a reference library is "never checked, formatted, committed or written to". B66 and B80 delivered *checked*. The other three are unguarded, and they chain. **Formatted:** the four incremental-format call sites in `MainLayout` — startup (`FormatModifiedFilesAsync`), `OnVcsFilesChanged`, `FormatChangedFilesForCommitAsync` and `RefreshLibrariesAsync` — each resolve a repository, take `repository.StyleSettings`, and format; none asks `IsReferenceOnly`. B80 fixed only the *full* save. A reference-only repository whose committed `.mlqt/settings.json` sets `ApplyFormattingRules: true` — which another team's MLQT-managed library naturally would — has its modified files reformatted and written at startup. **Monitored:** `RepositoryService.StartMonitoringAllRepositories` watches every repository, so a change made to a vendor's checkout outside MLQT feeds straight into that pipeline; the encrypted-library design note lists "`FileMonitoringService` — never monitor a reference library path" as a required guard and it was never built. **Committed:** `LibraryBrowser`'s repository toolbar offers Update, Commit, Revert, Rebase, Merge, Push, Create pull request and Switch branch with no `IsReferenceOnly` anywhere in the file. Three consumers of one question, none of which asks it — and the question now has a single answer (`ReferenceOnlyScope`) that B80 put there. **✅ shipped (2026-09-04)** — one `SkipReferenceOnly` guard in `MainLayout` on all four formatting paths; `RepositoryService` no longer watches a reference-only repository, at either place monitoring starts; and the library browser shows a **Reference only** chip where the write actions were, with a tooltip saying how to change it. `IFileMonitoringService.IsMonitoringRepository` was added so the second of those could be tested at all — the service could say whether anything was watched, not whether this was. Three tests, each with its positive control. |
 | B85 | **The MCP edit tools can overwrite an encrypted `package.moe` with Modelica text** | seventh review 2026-09-04 | ⭐⭐⭐ | S | `ExternalStubBuilder` gives every recovered class a `FileNode` whose path is the vendor's `package.moe`, because that genuinely is where it came from. `EditTools.UpdateClassSource` (and every other tool through `ClassBodyEditor`: `create_class`, `delete_class`, `move_class`, the structure edits, `correct_spelling`, `suppress_rule`) takes `ctx.FilePath` from that node and writes to it. The **only** guard is `FileWritability`, whose own summary says the server "does not track a 'read-only library' flag" and relies on reference libraries living under `Program Files` — so a library installed anywhere the user can write (a home directory, a network share, a shared drive, or MLQT running elevated) is unprotected, and the write replaces an encrypted binary with a page of synthesized Modelica. Nothing in `MLQT.McpServer` mentions `IsExternalStub` at all. This is the failure the design note calls "the highest-severity failure mode … MLQT trying to rewrite a vendor library it cannot read", for which it prescribed `ModelicaPackageSaver` **throwing** rather than skipping, "so a missed guard fails a test rather than a customer's `Program Files`" — and the MCP write path does not go through the saver. The file the stub points at is also the evidence: `ExternalStubBuilder` carries a comment about a spelling correction that already "came to read, and try to parse, a vendor's encrypted blob", fixed for the superseded-by-source case and not for editing a stub itself. The guard belongs beside `FileWritability` in `ClassBodyEditor`, where every write funnels, not at each tool. **✅ shipped (2026-09-04)** — `ExternalStubBuilder.IsEncryptedPackageFile` is the one definition of "this is a vendor's encrypted package" (`DirectedGraph` had its own spelling of `.moe`), and `FileWritability` refuses one before it looks at permissions, with a message that says what it is rather than suggesting admin rights would help. Inside `FileWritability` because every MCP write already calls it — at each tool instead, it would cover the twelve that exist and none of the next one. `IsWritable` answers false too, so `get_class_info` stops advertising a stub as editable and inviting the attempt. Five tests over a genuinely writable `package.moe`, which is the case permissions do not catch. |
 | B86 | **The one case-sensitive `.mo` test in the solution** | seventh review 2026-09-04 | ⭐ | S | Twenty-two places ask whether a path is a Modelica file and twenty-one pass `StringComparison.OrdinalIgnoreCase`. `LibraryDataService.GetPackageModelicaFiles` does not: `rootDirectory.EndsWith(".mo")`. `LibraryDiscovery.DiscoverLibraryPaths` accepts `Foo.MO` case-insensitively, so a file named that way is offered as a library and then loads **zero** classes — a silent empty library rather than an error. The same line reads `validFiles.AddRange(rootDirectory)` where `rootDirectory` is a `string`; it does the right thing (the `params ReadOnlySpan<T>` overload treats it as one element) but reads as if it were splitting the path into characters, and `Add` is what is meant. **✅ shipped (2026-09-04)** — case-insensitive like the other twenty-one, and `Add` rather than `AddRange`. |
+| B87 | **`WithinClause` cannot see a clause that follows a comment, so ordinary files are never formatted** | eighth review 2026-09-04 | ⭐⭐⭐ | S | `StartsWithClause` skips leading *whitespace* and nothing else, so a file opening with a licence header — `// Copyright …` above `within MyLib.Sub;`, which is entirely ordinary Modelica and parses cleanly — is read as having no within clause. Verified end to end: `Has` returns false, `Ensure` prepends a **second** clause, and the result goes from 0 parse errors to 1. `ModelicaPackageSaver.RenderFileSource` calls `Ensure` on the file's own text and is what MainLayout's incremental formatter uses, so every such file fails the `parserErrors.Count > 0` guard and is left unformatted — quietly, and with a log line blaming a syntax error on a file that has none. The guard is the only reason this is not corruption: without it the duplicate clause would be written to disk, which is exactly the failure `WithinClause` was created to stop, on the one input its check does not cover. `Strip` has the mirror defect and leaves the clause in place. Same root cause reaches the stub source: `ExternalStubBuilder.SynthesizeSource` writes its three-line header *above* the within clause, so a stub's stored code is invisible to `Has` too — latent only because every write path now refuses a stub. **✅ shipped (2026-09-04)** — `StartsWithClause` skips everything the lexer skips: whitespace and both comment forms. `Strip` gained the other half of the answer — it keeps a comment above the clause and still drops the whitespace, because whitespace carries nothing and dropping it is what keeps the class on line 1, while a licence header is text somebody wrote and a method called Strip must not lose it. Twelve tests, including that the file parses cleanly both before and after `Ensure` (the property, rather than a string compare), that a *commented-out* clause is correctly still not a clause, and that an unterminated `/*` is treated as the lexer treats it. |
+| B88 | **Seven stale doc summaries, two of them contradicting the member they sit on** | eighth review 2026-09-04 | ⭐ | S | B82 fixed one orphaned `<summary>`; a mechanical sweep for `</summary>` immediately followed by `<summary>` finds **seven**, so it is a class rather than a slip — a rewritten comment left above its replacement. Two are worse than untidy because the old text contradicts the new. `ILibraryDataService.SuppressTreeDataChanged` opens by describing a **flag** the caller must set and unset, and is immediately followed by the summary explaining that a flag could not express nesting and that this is a disposable scope; a reader taking the first goes looking for a property. `StyleCheckingSettings.HasAnyStyleRuleEnabled` opens with "the severity map holds only enabled rules" and is followed by the summary explaining that it does not — a rule whose prerequisite is off is in the map and does nothing, which is the whole reason the member asks `SeverityFor`. The other five strand a method's summary on the member that was later inserted above it (`LoadReferenceLibrariesAsync`, `SkipReferenceOnly`, `RunDeferredStyleCheckingFromEventAsync`, `UpdateGraphIncremental`, `ExternalStubBuilder.StubHeader`) — and one of those five was introduced by **B84's own edit**, which is the argument for sweeping rather than fixing them one at a time. **✅ shipped (2026-09-04)** — all seven gone, and the sweep that found them (`</summary>` immediately followed by `<summary>`) now returns nothing. Two were deleted, being old text the summary beneath it contradicts; five were **moved** onto the member they describe, which is what the delete-only first pass got wrong — four members would have been left with no summary at all, so the fix was checked by re-running the sweep *and* by looking at each member afterwards. `RunDeferredStyleCheckingAsync` gained the one-line summary it had never had beside its `<param>`. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -873,6 +879,55 @@ are a checklist, and the cheapest review is to walk them one at a time.
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app, so B84's toolbar change is verified by build and by reading rather than by clicking; and
 it did not review the Dymola help parsing, whose accuracy is measured against MSL on every build.
+
+
+### Eighth review (2026-09-04)
+
+**B87–B88 came out of an eighth read**, using the seventh's lens again: take an absolute the project
+states about itself and check every case it claims to cover. **Both are closed.** The absolutes this
+time were CLAUDE.md's, not the user documentation's — `WithinClause` is "**the only place** that adds
+or removes a leading `within ...;` clause", `ClassSuppressions.For` "**the only read**", `SeverityFor`
+"the **only** way to ask what a rule will do", `ModelicaFileEncoding` the only reader and writer of
+`.mo`.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green.
+
+**B87 is a live user-facing defect and the one worth the review.** `WithinClause` is the only place
+that handles the clause — that part was true — but its detection skipped leading *whitespace* and
+nothing else. A file opening with a licence header above its `within` clause is entirely ordinary
+Modelica and parses cleanly; MLQT read it as having no clause, so `Ensure` prepended a second one and
+the text stopped parsing. `ModelicaPackageSaver.RenderFileSource` calls `Ensure` on the file's own
+text, and that is what the incremental formatter uses, so **every file with a header comment was
+silently never formatted** — with a log line blaming a syntax error on a file that had none. The
+"leave a file we cannot parse alone" guard is the only thing that kept it from writing the duplicate
+to disk, which is the exact corruption `WithinClause` was created to prevent. Verified by running it:
+0 parse errors before, 1 after.
+
+The lesson is narrower than the sixth review's and worth keeping separate: **a claim of the form "X is
+the only place that does Y" can be completely true and still leave Y wrong.** Five reviews had checked
+that nobody else adds a within clause. None had checked that the one place which does gets it right,
+because the sentence invites the first question and not the second.
+
+**B88** is the tail of B82. A sweep for `</summary>` followed by `<summary>` found seven stale doc
+blocks, not one — a rewritten comment left above its replacement. Two of the seven state the opposite
+of the summary beneath them: `SuppressTreeDataChanged` opened by describing a **flag** the caller must
+set and unset, immediately above the summary explaining that a flag could not express nesting and that
+this is a disposable scope; `HasAnyStyleRuleEnabled` opened with "the severity map holds only enabled
+rules" above the summary explaining that it does not. One of the seven was introduced by **B84's own
+edit two commits earlier**, which is the argument for sweeping a defect shape rather than fixing
+instances of it.
+
+**A note on how B88 was fixed, because the first attempt was wrong.** Deleting all seven left four
+members with no summary at all — five of the blocks were not duplicates but a method's summary
+stranded by something later inserted above it. They were moved instead. The check that caught it was
+looking at each member after the edit rather than re-running the sweep, which reported success either
+way.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app; and of CLAUDE.md's four "only place" claims it followed two to their edge cases
+(`WithinClause`, and `ClassSuppressions.For`, which B71 had already closed) and took the other two on
+the evidence of earlier reviews.
 
 
 ---

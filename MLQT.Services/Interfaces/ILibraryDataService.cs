@@ -182,12 +182,6 @@ public interface ILibraryDataService
     event Action? OnTreeDataChanged;
 
     /// <summary>
-    /// When true, OnTreeDataChanged events are suppressed. Used during batch
-    /// operations (e.g., refreshing multiple files) to avoid triggering expensive
-    /// side effects (VCS status queries) on every individual file reload.
-    /// The caller must fire OnTreeDataChanged once after unsetting this flag.
-    /// </summary>
-    /// <summary>
     /// Holds back the per-library tree announcements until the returned scope is disposed, then makes
     /// one. Each announcement costs every open library tree a working-copy status query and a full
     /// rebuild, queued on the UI thread, so a load that brings in a hundred libraries queues a hundred

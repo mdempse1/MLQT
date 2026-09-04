@@ -137,8 +137,6 @@ public static class ExternalStubBuilder
     }
 
     /// <summary>
-    /// Builds the Modelica declaration for one documented class.
-    /// </summary>
     /// <summary>
     /// Header written above every stub.
     ///
@@ -153,6 +151,7 @@ public static class ExternalStubBuilder
         "// The library ships encrypted, so only what its documentation states is known here: the name,\n" +
         "// the description, the base classes and whether there is an icon. Read-only.\n";
 
+    /// <summary>Builds the Modelica declaration for one documented class.</summary>
     public static string SynthesizeSource(DocumentedClass documented)
     {
         var source = new StringBuilder();

@@ -1087,17 +1087,6 @@
     }
 
     /// <summary>
-    /// Saves all loaded libraries back to their source directories to apply code formatting rules.
-    /// This uses the ModelicaSyntaxVisitor to reformat the code according to our standards.
-    /// Libraries loaded from Git/SVN repositories are saved to their local checkout location.
-    ///
-    /// Uses a safe replacement strategy:
-    /// 1. Collects all original file paths before saving
-    /// 2. Saves new files (which may have different structure due to formatting rules)
-    /// 3. Deletes orphaned files that are no longer part of the new structure
-    /// 4. Updates FileNodes in the graph with new file paths
-    /// </summary>
-    /// <summary>
     /// Loads the configured reference libraries read-only, so references out of the user's code
     /// resolve against them. Encrypted libraries are reconstructed from their vendor documentation;
     /// readable ones are loaded normally. Neither is ever reported on or written to.
@@ -1184,6 +1173,17 @@
         LogProcessEnd("MainLayout", "Loading reference libraries");
     }
 
+    /// <summary>
+    /// Saves all loaded libraries back to their source directories to apply code formatting rules.
+    /// This uses the ModelicaSyntaxVisitor to reformat the code according to our standards.
+    /// Libraries loaded from Git/SVN repositories are saved to their local checkout location.
+    ///
+    /// Uses a safe replacement strategy:
+    /// 1. Collects all original file paths before saving
+    /// 2. Saves new files (which may have different structure due to formatting rules)
+    /// 3. Deletes orphaned files that are no longer part of the new structure
+    /// 4. Updates FileNodes in the graph with new file paths
+    /// </summary>
     private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
     {
         LogProcessStart("MainLayout", "Saving all libraries with formatting");
@@ -1453,12 +1453,6 @@
     }
 
     /// <summary>
-    /// Formats only files that have been modified according to VCS status.
-    /// This assumes the repository is already properly formatted and only files that
-    /// have been modified (or are untracked) since the last commit need formatting.
-    /// This is much faster than SaveAllLibrariesWithFormattingAsync for large repositories.
-    /// </summary>
-    /// <summary>
     /// Whether this repository is one MLQT must not write to. <c>settings-reference.md</c> promises a
     /// reference library is "never checked, formatted, committed or written to"; B66 delivered
     /// <em>checked</em> and this is <em>formatted</em>.
@@ -1477,6 +1471,12 @@
         return true;
     }
 
+    /// <summary>
+    /// Formats only files that have been modified according to VCS status.
+    /// This assumes the repository is already properly formatted and only files that
+    /// have been modified (or are untracked) since the last commit need formatting.
+    /// This is much faster than SaveAllLibrariesWithFormattingAsync for large repositories.
+    /// </summary>
     private async Task FormatModifiedFilesAsync()
     {
         LogProcessStart("MainLayout", "Formatting VCS-modified files");
@@ -1886,14 +1886,12 @@
             .Any(s => ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(s!));
 
     /// <summary>
-    /// Runs deferred style checking. Called via AppState event from pages or startup dialog.
-    /// </summary>
-    /// <summary>
     /// Entry point for the AppState event, which carries no arguments. Pages asking for a run have
     /// no dialog of their own, so this one raises the progress dialog.
     /// </summary>
     private Task RunDeferredStyleCheckingFromEventAsync() => RunDeferredStyleCheckingAsync();
 
+    /// <summary>Runs the deferred style check, on request from a page or from the startup dialog.</summary>
     /// <param name="showOwnDialog">Whether to raise the standalone progress dialog. False when the
     /// startup dialog is driving this, because it already shows the step — and because raising a
     /// second modal there put an undismissable dialog over the one the user was working in, whose

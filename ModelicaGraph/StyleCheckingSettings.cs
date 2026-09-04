@@ -418,12 +418,6 @@ public class StyleCheckingSettings
     public List<string> SvnBranchDirectories { get; set; } = ["trunk", "branches", "tags"];
 
     /// <summary>
-    /// Returns true if any style checking rule is enabled that would produce findings.
-    /// Used to skip the entire style checking pipeline when no rules are active. Map-driven so new
-    /// rules are counted automatically (the severity map holds only enabled rules; formatter flags
-    /// such as ApplyFormattingRules/ComponentsBeforeClasses are plain bools and never appear here).
-    /// </summary>
-    /// <summary>
     /// True when at least one rule will actually run. Asks <see cref="SeverityFor"/> rather than
     /// reading the stored values, because the two can disagree: a rule whose prerequisite is off is
     /// in the map and does nothing, and a settings file holding only those would otherwise announce

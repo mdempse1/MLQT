@@ -38,10 +38,15 @@ public static class WithinClause
     /// Returns <paramref name="source"/> without its leading within clause, and unchanged if it has
     /// none. Any newline immediately following the clause goes with it, so the class that followed
     /// becomes line 1 and stored line numbers stay put.
+    ///
+    /// <para>A comment above the clause is <b>kept</b>. Whitespace above it is not: whitespace
+    /// carries nothing and dropping it is what keeps the class on line 1, whereas a licence header
+    /// or a note about the class is text somebody wrote, and a method named Strip taking it out
+    /// would be losing content while claiming to remove a clause.</para>
     /// </summary>
     public static string Strip(string source)
     {
-        if (!StartsWithClause(source, out var keywordEnd))
+        if (!StartsWithClause(source, out var keywordEnd, out var keepUpTo))
             return source;
 
         // The clause runs to the first semicolon; a Modelica name cannot contain one.
@@ -55,7 +60,7 @@ public static class WithinClause
         if (rest < source.Length && source[rest] == '\n')
             rest++;
 
-        return source[rest..];
+        return keepUpTo > 0 ? string.Concat(source[..keepUpTo], source[rest..]) : source[rest..];
     }
 
     /// <summary>
@@ -73,31 +78,79 @@ public static class WithinClause
     public static string Set(string source, string? parent) => Ensure(Strip(source), parent);
 
     /// <summary>
-    /// True when <paramref name="source"/> opens with a within clause. Leading whitespace is
-    /// ignored, and an identifier that merely starts with the keyword (<c>withinTolerance</c>) is
-    /// not one.
+    /// True when <paramref name="source"/> opens with a within clause. Leading whitespace and
+    /// comments are ignored — a licence header above the clause is ordinary Modelica — and an
+    /// identifier that merely starts with the keyword (<c>withinTolerance</c>) is not one.
     /// </summary>
     public static bool Has(string source) => StartsWithClause(source, out _);
 
     /// <summary>
-    /// True when <paramref name="source"/> opens with a within clause, ignoring any leading
-    /// whitespace — rendered and hand-edited text can start with a blank line, and reading that as
-    /// "no clause" is what produced duplicates. <paramref name="keywordEnd"/> is the index just past
-    /// the <c>within</c> keyword.
+    /// True when <paramref name="source"/> opens with a within clause, ignoring anything the parser
+    /// ignores before it: whitespace <b>and comments</b>. <paramref name="keywordEnd"/> is the index
+    /// just past the <c>within</c> keyword.
+    ///
+    /// <para>Whitespace alone was not enough, and the gap was an ordinary file rather than an odd
+    /// one. A licence header above the within clause is normal Modelica and parses cleanly, and this
+    /// read it as having no clause — so <see cref="Ensure"/> prepended a second one, the text stopped
+    /// parsing, and the incremental formatter's "leave a file we cannot parse alone" guard declined
+    /// to write it. Every file with a header comment therefore went unformatted, and the log blamed a
+    /// syntax error on a file that had none. That guard was the only thing between this and writing a
+    /// duplicate clause to disk, which is the corruption this class exists to prevent.</para>
     /// </summary>
     private static bool StartsWithClause(string source, out int keywordEnd)
+        => StartsWithClause(source, out keywordEnd, out _);
+
+    /// <param name="keepUpTo">Index just past the last comment before the clause, or 0 when there is
+    /// none — what <see cref="Strip"/> must not throw away.</param>
+    /// <inheritdoc cref="StartsWithClause(string, out int)"/>
+    private static bool StartsWithClause(string source, out int keywordEnd, out int keepUpTo)
     {
-        var start = 0;
-        while (start < source.Length && char.IsWhiteSpace(source[start]))
-            start++;
+        var start = SkipIgnorable(source, 0, out keepUpTo);
 
         keywordEnd = start + Keyword.Length;
 
-        if (string.CompareOrdinal(source, start, Keyword, 0, Keyword.Length) != 0)
+        if (keywordEnd > source.Length
+            || string.CompareOrdinal(source, start, Keyword, 0, Keyword.Length) != 0)
             return false;
 
         // "withinTolerance" starts with the keyword but is an identifier, not a clause.
         return keywordEnd >= source.Length
             || (!char.IsLetterOrDigit(source[keywordEnd]) && source[keywordEnd] != '_');
+    }
+
+    /// <summary>
+    /// The index of the first character the parser would actually read, skipping whitespace and both
+    /// comment forms. An unterminated <c>/*</c> runs to the end, which is what the lexer does with it
+    /// too — there is no clause after it either way.
+    /// </summary>
+    private static int SkipIgnorable(string source, int index, out int lastCommentEnd)
+    {
+        lastCommentEnd = 0;
+
+        while (index < source.Length)
+        {
+            if (char.IsWhiteSpace(source[index]))
+            {
+                index++;
+            }
+            else if (index + 1 < source.Length && source[index] == '/' && source[index + 1] == '/')
+            {
+                var newline = source.IndexOf('\n', index);
+                index = newline < 0 ? source.Length : newline + 1;
+                lastCommentEnd = index;
+            }
+            else if (index + 1 < source.Length && source[index] == '/' && source[index + 1] == '*')
+            {
+                var close = source.IndexOf("*/", index + 2, StringComparison.Ordinal);
+                index = close < 0 ? source.Length : close + 2;
+                lastCommentEnd = index;
+            }
+            else
+            {
+                return index;
+            }
+        }
+
+        return index;
     }
 }

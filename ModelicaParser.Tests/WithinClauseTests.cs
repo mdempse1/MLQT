@@ -1,4 +1,5 @@
 using ModelicaParser.Helpers;
+using ModelicaParser;
 using Xunit;
 
 namespace ModelicaParser.Tests;
@@ -222,6 +223,70 @@ public class WithinClauseTests
     [InlineData("within_range = 1;")]
     [InlineData("")]
     public void Has_IsFalseWithoutAClause(string source) => Assert.False(WithinClause.Has(source));
+
+    #endregion
+
+    #region A clause behind a comment (B87)
+
+    // A licence header above the within clause is ordinary Modelica and parses cleanly. Reading it as
+    // "no clause" made Ensure add a second one, which does not parse — so the incremental formatter's
+    // "leave a file we cannot parse alone" guard declined to write, and every file with a header
+    // comment went silently unformatted.
+    private const string HeaderThenClause =
+        "// Copyright (c) 2026 Someone.\nwithin My.Package;\nmodel M\nend M;";
+
+    [Fact]
+    public void AClauseBehindALineCommentIsSeen()
+        => Assert.True(WithinClause.Has(HeaderThenClause));
+
+    [Fact]
+    public void EnsureDoesNotAddASecondClauseBehindAComment()
+        => Assert.Same(HeaderThenClause, WithinClause.Ensure(HeaderThenClause, "My.Package"));
+
+    [Fact]
+    public void TheOriginalAndTheEnsuredBothParse()
+    {
+        // The property that matters, stated as the parser sees it rather than as a string compare.
+        var (_, before) = ModelicaParserHelper.ParseWithErrors(HeaderThenClause);
+        var (_, after) = ModelicaParserHelper.ParseWithErrors(
+            WithinClause.Ensure(HeaderThenClause, "My.Package"));
+
+        Assert.Empty(before);
+        Assert.Empty(after);
+    }
+
+    [Fact]
+    public void StripRemovesAClauseBehindAComment()
+    {
+        var stripped = WithinClause.Strip(HeaderThenClause);
+
+        Assert.DoesNotContain("within", stripped, StringComparison.Ordinal);
+        Assert.StartsWith("// Copyright", stripped, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/* block */\nwithin My.Package;\nmodel M\nend M;")]
+    [InlineData("/* one */ /* two */ within My.Package;\nmodel M\nend M;")]
+    [InlineData("\n  // spaced\n\n  within My.Package;\nmodel M\nend M;")]
+    public void EveryShapeTheLexerIgnoresIsSkipped(string source)
+        => Assert.True(WithinClause.Has(source));
+
+    [Theory]
+    [InlineData("// only a comment\nmodel M\nend M;")]
+    [InlineData("/* unterminated\nwithin My.Package;")]
+    [InlineData("// withinTolerance is not a clause\nwithinTolerance = 1;")]
+    public void WhatIsNotAClauseIsStillNotOne(string source)
+        => Assert.False(WithinClause.Has(source));
+
+    [Fact]
+    public void ACommentedOutClauseIsNotAClause()
+    {
+        // The line comment hides it, so the file genuinely has none and Ensure must supply one.
+        const string source = "// within My.Package;\nmodel M\nend M;";
+
+        Assert.False(WithinClause.Has(source));
+        Assert.StartsWith("within My.Package;", WithinClause.Ensure(source, "My.Package"), StringComparison.Ordinal);
+    }
 
     #endregion
 

@@ -1279,10 +1279,6 @@ public static class GraphBuilder
     }
 
     /// <summary>
-    /// Generates a unique file ID from a file path.
-    /// On Windows, paths are normalized to lowercase for case-insensitive matching.
-    /// </summary>
-    /// <summary>
     /// Incrementally updates a graph by re-parsing only the files that changed.
     /// Removes models from changed/deleted files and re-parses changed/added files.
     /// </summary>
@@ -1363,6 +1359,10 @@ public static class GraphBuilder
         return affectedModelIds.Distinct().ToList();
     }
 
+    /// <summary>
+    /// Generates a unique file ID from a file path.
+    /// On Windows, paths are normalized to lowercase for case-insensitive matching.
+    /// </summary>
     public static string GenerateFileId(string filePath)
     {
         var fullPath = Path.GetFullPath(filePath);
