@@ -69,8 +69,10 @@ by it — and finding the accepted-spellings list read as UTF-8 and written back
 **Excluded libraries** saving but never re-checking. A tenth read closed **B91–B92**, found not by
 reading but by two fifteen-line sweeps over patterns CLAUDE.md states in one line each: three settings
 components have an unsubscribe method nothing calls, and the five coverage dimensions hidden from the
-user on the grounds that the formatter closes them had nothing checking that it does. **B20 is
-deliberately left**: it belongs inside phase 7a, because the logic
+user on the grounds that the formatter closes them had nothing checking that it does. An eleventh
+read closed **B93–B94** by running the same sweeps over the rest of CLAUDE.md's stated patterns: two
+came back clean, one found a source-swap written twice and out of date since B75, and one found two
+coding rules that describe a codebase which does not exist. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -90,8 +92,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Sixth review](#sixth-review-2026-09-04)), B84–B86 by the seventh (see
 [Seventh review](#seventh-review-2026-09-04)), B87–B88 by the eighth (see
 [Eighth review](#eighth-review-2026-09-04)), B89–B90 by the ninth (see
-[Ninth review](#ninth-review-2026-09-04)) and B91–B92 by the tenth (see
-[Tenth review](#tenth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Ninth review](#ninth-review-2026-09-04)), B91–B92 by the tenth (see
+[Tenth review](#tenth-review-2026-09-04)) and B93–B94 by the eleventh (see
+[Eleventh review](#eleventh-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -290,12 +293,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the ten end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the eleven end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, and B91–B92 the tenth.
+B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, and B93–B94 the eleventh.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -391,6 +394,8 @@ B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, and B91–B92 
 | B90 | **Excluding a library from the checks does nothing until the project is reloaded** | ninth review 2026-09-04 | ⭐⭐ | S | `SettingsRepositories.ConfirmChanges` asks `StyleSettingsChanged` whether Apply has to re-check. It compared the severity map, the two formatter flags, the naming config and the spell languages — and not `ExcludedLibraries`, which **the same dialog edits**. So adding a library to the excluded list saved the setting, raised nothing, and left its findings on the Code Review list and its classes in the coverage figures until the project was reloaded; removing one left the library unchecked the same way. The phase 6 note named this risk in as many words for rules — "each needing its own switch *and* a field in `StyleSettingsChanged` (miss the latter and persistence/re-check silently break)" — and solved it for rules by making the list data-driven. `ExcludedLibraries` is not a rule, arrived later, and was missed. **✅ shipped (2026-09-04)** — the comparison moved onto `StyleCheckingSettings` as `ChecksDifferFrom` / `FormattingDiffersFrom`, beside the properties it has to keep up with and where it can be tested at all; `ExcludedLibraries` and `FormattingExcludedModels` are in it. `StyleCheckingSettingsComparisonTests` walks every persisted property by reflection and fails on one that is neither compared nor written down in a reasoned exemption list — and checks the exemptions are true, so the list cannot become a way of silencing the test. |
 | B91 | **Three settings components have a `Dispose` that nothing calls** | tenth review 2026-09-04 | ⭐⭐ | S | CLAUDE.md states the pattern in one line — "Subscribe in `OnInitializedAsync`, unsubscribe in `Dispose()`" — and `SettingsUI`, `SettingsExternalTools` and `SettingsRepositories` each have the unsubscribe method, named `OnDispose`, `protected`, and **called by nothing**: none of the three declares `@implements IDisposable`, so Blazor never invokes it. `SettingsReferenceLibraries`, the newest of the four, does declare it, which is what makes this a slip rather than a design. `MudTabs` renders only the active panel, so every switch between settings tabs — and every switch away from Settings and back — creates a new instance whose handlers stay on the singletons for the life of the process. **Save Settings** therefore fires `NavState.OnSaveSettings` once per instance ever created, running `SaveRepositorySettingsAsync` that many times over; and each dead instance's handler calls `InvokeAsync(StateHasChanged)` on a disposed component, which throws inside an `async void`. `SettingsRepositories` also never listed `RepositoryService.OnRepositoriesChanged` in the method at all. **✅ shipped (2026-09-04)** — all three declare the interface and the method is `public void Dispose()`; the missing subscription is in it. Two sweeps re-run and clean: every `+=` in a component has a matching `-=`, and no component subscribes without declaring the interface. |
 | B92 | **Nothing checks that the formatter closes the gaps coverage credits it with** | tenth review 2026-09-04 | ⭐⭐ | S | `CoverageDimensions.FormatterRewrites` takes five dimensions off the report when the formatter is on, because "reporting them would measure the moment before the save rather than the library". That is only honest while the renderer really satisfies those five rules, and it has already been wrong once: `InitialSectionsLast` was in the set while `ModelicaRenderer` wrote initial sections first whatever the setting said, so the report hid a gap every save reintroduced — recorded in the file's own comment. The only test on the constant asserts it against itself (those dimensions drop out when the formatter is on), which is true by construction and would have passed throughout. The claim that justifies **hiding numbers from a user** had nothing holding it to the code that is supposed to make it true. **✅ shipped (2026-09-04)** — `FormatterClosesTheGapTests` does the round trip the claim describes: a class breaking all four order rules, rendered with the formatting a repository would have on, then checked again — and the rule reports nothing. Eight tests, including a control asserting the fixture really does break the rules before formatting, one asserting the two dimensions the renderer *cannot* fix stay on the report, and one holding the credited set itself to what switching the formatter on actually drops (asked twice, since the two initial-section rules are mutually exclusive and no single configuration sees both). |
+| B93 | **"Swap a class's source and put it back" is written twice, and both copies are out of date** | eleventh review 2026-09-04 | ⭐⭐ | S | `FormattingTools.FormatClass` and `StyleTools.CheckLibrary` both replace a node's stored source, do something, and restore it — each capturing `(ModelicaCode, ParsedCode)` by hand. What a class carries beside its source has grown underneath them: **B75** (two commits earlier) made assigning `ModelicaCode` also drop `Coverage` and `Suppressions`, and `PackageCodeTrimmer` sets `SourceMatchesFile` and `ChildrenTrimmed` on the node. Neither copy restores any of those four, and — the part that makes it a defect rather than a slow path — nothing says which of them are deliberately left. That is unanswerable from the code, and it is the question a reader has. This is the shape the memory note names: a change correct in itself, breaking something nothing tests. **✅ shipped (2026-09-04)** — `ModelNode.TakeSourceSnapshot` / `RestoreSource` name all six fields and restore them in the order the setters require (source first, because assigning it clears three of the others). Both callers use it, and `StyleTools` then re-clears `SourceMatchesFile` **with the reason written down**: the findings it has just recorded were measured against the trimmed source, `list_findings` maps them at read time, and reporting them at the class declaration is `ClassLocation`'s own answer for a line it cannot trust. Four tests, including one that fails if `ModelicaCode`'s setter learns to clear a fourth thing the snapshot does not name. |
+| B94 | **Two of CLAUDE.md's coding rules describe a codebase that does not exist** | eleventh review 2026-09-04 | ⭐ | S | CLAUDE.md is written to be followed when generating code, so a rule that the code does not follow produces components unlike the ones beside them. "Use `Typo.body1` for all text except code" is followed by 138 call sites and contradicted by **92** — `h6` for dialog titles, `subtitle1` for the name of the thing a panel is about, `subtitle2` for a section heading, `caption` for explanatory text. The convention is a sensible hierarchy; the guidance describes two levels of it, and an agent following it would put body text styling on a dialog title. Rewriting 92 call sites would be a large cosmetic diff with no test behind it and would make the UI worse, so the guidance is what is wrong. Separately, "**Always** use methods … not direct property access" on `AppState` has a documented exception the guidance does not mention: `MetricsScope` is plain session memory with no event and no method, says so at its declaration, and is assigned directly in three places. **✅ shipped (2026-09-04)** — both rules now describe what the code does, with a table of what each `Typo` value is for and the reason the AppState rule is about members that *have* a method (the method is what raises the event). |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -1011,6 +1016,45 @@ the files nobody thought to open. The two scripts used here are three lines of r
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app, so B91 is verified by the sweeps and the build rather than by opening the settings tabs
 repeatedly and watching the handler count; and it did not review the Dymola help parsing.
+
+
+### Eleventh review (2026-09-04)
+
+**B93–B94 came out of an eleventh read**, running the tenth's sweeps over the rest of the patterns
+CLAUDE.md states. **Both are closed.**
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green.
+
+**Four sweeps, two of which came back clean and are worth recording as such.** No service interface is
+declared outside `MLQT.Services/Interfaces/`; the only services registered in one composition root and
+not the other are `IFilePickerService` and `IPowerManagementService`, which are the two platform
+services that belong to MAUI alone. Every `ParsedCode = null` outside `Borrow` is one of the sites its
+summary already excuses — `GraphBuilder`'s bulk load, the per-class check entry point, the saver's
+pre-render — plus one that turned out to be **B93**.
+
+**B93 is the memory note's own shape, and this time the change that caused it was two commits old.**
+B75 made assigning `ModelicaCode` clear the coverage facts and the suppression set with it. Two MCP
+tools swap a node's source out and back by hand, capturing the source and the parse tree and nothing
+else; they were already incomplete before B75 and B75 widened the gap. What makes it a defect rather
+than a slow path is that the omissions are unanswerable: a reader cannot tell which of the four
+unrestored fields are deliberate. One of them turned out to be — `StyleTools` should leave
+`SourceMatchesFile` down, because the findings it just recorded were measured against source it has
+now thrown away — and that is exactly the kind of thing a named snapshot makes it possible to say.
+
+**B94 is the guidance describing a codebase that does not exist.** CLAUDE.md is read to generate code,
+so a rule the code does not follow is worse than no rule: 92 call sites use a `Typo` hierarchy the
+one-line guideline does not mention, and an agent obeying the guideline would style a dialog title as
+body text. The fix is the guidance, not 92 call sites.
+
+**What the sweeps are worth.** Ten reviews found defects by reading; the last two found four by
+listing, and the listing also produced the first *negative* results anyone has been able to state with
+confidence — "no interface is in the wrong folder" is a sentence no amount of reading earns. The
+scripts are three lines of regex each and live in the review, not the repository, which is the one
+thing to change if this keeps paying: a sweep worth running twice is worth a test.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app; and it did not review the Dymola help parsing.
 
 
 ---

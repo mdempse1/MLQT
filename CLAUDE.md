@@ -114,7 +114,7 @@ Centralized state container in `MLQT.Shared/Models/AppState.cs`:
   - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`
   - Deferred analysis: `OnRunDeferredDependencies`, `OnRunDeferredStyleChecking`, `OnRunDeferredExternalResources`, `OnRunAllDeferredAnalysis`, `OnDeferredAnalysisCompleted`
   - Formatting: `OnFormatChangedFilesForCommit`
-- Always use methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) not direct property access
+- Use the methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) rather than assigning the property, **wherever the property has one** — the method is what raises the event, and an assignment leaves every subscriber unaware. A few members are plain session memory with no event and no method (`MetricsScope`, which the Metrics tab writes so its scope survives the tab being recreated); those are assigned directly and say so at the declaration
 - AppState carries no "library loaded/cleared" state — the set of loaded libraries is published by
   `ILibraryDataService.OnLibrariesChanged`/`OnTreeDataChanged` and `IRepositoryService.OnProjectChanged`
 
@@ -127,8 +127,19 @@ Use the following styling guidelines
 * Use Dense styling options when available
 * Use minimal padding and margin spacing
 * RowStack components should have spacing=0
-* Use Typo.body1 for all text except code
-* Use Typo.body2 for code
+
+**Typography.** `Typo.body1` is the default for ordinary text and `Typo.body2` for code, file paths
+and de-emphasised values — but the UI uses a hierarchy above that, and a component built to
+"body1 for everything" looks wrong beside the ones already there. What the existing components do:
+
+| Typo | Used for |
+|------|----------|
+| `h6` | A dialog's title |
+| `subtitle1` | The name of the thing a panel is about (a repository, an external tool) |
+| `subtitle2` | A section heading inside a panel |
+| `body1` | Ordinary text — the default, and by far the most common |
+| `body2` | Modelica code, file paths, and values shown beside a label |
+| `caption` | Explanatory text under a control, and secondary detail in a tree |
 
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 

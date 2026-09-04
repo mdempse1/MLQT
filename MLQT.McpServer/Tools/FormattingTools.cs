@@ -144,10 +144,8 @@ public sealed class FormattingTools
         // — so rendering from the stored source would write the file back without those classes,
         // which is the opposite of what this tool promises ("all classes stored in it").
         var owner = ctx.FileOwner;
-        var storedCode = owner.Definition.ModelicaCode;
-        var storedParsed = owner.Definition.ParsedCode;
+        var snapshot = owner.TakeSourceSnapshot();
         owner.Definition.ModelicaCode = original;
-        owner.Definition.ParsedCode = null;
 
         string rendered;
         try
@@ -161,16 +159,14 @@ public sealed class FormattingTools
         }
         catch (Exception ex)
         {
-            owner.Definition.ModelicaCode = storedCode;
-            owner.Definition.ParsedCode = storedParsed;
+            owner.RestoreSource(snapshot);
             return new ToolError($"Formatting failed: {ex.Message}");
         }
 
         if (preview)
         {
             // Nothing is written, so put the node back the way it was.
-            owner.Definition.ModelicaCode = storedCode;
-            owner.Definition.ParsedCode = storedParsed;
+            owner.RestoreSource(snapshot);
             return new FormatClassResult(classId, PreviewOnly: true, Changed: false, ctx.FilePath, rendered);
         }
 
@@ -179,8 +175,7 @@ public sealed class FormattingTools
         {
             if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)
             {
-                owner.Definition.ModelicaCode = storedCode;
-                owner.Definition.ParsedCode = storedParsed;
+                owner.RestoreSource(snapshot);
                 return readOnly;
             }
 
@@ -191,8 +186,7 @@ public sealed class FormattingTools
         else
         {
             // The file was already formatted, so nothing was written and the node keeps its own source.
-            owner.Definition.ModelicaCode = storedCode;
-            owner.Definition.ParsedCode = storedParsed;
+            owner.RestoreSource(snapshot);
         }
 
         return new FormatClassResult(classId, PreviewOnly: false, Changed: changed, ctx.FilePath, rendered);

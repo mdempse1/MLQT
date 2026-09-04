@@ -203,7 +203,7 @@ public sealed class StyleTools
         var targetModelIds = targets.SelectMany(l => l.ModelIds).ToHashSet(StringComparer.Ordinal);
         var packageSnapshots = graph.ModelNodes
             .Where(m => m.ClassType == "package" && targetModelIds.Contains(m.Id))
-            .ToDictionary(m => m.Id, m => (m.Definition.ModelicaCode, m.Definition.ParsedCode), StringComparer.Ordinal);
+            .ToDictionary(m => m.Id, m => m.TakeSourceSnapshot(), StringComparer.Ordinal);
         ModelicaGraph.PackageCodeTrimmer.TrimStandaloneChildren(graph, targetModelIds);
 
         try
@@ -268,11 +268,18 @@ public sealed class StyleTools
             foreach (var kv in packageSnapshots)
             {
                 var node = graph.GetNode<ModelNode>(kv.Key);
-                if (node is not null)
-                {
-                    node.Definition.ModelicaCode = kv.Value.ModelicaCode;
-                    node.Definition.ParsedCode = kv.Value.ParsedCode;
-                }
+                if (node is null)
+                    continue;
+
+                node.RestoreSource(kv.Value);
+
+                // With one deliberate exception. The findings just recorded were measured against the
+                // TRIMMED source, so their line numbers do not describe the text now on the node —
+                // and list_findings maps them at read time. Reporting them at the class declaration
+                // is ClassLocation's own answer for that ("pointing at the right class is always
+                // true; pointing at the wrong line looks precise and is not"), so the flag stays
+                // down until a reload replaces the node.
+                node.SourceMatchesFile = false;
             }
         }
     }

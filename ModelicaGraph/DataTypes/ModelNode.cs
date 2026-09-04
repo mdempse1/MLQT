@@ -115,6 +115,47 @@ public class ModelNode : GraphNode
     public bool ChildrenTrimmed { get; set; }
 
     /// <summary>
+    /// Everything a caller has to put back after swapping a class's stored source out and in again.
+    ///
+    /// <para>There is a type for it because there were two hand-written versions, each capturing the
+    /// source and the parse tree and neither capturing anything else — and what "anything else" means
+    /// has changed under them since. Setting <see cref="ModelDefinition.ModelicaCode"/> now also drops
+    /// the coverage facts and the suppression set, and trimming a package sets
+    /// <see cref="SourceMatchesFile"/> and <see cref="ChildrenTrimmed"/>. A snapshot that names the
+    /// fields is a list a reader can check; two tuples of two are not.</para>
+    /// </summary>
+    public readonly record struct SourceSnapshot(
+        string ModelicaCode,
+        modelicaParser.Stored_definitionContext? ParsedCode,
+        CoverageFacts? Coverage,
+        ModelicaParser.StyleRules.SuppressionSet? Suppressions,
+        bool SourceMatchesFile,
+        bool ChildrenTrimmed);
+
+    /// <summary>Captures this class's source and everything derived from it.</summary>
+    public SourceSnapshot TakeSourceSnapshot() => new(
+        Definition.ModelicaCode,
+        Definition.ParsedCode,
+        Definition.Coverage,
+        Definition.Suppressions,
+        SourceMatchesFile,
+        ChildrenTrimmed);
+
+    /// <summary>
+    /// Puts a snapshot back, in the order the setters require: the source first, because assigning it
+    /// clears the tree and the two caches, and then the things it cleared.
+    /// </summary>
+    public void RestoreSource(SourceSnapshot snapshot)
+    {
+        Definition.ModelicaCode = snapshot.ModelicaCode;
+        Definition.ParsedCode = snapshot.ParsedCode;
+        Definition.Coverage = snapshot.Coverage;
+        Definition.Suppressions = snapshot.Suppressions;
+        SourceMatchesFile = snapshot.SourceMatchesFile;
+        ChildrenTrimmed = snapshot.ChildrenTrimmed;
+    }
+
+    /// <summary>
     /// Name of the parent model/package.
     /// </summary>
     public string? ParentModelName { get; set; }
