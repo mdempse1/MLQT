@@ -52,7 +52,27 @@ public static class RuleIds
     /// </summary>
     public const string CheckFailed = "MLQT.Check.Failed";
 
-    /// <summary>True for the always-on parse diagnostics above.</summary>
+    /// <summary>
+    /// True for the two diagnostics the <b>parser</b> produces. Narrower than
+    /// <see cref="IsDiagnostic"/> on purpose: this is the question "did this come from reading the
+    /// file", which decides whether a finding is projected as a parser message (source
+    /// <c>"Parser"</c>) or a style one. Use <see cref="IsDiagnostic"/> to ask whether a finding is
+    /// configurable or baselineable — <see cref="CheckFailed"/> is neither, and is not a parse error.
+    /// </summary>
     public static bool IsParseDiagnostic(string ruleId) =>
         ruleId is SyntaxError or ParseFailure;
+
+    /// <summary>
+    /// True for every finding that is a <b>diagnostic rather than a rule</b>: the two parse errors
+    /// and <see cref="CheckFailed"/>. None of them is enabled, configured, suppressed or written to a
+    /// baseline, and none counts as style debt in the metrics trend.
+    ///
+    /// <para>They share one property that decides all of that: each one says <em>the results you are
+    /// reading are incomplete</em>. A baseline records debt a team chose to live with, and "this
+    /// class was never checked" is not something a gate should be able to accept — accepting it hides
+    /// the very fact that the total cannot be trusted, permanently and invisibly. <c>CheckFailed</c>
+    /// used to be baselineable purely because this predicate stopped one id short of it.</para>
+    /// </summary>
+    public static bool IsDiagnostic(string ruleId) =>
+        ruleId is SyntaxError or ParseFailure or CheckFailed;
 }

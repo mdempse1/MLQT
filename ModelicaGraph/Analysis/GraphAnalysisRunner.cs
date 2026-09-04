@@ -60,15 +60,32 @@ public static class GraphAnalysisRunner
             // everything as unreferenced. Skip it rather than emit false positives.
             if (analyzer.NeedsDependencyAnalysis && !context.DependenciesAnalyzed)
                 continue;
-            findings.AddRange(analyzer.Analyze(context));
+
+            try
+            {
+                findings.AddRange(analyzer.Analyze(context));
+            }
+            catch (Exception ex)
+            {
+                // The same bargain the per-class check already makes: one analysis that cannot finish
+                // must not take the others with it, and must not vanish either. Before this, the CLI
+                // died on the exception (exit code and stack trace, not the documented 2) while the
+                // desktop app caught it several frames up and dropped every graph finding for every
+                // repository in silence — two different wrong answers to the same question.
+                findings.Add(Failure(context, analyzer, ex));
+            }
         }
 
         if (findings.Count == 0)
             return findings;
 
-        // Stamp the configured severity (visitors/analyzers emit at the record default).
+        // Stamp the configured severity (visitors/analyzers emit at the record default). A diagnostic
+        // is not in the map and is not stamped from it — it keeps the severity it was created with.
         for (int i = 0; i < findings.Count; i++)
         {
+            if (RuleIds.IsDiagnostic(findings[i].RuleId))
+                continue;
+
             var sev = context.Settings.SeverityFor(findings[i].RuleId);
             if (sev == RuleSeverity.Off)
                 sev = RuleCatalog.DefaultSeverityFor(findings[i].RuleId);
@@ -76,6 +93,40 @@ public static class GraphAnalysisRunner
         }
 
         return honorSuppressions ? ApplySuppressions(context.Graph, findings) : findings;
+    }
+
+    /// <summary>
+    /// Reports an analysis that threw, as the diagnostic that says the results are incomplete.
+    /// Attributed to the root of the checked set, because a whole-graph analysis belongs to no one
+    /// class — and a finding needs a model id a reader can navigate to.
+    /// </summary>
+    private static Finding Failure(GraphAnalysisContext context, IGraphAnalyzer analyzer, Exception ex) =>
+        new()
+        {
+            RuleId = RuleIds.CheckFailed,
+            ModelId = OwnerOf(context),
+            Discriminator = analyzer.GetType().Name,
+            Message = $"The {analyzer.GetType().Name} analysis failed " +
+                      $"({ex.GetType().Name}: {ex.Message}). Its findings are missing from these results.",
+            Severity = RuleSeverity.Error,
+        };
+
+    /// <summary>
+    /// The class a whole-graph failure is reported against: the shortest top-level package in the
+    /// checked set, else the first model, else nothing. Any of them is arbitrary; a stable choice is
+    /// what matters, so the fingerprint does not move between runs over the same library.
+    /// </summary>
+    private static string OwnerOf(GraphAnalysisContext context)
+    {
+        if (context.Models.Count == 0)
+            return string.Empty;
+
+        var root = context.Models
+            .Where(m => !m.Id.Contains('.'))
+            .OrderBy(m => m.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        return root?.Id ?? context.Models.OrderBy(m => m.Id, StringComparer.Ordinal).First().Id;
     }
 
     // Drop findings the author waived via __MLQT annotations. Graph findings can span many models,
@@ -93,9 +144,24 @@ public static class GraphAnalysisRunner
         return kept;
     }
 
+    /// <summary>
+    /// The suppression directives on one class, or null when there are none to read. Reading them
+    /// means re-parsing the class, so it is per-model on purpose: a class that will not parse costs
+    /// its own waivers and no one else's, and the findings come through unsuppressed — visible rather
+    /// than silently dropped, which is the safe direction for a check to fail in.
+    /// </summary>
     private static SuppressionSet? BuildSuppressions(DirectedGraph graph, string modelId)
     {
-        var parsed = graph.GetNode<ModelNode>(modelId)?.Definition?.EnsureParsed();
+        modelicaParser.Stored_definitionContext? parsed;
+        try
+        {
+            parsed = graph.GetNode<ModelNode>(modelId)?.Definition?.EnsureParsed();
+        }
+        catch
+        {
+            return null;
+        }
+
         if (parsed is null)
             return null;
 

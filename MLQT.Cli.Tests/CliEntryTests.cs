@@ -104,4 +104,43 @@ public class CliEntryTests
         Assert.Equal(ExitCodes.Error, code);
         Assert.NotEqual(string.Empty, stderr);
     }
+
+    /// <summary>A writer that fails, standing in for anything unexpected inside a command.</summary>
+    private sealed class BrokenWriter : StringWriter
+    {
+        public override void WriteLine(string? value) =>
+            throw new IOException("There is not enough space on the disk.");
+    }
+
+    /// <summary>
+    /// Whatever goes wrong, the process still answers with one of the three documented exit codes.
+    ///
+    /// <para>Before this there was nothing around the dispatch: an analyzer that threw, or a report
+    /// file that could not be written, ended the process on an unhandled exception — a stack trace on
+    /// stderr and an exit code that is neither 0, 1 nor 2. A CI job branching on the contract in
+    /// cli.md has no case for that, so it reads as neither a clean run nor a failed gate.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnUnexpectedFailure_IsASetupError_NotACrash()
+    {
+        var stderr = new StringWriter();
+
+        var code = await CliEntry.RunAsync(["--help"], new BrokenWriter(), stderr);
+
+        Assert.Equal(ExitCodes.Error, code);
+        Assert.Contains("error: IOException", stderr.ToString());
+        Assert.Contains("not enough space", stderr.ToString());
+    }
+
+    [Fact]
+    public async Task AnUnexpectedFailure_SaysItIsOurFaultAndWhatToReport()
+    {
+        var stderr = new StringWriter();
+
+        await CliEntry.RunAsync(["--help"], new BrokenWriter(), stderr);
+
+        // The operator needs to know this is not their library, and needs the detail to paste.
+        Assert.Contains("defect in mlqt", stderr.ToString());
+        Assert.Contains(nameof(CliEntry), stderr.ToString());   // the stack trace is included
+    }
 }

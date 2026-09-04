@@ -35,7 +35,7 @@ public sealed class SuppressionTools
                 "'__MLQT(suppress=\"<ruleId>\")' vendor annotation to the source. Use this to waive a finding " +
                 "that is a false positive or an accepted exception — the waiver is written into the .mo file, " +
                 "survives reformatting, and is honoured by both 'mlqt check' and the desktop app. Pass the " +
-                "ruleId exactly as reported (e.g. 'MLQT.Documentation.ParameterDescription'; the short form " +
+                "ruleId exactly as reported (e.g. 'MLQT.Doc.ParameterDescription'; the short form " +
                 "without the 'MLQT.' prefix and the wildcard '*' are also accepted). Give 'component' to scope " +
                 "the waiver to a single component (e.g. a parameter) rather than the whole class. An optional " +
                 "'reason' is recorded as 'reason=\"…\"' alongside the suppression. Merges into any existing " +
@@ -44,7 +44,7 @@ public sealed class SuppressionTools
     public async Task<object> SuppressRule(
         [Description("Fully-qualified id of the class the finding is in.")] string classId,
         [Description("The rule id to suppress, exactly as reported (e.g. " +
-                     "'MLQT.Documentation.ParameterDescription'). The short form without the 'MLQT.' prefix " +
+                     "'MLQT.Doc.ParameterDescription'). The short form without the 'MLQT.' prefix " +
                      "and the wildcard '*' (suppress all rules here) are also accepted.")]
         string ruleId,
         [Description("Optional component name to scope the waiver to a single component (a parameter, " +
@@ -55,8 +55,17 @@ public sealed class SuppressionTools
         [Description("Return the resulting file text without writing. Default false.")] bool preview = false)
     {
         if (string.IsNullOrWhiteSpace(ruleId))
-            return new ToolError("ruleId is required — the rule to suppress, e.g. 'MLQT.Documentation.ParameterDescription' or '*'.");
+            return new ToolError("ruleId is required — the rule to suppress, e.g. 'MLQT.Doc.ParameterDescription' or '*'.");
         ruleId = ruleId.Trim();
+
+        // A diagnostic is not a rule and is never routed through suppression, so writing the
+        // annotation would edit the source and change nothing. Refuse rather than report success:
+        // the caller would otherwise conclude the finding was waived and stop looking at it.
+        if (RuleIds.IsDiagnostic(ruleId) || RuleIds.IsDiagnostic("MLQT." + ruleId))
+            return new ToolError(
+                $"'{ruleId}' is a diagnostic, not a style rule, and cannot be suppressed. It reports that " +
+                "this class could not be read or could not be checked, which means the findings for it are " +
+                "incomplete — fix the source, or report the failure. See Documentation/cli.md.");
 
         var node = _libraries.GetModelById(classId);
         if (node is null)

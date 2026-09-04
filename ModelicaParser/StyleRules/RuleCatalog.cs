@@ -64,12 +64,16 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.UnusedPublicClass, "Possibly-unused public classes", "Unused", RuleSeverity.Info, "A public nested class that nothing in the loaded libraries references — lower confidence, as a downstream library you cannot see may use it. Classes with an experiment(...) annotation are exempt. Best on an application library, not a foundational one."),
             new RuleDefinition(RuleIds.ShadowingInheritedMember, "No shadowed inherited members", "Correctness", RuleSeverity.Warning, "A declaration must not silently shadow a same-named member inherited via extends (use redeclare to override intentionally)."),
             new RuleDefinition(RuleIds.UnusedMember, "No unused protected members", "Unused", RuleSeverity.Warning, "A protected component/parameter/constant in a class that nothing extends should be referenced."),
-            // Parse diagnostics are catalogued for SARIF metadata and suppression-id validation only.
-            // They are never enabled or disabled — see RuleIds.IsParseDiagnostic. The "Parse" category
-            // is deliberately outside the settings UI's rule categories so they cannot be switched off.
+            // Diagnostics are catalogued for SARIF metadata and suppression-id validation only. They
+            // are never enabled or disabled, and never baselined — see RuleIds.IsDiagnostic. The
+            // "Parse" and "Check" categories are deliberately outside the settings UI's rule
+            // categories so they cannot be switched off.
             new RuleDefinition(RuleIds.SyntaxError, "Source parses cleanly", "Parse", RuleSeverity.Error, "The file contains a syntax error. The parser recovered, so the class still loaded, but part of it may have been misread and every other rule under-reports on it."),
             new RuleDefinition(RuleIds.ParseFailure, "Source could be parsed", "Parse", RuleSeverity.Error, "The file could not be parsed at all. No classes were extracted from it and nothing in it has been checked."),
-            new RuleDefinition(RuleIds.CheckFailed, "Class could be checked", "Parse", RuleSeverity.Error, "Checking this class threw, so its findings are missing from the results. A defect in MLQT or an unworkable setting (for example a naming pattern that cannot be evaluated), not a problem with the code."),
+            // Its own category, not "Parse": nothing failed to parse here. Reading the file worked;
+            // MLQT threw afterwards. Filing it under Parse made the one predicate that matters look
+            // like it covered this id when it did not.
+            new RuleDefinition(RuleIds.CheckFailed, "Class could be checked", "Check", RuleSeverity.Error, "Checking this class threw, so its findings are missing from the results. A defect in MLQT or an unworkable setting (for example a naming pattern that cannot be evaluated), not a problem with the code."),
         };
 
         return defs.ToDictionary(d => d.Id, StringComparer.Ordinal);

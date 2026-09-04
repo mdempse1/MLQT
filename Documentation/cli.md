@@ -64,11 +64,11 @@ copy of a library has that another does not, and `mlqt hook`
 |------|---------|
 | `0` | No findings at or above `--fail-on` |
 | `1` | Findings at or above `--fail-on` |
-| `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) |
+| `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
 Because the built-in **style** rules report at **warning** severity, the default `--fail-on error`
 is effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for
-a strict gate, or `--fail-on off` to never fail. **Parse diagnostics are the exception** — they are
+a strict gate, or `--fail-on off` to never fail. **Diagnostics are the exception** — they are
 errors and fail even the default gate; see below.
 
 ## Resolving references into other libraries
@@ -170,23 +170,31 @@ warning: the baseline was generated with a different configuration
          change did not cause.
 ```
 
-## Parse diagnostics
+## Diagnostics
 
-Two findings are reported that are not style rules:
+Three findings are reported that are not style rules:
 
 | Rule id | Meaning |
 |---------|---------|
 | `MLQT.Parse.SyntaxError` | The file has a syntax error. The parser recovered, so the class still loaded — but part of it was misread. |
 | `MLQT.Parse.Failure` | The file could not be parsed at all. No classes were extracted from it and nothing in it was checked. |
+| `MLQT.Check.Failed` | Checking the class threw, so its findings are missing from the results — see [below](#mlqtcheckfailed). |
 
-They behave differently from style rules on purpose, because a file MLQT cannot read is not a matter
-of taste and every other rule silently under-reports on it:
+They behave differently from style rules on purpose, because a class MLQT could not read — or could
+not check — is not a matter of taste, and every other rule silently under-reports on it:
 
 - **Always reported.** They ignore the settings file — there is nothing to enable, and they are
   produced even when no style rules are configured at all.
 - **Always errors.** They fail the default `--fail-on error` gate.
 - **Cannot be suppressed** with a `__MLQT` annotation, and `baseline create` will not record them, so
-  a baseline can never accept one.
+  a baseline can never accept one. `suppress_rule` in the MCP server refuses them for the same reason.
+
+That last point is the one worth stating plainly: **a diagnostic cannot be waived**. Every other
+finding can be accepted into the baseline and stop failing the build, because it is a judgement about
+code someone chose to live with. A diagnostic is not a judgement — it says *the numbers you are about
+to read are incomplete* — and accepting it would hide exactly that. If one is blocking a pipeline,
+`--fail-on off` will get past it, but the totals in that run are still short by however many findings
+the unread class would have produced.
 
 The same diagnostics appear in the desktop app's Findings panel and from the MCP server's `check_class`
 / `check_library`, with identical wording and line numbers.
@@ -202,6 +210,11 @@ It exists because the alternative is worse: a class that cannot be checked used 
 silence, so a run's totals could move between two runs over the same code with nothing to explain the
 difference, and a clean class looked exactly like one that was never checked. Seeing this finding
 means the reported totals are incomplete; please report it.
+
+It is a diagnostic, so it follows the rules above rather than the style rules': always reported,
+always an error, never suppressed and never written to a baseline. It used to be baselineable, which
+meant the one finding that says *this result is incomplete* was also the one a baseline could silence
+for good.
 
 ## Settings
 
@@ -316,7 +329,7 @@ One consequence worth knowing: an entry only becomes prunable when the **last** 
 fixed. Fix one of two identical-fingerprint findings and `prune` will correctly leave the entry alone.
 
 **Severity plays no part in this.** Errors, warnings and infos are all recorded. The only findings a
-baseline never holds are [parse diagnostics](#parse-diagnostics); `create` says so on stderr
+baseline never holds are [diagnostics](#diagnostics); `create` says so on stderr
 when it skipped any.
 
 ### `prune` vs `update`
@@ -419,8 +432,8 @@ unchanged model → never fails), or **touched debt** (in the baseline, but in a
 modified). The baseline uses a reformat-stable fingerprint, so reformatting a model does not turn its
 accepted debt into new findings.
 
-Parse diagnostics are never captured in a baseline and are always classified **new** — see
-[Parse diagnostics](#parse-diagnostics).
+Diagnostics are never captured in a baseline and are always classified **new** — see
+[Diagnostics](#diagnostics).
 
 ### Changed-model escalation (the "boy-scout rule")
 

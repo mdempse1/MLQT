@@ -117,7 +117,7 @@ The **Rule id** column is the identifier the rule reports under everywhere outsi
 `RuleSeverities`, in a `__MLQT(suppress="…")` annotation, in the CLI's output and in a SARIF alert,
 whose "learn more" link comes to this page. Every id MLQT can report is on this page except the parse
 diagnostics, which are not settings — see
-[Parse diagnostics](cli.md#parse-diagnostics).
+[Diagnostics](cli.md#diagnostics).
 
 | Setting | Rule id | Default | Description |
 |---------|---------|---------|-------------|
@@ -246,7 +246,7 @@ to leave alone:
   so excluding your test library will not make the code it exercises look unused. Only the reporting
   is suppressed.
 - **Parse errors are still reported.** Those say the file could not be read at all rather than
-  expressing an opinion about its style; see [cli.md](cli.md#parse-diagnostics).
+  expressing an opinion about its style; see [cli.md](cli.md#diagnostics).
 - `mlqt check` prints `note: N class(es) skipped as excluded libraries`, so a mistyped name shows up
   as an unexpected number rather than as a quiet pass.
 

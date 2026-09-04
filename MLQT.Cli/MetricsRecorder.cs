@@ -69,11 +69,12 @@ internal static class MetricsRecorder
                 // dimensions changed with who wrote the point would be unreadable.
                 var metrics = MetricsCalculator.Compute(graph, scopeModels, _ => settings);
 
-                // Match the dashboard's figure: active style findings in scope. Parse diagnostics are
-                // not style debt and would make the trend jump on a syntax error rather than quality.
+                // Match the dashboard's figure: active style findings in scope. A diagnostic is not
+                // style debt — it would make the trend jump on a syntax error, or on a defect in MLQT,
+                // rather than on the library's quality moving.
                 var inScope = scopeModels.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
                 var findingCount = findings.Count(f =>
-                    !RuleIds.IsParseDiagnostic(f.RuleId) && inScope.Contains(f.ModelId));
+                    !RuleIds.IsDiagnostic(f.RuleId) && inScope.Contains(f.ModelId));
 
                 var snapshot = MetricsSnapshot.From(
                     metrics, scope, timestampUtc, findingCount, stamp.Revision, stamp.Branch);

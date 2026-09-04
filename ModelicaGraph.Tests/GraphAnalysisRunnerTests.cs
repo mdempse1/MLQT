@@ -16,6 +16,14 @@ public class GraphAnalysisRunnerTests
         public IEnumerable<Finding> Analyze(GraphAnalysisContext context) => _findings;
     }
 
+    /// <summary>An analyzer that throws — a defect in a rule, or a class it cannot handle.</summary>
+    private sealed class ThrowingAnalyzer : IGraphAnalyzer
+    {
+        public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Throws" };
+        public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
+            throw new InvalidOperationException("the analyzer broke");
+    }
+
     private static (DirectedGraph graph, GraphAnalysisContext ctx) Setup(string modelId, string code, StyleCheckingSettings settings)
     {
         var graph = new DirectedGraph();
@@ -139,5 +147,62 @@ public class GraphAnalysisRunnerTests
         var ctx = new GraphAnalysisContext(graph, StubEnabled(), graph.ModelNodes.ToList(), dependenciesAnalyzed: true);
 
         Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new DependencyRequiringStub() }));
+    }
+
+    /// <summary>
+    /// An analyzer that throws is reported, not propagated. It used to escape the runner entirely:
+    /// out through the CLI as an unhandled exception (a stack trace and an exit code outside the
+    /// documented 0/1/2), and out through the desktop app into a catch several frames up that dropped
+    /// every graph finding for every repository without saying so.
+    /// </summary>
+    [Fact]
+    public void AnAnalyzerThatThrows_IsReportedAsADiagnostic()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Throws"] = RuleSeverity.Warning;
+        var (_, ctx) = Setup("M", "model M Real x; end M;", settings);
+
+        var result = GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer() });
+
+        var f = Assert.Single(result);
+        Assert.Equal(ModelicaParser.StyleRules.RuleIds.CheckFailed, f.RuleId);
+        Assert.Equal(RuleSeverity.Error, f.Severity);
+        Assert.Contains("ThrowingAnalyzer", f.Message);
+        Assert.Contains("the analyzer broke", f.Message);
+        Assert.Contains("missing from these results", f.Message);
+    }
+
+    [Fact]
+    public void AnAnalyzerThatThrows_DoesNotTakeTheOthersWithIt()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Throws"] = RuleSeverity.Warning;
+        settings.RuleSeverities["MLQT.Test.Stub"] = RuleSeverity.Warning;
+        var (_, ctx) = Setup("M", "model M Real x; end M;", settings);
+        var good = new StubAnalyzer(new Finding { RuleId = "MLQT.Test.Stub", ModelId = "M", Message = "hi" });
+
+        var result = GraphAnalysisRunner.Run(
+            ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer(), good });
+
+        Assert.Contains(result, f => f.RuleId == "MLQT.Test.Stub");
+        Assert.Contains(result, f => f.RuleId == ModelicaParser.StyleRules.RuleIds.CheckFailed);
+    }
+
+    /// <summary>
+    /// The diagnostic keeps the Error it was created with. Stamping it from the severity map would
+    /// read Off (it is not a configurable rule) and then fall back to the catalog default, which is
+    /// the same answer by luck rather than by design — and would let a settings file demote it.
+    /// </summary>
+    [Fact]
+    public void TheFailureDiagnostic_IsNotStampedFromTheSeverityMap()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Throws"] = RuleSeverity.Warning;
+        settings.RuleSeverities[ModelicaParser.StyleRules.RuleIds.CheckFailed] = RuleSeverity.Info;
+        var (_, ctx) = Setup("M", "model M Real x; end M;", settings);
+
+        var f = Assert.Single(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer() }));
+
+        Assert.Equal(RuleSeverity.Error, f.Severity);
     }
 }

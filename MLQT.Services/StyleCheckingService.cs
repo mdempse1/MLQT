@@ -3,6 +3,7 @@ using ModelicaGraph;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using ModelicaParser.SpellChecking;
 using MLQT.Services.Helpers;
 using MLQT.Services.DataTypes;
@@ -679,56 +680,78 @@ public class StyleCheckingService : IStyleCheckingService
 
     private void RunGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst = false)
     {
-        try
-        {
-            var graph = _libraryDataService.CombinedGraph;
-            var emitted = false;
+        var graph = _libraryDataService.CombinedGraph;
+        var emitted = false;
 
-            foreach (var repository in repositories)
+        // Per repository, not around the loop. A failure here used to be caught several frames up,
+        // logged, and returned from - which lost every graph finding for every repository in the
+        // project, with nothing on the Issues list to say a whole class of rules had not run. The
+        // analyzers themselves now report their own failures (GraphAnalysisRunner), so what is left
+        // to catch is this repository's model list or its settings; that costs this repository and
+        // says so.
+        foreach (var repository in repositories)
+        {
+            try
             {
-                var settings = repository.StyleSettings;
-                if (settings is null)
-                    continue;
-                // Nothing to do unless a graph rule is enabled for this repository.
-                if (!GraphAnalysisRunner.BuiltIn.Any(a => a.RuleIds.Any(settings.IsRuleEnabled)))
-                    continue;
-
-                var models = _libraryDataService.Libraries
-                    .Where(l => l.RepositoryId == repository.Id)
-                    .SelectMany(l => l.ModelIds)
-                    .Select(id => graph.GetNode<ModelNode>(id))
-                    .Where(m => m is not null && !m.IsParseFailurePlaceholder)
-                    .Cast<ModelNode>()
-                    .ToList();
-                if (models.Count == 0)
-                    continue;
-
-                if (removeStaleFirst)
-                {
-                    var repoModelIds = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
-                    _codeReviewService.RemoveLogMessagesByPredicate(m =>
-                        m.RuleId is not null && GraphRuleIds.Contains(m.RuleId) && repoModelIds.Contains(m.ModelName));
-                }
-
-                // Whether the edges exist is answered by the graph itself (DirectedGraph.DependenciesAnalyzed),
-                // not inferred from whether some model happens to have edges — that inference read true for a
-                // partly-built graph and changed the finding count between runs.
-                var context = new GraphAnalysisContext(graph, settings, models);
-                var findings = GraphAnalysisRunner.Run(context);
-                if (findings.Count > 0)
-                {
-                    FindingsFound(this, findings.Select(f => f.ToLogMessage()).ToList());
-                    emitted = true;
-                }
+                emitted |= RunGraphAnalysesFor(repository, graph, removeStaleFirst);
             }
+            catch (Exception ex)
+            {
+                Error("StyleCheckingService", $"Graph analyses for {repository.Name} failed", ex);
+                _codeReviewService.AddLogMessages([
+                    new LogMessage(repository.Name, "Style warning", 0,
+                        $"The whole-library analyses for {repository.Name} failed " +
+                        $"({ex.GetType().Name}: {ex.Message}). Their findings are missing from these results.")
+                    {
+                        Source = "StyleChecking",
+                        RuleId = RuleIds.CheckFailed,
+                    }
+                ]);
+                emitted = true;
+            }
+        }
 
-            if (emitted)
-                FlushPendingFindings();
-        }
-        catch (Exception ex)
+        if (emitted)
+            FlushPendingFindings();
+    }
+
+    /// <summary>Runs the graph analyses for one repository. True if it emitted anything.</summary>
+    private bool RunGraphAnalysesFor(Repository repository, DirectedGraph graph, bool removeStaleFirst)
+    {
+        var settings = repository.StyleSettings;
+        if (settings is null)
+            return false;
+        // Nothing to do unless a graph rule is enabled for this repository.
+        if (!GraphAnalysisRunner.BuiltIn.Any(a => a.RuleIds.Any(settings.IsRuleEnabled)))
+            return false;
+
+        var models = _libraryDataService.Libraries
+            .Where(l => l.RepositoryId == repository.Id)
+            .SelectMany(l => l.ModelIds)
+            .Select(id => graph.GetNode<ModelNode>(id))
+            .Where(m => m is not null && !m.IsParseFailurePlaceholder)
+            .Cast<ModelNode>()
+            .ToList();
+        if (models.Count == 0)
+            return false;
+
+        if (removeStaleFirst)
         {
-            Error("StyleCheckingService", "Graph analyses failed", ex);
+            var repoModelIds = models.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+            _codeReviewService.RemoveLogMessagesByPredicate(m =>
+                m.RuleId is not null && GraphRuleIds.Contains(m.RuleId) && repoModelIds.Contains(m.ModelName));
         }
+
+        // Whether the edges exist is answered by the graph itself (DirectedGraph.DependenciesAnalyzed),
+        // not inferred from whether some model happens to have edges — that inference read true for a
+        // partly-built graph and changed the finding count between runs.
+        var context = new GraphAnalysisContext(graph, settings, models);
+        var findings = GraphAnalysisRunner.Run(context);
+        if (findings.Count == 0)
+            return false;
+
+        FindingsFound(this, findings.Select(f => f.ToLogMessage()).ToList());
+        return true;
     }
 
     /// <summary>

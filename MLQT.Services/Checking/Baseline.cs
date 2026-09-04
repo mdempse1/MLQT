@@ -118,23 +118,24 @@ public sealed class Baseline
     }
 
     /// <summary>
-    /// True if the finding is recorded as accepted debt. Parse diagnostics never are: a baseline is a
-    /// record of style debt someone chose to live with, and code that does not parse is not something
-    /// a gate should be able to accept — every other rule under-reports on it.
+    /// True if the finding is recorded as accepted debt. Diagnostics never are: a baseline is a
+    /// record of style debt someone chose to live with, and a class that could not be read or could
+    /// not be checked is not something a gate should be able to accept — every other rule
+    /// under-reports on it. See <see cref="RuleIds.IsDiagnostic"/>.
     /// </summary>
     public bool Contains(Finding finding) =>
-        !RuleIds.IsParseDiagnostic(finding.RuleId) && _fingerprints.Contains(finding.Fingerprint);
+        !RuleIds.IsDiagnostic(finding.RuleId) && _fingerprints.Contains(finding.Fingerprint);
 
     /// <summary>
     /// Whether the baseline records this fingerprint. For a consumer that holds a projected
-    /// <see cref="LogMessage"/> rather than the original finding. Parse diagnostics are never written
-    /// to a baseline, so they simply do not match.
+    /// <see cref="LogMessage"/> rather than the original finding. Diagnostics are never written to a
+    /// baseline, so they simply do not match.
     /// </summary>
     public bool ContainsFingerprint(string? fingerprint) =>
         fingerprint is not null && _fingerprints.Contains(fingerprint);
 
     /// <summary>Snapshots the current findings into a baseline (deduped by fingerprint, sorted).
-    /// Parse diagnostics are excluded — see <see cref="Contains"/>.</summary>
+    /// Diagnostics are excluded — see <see cref="Contains"/>.</summary>
     /// <param name="createdUtc">Generation time, supplied by the caller so the result is deterministic
     /// and testable rather than reading the clock here.</param>
     /// <param name="stamp">The revision the library was at, for matching the baseline to a commit.</param>
@@ -143,7 +144,7 @@ public sealed class Baseline
         StyleCheckingSettings? settings = null, IReadOnlyList<string>? dependencies = null)
     {
         var entries = findings
-            .Where(f => !RuleIds.IsParseDiagnostic(f.RuleId))
+            .Where(f => !RuleIds.IsDiagnostic(f.RuleId))
             .GroupBy(f => f.Fingerprint, StringComparer.Ordinal)
             .Select(g => g.First())
             .Select(f => new BaselineEntry(f.Fingerprint, f.RuleId, f.ModelId, f.ElementPath, f.Message));
@@ -159,7 +160,7 @@ public sealed class Baseline
     public static BaselineCoverage CoverageOf(IEnumerable<Finding> findings)
     {
         var all = findings as IReadOnlyCollection<Finding> ?? findings.ToList();
-        var baselineable = all.Where(f => !RuleIds.IsParseDiagnostic(f.RuleId)).ToList();
+        var baselineable = all.Where(f => !RuleIds.IsDiagnostic(f.RuleId)).ToList();
         return new BaselineCoverage(
             all.Count,
             baselineable.Select(f => f.Fingerprint).Distinct(StringComparer.Ordinal).Count(),

@@ -65,4 +65,61 @@ public class CheckFailureVisibilityTests
         // It reaches the severity map, SARIF metadata and the dashboard like any other rule id.
         Assert.True(RuleCatalog.IsKnown(RuleIds.CheckFailed));
     }
+
+    /// <summary>
+    /// The finding that says "these results are incomplete" must not be something a baseline can
+    /// accept. It was, for as long as <c>IsParseDiagnostic</c> was the predicate the baseline asked:
+    /// one `baseline create` over a library with a class MLQT threw on wrote the failure in as debt,
+    /// and the gate never mentioned it again.
+    /// </summary>
+    [Fact]
+    public void AFailureIsNeverWrittenToABaseline()
+    {
+        var (graph, models) = Library();
+        models.First(m => m.Id == "P.A").Definition = null!;
+        var findings = Check(graph, models);
+        Assert.Contains(findings, f => f.RuleId == RuleIds.CheckFailed);
+
+        var baseline = Baseline.FromFindings(findings);
+
+        Assert.DoesNotContain(baseline.Entries, e => e.RuleId == RuleIds.CheckFailed);
+        Assert.All(findings.Where(f => f.RuleId == RuleIds.CheckFailed),
+            f => Assert.False(baseline.Contains(f)));
+    }
+
+    /// <summary>
+    /// And not even when the baseline was written before this rule existed and happens to hold the
+    /// fingerprint anyway — <c>Contains</c> refuses on the rule id, not on the absence of an entry.
+    /// </summary>
+    [Fact]
+    public void AFailureIsNotAcceptedEvenByABaselineThatRecordsIt()
+    {
+        var failure = new Finding
+        {
+            RuleId = RuleIds.CheckFailed,
+            ModelId = "P.A",
+            Message = "Checking this class failed.",
+            Severity = RuleSeverity.Error,
+        };
+        var stale = new Baseline([
+            new BaselineEntry(failure.Fingerprint, failure.RuleId, failure.ModelId, null, failure.Message)
+        ]);
+
+        Assert.False(stale.Contains(failure));
+    }
+
+    [Fact]
+    public void EveryDiagnosticIsRecognisedAsOne()
+    {
+        // The whole point of the predicate: three ids, one answer. Adding a fourth diagnostic without
+        // adding it here is what let CheckFailed be treated as style debt in the first place.
+        Assert.True(RuleIds.IsDiagnostic(RuleIds.SyntaxError));
+        Assert.True(RuleIds.IsDiagnostic(RuleIds.ParseFailure));
+        Assert.True(RuleIds.IsDiagnostic(RuleIds.CheckFailed));
+        Assert.False(RuleIds.IsDiagnostic(RuleIds.ClassDescription));
+
+        // Narrower, and deliberately so: only these two came from the parser, which is what decides
+        // whether a finding is projected as a parser message or a style one.
+        Assert.False(RuleIds.IsParseDiagnostic(RuleIds.CheckFailed));
+    }
 }

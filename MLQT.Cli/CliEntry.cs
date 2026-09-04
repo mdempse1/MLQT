@@ -3,7 +3,34 @@ namespace MLQT.Cli;
 /// <summary>Top-level dispatch for the `mlqt` command. Kept separate from Program.cs so it is testable.</summary>
 internal static class CliEntry
 {
+    /// <summary>
+    /// Runs one command, and answers with an exit code whatever happens.
+    ///
+    /// <para>The catch is load-bearing, not defensive tidiness. `cli.md` publishes a three-value exit
+    /// contract that CI scripts branch on, and without this an unexpected exception — an analyzer that
+    /// throws, a report file on a full disk, a settings file that deserializes into something
+    /// surprising — left the process with a .NET unhandled-exception code and a stack trace on stderr.
+    /// A build reading that sees neither "clean" nor "findings" nor "setup error", and the operator
+    /// sees a crash where every other failure prints one `error:` line.</para>
+    /// </summary>
     public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        try
+        {
+            return await DispatchAsync(args, stdout, stderr);
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"error: {ex.GetType().Name}: {ex.Message}");
+            stderr.WriteLine(
+                "       This is a defect in mlqt, not a problem with the library. Please report it " +
+                "with the command line you used; the detail below is what to include.");
+            stderr.WriteLine(ex.ToString());
+            return ExitCodes.Error;
+        }
+    }
+
+    private static async Task<int> DispatchAsync(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length == 0)
         {
