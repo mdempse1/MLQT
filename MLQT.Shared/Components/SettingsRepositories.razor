@@ -355,29 +355,34 @@
                     }
                 </MudPaper>
             }
-            @foreach (var item in StyleGuidelineRules)
+            @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.StyleGuidelines))
             {
                 <div class="mlqt-rule-row">
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                        <MudTooltip Text="@("Rule ID = " + item.Id)">
+                        <MudTooltip Text="@("Rule ID = " + item.RuleId)">
                             <MudText Typo="Typo.body1">@item.Label</MudText>
                         </MudTooltip>
                         <MudSpacer/>
-                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.Id)"
-                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.Id, v))" />
+                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
                     </MudStack>
                 </div>
             }
            
-            <MudText Typo="Typo.subtitle2" Class="mt-4">Reference validation</MudText>
-            <div class="mlqt-rule-row">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                    <MudText Typo="Typo.body1">Validate modelica:// model references point to existing models</MudText>
-                    <MudSpacer/>
-                    <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(RuleIds.ModelReferences)"
-                        ValueChanged="@(v => SelectedSettings.SetRuleSeverity(RuleIds.ModelReferences, v))" />
-                </MudStack>
-            </div>
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@RuleSettingsLayout.ReferenceValidation</MudText>
+            @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.ReferenceValidation))
+            {
+                <div class="mlqt-rule-row">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                        <MudTooltip Text="@("Rule ID = " + item.RuleId)">
+                            <MudText Typo="Typo.body1">@item.Label</MudText>
+                        </MudTooltip>
+                        <MudSpacer/>
+                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
+                    </MudStack>
+                </div>
+            }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Static analysis</MudText>
             <MudText Typo="Typo.body1" Class="mb-1">
@@ -704,33 +709,17 @@
         StateHasChanged();
     }
 
-    // The rules shown in the data-driven "Static analysis" section: everything in the catalog that
-    // isn't one of the hand-written style/ordering/documentation/spelling/naming toggles above.
-    private static readonly HashSet<string> AnalysisCategories =
-        new(StringComparer.Ordinal) { "Correctness", "Units", "Unused", "Structure" };
-
+    // The rules shown in the data-driven "Static analysis" section: everything in the catalog whose
+    // category is rendered from the catalog. Which categories those are is declared in
+    // RuleSettingsLayout alongside the rules this dialog places by hand, so one list answers "where
+    // is this rule set?" for every rule — and a rule with no answer fails RuleSettingsLayoutTests
+    // instead of quietly appearing nowhere.
     private static readonly IReadOnlyList<RuleDefinition> AnalysisRules =
-        RuleCatalog.BuiltIn.Values
-            .Where(r => AnalysisCategories.Contains(r.Category))
+        RuleCatalog.Configurable
+            .Where(r => RuleSettingsLayout.CatalogDrivenCategories.Contains(r.Category))
             .OrderBy(r => r.Category, StringComparer.Ordinal)
             .ThenBy(r => r.Title, StringComparer.Ordinal)
             .ToList();
-
-    // Documentation/structure/reference rules that used to be hand-written on/off switches, now rendered
-    // through the shared severity control. Their descriptive labels are kept (clearer than the terse
-    // catalog titles); the ordering/formatting-coupled and naming/spell rules stay bespoke above/below
-    // because they interlock with the formatter or drive their own sub-panels.
-    private static readonly (string Id, string Label)[] StyleGuidelineRules =
-    {
-        (RuleIds.ClassDescription, "Every class must have a description"),
-        (RuleIds.ClassDocumentationInfo, "Every class must have documentation info"),
-        (RuleIds.ClassDocumentationRevisions, "Every class must have documentation revisions"),
-        (RuleIds.ClassIcon, "Every class must have an icon"),
-        (RuleIds.ParameterDescription, "Every public parameter must have a description"),
-        (RuleIds.ConstantDescription, "Every public constant must have a description"),
-        (RuleIds.DontMixEquationAndAlgorithm, "A class may only have either an equation or algorithm section, not both"),
-        (RuleIds.DontMixConnections, "Do not mix connections and equations in the same class"),
-    };
 
     // Compare the rule-severity maps (covers every rule toggle, hand-written or data-driven) plus the
     // non-rule fields that aren't in the map (formatter flags, naming config, spell languages).

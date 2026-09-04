@@ -191,9 +191,11 @@ public static class StyleChecking
         // over the graph rather than by looking at the declaring class on its own.
 
         // Stamp the configured severity on each finding (visitors emit at the default level).
-        // A finding only exists because its rule ran, so a resolved severity of Off (e.g. the
-        // ExtendsAtTop rule, which is coupled to ImportStatementsFirst rather than independently
-        // toggled) falls back to the rule's default enabled severity.
+        // A finding only exists because its rule ran, so a resolved severity of Off would be a
+        // contradiction; the fallback to the rule's default keeps such a finding reportable instead
+        // of emitting one at a severity that means "disabled". It used to be load-bearing, because
+        // MLQT.Style.ExtendsAtTop had no setting to resolve and so always came back Off; that rule
+        // now resolves through its governor (RuleDefinition.GovernedBy), and this is a net.
         for (int i = 0; i < findings.Count; i++)
         {
             var sev = settings.SeverityFor(findings[i].RuleId);

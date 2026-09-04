@@ -127,6 +127,12 @@ internal static class CheckPipeline
 
         if (!settings.HasAnyStyleRuleEnabled)
             stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
+
+        // A settings file that names a rule it cannot set is a gate configured by a spelling mistake.
+        // It loads without complaint either way, so the only thing standing between a typo and a rule
+        // silently never running is this line.
+        foreach (var ignored in settings.IgnoredRuleKeys())
+            stderr.WriteLine($"warning: {StyleCheckingSettings.WhyIgnored(ignored)}");
         if (settings.ExcludedLibraries.Count > 0)
             stderr.WriteLine($"note: excluding {string.Join(", ", settings.ExcludedLibraries)} from the checks");
 

@@ -142,10 +142,21 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 |---------|---------|---------|-------------|
 | **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
 | **One of each section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Imports first, extends at top** | `MLQT.Style.ImportStatementsFirst`, `MLQT.Style.ExtendsAtTop` | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
+| **Imports first, extends at top** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
 | **Components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
 | **Initial equation/algorithm first** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
 | **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". |
+
+> **One switch, two rule ids.** `MLQT.Style.ExtendsAtTop` reports a misplaced `extends` clause and
+> `MLQT.Style.ImportStatementsFirst` a misplaced `import`, but they are one convention and one
+> setting: `ExtendsAtTop` is **governed by** `ImportStatementsFirst` and has no entry of its own. It
+> keeps a separate id so a finding says which of the two it is, and so a single `extends` can be
+> waived with `__MLQT(suppress="Style.ExtendsAtTop")` without waiving the import rule as well.
+>
+> Naming `MLQT.Style.ExtendsAtTop` in `ruleSeverities` therefore sets nothing. `mlqt check` prints a
+> warning naming the setting to use instead, rather than reading the key and ignoring it — which is
+> what it used to do, so a repository that wrote `"MLQT.Style.ExtendsAtTop": "Off"` went on being
+> reported at for years.
 
 #### Mutually Exclusive Settings
 

@@ -38,9 +38,46 @@ public class StyleCheckingSettings
     [JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
     public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Resolves the configured severity for a rule id (Off when disabled/absent).</summary>
+    /// <summary>
+    /// Resolves the configured severity for a rule id (Off when disabled/absent).
+    ///
+    /// <para>A <b>governed</b> rule resolves through its governor instead of through its own entry
+    /// (see <see cref="RuleDefinition.GovernedBy"/>): <c>MLQT.Style.ExtendsAtTop</c> is the
+    /// "imports first, extends next" convention seen from the other end, and answers with whatever
+    /// <c>MLQT.Style.ImportStatementsFirst</c> is set to. Before this, its own entry was consulted,
+    /// always missing, and always Off — so the checker had to paper over the answer by falling back
+    /// to the catalog default, and a settings file that set the id to <c>"Off"</c> was read, accepted,
+    /// and ignored. See <see cref="IgnoredRuleKeys"/>, which is how that file gets told.</para>
+    /// </summary>
     public RuleSeverity SeverityFor(string ruleId)
-        => RuleSeverities.TryGetValue(ruleId, out var s) ? s : RuleSeverity.Off;
+    {
+        if (RuleCatalog.GovernorOf(ruleId) is { } governor)
+            return SeverityFor(governor);
+
+        return RuleSeverities.TryGetValue(ruleId, out var s) ? s : RuleSeverity.Off;
+    }
+
+    /// <summary>
+    /// Keys in <see cref="RuleSeverities"/> that this settings file cannot actually set: a rule
+    /// governed by another, or an id no catalog rule matches (a typo, or a rule from a newer MLQT).
+    ///
+    /// <para>A quality gate configured by a file nobody validates is a gate that can be switched off
+    /// by a spelling mistake and never say so. The caller decides what to do about it — the CLI warns
+    /// on stderr — but the answer is computed here so every surface asks the same question.</para>
+    /// </summary>
+    public IReadOnlyList<string> IgnoredRuleKeys() =>
+        RuleSeverities.Keys
+            .Where(id => !RuleCatalog.IsConfigurable(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>Why <paramref name="ruleId"/> is in <see cref="IgnoredRuleKeys"/>, as a sentence.</summary>
+    public static string WhyIgnored(string ruleId) =>
+        RuleCatalog.GovernorOf(ruleId) is { } governor
+            ? $"'{ruleId}' is governed by '{governor}' and has no setting of its own — set that instead"
+            : RuleIds.IsDiagnostic(ruleId)
+                ? $"'{ruleId}' is a diagnostic, not a rule: it is always reported and cannot be configured"
+                : $"'{ruleId}' is not a known rule id — check the spelling against settings-reference.md";
 
     /// <summary>True if the rule is enabled (severity != Off). Public so a data-driven settings UI
     /// can render a toggle per rule id from the catalog.</summary>
