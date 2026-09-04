@@ -57,6 +57,45 @@ internal static class SettingsResolver
         NearestMlqtFile(libraryPath, "settings.json");
 
     /// <summary>
+    /// The directory whose <c>.mlqt</c> this run belongs to — the repository, when the library sits
+    /// inside one — falling back to the library itself when nothing above it has one.
+    ///
+    /// <para>Public because more than the settings live in that folder. The metrics history does too,
+    /// and the desktop app keeps it per <em>repository</em>: composing it from the library path
+    /// instead meant <c>mlqt check &lt;repo&gt;/MyLib --metrics</c> read the team's rules from
+    /// <c>&lt;repo&gt;/.mlqt</c> and wrote the trend into <c>&lt;repo&gt;/MyLib/.mlqt</c>, a second
+    /// file nothing else opens — so <c>--coverage-ratchet</c> also found nothing to compare against
+    /// and said so, on a repository with a perfectly good history.</para>
+    ///
+    /// <para>Walking by the same rule as the settings lookup is the point: whatever <c>.mlqt</c> the
+    /// rules came out of is the one the run's own numbers go back into.</para>
+    /// </summary>
+    public static string RepositoryRootFor(string libraryPath)
+    {
+        var directory = Directory.Exists(libraryPath)
+            ? new DirectoryInfo(libraryPath)
+            : new FileInfo(libraryPath).Directory;
+
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, ".mlqt")))
+                return directory.FullName;
+
+            if (Directory.Exists(Path.Combine(directory.FullName, ".git")) ||
+                Directory.Exists(Path.Combine(directory.FullName, ".svn")))
+                return directory.FullName;
+
+            directory = directory.Parent;
+        }
+
+        // No .mlqt and no working copy: a loose library, or a single .mo file. Its own directory is
+        // the only sensible home, and is what the library path meant before any of this existed.
+        return Directory.Exists(libraryPath)
+            ? libraryPath
+            : Path.GetDirectoryName(Path.GetFullPath(libraryPath)) ?? libraryPath;
+    }
+
+    /// <summary>
     /// The directory holding the nearest <c>.mlqt/dictionary.txt</c> at or above the library, or null
     /// if there is none. Walks by the same rule as the settings lookup.
     /// </summary>

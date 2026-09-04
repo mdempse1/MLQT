@@ -35,12 +35,12 @@ public class RuleSettingsLayoutTests
         return null;
     }
 
-    private static string? SettingsMarkup()
+    private static string? SettingsMarkup() => Markup("SettingsRepositories.razor");
+
+    private static string? Markup(string component)
     {
         var shared = SharedDirectory();
-        return shared is null
-            ? null
-            : File.ReadAllText(Path.Combine(shared, "Components", "SettingsRepositories.razor"));
+        return shared is null ? null : File.ReadAllText(Path.Combine(shared, "Components", component));
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class RuleSettingsLayoutTests
     [Fact]
     public void ThePickerSectionsAreRenderedFromThisList()
     {
-        if (SettingsMarkup() is not { } markup)
+        if (SettingsMarkup() is not { } dialog)
             return;
 
         foreach (var section in RuleSettingsLayout.Rows
@@ -142,10 +142,59 @@ public class RuleSettingsLayoutTests
                      .Select(r => r.Section)
                      .Distinct(StringComparer.Ordinal))
         {
-            Assert.Contains($"RuleSettingsLayout.PickersIn(", markup, StringComparison.Ordinal);
+            var name = SectionConstantName(section);
+            Assert.True(
+                dialog.Contains($"RuleSettingsLayout.PickersIn(RuleSettingsLayout.{name})", StringComparison.Ordinal),
+                $"section '{section}' declares picker rows, and the dialog does not render them");
             Assert.True(
                 RuleSettingsLayout.PickersIn(section).Any(),
                 $"section '{section}' declares picker rows that nothing renders");
         }
     }
+
+    /// <summary>
+    /// Every rule row goes through <c>RuleSeverityRow</c>, and none is written out by hand.
+    ///
+    /// <para>Not tidiness — the row's hover highlight is scoped CSS, and Blazor stamps a component's
+    /// scope attribute onto that component's own elements only. A hand-written
+    /// <c>&lt;div class="mlqt-rule-row"&gt;</c> in the dialog carries the dialog's scope and
+    /// <c>RuleSeverityRow.razor.css</c> never reaches it, so the row renders correctly and silently
+    /// stops highlighting. That is what happened in reverse when the row first moved out: the four
+    /// list sections lost their highlight and the Static analysis rows, still inline, kept theirs,
+    /// which is a difference nothing but a person looking at the dialog would have caught.</para>
+    /// </summary>
+    [Fact]
+    public void NoRuleRowIsWrittenOutByHand()
+    {
+        if (SettingsMarkup() is not { } dialog)
+            return;
+
+        Assert.Contains("<RuleSeverityRow ", dialog, StringComparison.Ordinal);
+        Assert.DoesNotContain("mlqt-rule-row", dialog, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And the row's stylesheet sits beside the row, for the same reason.
+    /// </summary>
+    [Fact]
+    public void TheRowStyleLivesWithTheRow()
+    {
+        if (SharedDirectory() is not { } shared)
+            return;
+
+        var css = Path.Combine(shared, "Components", "RuleSeverityRow.razor.css");
+        Assert.True(File.Exists(css),
+            "RuleSeverityRow.razor.css is where the row's scoped styles have to live; a stylesheet "
+            + "beside any other component cannot reach the row's div.");
+        Assert.Contains("mlqt-rule-row", File.ReadAllText(css), StringComparison.Ordinal);
+    }
+
+    /// <summary>The name of the <see cref="RuleSettingsLayout"/> constant holding a section heading —
+    /// which is what the markup names, rather than the heading text.</summary>
+    private static string SectionConstantName(string section) =>
+        typeof(RuleSettingsLayout)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Single(f => (string?)f.GetRawConstantValue() == section)
+            .Name;
 }

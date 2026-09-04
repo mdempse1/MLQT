@@ -104,6 +104,40 @@ Individual models can be excluded from auto-formatting using the **FormatClear**
 - When you exclude a model that belongs to a VCS-tracked repository, MLQT reverts the model's file to undo any formatting changes that were already applied. This restores the file to its last committed state
 - To re-include a model, select it and toggle the same button again. The model will be formatted on the next formatting pass
 
+### In the source instead: `__MLQT(format=false)`
+
+The name list lives in the repository's settings, so it goes stale the moment a class is renamed or
+moved — the entry still names the old id, silently, and the class starts being reformatted again.
+Saying it in the class instead avoids that, and is the **preferred way** for anything you intend to
+keep:
+
+```modelica
+model Rectifier "Order matters to the solver"
+  // ...
+  annotation(__MLQT(preserveOrder = true,
+                    reason = "declaration order affects the nonlinear system"));
+end Rectifier;
+```
+
+`format = false` is a synonym. Either one:
+
+- **takes the class out of every formatting pass**, exactly as the name list does — startup, VCS
+  changes, pre-commit and **Format All Files** all leave it alone;
+- **suppresses the same formatting-related rules** in the checker, on every surface: the desktop app,
+  [`mlqt check`](cli.md) and the [MCP server](mcp-server.md);
+- **takes the class off the layout coverage dimensions** on the
+  [Coverage dashboard](metrics-dashboard.md), so it is not counted for a gap no finding will name;
+- **travels with the class** when it is renamed or moved to another file, because it is part of it.
+
+Give a `reason`. Nothing reads it, and the next person to wonder why this one class looks different
+will.
+
+`mlqt check --no-suppress` ignores it, along with every other `__MLQT` directive, so an audit run
+still shows what has been waived — including the layout rows on the coverage figures.
+
+The two mechanisms are otherwise interchangeable, and the name list stays supported: a class named in
+`FormattingExcludedModels` **or** carrying the annotation is excluded.
+
 ### Effect on Style Checking
 
 Excluding a model from formatting affects which style findings are reported:
@@ -116,6 +150,9 @@ Excluding a model from formatting affects which style findings are reported:
 - When a model has intentional formatting that should not be changed (e.g., carefully aligned equations)
 - When adopting MLQT on an existing repository and certain models need to remain unchanged
 - When formatting a particular model causes undesirable structural changes
+
+Use the **annotation** for the first of those — a deliberate, permanent decision about one class — and
+the **toggle** for the second, where the exclusion is temporary scaffolding you expect to remove.
 
 ## When Formatting Does NOT Happen
 

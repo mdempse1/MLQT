@@ -12,8 +12,7 @@ internal sealed class JUnitFindingFormatter : IFindingFormatter
 {
     public string Format(CheckReport report)
     {
-        var actionable = report.Findings
-            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+        var actionable = report.Actionable
             .ToList();
         var count = actionable.Count;
 

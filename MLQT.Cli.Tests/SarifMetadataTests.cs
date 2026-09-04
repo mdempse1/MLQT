@@ -95,6 +95,82 @@ public class SarifMetadataTests
             rule.GetProperty("properties").GetProperty("tags").EnumerateArray().Select(t => t.GetString()).ToList());
     }
 
+    // ---- B42: a diagnostic is not a rule, and its alert must not pretend otherwise --------------
+
+    private const string Unparseable = """
+        model Broken
+          parameter Real = ;
+        """;
+
+    private sealed class BrokenLibrary : IDisposable
+    {
+        private readonly TempWorkspace _workspace = new TempWorkspace("mlqt-sarif-diag")
+            .Write("Broken.mo", Unparseable)
+            .WithSettings(Settings);
+
+        public string Path => _workspace.Root;
+
+        public void Dispose() => _workspace.Dispose();
+    }
+
+    private static JsonElement RuleFor(string sarif, string id) =>
+        Sarif(sarif).GetProperty("runs")[0].GetProperty("tool").GetProperty("driver")
+            .GetProperty("rules").EnumerateArray()
+            .Single(r => r.GetProperty("id").GetString() == id);
+
+    [Fact]
+    public void ADiagnosticsAlertDoesNotOfferToSwitchItOff()
+    {
+        using var lib = new BrokenLibrary();
+
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+
+        var ids = Sarif(stdout).GetProperty("runs")[0].GetProperty("tool").GetProperty("driver")
+            .GetProperty("rules").EnumerateArray()
+            .Select(r => r.GetProperty("id").GetString()!)
+            .Where(ModelicaParser.StyleRules.RuleIds.IsDiagnostic)
+            .ToList();
+
+        Assert.NotEmpty(ids);   // otherwise the assertions below are vacuous
+
+        foreach (var id in ids)
+        {
+            var markdown = RuleFor(stdout, id).GetProperty("help").GetProperty("markdown").GetString()!;
+
+            // It has no setting to change, so the rule wording described a control that is not there.
+            Assert.DoesNotContain("Configure this rule's severity", markdown);
+            Assert.Contains("cannot be switched", markdown);
+        }
+    }
+
+    [Fact]
+    public void ADiagnosticsAlertLinksToThePageThatNamesIt()
+    {
+        // settings-reference.md deliberately does not carry the diagnostics, so pointing an alert
+        // there was B16's defect again - a "learn more" landing somewhere the rule is not mentioned.
+        using var lib = new BrokenLibrary();
+
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+
+        var diagnostic = Sarif(stdout).GetProperty("runs")[0].GetProperty("tool").GetProperty("driver")
+            .GetProperty("rules").EnumerateArray()
+            .First(r => ModelicaParser.StyleRules.RuleIds.IsDiagnostic(r.GetProperty("id").GetString()!));
+
+        Assert.Contains("cli.md#diagnostics", diagnostic.GetProperty("helpUri").GetString());
+    }
+
+    [Fact]
+    public void AnOrdinaryRuleStillLinksToTheSettingsReference()
+    {
+        using var lib = new TempLibrary();
+
+        var (_, stdout, _) = Cli.Run("check", lib.Path, "--format", "sarif", "--fail-on", "off");
+
+        Assert.Contains(
+            "settings-reference.md",
+            RuleFor(stdout, "MLQT.Doc.ClassDescription").GetProperty("helpUri").GetString());
+    }
+
     // ---- B10: accepted debt --------------------------------------------------------------------
 
     [Fact]

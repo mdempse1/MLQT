@@ -124,6 +124,9 @@ Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
     '-classfilters:-System.Text.RegularExpressions.Generated*;-modelicaParser;-modelicaLexer;-modelicaBaseListener;-modelicaBaseVisitor*' | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'reportgenerator failed' }
 
+# What -UpdateBaseline writes for a new entry, and what the gate refuses to accept.
+$NeedsReason = 'TODO: why is this accepted?'
+
 $summary = Get-Content (Join-Path $ReportDirectory 'Summary.json') -Raw | ConvertFrom-Json
 
 $missing = $bars.Keys | Where-Object { $_ -notin $summary.coverage.assemblies.name }
@@ -148,19 +151,45 @@ $small = $gated | Where-Object { $_.Lines -lt $MinimumLines -and $_.Coverage -lt
 $gated = $gated | Where-Object { $_.Lines -ge $MinimumLines }
 $below = $gated | Where-Object { $_.Coverage -lt $_.Bar } | Sort-Object Coverage
 
+# Reasons already recorded, so -UpdateBaseline carries them forward instead of erasing them. A ledger
+# entry has to say why it is accepted - that is what makes accepting debt a decision rather than a
+# keystroke - and the reason is the only part a person writes.
+$reasons = @{}
+if (Test-Path $BaselinePath) {
+    $existing = Get-Content $BaselinePath -Raw | ConvertFrom-Json
+    foreach ($property in $existing.classes.PSObject.Properties) {
+        if ($property.Value.PSObject.Properties.Name -contains 'reason') {
+            $reasons[$property.Name] = [string] $property.Value.reason
+        }
+    }
+}
+
 if ($UpdateBaseline) {
     $entries = [ordered] @{}
     foreach ($item in ($below | Sort-Object Key)) {
-        $entries[$item.Key] = [ordered] @{ coverage = [math]::Round($item.Coverage, 1); lines = $item.Lines; bar = $item.Bar }
+        $entries[$item.Key] = [ordered] @{
+            coverage = [math]::Round($item.Coverage, 1)
+            lines    = $item.Lines
+            bar      = $item.Bar
+            reason   = if ($reasons.ContainsKey($item.Key)) { $reasons[$item.Key] } else { $NeedsReason }
+        }
     }
     $payload = [ordered] @{
-        '_comment'   = 'Classes below the coverage bar, accepted as existing debt. The build fails if one goes further backwards, or if a class arrives below the bar and is not listed here. Regenerate with build/check-coverage.ps1 -UpdateBaseline and review the diff.'
+        '_comment'   = 'Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.'
         minimumLines = $MinimumLines
         bars         = $bars
         classes      = $entries
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content $BaselinePath -Encoding utf8
     Write-Host "Recorded $($entries.Count) class(es) in $BaselinePath" -ForegroundColor Green
+
+    $unexplained = @($entries.Keys | Where-Object { $entries[$_].reason -eq $NeedsReason })
+    if ($unexplained.Count -gt 0) {
+        Write-Host ''
+        Write-Host "$($unexplained.Count) new entr(y/ies) need a reason before the build will pass:" -ForegroundColor Yellow
+        foreach ($key in $unexplained) { Write-Host "  $key" -ForegroundColor Yellow }
+    }
+
     Pop-Location
     exit 0
 }
@@ -219,9 +248,28 @@ if ($regressed) {
     }
 }
 
+# An entry with no reason is debt nobody decided to take on. Six of them arrived that way when the
+# ledger was first recorded - ordinary in-process classes sitting beside the ones that genuinely
+# cannot be tested on a runner, indistinguishable from them, and none of them ever asked about again.
+$unexplained = @($baseline.classes.PSObject.Properties | Where-Object {
+    $_.Value.PSObject.Properties.Name -notcontains 'reason' -or
+    [string]::IsNullOrWhiteSpace($_.Value.reason) -or
+    $_.Value.reason -eq $NeedsReason
+})
+if ($unexplained.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'Accepted as debt with no reason recorded:' -ForegroundColor Red
+    foreach ($entry in ($unexplained | Sort-Object Name)) { Write-Host "  $($entry.Name)" -ForegroundColor Red }
+}
+
 if ($newDebt -or $regressed) {
     Write-Host ''
     Fail 'coverage went backwards. Add tests, or - if the drop is deliberate and understood - re-record with -UpdateBaseline and explain it in the commit message'
+}
+
+if ($unexplained.Count -gt 0) {
+    Write-Host ''
+    Fail "$($unexplained.Count) baseline entr(y/ies) carry no reason. Write one in $BaselinePath saying why the class is below its bar - 'needs a working SVN server' and 'nobody has written the tests yet' are both fine, and are different facts"
 }
 
 Write-Host ''

@@ -52,7 +52,7 @@ The spell checker is designed to minimize false positives. The following are aut
 
 ## Enabling Spell Checking
 
-Spell checking is controlled by two independent toggle switches, set per repository:
+Spell checking is controlled by two independent rules, set per repository. Each is an **Off / Info / Warning / Error** row rather than a switch, so a repository can report misspellings without failing CI, or set them to **Error** and gate on them:
 
 1. Navigate to **Settings > Manage Repositories** and click the repository
 2. Under **Spell checking**, enable one or both:
@@ -68,7 +68,7 @@ MLQT ships with English (US) and English (UK) dictionaries. You can select which
 
 ### Selecting Active Dictionaries
 
-In **Settings > Manage Repositories**, click the repository and look under **Spell checking**: below the two toggles a **Language dictionaries** multi-select dropdown shows all available dictionaries. Select the languages this repository should be checked against — a word is considered correct if it appears in **any** of the selected dictionaries.
+In **Settings > Manage Repositories**, click the repository and look under **Spell checking**: below the two severity rows a **Language dictionaries** multi-select dropdown shows all available dictionaries. Select the languages this repository should be checked against — a word is considered correct if it appears in **any** of the selected dictionaries.
 
 By default, both English (US) and English (UK) are selected; selecting none falls back to those two.
 

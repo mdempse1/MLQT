@@ -76,7 +76,7 @@ internal static class HookCommand
 
     private static int Uninstall(HookOptions options, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryResolve(options, out _, out var hookPath, stderr))
+        if (!TryResolve(options, out _, out var hookPath, stderr, installing: false))
             return ExitCodes.Error;
 
         if (!File.Exists(hookPath))
@@ -99,7 +99,7 @@ internal static class HookCommand
 
     private static int Status(HookOptions options, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryResolve(options, out _, out var hookPath, stderr))
+        if (!TryResolve(options, out _, out var hookPath, stderr, installing: false))
             return ExitCodes.Error;
 
         if (!File.Exists(hookPath))
@@ -116,8 +116,15 @@ internal static class HookCommand
     /// Locates the library and the hook file, or says what is wrong. The repository is found by
     /// walking up from the library, so a library in a subdirectory needs no second path.
     /// </summary>
+    /// <param name="installing">
+    /// True for <c>install</c>, which must refuse when <c>core.hooksPath</c> redirects git elsewhere:
+    /// the file would be written and never run. <c>status</c> and <c>uninstall</c> pass false and
+    /// carry on — status has to be able to say what is there, and uninstall has to be able to remove
+    /// a hook installed before the redirect was set.
+    /// </param>
     private static bool TryResolve(
-        HookOptions options, out string? library, out string hookPath, TextWriter stderr)
+        HookOptions options, out string? library, out string hookPath, TextWriter stderr,
+        bool installing = true)
     {
         library = null;
         hookPath = string.Empty;
@@ -138,9 +145,79 @@ internal static class HookCommand
             return false;
         }
 
+        if (ConfiguredHooksPath(libraryPath) is { } configured)
+        {
+            var lead = installing ? "error" : "note";
+            stderr.WriteLine(
+                $"{lead}: this repository sets core.hooksPath to '{configured}', so git reads its hooks " +
+                "from there and will not run one written under .git/hooks.");
+
+            if (installing)
+            {
+                stderr.WriteLine(
+                    "       That is usually husky, pre-commit or lefthook managing the hooks. Add the " +
+                    "check to whatever they run instead:");
+                stderr.WriteLine(
+                    $"         mlqt check \"{libraryPath}\" --fail-on " +
+                    $"{options.FailOn.ToString().ToLowerInvariant()}");
+                stderr.WriteLine("       See the `hook` section of Documentation/cli.md.");
+                return false;
+            }
+        }
+
         library = libraryPath;
         hookPath = Path.Combine(gitDir, "hooks", "pre-commit");
         return true;
+    }
+
+    /// <summary>
+    /// The repository's <c>core.hooksPath</c>, or null when it sets none.
+    ///
+    /// <para>Asked because git reads hooks from that directory <em>instead of</em>
+    /// <c>.git/hooks</c>, and husky, pre-commit and lefthook all set it. Writing the file anyway
+    /// produced the one outcome a commit gate cannot have: install reported success, status reported
+    /// the hook installed, and no commit was ever checked. Refusing with the command to add by hand
+    /// is the honest answer — MLQT cannot know how somebody else's hook manager wants to be
+    /// extended.</para>
+    ///
+    /// <para>Asked of <c>git</c> rather than read out of a config file, because the value can come
+    /// from any of the system, global, local or worktree scopes.</para>
+    /// </summary>
+    private static string? ConfiguredHooksPath(string libraryPath)
+    {
+        try
+        {
+            var start = Directory.Exists(libraryPath) ? libraryPath : Path.GetDirectoryName(libraryPath);
+            if (string.IsNullOrEmpty(start))
+                return null;
+
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                ArgumentList = { "config", "--get", "core.hooksPath" },
+                WorkingDirectory = start,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+
+            if (process is null)
+                return null;
+
+            var value = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(5000);
+
+            // Exit 1 is git's "not set", which is the ordinary case and not a failure.
+            return value.Length == 0 ? null : value;
+        }
+        catch
+        {
+            // No git on PATH, or it would not run. The hook is still worth installing: the
+            // overwhelmingly common case is no core.hooksPath at all, and refusing to install
+            // because we could not ask would be worse than installing where git looks by default.
+            return null;
+        }
     }
 
     /// <summary>
@@ -271,7 +348,25 @@ internal static class HookCommand
     /// <summary>Git's sh takes forward slashes on Windows; a backslash there is an escape.</summary>
     private static string ToPosix(string path) => path.Replace('\\', '/');
 
-    private static string Quote(string value) => $"\"{value}\"";
+    /// <summary>
+    /// One argument, as a POSIX shell double-quoted string.
+    ///
+    /// <para>Escaped rather than merely wrapped: inside double quotes <c>sh</c> still expands
+    /// <c>$</c> and backticks and still honours a backslash, so a path or a <c>--changed-from</c> ref
+    /// containing one produced a hook that checked the wrong thing rather than one that failed. Git
+    /// ref names may contain <c>$</c>, and the value reaches here exactly as it was typed.</para>
+    /// </summary>
+    private static string Quote(string value)
+    {
+        // Backslash first, or the escapes added below would themselves be escaped.
+        var escaped = value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("$", "\\$")
+            .Replace("`", "\\`");
+
+        return $"\"{escaped}\"";
+    }
 
     /// <summary>
     /// Marks the hook executable where that matters. Git for Windows ignores the bit, so a failure

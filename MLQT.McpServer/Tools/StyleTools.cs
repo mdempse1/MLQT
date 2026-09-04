@@ -70,13 +70,15 @@ public sealed class StyleTools
 
     [McpServerTool(Name = "set_style_settings")]
     [Description("Update a repository's style-checking rules and spell-check languages and PERSIST them " +
-                "to its .mlqt/settings.json (creating the file if needed), exactly like MLQT. Only the " +
-                "rule toggles and spell languages are changed; the naming-convention config and other " +
-                "settings are preserved. With one repository loaded, repositoryId is optional. Requires a " +
-                "repository — libraries loaded via load_library have no .mlqt/settings.json to write.")]
+                "to its .mlqt/settings.json (creating the file if needed), exactly like MLQT. This is a " +
+                "MERGE: send only the rules you are changing. A rule you omit keeps its current value, " +
+                "and the naming-convention config and every other setting are preserved. With one " +
+                "repository loaded, repositoryId is optional. Requires a repository — libraries loaded " +
+                "via load_library have no .mlqt/settings.json to write.")]
     public async Task<object> SetStyleSettings(
-        [Description("The new settings (rule toggles + spellCheckLanguages). Omitted spellCheckLanguages " +
-                     "keeps the current languages.")]
+        [Description("The rules to change, and optionally spellCheckLanguages. Every key is optional: " +
+                     "omit a rule to leave it as it is, omit spellCheckLanguages to keep the current " +
+                     "languages. Pass true/false only for what you mean to change.")]
         StyleSettingsInput settings,
         [Description("Optional repository id (GUID) or name. Omit when a single repository is loaded.")]
         string? repositoryId = null)

@@ -1,0 +1,43 @@
+@using ModelicaParser.DataTypes
+
+@*
+    One rule's row in the repository-settings dialog: its wording at one end, its
+    Off/Info/Warning/Error picker at the other, and the rule id on a tooltip.
+
+    A row rather than a whole section, because the dialog builds its lists two different ways — four
+    sections come from RuleSettingsLayout, and "Static analysis" walks RuleCatalog interleaving a
+    heading whenever the category changes. Only the row itself is common to both, and the row is
+    what was written out five times.
+
+    It is also why the callback is a plain ValueChanged the caller supplies, exactly as
+    RuleSeverityPicker does. A component that wrote the setting itself would re-render only itself:
+    Blazor redraws whoever SUPPLIED a callback, and the dialog shows the spell-check dictionaries
+    and the naming panel only while their rule is not Off, so those panels stayed open after their
+    rule was switched off. Leaving the write with the caller means the caller redraws, which is what
+    a dialog reading its own settings object needs.
+*@
+
+<div class="mlqt-rule-row">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+        <MudTooltip Text="@("Rule ID = " + RuleId)">
+            <MudText Typo="Typo.body1">@Label</MudText>
+        </MudTooltip>
+        <MudSpacer/>
+        <RuleSeverityPicker Value="@Value" ValueChanged="ValueChanged" />
+    </MudStack>
+</div>
+
+@code {
+    /// <summary>The rule this row sets. Shown on the tooltip, so a finding's rule id can be traced
+    /// back to the control that configures it.</summary>
+    [Parameter, EditorRequired] public string RuleId { get; set; } = string.Empty;
+
+    /// <summary>The wording shown to the user.</summary>
+    [Parameter, EditorRequired] public string? Label { get; set; }
+
+    /// <summary>The severity currently configured for the rule.</summary>
+    [Parameter, EditorRequired] public RuleSeverity Value { get; set; }
+
+    /// <summary>Raised with the chosen severity. The caller writes it — see the note above.</summary>
+    [Parameter, EditorRequired] public EventCallback<RuleSeverity> ValueChanged { get; set; }
+}

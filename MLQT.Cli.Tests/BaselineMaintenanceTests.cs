@@ -414,6 +414,24 @@ public class BaselineMaintenanceTests
     }
 
     [Fact]
+    public void Check_SaysSoBeforeSpendingTheCheckOnIt()
+    {
+        // The versions come off the loaded nodes, so nothing below the load is needed to know this —
+        // and on a large library, running the whole check first meant spending minutes to report that
+        // the command was wrong. Dependency analysis is the expensive step that must not have run.
+        using var dependency = new TempLibrary().WithModel(DependencyAtTwo);
+        using var lib = new TempLibrary()
+            .WithModel(LibraryDeclaringOne)
+            .WithSettings("""{ "CheckUsesUndeclared": true }""");
+
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--dependency", dependency.Path, "--no-color");
+
+        Assert.Equal(2, code);
+        Assert.Contains("error: dependency version mismatch", stderr);
+        Assert.DoesNotContain("running dependency analysis", stderr);
+    }
+
+    [Fact]
     public void Check_AllowVersionMismatch_ContinuesButSaysTheFindingsMayNotBeReal()
     {
         // The escape hatch: a conversion(noneFromVersion=...) annotation can make a difference

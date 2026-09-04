@@ -80,18 +80,9 @@ public static class GraphAnalysisRunner
         if (findings.Count == 0)
             return findings;
 
-        // Stamp the configured severity (visitors/analyzers emit at the record default). A diagnostic
-        // is not in the map and is not stamped from it — it keeps the severity it was created with.
-        for (int i = 0; i < findings.Count; i++)
-        {
-            if (RuleIds.IsDiagnostic(findings[i].RuleId))
-                continue;
-
-            var sev = context.Settings.SeverityFor(findings[i].RuleId);
-            if (sev == RuleSeverity.Off)
-                sev = RuleCatalog.DefaultSeverityFor(findings[i].RuleId);
-            findings[i] = findings[i] with { Severity = sev };
-        }
+        // Analyzers emit at the record default; configuration is applied here, by the same method the
+        // per-class checker uses.
+        context.Settings.StampSeverities(findings);
 
         return honorSuppressions ? ApplySuppressions(context.Graph, findings) : findings;
     }
@@ -141,29 +132,23 @@ public static class GraphAnalysisRunner
     }
 
     /// <summary>
-    /// The suppression directives on one class, or null when there are none to read. Reading them
-    /// means re-parsing the class, so it is per-model on purpose: a class that will not parse costs
-    /// its own waivers and no one else's, and the findings come through unsuppressed — visible rather
-    /// than silently dropped, which is the safe direction for a check to fail in.
+    /// The suppression directives on one class, or null when there are none. Per-model on purpose: a
+    /// class that will not parse costs its own waivers and no one else's, and its findings come
+    /// through unsuppressed — visible rather than silently dropped, which is the safe direction for a
+    /// check to fail in.
+    ///
+    /// <para>Through <see cref="ClassSuppressions"/>, which keeps the answer on the class and borrows
+    /// the tree to get it. This phase runs after the per-class check has released every class it
+    /// read, so without the shared answer it re-parsed each class carrying a graph finding to ask
+    /// what the checker had already asked of the same class minutes earlier.</para>
     /// </summary>
     private static SuppressionSet? BuildSuppressions(DirectedGraph graph, string modelId)
     {
-        modelicaParser.Stored_definitionContext? parsed;
-        try
-        {
-            parsed = graph.GetNode<ModelNode>(modelId)?.Definition?.EnsureParsed();
-        }
-        catch
-        {
-            return null;
-        }
-
-        if (parsed is null)
+        var definition = graph.GetNode<ModelNode>(modelId)?.Definition;
+        if (definition is null)
             return null;
 
-        var extractor = new MlqtSuppressionExtractor(ModelicaName.EnclosingPackageOf(modelId));
-        extractor.VisitStored_definition(parsed);
-        var set = extractor.Build();
+        var set = ClassSuppressions.For(definition, modelId);
         return set.IsEmpty ? null : set;
     }
 }

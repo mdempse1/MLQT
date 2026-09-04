@@ -78,6 +78,22 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **OpenModelicaCheckingService** | Model checking via OpenModelica ZeroMQ |
 | **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`) |
 
+### The shared check pipeline (`MLQT.Services/Checking/`)
+
+Not services — the primitives that keep the desktop app, `mlqt check` and the MCP server reporting
+the **same findings with the same line numbers**. Change the primitive, never one tool's path.
+
+| Type | Role |
+|------|------|
+| **LibraryCheckSession** | `Check(...)` — the whole answer for a set of models: parse diagnostics, the per-class rules in parallel, then the whole-graph analyses. The CLI and MCP call this |
+| **StyleCheckRunner** | The per-class entry point *every* surface funnels through, including the GUI's workers, which is why the external-stub guard and the coverage measurement live here |
+| **StyleCheckContext** | The once-per-run inputs (spell checker, known ids, icon and inherited-name callbacks, unit lookup, coverage measurer) built once instead of per class |
+| **ParserErrorReporter** | Parse diagnostics as `Finding`s. Always reported, never configurable, never baselined — `RuleIds.IsDiagnostic` is that question |
+| **Baseline** / **FindingClassifier** | The accepted-debt ledger, New/AcceptedDebt/TouchedDebt classification, and drift against the rules the baseline was taken with |
+| **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
+| **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
+| **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation |
+
 **Platform-specific services** (in `MLQT/Services/`, use MAUI APIs):
 
 | Service | Purpose |
@@ -133,16 +149,29 @@ Use the following styling guidelines
 | `ModelicaParser/modelica.g4` | ANTLR grammar |
 | `ModelicaParser/Helpers/ModelicaParserHelper.cs` | Parser utilities |
 | `ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs` | Base class for all style rule visitors |
+| `ModelicaParser/DataTypes/Finding.cs` | The structured finding every rule and analysis emits — rule id, severity, element identity, reformat-stable fingerprint |
+| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry: the id constants, and each rule's title, category, default severity, governor and prerequisite |
 | `ModelicaGraph/DirectedGraph.cs` | Main graph structure |
 | `ModelicaGraph/GraphBuilder.cs` | Loads libraries, analyzes dependencies |
-| `ModelicaGraph/StyleChecking.cs` | Orchestrates all style rule checks |
-| `ModelicaGraph/StyleCheckingSettings.cs` | Persisted style/formatting settings |
+| `ModelicaGraph/StyleChecking.cs` | Orchestrates all per-class style rule checks |
+| `ModelicaGraph/StyleCheckingSettings.cs` | Persisted style/formatting settings, and the severity map every rule resolves through |
+| `ModelicaGraph/RuleSettingsLayout.cs` | Where each rule is set in the settings dialog — held to `RuleCatalog` by a test |
+| `ModelicaGraph/ClassSuppressions.cs` | The one read of a class's `__MLQT` directives, kept on the class |
+| `ModelicaGraph/Analysis/GraphAnalysisRunner.cs` | Runs the whole-graph analyses (`IGraphAnalyzer`), stamps severities, applies suppression |
+| `ModelicaGraph/Analysis/MetricsCalculator.cs` | Coverage/size figures and `CoverageMeasurer`, the per-class measurement |
+| `ModelicaGraph/Analysis/CoverageDimensions.cs` | Which coverage dimensions apply — to a repository (`TrackedFor`) and to one class (`ForClass`) |
+| `MLQT.Services/Checking/LibraryCheckSession.cs` | The shared load→check pipeline: parse diagnostics, per-class rules, graph analyses |
+| `MLQT.Services/Checking/StyleCheckRunner.cs` / `StyleCheckContext.cs` | Per-class entry point every surface funnels through, and its once-per-run inputs |
+| `MLQT.Services/Checking/Baseline.cs` | The accepted-debt ledger, its drift detection, and `FindingClassifier` |
+| `MLQT.Services/Checking/ClassLocation.cs` | Where a class starts in its file — turns a class-relative finding line into a file line |
 | `MLQT.Services/LibraryDataService.cs` | Library management |
 | `MLQT.Services/RepositoryService.cs` | VCS repository operations |
 | `MLQT.Services/StyleCheckingService.cs` | Background style checking with workers |
 | `MLQT.Services/Helpers/StyleCheckingWorker.cs` | Parallel style checking per repository |
 | `MLQT.Services/Helpers/ModelicaPackageSaver.cs` | Code formatting and file saving |
+| `MLQT.Cli/CheckPipeline.cs` / `CheckRunner.cs` | The CLI's load+check, and the gate/report/exit-code layer over it |
 | `RevisionControl/Interfaces/IRevisionControlSystem.cs` | Unified Git/SVN interface |
+| `RevisionControl/Interfaces/ILineLevelDiff.cs` | Line-level diff, implemented by Git only — why a pull-request review needs Git |
 
 ## ModelicaParser Project
 
@@ -186,7 +215,15 @@ Directed graph for tracking file/model relationships, dependencies, external res
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
 - `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
-- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
+- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags). `SeverityFor(id)` is the **only** way to ask what a rule will do — it resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw `RuleSeverities` map. `StampSeverities` is the one place configuration is applied to findings
+- `ModelDefinition.Borrow` - **The convention for reading a class you do not own.** Parses if needed, runs the work, and releases the tree again *only if this call is what parsed it*. Read it before adding any `EnsureParsed()`: the two halves have come apart in both directions, and a walk that keeps a base class's tree accumulates over tens of thousands of classes. The bulk load pass in `GraphBuilder` is the deliberate exception, and says so
+- `ClassSuppressions.For(definition, modelId)` - **The only read of a class's `__MLQT` directives.** Three passes want the same answer about the same class in one run — the checker, the coverage measurer and the graph analyses — and each used to walk the tree for itself. Kept on the class as `SuppressionSet.Empty` when there is nothing, so a library of tens of thousands costs a reference each
+
+**`Analysis/` — the whole-graph half (phase 6):**
+- `IGraphAnalyzer` / `GraphAnalysisContext` / `GraphAnalysisRunner` - Analyses that need the graph rather than one class: `PackageOrderAnalyzer`, `UsesHygieneAnalyzer`, `UnusedClassAnalyzer`, `UnusedImportAnalyzer`, `UnusedMembersAnalyzer`, `ShadowingAnalyzer`. `RequiresDependencyAnalysis(settings)` says whether the edges are needed first
+- `TypeResolver` / `ClassElementResolver` / `UnitResolver` - Inheritance- and import-aware resolution. They cache **the answer, not the tree**
+- `MetricsCalculator` / `CoverageMeasurer` - The dashboard's figures, and the per-class measurement the checker triggers while it still holds the tree
+- `CoverageDimensions` - `TrackedFor(settings)` for a repository, `ForClass(...)` for one class. **`ForClass` is the single narrowing**: every way of taking a class out of scope (`ExcludedLibraries`, `FormattingExcludedModels`, `__MLQT(format=false)`) is asked there, because each arrived separately and each was taught to the checker before anything asked what it meant for the report
 
 ```csharp
 var graph = new DirectedGraph();
@@ -344,8 +381,13 @@ It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its u
 predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need a working copy
 and a server no runner has. `build/coverage-baseline.json` records the classes currently below their
 bar, and the build fails when one goes further backwards, when a class that met the bar stops meeting
-it, or when a new class arrives below it. That file is a debt ledger: adding to it needs the same
-justification as any other accepted debt.
+it, or when a new class arrives below it.
+
+That file is a debt ledger, so **every entry carries a `reason` and the build fails on one that does
+not** — `-UpdateBaseline` writes a `TODO` placeholder for anything new, which the gate then refuses.
+"Needs a working SVN server" and "nobody has written the tests yet" are both acceptable reasons and
+are *different facts*: the ledger existed for a while with six ordinary in-process classes sitting
+beside the untestable ones, indistinguishable from them and never asked about again.
 
 Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
 lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that

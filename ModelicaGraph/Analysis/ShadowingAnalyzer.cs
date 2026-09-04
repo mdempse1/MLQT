@@ -26,13 +26,14 @@ public sealed class ShadowingAnalyzer : IGraphAnalyzer
             if (node.IsParseFailurePlaceholder)
                 continue;
 
-            var tree = node.Definition.EnsureParsed();
-            if (tree is null)
-                continue;
-
             try
             {
-                var iface = ClassInterfaceExtractor.Extract(tree);
+                // Borrowed: this walk reaches for base classes of its own, so it must not take the
+                // tree of a class somebody upstream is holding. See ModelDefinition.Borrow.
+                var iface = node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
+                if (iface is null)
+                    continue;
+
                 var extends = iface.Elements.Where(e => e.Kind == ClassElementKind.Extends).ToList();
                 if (extends.Count == 0)
                     continue;
@@ -77,10 +78,6 @@ public sealed class ShadowingAnalyzer : IGraphAnalyzer
             catch
             {
                 // Skip a class that fails to analyse rather than break the run.
-            }
-            finally
-            {
-                node.Definition.ParsedCode = null;
             }
         }
 

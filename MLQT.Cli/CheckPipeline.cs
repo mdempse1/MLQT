@@ -96,6 +96,40 @@ internal static class CheckPipeline
             : $"note: no accepted spellings; there is no {path}");
     }
 
+    /// <summary>
+    /// Reports any dependency loaded at a version the library does not declare, and says whether the
+    /// run may continue. False means stop — see the call site for why that is a setup error.
+    /// </summary>
+    private static bool CheckDependencyVersions(
+        DirectedGraph graph, IEnumerable<ModelNode> models, bool allowVersionMismatch, TextWriter stderr)
+    {
+        var mismatches = UsesVersionChecker.Check(graph, models);
+        if (mismatches.Count == 0)
+            return true;
+
+        stderr.WriteLine($"{(allowVersionMismatch ? "warning" : "error")}: dependency version mismatch");
+        foreach (var mismatch in mismatches)
+            stderr.WriteLine($"       {mismatch.Describe()}");
+
+        if (allowVersionMismatch)
+        {
+            stderr.WriteLine(
+                "       Continuing because --allow-version-mismatch was given; findings may not be real.");
+            return true;
+        }
+
+        stderr.WriteLine(
+            "       Checking against the wrong version reports findings that are not real, so " +
+            "this check has been stopped.");
+        stderr.WriteLine(
+            "       Point --dependency at the declared versions, or update the uses(...) " +
+            "annotation to match what you have.");
+        stderr.WriteLine(
+            "       If the difference is deliberate (a conversion(noneFromVersion=...) covers " +
+            "it, say), pass --allow-version-mismatch.");
+        return false;
+    }
+
     public static async Task<LoadResult> LoadAndCheckAsync(
         string libraryPath, string? configPath, TextWriter stderr, bool honorSuppressions = true,
         IReadOnlyList<string>? dependencyPaths = null, bool allowVersionMismatch = false,
@@ -226,6 +260,19 @@ internal static class CheckPipeline
 
         var graph = libraryData.CombinedGraph;
 
+        // A dependency on the machine that is not the version the library targets resolves references
+        // against classes that may have moved, been renamed or changed signature between versions. The
+        // result is not a slightly-off check but a pile of findings that are not real, so stop rather
+        // than hand back numbers nobody should act on. Exit code 2 (setup error), not 1 (gate failed):
+        // in CI the two mean different things — fix your invocation vs fix your code.
+        //
+        // Asked as soon as the libraries are loaded and before anything is analysed or checked, which
+        // is where every other "this invocation cannot work" answer is given: the versions come off
+        // the loaded nodes, so nothing below is needed to know it, and on a large library running the
+        // whole check first meant spending minutes to report that the command was wrong.
+        if (!CheckDependencyVersions(graph, models, allowVersionMismatch, stderr))
+            return LoadResult.Failed(ExitCodes.Error);
+
         // Some graph analyses (uses hygiene, unused classes) rely on cross-model dependency edges,
         // which the load path does not populate. Run dependency analysis once, only when such a rule
         // is enabled, so a plain style-check run doesn't pay for it.
@@ -282,37 +329,6 @@ internal static class CheckPipeline
         // report turn a finding's class-relative line into the line a reader (or GitHub) will open.
         var locations = ClassLocation.ForGraph(graph);
         var modelToFile = locations.ToDictionary(kv => kv.Key, kv => kv.Value.FilePath, StringComparer.Ordinal);
-
-        // A dependency on the machine that is not the version the library targets resolves references
-        // against classes that may have moved, been renamed or changed signature between versions. The
-        // result is not a slightly-off check but a pile of findings that are not real, so stop rather
-        // than hand back numbers nobody should act on. Exit code 2 (setup error), not 1 (gate failed):
-        // in CI the two mean different things — fix your invocation vs fix your code.
-        var mismatches = UsesVersionChecker.Check(graph, models);
-        if (mismatches.Count > 0)
-        {
-            var severity = allowVersionMismatch ? "warning" : "error";
-            stderr.WriteLine($"{severity}: dependency version mismatch");
-            foreach (var mismatch in mismatches)
-                stderr.WriteLine($"       {mismatch.Describe()}");
-
-            if (!allowVersionMismatch)
-            {
-                stderr.WriteLine(
-                    "       Checking against the wrong version reports findings that are not real, so " +
-                    "this check has been stopped.");
-                stderr.WriteLine(
-                    "       Point --dependency at the declared versions, or update the uses(...) " +
-                    "annotation to match what you have.");
-                stderr.WriteLine(
-                    "       If the difference is deliberate (a conversion(noneFromVersion=...) covers " +
-                    "it, say), pass --allow-version-mismatch.");
-                return LoadResult.Failed(ExitCodes.Error);
-            }
-
-            stderr.WriteLine(
-                "       Continuing because --allow-version-mismatch was given; findings may not be real.");
-        }
 
         // Report the number of classes actually checked: excludes unparseable placeholders and any
         // library the settings exclude. Excluded classes are counted out loud rather than silently, so

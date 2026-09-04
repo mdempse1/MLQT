@@ -7,7 +7,7 @@ namespace RevisionControl;
 /// Git implementation of the revision control system interface.
 /// Uses LibGit2Sharp to interact with Git repositories.
 /// </summary>
-public class GitRevisionControlSystem : IRevisionControlSystem
+public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 {
     /// <summary>
     /// Checks out a specific revision to a temporary directory.

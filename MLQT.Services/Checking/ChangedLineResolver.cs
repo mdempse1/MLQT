@@ -1,4 +1,4 @@
-using RevisionControl;
+using RevisionControl.Interfaces;
 
 namespace MLQT.Services.Checking;
 
@@ -41,11 +41,28 @@ public sealed record ChangedLineResult(
 /// </summary>
 public static class ChangedLineResolver
 {
-    public static ChangedLineResult Resolve(string libraryPath, string sinceRevision)
-    {
-        var (vcs, root) = VcsLocator.Find(libraryPath);
+    public static ChangedLineResult Resolve(string libraryPath, string sinceRevision) =>
+        Resolve(libraryPath, sinceRevision, systems: []);
 
-        if (vcs is not GitRevisionControlSystem git || root is null)
+    /// <summary>
+    /// The same, over systems the caller already holds — and the seam a test reaches through. The
+    /// two branches worth exercising are the ones a real repository will not perform to order: a
+    /// working copy that is not Git, and a diff that cannot be taken.
+    /// </summary>
+    /// <param name="systems">Tried in order. Empty means the ordinary set, which
+    /// <see cref="VcsLocator"/> owns — listed here as well, this file would have kept its own idea of
+    /// what a working copy can be while the neighbouring <see cref="ChangedModelResolver"/> asked.</param>
+    public static ChangedLineResult Resolve(
+        string libraryPath, string sinceRevision, params IRevisionControlSystem[] systems)
+    {
+        var (vcs, root) = systems.Length > 0
+            ? VcsLocator.Find(libraryPath, systems)
+            : VcsLocator.Find(libraryPath);
+
+        // ILineLevelDiff rather than the concrete Git class: what this needs is the line-level diff,
+        // and saying so in the type is what makes "SVN cannot do this" a fact about the system rather
+        // than a check somebody remembered to write.
+        if (vcs is not ILineLevelDiff diff || root is null)
         {
             return Failed(vcs is null
                 ? $"'{libraryPath}' is not inside a Git working copy"
@@ -53,7 +70,7 @@ public static class ChangedLineResolver
                   "nothing to attach a line comment to");
         }
 
-        var lines = git.GetChangedLinesSince(root, sinceRevision);
+        var lines = diff.GetChangedLinesSince(root, sinceRevision);
         if (lines is null)
         {
             // Nearly always the same cause, and not an obvious one: the ref has to exist locally and

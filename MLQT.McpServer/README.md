@@ -71,8 +71,6 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 | Diagram | `get_diagram_layout`, `set_component_placement` |
 | Dependencies & impact | `analyze_dependencies`, `get_dependencies`, `find_usages`, `analyze_impact` |
 | Code quality | `get_style_settings`, `set_style_settings`, `check_style`, `check_class`, `check_library`, `list_findings`, `suppress_rule`, `accept_spelling_in_class` |
-
-`check_class` / `check_library` always report parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
 | Spelling | `spell_check`, `spelling_suggestions`, `correct_spelling` |
 | Editing (class) | `create_class`, `update_class_source`, `rename_class`, `move_class`, `delete_class` |
 | Editing (elements) | `add_component`, `remove_component`, `set_component_modifier`, `add_extends`, `add_import`, `add_equation`, `add_statement`, `add_connection`, `remove_connection`, `list_connections`, `batch_edit` |
@@ -80,12 +78,17 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 | External resources | `get_class_resources`, `find_resource_usages`, `get_resource_warnings` |
 | Modelica-aware VCS | `get_changed_classes`, `analyze_change_impact` |
 
+`check_class` / `check_library` always report parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
+
+`set_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite the other twenty-eight. `get_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
+
 ## Project layout
 
 - `Program.cs` — host, DI wiring (mirrors `MauiProgram` minus MAUI), stdio MCP server.
 - `Tools/` — one `[McpServerToolType]` class per group.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
-- `Helpers/` — `StyleCheckRunner`, `ModelFilePersistence`.
+- `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`).
+  The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
 - `Services/HeadlessSettingsService.cs` — JSON settings store (replaces MAUI `Preferences`).
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
 - `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).

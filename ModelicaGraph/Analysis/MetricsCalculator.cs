@@ -70,6 +70,7 @@ public static class MetricsCalculator
 
         foreach (var model in classes)
         {
+            StyleCheckingSettings? settings = null;
             CoverageDimension mask;
             if (settingsFor is null)
             {
@@ -77,7 +78,7 @@ public static class MetricsCalculator
             }
             else
             {
-                var settings = settingsFor(model);
+                settings = settingsFor(model);
                 if (!seenSettings || !ReferenceEquals(settings, lastSettings))
                 {
                     lastSettings = settings;
@@ -87,15 +88,10 @@ public static class MetricsCalculator
                         : CoverageDimensions.TrackedFor(settings);
                     seenSettings = true;
                 }
-                mask = lastMask;
-                if (settings is not null
-                    && (mask & CoverageDimension.Layout) != 0
-                    && settings.FormattingExcludedModels.Count > 0
-                    && settings.IsModelExcludedFromFormatting(model.Id))
-                    mask &= ~CoverageDimension.Layout;
+                mask = settings is null
+                    ? lastMask
+                    : CoverageDimensions.ForClass(lastMask, settings, model.Id);
             }
-
-            tracked |= mask;
 
             // Measured once per class and kept. The same class is measured for every scope the
             // dashboard asks about — all libraries, then one sub-package, then each of them side by
@@ -103,6 +99,19 @@ public static class MetricsCalculator
             var facts = measurer.Measure(model, mask);
             if (facts is null)
                 continue;
+
+            // Narrowed again now the class has been read: whether it opted out of formatting in its
+            // own source is a fact only the measurement can supply, and it takes the class off the
+            // layout dimensions exactly as the settings' name list does.
+            if (settings is not null)
+                mask = CoverageDimensions.ForClass(mask, settings, model.Id, facts);
+
+            // Accumulated from the narrowed mask, and only for a class that was measured, because
+            // `tracked` decides which rows the report has. Both halves matter: counting a dimension
+            // the class was taken off would put back the row the narrowing exists to remove, and
+            // counting one for a class that could not be read at all would show "100% (0 of 0)" for
+            // a dimension nothing was measured on.
+            tracked |= mask;
 
             components += facts.Components;
 
@@ -178,6 +187,7 @@ public sealed class CoverageMeasurer
     private readonly DirectedGraph _graph;
     private readonly Func<string, string, bool>? _inheritedIcon;
     private readonly CoverageDimension _dimensions;
+    private readonly bool _honorSuppressions;
 
     // Memoises the (is-Real-derived, has-unit) verdict per resolved type class. Concurrent because
     // style checking measures from its worker threads.
@@ -196,13 +206,27 @@ public sealed class CoverageMeasurer
     /// <param name="dimensions">What to measure when <see cref="Measure(ModelNode?)"/> is called
     /// without saying — for style checking, the dimensions its repository tracks, so a class is not
     /// walked again for a rule nobody enabled.</param>
-    public CoverageMeasurer(DirectedGraph graph, CoverageDimension dimensions = CoverageDimension.All)
+    /// <param name="honorSuppressions">
+    /// Whether <c>__MLQT(format=false)</c> takes a class off the layout dimensions, matching the run
+    /// this measurement belongs to. False for an audit (<c>mlqt check --no-suppress</c>), which puts
+    /// the class's layout findings back — and a report that dropped its layout rows while listing its
+    /// layout findings would be the gap-with-no-finding defect the other way round.
+    /// </param>
+    public CoverageMeasurer(
+        DirectedGraph graph,
+        CoverageDimension dimensions = CoverageDimension.All,
+        bool honorSuppressions = true)
     {
         _graph = graph;
         _dimensions = dimensions;
+        _honorSuppressions = honorSuppressions;
         // For "has an icon" including icons inherited via `extends Modelica.Icons.*`.
         _inheritedIcon = StyleChecking.CreateBaseClassHasIconCallback(graph);
     }
+
+    /// <summary>What <see cref="Measure(ModelNode?)"/> measures — the repository-wide answer this
+    /// measurer was built for, so a caller can narrow it per class without holding it twice.</summary>
+    public CoverageDimension Dimensions => _dimensions;
 
     /// <summary>
     /// This class's contribution, measuring it if nobody has yet. Null for a class with nothing to
@@ -224,29 +248,24 @@ public sealed class CoverageMeasurer
         if (already is not null && (needed & ~already.Measured) == CoverageDimension.None)
             return already;
 
-        // Whoever owned the parse tree keeps it: releasing a tree the caller was still using would
-        // cost it the re-parse this class exists to avoid.
-        var borrowed = model.Definition.ParsedCode is not null;
-        var tree = model.Definition.EnsureParsed();
-        if (tree is null)
-            return null;
-
         try
         {
-            var facts = Extract(model, tree, needed | (already?.Measured ?? CoverageDimension.None));
-            model.Definition.Coverage = facts;
-            Interlocked.Increment(ref _measured);
-            return facts;
+            // Borrowed, not taken: style checking calls this with the tree it is still using, and
+            // the dashboard calls it for classes nobody else holds. See ModelDefinition.Borrow.
+            return model.Definition.Borrow<CoverageFacts?>(
+                tree =>
+                {
+                    var facts = Extract(model, tree, needed | (already?.Measured ?? CoverageDimension.None));
+                    model.Definition.Coverage = facts;
+                    Interlocked.Increment(ref _measured);
+                    return facts;
+                },
+                null);
         }
         catch
         {
             // Skip a model that fails to analyse rather than break the whole dashboard.
             return null;
-        }
-        finally
-        {
-            if (!borrowed)
-                model.Definition.ParsedCode = null;
         }
     }
 
@@ -336,8 +355,29 @@ public sealed class CoverageMeasurer
             ConstantTotal: constantTotal,
             ConstantsWithDescription: constantWithDesc,
             Measured: needed,
-            Failed: MeasureLayout(tree, needed));
+            Failed: MeasureLayout(tree, needed),
+            FormattingPreserved: PreservesFormatting(model));
     }
+
+    /// <summary>
+    /// Whether the class opted out of formatting in its own source, with <c>__MLQT(format=false)</c>
+    /// or <c>__MLQT(preserveOrder=true)</c>, <b>as this run reads it</b>.
+    ///
+    /// <para>Recorded on the facts because a report decides which dimensions a class is on from its
+    /// repository's settings, and a settings object cannot know something the source says — so
+    /// without this, the in-source exclusion silenced the layout rules while the dashboard went on
+    /// counting the class, which is a gap no finding would ever name.</para>
+    ///
+    /// <para>False in an audit run, where the directives are deliberately not being read and the
+    /// class's layout findings are therefore back. That makes the fact one about a run rather than
+    /// only about the source, so a facts cache belongs to a run with one suppression mode: the CLI is
+    /// a process per run, and the app and the MCP server always honour them.</para>
+    ///
+    /// <para>Read through <see cref="ClassSuppressions"/>, which keeps the answer on the class — the
+    /// style checker has usually just asked the same question of the same tree.</para>
+    /// </summary>
+    private bool PreservesFormatting(ModelNode model) =>
+        _honorSuppressions && ClassSuppressions.For(model.Definition, model.Id).PreservesFormatting(model.Id);
 
     /// <summary>
     /// Documentation info/revisions, from the rule's own annotation walk — one traversal answering

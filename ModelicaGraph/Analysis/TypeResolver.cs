@@ -94,18 +94,24 @@ public static class TypeResolver
         {
             if (depth > 32)
                 return;
-            var tree = graph.GetNode<ModelNode>(id)?.Definition.EnsureParsed();
-            if (tree is null)
+            // Borrowed, not kept: this walks up an extends chain, so every class it reaches beyond
+            // the first is one nobody else asked for. See ModelDefinition.Borrow.
+            var iface = graph.GetNode<ModelNode>(id)?.Definition
+                .Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
+            if (iface is null)
                 return;
-            var iface = ClassInterfaceExtractor.Extract(tree);
             var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
             foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
             {
                 var baseNode = Resolve(graph, id, ext.Type, imports);
                 if (baseNode is null || !visited.Add(baseNode.Id))
                     continue;
-                var baseImports = ClassInterfaceExtractor.Extract(baseNode.Definition.EnsureParsed())
-                    .Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
+                var baseImports = baseNode.Definition
+                    .Borrow<IReadOnlyList<string>>(
+                        tree => ClassInterfaceExtractor.Extract(tree).Elements
+                            .Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList(),
+                        [])
+                    .ToList();
                 result.Add((baseNode.Id, baseImports));
                 Walk(baseNode.Id, depth + 1);
             }

@@ -55,16 +55,9 @@ internal static class CheckRunner
                 $"{diff.LinesByFile.Count} file(s) since the merge base with {opts.ChangedFrom}");
         }
 
-        var load = await CheckPipeline.LoadAndCheckAsync(
-            opts.LibraryPath, opts.ConfigPath, stderr,
-            honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
-            allowVersionMismatch: opts.AllowVersionMismatch,
-            // Only when this run is going to report or judge coverage: the check has the parse tree in
-            // hand, so measuring here costs the measurement alone rather than a second pass.
-            collectCoverage: opts.RecordMetrics || opts.Coverage.IsActive);
-        if (!load.Ok)
-            return load.ExitCode;
-
+        // Read before the library is loaded, for the same reason as the two above: a baseline that is
+        // missing or unreadable is a mistake in the invocation, and reporting it after several minutes
+        // of checking helps nobody. Nothing in reading it depends on the check.
         Baseline? baseline = null;
         if (opts.BaselinePath is not null)
         {
@@ -91,6 +84,16 @@ internal static class CheckRunner
                 $"note: baseline holds {Plural.Entries(baseline.Entries.Count)}; one entry can cover " +
                 "several findings, so the accepted count below can be larger");
         }
+
+        var load = await CheckPipeline.LoadAndCheckAsync(
+            opts.LibraryPath, opts.ConfigPath, stderr,
+            honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
+            allowVersionMismatch: opts.AllowVersionMismatch,
+            // Only when this run is going to report or judge coverage: the check has the parse tree in
+            // hand, so measuring here costs the measurement alone rather than a second pass.
+            collectCoverage: opts.RecordMetrics || opts.Coverage.IsActive);
+        if (!load.Ok)
+            return load.ExitCode;
 
         // Warn when the baseline was generated under different rules. Both failure modes are silent
         // otherwise: a rule enabled since reports its pre-existing findings as NEW, so a change looks
@@ -170,16 +173,24 @@ internal static class CheckRunner
                 .ToList();
         }
 
+        // The figures for every checked model, computed at most once. Both the trend point for the
+        // "all libraries" scope and the coverage gate ask exactly this question, and `--metrics`
+        // alongside `--min-coverage` is the recipe the CI walk-through recommends.
+        var wholeSet = load.Graph is not null && load.Models is not null && load.Settings is not null
+                       && (opts.RecordMetrics || opts.Coverage.IsActive)
+            ? MetricsCalculator.Compute(load.Graph, load.Models, _ => load.Settings)
+            : null;
+
         // Record before formatting/exit-code so the point still lands when the gate fails — a failing
         // build is exactly the one whose numbers you want on the trend.
         if (opts.RecordMetrics && load.Graph is not null && load.Models is not null && load.Settings is not null)
         {
             MetricsRecorder.Record(
                 opts.ResolvedMetricsPath, load.Graph, load.Models, load.Findings, load.Settings,
-                DateTime.UtcNow, VcsLocator.Stamp(opts.LibraryPath), opts.MetricsForce, stderr);
+                DateTime.UtcNow, VcsLocator.Stamp(opts.LibraryPath), opts.MetricsForce, stderr, wholeSet);
         }
 
-        var coverageResults = EvaluateCoverageGate(opts, load, stderr);
+        var coverageResults = EvaluateCoverageGate(opts, load, wholeSet, stderr);
 
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
@@ -220,7 +231,7 @@ internal static class CheckRunner
     }
 
     /// <summary>
-    /// Measures coverage and judges it against whatever the caller asked for, saying on stderr what
+    /// Judges the measured coverage against whatever the caller asked for, saying on stderr what
     /// failed and why. Null when no coverage gate was requested — the ordinary case, which must not
     /// pay for the measurement.
     ///
@@ -228,14 +239,13 @@ internal static class CheckRunner
     /// this library documented well enough" are different questions, and a team that has switched the
     /// first off with <c>--fail-on off</c> has not thereby agreed to lose the second.</para>
     /// </summary>
+    /// <param name="metrics">The whole checked set's figures, computed once by the caller and shared
+    /// with the trend point — see the call site.</param>
     private static IReadOnlyList<CoverageGateResult>? EvaluateCoverageGate(
-        CheckOptions opts, LoadResult load, TextWriter stderr)
+        CheckOptions opts, LoadResult load, LibraryMetrics? metrics, TextWriter stderr)
     {
-        if (!opts.Coverage.IsActive || load.Graph is null || load.Models is null || load.Settings is null)
+        if (!opts.Coverage.IsActive || metrics is null)
             return null;
-
-        var settings = load.Settings;
-        var metrics = MetricsCalculator.Compute(load.Graph, load.Models, _ => settings);
 
         if (metrics.Coverage.Count == 0)
         {

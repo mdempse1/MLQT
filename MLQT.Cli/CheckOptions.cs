@@ -1,3 +1,5 @@
+using MLQT.Services.Helpers;
+
 namespace MLQT.Cli;
 
 internal enum OutputFormat { Console, Json, JUnit, Sarif, TeamCity, Markdown, Review }
@@ -80,20 +82,29 @@ internal sealed record CheckOptions
     /// <summary>Record a coverage snapshot into the metrics history the desktop dashboard reads.</summary>
     public bool RecordMetrics { get; init; }
 
-    /// <summary>Where to record it. Null = <c>&lt;library-path&gt;/.mlqt/metrics-history.json</c>, the
-    /// shared, version-controllable file the desktop app uses. Point this outside the repository to
-    /// collect the history as a CI artifact instead of committing it.</summary>
+    /// <summary>Where to record it. Null = the repository's
+    /// <c>.mlqt/metrics-history.json</c>, the shared, version-controllable file the desktop app uses.
+    /// Point this outside the repository to collect the history as a CI artifact instead of
+    /// committing it.</summary>
     public string? MetricsPath { get; init; }
 
     /// <summary>Record even when the numbers are unchanged. Off by default — see
     /// <c>MetricsHistoryStore.AppendIfChanged</c> for why that matters in CI.</summary>
     public bool MetricsForce { get; init; }
 
-    /// <summary>The metrics file this run would write to.</summary>
+    /// <summary>
+    /// The metrics file this run would write to.
+    ///
+    /// <para>Composed by the same two pieces the desktop app uses —
+    /// <see cref="MetricsHistoryStore.RepoPath"/> over the repository the library sits in — so CI and
+    /// the app write and read one history. Built from the library path instead, a library in a
+    /// subdirectory got a private second file that the Metrics tab never opened and
+    /// <c>--coverage-ratchet</c> never found anything in.</para>
+    /// </summary>
     public string ResolvedMetricsPath =>
         MetricsPath is not null
             ? RepoPath.Resolve(LibraryPath, MetricsPath)
-            : Path.Combine(LibraryPath, ".mlqt", "metrics-history.json");
+            : MetricsHistoryStore.RepoPath(SettingsResolver.RepositoryRootFor(LibraryPath));
 
     public static bool TryParse(IReadOnlyList<string> args, out CheckOptions? options, out string? error)
     {

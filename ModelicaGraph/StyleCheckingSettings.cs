@@ -254,12 +254,15 @@ public class StyleCheckingSettings
     private Regex[] EnsureExcludedLibraryPatterns()
     {
         // Cheap identity check on the current entries — the settings object is mutated in place by the
-        // UI, so a cached compilation has to notice an edit.
-        var current = ExcludedLibraries.Where(n => !string.IsNullOrWhiteSpace(n)).ToArray();
+        // UI, so a cached compilation has to notice an edit. Done without materialising the list,
+        // because this now runs per class per reported scope (CoverageDimensions.ForClass asks it too),
+        // and allocating an array to discover nothing has changed is the wrong thing to do tens of
+        // thousands of times.
         if (_excludedLibraryPatterns is not null && _excludedLibrariesSource is not null &&
-            current.SequenceEqual(_excludedLibrariesSource, StringComparer.Ordinal))
+            NamesUnchanged(_excludedLibrariesSource))
             return _excludedLibraryPatterns;
 
+        var current = ExcludedLibraries.Where(n => !string.IsNullOrWhiteSpace(n)).ToArray();
         _excludedLibrariesSource = current;
         _excludedLibraryPatterns = current
             .Select(name => new Regex(
@@ -267,6 +270,23 @@ public class StyleCheckingSettings
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
             .ToArray();
         return _excludedLibraryPatterns;
+    }
+
+    /// <summary>Whether the non-blank entries of <see cref="ExcludedLibraries"/> are still exactly
+    /// <paramref name="compiled"/>, walked in place so the check itself allocates nothing.</summary>
+    private bool NamesUnchanged(string[] compiled)
+    {
+        var next = 0;
+        foreach (var name in ExcludedLibraries)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+            if (next >= compiled.Length || !string.Equals(name, compiled[next], StringComparison.Ordinal))
+                return false;
+            next++;
+        }
+
+        return next == compiled.Length;
     }
 
     // Style guidelines
@@ -410,4 +430,35 @@ public class StyleCheckingSettings
     /// that rules are enabled and then report nothing, which is the least debuggable outcome there is.
     /// </summary>
     public bool HasAnyStyleRuleEnabled => RuleSeverities.Keys.Any(IsRuleEnabled);
+
+    /// <summary>
+    /// Stamps each finding with the severity these settings resolve for its rule, in place.
+    ///
+    /// <para>Visitors and analyzers emit at the record's default level, because a rule should not
+    /// have to know how it is configured. This is where configuration is applied, and it is one
+    /// method because it was two: the per-class checker and the graph-analysis runner each had their
+    /// own copy of the loop, and the copies had already diverged over whether a diagnostic is exempt.
+    /// It is — a parse error is not configurable, so there is nothing in the map to stamp it
+    /// from.</para>
+    ///
+    /// <para>A resolved severity of <see cref="RuleSeverity.Off"/> falls back to the rule's catalog
+    /// default rather than being written down: the finding exists only because its rule ran, so
+    /// "disabled" would be a contradiction, and recording it would lose a real finding behind a level
+    /// that means it should not be reported. It is a net, not a mechanism — the one case that used to
+    /// need it, a governed rule with no entry of its own, now resolves through its governor.</para>
+    /// </summary>
+    public void StampSeverities(IList<Finding> findings)
+    {
+        for (int i = 0; i < findings.Count; i++)
+        {
+            if (RuleIds.IsDiagnostic(findings[i].RuleId))
+                continue;
+
+            var severity = SeverityFor(findings[i].RuleId);
+            if (severity == RuleSeverity.Off)
+                severity = RuleCatalog.DefaultSeverityFor(findings[i].RuleId);
+
+            findings[i] = findings[i] with { Severity = severity };
+        }
+    }
 }

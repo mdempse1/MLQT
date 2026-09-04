@@ -438,7 +438,9 @@ Two things to be clear about:
 
 If your repository already runs hooks through husky, pre-commit or lefthook (anything that sets
 `core.hooksPath`), add the `mlqt check` line to that configuration instead — git reads hooks only
-from the configured directory, so an installed one would sit unused.
+from the configured directory, so an installed one would sit unused. You will not install one by
+accident: `mlqt hook install` checks `core.hooksPath` first and refuses when it is set, printing the
+command to add.
 
 ---
 
@@ -608,8 +610,12 @@ end Foo;
   in full (`MLQT.Naming.Convention`) or short (`Naming.Convention`).
 - Class-level annotations waive the rule for the whole class; component-level annotations only for
   that component.
-- **`preserveOrder=true`** (or `format=false`) on a class waives the ordering/formatting rules —
-  the in-source way to mark an order-sensitive class. Include a `reason`.
+- **`preserveOrder=true`** (or `format=false`) on a class does three things, not one: it waives the
+  ordering/formatting rules, it stops the **formatter** rewriting the class (including under
+  **Format All Files**), and it takes the class off the layout coverage dimensions so the dashboard
+  does not show a gap no finding will name. It is the in-source, rename-safe way to mark an
+  order-sensitive class, and the successor to the `FormattingExcludedModels` name list — see
+  [code-formatting.md](code-formatting.md#in-the-source-instead-__mlqtformatfalse). Include a `reason`.
 - **`spelling`** is a comma-separated list of words the class accepts as spelled correctly, e.g.
   `annotation(__MLQT(spelling="Stodola,Pacejka"));`. It waives only the spelling findings for those
   words in that class, so the rest of the class is still spell checked. The desktop app writes one

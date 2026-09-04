@@ -43,14 +43,19 @@ Three things decide whether a dimension is listed at all:
   you saying that gap does not matter here, so the dimension is dropped rather than reported at 40%
   and dragging the average. Turn the rule on and the dimension appears.
 - **The formatter must not be closing the gap.** With **Apply formatting rules** on, the layout
-  dimensions (imports, extends, sections) are rewritten on every save, so reporting them would
-  measure the moment before the save rather than the library. They drop off.
-  *Initial sections last* is the exception: the formatter writes initial sections **first**, so it
-  defeats that rule rather than satisfying it, and the number stays worth showing.
+  dimensions (imports, extends, sections, and both initial-section orders) are rewritten on every
+  save, so reporting them would measure the moment before the save rather than the library. They all
+  drop off. The renderer only reorders a class in its one-of-each-section mode, so with
+  **One of each section** off the formatter leaves layout alone and the dimensions stay.
 - **The class has to be in a repository.** A reference library, or anything marked
   **Reference only**, is loaded so references resolve and is measured for nothing — a vendor's
   descriptions are neither your achievement nor your debt. Classes recovered from an
   [encrypted library](encrypted-libraries.md) are excluded for the same reason.
+- **The class must not be excluded from checking.** A library named in `ExcludedLibraries` — usually
+  the examples or the test library sharing the repository — has no rule reporting on it, so it is
+  measured for nothing either. It is still counted in the **Size** panel: it is your code, and only
+  the quality judgement is suppressed. See
+  [settings-reference.md](settings-reference.md#excluding-whole-libraries-from-the-checks).
 
 ### Active rule findings
 
@@ -148,6 +153,13 @@ slightly different questions and are meant to:
 
 - **A waived finding still counts against coverage.** `__MLQT(suppress=...)` says "do not tell me
   about this again", not "this class now has a description".
+- **Except where no finding could ever be raised.** The exception, and the only one: a class taken
+  out of formatting — by the **Exclude from Formatting** toggle or by
+  [`__MLQT(format=false)`](code-formatting.md#in-the-source-instead-__mlqtformatfalse) — has its
+  layout rules skipped by the checker, so it is left off the layout dimensions too. Counting it would
+  show a gap nothing will ever name, which is worse than not counting it. The same goes for a whole
+  library named in `ExcludedLibraries`: nothing in it is reported on, so nothing in it is measured.
+  An audit run (`mlqt check --no-suppress`) reads no directives and so keeps those rows.
 - **Coverage counts every eligible class; a finding needs a rule to be on.** A dimension whose rule
   you switch off disappears from coverage entirely rather than reading 100%.
 - **A class that could not be parsed is in neither.** It appears in Code Review as a

@@ -53,8 +53,10 @@ public static class UnitResolver
         }
 
         var result = (false, false);
-        var tree = node.Definition.EnsureParsed();
-        if (tree is not null && ShortClassBase(tree) is { } info)
+        // Borrowed: the answer is what gets cached, not the tree, so handing it back costs nothing —
+        // a type already resolved is never re-parsed. Every class reached here is a type alias
+        // somewhere up a chain, not the class being checked. See ModelDefinition.Borrow.
+        if (node.Definition.Borrow<(string? Base, bool HasUnit)?>(ShortClassBase) is { } info)
         {
             var (baseType, hasUnit) = info;
             var baseName = (baseType ?? string.Empty).TrimStart('.').Trim();

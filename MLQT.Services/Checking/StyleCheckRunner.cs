@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 
@@ -42,32 +43,35 @@ public static class StyleCheckRunner
 
         // While the tree is still here. The dashboard would otherwise parse this class again to ask
         // the same questions, once for every scope it appears in.
-        context.Coverage?.Measure(node);
+        //
+        // Not for a class no report will put on any row — one in a library the settings exclude,
+        // where the check above returned before it read anything. Asked through
+        // CoverageDimensions.ForClass rather than IsLibraryExcluded directly, so who gets measured
+        // cannot come to disagree with who gets reported. Only the exclusions that empty the set are
+        // acted on here: the per-class layout narrowing is deliberately left to the report, because
+        // measuring a layout dimension costs one walk and not measuring it costs a re-parse.
+        if (context.Coverage is { } coverage
+            && CoverageDimensions.ForClass(coverage.Dimensions, settings, node.Id) != CoverageDimension.None)
+            coverage.Measure(node);
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return findings;
     }
 
-    /// <summary>Legacy LogMessage projection for existing (GUI/MCP) consumers.</summary>
-    public static List<LogMessage> Run(ModelNode node, StyleCheckingSettings settings, StyleCheckContext context)
-    {
-        if (node.IsExternalStub)
-            return [];
-
-        // Through the structured path, so the same "only about this class" rule applies as in
-        // RunFindings rather than the projection quietly keeping the duplicates.
-        var findings = OnlyAbout(node, context, StyleChecking.RunStyleCheckingFindings(
-            node.Definition, settings, node.Id, context.KnownModelIds, context.SpellChecker, context.KnownModelNames,
-            isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
-            baseClassHasIcon: context.BaseClassHasIcon, namingConfig: context.NamingConfig,
-            inheritedElementNames: context.InheritedElementNames, unitLookup: context.UnitLookup));
-
-        // While the tree is still here — see RunFindings.
-        context.Coverage?.Measure(node);
-
-        node.Definition.ParsedCode = null; // release the parse tree to bound memory
-        return findings.Select(f => f.ToLogMessage()).ToList();
-    }
+    /// <summary>
+    /// Legacy <see cref="LogMessage"/> projection for existing (GUI/MCP) consumers.
+    ///
+    /// <para>One line over <see cref="RunFindings"/> on purpose. It used to be a second copy of the
+    /// whole method differing only in the final <c>Select</c>, and the copies had already come apart
+    /// — this one grew no <paramref name="honorSuppressions"/>, so the GUI could not ask for the
+    /// audit pass the CLI can.</para>
+    /// </summary>
+    public static List<LogMessage> Run(
+        ModelNode node, StyleCheckingSettings settings, StyleCheckContext context,
+        bool honorSuppressions = true)
+        => RunFindings(node, settings, context, honorSuppressions)
+            .Select(f => f.ToLogMessage())
+            .ToList();
 
     /// <summary>
     /// The findings that are about <paramref name="node"/> itself. One naming another class is the

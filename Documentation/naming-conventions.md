@@ -97,8 +97,9 @@ Same as Modelica Standard, but constants (both public and protected) use UPPER_C
 ## Enabling Naming Convention Checking
 
 1. Navigate to **Settings > Manage Repositories** and click the repository
-2. Enable **Check that the naming convention is followed**
-3. An expansion panel appears below the toggle showing the current convention settings
+2. Set **Check that the naming convention is followed** to a severity — **Warning** to report,
+   **Error** to fail the CI quality gate on a misnamed element
+3. An expansion panel appears below the row showing the current convention settings
 4. Select a preset or customize individual rules
 5. Save settings
 

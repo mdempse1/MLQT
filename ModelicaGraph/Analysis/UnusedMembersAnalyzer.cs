@@ -29,12 +29,13 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
         {
             if (node is null || node.IsParseFailurePlaceholder)
                 continue;
-            var tree = node.Definition.EnsureParsed();
-            if (tree is null)
-                continue;
             try
             {
-                var iface = ClassInterfaceExtractor.Extract(tree);
+                // Borrowed, not taken: TypeResolver below reaches for base classes, and a tree this
+                // pass did not parse belongs to whoever did. See ModelDefinition.Borrow.
+                var iface = node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
+                if (iface is null)
+                    continue;
                 var extendsClauses = iface.Elements.Where(e => e.Kind == ClassElementKind.Extends).ToList();
                 if (extendsClauses.Count == 0)
                     continue;
@@ -47,7 +48,6 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
                 }
             }
             catch { }
-            finally { node.Definition.ParsedCode = null; }
         }
 
         // Pass 2: check each leaf (un-extended) class with no nested classes.
@@ -58,36 +58,36 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
             if (extended.Contains(node.Id))
                 continue;
 
-            var tree = node.Definition.EnsureParsed();
-            if (tree is null)
-                continue;
-
             try
             {
-                var iface = ClassInterfaceExtractor.Extract(tree);
-                if (iface.Elements.Any(e => e.Kind == ClassElementKind.Class))
-                    continue;   // a nested class could reference a protected member lexically — don't guess
+                // The whole check runs inside the borrow, because it wants the tree itself and not
+                // just the interface — CountIdentifiers walks every token. See ModelDefinition.Borrow.
+                node.Definition.Borrow(tree =>
+                {
+                    var iface = ClassInterfaceExtractor.Extract(tree);
+                    if (iface.Elements.Any(e => e.Kind == ClassElementKind.Class))
+                        return;   // a nested class could reference a protected member lexically — don't guess
 
-                var protectedMembers = iface.Elements
-                    .Where(e => e.Kind == ClassElementKind.Component && !e.IsPublic)
-                    .ToList();
-                if (protectedMembers.Count == 0)
-                    continue;
+                    var protectedMembers = iface.Elements
+                        .Where(e => e.Kind == ClassElementKind.Component && !e.IsPublic)
+                        .ToList();
+                    if (protectedMembers.Count == 0)
+                        return;
 
-                var counts = CountIdentifiers(tree);
-                foreach (var member in protectedMembers)
-                    if (counts.GetValueOrDefault(member.Name, 0) <= 1)   // only its own declaration
-                        findings.Add(new Finding
-                        {
-                            RuleId = RuleIdsRef.UnusedMember,
-                            ModelId = node.Id,
-                            ElementPath = member.Name,
-                            Message = $"protected {member.Name} is never used in {node.Definition.Name}",
-                            LineNumber = member.Line
-                        });
+                    var counts = CountIdentifiers(tree);
+                    foreach (var member in protectedMembers)
+                        if (counts.GetValueOrDefault(member.Name, 0) <= 1)   // only its own declaration
+                            findings.Add(new Finding
+                            {
+                                RuleId = RuleIdsRef.UnusedMember,
+                                ModelId = node.Id,
+                                ElementPath = member.Name,
+                                Message = $"protected {member.Name} is never used in {node.Definition.Name}",
+                                LineNumber = member.Line
+                            });
+                });
             }
             catch { }
-            finally { node.Definition.ParsedCode = null; }
         }
 
         return findings;

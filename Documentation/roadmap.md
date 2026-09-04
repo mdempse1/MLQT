@@ -26,7 +26,20 @@ closed — five correctness defects, two pieces of duplication, and documentatio
 the code. A second read on 2026-09-04 opened **B26–B35**, and those are closed too: it confirmed every phase
 1–6 claim against the code and a green build, and found one exception path outside the documented
 exit codes, two rule-classification mistakes, and a set of duplication, test and documentation gaps.
-**B20 is deliberately left**: it belongs inside phase 7a, because the logic sitting in the two largest
+A third read the same day opened **B37–B49**, and those are closed too: it re-confirmed phases 1–6
+against a green build, a passing coverage gate and a schema-validated SARIF report, and found one
+destructive defect (**B37** — the MCP `set_style_settings` tool switched off every rule the caller
+did not name, and committed that), plus the same two patterns the second read named, one surface
+further on — a catalogued promise no test holds anyone to, and one rule written in several places.
+**B36 is closed too** — spelling and naming were given the four-button picker, which removes the
+two-level control the demotion came from rather than papering over it. A fourth read, also on
+2026-09-04, opened **B50–B64**, and those are closed too: it re-confirmed phases 1–6 against a
+0-warning Release build, a passing coverage gate and a schema-validated SARIF report, and found one
+wrong number a user would see (**B50** — a library excluded from checking was still counted in every
+coverage percentage and in the coverage gate, B39's defect on the one exclusion mechanism B39 did not
+look at), plus the same two patterns for the third read running and one the reading could not have
+found: **B64**, a coverage gate that failed and then passed on identical code. **B20 is
+deliberately left**: it belongs inside phase 7a, because the logic sitting in the two largest
 pages is what makes a GUI test harness expensive to build. Cross-platform (§1) was kept last of the
 two on purpose — it is the big task, and the point was to start it against a toolchain that is
 complete rather than one still being finished.
@@ -34,10 +47,12 @@ complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: everything is shipped except B20, which belongs to phase 7a, and B36, opened by the work on B28.**
+**Backlog: everything is shipped except B20, which belongs to phase 7a.**
 B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
-[Branch review](#branch-review-2026-09-03)) and B26–B35 by the second read on 2026-09-04 (see
-[Second review](#second-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Branch review](#branch-review-2026-09-03)), B26–B35 by the second read on 2026-09-04 (see
+[Second review](#second-review-2026-09-04)), B37–B49 by the third (see
+[Third review](#third-review-2026-09-04)) and B50–B64 by the fourth (see
+[Fourth review](#fourth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -236,11 +251,11 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13–B25 and B26–B35 — a defect one of the two end-of-branch reviews found
-in what was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The
-point of the list is a CI/CD toolchain with nothing outstanding before the big migration starts;
-B1–B12 got it feature-complete, B13–B25 are what the first careful read of the result turned up, and
-B26–B35 what the second one did.
+half-delivered, or — for B13 onwards — a defect one of the four end-of-branch reviews found in what
+was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
+the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
+feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
+second one did, B37–B49 the third, and B50–B64 the fourth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -279,7 +294,35 @@ B26–B35 what the second one did.
 | B33 | **The pre-commit hook checks the working tree, not what is being committed** | second review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — documented rather than changed, in `cli.md` and in the generated hook's own header. A partial commit is judged on the unstaged remainder too, and a fix made but not staged will not block the commit that still contains the problem; both are now stated, with why it is a trade (checking the index means materialising it, which taxes every commit for a case that is rare in Modelica work) rather than an oversight. |
 | B34 | **The Coverage dashboard has no user documentation** | second review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — `metrics-dashboard.md`: what each of the fourteen dimensions counts, the three reasons one is not listed, why the finding count moves when the percentages barely do, and why coverage and the finding list disagree about a waived finding. Writing it turned up that the tab is called Metrics in the app and “the Coverage dashboard” in the documentation, the CLI help and a dozen comments; it is Metrics everywhere now. |
 | B35 | **CLAUDE.md does not mention the roadmap or any design note** | second review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — CLAUDE.md has a Planning and Design Notes section naming `roadmap.md` and all eight design notes, and says to read the roadmap before starting anything substantial. Its maintenance rules now ask for the backlog and the phase notes to be kept up: an item finished but still open reads as outstanding work, and a note describing something planned and not built is worse than no note. `IBaselineStatusService` moves to `MLQT.Services/Interfaces/`, and the instruction says “always there, even when the implementation lives in a subfolder” — which is the case that drifted. |
-| B36 | **Switching a rule off in the GUI forgets the severity it was set to** | found while doing B28 | ⭐ | S | `SetRuleEnabled(false)` removes the rule's entry outright, so an explicit severity is not remembered: switching it back on re-seeds the catalog default and a repository's `"Error"` has become `"Warning"`, with the dialog looking exactly as it did before and nothing written down about it. **Narrowed since it was opened.** It reached the rules the dialog shows as a switch rather than as a severity picker, which was the four formatting rules plus spelling and naming; the formatting four now derive their level from whether the formatter maintains them, so they store nothing to lose and the exposure is spelling and naming alone — three rules nobody is likely to have raised to Error for a gate. Current behaviour is pinned by `GovernedRuleTests.SwitchingOffAndOnAgainCurrentlyLosesAnExplicitSeverity`, which names this item and should assert `Error` once it is fixed. Two ways out, and it is a UI decision rather than a mechanical one: give those rules the same four-button picker as every other rule, or keep the switch and remember the severity across an off/on within the dialog. |
+| B36 | **Switching a rule off in the GUI forgets the severity it was set to** | found while doing B28 | ⭐ | S | `SetRuleEnabled(false)` removes the rule's entry outright, so an explicit severity is not remembered: switching it back on re-seeds the catalog default and a repository's `"Error"` has become `"Warning"`, with the dialog looking exactly as it did before and nothing written down about it. **Narrowed since it was opened.** It reached the rules the dialog shows as a switch rather than as a severity picker, which was the four formatting rules plus spelling and naming; the formatting four now derive their level from whether the formatter maintains them, so they store nothing to lose and the exposure is spelling and naming alone — three rules nobody is likely to have raised to Error for a gate. Current behaviour is pinned by `GovernedRuleTests.SwitchingOffAndOnAgainCurrentlyLosesAnExplicitSeverity`, which names this item and should assert `Error` once it is fixed. Two ways out, and it is a UI decision rather than a mechanical one: give those rules the same four-button picker as every other rule, or keep the switch and remember the severity across an off/on within the dialog. **✅ shipped (2026-09-04)** — the first of the two, as decided: spelling and naming now use the same four-button picker as every other rule, and the choice between them turned out to be less even than it looked. Remembering a severity across an off/on is a workaround for a control that can only express two of the four levels; a picker writes the level the user chose, so there is nothing to remember on their behalf and no demotion to be silent about. Revealing a sub-panel — the dictionary languages, the naming presets — was never a reason to hide the level, and each still appears whenever its rule is not Off. `RuleSettingsLayout` carries the three as `SeverityPicker` rows, so the dialog renders them from the same list as the rest and a regression to a switch fails `SpellingAndNamingAreOfferedAsPickers`. The bool facade still cannot carry a severity and still has a test saying so — that is now a fact about the facade, which the settings file's backward compatibility and the derived-level formatting switches both still need. |
+| B37 | **`set_style_settings` switches off every rule the caller did not name** | third review 2026-09-04 | ⭐⭐⭐ | S | `StyleSettingsInput`'s rule properties are non-nullable `bool`s and `ApplyTo` assigns all twenty-nine of them, so an agent that sends `{ "classHasDescription": true }` to enable one rule writes `false` over every other rule, and `SaveRepositorySettingsAsync` persists that to the committed `.mlqt/settings.json`. An omitted property and a deliberate "off" are indistinguishable. The same DTO got this right for `SpellCheckLanguages` — nullable, and "when null or empty on save, the existing languages are kept" — so the shape of the fix is already in the file: make the rule properties `bool?` and leave a null alone. Until then the tool's own description ("Only the rule toggles and spell languages are changed") reads as a reassurance while describing the loss, and the visible symptom is a large unexplained diff on a reviewed file, or a CI gate quietly narrowed to one rule. **✅ shipped (2026-09-04)** — the toggles are `bool?`, and `ApplyTo` writes only the ones that were supplied: a rule the caller did not name keeps whatever the repository had. `SpellCheckLanguages` had always worked that way and the rules had not, which is the whole defect. The tool's description says it is a merge and that a key may be omitted. Two things fell out of doing it. `From` now reports whether a rule is *switched on* rather than whether it would currently run, because the ordering rules read as off while `OneOfEachSection` is off — so a read-modify-write round trip through `get_style_settings` used to discard them, silently, having changed nothing. And the check tools are unaffected: they build from a blank settings object, where "not mentioned" and "off" are the same thing, which is pinned by a test. |
+| B38 | **Nothing holds the MCP settings DTO to the rule catalog** | third review 2026-09-04 | ⭐⭐ | S | Adding a rule to `RuleCatalog` needs three hand edits in `QualityDtos.cs` — the property, the `ApplyTo` line, the `From` line — and no test fails if any of them is missed: an agent then cannot enable the rule, and `get_style_settings` cannot see it. This is exactly the gap B29 closed for the settings dialog and B16 for the documentation, one surface short. The count happens to be right today (29 configurable rules, 29 bools plus the `ComponentsBeforeClasses` formatter flag), which is the point — it is right by hand. The guard is the same one twice over: assert every `RuleCatalog.Configurable` id round-trips through `From`/`ApplyTo`. Better still, drive the DTO from the catalog and delete the three lists. **✅ shipped (2026-09-04)** — `ApplyTo` and `From` walk one table binding each rule id to its property instead of listing the twenty-nine names three times, and `StyleSettingsInput.SettableRuleIds` exposes it. `StyleSettingsCoverageTests` holds that list to `RuleCatalog.Configurable` in both directions — a rule with no toggle fails, and a toggle for a governed rule or a diagnostic fails too — and checks every toggle reads back what it wrote, which is what catches one wired to a different rule for reading than for writing. Same guard as `RuleSettingsLayoutTests` and `RuleDocumentationTests`, now on the third surface. |
+| B39 | **The two formatting exclusions disagree about coverage** | third review 2026-09-04 | ⭐⭐ | S | `FormattingExcludedModels` takes a class off the Layout coverage dimensions (`CoverageDimensions.TrackedFor`, `MetricsCalculator`); `__MLQT(format=false)` / `preserveOrder=true` does not, because it is applied inside `RunStyleCheckingFindings` by the suppression extractor and nothing outside the checker knows about it. So the mechanism phase 5b calls "the in-source, rename-safe successor", and that the docs steer new usage to, leaves the dashboard reporting a Layout gap no finding will ever name — the precise thing `CoverageDimensions` says it exists to prevent. Note that the two defensible directions conflict: `MetricsCalculator` states that coverage is "never scraped from findings" and shows the true state "whatever has been waived", which argues the *name list* is the one behaving wrongly. Either answer is fine; having both is not. **✅ shipped (2026-09-04)** — settled in the direction the file already argued for: coverage must not show a gap no finding will name, and the checker skips the layout rules for both exclusions, so coverage skips them for both. `__MLQT(format=false)` / `preserveOrder=true` is a fact about the source, so it is read where the tree is already in hand — `CoverageMeasurer` records it as `CoverageFacts.FormattingPreserved` — and `CoverageDimensions.ForClass` consults it alongside the name list. A test asserts the two mechanisms produce the same rows, which is the property that was missing rather than either answer. |
+| B40 | **The per-model layout exclusion is written three times, and the shared version has no caller** | third review 2026-09-04 | ⭐⭐ | S | `CoverageDimensions.TrackedFor(settings, modelId)` exists to answer "which dimensions apply to this class", and its `modelId` overload is reached only from `CoverageDimensionsTests`. Production asks the question three times instead, each rebuilding the same `FormattingExcludedModels.Count > 0 && IsModelExcludedFromFormatting(id) ? tracked & ~Layout : tracked`: `MetricsCalculator.Compute`, `StyleCheckingService`'s coverage sweep, and — by omission — `StyleCheckContext`, which builds its measurer from the un-narrowed mask. Three copies of one rule with the canonical one unused is how B39 comes to be fixed in only one of them. **✅ shipped (2026-09-04)** — `CoverageDimensions.ForClass` is the one narrowing, and the three sites call it: `MetricsCalculator` (twice — once to decide what to measure, once with the facts to decide what to report), `StyleCheckingService`'s sweep, and `TrackedFor(settings, modelId)`, which is now a front door onto it rather than a fourth copy. `StyleCheckContext` deliberately does not narrow and says why: it decides what to *measure*, and measuring a dimension the report will drop costs one walk while not measuring it costs a re-parse. |
+| B41 | **`mlqt hook install` ignores `core.hooksPath`** | third review 2026-09-04 | ⭐⭐ | S | `HookCommand` walks up to `.git` and writes `hooks/pre-commit` under it. A repository that sets `core.hooksPath` — which husky, pre-commit and lefthook all do — makes git read hooks from somewhere else entirely, so the file is written, `install` reports success, `status` reports "mlqt pre-commit hook installed", and no commit is ever checked. `cli.md` and `ci-quality-gate.md` already tell the user to wire the check into their existing configuration in that case; the command itself neither detects the config nor mentions it. Reading `git config core.hooksPath` and refusing with that advice is the whole fix. A silent no-op is the one outcome a commit gate cannot have. **✅ shipped (2026-09-04)** — `install` asks `git config --get core.hooksPath` and refuses when it is set, naming the directory, saying husky/pre-commit/lefthook are the usual cause, and printing the `mlqt check` line to add to whatever they run. `status` and `uninstall` carry on but say the same thing — status has to be able to report what is there, and uninstall has to be able to remove a hook installed before the redirect was set. Git being unavailable is not a refusal: the overwhelmingly common case is no redirect at all, and declining to install because we could not ask would be worse than installing where git looks by default. |
+| B42 | **A diagnostic's SARIF alert explains how to configure a rule that cannot be configured** | third review 2026-09-04 | ⭐⭐ | S | `SarifFindingFormatter.Help` is written for every rule id in the report, so an alert for `MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure` or `MLQT.Check.Failed` says "Configure this rule's severity, or switch it off, in the repository's `.mlqt/settings.json`" and links to `settings-reference.md` — which mentions none of the three, because `RuleIds.IsDiagnostic` is precisely the set that cannot be configured. This is B16's defect for the three ids B16 did not cover, and `RuleDocumentationTests` does not catch it because it holds the catalog's *configurable* rules to the page. The diagnostics need their own help text — what the finding means, and that it is not switchable — and a page to point at. **✅ shipped (2026-09-04)** — the alert body branches on `RuleIds.IsDiagnostic`. A diagnostic is told it is a diagnostic — always reported, never configurable, never baselined, and a statement that the results are incomplete — and its `helpUri` points at `cli.md#diagnostics`, which is where the three are documented. Ordinary rules are unchanged. `RuleDocumentationTests` already held the settings page to the catalog; it now also holds the heading the diagnostics link to, so renaming it fails the build rather than the link. |
+| B43 | **The review body calls findings over the comment cap "not on a changed line"** | third review 2026-09-04 | ⭐ | S | `ReviewFindingFormatter` folds `unplaceable` and `overflow` into one `<details>` block headed "N finding(s) not on a changed line", explaining that a comment cannot be attached to them. The overflow findings *are* on changed lines — they were held back only because `MaxInlineComments` is 50 — so the reader is told something false about them, and sent looking for a cause that is not the cause. `ReviewFindingFormatterTests.BeyondTheCap_TheRestAreListedRatherThanDropped` asserts the wrong wording, so the test moves with the fix. Two sections, or one heading that names both causes. **✅ shipped (2026-09-04)** — the block is headed "N finding(s) not commented inline" and lists the two causes separately: "Not on a changed line", which is about the diff, and "Over the comment limit", which is about the fifty-comment cap and says so. The test that asserted the wrong wording moved with it, and two more pin each cause on its own and both together. |
+| B44 | **The parse-tree release convention is unwritten, and four sites do not follow it** | third review 2026-09-04 | ⭐⭐ | M | `StyleCheckRunner`, `MetricsCalculator`, `ShadowingAnalyzer`, `UnusedImportAnalyzer` and `UnusedMembersAnalyzer` all clear `Definition.ParsedCode` after use, "to release the parse tree to bound memory". `GraphAnalysisRunner.BuildSuppressions`, `ClassElementResolver`, `TypeResolver` and `UnitResolver` do not — and each of them parses classes *other* than the one under check: base classes up an `extends` chain, the type a component is declared as. On a large library those trees then accumulate for the rest of the run. `CoverageMeasurer` already has the right primitive (its `borrowed` flag: release only what you parsed yourself); nothing else uses it and nothing states the rule. For the suppression reader this is a straightforward leak; for the three resolvers it may be a deliberate cache, in which case that is the thing to write down. It matters on exactly the run the reference-library note is about, where nothing may scale with graph size. **✅ shipped (2026-09-04)** — `ModelDefinition.Borrow` is the convention with a name: it parses if needed, runs the work, and releases the tree again only if it was what parsed it — so a walk hands back the base classes it reached for while leaving the caller's own tree alone. The four sites that kept trees now use it: the graph runner's suppression reader (a plain leak, once per class carrying a graph finding) and the three resolvers, which turned out not to need the trees at all, since what they cache is the answer. `ParseTreeBorrowingTests` pins the primitive — including release on an exception — and each of the four walks. |
+| B45 | **`StyleCheckRunner.Run` duplicates `RunFindings` rather than projecting over it** | third review 2026-09-04 | ⭐ | S | The two methods differ only in a final `.Select(f => f.ToLogMessage())` — the same stub guard, the same eleven arguments to `RunStyleCheckingFindings`, the same `OnlyAbout`, the same `Coverage.Measure`, the same tree release, written out twice. They have already diverged once: `Run` has no `honorSuppressions` parameter, so the GUI cannot ask for the audit pass the CLI can. `Run` should be one line over `RunFindings`. **✅ shipped (2026-09-04)** — `Run` is three lines over `RunFindings`, and takes the `honorSuppressions` argument it had been missing. |
+| B46 | **Two more small duplications in the finding pipeline** | third review 2026-09-04 | ⭐ | S | The severity-stamping loop — walk the findings, `SeverityFor(id)`, fall back to `RuleCatalog.DefaultSeverityFor` when it resolves Off — is written out in both `StyleChecking.RunStyleCheckingFindings` and `GraphAnalysisRunner.Run`, and the two have already diverged (only the second skips diagnostics, correctly). And `c.Status != FindingStatus.AcceptedDebt` — "is this finding actionable" — is repeated in five of the six formatters, which is one predicate away from a `CheckReport.Actionable`. Neither is broken; both are the shape B30 was opened for. **✅ shipped (2026-09-04)** — `StyleCheckingSettings.StampSeverities` is the one severity stamp, used by both the per-class checker and the graph-analysis runner, with the diagnostic exemption the two had disagreed about. `CheckReport.Actionable` is the one "not accepted debt" predicate, used by all six formatters. |
+| B47 | **`ChangedLineResolver` has no tests of its own** | third review 2026-09-04 | ⭐⭐ | S | `GitRevisionControlSystem.GetChangedLinesSince` is covered by `GitChangedLinesTests`, and `mlqt check --format review` end to end by `ReviewCommandTests` — but the resolver between them, which picks the VCS, refuses SVN with an explanation, turns a null diff into the "shallow checkout" message and maps absolute paths back to repository-relative ones, is exercised only incidentally. `RepositoryRelativePath` returning null for a file outside the repository is the branch a review comment depends on, and no test names it. `ChangedModelResolver`, which answers the coarser question, has a test file; this one does not. **✅ shipped (2026-09-04)** — `ChangedLineResolverTests`, eight of them, over the branches a real repository will not perform to order: a diff that cannot be taken, an SVN working copy, somewhere that is not a working copy at all, and a file outside the repository having no path a forge could resolve. Reaching them needed a seam, and the seam is worth more than the tests: `ILineLevelDiff`, implemented by Git and not by SVN, so "a review needs Git" is a fact about the type rather than a check against a concrete class that somebody remembered to write. |
+| B48 | **The hook script quotes its arguments without escaping them** | third review 2026-09-04 | ⭐ | S | `HookCommand.Quote` wraps a value in double quotes and stops there, so a library path or a `--changed-from` ref containing `"`, `$`, a backtick or a backslash produces a hook that is wrong rather than one that fails: `sh` expands `$` inside double quotes, and a git ref name may contain one. The values come from whoever runs `mlqt hook install`, so this is robustness rather than a security boundary — but a hook that silently checks the wrong thing is the same failure mode as B41. **✅ shipped (2026-09-04)** — `Quote` escapes backslash, `"`, `$` and backtick, which are what `sh` still reads inside double quotes. A ref named `origin/feature$x` used to be written into the hook unescaped and quietly diffed against `origin/feature`. |
+| B49 | **`MLQT.McpServer/README.md` has a broken table and a stale project layout** | third review 2026-09-04 | ⭐ | S | A paragraph about parse-error reporting sits between the "Code quality" and "Spelling" rows of the tools table, which ends the table there — the last six groups render as loose text. And the `Helpers/` bullet still lists `StyleCheckRunner`, which phase 2 moved to `MLQT.Services/Checking/` and which is now the shared primitive the whole pipeline funnels through; the nine helpers actually in that folder are unlisted. The tool *names* in the same file are exact — all 65 match the code, in both directions — so this is presentation and one moved type, not drift in the list itself. **✅ shipped (2026-09-04)** — the paragraph moved below the table, so the last six tool groups render as rows again, and the project layout lists what `Helpers/` actually holds and says the check pipeline is not among it: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` are in `MLQT.Services/Checking/`, shared with the CLI and the app. |
+| B50 | **An excluded library still counts against coverage** | fourth review 2026-09-04 | ⭐⭐⭐ | S | **✅ shipped (2026-09-04)** — `CoverageDimensions.ForClass` returns `None` for a class in an excluded library, so it is on no dimension rather than on all of them, and `StyleCheckRunner` stops measuring one: the narrowing was already the single answer for the other two mechanisms, and this is the third asking the same method. The class stays in the **Size** census — excluding a library suppresses the quality judgement, not the library, and the settings reference already said so. Four tests, including that an excluded library missing every description leaves the figure at 100% rather than 50%, and that its classes are still counted. |
+| B51 | **Baseline drift is blind to a rule going inert** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — `Baseline.InForce` is the one answer to "which rules will actually run, at what level", resolved through `SeverityFor` and used both to write the ledger and to compare against it, so the two cannot come to mean different things. Switching off `OneOfEachSection` now reports the four ordering rules as disabled-since, which is what stranding their entries actually is; switching the formatter on reports the severity change it makes. A baseline written before this recorded configured levels, so the first check after upgrading may report a change that is not one — the warning already says to regenerate. |
+| B52 | **`--no-suppress` reports layout findings coverage has already dropped** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — `CoverageMeasurer` takes `honorSuppressions` from the run it belongs to, so an audit records `FormattingPreserved: false` and the layout rows stay while `--no-suppress` is putting the layout findings back. It makes the fact one about a run rather than only about the source, which is written down where it is recorded: a facts cache belongs to a run with one suppression mode, and the CLI is a process per run while the app and MCP always honour them. |
+| B53 | **An invocation error is found after the whole check has run** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — both now answer before anything is read. The baseline is loaded ahead of `LoadAndCheckAsync`, and `UsesVersionChecker` runs as soon as the libraries are in the graph, before trimming, dependency analysis or the check — the versions come off the loaded nodes, so nothing below was ever needed to know. Tested by the absence of the first thing the load prints (`settings from …`) and of `running dependency analysis`. |
+| B54 | **The `Borrow` convention has more sites outside it than in it** | fourth review 2026-09-04 | ⭐⭐ | M | **✅ shipped (2026-09-04)** — the five hand-written sites are gone: `ShadowingAnalyzer`, `UnusedMembersAnalyzer` (twice) and `UnusedImportAnalyzer` released unconditionally and now borrow, and `CoverageMeasurer` had a second copy of the primitive. Two more leaks turned up while doing it, both of the category B44 named — `StyleChecking.ImportsOf` and the inherited-icon walk, which climbs an extends chain and kept every class it reached. `Borrow`'s summary no longer claims the resolvers keep trees on purpose (they cache the answer, and B44 is what made that true), and it now says where the convention does **not** apply: `GraphBuilder`'s bulk load owns what it parses and releases unconditionally on purpose. Six tests, including that a graph analysis leaves a tree its caller was holding. |
+| B55 | **The suppression set is extracted up to three times per class per run** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — `ClassSuppressions.For(definition, modelId)` is the one read, kept on the class and cleared when its source changes. `SuppressionSet.Empty` is a shared instance, so keeping the answer for a library of tens of thousands of classes costs a reference each rather than a set each — which is what made caching it the right shape rather than a memory regression. The graph analyses stop re-parsing a class to ask what the checker asked of the same class minutes earlier. |
+| B56 | **The CLI's metrics file is not the one the app reads** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — `ResolvedMetricsPath` is `MetricsHistoryStore.RepoPath` over `SettingsResolver.RepositoryRootFor(library)`, the same two pieces the desktop app uses, so whatever `.mlqt` the rules came out of is the one the run's numbers go back into. A library in a subdirectory writes the repository's history rather than a private second file; `--coverage-ratchet` reads it back, which is the half that was a silent gate rather than a stray file. A loose library with no `.mlqt` and no working copy still records beside itself. |
+| B57 | **Two adjacent resolvers pick their default VCS list two different ways** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — `ChangedLineResolver` asks `VcsLocator` for the default systems, as `ChangedModelResolver` already did. Its test seam is unchanged: passing systems explicitly still overrides. |
+| B58 | **Metrics for the whole checked set are computed twice** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — `CheckRunner` computes the whole checked set's figures at most once and hands them to both the trend point and the coverage gate. `MetricsRecorder` takes them for the `""` scope and computes only the per-library ones. |
+| B59 | **Nothing holds a coverage dimension to a rule that exists** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — two tests. One holds `CoverageDimensions.Ordered` to the enum in both directions and asserts every dimension is tracked when every rule is on, which catches a `RuleFor` arm falling through to `""`. The other pins `CoverageDimension.Layout` to the rules `StyleChecking` puts behind `isExcludedFromFormatting`, by running the checker both ways over a class that violates them — the coupling B39 turned on, in two files with nothing else tying them together. |
+| B60 | **Six ordinary classes sit in the coverage ledger with no reason** | fourth review 2026-09-04 | ⭐ | M | **✅ shipped (2026-09-04)** — the ledger carries a `reason` per entry and the gate fails on one that does not, so accepting coverage debt is a decision rather than a keystroke. `-UpdateBaseline` carries existing reasons forward and writes a `TODO` placeholder for anything new, which the gate then refuses. All fifteen are written, and the six that prompted this say plainly that the tests are reachable and not yet written — a different fact from "needs a working SVN server", and the one the ledger could not previously express. |
+| B61 | **`__MLQT(format=false)` is missing from the formatting documentation** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — `code-formatting.md` has a section on the annotation as the preferred, rename-safe form, listing all three things it does (out of every formatting pass, the rules suppressed, the layout coverage rows dropped) and saying when to prefer it over the toggle; `code-review.md`'s toolbar row points at it; `ci-quality-gate.md`'s one line says all three rather than one; and `metrics-dashboard.md` carries the exception to its own rule, plus a scope bullet for `ExcludedLibraries` (B50's user-visible half). One stale claim went with it: that page still said the formatter writes initial sections first and so defeats *Initial sections last*, which the renderer stopped doing. |
+| B62 | **CLAUDE.md describes the codebase as it was before phases 1–6** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — CLAUDE.md's key-file table names the phase 1–6 substrate (`Finding`, `RuleIds`/`RuleCatalog`, `RuleSettingsLayout`, `ClassSuppressions`, the three `Analysis/` entry points, `LibraryCheckSession`, `Baseline`, `ClassLocation`, `ILineLevelDiff`); the ModelicaGraph section has an `Analysis/` block and calls out `ModelDefinition.Borrow`, `ClassSuppressions` and `CoverageDimensions.ForClass` as conventions in the style it already used for `WithinClause`; and there is a table for `MLQT.Services/Checking/`, the shared pipeline, saying what each primitive is for. |
+| B63 | **An orphaned doc comment in the SARIF formatter** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — the blank line is gone, so the summary documents the method again. |
+| B64 | **The coverage gate is a coin flip on one class** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — found by running the gate twice on the same code: `MLQT.Services.FileMonitoringService` measured 76.7% and then 81.4%, straddling its 80% bar, so the build failed and then passed with nothing changed. The cause was that its rename and delete handlers had no test of their own and were reached only when Windows happened to report a write as a rename — which it does sometimes, a text write being a temp file and a rename underneath. A handler covered by accident is a handler nobody is checking, and a gate that fails at random teaches people to re-run until green, which is how a gate stops meaning anything. Nine tests now wait for the specific change and assert it arrived, so they either cover those lines or fail: 89.5% on repeated runs. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -363,6 +406,182 @@ shipped. What it did **not** do, again, is read all 44,000 changed lines, and it
 `CodeReview.razor` or `MetricsDashboard.razor` in detail — that is B20's subject and belongs to
 phase 7a.
 
+
+### Third review (2026-09-04)
+
+**B37–B49 came out of a third read of the branch**, asked for on the same terms as the second:
+phases 1–6 against the roadmap and the design notes, then the code for problems, duplication,
+missing tests and logic implemented twice, then the documentation against what shipped. **All
+thirteen are closed.**
+
+**Phases 1–6 verify as delivered, again, and this time against a green run of everything.** The
+solution builds in Release; all **4,809 tests pass** (ModelicaParser 1860, Services 760,
+ModelicaGraph 743, RevisionControl 651, McpServer 276, CLI 267, Dymola 207, OpenModelica 45);
+`build/check-coverage.ps1` passes, with no CLI or ModelicaGraph class in the debt ledger at all; and
+`build/validate-sarif.ps1` validates a generated report against the SARIF 2.1.0 schema with
+`Sarif.Multitool` — so B8's conformance claim is not just recorded but re-run. Every `mlqt` flag in
+the source is in `cli.md`; every configurable rule id is in `settings-reference.md`; every one of the
+65 MCP tool names matches between the code and both READMEs, in both directions; and the fourteen
+coverage dimensions are all named in `metrics-dashboard.md`. Nothing below unships a phase.
+
+**One item is worth taking seriously on its own: B37.** `set_style_settings` replaces every rule
+toggle from the object it is handed and persists the result to the committed `.mlqt/settings.json`,
+so an agent enabling one rule switches off the other twenty-eight. It is the only finding here that
+destroys something, and it is reachable by an ordinary use of the tool.
+
+The rest fall into three groups, and the first two are the same two the second review named — which
+is the useful thing this read found:
+
+- **A catalogued thing whose promise no test holds anyone to.** B38 is B29 and B16 one surface
+  short: the MCP settings DTO lists all twenty-nine configurable rules by hand, in three places, and
+  nothing fails when a new rule misses them. B42 is B16 for the three ids B16 excluded — a
+  diagnostic's SARIF alert explains how to configure a rule that by definition cannot be configured,
+  and links to a page that does not mention it. Both fixes are the shape the second review already
+  established: turn the promise into an assertion over `RuleCatalog`.
+
+- **One rule written more than once.** B40 is the sharpest: the per-model layout exclusion exists as
+  a shared method whose only callers are its tests, while production rebuilds it in three places —
+  which is exactly how **B39** happened, the two formatting-exclusion mechanisms now disagreeing
+  about coverage, with the in-source one phase 5b calls the successor being the one that behaves
+  worse. B44, B45 and B46 are the same pattern lower down: a parse-tree release convention four sites
+  do not follow, a method copied instead of projected over (and already diverged), and the severity
+  stamp and the actionable-finding predicate each written out more times than there are of them.
+
+- **A gate or a report that is quietly wrong rather than loudly.** B41 — `mlqt hook install` ignores
+  `core.hooksPath`, so on a repository using husky or lefthook it writes a file git never reads and
+  then reports the hook installed. B43 — the review body tells the reader that findings held back by
+  the comment cap were "not on a changed line", which is false, and a test asserts the wording. B48 —
+  the hook script quotes without escaping. B47 is the test gap underneath the same area:
+  `ChangedLineResolver` sits between two well-tested things and has no tests of its own.
+
+B49 is presentation: a paragraph split the MCP README's tools table, and its project layout still
+named a type phase 2 moved.
+
+**What the fixes converged on.** Four of the thirteen ended in the same place — a rule that had been
+written out several times became a named thing with a test behind it — and that is the shape to reach
+for next time rather than the individual defects. `CoverageDimensions.ForClass` is now the one answer
+to "which dimensions apply to this class" (B39/B40); `StyleCheckingSettings.StampSeverities` the one
+severity stamp and `CheckReport.Actionable` the one actionable-finding predicate (B46);
+`ModelDefinition.Borrow` the one way to read a class you do not own (B44). Two more turned an
+implicit promise into a type or an assertion: `StyleSettingsInput.SettableRuleIds` is held to
+`RuleCatalog.Configurable` the way the settings dialog and the documentation already were (B38), and
+`ILineLevelDiff` — implemented by Git, not by SVN — makes "a pull-request review needs Git" a fact
+about the type rather than a check against a concrete class (B47). That last one was reached for to
+make B47's tests possible and is worth more than the tests.
+
+Two fixes turned up a defect next to the one being fixed. B37's `From` was reporting whether a rule
+would currently *run* rather than whether it was switched on, so a read-modify-write round trip
+through `get_style_settings` silently discarded the ordering rules whenever `OneOfEachSection` was
+off — the same distinction `IsRuleSwitchedOn` was added to the settings dialog for, not carried over
+to MCP. And B44's three resolvers turned out not to want their trees at all: what they cache is the
+answer, so handing the tree back costs nothing, and the "deliberate cache" the item allowed for did
+not exist.
+
+What this review covered, so its gaps are on the record too: the six design notes claim by claim
+against the code; the rule catalog against `RuleIds`, the severity map, the settings UI declaration
+and `settings-reference.md`; every CLI flag against `cli.md` (including which flags in the docs
+belong to other tools); every MCP tool name against both READMEs, both ways; the four check entry
+points and the three coverage-masking sites against each other; the CI workflow's steps against what
+they claim to gate; and a full build, test, coverage and SARIF-validation run. What it did **not** do,
+for the third time, is read all 47,000 changed lines, and it did not review `CodeReview.razor` or
+`MetricsDashboard.razor` — that is **B20**, and it belongs to phase 7a.
+
+### Fourth review (2026-09-04)
+
+**B50–B64 came out of a fourth read of the branch**, on the same terms as the second and third:
+phases 1–6 against the roadmap and the design notes, then the code for problems, duplication,
+missing tests and logic implemented twice, then the documentation against what shipped. **All
+fifteen are closed.** B64 was the one the reading did not find — it took running the gate twice.
+
+**Phases 1–6 verify as delivered.** As read, the solution built in Release with 0 warnings, all six
+gated suites passed (4,603 tests), the coverage gate passed at 86.7% and `build/validate-sarif.ps1`
+re-validated a generated report against the SARIF 2.1.0 schema. **After the fixes**: 0 warnings,
+**4,642 tests** (ModelicaParser 1860, ModelicaGraph 781, Services 781, RevisionControl 651, McpServer
+286, CLI 283 — plus Dymola 207 and OpenModelica 45), the coverage gate at **86.8%** with 148 classes
+gated and every accepted entry now carrying a reason, and the SARIF still valid: 3 rules, 5 results,
+paths relative to the repository root. Every `mlqt` flag in the source is in `cli.md` and in `--help`;
+`cli.md` names no flag the tool does not have. Nothing below unships a phase, and nothing below is a
+defect in what a phase claimed — they are all in the seams between what two phases claimed
+separately.
+
+**The one worth taking seriously on its own is B50.** MLQT now has three ways to take a class out of
+scope — the `ExcludedLibraries` name list, the `FormattingExcludedModels` name list, and
+`__MLQT(format=false)` — and B39 spent this branch making the second and third agree about coverage.
+The first was never asked. A repository that excludes its examples or test library still has every
+class in it counted in the coverage percentages, in the recorded trend and in the `--min-coverage`
+gate, while no rule will ever report a finding about it. That is the same defect B39 closed, on the
+exclusion mechanism B39 did not look at, and it is the one item here a user would notice as a wrong
+number rather than as a missing warning.
+
+The rest fall into the three groups the last two reviews named, which is now the finding rather than
+any individual item:
+
+- **One rule written more than once, or in one place and not the neighbouring one.** B54 is the
+  sharpest and the most recent: `ModelDefinition.Borrow` was introduced *this branch* as the one way
+  to read a class you do not own, and it now has four callers and five hand-written sites — four of
+  which release unconditionally, the half its own summary says is wrong, and one of which is a second
+  copy of the primitive. Its closing paragraph still describes the resolvers as keeping their trees,
+  which the same commit stopped being true. B56 and B57 are the same shape a level down: the CLI
+  builds the metrics path by hand instead of through `MetricsHistoryStore.RepoPath`, and so writes the
+  trend somewhere the app does not read it; and of two adjacent resolvers, one asks `VcsLocator` for
+  the default systems and the other lists them itself. B55 and B58 are the cheap end — the same
+  suppression walk done up to three times per class, the same metrics computed twice.
+
+- **A catalogued thing whose promise no test holds anyone to.** B59 is B29/B38/B42 on the fifth
+  surface: `CoverageDimensions` maps every dimension to a rule id through a `switch` with a
+  `_ => string.Empty` arm and lists them in an `Ordered` array, and a dimension missing from either
+  is silently never reported. The same file also carries the `Layout`-to-`isExcludedFromFormatting`
+  coupling B39 turned on, with nothing asserting the two sets are the same. B60 is the test-shaped
+  version: the coverage ledger this branch added accepts six ordinary in-process classes with no
+  reason recorded, against its own rule that an entry needs the same justification as any other
+  accepted debt.
+
+- **A gate or a report that is quietly wrong rather than loudly.** B64 was found by running the
+  coverage gate twice rather than by reading anything: the same code failed and then passed, because
+  one class's measured coverage moves several points between runs and sits on its bar. B51 — baseline
+  drift compares the raw severity map, so switching off `OneOfEachSection` strands four rules' entries for ever, and
+  flipping `ApplyFormattingRules` moves every layout rule between Warning and Error, with no drift
+  reported for either. B52 — `--no-suppress` puts a class's layout findings back while coverage has
+  already dropped its rows, B39 in the other direction. B53 — two invocation errors are found after
+  the whole check has run, against the principle the same file states for two others.
+
+**Documentation.** B61 and B62 are the two gaps. `__MLQT(format=false)` is called the successor to
+`FormattingExcludedModels` in the design notes and the documentation is told to steer users to it,
+and it appears in no user page that discusses formatting — while `metrics-dashboard.md` states the
+general rule B39 made an exception to, without the exception. And CLAUDE.md's key-file and key-class
+tables still describe the codebase as it was before phase 1: they name none of
+`ModelicaGraph/Analysis/` and almost none of `MLQT.Services/Checking/`, which between them are the
+substrate of phases 2, 3 and 6. B62 is also why B54 keeps happening — the file that calls out
+`WithinClause` and `ModelicaFileEncoding` as conventions has nowhere that `ModelDefinition.Borrow` is
+named, so a convention introduced this branch is already only discoverable by reading the type.
+
+**What the fixes converged on.** The same shape as last time, one level down: a rule or a read that
+had been written out several times became a named thing with a test behind it.
+`CoverageDimensions.ForClass` gained the third and last exclusion mechanism (B50) and now answers for
+all of them, which is the whole reason B39 made it a method; `ClassSuppressions.For` is the one read
+of a class's `__MLQT` directives, where three passes had each walked the tree (B55); `Baseline.InForce`
+is the one answer to "which rules will actually run, at what level", used to write the ledger and to
+compare against it (B51); and `ModelDefinition.Borrow`, introduced by the *previous* review, finally
+has no hand-written rivals (B54) — which is the more interesting fact, because a convention with four
+callers and five exceptions is not yet a convention. Two of B54's five turned out to be leaks nobody
+had listed: `StyleChecking.ImportsOf`, and the inherited-icon walk that climbs an extends chain.
+
+The pattern worth naming for next time is **B50 itself**. MLQT has three ways to take a class out of
+scope, they arrived separately, and each was taught to the checker before anything asked what it meant
+for the report. B39 fixed two of them and did not ask about the third. So the rule is not "check the
+settings in one more place" but: when adding any way to exclude a class, find every consumer of the
+existing exclusions — and add the test that says the mechanisms agree, which is the property that was
+missing rather than either answer.
+
+What this review covered, so its gaps are on the record too: the six design notes claim by claim
+against the code; the uncommitted working tree, which is where the third review's fixes still sit and
+which no review has seen before; every `mlqt` flag against `cli.md` and `--help` in both directions;
+the rule catalog against `RuleIds`, the severity map, `RuleSettingsLayout`, the MCP toggle table and
+`settings-reference.md`; the three exclusion mechanisms against the four places that decide coverage;
+every `EnsureParsed`/`ParsedCode = null` pair in the solution against the `Borrow` convention; and a
+full build, test, coverage and SARIF-validation run, repeated after the fixes. What it did **not** do, for the fourth time, is
+read all 47,000 changed lines, and it did not review `CodeReview.razor` or `MetricsDashboard.razor` —
+that is **B20**, and it belongs to phase 7a.
 
 ---
 

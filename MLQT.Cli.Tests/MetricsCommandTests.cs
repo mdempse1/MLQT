@@ -231,4 +231,53 @@ public class MetricsCommandTests
         Assert.Equal(0, code);
         Assert.Contains("could not record metrics", stderr);
     }
+
+    // ---- the history goes where the settings came from, not beside the library (B56) ------------
+
+    [Fact]
+    public void ALibraryInASubdirectory_RecordsIntoTheRepositorysHistory()
+    {
+        // The settings are read from the repository's .mlqt, and the desktop app keeps the history
+        // there too. Composed from the library path instead, CI wrote a second file in
+        // <repo>/Libraries/Lib/.mlqt that the Metrics tab never opened.
+        using var workspace = new TempWorkspace("mlqt-metrics-sub");
+        workspace.Write(System.IO.Path.Combine("Libraries", "Lib", "Lib.mo"), TwoClasses);
+        workspace.WithSettings("""{ "ClassHasDescription": true }""");
+        var library = workspace.PathTo("Libraries", "Lib");
+
+        var (code, _, _) = Cli.Run("check", library, "--metrics", "--no-color");
+
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(workspace.PathTo(".mlqt", "metrics-history.json")));
+        Assert.False(File.Exists(System.IO.Path.Combine(library, ".mlqt", "metrics-history.json")));
+    }
+
+    [Fact]
+    public void TheRatchetReadsBackWhatTheSameInvocationWrote()
+    {
+        // The half of B56 that is a gate rather than a file: --coverage-ratchet loads the history from
+        // the same resolved path, so a repository with a perfectly good trend used to be told there
+        // was nothing to compare against.
+        using var workspace = new TempWorkspace("mlqt-metrics-ratchet");
+        workspace.Write(System.IO.Path.Combine("Libraries", "Lib", "Lib.mo"), TwoClasses);
+        workspace.WithSettings("""{ "ClassHasDescription": true }""");
+        var library = workspace.PathTo("Libraries", "Lib");
+
+        Cli.Run("check", library, "--metrics", "--no-color");
+        var (_, _, stderr) = Cli.Run("check", library, "--coverage-ratchet", "--no-color");
+
+        Assert.DoesNotContain("nothing to compare against yet", stderr);
+    }
+
+    [Fact]
+    public void ALooseLibraryStillRecordsBesideItself()
+    {
+        // Nothing above it has a .mlqt and it is not in a working copy, so its own directory is the
+        // only sensible home — which is also what the path meant before any of this.
+        using var lib = Fixture();
+
+        Cli.Run("check", lib.Path, "--metrics", "--no-color");
+
+        Assert.True(File.Exists(lib.MetricsPath));
+    }
 }

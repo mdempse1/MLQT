@@ -70,14 +70,15 @@ public sealed class StyleCheckContext
         ICustomDictionaryService customDictionary,
         IDictionaryManagerService dictionaryManager,
         string? repositoryRoot = null,
-        bool collectCoverage = false)
+        bool collectCoverage = false,
+        bool honorSuppressions = true)
     {
         SpellChecker? spellChecker = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
             spellChecker = SpellCheckerFactory.Build(
                 settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
-        return Build(settings, graph, spellChecker, collectCoverage);
+        return Build(settings, graph, spellChecker, collectCoverage, honorSuppressions);
     }
 
     /// <summary>Context for checking loaded models against a graph, reusing an already-built spell
@@ -88,7 +89,8 @@ public sealed class StyleCheckContext
         StyleCheckingSettings settings,
         DirectedGraph graph,
         SpellChecker? spellChecker,
-        bool collectCoverage = false)
+        bool collectCoverage = false,
+        bool honorSuppressions = true)
     {
         // Every class in the graph. Needed unconditionally (see ClassesCheckedSeparately), and the
         // reference-validation rule wants the same set, so it is built once.
@@ -118,9 +120,13 @@ public sealed class StyleCheckContext
             UnitLookup = settings.CheckMissingUnits ? StyleChecking.CreateUnitLookup(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
-            // per class for a row the report will not show.
+            // per class for a row the report will not show. Deliberately the repository-wide answer
+            // rather than the per-class one (CoverageDimensions.ForClass) — this decides what to
+            // MEASURE, and measuring a layout dimension for a class that will not be reported on it
+            // costs one walk, while not measuring it would make the report re-parse the class. The
+            // narrowing happens where the report is assembled, in MetricsCalculator.
             Coverage = collectCoverage
-                ? new CoverageMeasurer(graph, CoverageDimensions.TrackedFor(settings))
+                ? new CoverageMeasurer(graph, CoverageDimensions.TrackedFor(settings), honorSuppressions)
                 : null,
         };
     }

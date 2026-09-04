@@ -37,8 +37,7 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
     {
         // Accepted debt is agreed history. It is not what this pull request did, and a comment on it
         // asks the wrong person to fix it.
-        var actionable = report.Findings
-            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+        var actionable = report.Actionable
             .ToList();
 
         var placeable = new List<(string Path, int Line, ClassifiedFinding Finding)>();
@@ -135,22 +134,11 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
                     : $"{commentedFindings} findings are commented on the diff below.");
         }
 
-        // Everything the review could not point at. Said plainly, because a reader who sees only the
-        // inline comments would otherwise take them for the whole answer.
-        var elsewhere = unplaceable.Concat(overflow).ToList();
-        if (elsewhere.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine(
-                $"<details><summary>{elsewhere.Count} finding(s) not on a changed line</summary>");
-            sb.AppendLine();
-            sb.AppendLine("They are not on a line this change added or rewrote, so a review comment");
-            sb.AppendLine("cannot be attached to them.");
-            sb.AppendLine();
-            sb.Append(Markdown.FindingsTable(report, elsewhere));
-            sb.AppendLine();
-            sb.AppendLine("</details>");
-        }
+        // Everything the review could not point at, and why. Said plainly, because a reader who sees
+        // only the inline comments would otherwise take them for the whole answer — and said with the
+        // two causes apart, because they are different facts about a finding. Folding them together
+        // told the reader that findings sitting squarely on a changed line were not on one.
+        AppendNotCommented(sb, report, unplaceable, overflow);
 
         if (report.FixedEntries.Count > 0)
         {
@@ -159,5 +147,49 @@ internal sealed class ReviewFindingFormatter : IFindingFormatter
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// The findings that are in the report but not on the diff, in a collapsed block.
+    ///
+    /// <para>Two reasons, kept separate. <paramref name="unplaceable"/> could not be commented at
+    /// all: the line is not one this change added or rewrote, or the file is outside the repository.
+    /// <paramref name="overflow"/> could have been, and was held back only by the cap on how many
+    /// comments one review may carry — so telling its reader the finding was not on a changed line
+    /// is false, and sends them looking at the wrong thing.</para>
+    /// </summary>
+    private static void AppendNotCommented(
+        StringBuilder sb,
+        CheckReport report,
+        IReadOnlyList<ClassifiedFinding> unplaceable,
+        IReadOnlyList<ClassifiedFinding> overflow)
+    {
+        if (unplaceable.Count + overflow.Count == 0)
+            return;
+
+        sb.AppendLine();
+        sb.AppendLine(
+            $"<details><summary>{unplaceable.Count + overflow.Count} finding(s) not commented inline</summary>");
+
+        if (unplaceable.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"**Not on a changed line ({unplaceable.Count}).** They are not on a line this");
+            sb.AppendLine("change added or rewrote, so a review comment cannot be attached to them.");
+            sb.AppendLine();
+            sb.Append(Markdown.FindingsTable(report, unplaceable));
+        }
+
+        if (overflow.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"**Over the comment limit ({overflow.Count}).** These are on changed lines, but");
+            sb.AppendLine($"one review carries at most {MaxInlineComments} inline comments.");
+            sb.AppendLine();
+            sb.Append(Markdown.FindingsTable(report, overflow));
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("</details>");
     }
 }

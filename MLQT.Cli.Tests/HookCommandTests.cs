@@ -119,6 +119,66 @@ public class HookCommandTests
         Assert.Contains("mlqt pre-commit hook installed", Cli.Run("hook", "status", repo.LibraryPath).stdout);
     }
 
+    // ---- core.hooksPath, where git does not look at .git/hooks (B41) ---------------------------
+
+    [Fact]
+    public void ARepositoryWithCoreHooksPathIsRefused_RatherThanWrittenToAndIgnored()
+    {
+        using var repo = new TempRepo();
+        repo.Git("config core.hooksPath .husky");
+
+        var (code, _, stderr) = Cli.Run("hook", "install", repo.LibraryPath);
+
+        // Writing .git/hooks/pre-commit here produced the one outcome a commit gate cannot have:
+        // install said it worked, status said it was installed, and no commit was ever checked.
+        Assert.Equal(2, code);
+        Assert.False(File.Exists(repo.HookPath));
+        Assert.Contains("core.hooksPath", stderr);
+    }
+
+    [Fact]
+    public void TheRefusalSaysWhatToRunInstead()
+    {
+        using var repo = new TempRepo();
+        repo.Git("config core.hooksPath .husky");
+
+        var (_, _, stderr) = Cli.Run("hook", "install", repo.LibraryPath, "--fail-on", "warning");
+
+        Assert.Contains("mlqt check", stderr);
+        Assert.Contains("--fail-on warning", stderr);
+    }
+
+    [Fact]
+    public void StatusAndUninstallStillWorkWhenHooksAreRedirected()
+    {
+        using var repo = new TempRepo();
+        Cli.Run("hook", "install", repo.LibraryPath);       // installed before the redirect was set
+        repo.Git("config core.hooksPath .husky");
+
+        var status = Cli.Run("hook", "status", repo.LibraryPath);
+        Assert.Equal(0, status.code);
+        Assert.Contains("core.hooksPath", status.stderr);   // said, not hidden
+
+        Assert.Equal(0, Cli.Run("hook", "uninstall", repo.LibraryPath).code);
+        Assert.False(File.Exists(repo.HookPath));           // a stale hook can still be removed
+    }
+
+    // ---- the hook script is a shell script (B48) -----------------------------------------------
+
+    [Fact]
+    public void ARefWithAShellMetacharacterIsEscaped_NotExpanded()
+    {
+        using var repo = new TempRepo();
+
+        Cli.Run("hook", "install", repo.LibraryPath, "--changed-from", "origin/feature$x");
+
+        var hook = File.ReadAllText(repo.HookPath);
+
+        // Inside double quotes sh still expands $, so the unescaped version silently diffed against
+        // "origin/feature" - a hook that checks the wrong thing rather than one that fails.
+        Assert.Contains("--changed-from \"origin/feature\\$x\"", hook);
+    }
+
     // ---- not trampling anything ----------------------------------------------------------------
 
     [Fact]

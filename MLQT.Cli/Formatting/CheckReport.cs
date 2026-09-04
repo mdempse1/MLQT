@@ -52,6 +52,17 @@ internal sealed record CheckReport(
     public int LineFor(Finding f) =>
         Locations.TryGetValue(f.ModelId, out var l) ? l.FileLine(f.LineNumber) : Math.Max(1, f.LineNumber);
 
+    /// <summary>
+    /// The findings this run is actually about: everything except accepted debt.
+    ///
+    /// <para>Accepted debt is agreed history — it is in the ledger, it does not gate, and no report
+    /// lists it among the things to look at. Every format needs that set, and each of them used to
+    /// write the predicate out again, which is one edit away from two formats disagreeing about what
+    /// a run found.</para>
+    /// </summary>
+    public IEnumerable<ClassifiedFinding> Actionable =>
+        Findings.Where(c => c.Status != FindingStatus.AcceptedDebt);
+
     public int CountOfSeverity(RuleSeverity severity) => Findings.Count(c => c.Finding.Severity == severity);
 
     public int CountOfStatus(FindingStatus status) => Findings.Count(c => c.Status == status);

@@ -140,23 +140,22 @@ public sealed class UnusedImportAnalyzer : IGraphAnalyzer
 
     private static IReadOnlyList<ImportScope> Extract(ModelNode node)
     {
-        var tree = node.Definition.EnsureParsed();
-        if (tree is null)
-            return [];
-
         try
         {
-            var extractor = new ImportScopeExtractor(ModelicaName.EnclosingPackageOf(node.Id));
-            extractor.VisitStored_definition(tree);
-            return extractor.Scopes;
+            // Borrowed: this runs over every class in the graph, so it must hand back what it parsed
+            // and leave alone what it did not. See ModelDefinition.Borrow.
+            return node.Definition.Borrow<IReadOnlyList<ImportScope>>(
+                tree =>
+                {
+                    var extractor = new ImportScopeExtractor(ModelicaName.EnclosingPackageOf(node.Id));
+                    extractor.VisitStored_definition(tree);
+                    return extractor.Scopes;
+                },
+                []);
         }
         catch
         {
             return [];
-        }
-        finally
-        {
-            node.Definition.ParsedCode = null;   // release the parse tree to bound memory
         }
     }
 }

@@ -26,7 +26,7 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
         // the run is actually about.
         var reported = report.SarifIncludeAccepted
             ? report.Findings
-            : report.Findings.Where(c => c.Status != FindingStatus.AcceptedDebt).ToList();
+            : report.Actionable.ToList();
 
         var rules = reported
             .Select(c => c.Finding.RuleId)
@@ -50,7 +50,7 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
                         text = $"{description} ({category} rule {id}.) See {ToolInfo.InformationUri}",
                         markdown = Help(id, title, description, category)
                     },
-                    helpUri = RuleDocumentationUri,
+                    helpUri = DocumentationUriFor(id),
                     properties = new { category, tags = new[] { category } }
                 };
             })
@@ -119,13 +119,14 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
         status == FindingStatus.New ? "new" : "unchanged";
 
     /// <summary>
-    /// The file path a SARIF reader will resolve against its own root — the checked-out repository,
-    /// for GitHub code scanning. Relative to <c>--sarif-base</c> when given, and to the library
-    /// otherwise, which is the same thing when the library is the repository.
-    /// </summary>
-    /// <summary>
     /// What GitHub renders in the alert body. Everything MLQT knows about the rule, in the order a
-    /// reader needs it: what is wrong, which family it belongs to, and where the rule is documented.
+    /// reader needs it: what is wrong, which family it belongs to, and what to do about it.
+    ///
+    /// <para>A diagnostic gets different words. It has no setting, so telling its reader to change
+    /// the severity or switch it off describes a control that does not exist — and sending them to
+    /// the settings reference sends them to a page that deliberately does not name it. Both were
+    /// true of every parse-error alert until this branched: exactly the defect the rule alerts had
+    /// fixed, on the three ids that fix excluded.</para>
     /// </summary>
     private static string Help(string id, string title, string description, string category) =>
         $"""
@@ -135,15 +136,42 @@ internal sealed class SarifFindingFormatter : IFindingFormatter
 
         **Rule:** `{id}` - **Category:** {category}
 
-        Configure this rule's severity, or switch it off, in the repository's `.mlqt/settings.json`.
-        See [the settings reference]({RuleDocumentationUri}).
+        {Advice(id)}
         """;
 
-    /// <summary>Where the rules are documented. A dead link is worse than none, so this is the one
-    /// page that lists every rule id rather than a per-rule anchor that may not exist.</summary>
+    /// <summary>The closing line of an alert body: what the reader can actually do.</summary>
+    private static string Advice(string id) =>
+        RuleIds.IsDiagnostic(id)
+            ? $"""
+              This is a diagnostic, not a style rule: it is always reported, it cannot be switched
+              off or given a different severity, and it is never accepted into a baseline. It says
+              the results you are reading are incomplete.
+              See [the diagnostics reference]({DiagnosticDocumentationUri}).
+              """
+            : $"""
+              Configure this rule's severity, or switch it off, in the repository's
+              `.mlqt/settings.json`. See [the settings reference]({RuleDocumentationUri}).
+              """;
+
+    /// <summary>Where a rule id is documented. A dead link is worse than none, so each of these is a
+    /// page that lists every id it covers rather than a per-rule anchor that may not exist — and
+    /// <c>RuleDocumentationTests</c> holds both pages to the catalog.</summary>
+    private static string DocumentationUriFor(string id) =>
+        RuleIds.IsDiagnostic(id) ? DiagnosticDocumentationUri : RuleDocumentationUri;
+
     private const string RuleDocumentationUri =
         "https://github.com/mdempse1/MLQT/blob/main/Documentation/settings-reference.md";
 
+    /// <summary>The diagnostics are on the CLI page, under "Diagnostics" — they are not settings, so
+    /// the settings reference does not carry them.</summary>
+    private const string DiagnosticDocumentationUri =
+        "https://github.com/mdempse1/MLQT/blob/main/Documentation/cli.md#diagnostics";
+
+    /// <summary>
+    /// The file path a SARIF reader will resolve against its own root — the checked-out repository,
+    /// for GitHub code scanning. Relative to <c>--sarif-base</c> when given, and to the library
+    /// otherwise, which is the same thing when the library is the repository.
+    /// </summary>
     private static string RelativeUri(CheckReport report, Finding f)
     {
         var abs = report.FileFor(f);

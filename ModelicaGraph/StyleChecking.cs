@@ -181,26 +181,17 @@ public static class StyleChecking
         // it, which in a library means other files entirely, so it is decided by UnusedImportAnalyzer
         // over the graph rather than by looking at the declaring class on its own.
 
-        // Stamp the configured severity on each finding (visitors emit at the default level).
-        // A finding only exists because its rule ran, so a resolved severity of Off would be a
-        // contradiction; the fallback to the rule's default keeps such a finding reportable instead
-        // of emitting one at a severity that means "disabled". It used to be load-bearing, because
-        // MLQT.Style.ExtendsAtTop had no setting to resolve and so always came back Off; that rule
-        // now resolves through its governor (RuleDefinition.GovernedBy), and this is a net.
-        for (int i = 0; i < findings.Count; i++)
-        {
-            var sev = settings.SeverityFor(findings[i].RuleId);
-            if (sev == RuleSeverity.Off)
-                sev = RuleCatalog.DefaultSeverityFor(findings[i].RuleId);
-            findings[i] = findings[i] with { Severity = sev };
-        }
+        // Visitors emit at the record's default level; configuration is applied here. Shared with
+        // the graph analyses (see StyleCheckingSettings.StampSeverities) so the two cannot disagree
+        // about what a configured severity means.
+        settings.StampSeverities(findings);
 
-        // Drop findings the author has intentionally waived via __MLQT annotations.
+        // Drop findings the author has intentionally waived via __MLQT annotations. Read through
+        // ClassSuppressions so the coverage measurer and the graph analyses, which want the same
+        // answer about the same class in the same run, find it done rather than walking again.
         if (honorSuppressions && findings.Count > 0)
         {
-            var extractor = new MlqtSuppressionExtractor(basePackage);
-            extractor.VisitStored_definition(parsedCode);
-            var suppressions = extractor.Build();
+            var suppressions = ClassSuppressions.For(_currentModel, fullModelId);
             if (!suppressions.IsEmpty)
                 findings = findings.Where(f => !suppressions.IsSuppressed(f)).ToList();
         }
@@ -247,15 +238,16 @@ public static class StyleChecking
     /// <summary>The import clauses of a class, which decide what a short type name means in it.</summary>
     private static IReadOnlyList<string> ImportsOf(DirectedGraph graph, string modelId)
     {
-        var node = graph.GetNode<ModelNode>(modelId);
-        var tree = node?.Definition.EnsureParsed();
-        if (tree is null)
-            return [];
-
-        return ClassInterfaceExtractor.Extract(tree).Elements
-            .Where(e => e.Kind == ClassElementKind.Import)
-            .Select(e => e.Name)
-            .ToList();
+        // Borrowed: usually the class under check, whose tree the checker is holding and must keep,
+        // but the answer is memoised per class so a tree parsed here is not wanted afterwards.
+        // See ModelDefinition.Borrow.
+        return graph.GetNode<ModelNode>(modelId)?.Definition.Borrow<IReadOnlyList<string>>(
+            tree => ClassInterfaceExtractor.Extract(tree).Elements
+                .Where(e => e.Kind == ClassElementKind.Import)
+                .Select(e => e.Name)
+                .ToList(),
+            [])
+            ?? [];
     }
 
     /// <summary>
@@ -388,12 +380,10 @@ public static class StyleChecking
             if (node == null)
                 return IconWalkResult.NotFound;
 
-            // Parse the model and extract icon + extends information
-            var parsedCode = node.Definition.EnsureParsed();
-            if (parsedCode == null)
-                return IconWalkResult.NotFound;
-
-            var extracted = IconExtractor.ExtractIconWithInheritance(parsedCode);
+            // Borrowed: this walks up an extends chain, so every class beyond the first is one
+            // nobody asked for — and what the walk caches is the verdict, not the tree. See
+            // ModelDefinition.Borrow.
+            var extracted = node.Definition.Borrow(IconExtractor.ExtractIconWithInheritance);
             if (extracted == null)
                 return IconWalkResult.NotFound;
 

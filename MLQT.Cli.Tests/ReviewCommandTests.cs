@@ -90,7 +90,7 @@ public class ReviewCommandTests
         // Lib.Old is just as undescribed, but on a line this branch never wrote.
         var body = review.GetProperty("body").GetString()!;
         Assert.Contains("Lib.Old", body);
-        Assert.Contains("not on a changed line", body);
+        Assert.Contains("Not on a changed line", body);
     }
 
     [Fact]

@@ -36,13 +36,16 @@ public sealed class Baseline
     public string? Branch { get; }
 
     /// <summary>
-    /// The rules that were in force when this baseline was generated (rule id → severity, enabled
-    /// rules only), and the libraries that were excluded. Null for a file written before these were
-    /// recorded, in which case drift cannot be detected and is not reported.
+    /// The rules that were in force when this baseline was generated (rule id → severity, rules that
+    /// would actually run only), and the libraries that were excluded. Null for a file written before
+    /// these were recorded, in which case drift cannot be detected and is not reported.
     ///
     /// Kept so a check can warn when the configuration has moved on: a rule enabled after baselining
     /// reports its pre-existing findings as NEW, which looks like a regression the change did not
-    /// cause.
+    /// cause; a rule disabled since leaves entries that can never match again.
+    ///
+    /// "In force" is the resolved severity, not the configured one — see <c>InForce</c> for the two
+    /// changes that move one without moving the other.
     /// </summary>
     public IReadOnlyDictionary<string, RuleSeverity>? Rules { get; }
 
@@ -87,9 +90,7 @@ public sealed class Baseline
         if (Rules is null)
             return RuleSetDrift.NotComparable;
 
-        var enabledNow = current.RuleSeverities
-            .Where(kv => kv.Value != RuleSeverity.Off)
-            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        var enabledNow = InForce(current);
 
         var enabledSince = enabledNow.Keys.Where(id => !Rules.ContainsKey(id))
             .OrderBy(id => id, StringComparer.Ordinal).ToList();
@@ -191,12 +192,33 @@ public sealed class Baseline
             dependencies ?? Dependencies);
     }
 
-    /// <summary>The enabled rules of <paramref name="settings"/>, or null when none were supplied.</summary>
+    /// <summary>The rules in force in <paramref name="settings"/>, or null when none were supplied.</summary>
     private static Dictionary<string, RuleSeverity>? RulesOf(StyleCheckingSettings? settings) =>
-        settings?.RuleSeverities
-            .Where(kv => kv.Value != RuleSeverity.Off)
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        settings is null ? null : InForce(settings);
+
+    /// <summary>
+    /// Every rule that will actually run, at the level it will actually report — resolved through
+    /// <see cref="StyleCheckingSettings.SeverityFor"/> rather than read out of the severity map.
+    ///
+    /// <para>The map is what somebody typed; this is what the gate does, and two changes move the
+    /// second without moving the first. Switching <c>OneOfEachSection</c> off makes the four ordering
+    /// rules inert, stranding their baseline entries for ever — the exact case this warning exists
+    /// for, and read raw it reported nothing. Switching the formatter on moves every layout rule it
+    /// maintains from Warning to Error, which can turn <c>--fail-on error</c> from passing to failing
+    /// against a baseline that looked unchanged.</para>
+    ///
+    /// <para>Written and compared through the same method, so the two cannot come to mean different
+    /// things. A baseline generated before this recorded configured levels instead, so the first
+    /// check after upgrading may report a severity change that is not one; regenerating settles
+    /// it.</para>
+    /// </summary>
+    private static Dictionary<string, RuleSeverity> InForce(StyleCheckingSettings settings) =>
+        RuleCatalog.BuiltIn.Keys
+            .Where(id => !RuleIds.IsDiagnostic(id))
+            .Select(id => (Id: id, Severity: settings.SeverityFor(id)))
+            .Where(x => x.Severity != RuleSeverity.Off)
+            .OrderBy(x => x.Id, StringComparer.Ordinal)
+            .ToDictionary(x => x.Id, x => x.Severity, StringComparer.Ordinal);
 
     // --- persistence ---------------------------------------------------------------------------
 

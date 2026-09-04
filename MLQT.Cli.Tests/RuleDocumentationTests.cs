@@ -72,4 +72,17 @@ public class RuleDocumentationTests
         foreach (var id in NotSettings)
             Assert.Contains(id, cli);
     }
+
+    [Fact]
+    public void TheDiagnosticsPageHasTheHeadingTheirAlertsLinkTo()
+    {
+        // The alert body links to cli.md#diagnostics. A helpUri pointing at a heading that has been
+        // renamed lands the reader at the top of a long page, which is the same failure as linking
+        // to a page that never mentions the rule.
+        var docs = DocumentationDirectory();
+        if (docs is null)
+            return;
+
+        Assert.Contains("## Diagnostics", File.ReadAllText(Path.Combine(docs, "cli.md")));
+    }
 }

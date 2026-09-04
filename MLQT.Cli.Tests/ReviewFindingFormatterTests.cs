@@ -97,7 +97,7 @@ public class ReviewFindingFormatterTests
 
         Assert.Empty(Comments(report));
         Assert.Contains("Lib.Old", Body(report));
-        Assert.Contains("not on a changed line", Body(report));
+        Assert.Contains("Not on a changed line", Body(report));
     }
 
     [Fact]
@@ -174,8 +174,39 @@ public class ReviewFindingFormatterTests
             Diff(lines));
 
         Assert.Equal(50, Comments(report).Length);
-        Assert.Contains("10 finding(s) not on a changed line", Body(report));
+        Assert.Contains("10 finding(s) not commented inline", Body(report));
         Assert.Contains("Lib.M60", Body(report));
+    }
+
+    [Fact]
+    public void TheOnesOverTheCapAreNotDescribedAsBeingOffTheDiff()
+    {
+        // They are on changed lines; the cap is the only reason they are not commented. Saying
+        // otherwise sends the reader looking for a diff problem that is not there.
+        var lines = Enumerable.Range(1, 60).ToArray();
+        var report = Report(
+            lines.Select(i => (new ClassifiedFinding(Finding(model: $"Lib.M{i}"), FindingStatus.New), i)),
+            Diff(lines));
+
+        var body = Body(report);
+        Assert.Contains("Over the comment limit (10)", body);
+        Assert.DoesNotContain("Not on a changed line", body);
+    }
+
+    [Fact]
+    public void TheTwoReasonsAreListedSeparatelyWhenBothApply()
+    {
+        // 60 findings on changed lines, plus one that is not on the diff at all.
+        var lines = Enumerable.Range(1, 60).ToArray();
+        var entries = lines
+            .Select(i => (new ClassifiedFinding(Finding(model: $"Lib.M{i}"), FindingStatus.New), i))
+            .Append((new ClassifiedFinding(Finding(model: "Lib.Untouched"), FindingStatus.New), 900));
+
+        var body = Body(Report(entries, Diff(lines)));
+
+        Assert.Contains("11 finding(s) not commented inline", body);
+        Assert.Contains("Not on a changed line (1)", body);
+        Assert.Contains("Over the comment limit (10)", body);
     }
 
     // ---- the summary ------------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using Xunit;
 
 namespace ModelicaGraph.Tests;
@@ -116,5 +117,83 @@ public class SuppressionTests
             end TestModel;
             """;
         Assert.NotEmpty(Check(code, ParamRule, honor: false));
+    }
+
+    // ---- one read per class, shared by everything that wants it (B55) --------------------------
+
+    private const string Waiving = """
+        model TestModel
+          parameter Real x = 1.0;
+          annotation(__MLQT(suppress="Doc.ParameterDescription"));
+        end TestModel;
+        """;
+
+    [Fact]
+    public void TheDirectivesAreReadOnceAndKeptOnTheClass()
+    {
+        // Three passes want this answer about the same class in the same run — the checker, the
+        // coverage measurer and the graph analyses, the last of which used to re-parse to get it.
+        var definition = new ModelDefinition("M", Waiving);
+
+        var first = ClassSuppressions.For(definition, "TestModel");
+        var second = ClassSuppressions.For(definition, "TestModel");
+
+        Assert.Same(first, second);
+        Assert.Same(first, definition.Suppressions);
+        Assert.False(first.IsEmpty);
+    }
+
+    [Fact]
+    public void AClassCarryingNothing_KeepsTheOneSharedEmptySet()
+    {
+        // Nearly every class carries nothing, and a library holds tens of thousands of them, so the
+        // kept answer has to cost a reference rather than a set.
+        var a = new ModelDefinition("A", "model A end A;");
+        var b = new ModelDefinition("B", "model B end B;");
+
+        Assert.Same(SuppressionSet.Empty, ClassSuppressions.For(a, "A"));
+        Assert.Same(SuppressionSet.Empty, ClassSuppressions.For(b, "B"));
+    }
+
+    [Fact]
+    public void EditingTheSourceDropsWhatWasReadFromTheOldOne()
+    {
+        var definition = new ModelDefinition("M", Waiving);
+        Assert.False(ClassSuppressions.For(definition, "TestModel").IsEmpty);
+
+        definition.ModelicaCode = "model TestModel\n  parameter Real x = 1.0;\nend TestModel;";
+
+        Assert.Same(SuppressionSet.Empty, ClassSuppressions.For(definition, "TestModel"));
+    }
+
+    [Fact]
+    public void AClassThatWillNotParse_CarriesNoDirectives()
+    {
+        // The safe direction: a broken file loses its waivers rather than silently gaining every one
+        // of them. Its parse error is reported on its own account.
+        var definition = new ModelDefinition("M", "model TestModel this is not Modelica");
+
+        Assert.Same(SuppressionSet.Empty, ClassSuppressions.For(definition, "TestModel"));
+    }
+
+    [Fact]
+    public void ReadingTheDirectivesDoesNotTakeATreeTheCallerWasHolding()
+    {
+        var definition = new ModelDefinition("M", Waiving);
+        var tree = definition.EnsureParsed();
+
+        ClassSuppressions.For(definition, "TestModel");
+
+        Assert.Same(tree, definition.ParsedCode);
+    }
+
+    [Fact]
+    public void ReadingThemForSomeoneElsesClassHandsTheTreeBack()
+    {
+        var definition = new ModelDefinition("M", Waiving);
+
+        ClassSuppressions.For(definition, "TestModel");
+
+        Assert.Null(definition.ParsedCode);
     }
 }

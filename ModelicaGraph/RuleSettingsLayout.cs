@@ -70,12 +70,17 @@ public static class RuleSettingsLayout
         new(RuleIds.InitialEqAlgoFirst, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"),
         new(RuleIds.InitialEqAlgoLast, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoLast)"),
 
-        // Spelling. Bespoke because switching either on reveals the dictionary picker.
-        new(RuleIds.SpellingDescription, Spelling, RuleControl.Bespoke, Binding: "SelectedSettings.SpellCheckDescription"),
-        new(RuleIds.SpellingDocumentation, Spelling, RuleControl.Bespoke, Binding: "SelectedSettings.SpellCheckDocumentation"),
+        // Spelling and naming are pickers, though each also reveals a sub-panel when it is not Off —
+        // the dictionary languages for spelling, the preset and per-slot styles for naming. Revealing
+        // something is not a reason to hide the level: these are ordinary rules whose severity decides
+        // whether a misspelling or a misnamed component fails a build, and while they were switches
+        // there was nowhere to say. It also cost them their severity, since a switch could only write
+        // the catalog default or remove the entry, so turning one off and on again silently demoted
+        // an Error to a Warning.
+        new(RuleIds.SpellingDescription, Spelling, RuleControl.SeverityPicker, "Spell check every description string"),
+        new(RuleIds.SpellingDocumentation, Spelling, RuleControl.SeverityPicker, "Spell check all documentation"),
 
-        // Naming. Bespoke because it opens the preset/style sub-panel.
-        new(RuleIds.NamingConvention, Naming, RuleControl.Bespoke, Binding: "SelectedSettings.FollowNamingConvention"),
+        new(RuleIds.NamingConvention, Naming, RuleControl.SeverityPicker, "Check that the naming convention is followed"),
 
         new(RuleIds.ClassDescription, StyleGuidelines, RuleControl.SeverityPicker, "Every class must have a description"),
         new(RuleIds.ClassDocumentationInfo, StyleGuidelines, RuleControl.SeverityPicker, "Every class must have documentation info"),

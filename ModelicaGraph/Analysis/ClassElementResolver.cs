@@ -48,11 +48,13 @@ public static class ClassElementResolver
         if (depth > MaxDepth || !visited.Add(node.Id))
             return;
 
-        var tree = node.Definition.EnsureParsed();
-        if (tree is null)
+        // Borrowed: the queried class is usually one the caller is holding a tree for and must keep,
+        // while every base class up the chain is one this walk parsed and should hand back. See
+        // ModelDefinition.Borrow.
+        var iface = node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
+        if (iface is null)
             return;
 
-        var iface = ClassInterfaceExtractor.Extract(tree);
         var imports = iface.Elements
             .Where(e => e.Kind == ClassElementKind.Import)
             .Select(e => e.Name)

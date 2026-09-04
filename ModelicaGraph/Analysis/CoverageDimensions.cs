@@ -80,9 +80,8 @@ public static class CoverageDimensions
     /// A class belonging to no repository has no settings and is tracked for nothing — style
     /// checking runs per repository, so no rule ever reports on it either.
     /// </summary>
-    /// <param name="modelId">The class, for the per-model formatting exclusion. A class excluded from
-    /// formatting has its layout rules skipped by the style checker, so counting it here would report
-    /// a gap no rule will ever raise.</param>
+    /// <param name="modelId">The class, for the exclusions that are decided per class — see
+    /// <see cref="ForClass"/>. Omit it for the repository-wide answer.</param>
     public static CoverageDimension TrackedFor(StyleCheckingSettings settings, string? modelId = null)
     {
         var tracked = CoverageDimension.None;
@@ -95,11 +94,59 @@ public static class CoverageDimensions
         if (settings.ApplyFormattingRules && settings.OneOfEachSection)
             tracked &= ~FormatterRewrites;
 
-        if (modelId is { Length: > 0 }
-            && settings.FormattingExcludedModels.Count > 0
-            && settings.IsModelExcludedFromFormatting(modelId))
-            tracked &= ~CoverageDimension.Layout;
+        return modelId is { Length: > 0 } ? ForClass(tracked, settings, modelId) : tracked;
+    }
 
-        return tracked;
+    /// <summary>
+    /// Narrows a repository's tracked dimensions to what applies to one class.
+    ///
+    /// <para><b>Every</b> way of taking a class out of scope is asked here, and that is the point of
+    /// gathering it in one method: each of the three arrived separately, and each was taught to the
+    /// checker before anything asked what it meant for the report.</para>
+    ///
+    /// <para><b>An excluded library is on nothing.</b>
+    /// <see cref="StyleCheckingSettings.ExcludedLibraries"/> — typically the examples or the test
+    /// library sharing the repository — makes
+    /// <see cref="StyleChecking.RunStyleCheckingFindings"/> return before it reads the class and
+    /// <c>GraphAnalysisRunner</c> drop it from the analysed set, so no rule will ever report anything
+    /// about it. Counting it on every dimension therefore put a whole library's worth of gaps into
+    /// percentages, into the recorded trend and into the <c>--min-coverage</c> gate that no finding
+    /// would ever name — the same defect the formatting exclusions had, on the mechanism nobody had
+    /// asked about.</para>
+    ///
+    /// <para><b>A class excluded from formatting is off the layout dimensions.</b> The style checker
+    /// skips its layout rules (<c>isExcludedFromFormatting</c> in
+    /// <see cref="StyleChecking.RunStyleCheckingFindings"/>), so counting them here would report a gap
+    /// no rule will ever raise. Both ways of saying it count. The name list in
+    /// <see cref="StyleCheckingSettings.FormattingExcludedModels"/> is visible from the settings
+    /// alone; <c>__MLQT(format=false)</c> / <c>preserveOrder=true</c> is a fact about the source, and
+    /// reaches here through <see cref="CoverageFacts.FormattingPreserved"/>, recorded while the class
+    /// was measured. Phase 5b calls the annotation the rename-safe successor to the list and the
+    /// documentation steers new usage to it, so the successor behaving worse — silenced in the
+    /// checker, still counted on the dashboard — was the wrong way round.</para>
+    ///
+    /// <para>The callers that used to spell this out separately (the metrics report, the GUI's
+    /// coverage sweep, the check-time measurer) are why it is a method: a mechanism had been added to
+    /// one of them and to none of the others.</para>
+    /// </summary>
+    /// <param name="tracked">The repository-wide answer from <see cref="TrackedFor"/>.</param>
+    /// <param name="facts">The class's measurement, when it has one. Null before it is measured, in
+    /// which case only the name list can be consulted — enough for deciding what to measure, and
+    /// narrowed again on the way into a report.</param>
+    public static CoverageDimension ForClass(
+        CoverageDimension tracked, StyleCheckingSettings settings, string modelId,
+        CoverageFacts? facts = null)
+    {
+        if (settings.IsLibraryExcluded(modelId))
+            return CoverageDimension.None;
+
+        if ((tracked & CoverageDimension.Layout) == 0)
+            return tracked;
+
+        var excluded =
+            (settings.FormattingExcludedModels.Count > 0 && settings.IsModelExcludedFromFormatting(modelId))
+            || facts is { FormattingPreserved: true };
+
+        return excluded ? tracked & ~CoverageDimension.Layout : tracked;
     }
 }

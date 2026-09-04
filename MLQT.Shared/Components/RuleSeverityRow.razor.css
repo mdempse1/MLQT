@@ -1,0 +1,25 @@
+/* A rule row: the label at one end of a wide dialog, its four severity buttons at the other. With
+   thirty-odd of them stacked up, nothing ties the two ends of a line together, and it is easy to
+   read a label against the row below's buttons. Highlighting the whole row under the pointer is
+   what says which label those buttons belong to.
+
+   The colour is MudBlazor's own hover overlay — the one it uses for .mud-list-item-clickable — so
+   it follows the light/dark theme rather than pinning a colour that only works in one of them.
+
+   It lives beside the row's own markup, and that is load-bearing rather than tidy. Blazor stamps a
+   component's scope attribute onto that component's own HTML elements only, so a stylesheet here
+   reaches this div and a stylesheet next to the dialog does not — which is exactly what happened
+   when the row moved out of the dialog and every one of these rows silently stopped highlighting,
+   while the Static analysis rows, still written inline, went on working. */
+.mlqt-rule-row {
+    /* The class sits on the wrapping div rather than on the MudStack, for the same reason: the
+       scope attribute is never stamped onto a child component's root. */
+    margin-bottom: 4px;
+    padding: 2px 6px;
+    border-radius: var(--mud-default-borderradius);
+    transition: background-color 120ms ease-in-out;
+}
+
+.mlqt-rule-row:hover {
+    background-color: var(--mud-palette-action-default-hover);
+}

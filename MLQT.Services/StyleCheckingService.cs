@@ -527,11 +527,11 @@ public class StyleCheckingService : IStyleCheckingService
             var tracked = CoverageDimensions.TrackedFor(settings);
             if (tracked == CoverageDimension.None)
                 continue;
-            var excludesAny = settings.FormattingExcludedModels.Count > 0;
+            // CoverageDimensions.ForClass, not a local copy of what it does: the per-class narrowing
+            // has to match the one the Metrics report applies, and when it was written out here as
+            // well the two drifted the moment either changed.
             foreach (var id in ModelIdsFor(repository))
-                masks[id] = excludesAny && settings.IsModelExcludedFromFormatting(id)
-                    ? tracked & ~CoverageDimension.Layout
-                    : tracked;
+                masks[id] = CoverageDimensions.ForClass(tracked, settings, id);
         }
 
         var pending = _libraryDataService.GetAllModels()

@@ -79,6 +79,14 @@
 > **coverage dimensions themselves made rule-driven** — fourteen dimensions of which a repository
 > shows only those whose rule is enabled and which the formatter does not rewrite on save.
 
+> **Correction (2026-09-04, backlog B39/B40).** The coverage dimensions are decided per class, and
+> that decision had been written out in three places — the metrics report, the GUI's coverage sweep,
+> and a `CoverageDimensions.TrackedFor(settings, modelId)` overload whose only callers were its own
+> tests. The consequence was the one this phase's rule-driven dimensions exist to avoid: the in-source
+> `__MLQT(format=false)` exclusion had been taught to one copy and to neither of the others, so the
+> dashboard reported a layout gap the checker would never raise a finding for.
+> `CoverageDimensions.ForClass` is now that decision, and the three sites call it.
+
 ## Purpose
 
 Ship the six **Wave-1** analyses — the ones that need only the user's own source and therefore

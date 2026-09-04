@@ -305,4 +305,180 @@ public class FileMonitoringServiceTests : IDisposable
 
         Assert.False(tempService.IsMonitoring);
     }
+
+    // ---- the handlers nothing asked for by name ------------------------------------------------
+    //
+    // Rename and delete had no test of their own, and were reached only when Windows happened to
+    // report a write as one — which it does sometimes, because a text write is a temp file and a
+    // rename underneath. That is why this class's measured coverage moved several points between two
+    // runs of the same code, straddling its bar and turning the build into a coin flip. A handler
+    // covered by accident is a handler nobody is checking; these wait for the specific change and
+    // assert it arrived, so they either cover those lines or fail.
+
+    /// <summary>
+    /// Waits for a change of a given kind, or gives up. Generous, because the wait is on the OS
+    /// delivering a watcher event under whatever load the machine is under, and a short timeout here
+    /// is the flakiness this section exists to remove.
+    /// </summary>
+    private async Task<FileChangeInfo?> WaitForChangeAsync(
+        FileChangeType type, Func<FileChangeInfo, bool>? where = null)
+    {
+        var tcs = new TaskCompletionSource<FileChangeInfo>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Handler(FileChangeInfo change)
+        {
+            if (change.ChangeType == type && (where is null || where(change)))
+                tcs.TrySetResult(change);
+        }
+
+        _service.OnFileChanged += Handler;
+        try
+        {
+            return await Task.WhenAny(tcs.Task, Task.Delay(10_000)) == tcs.Task ? tcs.Task.Result : null;
+        }
+        finally
+        {
+            _service.OnFileChanged -= Handler;
+        }
+    }
+
+    [Fact]
+    public async Task RenamingAMoFile_ReportsARename_CarryingBothNames()
+    {
+        var original = Path.Combine(_tempDir, "Before.mo");
+        await File.WriteAllTextAsync(original, "model Before end Before;");
+        _service.StartMonitoring("repo1", _tempDir);
+
+        var renamed = Path.Combine(_tempDir, "After.mo");
+        var waiting = WaitForChangeAsync(
+            FileChangeType.Renamed, c => c.FilePath.EndsWith("After.mo", StringComparison.OrdinalIgnoreCase));
+        File.Move(original, renamed);
+
+        var change = await waiting;
+
+        Assert.NotNull(change);
+        Assert.Equal(renamed, change!.FilePath);
+        Assert.Equal(original, change.OldFilePath);   // the old name is what makes it a rename
+        Assert.Equal("repo1", change.RepositoryId);
+        Assert.False(change.IsDirectory);
+    }
+
+    [Fact]
+    public async Task RenamingToANonMoName_IsStillReported()
+    {
+        // Tracked because it is how a .mo file leaves the library: the old name was one MLQT cared
+        // about, so the change is one it has to hear about even though the new name is not.
+        var original = Path.Combine(_tempDir, "Leaving.mo");
+        await File.WriteAllTextAsync(original, "model Leaving end Leaving;");
+        _service.StartMonitoring("repo1", _tempDir);
+
+        var waiting = WaitForChangeAsync(
+            FileChangeType.Renamed, c => c.OldFilePath?.EndsWith("Leaving.mo", StringComparison.OrdinalIgnoreCase) == true);
+        File.Move(original, Path.Combine(_tempDir, "Leaving.bak"));
+
+        Assert.NotNull(await waiting);
+    }
+
+    [Fact]
+    public async Task RenamingAFileNobodyTracks_IsNotReported()
+    {
+        var original = Path.Combine(_tempDir, "notes.txt");
+        await File.WriteAllTextAsync(original, "notes");
+        _service.StartMonitoring("repo1", _tempDir);
+
+        var seen = false;
+        void Handler(FileChangeInfo change) => seen = true;
+        _service.OnFileChanged += Handler;
+        try
+        {
+            File.Move(original, Path.Combine(_tempDir, "notes2.txt"));
+            await Task.Delay(1500);
+        }
+        finally { _service.OnFileChanged -= Handler; }
+
+        Assert.False(seen, "neither name is one MLQT tracks");
+    }
+
+    [Fact]
+    public async Task DeletingAMoFile_ReportsADeletion()
+    {
+        var path = Path.Combine(_tempDir, "Doomed.mo");
+        await File.WriteAllTextAsync(path, "model Doomed end Doomed;");
+        _service.StartMonitoring("repo1", _tempDir);
+
+        var waiting = WaitForChangeAsync(
+            FileChangeType.Deleted, c => c.FilePath.EndsWith("Doomed.mo", StringComparison.OrdinalIgnoreCase));
+        File.Delete(path);
+
+        var change = await waiting;
+
+        Assert.NotNull(change);
+        Assert.Equal(1, _service.GetPendingChangesSummary().DeletedFiles);
+    }
+
+    [Fact]
+    public async Task ARenameIsCountedAsOneInTheSummary()
+    {
+        // The summary is what the refresh prompt reads, so its counts are the user-facing half of
+        // these handlers.
+        var original = Path.Combine(_tempDir, "Counted.mo");
+        await File.WriteAllTextAsync(original, "model Counted end Counted;");
+        _service.StartMonitoring("repo1", _tempDir);
+
+        var waiting = WaitForChangeAsync(FileChangeType.Renamed);
+        File.Move(original, Path.Combine(_tempDir, "CountedNow.mo"));
+        Assert.NotNull(await waiting);
+
+        Assert.Equal(1, _service.GetPendingChangesSummary().RenamedFiles);
+    }
+
+    [Fact]
+    public async Task StopMonitoring_StopsTheEvents()
+    {
+        _service.StartMonitoring("repo1", _tempDir);
+        _service.StopMonitoring("repo1");
+
+        var seen = false;
+        void Handler(FileChangeInfo change) => seen = true;
+        _service.OnFileChanged += Handler;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(_tempDir, "Ignored.mo"), "model Ignored end Ignored;");
+            await Task.Delay(1500);
+        }
+        finally { _service.OnFileChanged -= Handler; }
+
+        Assert.False(seen);
+        Assert.False(_service.IsMonitoring);
+    }
+
+    [Fact]
+    public void NotifyFileActivity_RaisesTheActivityEvent()
+    {
+        string? seen = null;
+        _service.OnRepositoryFileActivity += id => seen = id;
+
+        _service.NotifyFileActivity("repo1");
+
+        Assert.Equal("repo1", seen);
+    }
+
+    [Fact]
+    public void StartMonitoring_APathThatIsNotThere_DoesNotThrowOrStartMonitoring()
+    {
+        // The catch around the watcher setup: a repository whose working copy has been moved or
+        // deleted since the project was saved, which is an ordinary thing to happen between sessions.
+        _service.StartMonitoring("gone", Path.Combine(_tempDir, "no-such-directory"));
+
+        Assert.False(_service.IsMonitoring);
+    }
+
+    [Fact]
+    public void StopMonitoring_ARepositoryThatWasNeverStarted_IsHarmless()
+    {
+        _service.StopMonitoring("never-started");
+
+        Assert.False(_service.IsMonitoring);
+    }
 }

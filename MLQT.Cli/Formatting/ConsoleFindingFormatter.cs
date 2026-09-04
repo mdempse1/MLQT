@@ -37,8 +37,7 @@ internal sealed class ConsoleFindingFormatter(bool useColor) : IFindingFormatter
     {
         var sb = new StringBuilder();
 
-        var actionable = report.Findings
-            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+        var actionable = report.Actionable
             .ToList();
         var accepted = report.CountOfStatus(FindingStatus.AcceptedDebt);
         var newCount = report.CountOfStatus(FindingStatus.New);

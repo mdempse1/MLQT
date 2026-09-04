@@ -21,8 +21,7 @@ internal sealed class MarkdownFindingFormatter : IFindingFormatter
             $"{fixedCount} fixed (gate: {gate})");
         sb.AppendLine();
 
-        var actionable = report.Findings
-            .Where(c => c.Status != FindingStatus.AcceptedDebt)
+        var actionable = report.Actionable
             .ToList();
 
         if (actionable.Count == 0)

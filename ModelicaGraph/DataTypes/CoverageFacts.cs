@@ -18,6 +18,12 @@ namespace ModelicaGraph.DataTypes;
 /// rather than reading zeros as gaps.</param>
 /// <param name="Failed">The layout dimensions this class violates. Only meaningful within
 /// <paramref name="Measured"/>; every layout dimension measured and not failed is compliant.</param>
+/// <param name="FormattingPreserved">True when the class carries <c>__MLQT(format=false)</c> or
+/// <c>__MLQT(preserveOrder=true)</c>. Recorded here because it is a fact about the source that only
+/// a parse can answer, and this is the one pass that already has the tree — the settings object a
+/// report consults knows about the <c>FormattingExcludedModels</c> name list and nothing else. It
+/// takes the class off the layout dimensions, exactly as the name list does; see
+/// <c>CoverageDimensions.ForClass</c>.</param>
 public sealed record CoverageFacts(
     bool HasDescription,
     bool HasIcon,
@@ -31,4 +37,5 @@ public sealed record CoverageFacts(
     int ConstantTotal = 0,
     int ConstantsWithDescription = 0,
     CoverageDimension Measured = CoverageDimension.All,
-    CoverageDimension Failed = CoverageDimension.None);
+    CoverageDimension Failed = CoverageDimension.None,
+    bool FormattingPreserved = false);

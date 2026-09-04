@@ -792,10 +792,14 @@ convenience for the author, never the enforcement. Keep the CI gate.
 
 **A hook someone else wrote is left alone.** Install and uninstall both refuse when the existing
 `pre-commit` does not carry mlqt's marker line, rather than overwriting a colleague's or a
-framework's. Add the check to that script yourself, or pass `--force`. If your repository uses
-`core.hooksPath` (husky, pre-commit, lefthook), call `mlqt check` from your existing configuration
-instead — git reads hooks only from the configured directory, and the one installed here would sit
-unused.
+framework's. Add the check to that script yourself, or pass `--force`.
+
+**`core.hooksPath` is refused, not worked around.** If your repository sets it — husky, pre-commit
+and lefthook all do — git reads hooks only from that directory, so one written under `.git/hooks`
+would never run. `mlqt hook install` detects this and stops, naming the directory and printing the
+`mlqt check` line to add to whatever your hook manager runs. `status` and `uninstall` still work, so
+a hook installed before the redirect was set can be seen and removed; both say the redirect is
+there.
 
 **Git only.** SVN has no client-side hooks: a pre-commit hook there runs on the server and would need
 MLQT installed on it. Outside a git working copy the command says so rather than writing a file

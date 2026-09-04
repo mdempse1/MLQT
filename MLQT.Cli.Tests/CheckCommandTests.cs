@@ -281,6 +281,35 @@ public class CheckCommandTests
     }
 
     [Fact]
+    public void CheckWithMissingBaselineFile_SaysSoBeforeCheckingAnything()
+    {
+        // The rule the same file states for --sarif-base and the review diff: an invocation that
+        // cannot produce what it asked for is a mistake to report now, not after several minutes of
+        // checking. "settings from …" is the first thing the load prints, so nothing has been read
+        // yet if the error comes before it.
+        using var lib = DefaultFixture();
+
+        var (_, _, stderr) = Cli.Run(
+            "check", lib.Path, "--baseline", System.IO.Path.Combine(lib.Path, "nope.json"), "--no-color");
+
+        Assert.DoesNotContain("settings from", stderr);
+    }
+
+    [Fact]
+    public void CheckWithAnUnreadableBaseline_SaysSoBeforeCheckingAnything()
+    {
+        using var lib = DefaultFixture();
+        var path = System.IO.Path.Combine(lib.Path, "broken.json");
+        File.WriteAllText(path, "{ this is not json");
+
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--baseline", path, "--no-color");
+
+        Assert.Equal(2, code);
+        Assert.Contains("could not read baseline", stderr);
+        Assert.DoesNotContain("settings from", stderr);
+    }
+
+    [Fact]
     public void ChangedFrom_EscalatesTouchedDebt()
     {
         using var lib = DefaultFixture(); // model with undescribed `x`

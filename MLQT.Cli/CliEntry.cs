@@ -115,7 +115,9 @@ internal static class CliEntry
                                         Never reported on — use for MSL and other dependencies
           --allow-version-mismatch      Check anyway when a loaded dependency is not the version
                                         the library's uses(...) declares (findings may not be real)
-          --metrics                     Record a coverage snapshot in <library-path>/.mlqt/metrics-history.json
+          --metrics                     Record a coverage snapshot in the repository's
+                                .mlqt/metrics-history.json - the same file the desktop
+                                app's Metrics tab reads
           --metrics-out <path>          Record it somewhere else instead (implies --metrics)
           --metrics-force               Record even when the numbers are unchanged
           -h, --help                    Show this help

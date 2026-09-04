@@ -51,7 +51,8 @@ public static class LibraryCheckSession
             return parseFindings;
 
         var context = StyleCheckContext.Build(
-            settings, graph, customDictionary, dictionaryManager, repositoryRoot, collectCoverage);
+            settings, graph, customDictionary, dictionaryManager, repositoryRoot, collectCoverage,
+            honorSuppressions);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };

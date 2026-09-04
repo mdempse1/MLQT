@@ -13,6 +13,10 @@ namespace MLQT.Cli;
 /// Records a coverage snapshot into the same <c>.mlqt/metrics-history.json</c> the desktop app's
 /// Metrics tab reads, so a CI run per commit builds the burndown automatically instead of
 /// relying on someone remembering to press "Save snapshot".
+///
+/// <para>"The same file" is load-bearing and was not free: the app keeps the history per
+/// <em>repository</em>, so the path has to be found the way the settings are — see
+/// <c>CheckOptions.ResolvedMetricsPath</c>.</para>
 /// </summary>
 internal static class MetricsRecorder
 {
@@ -22,6 +26,9 @@ internal static class MetricsRecorder
     /// <paramref name="force"/> bypasses the "only if it changed" rule. Leave it off in CI: skipping
     /// an unchanged point is what stops a job that commits the history file from re-triggering itself
     /// in a loop.
+    ///
+    /// <paramref name="wholeSet"/> is the figures for every checked model, when the caller already
+    /// has them.
     /// </summary>
     public static void Record(
         string path,
@@ -32,7 +39,8 @@ internal static class MetricsRecorder
         DateTime timestampUtc,
         VcsStamp stamp,
         bool force,
-        TextWriter stderr)
+        TextWriter stderr,
+        LibraryMetrics? wholeSet = null)
     {
         try
         {
@@ -68,7 +76,13 @@ internal static class MetricsRecorder
                 // The run's own settings decide the dimensions, so a point recorded by CI carries
                 // the same rows the desktop dashboard shows for the same library — a trend whose
                 // dimensions changed with who wrote the point would be unreadable.
-                var metrics = MetricsCalculator.Compute(graph, scopeModels, _ => settings);
+                //
+                // The whole-set figures are handed in when the caller has already computed them for a
+                // coverage gate, which is the recommended CI recipe: the same question, over the same
+                // models, with the same settings, and two chances to be answered differently.
+                var metrics = scope.Length == 0 && wholeSet is not null
+                    ? wholeSet
+                    : MetricsCalculator.Compute(graph, scopeModels, _ => settings);
 
                 // Match the dashboard's figure: active style findings in scope. A diagnostic is not
                 // style debt — it would make the trend jump on a syntax error, or on a defect in MLQT,

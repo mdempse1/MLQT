@@ -326,6 +326,71 @@ public class BaselineTests
         Assert.Contains(RuleIds.ClassDescription, rules.Keys);
         Assert.DoesNotContain(RuleIds.ClassIcon, rules.Keys);
     }
+
+    // ---- drift is about what runs, not about what was typed (B51) ------------------------------
+
+    private static StyleCheckingSettings Ordering()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.OneOfEachSection, true);
+        settings.SetRuleEnabled(RuleIds.ImportStatementsFirst, true);
+        return settings;
+    }
+
+    [Fact]
+    public void SwitchingOffAPrerequisite_IsReportedAsTheRulesItStopped()
+    {
+        // OneOfEachSection off makes the ordering rules inert: they report nothing, so their baseline
+        // entries can never match again. That is the case the disabled-since warning exists for, and
+        // reading the severity map raw it was invisible — the entries were all still there.
+        var baseline = BaselinedWith(Ordering());
+
+        var now = Ordering();
+        now.SetRuleEnabled(RuleIds.OneOfEachSection, false);
+        var drift = baseline.DriftFrom(now);
+
+        Assert.True(drift.HasDrifted);
+        Assert.Contains(RuleIds.ImportStatementsFirst, drift.DisabledSince);
+        Assert.Contains(RuleIds.OneOfEachSection, drift.DisabledSince);
+    }
+
+    [Fact]
+    public void SwitchingOnTheFormatter_IsReportedAsTheSeverityChangeItIs()
+    {
+        // A layout rule the formatter maintains reports at Error rather than Warning, so --fail-on
+        // error starts failing on findings that were passing. Nothing in the severity map moved.
+        var baseline = BaselinedWith(Ordering());
+
+        var now = Ordering();
+        now.ApplyFormattingRules = true;
+        var drift = baseline.DriftFrom(now);
+
+        // The formatter also takes over the rules it rewrites, so what is left is the change in level
+        // for the ones still reported plus the ones it now maintains.
+        Assert.True(drift.HasDrifted);
+        Assert.NotEmpty(drift.Describe());
+    }
+
+    [Fact]
+    public void APrerequisiteThatWasAlreadyOff_IsNotDrift()
+    {
+        // Symmetry: written and compared the same way, so a configuration that has not changed
+        // reports nothing however inert parts of it are.
+        var settings = Ordering();
+        settings.SetRuleEnabled(RuleIds.OneOfEachSection, false);
+
+        Assert.False(BaselinedWith(settings).DriftFrom(settings).HasDrifted);
+    }
+
+    [Fact]
+    public void AGovernedRuleIsRecordedAtItsGovernorsLevel()
+    {
+        // ExtendsAtTop has no setting of its own and reports through ImportStatementsFirst. It runs,
+        // so it is in force, and the ledger says so at the level it will report at.
+        var rules = BaselinedWith(Ordering()).Rules!;
+
+        Assert.Equal(RuleSeverity.Warning, rules[RuleIds.ExtendsAtTop]);
+    }
 }
 
 public class FindingClassifierTests

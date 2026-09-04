@@ -199,19 +199,23 @@ public class GovernedRuleTests
     }
 
     /// <summary>
-    /// KNOWN DEFECT, tracked as B36 — this test records what happens today, not what should.
+    /// The bool facade still cannot remember a severity, and that is now a statement about the facade
+    /// rather than about the dialog — B36, closed by giving spelling and naming the same four-button
+    /// picker as every other rule.
     ///
-    /// <para>Switching a rule off removes its entry outright, so an explicit <c>Error</c> is not
-    /// remembered: switching it back on re-seeds the catalog default and the repository's severity is
-    /// gone, with the dialog looking exactly as it did before. It only bites the rules the dialog
-    /// shows as a switch rather than as a severity picker, but those are the ones a CI gate is most
-    /// likely to have raised to Error. When B36 is fixed this test should assert Error.</para>
+    /// <para>The defect was never really the forgetting; it was a control that could express only two
+    /// of the four levels. Off and on through a switch had to re-seed the catalog default, because
+    /// the default is the only thing a switch knows, so a repository's <c>Error</c> came back as a
+    /// <c>Warning</c> with the dialog looking exactly as it had. A picker writes the level the user
+    /// chose, so there is no value to be remembered on their behalf and no demotion to be silent
+    /// about.</para>
     ///
-    /// <para>It used to cover the four formatting rules too; their level is derived now, so they
-    /// keep nothing to lose and the remaining exposure is spelling and naming.</para>
+    /// <para>Kept as a test because the facade is still there for the settings file's backward
+    /// compatibility and for the formatting switches, whose level is derived and who therefore have
+    /// nothing to lose. If a new control is ever bound to a bool facade, this is what it would do.</para>
     /// </summary>
     [Fact]
-    public void SwitchingOffAndOnAgainCurrentlyLosesAnExplicitSeverity()
+    public void TheBoolFacadeStillCannotCarryASeverity()
     {
         var settings = new StyleCheckingSettings();
         settings.SetRuleSeverity(RuleIds.SpellingDescription, RuleSeverity.Error);
@@ -220,6 +224,42 @@ public class GovernedRuleTests
         settings.SpellCheckDescription = true;
 
         Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.SpellingDescription));
+    }
+
+    /// <summary>
+    /// What the dialog does now: the picker writes the chosen level, and Off then Error is Error.
+    /// </summary>
+    [Theory]
+    [InlineData(RuleIds.SpellingDescription)]
+    [InlineData(RuleIds.SpellingDocumentation)]
+    [InlineData(RuleIds.NamingConvention)]
+    public void ThePickerKeepsTheSeverityAcrossOffAndOnAgain(string ruleId)
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleSeverity(ruleId, RuleSeverity.Error);
+
+        settings.SetRuleSeverity(ruleId, RuleSeverity.Off);
+        Assert.Equal(RuleSeverity.Off, settings.SeverityFor(ruleId));
+
+        settings.SetRuleSeverity(ruleId, RuleSeverity.Error);
+        Assert.Equal(RuleSeverity.Error, settings.SeverityFor(ruleId));
+    }
+
+    /// <summary>
+    /// And the three are offered as pickers, which is what makes the above the path a user takes.
+    /// A regression to a switch would put the demotion back without touching either test above.
+    /// </summary>
+    [Fact]
+    public void SpellingAndNamingAreOfferedAsPickers()
+    {
+        string[] expected =
+            [RuleIds.SpellingDescription, RuleIds.SpellingDocumentation, RuleIds.NamingConvention];
+
+        foreach (var ruleId in expected)
+        {
+            var row = RuleSettingsLayout.Rows.Single(r => r.RuleId == ruleId);
+            Assert.Equal(RuleControl.SeverityPicker, row.Control);
+        }
     }
 
     /// <summary>

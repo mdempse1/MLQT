@@ -16,6 +16,16 @@
 > - **5b (renderer side)** — `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` treats a class
 >   carrying `__MLQT(format=false/preserveOrder)` as format-excluded (rendered raw), unioning it with
 >   the explicit `excludedModelIds` set — the in-source successor to `FormattingExcludedModels`.
+> - **5b (coverage side, added 2026-09-04 — backlog B39).** Being the successor turned out to take a
+>   third place, not two. The exclusion also has to take the class off the **layout coverage
+>   dimensions**, which the name list did and the annotation did not — so a class using the
+>   recommended, rename-safe mechanism was silenced in the checker and still counted on the
+>   dashboard, showing a gap no finding would ever name. A settings object cannot answer this: it is a
+>   fact about the source. `CoverageMeasurer` reads it while it has the tree and records
+>   `CoverageFacts.FormattingPreserved`; `CoverageDimensions.ForClass` — now the single narrowing,
+>   where three copies of it had been written out — consults that alongside the name list. The
+>   general lesson for anything else claiming to succeed `FormattingExcludedModels`: find every
+>   consumer of the list, not just the ones in the formatting pipeline.
 > - **5c** — `MlqtSuppressionWriter` (adds/merges the `__MLQT(suppress=…)` annotation onto a class or
 >   component via parse-tree splicing); MCP `suppress_rule` tool (over the `ClassBodyEditor` path); and
 >   the Code Review **Suppress** action (carries `RuleId`/`ElementPath` through `LogMessage`, writes the

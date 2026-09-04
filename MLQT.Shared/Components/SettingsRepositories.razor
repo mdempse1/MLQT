@@ -240,11 +240,13 @@
                 Disabled="!SelectedSettings.OneOfEachSection"
                 Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
 
-            <MudText Typo="Typo.subtitle2" Class="mt-4">Spell checking</MudText>
-            <MudSwitch @bind-Value="SelectedSettings.SpellCheckDescription" Color="Color.Primary" Size="Size.Small"
-                Label="Spell check every description string" />
-            <MudSwitch @bind-Value="SelectedSettings.SpellCheckDocumentation" Color="Color.Primary" Size="Size.Small"
-                Label="Spell check all documentation" />
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@RuleSettingsLayout.Spelling</MudText>
+            @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.Spelling))
+            {
+                <RuleSeverityRow RuleId="@item.RuleId" Label="@item.Label"
+                    Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
+            }
 
             @if (SelectedSettings.SpellCheckDescription || SelectedSettings.SpellCheckDocumentation) 
             {
@@ -282,9 +284,13 @@
                 <SettingsRepositoryDictionary Repository="_selectedItem" />
             }
 
-            <MudText Typo="Typo.subtitle2" Class="mt-4">Style guidelines</MudText>
-            <MudSwitch @bind-Value="SelectedSettings.FollowNamingConvention" Color="Color.Primary" Size="Size.Small" Class="mt-2"
-                Label="Check that the naming convention is followed" />
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@RuleSettingsLayout.Naming</MudText>
+            @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.Naming))
+            {
+                <RuleSeverityRow RuleId="@item.RuleId" Label="@item.Label"
+                    Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
+            }
 
             @if (SelectedSettings.FollowNamingConvention)
             {
@@ -385,33 +391,20 @@
                     }
                 </MudPaper>
             }
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@RuleSettingsLayout.StyleGuidelines</MudText>
             @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.StyleGuidelines))
             {
-                <div class="mlqt-rule-row">
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                        <MudTooltip Text="@("Rule ID = " + item.RuleId)">
-                            <MudText Typo="Typo.body1">@item.Label</MudText>
-                        </MudTooltip>
-                        <MudSpacer/>
-                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.RuleId)"
-                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
-                    </MudStack>
-                </div>
+                <RuleSeverityRow RuleId="@item.RuleId" Label="@item.Label"
+                    Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
             }
            
             <MudText Typo="Typo.subtitle2" Class="mt-4">@RuleSettingsLayout.ReferenceValidation</MudText>
             @foreach (var item in RuleSettingsLayout.PickersIn(RuleSettingsLayout.ReferenceValidation))
             {
-                <div class="mlqt-rule-row">
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                        <MudTooltip Text="@("Rule ID = " + item.RuleId)">
-                            <MudText Typo="Typo.body1">@item.Label</MudText>
-                        </MudTooltip>
-                        <MudSpacer/>
-                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(item.RuleId)"
-                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
-                    </MudStack>
-                </div>
+                <RuleSeverityRow RuleId="@item.RuleId" Label="@item.Label"
+                    Value="@SelectedSettings.SeverityFor(item.RuleId)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(item.RuleId, v))" />
             }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Static analysis</MudText>
@@ -428,16 +421,9 @@
                     lastCategory = rule.Category;
                     <MudText Typo="Typo.subtitle2" Class="mt-2 mb-0">@rule.Category</MudText>
                 }
-                <div class="mlqt-rule-row">
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                        <MudTooltip Text="@("Rule ID = " + rule.Id)">
-                            <MudText Typo="Typo.body1">@rule.Description</MudText>
-                        </MudTooltip>
-                        <MudSpacer />
-                        <RuleSeverityPicker Value="@SelectedSettings.SeverityFor(rule.Id)"
-                            ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
-                    </MudStack>
-                </div>
+                <RuleSeverityRow RuleId="@rule.Id" Label="@rule.Description"
+                    Value="@SelectedSettings.SeverityFor(rule.Id)"
+                    ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
             }
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>
