@@ -334,7 +334,7 @@ public sealed class StyleTools
 
             findings.Add(Item(
                 m.ModelName, "style", m.Severity, m.LineNumber, m.Summary, m.Details,
-                string.IsNullOrEmpty(m.Source) ? "StyleChecking" : m.Source));
+                string.IsNullOrEmpty(m.Source) ? LogMessage.StyleCheckingSource : m.Source));
         }
 
         IEnumerable<FindingItem> filtered = findings;
@@ -428,7 +428,7 @@ public sealed class StyleTools
         var shown = findings
             .Take(MaxReturnedFindings)
             .Select(v => new StyleFindingDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
-                string.IsNullOrEmpty(v.Source) ? "StyleChecking" : v.Source))
+                string.IsNullOrEmpty(v.Source) ? LogMessage.StyleCheckingSource : v.Source))
             .ToList();
         return new CheckResult(modelsChecked, findings.Count, shown, findings.Count > shown.Count);
     }

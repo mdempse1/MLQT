@@ -63,7 +63,7 @@ public sealed record Finding
     public LogMessage ToLogMessage() =>
         new(ModelId, "Style warning", LineNumber, Message)
         {
-            Source = "StyleChecking",
+            Source = LogMessage.StyleCheckingSource,
             RuleId = RuleId,
             ElementPath = ElementPath,
             Fingerprint = Fingerprint,

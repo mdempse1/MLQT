@@ -157,9 +157,11 @@
                 StateHasChanged();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-
+            // A picker that throws used to leave the button doing nothing and no trace anywhere —
+            // not even in the log — which is indistinguishable from the user having cancelled.
+            LoggingService.Warn("SettingsExternalTools", $"Could not browse for the Dymola folder: {ex.Message}");
         }
     }
 
@@ -175,9 +177,10 @@
                 StateHasChanged();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-
+            LoggingService.Warn("SettingsExternalTools",
+                $"Could not browse for the OpenModelica folder: {ex.Message}");
         }
     }
 }

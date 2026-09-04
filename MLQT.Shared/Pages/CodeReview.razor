@@ -1680,7 +1680,7 @@ document.head.appendChild(style);
     // reported success. suppress_rule has refused a diagnostic since B26; this is the surface an
     // author is more likely to be sitting in front of.
     private static bool CanSuppressRule(LogMessage? finding)
-        => finding is { Source: "StyleChecking" } && !string.IsNullOrEmpty(finding.RuleId)
+        => finding is { Source: LogMessage.StyleCheckingSource } && !string.IsNullOrEmpty(finding.RuleId)
            && !RuleIds.IsDiagnostic(finding.RuleId) && !IsSpellingFinding(finding);
 
     /// <summary>

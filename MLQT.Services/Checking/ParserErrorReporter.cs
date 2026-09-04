@@ -18,7 +18,7 @@ public static class ParserErrorReporter
     /// Stamped on every message produced here so a caller can refresh parser issues without
     /// disturbing style-checking findings (and vice versa).
     /// </summary>
-    public const string SourceName = "Parser";
+    public const string SourceName = LogMessage.ParserSource;
 
     /// <summary>
     /// One message per parser error across <paramref name="models"/>, in the flat shape the GUI's

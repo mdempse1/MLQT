@@ -31,10 +31,29 @@ public class LogMessage
     public int LineNumber { get; set; }
 
     /// <summary>
-    /// Identifies the origin of this message (e.g., "StyleChecking", "Parser", "ExternalTool").
-    /// Used to selectively clear messages when a subsystem re-runs.
+    /// Identifies the origin of this message. Used to selectively clear messages when a subsystem
+    /// re-runs, and to decide what a surface is looking at — see the constants below, which are the
+    /// values it takes.
     /// </summary>
     public string Source { get; set; } = "";
+
+    /// <summary>
+    /// A finding from the style rules or the whole-graph analyses.
+    ///
+    /// <para>A constant because this is a load-bearing string contract — the phase 1 note lists it as
+    /// one — and it was written out as a literal in nine places across six files: the one that
+    /// produces it and five that filter on it, including the two that decide what the Metrics tab
+    /// counts and what the Code Review list clears. A typo in a consumer filters nothing and looks
+    /// exactly like "there were no findings". <c>Parser</c> already had a constant; this did
+    /// not.</para>
+    /// </summary>
+    public const string StyleCheckingSource = "StyleChecking";
+
+    /// <summary>A parse diagnostic. Kept apart from a style finding so a style re-run cannot clear it.</summary>
+    public const string ParserSource = "Parser";
+
+    /// <summary>A message from Dymola or OpenModelica.</summary>
+    public const string ExternalToolSource = "ExternalTool";
 
     /// <summary>
     /// For a style-check message, the structured rule id (e.g. "MLQT.Documentation.ParameterDescription")

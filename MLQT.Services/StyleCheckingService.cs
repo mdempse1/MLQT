@@ -54,7 +54,7 @@ public class StyleCheckingService : IStyleCheckingService
         CancelRunningWorkers();
         // Remove style checking findings already delivered to CodeReviewService
         // so they don't duplicate when the new run re-produces them
-        _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == "StyleChecking");
+        _codeReviewService.RemoveLogMessagesByPredicate(m => m.Source == LogMessage.StyleCheckingSource);
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ public class StyleCheckingService : IStyleCheckingService
         }
 
         _codeReviewService.RemoveLogMessagesByPredicate(
-            m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
+            m => m.Source == LogMessage.StyleCheckingSource && modelIds.Contains(m.ModelName));
 
         // Nothing is left of the run that was cancelled, and the caller may yet decide there is no
         // work to start — release whoever was waiting on it rather than leaving them waiting on a run

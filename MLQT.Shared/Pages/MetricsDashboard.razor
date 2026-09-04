@@ -423,7 +423,7 @@
     /// according to which of them recorded the point.</para>
     /// </summary>
     private static bool IsStyleDebt(LogMessage m)
-        => m.Source == "StyleChecking" && !(m.RuleId is { } id && RuleIds.IsDiagnostic(id));
+        => m.Source == LogMessage.StyleCheckingSource && !(m.RuleId is { } id && RuleIds.IsDiagnostic(id));
 
     // A finding count is only worth recording once the full analysis has finished; while it is still
     // running (or has never run) the number is partial, so store null rather than a misleading figure.

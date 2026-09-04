@@ -72,7 +72,10 @@ components have an unsubscribe method nothing calls, and the five coverage dimen
 user on the grounds that the formatter closes them had nothing checking that it does. An eleventh
 read closed **B93–B94** by running the same sweeps over the rest of CLAUDE.md's stated patterns: two
 came back clean, one found a source-swap written twice and out of date since B75, and one found two
-coding rules that describe a codebase which does not exist. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+coding rules that describe a codebase which does not exist. A twelfth read closed **B95–B97**, two
+of them small and the third the one that matters: the sweeps that had found three defects across two
+reviews existed only in the review transcripts, and are now four tests that run on every build.
+**B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -93,8 +96,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Seventh review](#seventh-review-2026-09-04)), B87–B88 by the eighth (see
 [Eighth review](#eighth-review-2026-09-04)), B89–B90 by the ninth (see
 [Ninth review](#ninth-review-2026-09-04)), B91–B92 by the tenth (see
-[Tenth review](#tenth-review-2026-09-04)) and B93–B94 by the eleventh (see
-[Eleventh review](#eleventh-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Tenth review](#tenth-review-2026-09-04)), B93–B94 by the eleventh (see
+[Eleventh review](#eleventh-review-2026-09-04)) and B95–B97 by the twelfth (see
+[Twelfth review](#twelfth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -293,12 +297,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the eleven end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the twelve end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, and B93–B94 the eleventh.
+B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, B93–B94 the eleventh, and B95–B97 the twelfth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -396,6 +400,9 @@ B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the 
 | B92 | **Nothing checks that the formatter closes the gaps coverage credits it with** | tenth review 2026-09-04 | ⭐⭐ | S | `CoverageDimensions.FormatterRewrites` takes five dimensions off the report when the formatter is on, because "reporting them would measure the moment before the save rather than the library". That is only honest while the renderer really satisfies those five rules, and it has already been wrong once: `InitialSectionsLast` was in the set while `ModelicaRenderer` wrote initial sections first whatever the setting said, so the report hid a gap every save reintroduced — recorded in the file's own comment. The only test on the constant asserts it against itself (those dimensions drop out when the formatter is on), which is true by construction and would have passed throughout. The claim that justifies **hiding numbers from a user** had nothing holding it to the code that is supposed to make it true. **✅ shipped (2026-09-04)** — `FormatterClosesTheGapTests` does the round trip the claim describes: a class breaking all four order rules, rendered with the formatting a repository would have on, then checked again — and the rule reports nothing. Eight tests, including a control asserting the fixture really does break the rules before formatting, one asserting the two dimensions the renderer *cannot* fix stay on the report, and one holding the credited set itself to what switching the formatter on actually drops (asked twice, since the two initial-section rules are mutually exclusive and no single configuration sees both). |
 | B93 | **"Swap a class's source and put it back" is written twice, and both copies are out of date** | eleventh review 2026-09-04 | ⭐⭐ | S | `FormattingTools.FormatClass` and `StyleTools.CheckLibrary` both replace a node's stored source, do something, and restore it — each capturing `(ModelicaCode, ParsedCode)` by hand. What a class carries beside its source has grown underneath them: **B75** (two commits earlier) made assigning `ModelicaCode` also drop `Coverage` and `Suppressions`, and `PackageCodeTrimmer` sets `SourceMatchesFile` and `ChildrenTrimmed` on the node. Neither copy restores any of those four, and — the part that makes it a defect rather than a slow path — nothing says which of them are deliberately left. That is unanswerable from the code, and it is the question a reader has. This is the shape the memory note names: a change correct in itself, breaking something nothing tests. **✅ shipped (2026-09-04)** — `ModelNode.TakeSourceSnapshot` / `RestoreSource` name all six fields and restore them in the order the setters require (source first, because assigning it clears three of the others). Both callers use it, and `StyleTools` then re-clears `SourceMatchesFile` **with the reason written down**: the findings it has just recorded were measured against the trimmed source, `list_findings` maps them at read time, and reporting them at the class declaration is `ClassLocation`'s own answer for a line it cannot trust. Four tests, including one that fails if `ModelicaCode`'s setter learns to clear a fourth thing the snapshot does not name. |
 | B94 | **Two of CLAUDE.md's coding rules describe a codebase that does not exist** | eleventh review 2026-09-04 | ⭐ | S | CLAUDE.md is written to be followed when generating code, so a rule that the code does not follow produces components unlike the ones beside them. "Use `Typo.body1` for all text except code" is followed by 138 call sites and contradicted by **92** — `h6` for dialog titles, `subtitle1` for the name of the thing a panel is about, `subtitle2` for a section heading, `caption` for explanatory text. The convention is a sensible hierarchy; the guidance describes two levels of it, and an agent following it would put body text styling on a dialog title. Rewriting 92 call sites would be a large cosmetic diff with no test behind it and would make the UI worse, so the guidance is what is wrong. Separately, "**Always** use methods … not direct property access" on `AppState` has a documented exception the guidance does not mention: `MetricsScope` is plain session memory with no event and no method, says so at its declaration, and is assigned directly in three places. **✅ shipped (2026-09-04)** — both rules now describe what the code does, with a table of what each `Typo` value is for and the reason the AppState rule is about members that *have* a method (the method is what raises the event). |
+| B95 | **The load-bearing `"StyleChecking"` source is a literal in nine places** | twelfth review 2026-09-04 | ⭐ | S | The phase 1 note lists `Source == "StyleChecking"` as one of the string contracts that must be preserved or migrated in lockstep, and its counterpart already has a constant (`ParserErrorReporter.SourceName`). This one was written out nine times across six files — the one place that produces it and five that filter on it, including the two deciding what the Metrics tab counts and what a re-check clears from the Code Review list. A typo in a consumer filters nothing, which looks exactly like "there were no findings". **✅ shipped (2026-09-04)** — `LogMessage.StyleCheckingSource`, `ParserSource` and `ExternalToolSource` are the three values the field takes, declared on the type that owns it; every site uses them, and `ParserErrorReporter.SourceName` is now an alias for one of them rather than a second definition. |
+| B96 | **Two settings buttons swallow every exception and log nothing** | twelfth review 2026-09-04 | ⭐ | S | `BrowseForDymolaFolder` and `BrowseForOpenModelicaFolder` wrap the folder picker in `catch (Exception) { }` — empty, no log, no message. A picker that throws (an open picker, a permissions problem, a shell failure) leaves the button doing nothing and no trace anywhere, which is indistinguishable from the user cancelling and undiagnosable afterwards. The rest of the codebase logs; B27's whole subject was an exception vanishing. Found by sweeping for empty catch blocks: the only other one is covered by the comment on the sibling `catch` immediately above it. **✅ shipped (2026-09-04)** — both log a warning naming the tool and the message. |
+| B97 | **The sweeps that found B88, B91 and B93 exist only in the review** | twelfth review 2026-09-04 | ⭐⭐ | S | Three defects in two reviews were found by fifteen-line scripts over the `MLQT.Shared` source, and every one of those scripts then lived in a review transcript and nowhere else — so the next occurrence waits for somebody to think of running it again. That is the whole failure the eleventh review's own closing note named ("a sweep worth running twice is worth a test"), left unactioned in the same breath. B91 makes the case: nine reviews read past an unsubscribe method that nothing called, because it was there and looked right, and only asking *who calls it* found it — which is the kind of question a machine should ask on every build, not a person once a review. **✅ shipped (2026-09-04)** — `SharedUiConventionTests` runs four of them: every subscription in a component is matched by an unsubscribe, every component that subscribes declares `IDisposable`, no component has a cleanup method nothing calls, and no doc comment is stranded above another. It lives in `MLQT.Services.Tests` because `MLQT.Shared` has no suite until phase 7a and these need no rendering; it says so, and says where it moves to. It also asserts it can see the source rather than skipping when it cannot — deliberately unlike `RuleDocumentationTests`, and the comment gives the reason: a silent no-op here would reintroduce exactly the failure the file exists to prevent. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -1055,6 +1062,40 @@ thing to change if this keeps paying: a sweep worth running twice is worth a tes
 
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app; and it did not review the Dymola help parsing.
+
+
+### Twelfth review (2026-09-04)
+
+**B95–B97 came out of a twelfth read.** **All three are closed**, and the third is the one that
+matters: it stops this being the last review that can find these.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green.
+
+**Four more sweeps, two clean.** Sync-over-async appears only in `SvnCli`, reading a process's output
+streams, which is not a UI context and is the ordinary pattern for it — and `MainLayout` carries a
+comment warning against the deadlock it would cause there. `DateTime.Now` appears twice, both in the
+findings export, both correct: the timestamp is round-trip format with an offset, and the filename is
+local time because that is what a person wants on a file they just saved. The other two found
+**B95** (a load-bearing string with no constant) and **B96** (two buttons that swallow everything).
+
+**B97 is the point of this review.** The tenth and eleventh reviews found three defects by running
+throwaway scripts, congratulated themselves on it, and left the scripts in the transcript. The
+eleventh even wrote down the conclusion — "a sweep worth running twice is worth a test" — and then did
+not act on it, which is the same shape as everything else in this backlog: a promise nothing holds
+anyone to. Four of the sweeps are now tests that run on every build, so the next component that
+subscribes without disposing fails a build rather than waiting for a thirteenth review.
+
+**Where the reviews have got to.** Twelve reads have produced eighty-odd items and the yield is now
+two or three per pass, all small, and increasingly found by machine rather than by reading. The
+remaining unread territory is stable and stated at the end of every one of these sections: the bulk of
+the 47,000 changed lines, the desktop app as an application, and the Dymola help parsing (whose
+accuracy is measured against MSL on every build, which is a stronger check than reading it). **B20**
+is the only open item, and it belongs to phase 7a.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app, so B96 is verified by the build rather than by making a picker throw; and it did not
+review the Dymola help parsing.
 
 
 ---
