@@ -2,6 +2,7 @@ using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
 using ModelicaParser.Visitors;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph.Analysis;
 
@@ -310,9 +311,8 @@ public sealed class CoverageMeasurer
             // Counted for this class only. The visitor walks into a nested class carrying
             // `replaceable`, and those components are measured with the nested class's own node, so
             // counting them here would subtract them from a denominator that never included them.
-            var basePackage = model.Id.LastIndexOf('.') is var dot && dot > 0 ? model.Id[..dot] : string.Empty;
             var unitVisitor = new MissingUnits(
-                basePackage,
+                ModelicaName.EnclosingPackageOf(model.Id),
                 unitLookup: (_, typeName) =>
                     UnitResolver.Resolve(_graph, model.Id, typeName, imports, _unitCache));
             unitVisitor.VisitStored_definition(tree);

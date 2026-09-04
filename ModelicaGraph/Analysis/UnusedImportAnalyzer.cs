@@ -146,9 +146,7 @@ public sealed class UnusedImportAnalyzer : IGraphAnalyzer
 
         try
         {
-            var lastDot = node.Id.LastIndexOf('.');
-            var basePackage = lastDot > 0 ? node.Id[..lastDot] : string.Empty;
-            var extractor = new ImportScopeExtractor(basePackage);
+            var extractor = new ImportScopeExtractor(ModelicaName.EnclosingPackageOf(node.Id));
             extractor.VisitStored_definition(tree);
             return extractor.Scopes;
         }

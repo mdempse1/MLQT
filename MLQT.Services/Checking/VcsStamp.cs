@@ -18,17 +18,29 @@ public sealed record VcsStamp(string? Revision, string? Branch)
 
 /// <summary>
 /// Locates the version control system a path sits in. Selection is "first system whose working-copy
-/// root contains the path" — the same rule <c>RepositoryService</c> uses, kept here so the headless
-/// surfaces (baseline stamping, metrics recording, changed-model resolution) all agree on which VCS
-/// owns a directory.
+/// root contains the path", Git before SVN.
+///
+/// <para>This is <b>the</b> rule, not a copy of one. It used to describe itself as "the same rule
+/// <c>RepositoryService</c> uses" while being a second implementation of it — and the two did not
+/// quite agree on the order of the walk-up and the validity check. A comment is not a mechanism;
+/// <c>RepositoryService</c> now calls this, passing its own systems so its tests keep their
+/// substitutes, and there is one answer to which VCS owns a directory.</para>
 /// </summary>
 public static class VcsLocator
 {
     /// <summary>The VCS owning <paramref name="path"/> and its working-copy root, or (null, null).</summary>
-    public static (IRevisionControlSystem? Vcs, string? Root) Find(string path)
-    {
-        IRevisionControlSystem[] systems = [new GitRevisionControlSystem(), new SvnRevisionControlSystem()];
+    public static (IRevisionControlSystem? Vcs, string? Root) Find(string path) =>
+        Find(path, new GitRevisionControlSystem(), new SvnRevisionControlSystem());
 
+    /// <summary>
+    /// The same, over systems the caller already holds. <c>RepositoryService</c> keeps one Git and one
+    /// SVN instance for the life of the app and hands them here rather than paying for new ones per
+    /// call — and so that a test can pass substitutes.
+    /// </summary>
+    /// <param name="systems">Tried in order, so the first is preferred where a path could be both.</param>
+    public static (IRevisionControlSystem? Vcs, string? Root) Find(
+        string path, params IRevisionControlSystem[] systems)
+    {
         foreach (var system in systems)
         {
             var candidate = system.FindRepositoryRoot(path);

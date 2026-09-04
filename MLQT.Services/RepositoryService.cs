@@ -1,6 +1,7 @@
 using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
+using MLQT.Services.Checking;
 using System.Text.Json;
 using ModelicaGraph;
 using ModelicaParser.Helpers;
@@ -111,18 +112,18 @@ public class RepositoryService : IRepositoryService
             }
         }
 
-        // Local path - check what VCS is present
+        // Local path - ask the one place that answers "which VCS owns this directory". The headless
+        // surfaces (baseline stamping, metrics, changed-model resolution) go through the same call,
+        // so a library that is Git to `mlqt check` cannot be Local to the app.
         if (Directory.Exists(pathOrUrl))
         {
-            if (_git.IsValidRepository(pathOrUrl))
+            var (vcs, _) = VcsLocator.Find(pathOrUrl, _git, _svn);
+            return vcs switch
             {
-                return (RepositoryVcsType.Git, true);
-            }
-            if (_svn.IsValidRepository(pathOrUrl))
-            {
-                return (RepositoryVcsType.SVN, true);
-            }
-            return (RepositoryVcsType.Local, true);
+                GitRevisionControlSystem => (RepositoryVcsType.Git, true),
+                SvnRevisionControlSystem => (RepositoryVcsType.SVN, true),
+                _ => (RepositoryVcsType.Local, true)
+            };
         }
 
         return (RepositoryVcsType.Local, false);

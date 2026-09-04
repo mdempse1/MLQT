@@ -154,7 +154,7 @@
                         <tr>
                             <td>
                                 <MudLink Typo="Typo.body2" Style="cursor:pointer;"
-                                         @onclick="@(() => OnScopeChanged(row.Package))">@ShortName(row.Package)</MudLink>
+                                         @onclick="@(() => OnScopeChanged(row.Package))">@ModelicaName.LeafOf(row.Package)</MudLink>
                             </td>
                             <td style="text-align:right;">@row.Metrics.TotalClasses</td>
                             @foreach (var d in _summaryDimensions)
@@ -485,17 +485,11 @@
         return Task.FromResult<IEnumerable<string>>(
             packages
                 .OrderBy(id => string.Equals(id, term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                .ThenBy(id => string.Equals(LastSegment(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(id => string.Equals(ModelicaName.LeafOf(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ThenBy(id => id.Count(c => c == '.'))
                 .ThenBy(id => id, System.StringComparer.Ordinal)
                 .Take(50)
                 .ToList());
-    }
-
-    private static string LastSegment(string id)
-    {
-        var dot = id.LastIndexOf('.');
-        return dot < 0 ? id : id[(dot + 1)..];
     }
 
     private async Task OnScopeChanged(string? scope)
@@ -845,12 +839,6 @@
             : packages.Where(id => id.StartsWith(parent + ".", System.StringComparison.Ordinal)
                                    && id.IndexOf('.', parent.Length + 1) < 0);
         return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
-    }
-
-    private static string ShortName(string id)
-    {
-        var i = id.LastIndexOf('.');
-        return i < 0 ? id : id[(i + 1)..];
     }
 
     private static Color CoverageColor(double percent)

@@ -1,6 +1,7 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Helpers;
 
 namespace ModelicaGraph.Analysis;
 
@@ -101,15 +102,10 @@ public static class GraphAnalysisRunner
     /// class — and a finding needs a model id a reader can navigate to.
     /// </summary>
     private static Finding Failure(GraphAnalysisContext context, IGraphAnalyzer analyzer, Exception ex) =>
-        new()
-        {
-            RuleId = RuleIds.CheckFailed,
-            ModelId = OwnerOf(context),
-            Discriminator = analyzer.GetType().Name,
-            Message = $"The {analyzer.GetType().Name} analysis failed " +
-                      $"({ex.GetType().Name}: {ex.Message}). Its findings are missing from these results.",
-            Severity = RuleSeverity.Error,
-        };
+        CheckFailure.For(
+            OwnerOf(context), ex,
+            what: $"The {analyzer.GetType().Name} analysis",
+            discriminator: analyzer.GetType().Name);
 
     /// <summary>
     /// The class a whole-graph failure is reported against: the shortest top-level package in the
@@ -165,9 +161,7 @@ public static class GraphAnalysisRunner
         if (parsed is null)
             return null;
 
-        var lastDot = modelId.LastIndexOf('.');
-        var basePackage = lastDot > 0 ? modelId[..lastDot] : string.Empty;
-        var extractor = new MlqtSuppressionExtractor(basePackage);
+        var extractor = new MlqtSuppressionExtractor(ModelicaName.EnclosingPackageOf(modelId));
         extractor.VisitStored_definition(parsed);
         var set = extractor.Build();
         return set.IsEmpty ? null : set;

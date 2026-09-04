@@ -699,13 +699,10 @@ public class StyleCheckingService : IStyleCheckingService
             {
                 Error("StyleCheckingService", $"Graph analyses for {repository.Name} failed", ex);
                 _codeReviewService.AddLogMessages([
-                    new LogMessage(repository.Name, "Style warning", 0,
-                        $"The whole-library analyses for {repository.Name} failed " +
-                        $"({ex.GetType().Name}: {ex.Message}). Their findings are missing from these results.")
-                    {
-                        Source = "StyleChecking",
-                        RuleId = RuleIds.CheckFailed,
-                    }
+                    CheckFailure.Message(
+                        repository.Name, ex,
+                        what: $"The whole-library analyses for {repository.Name}",
+                        discriminator: repository.Id)
                 ]);
                 emitted = true;
             }

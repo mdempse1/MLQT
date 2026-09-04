@@ -5,6 +5,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
 using MLQT.Services.Checking;
 using MLQT.Services.Helpers;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Cli;
 
@@ -56,7 +57,7 @@ internal static class MetricsRecorder
             scopes.AddRange(libraryRoots.Select(root => (
                 Scope: root,
                 Models: (IReadOnlyList<ModelNode>)models
-                    .Where(m => RootLibrary(m.Id) == root)
+                    .Where(m => ModelicaName.RootLibraryOf(m.Id) == root)
                     .ToList())));
 
             var recorded = new List<string>();
@@ -107,13 +108,6 @@ internal static class MetricsRecorder
             // them and return its own exit code if the history file cannot be written.
             stderr.WriteLine($"warning: could not record metrics: {ex.Message}");
         }
-    }
-
-    /// <summary>The library a class belongs to: the first segment of its id.</summary>
-    private static string RootLibrary(string modelId)
-    {
-        var dot = modelId.IndexOf('.');
-        return dot < 0 ? modelId : modelId[..dot];
     }
 
     private static string Label(string scope) => scope.Length == 0 ? "all libraries" : scope;

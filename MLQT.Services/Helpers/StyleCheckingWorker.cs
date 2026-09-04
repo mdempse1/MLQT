@@ -122,15 +122,7 @@ public class StyleCheckingWorker
                     // Report it rather than dropping the class: one class that cannot be checked
                     // should not stop the worker, but silence here cost the class every finding it
                     // had and made the app's totals disagree with the CLI's for no visible reason.
-                    OnFindingFound?.Invoke(this, [
-                        new LogMessage(modelId, "Style warning", 0,
-                            $"Checking this class failed ({ex.GetType().Name}: {ex.Message}). " +
-                            "Its findings are missing from these results.")
-                        {
-                            Source = "StyleChecking",
-                            RuleId = RuleIds.CheckFailed,
-                        }
-                    ]);
+                    OnFindingFound?.Invoke(this, [CheckFailure.Message(modelId, ex)]);
                 }
 
                 // Batch progress notifications — fire every 50 models instead of every model

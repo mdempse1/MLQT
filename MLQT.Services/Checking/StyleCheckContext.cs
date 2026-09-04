@@ -3,6 +3,7 @@ using ModelicaGraph.Analysis;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services.Checking;
 
@@ -97,7 +98,7 @@ public sealed class StyleCheckContext
         IReadOnlySet<string>? knownModelNames = null;
         if ((settings.SpellCheckDescription || settings.SpellCheckDocumentation) && spellChecker != null)
             knownModelNames = graph.ModelNodes
-                .Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
+                .Select(n => ModelicaName.LeafOf(n.Id))
                 .ToHashSet(StringComparer.Ordinal);   // Modelica is case sensitive
 
         return new StyleCheckContext

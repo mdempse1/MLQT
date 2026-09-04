@@ -1756,13 +1756,10 @@
                 onModelFailed: (model, ex) =>
                 {
                     Error("MainLayout", $"Analysing {model.Id} failed", ex);
-                    analysisFailures.Add(new LogMessage(model.Id, "Style warning", 0,
-                        $"Analysing this class failed ({ex.GetType().Name}: {ex.Message}). " +
-                        "Its findings and its dependencies are missing from these results.")
-                    {
-                        Source = "StyleChecking",
-                        RuleId = ModelicaParser.StyleRules.RuleIds.CheckFailed,
-                    });
+                    analysisFailures.Add(ModelicaParser.StyleRules.CheckFailure.Message(
+                        model.Id, ex,
+                        ModelicaParser.StyleRules.CheckFailure.Analysing,
+                        alsoMissing: "its dependencies"));
                 }));
 
             if (!analysisFailures.IsEmpty)

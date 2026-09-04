@@ -82,17 +82,8 @@ public static class StyleChecking
         if (parsedCode == null)
             return findings;
 
-        // Calculate the base package (everything except the last component of fullModelId)
-        // This is used when the code doesn't have a within clause
-        string basePackage = "";
-        if (!string.IsNullOrEmpty(fullModelId))
-        {
-            var lastDot = fullModelId.LastIndexOf('.');
-            if (lastDot > 0)
-            {
-                basePackage = fullModelId.Substring(0, lastDot);
-            }
-        }
+        // The package the class sits in, for when its own source carries no within clause.
+        var basePackage = ModelicaName.EnclosingPackageOf(fullModelId);
 
         if (settings.ParameterHasDescription || settings.ConstantHasDescription)
         {
