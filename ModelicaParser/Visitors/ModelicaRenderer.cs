@@ -48,6 +48,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private bool _componentsBeforeClasses;
 
     /// <summary>
+    /// Write <c>initial equation</c>/<c>initial algorithm</c> after the ordinary equation and
+    /// algorithm sections rather than before them, for a repository whose convention is
+    /// <c>MLQT.Style.InitialEqAlgoLast</c>.
+    ///
+    /// <para>Until this existed the renderer always wrote them first, which meant the formatter
+    /// actively defeated that rule: a repository could enable it, apply formatting, and have every
+    /// class with an initial section reported forever, the violation reintroduced on each save. The
+    /// two ordering rules are mutually exclusive in the settings UI, so at most one of them is ever
+    /// on.</para>
+    /// </summary>
+    private readonly bool _initialSectionsLast;
+
+    /// <summary>
     /// Gets the rendered code lines.
     /// </summary>
     public List<string> Code => _code;
@@ -59,9 +72,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         BufferedTokenStream? tokenStream = null, 
         HashSet<string>? classNamesToExclude = null, 
         int maxLineLength = 100, 
-        bool oneOfEachSection = false,
-        bool importsFirst = false,
-        bool componentsBeforeClasses = false)
+        FormattingOptions? formatting = null)
     {
         _renderForCodeEditor = renderForCodeEditor;
         _showAnnotations = showAnnotations;
@@ -69,9 +80,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _tokenStream = tokenStream;
         _classNamesToExclude = classNamesToExclude;
         _maxLineLength = maxLineLength;
-        _oneOfEachSection = oneOfEachSection;
-        _importsFirst = importsFirst;
-        _componentsBeforeClasses = componentsBeforeClasses;
+
+        var layout = formatting ?? FormattingOptions.None;
+        _oneOfEachSection = layout.OneOfEachSection;
+        _importsFirst = layout.ImportsFirst;
+        _componentsBeforeClasses = layout.ComponentsBeforeClasses;
+        _initialSectionsLast = layout.InitialSectionsLast;
     }
 
     #region Helper Methods
@@ -619,6 +633,24 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         ClassAndComponents
     }
 
+    /// <summary>
+    /// Writes the <c>initial equation</c> and <c>initial algorithm</c> sections. Called either before
+    /// or after the ordinary ones — see <see cref="_initialSectionsLast"/> — so the two orderings
+    /// cannot drift apart, which they would the moment this was written out twice.
+    /// </summary>
+    private void WriteInitialSections(modelicaParser.CompositionContext context)
+    {
+        _currentSection.Push(CodeSection.InitialEquation);
+        _writtenSectionHeader = false;
+        WriteComposition(context, CodeSection.InitialEquation, Element.Any);
+        _currentSection.Pop();
+
+        _currentSection.Push(CodeSection.InitialAlgorithm);
+        _writtenSectionHeader = false;
+        WriteComposition(context, CodeSection.InitialAlgorithm, Element.Any);
+        _currentSection.Pop();
+    }
+
     private bool WriteComposition(
         [NotNull] modelicaParser.CompositionContext context, 
         CodeSection section, 
@@ -811,16 +843,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 else
                     WriteComposition(context, CodeSection.Protected, Element.Any, false);
 
-                //Initial Equation/Algorithm
-                _currentSection.Push(CodeSection.InitialEquation);        
-                _writtenSectionHeader = false;               
-                WriteComposition(context, CodeSection.InitialEquation, Element.Any);
-                _currentSection.Pop();
-
-                _currentSection.Push(CodeSection.InitialAlgorithm);                       
-                _writtenSectionHeader = false;               
-                WriteComposition(context, CodeSection.InitialAlgorithm, Element.Any);
-                _currentSection.Pop();
+                // Initial and ordinary equation/algorithm sections, in whichever order the
+                // repository's convention asks for. External always goes last: it is the class's
+                // implementation, not a section anyone orders against.
+                if (!_initialSectionsLast)
+                    WriteInitialSections(context);
 
                 //Equation/Algorithm/External
                 _currentSection.Push(CodeSection.Equation);                       
@@ -832,6 +859,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 _writtenSectionHeader = false;               
                 WriteComposition(context, CodeSection.Algorithm, Element.Any);
                 _currentSection.Pop();
+
+                if (_initialSectionsLast)
+                    WriteInitialSections(context);
 
                 externalElement = WriteComposition(context, CodeSection.External, Element.Any);
             }

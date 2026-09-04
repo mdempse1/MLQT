@@ -1347,9 +1347,7 @@
                         library.ModelIds,
                         saveDirectory,
                         showAnnotations: true,
-                        oneOfEachSection: styleSettings.OneOfEachSection,
-                        importsFirst: styleSettings.ImportStatementsFirst,
-                        componentsBeforeClasses: styleSettings.ComponentsBeforeClasses,
+                        formatting: styleSettings.ToFormattingOptions(),
                         excludedModelIds: styleSettings.FormattingExcludedModels);
 
                     // Collect written files and directories
@@ -2766,9 +2764,7 @@
             return;
 
         // Capture settings once for thread safety
-        var oneOfEachSection = effectiveSettings.OneOfEachSection;
-        var importsFirst = effectiveSettings.ImportStatementsFirst;
-        var componentsBeforeClasses = effectiveSettings.ComponentsBeforeClasses;
+        var formatting = effectiveSettings.ToFormattingOptions();
 
         // Build list of files to process with their model nodes
         var filesToProcess = new List<(string FilePath, List<ModelNode> Models, ModelNode Owner)>();
@@ -2834,7 +2830,7 @@
 
                     var formatted = ModelicaPackageSaver.RenderFileSource(
                         fileSource, fileEntry.Owner.ParentModelName,
-                        oneOfEachSection, importsFirst, componentsBeforeClasses,
+                        formatting,
                         out var parserErrors);
 
                     // Reformatting invalid Modelica produces unreliable output, and this path overwrites
@@ -2861,9 +2857,7 @@
                             excludeClassDefinitions: false,
                             tokenStream: null,
                             classNamesToExclude: null,
-                            oneOfEachSection: oneOfEachSection,
-                            importsFirst: importsFirst,
-                            componentsBeforeClasses: componentsBeforeClasses);
+                            formatting: formatting);
                         visitor.Visit(modelTree);
                         modelNode.Definition.ModelicaCode = WithinClause.Strip(string.Join("\n", visitor.Code));
                     }

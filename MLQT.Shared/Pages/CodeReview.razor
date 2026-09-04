@@ -1,4 +1,4 @@
-﻿@using ModelicaParser.Helpers
+@using ModelicaParser.Helpers
 @using System.IO
 @using MLQT.Services.Checking
 @using System.Text.RegularExpressions
@@ -989,7 +989,7 @@
             var showAnnotations = _showAnnotations;
             // Rendering follows the rules of the repository the class belongs to, the same ones the
             // formatter would apply on save. There is no app-wide copy of these to fall back on.
-            var oneOfEachSection = StyleSettingsForModel(modelNode.Id)?.OneOfEachSection ?? false;
+            var formatting = StyleSettingsForModel(modelNode.Id)?.ToFormattingOptions() ?? FormattingOptions.None;
 
             // Render parse/format on a background thread. Display the code as soon as this
             // completes — crucially, do NOT gate code display on the VCS status check.
@@ -1011,7 +1011,7 @@
                     renderForCodeEditor: showHighlighted,
                     showAnnotations: showAnnotations,
                     excludeClassDefinitions: excludeClassDefs,
-                    oneOfEachSection: oneOfEachSection);
+                    formatting: formatting);
                 visitor.VisitStored_definition(parseTree);
                 var renderDuration = sw.ElapsedMilliseconds;
 

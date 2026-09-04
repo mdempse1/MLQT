@@ -9,12 +9,22 @@ Formatting behavior is controlled by the **Apply formatting rules** toggle in ea
 | Setting | Effect |
 |---------|--------|
 | **One of each section** | Ensures each section type (declarations, equations, algorithms) appears at most once |
-| **Import statements first** | Moves import statements to the top of the model |
+| **Import statements first** | Moves import statements to the top of the model, then `extends` clauses |
 | **Components before classes** | Sorts component declarations before nested class definitions |
+| **Initial equation/algorithm first** / **last** | Writes `initial equation` and `initial algorithm` blocks before, or after, the regular ones |
 
-These three settings are the only ones that change layout during formatting. When **One of each section** is enabled the formatter always emits initial-equation and initial-algorithm blocks before the regular sections.
+**One of each section is the master switch for layout.** With it off the formatter writes the class in
+source order and moves nothing at all, so the other three have no effect — enabling *Import statements
+first* on its own reorders nothing.
 
-> **Note:** The *Initial equation/algorithm first* and *Initial equation/algorithm last* options are **style-checking rules**, not formatting transforms — they only detect and report findings (see [Settings Reference](settings-reference.md)). Enabling them does not cause the formatter to move initial blocks.
+> **Formatting and checking agree about these.** Each row above is also a style rule, and the
+> formatter writes what the rule asks for. That was not always true of *Initial equation/algorithm
+> last*: the formatter used to write initial blocks first whatever the setting said, so a repository
+> that chose "last" had the finding reintroduced on every save and the rule could never be satisfied.
+> It now writes them where you asked.
+>
+> Because the two agree, a layout finding that survives formatting is reported as an **error** rather
+> than a warning — see [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
 
 If **Apply formatting rules** is disabled for a repository, MLQT will not modify any files in that repository during formatting operations.
 

@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Visitors;
 
 namespace ModelicaGraph;
 
@@ -39,6 +40,22 @@ public class StyleCheckingSettings
     public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// The layout the formatter should write with, for these settings.
+    ///
+    /// <para>The one place the rule switches are translated into renderer options, so the app, the
+    /// MCP server and the save path cannot disagree about what "formatted" means for a repository.
+    /// <see cref="ApplyFormattingRules"/> is deliberately not consulted: it decides <em>whether</em>
+    /// to reformat, which is the caller's question, not what the layout is.</para>
+    /// </summary>
+    public FormattingOptions ToFormattingOptions() => new(
+        OneOfEachSection: OneOfEachSection,
+        ImportsFirst: ImportStatementsFirst,
+        ComponentsBeforeClasses: ComponentsBeforeClasses,
+        // The two initial-section rules are mutually exclusive in the settings UI, so this reads
+        // "last if the repository asked for last, otherwise first".
+        InitialSectionsLast: InitialEQAlgoLast);
+
+    /// <summary>
     /// Resolves the configured severity for a rule id (Off when disabled/absent).
     ///
     /// <para>A <b>governed</b> rule resolves through its governor instead of through its own entry
@@ -54,8 +71,32 @@ public class StyleCheckingSettings
         if (RuleCatalog.GovernorOf(ruleId) is { } governor)
             return SeverityFor(governor);
 
-        return RuleSeverities.TryGetValue(ruleId, out var s) ? s : RuleSeverity.Off;
+        if (!RuleSeverities.TryGetValue(ruleId, out var stored))
+            return RuleSeverity.Off;
+
+        // A layout rule the formatter maintains is not judged at a level somebody typed: it is a
+        // warning while it is advice, and an error once the formatter is rewriting every class on save
+        // to satisfy it, because a violation that survives that is not a matter of taste.
+        return RuleCatalog.SeverityFollowsFormatter(ruleId)
+            ? (FormatterMaintainsLayout ? RuleSeverity.Error : RuleSeverity.Warning)
+            : stored;
     }
+
+    /// <summary>
+    /// True when saving a class rewrites its layout — which is what makes a surviving layout finding
+    /// an error rather than advice.
+    ///
+    /// <para>It takes <em>both</em> switches. <c>ApplyFormattingRules</c> turns the formatter on, but
+    /// <c>ModelicaRenderer</c> only reorders anything inside its one-of-each-section branch: with
+    /// <c>OneOfEachSection</c> off it writes the composition in source order and moves nothing, so
+    /// nothing is being maintained and Error would be claiming something untrue. The coverage
+    /// dimensions have used the same pair since they were written, for the same reason.</para>
+    ///
+    /// <para>Read straight from the map rather than through <see cref="IsRuleEnabled"/>: that would
+    /// call back into <see cref="SeverityFor"/> for a rule whose severity is what we are working out.</para>
+    /// </summary>
+    private bool FormatterMaintainsLayout =>
+        ApplyFormattingRules && RuleSeverities.ContainsKey(RuleIds.OneOfEachSection);
 
     /// <summary>
     /// Keys in <see cref="RuleSeverities"/> that this settings file cannot actually set: a rule

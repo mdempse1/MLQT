@@ -37,9 +37,10 @@ public class TestHelpers
             tokenStream, 
             classNamesToExclude: null, 
             maxLineLength: maxLineLength,
-            oneOfEachSection: onlyOneOfEachSection,
-            importsFirst: importsFirst==null ? onlyOneOfEachSection : importsFirst.Value,
-            componentsBeforeClasses: componentsBeforeClasses==null ? onlyOneOfEachSection : componentsBeforeClasses.Value);
+            formatting: new FormattingOptions(
+                OneOfEachSection: onlyOneOfEachSection,
+                ImportsFirst: importsFirst ?? onlyOneOfEachSection,
+                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection));
         visitor.Visit(parseTree);
 
         // Remove trailing empty lines from actual output
@@ -97,9 +98,10 @@ public class TestHelpers
             tokenStream,
             classNamesToExclude: null,
             maxLineLength: maxLineLength,
-            oneOfEachSection: onlyOneOfEachSection,
-            importsFirst: importsFirst ?? onlyOneOfEachSection,
-            componentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection);
+            formatting: new FormattingOptions(
+                OneOfEachSection: onlyOneOfEachSection,
+                ImportsFirst: importsFirst ?? onlyOneOfEachSection,
+                ComponentsBeforeClasses: componentsBeforeClasses ?? onlyOneOfEachSection));
         visitor.Visit(parseTree);
 
         var actualOutput = visitor.Code.ToList();

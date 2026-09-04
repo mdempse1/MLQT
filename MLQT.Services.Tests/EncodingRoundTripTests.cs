@@ -1,6 +1,7 @@
 using System.Text;
 using MLQT.Services.Helpers;
 using Xunit;
+using ModelicaParser.Visitors;
 
 namespace MLQT.Services.Tests;
 
@@ -65,8 +66,7 @@ public class EncodingRoundTripTests : IDisposable
 
         ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             service.CombinedGraph, library.ModelIds, Path.GetDirectoryName(libraryPath)!,
-            showAnnotations: true, oneOfEachSection: false,
-            importsFirst: false, componentsBeforeClasses: false);
+            showAnnotations: true, formatting: FormattingOptions.None);
 
         return Path.Combine(libraryPath, "package.mo");
     }

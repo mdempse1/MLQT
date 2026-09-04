@@ -80,17 +80,30 @@ public class CoverageDimensionsTests
         Assert.True(tracked.HasFlag(CoverageDimension.ClassDescription));
     }
 
+    /// <summary>
+    /// This used to assert the opposite, and the comment explained why: the renderer wrote initial
+    /// sections first whatever the setting said, so the formatter defeated this rule rather than
+    /// satisfying it, and hiding the number as "the formatter handles it" would have been a lie. The
+    /// renderer takes the convention now, so the dimension drops off with the other layout ones.
+    /// </summary>
     [Fact]
-    public void InitialSectionsLast_StaysTracked_BecauseTheFormatterDefeatsIt()
+    public void InitialSectionsLast_DropsOff_NowTheFormatterHonoursIt()
     {
-        // The renderer always writes initial sections first. Someone who asked for them last needs to
-        // see that number, not have it hidden as "the formatter handles it".
         var settings = new StyleCheckingSettings
         {
             ApplyFormattingRules = true,
             OneOfEachSection = true,
             InitialEQAlgoLast = true,
         };
+
+        Assert.False(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.InitialSectionsLast));
+    }
+
+    [Fact]
+    public void InitialSectionsLast_StaysTracked_WhenTheFormatterIsNotRunning()
+    {
+        // Nothing is rewriting the class, so the gap is real debt and worth measuring.
+        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
 
         Assert.True(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.InitialSectionsLast));
     }

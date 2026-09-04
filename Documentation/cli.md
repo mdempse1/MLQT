@@ -66,10 +66,15 @@ copy of a library has that another does not, and `mlqt hook`
 | `1` | Findings at or above `--fail-on` |
 | `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
-Because the built-in **style** rules report at **warning** severity, the default `--fail-on error`
-is effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for
-a strict gate, or `--fail-on off` to never fail. **Diagnostics are the exception** — they are
-errors and fail even the default gate; see below.
+Because the built-in **style** rules report at **warning** severity by default, `--fail-on error` is
+effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for a
+strict gate, or `--fail-on off` to never fail.
+
+Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
+[below](#diagnostics). The other is a **layout rule the formatter is maintaining**: with
+`applyFormattingRules` and `MLQT.Style.OneOfEachSection` both on, MLQT rewrites every class on save to
+satisfy the ordering rules, so a violation that survives that means something is wrong rather than
+untidy. See [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
 
 ## Resolving references into other libraries
 

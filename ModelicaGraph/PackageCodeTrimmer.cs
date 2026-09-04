@@ -93,9 +93,7 @@ public static class PackageCodeTrimmer
                     excludeClassDefinitions: false,
                     tokenStream: null,
                     classNamesToExclude: standaloneNames,
-                    oneOfEachSection: false,
-                    importsFirst: false,
-                    componentsBeforeClasses: false);
+                    formatting: FormattingOptions.None);
                 visitor.VisitStored_definition(parseTree);
                 var trimmedCode = string.Join("\n", visitor.Code);
 

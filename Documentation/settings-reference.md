@@ -145,7 +145,31 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 | **Imports first, extends at top** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
 | **Components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
 | **Initial equation/algorithm first** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
-| **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". |
+| **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
+
+#### How severely these are reported
+
+The layout rules above are the only ones whose **level is worked out rather than chosen**. They are
+switches, not Off/Info/Warning/Error rows, and the level follows what the formatter is doing:
+
+| Switch | Apply formatting rules | Reported as |
+|--------|------------------------|-------------|
+| Off | — | nothing — the rule does not run |
+| On | Off | **Warning** |
+| On | On (with **One of each section** on) | **Error** |
+
+The reasoning is that those two situations mean genuinely different things. With formatting off, the
+rule is advice about how code should be laid out, and advice is a warning. With formatting on, MLQT
+rewrites the class on every save *specifically to satisfy this rule* — so a violation that survives
+is not a matter of taste. Something is wrong: a file saved outside MLQT, a class on the formatting
+exclusion list that nobody remembers adding. That deserves to stop a build.
+
+**One of each section has to be on as well**, because it is the master switch for reordering: with it
+off the formatter writes the class in source order and moves nothing, so nothing is being maintained
+and an error would be claiming otherwise.
+
+A level written against one of these rules in `ruleSeverities` records only that the rule is on — the
+value itself is not read.
 
 > **One switch, two rule ids.** `MLQT.Style.ExtendsAtTop` reports a misplaced `extends` clause and
 > `MLQT.Style.ImportStatementsFirst` a misplaced `import`, but they are one convention and one

@@ -62,12 +62,18 @@ public static class CoverageDimensions
     /// What the formatter rewrites, and therefore what is not worth reporting when it runs. The
     /// renderer only reorders inside its one-of-each-section branch, and only moves imports when told
     /// to, so with that rule off the formatter leaves layout alone and the dimensions stay on the
-    /// report. Initial sections are always written first, so <c>InitialSectionsLast</c> is not in
-    /// here: the formatter does not satisfy it (it defeats it, which the report should show).
+    /// report.
+    ///
+    /// <para><c>InitialSectionsLast</c> is in here now. It used not to be, because the renderer wrote
+    /// initial sections first whatever the setting said — so the formatter <em>defeated</em> that rule
+    /// rather than satisfying it, and the report had to keep showing a gap that would be reintroduced
+    /// on the next save. The renderer takes the convention now
+    /// (<c>FormattingOptions.InitialSectionsLast</c>), so the dimension belongs with the others.</para>
     /// </summary>
     private const CoverageDimension FormatterRewrites =
         CoverageDimension.ImportsFirst | CoverageDimension.ExtendsAtTop
-        | CoverageDimension.OneOfEachSection | CoverageDimension.InitialSectionsFirst;
+        | CoverageDimension.OneOfEachSection | CoverageDimension.InitialSectionsFirst
+        | CoverageDimension.InitialSectionsLast;
 
     /// <summary>
     /// The dimensions to measure and report for a class in a repository configured this way.

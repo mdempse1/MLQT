@@ -27,7 +27,7 @@ public class ModelicaPackageSaver
     /// <param name="rootDirectory">The root directory to save to (parent of library directory)</param>
     /// <param name="showAnnotations">Whether to include annotations in the output</param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses, IReadOnlyList<string>? excludedModelIds = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, IReadOnlyList<string>? excludedModelIds = null)
     {
         var result = new SaveResult();
 
@@ -96,7 +96,7 @@ public class ModelicaPackageSaver
         excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
         var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
         var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            oneOfEachSection, importsFirst, componentsBeforeClasses, excludedOrNull);
+            formatting, excludedOrNull);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
@@ -128,7 +128,7 @@ public class ModelicaPackageSaver
     /// from its current <c>ModelicaCode</c> so a caller can mutate the source first.
     /// </para>
     /// </summary>
-    public static string RenderFileOwnerModel(ModelNode fileOwner, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses)
+    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting)
     {
         // The stored ModelicaCode is the extracted class body without a 'within' clause.
         // The file written to disk must carry the within clause so that, when the library is
@@ -141,7 +141,7 @@ public class ModelicaPackageSaver
         var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
         fileOwner.Definition.ParsedCode = parseTree;
 
-        return RenderStoredDefinition(parseTree, oneOfEachSection, importsFirst, componentsBeforeClasses);
+        return RenderStoredDefinition(parseTree, formatting);
     }
 
     /// <summary>
@@ -162,8 +162,8 @@ public class ModelicaPackageSaver
     /// <paramref name="fileSource"/> carries no within clause of its own. Null or empty for a
     /// top-level library.
     /// </param>
-    public static string RenderFileSource(string fileSource, string? withinParent, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses)
-        => RenderFileSource(fileSource, withinParent, oneOfEachSection, importsFirst, componentsBeforeClasses, out _);
+    public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting)
+        => RenderFileSource(fileSource, withinParent, formatting, out _);
 
     /// <inheritdoc cref="RenderFileSource(string, string?, bool, bool, bool)"/>
     /// <param name="parserErrors">
@@ -171,17 +171,17 @@ public class ModelicaPackageSaver
     /// must check this and leave the file alone when it is non-empty: the renderer will still
     /// produce output for malformed input, but that output is not a faithful copy of the file.
     /// </param>
-    public static string RenderFileSource(string fileSource, string? withinParent, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses,
+    public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting,
         out IReadOnlyList<ParserError> parserErrors)
     {
         var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
         parserErrors = errors;
-        return RenderStoredDefinition(parseTree, oneOfEachSection, importsFirst, componentsBeforeClasses);
+        return RenderStoredDefinition(parseTree, formatting);
     }
 
     /// <summary>Renders a parsed stored_definition with the standard save-time renderer settings.</summary>
     private static string RenderStoredDefinition(modelicaParser.Stored_definitionContext parseTree,
-        bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses)
+        FormattingOptions formatting)
     {
         var visitor = new ModelicaRenderer(
             renderForCodeEditor: false,
@@ -189,9 +189,7 @@ public class ModelicaPackageSaver
             excludeClassDefinitions: false,
             tokenStream: null,
             classNamesToExclude: null,
-            oneOfEachSection: oneOfEachSection,
-            importsFirst: importsFirst,
-            componentsBeforeClasses: componentsBeforeClasses);
+            formatting: formatting);
         visitor.VisitStored_definition(parseTree);
 
         var code = string.Join("\n", visitor.Code);
@@ -313,9 +311,7 @@ public class ModelicaPackageSaver
         List<ModelNode> allModels,
         Dictionary<string, List<ModelNode>> childrenByParent,
         Dictionary<string, HashSet<string>> standaloneChildren,
-        bool oneOfEachSection,
-        bool importsFirst,
-        bool componentsBeforeClasses,
+        FormattingOptions formatting,
         HashSet<string>? excludedModelIds = null)
     {
         const int batchSize = 500;
@@ -360,9 +356,7 @@ public class ModelicaPackageSaver
                         excludeClassDefinitions: false,
                         tokenStream: null,
                         classNamesToExclude: classNamesToExclude,
-                        oneOfEachSection: oneOfEachSection,
-                        importsFirst: importsFirst,
-                        componentsBeforeClasses: componentsBeforeClasses);
+                        formatting: formatting);
                     visitor.VisitStored_definition(model.Definition.ParsedCode);
                     var code = string.Join("\n", visitor.Code);
 

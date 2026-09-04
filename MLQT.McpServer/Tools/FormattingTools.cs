@@ -71,9 +71,10 @@ public sealed class FormattingTools
                 tokenStream: tokenStream,
                 classNamesToExclude: null,
                 maxLineLength: maxLineLength,
-                oneOfEachSection: oneOfEachSection,
-                importsFirst: importStatementsFirst,
-                componentsBeforeClasses: componentsBeforeClasses);
+                formatting: new FormattingOptions(
+                    OneOfEachSection: oneOfEachSection,
+                    ImportsFirst: importStatementsFirst,
+                    ComponentsBeforeClasses: componentsBeforeClasses));
             renderer.VisitStored_definition(parseTree);
             var formatted = string.Join("\n", renderer.Code);
 
@@ -152,7 +153,11 @@ public sealed class FormattingTools
         try
         {
             rendered = ModelicaPackageSaver.RenderFileOwnerModel(
-                owner, oneOfEachSection, importStatementsFirst, componentsBeforeClasses);
+                owner,
+                new FormattingOptions(
+                    OneOfEachSection: oneOfEachSection,
+                    ImportsFirst: importStatementsFirst,
+                    ComponentsBeforeClasses: componentsBeforeClasses));
         }
         catch (Exception ex)
         {

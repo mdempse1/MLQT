@@ -5,6 +5,7 @@ using MLQT.Services;
 using MLQT.Services.Checking;
 using MLQT.Services.Helpers;
 using Xunit;
+using ModelicaParser.Visitors;
 
 namespace MLQT.Services.Tests.ExternalDocs;
 
@@ -284,8 +285,7 @@ public class EncryptedLibraryEndToEndTests : IDisposable
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
                 service.CombinedGraph, vendor.ModelIds, output,
-                showAnnotations: true, oneOfEachSection: false, importsFirst: false,
-                componentsBeforeClasses: false));
+                showAnnotations: true, formatting: FormattingOptions.None));
 
         Assert.Contains("encrypted", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(Directory.GetFiles(output, "*", SearchOption.AllDirectories));
