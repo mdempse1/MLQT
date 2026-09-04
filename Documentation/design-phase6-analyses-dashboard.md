@@ -1,6 +1,6 @@
 # Design Note — Phase 6: Wave-1 analyses + metrics dashboard
 
-> **Status: ESSENTIALLY COMPLETE.** All six Wave-1 analyses ship (duplicate decl/import, missing-units,
+> **Status: COMPLETE.** All six Wave-1 analyses ship (duplicate decl/import, missing-units,
 > unused imports, unused protected members, unused classes, `uses` hygiene, `package.order`,
 > inherited-member shadowing), plus the graph-analyzer substrate, the shared resolver, the metrics
 > dashboard with SI-aware coverage + inherited icons, and a coverage-trend snapshot store — wired
@@ -64,11 +64,13 @@
 > members, resolver promotion and shadowing, the "possibly unused API" Info case, graph analyses on
 > GUI and MCP (and on incremental GUI re-checks), the data-driven settings UI (6b) with the
 > hand-written toggles migrated onto it, the dashboard (6e) and the coverage trend (6f) all shipped.
-> One item did not: **SI-typed missing-unit resolution**.
-> The Unit *coverage dimension* resolves alias and SI type chains through
-> `UnitResolver`, but `MLQT.Units.MissingUnit` still flags plain `Real` only, so the dashboard can
-> show a gap no finding names. Tracked as B5 in [roadmap.md](roadmap.md), "Backlog — finishing
-> phases 1–6".
+> One item lagged and has since landed: **SI-typed missing-unit resolution** (B5, 2026-09-03). The
+> Unit coverage dimension resolved alias and SI type chains through `UnitResolver` while
+> `MLQT.Units.MissingUnit` flagged plain `Real` only, so the dashboard could show a gap no finding
+> named. The rule now takes the same `UnitResolver` lookup the dimension uses
+> (`StyleChecking.CreateUnitLookup`), and the dimension's compliance is *defined* as "the rule does
+> not flag it", so the two cannot drift apart again. Without a graph — a snippet check — the rule
+> still judges plain `Real` only, which is all it can honestly say.
 >
 > **Work since (2026-08-16 → 2026-09-01), all in this phase's surface area:** encrypted-library class
 > recovery feeding the reported set and the coverage denominators

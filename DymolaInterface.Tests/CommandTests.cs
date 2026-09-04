@@ -76,17 +76,14 @@ public class CommandTests
         await _fixture.EnsureDymolaStartedAsync();
         var tempDir = Path.GetTempPath();
 
-        // Act - cd(dir) in Dymola returns a Boolean on success, which the
-        // string helper normalises to an empty string. We simply verify the
-        // call completes and the return value is non-null (even if empty).
+        // Act - cd(dir) changes Dymola's working directory; cd() with no argument queries it.
         var changeResult = await _fixture.Dymola.CdAsync(tempDir);
         var queryResult = await _fixture.Dymola.CdAsync();
 
-        // Assert - both calls complete without throwing. The returned strings
-        // may be empty depending on whether Dymola reports cd() as a string or
-        // a Boolean; we don't assert on the contents.
-        Assert.NotNull(changeResult);
-        Assert.NotNull(queryResult);
+        // Assert - cd into a directory that exists succeeds, and so does the query form. Both return
+        // bool, so the NotNull that used to stand here asserted nothing at all.
+        Assert.True(changeResult);
+        Assert.True(queryResult);
     }
 
     [Fact]

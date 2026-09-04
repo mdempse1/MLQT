@@ -1193,8 +1193,10 @@ end TestPkg;
         await Task.WhenAll(tasks);
 
         Assert.True(service.CombinedGraph.DependenciesAnalyzed);
-        // Every caller that started while a run was in flight got that same run back.
-        Assert.Single(tasks.Where(t => !ReferenceEquals(t, Task.CompletedTask)).Distinct());
+        // Every caller that started while a run was in flight got that same run back. Discarded
+        // explicitly: Assert.Single returns the element it found, and letting a Task fall out of an
+        // expression statement is a CS4014 the compiler is right to warn about.
+        _ = Assert.Single(tasks.Where(t => !ReferenceEquals(t, Task.CompletedTask)).Distinct());
     }
 
     [Fact]

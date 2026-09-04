@@ -81,6 +81,73 @@ public class GraphAnalysisRunnerTests
     }
 
     [Fact]
+    public void ADiagnosticIsNeverSuppressed_EvenByAWildcard()
+    {
+        // RuleIds.IsDiagnostic is the set that says "the results you are reading are incomplete", and
+        // an annotation that could hide one would hide the fact that the total cannot be trusted.
+        // This was the only path on which a diagnostic could be waived, so the same
+        // MLQT.Check.Failed was waivable or not depending on which pass had produced it.
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Throws"] = RuleSeverity.Warning;
+        var code = "model M\n  Real x;\n  annotation(__MLQT(suppress=\"*\"));\nend M;";
+        var (_, ctx) = Setup("M", code, settings);
+
+        var result = GraphAnalysisRunner.Run(
+            ctx, new IGraphAnalyzer[] { new ThrowingAnalyzer() }, honorSuppressions: true);
+
+        var finding = Assert.Single(result);
+        Assert.Equal(ModelicaParser.StyleRules.RuleIds.CheckFailed, finding.RuleId);
+    }
+
+    [Fact]
+    public void AnExternalStub_IsNotAnalysed()
+    {
+        // A class recovered from an encrypted library's help HTML has no source of its own — what it
+        // has is MLQT's synthesized declaration. LibraryCheckSession filtered stubs out before
+        // building this context and the GUI built its own, so the app analysed them and the CLI did
+        // not; the filter belongs here, where every surface goes through it.
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Stub"] = RuleSeverity.Warning;
+
+        var graph = new DirectedGraph();
+        var stubNode = new ModelNode("Vendor.Cell", "Cell", "model Cell end Cell;") { IsExternalStub = true };
+        graph.AddNode(stubNode);
+        var ctx = new GraphAnalysisContext(graph, settings, new List<ModelNode> { stubNode });
+
+        // The analyzer is handed no models at all, so there is nothing it could report about one.
+        Assert.Empty(GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ModelCountingAnalyzer() }));
+    }
+
+    /// <summary>Reports one finding per model it is given, so a test can see what reached it.</summary>
+    private sealed class ModelCountingAnalyzer : IGraphAnalyzer
+    {
+        public IReadOnlyList<string> RuleIds => new[] { "MLQT.Test.Stub" };
+        public IEnumerable<Finding> Analyze(GraphAnalysisContext context) =>
+            context.Models.Select(m => new Finding
+            {
+                RuleId = "MLQT.Test.Stub", ModelId = m.Id, Message = "seen"
+            });
+    }
+
+    [Fact]
+    public void AnOrdinaryClassBesideAStub_IsStillAnalysed()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.RuleSeverities["MLQT.Test.Stub"] = RuleSeverity.Warning;
+
+        var graph = new DirectedGraph();
+        var stubNode = new ModelNode("Vendor.Cell", "Cell", "model Cell end Cell;") { IsExternalStub = true };
+        var ours = new ModelNode("Ours.M", "M", "model M end M;");
+        graph.AddNode(stubNode);
+        graph.AddNode(ours);
+        var ctx = new GraphAnalysisContext(graph, settings, new List<ModelNode> { stubNode, ours });
+
+        var result = GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ModelCountingAnalyzer() });
+
+        Assert.Equal(new[] { "Ours.M" }, result.Select(f => f.ModelId));
+    }
+
+    [Fact]
     public void BuiltInList_IsEmpty_ForNow_SoRunIsNoOp()
     {
         var (_, ctx) = Setup("M", "model M\n  Real x;\nend M;", new StyleCheckingSettings());

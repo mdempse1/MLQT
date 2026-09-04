@@ -120,9 +120,16 @@ toggle and the "Changes vs baseline" switch. That is deliberate: the usual reaso
 compare against a CI run, and an export that quietly honoured the on-screen filters would look like
 evidence while reproducing the filter as a difference.
 
-Each entry carries the same fields, with the same names, as the CLI's `--format json` findings
-array — `RuleId`, `Severity`, `Status`, `Model`, `Element`, `Line`, `Message`, `Fingerprint`,
-`File` — so the two can be compared directly:
+Each entry carries the same fields, with the same names *and the same meanings*, as the CLI's
+`--format json` findings array — `RuleId`, `Severity`, `Status`, `Model`, `Element`, `Line`,
+`ModelLine`, `Message`, `Fingerprint`, `File` — so the two can be compared directly. Two of them are
+worth knowing about, because they are the ones that make a comparison meaningful:
+
+- **`Line` is the line in the file; `ModelLine` is the line within the class.** They differ, often by
+  hundreds, for a class stored inside a `package.mo`. The findings table on screen shows `ModelLine`,
+  because that is what the code viewer beside it is numbering.
+- **`File` is relative to the library the class belongs to**, with forward slashes — the same
+  convention `mlqt check` uses for the library it was pointed at.
 
 ```powershell
 mlqt check .\MyLibrary --format json --out cli.json

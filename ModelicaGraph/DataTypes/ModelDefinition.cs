@@ -18,9 +18,17 @@ public class ModelDefinition
     /// <summary>
     /// The Modelica source code for this model.
     ///
-    /// <para>Replacing it drops anything read from the old source — the parse tree's own staleness
-    /// is already handled by <see cref="EnsureParsed"/>, while <see cref="Coverage"/> and
-    /// <see cref="Suppressions"/> would otherwise describe code that is no longer here.</para>
+    /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
+    /// <see cref="Coverage"/> and <see cref="Suppressions"/> all describe code that is no longer
+    /// here.</para>
+    ///
+    /// <para>The tree is on that list, and the comment here used to say it was not — that
+    /// <see cref="EnsureParsed"/> handled its own staleness. It does not: it returns
+    /// <see cref="ParsedCode"/> whenever it is non-null and never looks at the source. So a caller
+    /// replacing the source while a tree was live got the old tree back, and the suppressions cleared
+    /// on the line above were then rebuilt from it — undoing the clearing in the same setter that did
+    /// it. Every current caller nulls the tree itself or never had one, which is exactly why the
+    /// comment would have gone on being believed.</para>
     /// </summary>
     public string ModelicaCode
     {
@@ -28,6 +36,7 @@ public class ModelDefinition
         set
         {
             _modelicaCode = value;
+            ParsedCode = null;
             Coverage = null;
             Suppressions = null;
         }

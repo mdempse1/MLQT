@@ -4,6 +4,7 @@ using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Helpers;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using Xunit;
 
 namespace MLQT.Services.Tests;
@@ -111,6 +112,103 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         lock (found)
             Assert.NotEmpty(found);
         Assert.All(h.Libraries.GetAllModels(), m => Assert.NotNull(m.Definition.Coverage));
+    }
+
+    // ---- every entry point, not just the one that had the guard (B66) --------------------------
+
+    [Fact]
+    public async Task AReferenceRepository_IsNotCheckedByTheSingleRepositoryEntryPoint()
+    {
+        // The path the Add Repository dialog takes, and the one "Apply" in repository settings takes.
+        // Neither had a reference-only guard at all: a repository the user ticked Reference only in
+        // that very dialog was style-checked the moment it finished loading, and stayed quiet only
+        // while the vendor's own .mlqt/settings.json enabled nothing.
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        h.Checking.StartBackgroundChecking(added.Repository);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task AReferenceRepository_IsNotCheckedByTheAsyncSingleRepositoryEntryPoint()
+    {
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.StartBackgroundCheckingAsync(added.Repository);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task AReferenceRepository_HasNoWholeGraphAnalysesRunOnItEither()
+    {
+        // The graph analyses had no guard on any path — including inside the one entry point that
+        // carefully skipped reference-only repositories for the per-class workers, which handed the
+        // unfiltered list straight to the graph pass. "It is not style-checked" held for the rules
+        // that run per class and not for the six that run over the graph.
+        //
+        // PackageOrder is the one to use: it needs no dependency analysis, and the fixture's
+        // package.order lists only A while the package also holds nothing else — so a run that
+        // happens produces findings and a run that does not produces none.
+        var h = Build();
+        var path = WriteLibrary("Vendor");
+        File.WriteAllText(Path.Combine(path, "P", "package.order"), "A\nGone\n");
+
+        var added = await h.Repositories.AddRepositoryAsync(path, startMonitoring: false, isReferenceOnly: true);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings();
+        added.Repository.StyleSettings.RuleSeverities[RuleIds.PackageOrder] = RuleSeverity.Warning;
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.RunGraphAnalysesForRepositoriesAsync([added.Repository]);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Empty(found);
+    }
+
+    [Fact]
+    public async Task ARepositoryTheTeamMaintains_DoesGetTheWholeGraphAnalyses()
+    {
+        // The other half: the guard must not be the reason nothing ran.
+        var h = Build();
+        var path = WriteLibrary("Ours");
+        File.WriteAllText(Path.Combine(path, "P", "package.order"), "A\nGone\n");
+
+        var added = await h.Repositories.AddRepositoryAsync(path, startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new StyleCheckingSettings();
+        added.Repository.StyleSettings.RuleSeverities[RuleIds.PackageOrder] = RuleSeverity.Warning;
+
+        var found = new List<LogMessage>();
+        h.Checking.OnFindingsFound += v => { lock (found) found.AddRange(v); };
+
+        await h.Checking.RunGraphAnalysesForRepositoriesAsync([added.Repository]);
+        await h.Checking.WaitForCompletionAsync();
+
+        lock (found)
+            Assert.Contains(found, m => m.RuleId == RuleIds.PackageOrder);
     }
 
     [Fact]

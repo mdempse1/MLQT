@@ -126,6 +126,27 @@ public class StyleCheckingService : IStyleCheckingService
     /// <summary>The generation of the run currently owning a repository's findings.</summary>
     private int GenerationFor(string repositoryId) => _repositoryGenerations.GetValueOrDefault(repositoryId);
 
+    /// <summary>
+    /// Code the user has no say over is loaded so references resolve, and reported on never: findings
+    /// against a vendor's library are findings nobody can act on, which is what
+    /// <c>settings-reference.md</c> promises in as many words.
+    ///
+    /// <para>Here rather than at one entry point because only one of the four had it. Adding a
+    /// repository with <b>Reference only</b> ticked went straight into
+    /// <see cref="StartBackgroundChecking"/>, which had no guard at all, and stayed quiet only while
+    /// the vendor's own <c>.mlqt/settings.json</c> enabled nothing — which is not a property of the
+    /// flag. The whole-graph analyses had no guard on any path; see
+    /// <see cref="StartGraphAnalyses"/>.</para>
+    /// </summary>
+    private static bool SkipBecauseReferenceOnly(Repository repository)
+    {
+        if (!repository.IsReferenceOnly)
+            return false;
+
+        LogProcessStart("StyleCheckingService", $"Skipping {repository.Name} — reference only");
+        return true;
+    }
+
     /// <inheritdoc/>
     public event Action<bool>? OnProgressChanged;
 
@@ -313,6 +334,12 @@ public class StyleCheckingService : IStyleCheckingService
         CancelWorkFor(repository);
         _stopRequested = false;
 
+        if (SkipBecauseReferenceOnly(repository))
+        {
+            SignalCompleteIfNoWorkers();
+            return;
+        }
+
         // A repository is loaded with settings of its own; this is only for one that somehow arrived
         // without any, and the answer is the same defaults a new repository gets.
         repository.StyleSettings ??= new StyleCheckingSettings();
@@ -366,6 +393,12 @@ public class StyleCheckingService : IStyleCheckingService
     {
         CancelWorkFor(repository);
         _stopRequested = false;
+
+        if (SkipBecauseReferenceOnly(repository))
+        {
+            SignalCompleteIfNoWorkers();
+            return;
+        }
 
         repository.StyleSettings ??= new StyleCheckingSettings();
 
@@ -423,13 +456,8 @@ public class StyleCheckingService : IStyleCheckingService
 
         foreach (var repository in repositories)
         {
-            // Code the user has no say over is loaded so references resolve, and reported on never:
-            // findings against a vendor's library are findings nobody can act on.
-            if (repository.IsReferenceOnly)
-            {
-                LogProcessStart("StyleCheckingService", $"Skipping {repository.Name} — reference only");
+            if (SkipBecauseReferenceOnly(repository))
                 continue;
-            }
 
             repository.StyleSettings ??= new StyleCheckingSettings();
 
@@ -620,12 +648,21 @@ public class StyleCheckingService : IStyleCheckingService
     /// it. Background callers ignore it.</returns>
     private Task StartGraphAnalyses(IReadOnlyList<Repository> repositories, bool removeStaleFirst)
     {
+        // The one place the whole-graph analyses are started, and therefore the one place to say that
+        // a reference-only repository is not analysed either. Every caller used to hand the list
+        // through unfiltered — including the one entry point that carefully skipped reference-only
+        // repositories for the per-model workers — so "it is not style-checked" held for the rules
+        // that run per class and not for the six that run over the graph.
+        var checkable = repositories.Where(r => !r.IsReferenceOnly).ToList();
+        if (checkable.Count == 0)
+            return Task.CompletedTask;
+
         Interlocked.Increment(ref _graphAnalysesRunning);
         return Task.Run(async () =>
         {
             try
             {
-                await RunGraphAnalysesAsync(repositories, removeStaleFirst);
+                await RunGraphAnalysesAsync(checkable, removeStaleFirst);
             }
             finally
             {

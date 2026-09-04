@@ -46,10 +46,12 @@ count. A change belongs in the primitive, not in one tool's path.
 | `LibraryCheckSession` | A whole-library run: load, trim, check, and the whole-graph analyses, in the order they depend on each other |
 | `Baseline` / `FindingClassifier` | The accepted-debt file and the new / touched / accepted classification the ratchet gates on |
 | `ChangedModelResolver` | Which classes a VCS ref touched, for `--changed-from` |
+| `ChangedLineResolver` | Which *lines* a change touched, for the pull-request review comments. Git only — a line-level diff is `ILineLevelDiff`, which SVN does not implement |
+| `ClassLocation` | Where a class starts in its file. Findings carry class-relative lines; every report that names a file maps through here, so they all mean the same line |
 | `DictionaryScope` | Which repository's accepted spellings apply to a class |
 | `SpellCheckerFactory` / `DictionaryAvailability` | Builds a spell checker for the chosen languages, and says so when the machine has no dictionary for one |
 | `ReferenceOnlyScope` | The classes loaded only so references resolve, which are never reported on |
-| `ParserErrorReporter` | Parse failures as findings, with real file line numbers |
+| `ParserErrorReporter` | Parse failures as findings. The parser reads whole files, so its lines are the file's; these are converted to class-relative ones like every other finding, and mapped back through `ClassLocation` by whatever reports them |
 | `UsesVersionChecker` / `VcsStamp` | Dependency version mismatches, and the revision a report was produced at |
 
 ### Static Helpers

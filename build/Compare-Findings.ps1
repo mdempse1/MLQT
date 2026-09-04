@@ -8,11 +8,16 @@
     has that the other does not, grouped by rule and by library — because the difference almost
     always clusters, and the cluster names the cause.
 
-    Both files use the same field names, so no translation is needed between them.
+    Both files use the same field names AND the same meanings, so no translation is needed between
+    them. That was not always true, which is why this script checks: 'Line' is the line in the FILE
+    in both, and 'ModelLine' the line within the class. For a while the CLI reported the first and
+    the app the second, so pairing on 'Line' reported nearly every finding as exclusive to both
+    sides - a difference with no cause to find. An app export that predates the fix has no
+    'ModelLine' field, and this script says so rather than producing that diff again.
 
     Produce the two inputs with:
         mlqt check <library> --format json --out cli.json
-        Code Review tab -> the download button in the issues toolbar
+        Code Review tab -> the download button in the findings toolbar
 
     Needs nothing installed: PowerShell reads JSON natively.
 
@@ -20,13 +25,13 @@
     The CLI's --format json output.
 
 .PARAMETER GuiJson
-    The app's exported issue list (mlqt-issues-<timestamp>.json).
+    The app's exported finding list (mlqt-findings-<timestamp>.json).
 
 .PARAMETER Detail
     Also list the individual differing issues, not just the counts per rule.
 
 .EXAMPLE
-    .\build\Compare-Findings.ps1 -CliJson .\cli.json -GuiJson .\mlqt-issues-20260824-141530.json
+    .\build\Compare-Findings.ps1 -CliJson .\cli.json -GuiJson .\mlqt-findings-20260824-141530.json
 
 .EXAMPLE
     .\build\Compare-Findings.ps1 cli.json gui.json -Detail | Out-File diff.txt
@@ -55,9 +60,10 @@ function Read-Findings([string] $path, [string] $label) {
     return ,@($document.findings)
 }
 
-# Model + rule + line, which is what identifies "the same issue" across the two tools. The
-# fingerprint would be stricter, but it moves when a file is reformatted and would then report every
-# issue as different for a reason that has nothing to do with the tools disagreeing.
+# Model + rule + line, which is what identifies "the same finding" across the two tools. 'Line' is
+# the line in the FILE on both sides - see the guard below, which refuses an export from before that
+# was true. The fingerprint would be stricter, but it moves when a file is reformatted and would then
+# report every finding as different for a reason that has nothing to do with the tools disagreeing.
 function Get-Key($finding) { "$($finding.Model)|$($finding.RuleId)|$($finding.Line)" }
 
 function New-KeySet($findings) {
@@ -68,6 +74,16 @@ function New-KeySet($findings) {
 
 $cli = Read-Findings $CliJson 'CLI'
 $gui = Read-Findings $GuiJson 'App'
+
+# An app export written before 'Line' became the file line has no 'ModelLine' beside it. Pairing on
+# 'Line' would then compare a file line against a class-relative one and report almost everything as
+# exclusive to both sides - a difference whose cause is not in either library. Refuse rather than
+# print that: it is indistinguishable from a real disagreement, which is the whole point of the tool.
+if ($gui.Count -gt 0 -and $gui[0].PSObject.Properties.Name -notcontains 'ModelLine') {
+    throw ("$GuiJson was exported by a version of MLQT whose 'Line' is the line within the class, " +
+           "not the line in the file, so it cannot be compared with the CLI's output. Re-export the " +
+           "finding list from the Code Review tab.")
+}
 
 $cliKeys = New-KeySet $cli
 $guiKeys = New-KeySet $gui

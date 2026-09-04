@@ -1,6 +1,7 @@
 @using ModelicaGraph.Analysis
 @using RevisionControl
 @using ModelicaGraph.DataTypes
+@using ModelicaParser.StyleRules
 @using MLQT.Services.Helpers
 @using MudBlazor
 @implements IDisposable
@@ -403,10 +404,26 @@
     }
 
     private int CountFindingsForScope(string scope)
-        => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && InScope(m.ModelName, scope));
+        => CodeReviewService.LogMessages.Count(m => IsStyleDebt(m) && InScope(m.ModelName, scope));
 
     private int CountFindingsForModels(HashSet<string> modelIds)
-        => CodeReviewService.LogMessages.Count(m => m.Source == "StyleChecking" && modelIds.Contains(m.ModelName));
+        => CodeReviewService.LogMessages.Count(m => IsStyleDebt(m) && modelIds.Contains(m.ModelName));
+
+    /// <summary>
+    /// What the trend's finding count is about: style debt, not diagnostics.
+    ///
+    /// <para>The source check alone excludes the two parse diagnostics, which are projected as
+    /// "Parser" messages — and lets <c>MLQT.Check.Failed</c> through, because
+    /// <see cref="Finding.ToLogMessage"/> gives every other finding the style source. That is the
+    /// exact id B26 moved out of the Parse category for looking like a parse error when it is not.
+    /// <see cref="RuleIds.IsDiagnostic"/> is the question actually being asked — is this a diagnostic
+    /// rather than a rule — and its own summary says none of them counts as style debt in the metrics
+    /// trend. <c>MetricsRecorder</c> in the CLI has always asked it that way, and since the CLI and
+    /// this page write the same <c>.mlqt/metrics-history.json</c>, one trend was stepping up and down
+    /// according to which of them recorded the point.</para>
+    /// </summary>
+    private static bool IsStyleDebt(LogMessage m)
+        => m.Source == "StyleChecking" && !(m.RuleId is { } id && RuleIds.IsDiagnostic(id));
 
     // A finding count is only worth recording once the full analysis has finished; while it is still
     // running (or has never run) the number is partial, so store null rather than a misleading figure.

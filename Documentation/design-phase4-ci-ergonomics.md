@@ -173,9 +173,14 @@ new `IFindingFormatter` implementations + switch arms in `CheckRunner`. No new o
   case flagged in Phase 1; contained to `StyleCheckingSettings` with a dedicated test.
 - **Risk:** SARIF schema conformance — validate output against the 2.1.0 shape in tests; keep the
   document minimal (driver + rules + results) rather than exhaustive.
-  **Not discharged (found 2026-09-03, backlog B8/B9):** the tests assert the shape *we* expect, not
-  conformance to the schema, and "minimal" went one field too far — the rules carry no
-  `fullDescription` or `help`, which is what GitHub puts on the alert page.
+  **Found not discharged (2026-09-03, backlog B8/B9), and since closed:** the tests asserted the shape
+  *we* expect, not conformance to the schema, and "minimal" had gone one field too far — the rules
+  carried no `fullDescription` or `help`, which is what GitHub puts on the alert page. Both are fixed.
+  `build/validate-sarif.ps1` generates a report from the committed fixture and validates it with
+  `Sarif.Multitool`, failing on warnings as well as errors, and `build-and-test.yml` runs it on every
+  push; every rule now carries `shortDescription`, `fullDescription`, `help.text`, `help.markdown`, a
+  `helpUri` and its category as a tag, and the smoke script checks each of them. A diagnostic gets its
+  own alert body pointing at `cli.md#diagnostics` rather than the settings page (B42).
 - **Resolved (2026-09-03, backlog B1):** finding line numbers were relative to each model's
   extracted definition, so SARIF's `region.startLine` pointed at the wrong line of a `package.mo`.
   Findings still carry class-relative lines — that is what a rule can know, and what the app's code

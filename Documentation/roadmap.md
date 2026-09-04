@@ -38,21 +38,33 @@ two-level control the demotion came from rather than papering over it. A fourth 
 wrong number a user would see (**B50** — a library excluded from checking was still counted in every
 coverage percentage and in the coverage gate, B39's defect on the one exclusion mechanism B39 did not
 look at), plus the same two patterns for the third read running and one the reading could not have
-found: **B64**, a coverage gate that failed and then passed on identical code. **B20 is
-deliberately left**: it belongs inside phase 7a, because the logic sitting in the two largest
-pages is what makes a GUI test harness expensive to build. Cross-platform (§1) was kept last of the
-two on purpose — it is the big task, and the point was to start it against a toolchain that is
-complete rather than one still being finished.
+found: **B64**, a coverage gate that failed and then passed on identical code. A fifth read, again on
+2026-09-04, opened **B65–B78**, and those are closed too: it re-confirmed phases 1–6 against a green
+Release build, all 4,642 tests, a passing coverage gate and a schema-validated SARIF report, and then
+went where the previous four had recorded that they did not go — `MLQT.Shared`, the incremental
+formatting path, the reference-only mechanism, and the tooling that reconciles the app with the CLI.
+Three of the fourteen matter on their own: **B65**, the incremental formatter ignoring
+`__MLQT(format=false)` and so reordering the very classes the recommended mechanism was written on;
+**B66**, a reference-only repository being style-checked by three of the four entry points, against a
+documented promise that it is not; and **B67**, `Compare-Findings.ps1` — the only tool that exists to
+explain an app-vs-CI disagreement — silently broken by B1 and now reporting nearly every finding as
+exclusive to both sides. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
+`MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
+last of the two on purpose — it is the big task, and the point was to start it against a toolchain
+that is complete rather than one still being finished.
 
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: everything is shipped except B20, which belongs to phase 7a.**
+**Backlog: everything is shipped except B20, which belongs to phase 7a — and which B73 widened to
+name `MainLayout.razor` first of the three components it covers.**
 B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Branch review](#branch-review-2026-09-03)), B26–B35 by the second read on 2026-09-04 (see
 [Second review](#second-review-2026-09-04)), B37–B49 by the third (see
-[Third review](#third-review-2026-09-04)) and B50–B64 by the fourth (see
-[Fourth review](#fourth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Third review](#third-review-2026-09-04)), B50–B64 by the fourth (see
+[Fourth review](#fourth-review-2026-09-04)) and B65–B78 by the fifth (see
+[Fifth review](#fifth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -251,11 +263,11 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the four end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the five end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
-second one did, B37–B49 the third, and B50–B64 the fourth.
+second one did, B37–B49 the third, B50–B64 the fourth, and B65–B78 the fifth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -278,7 +290,7 @@ second one did, B37–B49 the third, and B50–B64 the fourth.
 | B17 | **A finding's file path is relative or absolute depending on how the library was named** | branch review 2026-09-03 | ⭐⭐ | S | **✅ shipped (2026-09-03)** — `ClassLocation` normalises to an absolute path in its constructor, which is the one place every location goes through, so no consumer has to know how the command was typed. What a *report* shows is a separate question with a different answer per format, and that now lives in one place too: `CheckReport.RelativeFileFor` gives the console, JSON and JUnit a path relative to the library (SARIF keeps `--sarif-base`, a review comment the repository root). The JSON `File` field is library-relative in every invocation rather than echoing the argument — noted in the CLI reference, since it is the one visible change. |
 | B18 | **The markdown summary is written twice** | branch review 2026-09-03 | ⭐ | S | **✅ shipped (2026-09-03)** — a `Markdown` helper holds the findings table, the fixed-entries list and the cell escaper; the summary formatter and the review formatter call it. |
 | B19 | **Every CLI test file builds its own fixture** | branch review 2026-09-03 | ⭐⭐ | M | **✅ shipped (2026-09-03)** — one `TempWorkspace` holds the temp directory, the file writing, the git-repository variant B6 and B7 need, and the delete that clears read-only attributes first (without which a git repository is undeletable, which only some of the twelve copies knew). `Cli.Run` replaces eleven identical private runners. Each suite keeps what is its own — a baseline path, a way to rewrite the library between runs — as a dozen lines on top instead of fifty-five of plumbing. 240 lines lighter, same 253 tests. |
-| B20 | **The two largest pages hold the logic phase 7a has to test** | branch review 2026-09-03 | ⭐⭐⭐ | L | `CodeReview.razor` is 2,252 lines and `MetricsDashboard.razor` 990, both with analysis, VCS and persistence logic inline — against this repository's own instruction to keep business logic in services, not Razor components. It has not hurt yet because nothing tests them. Phase 7a is bUnit component tests plus a `/selftest` conformance route, and both are far harder against a component of that size: the logic can only be reached by rendering the whole page and driving the UI. This is the cheapest it will ever be to extract — before the tests are written against the current shape, and before the Photino port moves the same code again. Sequence it into 7a, not after. |
+| B20 | **The three largest components hold the logic phase 7a has to test** | branch review 2026-09-03 | ⭐⭐⭐ | L | **Widened by B73 (2026-09-04):** `MainLayout.razor` is **3,045 lines** — larger than either page this item originally named — and roughly 2,500 of them are C#: the whole formatting pipeline, the VCS reaction path, the deferred-analysis orchestration and the theme builders, inline in a layout component. B65 was a defect that lived in it and nowhere else, which is this item's own argument. Take it first. `CodeReview.razor` is 2,252 lines and `MetricsDashboard.razor` 978, both with analysis, VCS and persistence logic inline — against this repository's own instruction to keep business logic in services, not Razor components. It has not hurt yet because nothing tests them. Phase 7a is bUnit component tests plus a `/selftest` conformance route, and both are far harder against a component of that size: the logic can only be reached by rendering the whole page and driving the UI. This is the cheapest it will ever be to extract — before the tests are written against the current shape, and before the Photino port moves the same code again. Sequence it into 7a, not after. |
 | B21 | **CI has never seen this work** | branch review 2026-09-03 | ⭐⭐ | S | **✅ shipped (2026-09-03)** — the workflow builds on a push to any branch, so a long-lived working branch is built as it is written rather than at the moment it is merged. `DymolaInterface.Tests` and `OpenModelicaInterface.Tests` are now **built** by CI though still not run: they drive a live Dymola or OpenModelica install and assert on its answers rather than self-skipping, so a runner cannot execute them — but building them catches the thing CI can catch, an interface change that stops them compiling. Same treatment, and the same comment, as the SVN integration tests. |
 | B22 | **The phase 6 note describes wiring that was never built** | branch review 2026-09-03 | ⭐ | S | **✅ shipped (2026-09-03)** — the note says the deferred-metrics wiring was planned and deliberately not built, why computing on open turned out better, and what to pick back up if a second consumer ever needs the numbers before the page is opened. |
 | B23 | **Two flags are implemented and absent from the reference** | branch review 2026-09-03 | ⭐ | S | **✅ shipped (2026-09-03)** — `--no-suppress` and `--version` are in the option table, and `--version` is in the tool's own usage text, which had never mentioned it either. |
@@ -323,10 +335,33 @@ second one did, B37–B49 the third, and B50–B64 the fourth.
 | B62 | **CLAUDE.md describes the codebase as it was before phases 1–6** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — CLAUDE.md's key-file table names the phase 1–6 substrate (`Finding`, `RuleIds`/`RuleCatalog`, `RuleSettingsLayout`, `ClassSuppressions`, the three `Analysis/` entry points, `LibraryCheckSession`, `Baseline`, `ClassLocation`, `ILineLevelDiff`); the ModelicaGraph section has an `Analysis/` block and calls out `ModelDefinition.Borrow`, `ClassSuppressions` and `CoverageDimensions.ForClass` as conventions in the style it already used for `WithinClause`; and there is a table for `MLQT.Services/Checking/`, the shared pipeline, saying what each primitive is for. |
 | B63 | **An orphaned doc comment in the SARIF formatter** | fourth review 2026-09-04 | ⭐ | S | **✅ shipped (2026-09-04)** — the blank line is gone, so the summary documents the method again. |
 | B64 | **The coverage gate is a coin flip on one class** | fourth review 2026-09-04 | ⭐⭐ | S | **✅ shipped (2026-09-04)** — found by running the gate twice on the same code: `MLQT.Services.FileMonitoringService` measured 76.7% and then 81.4%, straddling its 80% bar, so the build failed and then passed with nothing changed. The cause was that its rename and delete handlers had no test of their own and were reached only when Windows happened to report a write as a rename — which it does sometimes, a text write being a temp file and a rename underneath. A handler covered by accident is a handler nobody is checking, and a gate that fails at random teaches people to re-run until green, which is how a gate stops meaning anything. Nine tests now wait for the specific change and assert it arrived, so they either cover those lines or fail: 89.5% on repeated runs. |
+| B65 | **The incremental formatter ignores `__MLQT(format=false)`** | fifth review 2026-09-04 | ⭐⭐⭐ | S | `MainLayout.SaveChangedFilesWithFormattingAsync` decides what to leave alone with `settings.IsModelExcludedFromFormatting(m.Id)` — the **name list only**. It never reads the annotation. `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` does (it extracts the directives and unions them into `excludedModelIds`), so **Format All Files** honours a class's opt-out and the routine incremental format does not — and the incremental one is the path that runs at startup, after every VCS operation, before a commit, and on Refresh (four call sites). A class carrying the mechanism phase 5b calls the rename-safe *successor*, and that `code-formatting.md` steers new usage to, is reordered in the working copy on the next pull. This is B39/B50 one surface further on, and the only one of the three that rewrites the user's source rather than mis-reporting a number. Note why it is not a one-line fix in the caller: `RenderFileSource` renders a whole file from its own text and nothing in that path knows about `__MLQT` — the phase 5 note's claim that "`ModelicaRenderer` reads `__MLQT` from the class annotation" is not true (see B74), so the detection has to happen where the file's models are gathered, as the saver does it. **✅ shipped (2026-09-04)** — `FormattingExclusion` is the one answer to "must this source be written back unchanged?", over both mechanisms, and the two formatting paths call it: the library save's per-model opt-out detection and `MainLayout.SaveChangedFilesWithFormattingAsync`'s per-file one. The saver's copy went with it, so the annotation is now read through `ClassSuppressions.For` with the base package the finding ids use (B71) rather than by a hand-built extractor with none. Nine tests over the new primitive, including that a class mentioning `__MLQT` without opting out is not excluded — the string pre-check decides whether to look, never the answer. |
+| B66 | **A reference-only repository is style-checked by three of the four entry points** | fifth review 2026-09-04 | ⭐⭐⭐ | S | `settings-reference.md` promises "it is not style-checked, so no findings are raised against code you cannot change". Only `StartBackgroundCheckingForRepositories` keeps that promise. `StartBackgroundChecking(repository)` and `StartBackgroundCheckingAsync(repository)` have no `IsReferenceOnly` guard at all, and both are reachable: **AddRepositoryDialog** calls the first unconditionally right after adding a repository — including one the user ticked **Reference only** in that same dialog — and `MainLayout.OnRepositorySettingsApplied` calls it on Apply. It stays quiet only while the reference library's own `.mlqt/settings.json` enables nothing, which is not a property of the flag. Separately, the **graph analyses are unguarded on every path**: `StartBackgroundCheckingForRepositories` hands `StartGraphAnalyses` the unfiltered list, `MainLayout` passes `RepositoryService.Repositories` whole, and `RunGraphAnalysesFor` filters neither `IsReferenceOnly` nor `IsExternalStub` — where `LibraryCheckSession` drops stubs centrally and says in its own summary that leaving that filter to one caller is how the GUI came to be unprotected last time. `ReferenceOnlyRepositoryTests` covers the one entry point that works. **✅ shipped (2026-09-04)** — `SkipBecauseReferenceOnly` is the one guard and all three per-class entry points call it, the two single-repository ones signalling completion as the no-rules branch beside them already did. The graph analyses are filtered in `StartGraphAnalyses`, which is the single funnel every one of their four callers goes through. And the external-stub filter moved into `GraphAnalysisRunner.Run`, beside the excluded-libraries one, for the reason `StyleCheckRunner` gives for the per-class guard: `LibraryCheckSession` filtered stubs before building the context and the GUI builds its own, so the app analysed a vendor's reconstructed classes and the CLI did not. Six tests, each with the positive control beside it so the guard cannot be the reason nothing ran. |
+| B67 | **`Compare-Findings.ps1` keys on a field that means two different things** | fifth review 2026-09-04 | ⭐⭐⭐ | S | The script pairs the CLI and app exports on `Model` + `RuleId` + `Line`. The CLI's `Line` is the line **in the file** (`CheckReport.LineFor`, mapped through `ClassLocation`); the app's `Line` is `LogMessage.LineNumber`, the **class-relative** line. They agree only for a class starting at line 1 of a file whose stored source still matches it — near enough nothing in a real library. So the tool built to explain why the two disagree now reports almost every finding as exclusive to both sides, and its own "where a cluster points" guidance sends the reader after a rule, library or filter cause that is not there. **B1** did this: it gave reports file lines and left the app on class lines, and the CLI grew `ModelLine` for exactly this — the app export has no such field. `File` diverged the same way under **B17**: library-relative in the CLI, absolute in the app. Three places assert the opposite and none was re-run — the script's `.DESCRIPTION` ("Both files use the same field names, so no translation is needed between them"), `code-review.md` ("the same fields, with the same names … so the two can be compared directly"), and `ExportFindingsAsync`'s own comment. The worked example in `code-review.md` shows a 167-finding difference, which is what it looked like before B1. Nothing runs this script in CI, which is how a break this total went a week unnoticed. **✅ shipped (2026-09-04)** — the app's export carries `Line` (the line in the file, through the same `ClassLocation` the CLI's report uses) and `ModelLine` (the line within the class) under the CLI's names, and `File` relative to the class's library as `CheckReport.RelativeFileFor` writes it. `Compare-Findings.ps1` refuses an export with no `ModelLine` rather than producing the all-exclusive diff again — a break that reads as a real disagreement is worse than no answer — and says in its own help which field means what. `code-review.md` lists both line fields and says which one the on-screen table shows. The general lesson is recorded with the review: a tool whose whole purpose is reconciling two others has to be exercised by the build that changes either of them. |
+| B68 | **The Metrics tab and `mlqt check --metrics` disagree about what counts as debt** | fifth review 2026-09-04 | ⭐⭐ | S | `RuleIds.IsDiagnostic`'s summary says the three diagnostics are the findings that report *the results are incomplete*, and that none of them "counts as style debt in the metrics trend". `MetricsRecorder` asks exactly that (`!RuleIds.IsDiagnostic(f.RuleId)`). The dashboard's `CountFindingsForScope` asks `m.Source == "StyleChecking"` instead, which excludes the two parse diagnostics (projected with source `"Parser"`) and **includes** `MLQT.Check.Failed`, which `Finding.ToLogMessage` gives the style source — the id B26 moved out of the `Parse` category precisely because a predicate stopping one short of it was the bug. Since **B56** both write the same `.mlqt/metrics-history.json`, so one trend can step up and down as the app and CI take turns recording it. `LogMessage` already carries `RuleId`, so the fix is the same predicate. **✅ shipped (2026-09-04)** — `MetricsDashboard.IsStyleDebt` asks `RuleIds.IsDiagnostic`, which is the question the predicate was reaching for, so the page and `MetricsRecorder` count the same thing into the same history file. |
+| B69 | **Code Review offers Suppress on a finding that cannot be suppressed** | fifth review 2026-09-04 | ⭐⭐ | S | `CodeReview.CanSuppressRule` accepts any `Source: "StyleChecking"` message with a rule id that is not a spelling finding — which includes `MLQT.Check.Failed`. Pressing it writes `__MLQT(suppress="MLQT.Check.Failed")` into the user's source, saves the file, and reports success for an annotation nothing reads: the per-class diagnostic is added in `LibraryCheckSession`'s catch, after suppression has been applied. This is B26's fix on the surface B26 did not reach — `suppress_rule` refuses a diagnostic with an explanation, and the GUI is the one an author is more likely to be sitting in front of. (`GraphAnalysisRunner` *does* route its own `CheckFailed` through `ApplySuppressions`, so the two halves of one diagnostic also disagree about whether it can be waived; whichever answer is right, one place should give it.) **✅ shipped (2026-09-04)** — `CanSuppressRule` refuses a diagnostic, as `suppress_rule` has since B26. The other half went with it: `GraphAnalysisRunner.ApplySuppressions` no longer lets a `__MLQT(suppress="*")` waive one, so the same `MLQT.Check.Failed` is unwaivable whichever pass produced it. Tested. |
+| B70 | **`ModelicaName.RootLibraryOf` has one caller and four rivals, and they already disagree** | fifth review 2026-09-04 | ⭐⭐ | S | B30 added `ModelicaName` because "the library a class belongs to" was written out at every site that needed it. `RootLibraryOf` is called from production exactly once (`MetricsRecorder`), while `StyleCheckingSettings.IsLibraryExcluded`, `UsesHygieneAnalyzer.RootSegment` and `GraphBuilder` (twice, as `modelId.Split('.')[0]`) each rebuild it. They are not identical: `RootLibraryOf(".Ramp")` returns `".Ramp"` — pinned by `ModelicaNameTests` — while `RootSegment(".Ramp")` returns `""`. This is B40 exactly (the shared method whose only callers are its own tests) on the helper introduced to prevent it, and it decides which classes an exclusion covers. **✅ shipped (2026-09-04)** — `StyleCheckingSettings.IsLibraryExcluded`, `UsesHygieneAnalyzer` and `GraphBuilder`'s two default-resource-directory helpers all call `ModelicaName.RootLibraryOf`. The helper B30 added has callers now, and the leading-dot disagreement goes with them. |
+| B71 | **The one read of `__MLQT` has a fifth site, and it asks a different question** | fifth review 2026-09-04 | ⭐⭐ | S | B55 made `ClassSuppressions.For` the single read of a class's directives; `ModelicaPackageSaver` still constructs `MlqtSuppressionExtractor` itself. Three differences fall out. It passes **no base package**, where `ClassSuppressions.For` passes `ModelicaName.EnclosingPackageOf(modelId)` — the thing that decides which class a directive is attributed to. It bypasses the cache, so it re-walks a tree the checker read minutes earlier. And it asks `HasFormattingOptOut` ("any class in this definition opted out") where the checker and `CoverageMeasurer` ask `PreservesFormatting(modelId)` (this exact class), so a **nested** class carrying `format=false` takes its parent out of the formatter while the checker and the dashboard keep judging the parent's layout — a finding the formatter will never fix, B39's defect pointing the other way. Whichever answer is right for a file that can only be rendered whole, it should be one answer. **✅ shipped (2026-09-04)** — settled rather than merged, because the two are genuinely different questions and `FormattingExclusion` now says so where a reader will find it: writing is per **rendered definition** (the renderer rewrites a class's whole source or none of it, so one opt-out inside it takes all of it), reporting is per **class** (waiving a nested class's declaration order is not a request to stop judging its parent's). What was actually wrong was the reading, and that is fixed: one reader, through `ClassSuppressions.For`, with the base package that makes the keys match a finding's `ModelId`. |
+| B72 | **"Which rules are layout rules" is written three times and pinned twice** | fifth review 2026-09-04 | ⭐ | S | The set lives in `StyleChecking.RunStyleCheckingFindings`'s `if (!isExcludedFromFormatting)` block, in `MlqtSuppressionExtractor.FormattingRuleIds`, and in `CoverageDimension.Layout`. B59 tied the first and third together (`TheLayoutDimensionsAreExactlyTheRulesTheCheckerSkipsForAnExcludedClass`, which drives the checker with `isExcludedFromFormatting: true` — the *name list* path). Nothing ties the second, so an eighth layout rule added to the checker would be waived by `FormattingExcludedModels` and not by `__MLQT(format=false)`, and every existing test would still pass. The three agree today, by hand. Same guard, one list short — B29/B38/B42/B59's shape. **✅ shipped (2026-09-04)** — `TheTwoFormattingExclusionsWaiveTheSameRules` runs the checker over a class that breaks all seven layout rules, once through `isExcludedFromFormatting` and once through `__MLQT(format=false)`, and compares the rule ids that survive. A sibling test asserts the fixture still reports without either exclusion, so the pair cannot rot into two empty sets matching. |
+| B73 | **B20 names the two largest pages and misses the largest** | fifth review 2026-09-04 | ⭐⭐ | S | `MainLayout.razor` is **3,045 lines**, against `CodeReview.razor`'s 2,252 and `MetricsDashboard.razor`'s 978, and roughly 2,500 of them are C#: the whole formatting pipeline (`SaveAllLibrariesWithFormattingAsync`, `FormatModifiedFilesAsync`, `SaveChangedFilesWithFormattingAsync`, `UpdateFileNodesAfterSave`), the VCS reaction path (`OnVcsFilesChanged`, `OnVcsModelsChanged`, `GetModifiedFilePathsFromVcs`), the deferred-analysis orchestration and the theme builders, inline in a layout component. CLAUDE.md names it as the analysis pipeline, and **B65 is a defect that lives in it and nowhere else** — which is the argument B20 makes about the other two. It belongs in 7a's extraction list, first. **✅ folded into B20 (2026-09-04)** — not fixed here on purpose: extracting it is phase 7a's work, and doing it now would move the same code twice. B20 is widened to name `MainLayout.razor` first of the three, with B65 as the evidence. |
+| B74 | **Four phase notes state as open what the backlog closed** | fifth review 2026-09-04 | ⭐⭐ | S | CLAUDE.md says the notes are read as the record of what was built. Four now read as a record of what was not. `design-phase4-ci-ergonomics.md` still carries "**Not discharged** (found 2026-09-03, backlog B8/B9): the tests assert the shape *we* expect, not conformance to the schema … the rules carry no `fullDescription` or `help`" — B8 wired `build/validate-sarif.ps1` into every push and B9 added the fields, and both re-verify green today. `design-phase6-analyses-dashboard.md` still says "One item did not: **SI-typed missing-unit resolution** … `MLQT.Units.MissingUnit` still flags plain `Real` only" — B5 gave the rule the `UnitResolver` lookup, and that sentence is the only reason the note's status line reads "essentially complete" rather than complete. `design-phase3-baseline.md` still says the SVN diff is "implemented but lightly tested" (B32 gave it tests). And `design-phase5-suppression.md` says "`ModelicaRenderer` reads `__MLQT` from the class annotation, and `ModelicaPackageSaver` passes it through" — the renderer knows nothing about `__MLQT`; the saver detects it and hands down an exclusion set, which is why B65 exists. **✅ shipped (2026-09-04)** — phase 4's SARIF risk records that it was found undischarged and what discharged it; phase 6's open item is the shipped B5, and its status line reads COMPLETE; phase 3's SVN diff is no longer "lightly tested"; and phase 5 says where the `__MLQT` formatting opt-out is actually read, which is not `ModelicaRenderer` — with B65 named as what the wrong sentence cost. |
+| B75 | **`ModelicaCode`'s setter says the parse tree looks after itself, and it does not** | fifth review 2026-09-04 | ⭐ | S | Setting `ModelDefinition.ModelicaCode` clears `Coverage` and `Suppressions` because they "would otherwise describe code that is no longer here", and says the tree needs no such treatment: "the parse tree's own staleness is already handled by `EnsureParsed`". `EnsureParsed` returns `ParsedCode` whenever it is non-null and never looks at the source. So a caller that replaces the source while a tree is live gets the old tree back — and the cleared `Suppressions` are then rebuilt from it, undoing the clearing the same setter just did. No current caller is exposed (`PackageCodeTrimmer` and `PreRenderModelsParallel` both null the tree first, and `MainLayout` parses into a local), which is exactly why the comment will be trusted. Either clear `ParsedCode` with the other two, or write down what the rule actually is. **✅ shipped (2026-09-04)** — the setter clears `ParsedCode` with `Coverage` and `Suppressions`, and the comment says why rather than claiming `EnsureParsed` handles it. `PackageCodeTrimmer`'s explicit release goes with it, since it now reads as if the setter does not. |
+| B76 | **`MLQT.Services/README.md` describes `ParserErrorReporter` backwards** | fifth review 2026-09-04 | ⭐ | S | Its `Checking/` table says "`ParserErrorReporter` — Parse failures as findings, **with real file line numbers**". `ToFindings` converts to class-relative lines (`error.Line - classStart + 1`) and comments at length on why: it is the half of B1 that stopped the app scrolling to the wrong place. The same table omits `ChangedLineResolver` and `ClassLocation`, both load-bearing and both introduced by this branch — B49's shape on the other README. **✅ shipped (2026-09-04)** — the `Checking/` table says what `ParserErrorReporter` actually produces, and lists `ChangedLineResolver` and `ClassLocation`. |
+| B77 | **The Release build is not warning-free, and the record says it is** | fifth review 2026-09-04 | ⭐ | S | The fourth review records "0 warnings" twice. A clean Release build of `MLQT.slnx` emits three: two pre-existing `xUnit2002`s in `DymolaInterface.Tests` (untouched by this branch), and one this branch added — `CS4014` at `MLQT.Services.Tests/LibraryDataServiceTests.cs:1197`, where `Assert.Single` over an `IEnumerable<Task>` yields a `Task` discarded as an expression statement. The reading was almost certainly taken from an incremental build, which reprints nothing: a warning count is only true of a build that actually compiled. Second time a roadmap claim was true when written and never re-measured (compare B16). **✅ shipped (2026-09-04)** — the `CS4014` is gone (`Assert.Single`'s result discarded explicitly, which satisfies the xUnit analyzer too), and so are the two pre-existing `xUnit2002`s: `CdAsync` returns `bool`, so the `Assert.NotNull` beside them asserted nothing — they assert the calls succeeded. A full Release build of `MLQT.slnx` is 0 warnings, measured from a build that actually compiled. |
+| B78 | **Two small presentation defects in user-facing text** | fifth review 2026-09-04 | ⭐ | S | `mlqt --help`: the `--metrics` entry's two continuation lines are indented to column 32 while every other option's sit at column 40, so it is the one row that does not line up. And `Compare-Findings.ps1`'s own `.DESCRIPTION` tells the reader to produce "the app's exported issue list (`mlqt-issues-<timestamp>.json`)" — `ExportFindingsAsync` writes `mlqt-findings-<timestamp>.json`, which is what `code-review.md` says. **✅ shipped (2026-09-04)** — the `--metrics` continuation lines line up with every other option's, and `Compare-Findings.ps1` names the file the app really writes. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
 turns the metrics work into a gate; B6 and B7 last, being conveniences rather than gaps.
+
+**Sequencing for B65–B78** (open): **B65** first — it is the only one that writes to a user's source,
+and it silently defeats the mechanism the documentation recommends. **B66** and **B67** next, in
+either order: one breaks a promise the settings page makes in as many words, the other has already
+made a diagnostic tool useless and nobody noticed, which is the argument for a test and a CI step
+rather than a fix. Then **B68/B69/B72** (three unheld promises over `RuleIds`/`RuleCatalog`, all the
+same guard) and **B70/B71** (two conventions with rivals). **B74** should go with whichever of B65's
+fixes lands, since the phase 5 note is what made the renderer look like it already handled this.
+**B73** joins B20 in phase 7a rather than being done now. **B75–B78** are tidy-ups.
 
 **B1–B12 are all done (2026-09-03).** B8–B11 came out of asking how the SARIF work would be tested,
 and they were what actually closed phase 4: until then the output had never been validated, and the
@@ -582,6 +617,117 @@ every `EnsureParsed`/`ParsedCode = null` pair in the solution against the `Borro
 full build, test, coverage and SARIF-validation run, repeated after the fixes. What it did **not** do, for the fourth time, is
 read all 47,000 changed lines, and it did not review `CodeReview.razor` or `MetricsDashboard.razor` —
 that is **B20**, and it belongs to phase 7a.
+
+### Fifth review (2026-09-04)
+
+**B65–B78 came out of a fifth read of the branch**, on the same terms as the second, third and
+fourth: phases 1–6 against the roadmap and the design notes, then the code for problems, duplication,
+missing tests and logic implemented twice, then the documentation against what shipped. **All
+fourteen are closed** — thirteen fixed, and B73 folded into B20 because extracting `MainLayout.razor`
+is phase 7a's work and doing it now would move the same code twice.
+
+**Phases 1–6 verify as delivered.** As read, the solution built in Release; all six gated suites
+passed — **4,642 tests** (ModelicaParser 1860, ModelicaGraph 781, Services 781, RevisionControl 651,
+McpServer 286, CLI 283), the same total the fourth review left; `build/check-coverage.ps1` passed at
+**86.8%** with 148 classes gated and every ledger entry carrying a reason; and
+`build/validate-sarif.ps1` re-validated a generated report against the SARIF 2.1.0 schema. Every
+`mlqt` flag in the source is in `cli.md` and in `--help`, in both directions, and every serialized
+`StyleCheckingSettings` property is on the settings page. Nothing below unships a phase.
+**After the fixes**: **0 warnings** — for the first time actually measured from a build that compiled
+everything, which is B77 — **4,660 tests** (ModelicaGraph 795, Services 785, the rest unchanged), the
+coverage gate still at 86.8% with no new ledger entry, and the SARIF still valid: 3 rules, 5 results,
+paths relative to the repository root.
+
+**This read deliberately went where the previous four said they had not been**: `MLQT.Shared` — which
+four reviews excluded as B20's subject — the incremental formatting path, the reference-only
+mechanism, the app-to-CLI reconciliation tooling, and the phase notes read as prose rather than
+claim-by-claim. Nine of the fourteen items are in that territory, which is the finding about the
+process rather than the code: *"we did not read it" and "there is nothing there" are different
+statements, and four reviews running had only made the first.*
+
+**Three are worth taking seriously on their own.**
+
+**B65** is the destructive one. MLQT has three ways to take a class out of scope, and B39/B50 spent
+this branch making them agree about *reporting*. Nobody asked whether they agree about *writing*.
+They do not: the full save honours `__MLQT(format=false)`, and the incremental format — the one that
+runs at startup, after every VCS operation, before a commit and on Refresh — honours only the name
+list. So the mechanism phase 5b calls the rename-safe successor, and that the documentation steers
+users to, does not actually stop the formatter reordering the class it is written on.
+
+**B66** is the same shape on the reference-only flag, and it has a documented promise to break:
+`settings-reference.md` says a reference-only repository "is not style-checked". One of the four
+entry points enforces that. Adding a repository with **Reference only** ticked style-checks it
+immediately, and the whole-graph analyses run on reference-only repositories from every path,
+including the one that guards the per-class workers.
+
+**B67** is the one nothing could have found by reading a single file. B1 gave every report file-line
+numbers and left the app on class-relative ones — correctly, and it said so. What it also did, and
+nobody noticed, was break `Compare-Findings.ps1`, which pairs the two exports on the line number and
+is the only tool that exists to answer "why do the app and CI disagree". It now reports nearly every
+finding as exclusive to both sides. The script's help, `code-review.md` and the exporter's own
+comment all still say the two files' fields match; the worked example in the documentation shows a
+167-finding difference, which is what it looked like before B1. A tool with no test and no CI step
+went from correct to useless in one commit, silently.
+
+The rest fall into the three groups the last three reviews named, which is now simply how this
+codebase fails:
+
+- **One rule written more than once.** B70 is the sharpest and is B40 verbatim: `ModelicaName`
+  was added by B30 to stop "which library is this class in" being written out per site, and
+  `RootLibraryOf` now has one production caller and four hand-written rivals — which already disagree
+  on a leading dot. B71 is B55's convention with a fifth site that asks a subtly different question,
+  and B72 is the layout-rule set written three times with two of the three pinned together.
+- **A catalogued thing whose promise no test holds anyone to.** B68 — `RuleIds.IsDiagnostic` states
+  that no diagnostic counts as debt in the metrics trend, and the app's own trend counts one. B69 —
+  B26 taught `suppress_rule` to refuse a diagnostic and left the GUI offering it. B72 again.
+- **A report that is quietly wrong rather than loudly.** B67, and B77: the roadmap records a
+  0-warning Release build that was measured from an incremental one.
+
+**Documentation.** B74 is the substantial one and it inverts the failure CLAUDE.md warns about: four
+phase notes now describe as *outstanding* work the backlog has closed — SARIF conformance
+"not discharged" (B8/B9), SI-typed missing units as the one thing phase 6 did not ship (B5), the SVN
+diff "lightly tested" (B32) — and one describes a mechanism that was never built the way it says
+(`ModelicaRenderer` reading `__MLQT`), which is the misreading B65 rests on. A reader who trusts the
+notes, as CLAUDE.md instructs, concludes phase 4 and phase 6 are incomplete. B76 and B78 are smaller:
+a README table that describes `ParserErrorReporter` as producing the line numbers B1 stopped it
+producing, and two cosmetic slips in user-facing text.
+
+**What the fixes converged on.** The same shape as the last two reviews, which is now three in a
+row: a rule that had been written out several times became a named thing with a test behind it.
+`FormattingExclusion` is the one answer to "must this source be written back unchanged?" (B65/B71),
+`SkipBecauseReferenceOnly` and `StartGraphAnalyses` the one place a reference-only repository is
+declined (B66), and `RuleIds.IsDiagnostic` finally reaches the two surfaces that were asking their
+own version of it (B68/B69). Two moves are worth noting beyond the individual fixes. The
+external-stub filter went into `GraphAnalysisRunner` rather than into the GUI caller that was missing
+it — the same reasoning `StyleCheckRunner` already records for the per-class guard, applied to the
+graph half a review later. And B71 was settled by *distinguishing* two questions rather than merging
+them: writing is per rendered definition because the renderer cannot rewrite half a class, reporting
+is per class because waiving a nested class's declaration order is not a request to stop judging its
+parent's. Both answers were already in the code; neither was written down, which is why they read as
+a bug.
+
+**The pattern worth naming for next time is B67.** B39, B50, B65 and B66 are all "a mechanism reached
+some consumers and not others", and the fourth review already drew the right conclusion from that
+("find every consumer of the existing exclusions"). B67 is a different and more expensive one:
+*a change that is correct in itself can break something downstream that nothing runs.* `Compare-Findings.ps1`
+and the app's export exist only to be used together; neither has a test, and CI runs neither, so B1
+could not have been caught by anything short of somebody using the tool. The rule that follows is not
+about exclusions at all — it is that a tool whose whole purpose is to reconcile two other tools has to
+be exercised by the same build that changes either of them.
+
+What this review covered, so its gaps are on the record too: a full Release build, all six suites, the
+coverage gate and SARIF validation, re-run rather than quoted; every `mlqt` flag against `cli.md` and
+`--help` both ways; every serialized settings property against `settings-reference.md`; every MCP tool
+name against both READMEs; the three exclusion mechanisms against the *writing* path as well as the
+reporting one; every `__MLQT` reader and every root-library computation in the solution; the four
+check entry points and the four graph-analysis entry points against the reference-only and
+external-stub filters; `MainLayout.razor`'s formatting and VCS paths; the app's finding export against
+the CLI's JSON and against the script that compares them; and the six phase notes read end to end
+against the closed backlog. What it did **not** do, for the fifth time, is read all 47,000 changed
+lines; it did not review `CodeReview.razor` or `MetricsDashboard.razor` line by line (B20/B73), only
+the paths reached from the findings above; and it did not exercise the encrypted-library recovery or
+the spell-checking rework beyond their seams with the check pipeline.
+
 
 ---
 

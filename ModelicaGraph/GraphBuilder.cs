@@ -1119,7 +1119,7 @@ public static class GraphBuilder
     /// </summary>
     private static string? GetDefaultIncludeDirectory(string modelId, List<LibraryInfo> libraries)
     {
-        var libraryName = modelId.Split('.')[0];
+        var libraryName = ModelicaName.RootLibraryOf(modelId);
         var library = libraries.FirstOrDefault(l =>
             l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
 
@@ -1135,7 +1135,7 @@ public static class GraphBuilder
     /// </summary>
     private static string? GetDefaultLibraryDirectory(string modelId, List<LibraryInfo> libraries)
     {
-        var libraryName = modelId.Split('.')[0];
+        var libraryName = ModelicaName.RootLibraryOf(modelId);
         var library = libraries.FirstOrDefault(l =>
             l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
 

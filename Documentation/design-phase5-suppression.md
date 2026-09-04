@@ -130,8 +130,17 @@ must **not flag** the ordering rules. There is already a per-model hook for the 
 - This is the **in-source, rename-safe successor** to `FormattingExcludedModels` — the exclusion
   travels with the model on rename/move instead of drifting out of a central name list. Keep the
   list for backward compatibility; steer new usage to the annotation.
-- Touches the formatting pipeline: `ModelicaRenderer` reads `__MLQT` from the class annotation, and
-  `ModelicaPackageSaver` passes it through.
+- Touches the formatting pipeline — but **not in `ModelicaRenderer`**, which is where this note said
+  it did and where a reader would go looking. The renderer knows nothing about `__MLQT`: it renders
+  whatever tree it is handed. The directive is read *outside* it, at the point where the models to be
+  written are gathered, and the class is then rendered from its original text instead. That is one
+  question — "must this source be written back unchanged?" — and `FormattingExclusion` is the one
+  place it is answered, over both the annotation and the `FormattingExcludedModels` name list.
+  Written out per caller instead, it went missing from the incremental format for the whole of phases
+  5 and 6: `ModelicaPackageSaver` (Format All Files, and the startup full save) honoured the
+  annotation, and `MainLayout.SaveChangedFilesWithFormattingAsync` — the path that actually runs at
+  startup, after every VCS operation, before a commit and on Refresh — asked the name list only and
+  reordered the class anyway (backlog B65).
 
 ## 5c — authoring ergonomics
 

@@ -98,8 +98,9 @@ public static class PackageCodeTrimmer
                 var trimmedCode = string.Join("\n", visitor.Code);
 
                 // Drop the leading within line so stored line numbers align with the source file.
+                // Setting ModelicaCode releases the parse tree with it — a tree read from the old
+                // source describes code that is no longer here.
                 model.Definition.ModelicaCode = WithinClause.Strip(trimmedCode);
-                model.Definition.ParsedCode = null; // release the parse tree
 
                 // The children are gone and the rest has been through the renderer, so a line in this
                 // text is no longer the file's line. Reports fall back to the class declaration

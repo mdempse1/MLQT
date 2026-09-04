@@ -1474,13 +1474,25 @@ document.head.appendChild(style);
             if (string.IsNullOrEmpty(folder))
                 return;
 
-            // Model to file, so an exported finding can be traced back to a path the same way the CLI
-            // reports one.
+            // Where each class sits on disk, through the same ClassLocation the CLI's report uses, so
+            // "line 42 of that file" means the same thing in both exports. Findings carry
+            // class-relative lines; a report that names a file has to name the file's line.
             var graph = LibraryDataService.CombinedGraph;
-            var fileByModel = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var file in graph.FileNodes)
-                foreach (var model in graph.GetModelsInFile(file.Id))
-                    fileByModel[model.Id] = file.FilePath;
+            var locations = ClassLocation.ForGraph(graph);
+
+            // And the library each class belongs to, so the path can be written relative to it — the
+            // CLI writes `File` relative to the library it was pointed at (CheckReport.RelativeFileFor).
+            var libraryRootByModel = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var library in LibraryDataService.Libraries)
+            {
+                var root = library.SourceType == LibrarySourceType.File
+                    ? Path.GetDirectoryName(library.SourcePath) ?? library.SourcePath
+                    : library.SourcePath;
+                if (string.IsNullOrEmpty(root))
+                    continue;
+                foreach (var id in library.ModelIds)
+                    libraryRootByModel[id] = root;
+            }
 
             var payload = new
             {
@@ -1492,8 +1504,13 @@ document.head.appendChild(style);
                     .OrderBy(m => m.ModelName, StringComparer.Ordinal)
                     .ThenBy(m => m.LineNumber)
                     .ThenBy(m => m.RuleId ?? string.Empty, StringComparer.Ordinal)
-                    // Field names match the CLI's --format json findings array exactly, so the two
-                    // exports can be diffed without translating between them first.
+                    // Field names AND meanings match the CLI's --format json findings array, so the
+                    // two exports can be diffed without translating between them first. The names
+                    // matched on their own for a while and the meanings did not: B1 gave every report
+                    // the line in the FILE and left this export on the class-relative line the code
+                    // viewer wants, so build/Compare-Findings.ps1 — which pairs the two up on
+                    // model + rule + line — reported nearly every finding as exclusive to both sides.
+                    // Both numbers are here now, named as the CLI names them.
                     .Select(m => new
                     {
                         RuleId = m.RuleId,
@@ -1501,10 +1518,11 @@ document.head.appendChild(style);
                         Status = BaselineStatus.HasBaseline ? BaselineStatus.StatusOf(m)?.ToString() : null,
                         Model = m.ModelName,
                         Element = m.ElementPath,
-                        Line = m.LineNumber,
+                        Line = FileLineOf(m, locations),
+                        ModelLine = m.LineNumber,
                         Message = m.Summary,
                         Fingerprint = m.Fingerprint,
-                        File = fileByModel.TryGetValue(m.ModelName, out var path) ? path : null,
+                        File = ReportPathOf(m, locations, libraryRootByModel),
                         Source = m.Source,
                         Details = string.IsNullOrEmpty(m.Details) ? null : m.Details
                     })
@@ -1531,6 +1549,43 @@ document.head.appendChild(style);
         {
             _exporting = false;
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// The line in the file, for a finding that carries a line within its class. Mirrors
+    /// <c>CheckReport.LineFor</c>, including its fallback for a class the map does not know.
+    /// </summary>
+    private static int FileLineOf(LogMessage m, IReadOnlyDictionary<string, ClassLocation> locations)
+        => locations.TryGetValue(m.ModelName, out var location)
+            ? location.FileLine(m.LineNumber)
+            : Math.Max(1, m.LineNumber);
+
+    /// <summary>
+    /// The file as the report shows it: relative to the library the class belongs to, with forward
+    /// slashes. Mirrors <c>CheckReport.RelativeFileFor</c>, which is what the CLI's `File` field
+    /// carries — this used to write the absolute path, so the field the two exports were said to
+    /// share was the second one that did not agree.
+    /// </summary>
+    private static string? ReportPathOf(
+        LogMessage m,
+        IReadOnlyDictionary<string, ClassLocation> locations,
+        IReadOnlyDictionary<string, string> libraryRootByModel)
+    {
+        if (!locations.TryGetValue(m.ModelName, out var location) || string.IsNullOrEmpty(location.FilePath))
+            return null;
+
+        if (!libraryRootByModel.TryGetValue(m.ModelName, out var root))
+            return location.FilePath;
+
+        try
+        {
+            var relative = Path.GetRelativePath(root, location.FilePath);
+            return Path.IsPathRooted(relative) ? location.FilePath : relative.Replace('\\', '/');
+        }
+        catch
+        {
+            return location.FilePath;
         }
     }
 
@@ -1620,8 +1675,13 @@ document.head.appendChild(style);
     // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
     // Spelling findings are excluded — a blanket waiver of the spelling rule would silence every
     // other misspelling in the class, so they get the word-scoped Ignore in the correction menu.
+    // Diagnostics are excluded too: MLQT.Check.Failed reaches this list with the style source, and
+    // offering Suppress on it wrote an annotation into the user's file that nothing reads and then
+    // reported success. suppress_rule has refused a diagnostic since B26; this is the surface an
+    // author is more likely to be sitting in front of.
     private static bool CanSuppressRule(LogMessage? finding)
-        => finding is { Source: "StyleChecking" } && !string.IsNullOrEmpty(finding.RuleId) && !IsSpellingFinding(finding);
+        => finding is { Source: "StyleChecking" } && !string.IsNullOrEmpty(finding.RuleId)
+           && !RuleIds.IsDiagnostic(finding.RuleId) && !IsSpellingFinding(finding);
 
     /// <summary>
     /// A class as it exists on disk: the node, the class that owns the file it lives in, that file's

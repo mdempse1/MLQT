@@ -2792,7 +2792,13 @@
             // so there is no way to reformat some of its classes and leave a nested sibling untouched.
             // Excluding the whole file is the safe reading of the exclusion — never reformat a model
             // the user has opted out.
-            if (modelNodes.Any(m => effectiveSettings.IsModelExcludedFromFormatting(m.Id)))
+            //
+            // Both mechanisms, through the one method that knows about both. This asked the name list
+            // alone, so __MLQT(format=false) — the rename-safe successor the documentation steers
+            // people to — was honoured by Format All Files and ignored by this path, which is the one
+            // that runs at startup and after every VCS operation. The class it was written on was
+            // reordered in the working copy on the next pull.
+            if (modelNodes.Any(m => FormattingExclusion.Excludes(m, effectiveSettings)))
             {
                 Debug("MainLayout", $"Skipping {filePath}: it holds a model excluded from formatting");
                 continue;

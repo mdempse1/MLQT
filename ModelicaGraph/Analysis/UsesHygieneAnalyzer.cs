@@ -1,5 +1,6 @@
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using RuleIdsRef = ModelicaParser.StyleRules.RuleIds;
 
 namespace ModelicaGraph.Analysis;
@@ -31,16 +32,16 @@ public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
             return findings;
 
         var allModels = context.Graph.ModelNodes.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
-        var loadedLibs = new HashSet<string>(allModels.Select(m => RootSegment(m.Id)), StringComparer.Ordinal);
+        var loadedLibs = new HashSet<string>(allModels.Select(m => ModelicaName.RootLibraryOf(m.Id)), StringComparer.Ordinal);
 
         // The set of external libraries each library references (root package name -> referenced roots).
         var referencedByLib = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var model in allModels)
         {
-            var ownLib = RootSegment(model.Id);
+            var ownLib = ModelicaName.RootLibraryOf(model.Id);
             foreach (var used in model.UsedModelIds)
             {
-                var usedLib = RootSegment(used);
+                var usedLib = ModelicaName.RootLibraryOf(used);
                 if (string.Equals(usedLib, ownLib, StringComparison.Ordinal))
                     continue;
                 if (!referencedByLib.TryGetValue(ownLib, out var set))
@@ -55,7 +56,7 @@ public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
             if (root.ClassType != "package" || !string.IsNullOrEmpty(root.ParentModelName))
                 continue;
 
-            var libName = RootSegment(root.Id);
+            var libName = ModelicaName.RootLibraryOf(root.Id);
             var referenced = referencedByLib.TryGetValue(libName, out var r) ? r : new HashSet<string>(StringComparer.Ordinal);
             var declared = root.Uses;
 
@@ -90,9 +91,4 @@ public sealed class UsesHygieneAnalyzer : IGraphAnalyzer
         return findings;
     }
 
-    private static string RootSegment(string id)
-    {
-        var dot = id.IndexOf('.');
-        return dot < 0 ? id : id[..dot];
-    }
 }

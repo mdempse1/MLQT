@@ -42,16 +42,21 @@ public static class GraphAnalysisRunner
     {
         var findings = new List<Finding>();
 
-        // Drop excluded libraries from the REPORTED set only. They stay in context.Graph, so a test
-        // library still counts as a user of the classes it exercises — excluding it must not make the
-        // library under test look unused.
-        if (context.Settings.ExcludedLibraries.Count > 0)
-        {
-            var reportable = context.Models.Where(m => !context.Settings.IsLibraryExcluded(m.Id)).ToList();
-            if (reportable.Count != context.Models.Count)
-                context = new GraphAnalysisContext(
-                    context.Graph, context.Settings, reportable, context.DependenciesAnalyzed);
-        }
+        // Drop excluded libraries and encrypted-library reconstructions from the REPORTED set only.
+        // They stay in context.Graph, so a test library still counts as a user of the classes it
+        // exercises — excluding it must not make the library under test look unused.
+        //
+        // The stub filter is here, not at a caller, for the reason StyleCheckRunner gives for the
+        // per-class one: LibraryCheckSession filtered stubs before building this context and the GUI
+        // builds its own, so a class recovered from a vendor's help HTML was analysed by the app and
+        // not by the CLI. A stub's "source" is MLQT's own synthesized declaration — a package.order
+        // or unused-class finding about one is a finding about the reconstruction.
+        var reportable = context.Models
+            .Where(m => !m.IsExternalStub && !context.Settings.IsLibraryExcluded(m.Id))
+            .ToList();
+        if (reportable.Count != context.Models.Count)
+            context = new GraphAnalysisContext(
+                context.Graph, context.Settings, reportable, context.DependenciesAnalyzed);
 
         foreach (var analyzer in analyzers)
         {
@@ -125,7 +130,13 @@ public static class GraphAnalysisRunner
         {
             var suppressions = BuildSuppressions(graph, group.Key);
             foreach (var finding in group)
-                if (suppressions is null || !suppressions.IsSuppressed(finding))
+                // A diagnostic is never waived. RuleIds.IsDiagnostic is the set that says "the
+                // results you are reading are incomplete", and an annotation that could hide one
+                // would hide the fact that the total cannot be trusted. It was reachable here and
+                // nowhere else, so the same MLQT.Check.Failed was waivable or not depending on which
+                // pass had produced it.
+                if (RuleIds.IsDiagnostic(finding.RuleId)
+                    || suppressions is null || !suppressions.IsSuppressed(finding))
                     kept.Add(finding);
         }
         return kept;

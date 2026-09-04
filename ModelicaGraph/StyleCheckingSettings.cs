@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.StyleRules;
 using ModelicaParser.Visitors;
 
@@ -242,8 +243,7 @@ public class StyleCheckingSettings
         if (patterns.Length == 0)
             return false;
 
-        var dot = modelId.IndexOf('.');
-        var library = dot < 0 ? modelId : modelId[..dot];
+        var library = ModelicaName.RootLibraryOf(modelId);
 
         foreach (var pattern in patterns)
             if (pattern.IsMatch(library))

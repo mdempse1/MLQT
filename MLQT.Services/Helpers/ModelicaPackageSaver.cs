@@ -66,16 +66,12 @@ public class ModelicaPackageSaver
                 shortClassIds.Add(model.Id);
 
             // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
-            // the model's original text (no reformatting/reordering). The cheap string pre-check
-            // avoids a visitor pass on the vast majority of models that have no __MLQT annotation.
-            if (model.Definition.ModelicaCode?.Contains("__MLQT", StringComparison.Ordinal) == true
-                && model.Definition.ParsedCode is { } parsedForSuppression)
-            {
-                var suppressionExtractor = new ModelicaParser.StyleRules.MlqtSuppressionExtractor();
-                suppressionExtractor.VisitStored_definition(parsedForSuppression);
-                if (suppressionExtractor.Build().HasFormattingOptOut)
-                    formatPreserved.Add(model.Id);
-            }
+            // the model's original text (no reformatting/reordering). Asked through the shared
+            // FormattingExclusion so the incremental format in MainLayout gets the same answer — it
+            // used to read the name list only, and reordered exactly the classes the annotation was
+            // written on.
+            if (FormattingExclusion.OptsOutInSource(model))
+                formatPreserved.Add(model.Id);
 
             // Pre-compute element names for packages without a stored package.order
             if (model.PackageOrder == null && model.Definition.ParsedCode != null

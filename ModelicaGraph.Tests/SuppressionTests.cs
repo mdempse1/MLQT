@@ -107,6 +107,68 @@ public class SuppressionTests
         Assert.Empty(Check(code, new StyleCheckingSettings { ImportStatementsFirst = true }));
     }
 
+    // ---- the two formatting exclusions waive the same rules (B72) -----------------------------
+
+    /// <summary>A class that breaks every rule the checker puts behind <c>isExcludedFromFormatting</c>.</summary>
+    private const string BreaksEveryLayoutRule = """
+        model TestModel
+          Real x;
+          import Modelica.Units.SI;
+          extends Modelica.Icons.Example;
+        equation
+          connect(a.p, b.n);
+          x = time;
+        initial equation
+          x = 0;
+        algorithm
+          x := x;
+        end TestModel;
+        """;
+
+    private static StyleCheckingSettings EveryLayoutRule => new()
+    {
+        ImportStatementsFirst = true,
+        OneOfEachSection = true,
+        DontMixEquationAndAlgorithm = true,
+        DontMixConnections = true,
+        InitialEQAlgoFirst = true,
+        InitialEQAlgoLast = true,
+    };
+
+    [Fact]
+    public void TheTwoFormattingExclusionsWaiveTheSameRules()
+    {
+        // "Which rules are layout rules" is written in three places: the if (!isExcludedFromFormatting)
+        // block in StyleChecking, MlqtSuppressionExtractor.FormattingRuleIds, and
+        // CoverageDimension.Layout. CoverageDimensionsTests pins the first to the third. This pins the
+        // first to the second, which nothing did — so an eighth layout rule added to the checker would
+        // have been waived by the FormattingExcludedModels name list and not by __MLQT(format=false),
+        // and every existing test would still have passed.
+        var byNameList = StyleChecking.RunStyleCheckingFindings(
+            new ModelDefinition("M", BreaksEveryLayoutRule), EveryLayoutRule, "TestModel",
+            isExcludedFromFormatting: true);
+
+        var annotated = BreaksEveryLayoutRule.Replace(
+            "end TestModel;", "annotation(__MLQT(format=false));\nend TestModel;");
+        var byAnnotation = StyleChecking.RunStyleCheckingFindings(
+            new ModelDefinition("M", annotated), EveryLayoutRule, "TestModel");
+
+        Assert.Equal(
+            byNameList.Select(f => f.RuleId).OrderBy(id => id, StringComparer.Ordinal),
+            byAnnotation.Select(f => f.RuleId).OrderBy(id => id, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void WithNeitherExclusion_TheSameClassReportsLayoutFindings()
+    {
+        // The test above passes vacuously if the fixture breaks no rule, which is exactly how it would
+        // rot: a grammar or rule change that stops it reporting leaves two empty sets matching.
+        var reported = StyleChecking.RunStyleCheckingFindings(
+            new ModelDefinition("M", BreaksEveryLayoutRule), EveryLayoutRule, "TestModel");
+
+        Assert.NotEmpty(reported);
+    }
+
     [Fact]
     public void NoSuppress_IgnoresAnnotations()
     {

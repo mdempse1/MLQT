@@ -10,7 +10,9 @@
 > - `check --baseline <path>` takes a **required value** (the bare-flag default was dropped as a
 >   parsing footgun); the `baseline` subcommand defaults to `<lib>/.mlqt/baseline.json`.
 > - **Both Git and SVN** `GetChangedFilePathsSince` shipped (not Git-only) — SVN via
->   `svn diff --summarize --xml -r <rev>`. Git has unit tests; SVN is implemented but lightly tested.
+>   `svn diff --summarize --xml -r <rev>`. Both are tested now: `SvnChangedFilesSinceTests` covers
+>   the SVN half, including the two properties neither implementation had stated — absolute paths,
+>   and no deleted files (B32).
 > - `ChangedModelResolver` works off the **model→file map** (decoupled from `DirectedGraph`) and
 >   selects the VCS the way `RepositoryService` does (first system whose root contains the path).
 > - JUnit emits only `New` (and `TouchedDebt`) as failing test cases; accepted debt is omitted, so a
