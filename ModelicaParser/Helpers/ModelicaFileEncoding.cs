@@ -168,6 +168,13 @@ public static class ModelicaFileEncoding
         File.WriteAllLines(path, lines, encoding ?? DetectExisting(path));
     }
 
+    /// <inheritdoc cref="WriteAllLines"/>
+    public static async Task WriteAllLinesAsync(
+        string path, IEnumerable<string> lines, Encoding? encoding = null)
+    {
+        await File.WriteAllLinesAsync(path, lines, encoding ?? DetectExisting(path));
+    }
+
     /// <summary>
     /// The encoding of an existing file, or <see cref="Default"/> when it does not exist or cannot
     /// be read. Reading the file to answer this is deliberate: the alternative — assuming — is what

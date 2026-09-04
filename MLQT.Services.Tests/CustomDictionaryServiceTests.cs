@@ -270,4 +270,56 @@ public class CustomDictionaryServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Encoding (B89)
+
+    private const string NL = "\n";
+
+    // The list is a committed file people hand-edit, and it holds engineering terms and proper nouns
+    // that are not all ASCII. It declares no encoding, so it is read the way a .mo file is —
+    // per file, from its bytes — rather than assumed to be UTF-8.
+
+    [Fact]
+    public void AWindows1252ListIsReadWithoutMangling()
+    {
+        var service = NewService();
+        var path = service.PathFor(_alpha);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, System.Text.Encoding.Latin1.GetBytes("Frössling" + NL + "Krüger" + NL));
+
+        Assert.Equal(["Frössling", "Krüger"], service.WordsFor(_alpha).OrderBy(w => w));
+    }
+
+    [Fact]
+    public async Task AndIsWrittenBackInTheSameEncoding()
+    {
+        // The half that made it corruption rather than a display problem: reading as UTF-8 gave
+        // replacement characters, and the next accepted word wrote those characters back.
+        var service = NewService();
+        var path = service.PathFor(_alpha);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, System.Text.Encoding.Latin1.GetBytes("Frössling" + NL));
+
+        await service.AddWordAsync(_alpha, "Nusselt");
+
+        var reread = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(path));
+        Assert.Contains("Frössling", reread);
+        Assert.DoesNotContain("�", reread);   // the replacement character
+    }
+
+    [Fact]
+    public async Task AUtf8ListRoundTrips()
+    {
+        var service = NewService();
+        var path = service.PathFor(_alpha);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "Frössling" + NL, new System.Text.UTF8Encoding(false));
+
+        await service.AddWordAsync(_alpha, "Nusselt");
+
+        Assert.Equal(["Frössling", "Nusselt"], service.WordsFor(_alpha).OrderBy(w => w));
+        Assert.Contains("Frössling", File.ReadAllText(path, new System.Text.UTF8Encoding(false)));
+    }
+
+    #endregion
 }

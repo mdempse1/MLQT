@@ -694,9 +694,9 @@
         var oldSettings = _backupItem.StyleSettings ?? new StyleCheckingSettings();
         var newSettings = SelectedSettings;
 
-        bool styleSettingsChanged = StyleSettingsChanged(oldSettings, newSettings);
+        bool styleSettingsChanged = newSettings.ChecksDifferFrom(oldSettings);
         bool formattingChanged = newSettings.ApplyFormattingRules &&
-                                 (!oldSettings.ApplyFormattingRules || FormattingSettingsChanged(oldSettings, newSettings));
+                                 (!oldSettings.ApplyFormattingRules || newSettings.FormattingDiffersFrom(oldSettings));
 
         _editRepository = false;
         await RepositoryService.SaveRepositorySettingsAsync();
@@ -736,32 +736,6 @@
             .OrderBy(r => r.Category, StringComparer.Ordinal)
             .ThenBy(r => r.Title, StringComparer.Ordinal)
             .ToList();
-
-    // Compare the rule-severity maps (covers every rule toggle, hand-written or data-driven) plus the
-    // non-rule fields that aren't in the map (formatter flags, naming config, spell languages).
-    private static bool StyleSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
-        !RuleSeveritiesEqual(old, @new) ||
-        old.ApplyFormattingRules != @new.ApplyFormattingRules ||
-        old.ComponentsBeforeClasses != @new.ComponentsBeforeClasses ||
-        !old.NamingConvention.Equals(@new.NamingConvention) ||
-        !old.SpellCheckLanguages.SequenceEqual(@new.SpellCheckLanguages);
-
-    private static bool RuleSeveritiesEqual(StyleCheckingSettings old, StyleCheckingSettings @new)
-    {
-        if (old.RuleSeverities.Count != @new.RuleSeverities.Count)
-            return false;
-        foreach (var kv in old.RuleSeverities)
-            if (!@new.RuleSeverities.TryGetValue(kv.Key, out var s) || s != kv.Value)
-                return false;
-        return true;
-    }
-
-    private static bool FormattingSettingsChanged(StyleCheckingSettings old, StyleCheckingSettings @new) =>
-        old.OneOfEachSection != @new.OneOfEachSection ||
-        old.ImportStatementsFirst != @new.ImportStatementsFirst ||
-        old.ComponentsBeforeClasses != @new.ComponentsBeforeClasses ||
-        old.InitialEQAlgoFirst != @new.InitialEQAlgoFirst ||
-        old.InitialEQAlgoLast != @new.InitialEQAlgoLast;
 
     private void RemoveRepository()
     {

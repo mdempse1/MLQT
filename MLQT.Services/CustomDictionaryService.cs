@@ -1,4 +1,5 @@
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services;
 
@@ -158,7 +159,10 @@ public class CustomDictionaryService : ICustomDictionaryService
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllLinesAsync(targetFile, words);
+        // A new file, so ModelicaFileEncoding's default (UTF-8, no BOM) — but through the same
+        // helper, so an export over an existing file keeps that file's encoding rather than
+        // rewriting it as something else.
+        await ModelicaFileEncoding.WriteAllLinesAsync(targetFile, words);
     }
 
     /// <summary>
@@ -189,7 +193,13 @@ public class CustomDictionaryService : ICustomDictionaryService
 
         try
         {
-            foreach (var line in File.ReadAllLines(path))
+            // Through ModelicaFileEncoding for the same reason every .mo read goes through it: the
+            // list is a committed file people hand-edit, it holds proper nouns and engineering terms
+            // that are not all ASCII ("Frössling", "Krüger"), and it declares no encoding. Read as
+            // UTF-8 outright, a Windows-1252 list decoded to replacement characters — and the next
+            // word the user accepted wrote those characters back, so the corruption survived the
+            // edit. Detection is per file and cannot fail.
+            foreach (var line in ModelicaFileEncoding.ReadAllLinesOnly(path))
             {
                 var word = line.Trim();
                 // '#' starts a comment so a team can explain why a word is accepted — the list is a
@@ -225,7 +235,8 @@ public class CustomDictionaryService : ICustomDictionaryService
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllLinesAsync(path, sorted);
+        // Written back in the encoding it was read in — see ReadFile.
+        await ModelicaFileEncoding.WriteAllLinesAsync(path, sorted);
 
         // Record what we just wrote, so the next read does not mistake our own write for an outside
         // change and announce it.

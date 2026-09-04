@@ -63,7 +63,10 @@ vendor's encrypted `package.moe` with Modelica text whenever the library happene
 writable. An eighth read, on the same day, opened **B87–B88** and closed them: turning the same lens
 on CLAUDE.md's own absolutes found that `WithinClause` really is the only place that handles a within
 clause and that it got the clause wrong — a file with a licence header above it was read as having
-none, so **every such file was silently never formatted** (**B87**). **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+none, so **every such file was silently never formatted** (**B87**). A ninth read closed **B89–B90**,
+asking the same lens's third question — what is *like* the things an absolute covers but not covered
+by it — and finding the accepted-spellings list read as UTF-8 and written back mangled, and
+**Excluded libraries** saving but never re-checking. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -81,8 +84,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Fourth review](#fourth-review-2026-09-04)), B65–B78 by the fifth (see
 [Fifth review](#fifth-review-2026-09-04)), B79–B83 by the sixth (see
 [Sixth review](#sixth-review-2026-09-04)), B84–B86 by the seventh (see
-[Seventh review](#seventh-review-2026-09-04)) and B87–B88 by the eighth (see
-[Eighth review](#eighth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Seventh review](#seventh-review-2026-09-04)), B87–B88 by the eighth (see
+[Eighth review](#eighth-review-2026-09-04)) and B89–B90 by the ninth (see
+[Ninth review](#ninth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -281,12 +285,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the eight end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the nine end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, and B87–B88 the eighth.
+B84–B86 the seventh, B87–B88 the eighth, and B89–B90 the ninth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -378,6 +382,8 @@ B84–B86 the seventh, and B87–B88 the eighth.
 | B86 | **The one case-sensitive `.mo` test in the solution** | seventh review 2026-09-04 | ⭐ | S | Twenty-two places ask whether a path is a Modelica file and twenty-one pass `StringComparison.OrdinalIgnoreCase`. `LibraryDataService.GetPackageModelicaFiles` does not: `rootDirectory.EndsWith(".mo")`. `LibraryDiscovery.DiscoverLibraryPaths` accepts `Foo.MO` case-insensitively, so a file named that way is offered as a library and then loads **zero** classes — a silent empty library rather than an error. The same line reads `validFiles.AddRange(rootDirectory)` where `rootDirectory` is a `string`; it does the right thing (the `params ReadOnlySpan<T>` overload treats it as one element) but reads as if it were splitting the path into characters, and `Add` is what is meant. **✅ shipped (2026-09-04)** — case-insensitive like the other twenty-one, and `Add` rather than `AddRange`. |
 | B87 | **`WithinClause` cannot see a clause that follows a comment, so ordinary files are never formatted** | eighth review 2026-09-04 | ⭐⭐⭐ | S | `StartsWithClause` skips leading *whitespace* and nothing else, so a file opening with a licence header — `// Copyright …` above `within MyLib.Sub;`, which is entirely ordinary Modelica and parses cleanly — is read as having no within clause. Verified end to end: `Has` returns false, `Ensure` prepends a **second** clause, and the result goes from 0 parse errors to 1. `ModelicaPackageSaver.RenderFileSource` calls `Ensure` on the file's own text and is what MainLayout's incremental formatter uses, so every such file fails the `parserErrors.Count > 0` guard and is left unformatted — quietly, and with a log line blaming a syntax error on a file that has none. The guard is the only reason this is not corruption: without it the duplicate clause would be written to disk, which is exactly the failure `WithinClause` was created to stop, on the one input its check does not cover. `Strip` has the mirror defect and leaves the clause in place. Same root cause reaches the stub source: `ExternalStubBuilder.SynthesizeSource` writes its three-line header *above* the within clause, so a stub's stored code is invisible to `Has` too — latent only because every write path now refuses a stub. **✅ shipped (2026-09-04)** — `StartsWithClause` skips everything the lexer skips: whitespace and both comment forms. `Strip` gained the other half of the answer — it keeps a comment above the clause and still drops the whitespace, because whitespace carries nothing and dropping it is what keeps the class on line 1, while a licence header is text somebody wrote and a method called Strip must not lose it. Twelve tests, including that the file parses cleanly both before and after `Ensure` (the property, rather than a string compare), that a *commented-out* clause is correctly still not a clause, and that an unterminated `/*` is treated as the lexer treats it. |
 | B88 | **Seven stale doc summaries, two of them contradicting the member they sit on** | eighth review 2026-09-04 | ⭐ | S | B82 fixed one orphaned `<summary>`; a mechanical sweep for `</summary>` immediately followed by `<summary>` finds **seven**, so it is a class rather than a slip — a rewritten comment left above its replacement. Two are worse than untidy because the old text contradicts the new. `ILibraryDataService.SuppressTreeDataChanged` opens by describing a **flag** the caller must set and unset, and is immediately followed by the summary explaining that a flag could not express nesting and that this is a disposable scope; a reader taking the first goes looking for a property. `StyleCheckingSettings.HasAnyStyleRuleEnabled` opens with "the severity map holds only enabled rules" and is followed by the summary explaining that it does not — a rule whose prerequisite is off is in the map and does nothing, which is the whole reason the member asks `SeverityFor`. The other five strand a method's summary on the member that was later inserted above it (`LoadReferenceLibrariesAsync`, `SkipReferenceOnly`, `RunDeferredStyleCheckingFromEventAsync`, `UpdateGraphIncremental`, `ExternalStubBuilder.StubHeader`) — and one of those five was introduced by **B84's own edit**, which is the argument for sweeping rather than fixing them one at a time. **✅ shipped (2026-09-04)** — all seven gone, and the sweep that found them (`</summary>` immediately followed by `<summary>`) now returns nothing. Two were deleted, being old text the summary beneath it contradicts; five were **moved** onto the member they describe, which is what the delete-only first pass got wrong — four members would have been left with no summary at all, so the fix was checked by re-running the sweep *and* by looking at each member afterwards. `RunDeferredStyleCheckingAsync` gained the one-line summary it had never had beside its `<param>`. |
+| B89 | **The accepted-spellings list is read as UTF-8 and written back mangled** | ninth review 2026-09-04 | ⭐⭐ | S | `CustomDictionaryService` reads `<repo>/.mlqt/dictionary.txt` with `File.ReadAllLines` and writes it with `File.WriteAllLinesAsync`. That file is the one committed, hand-editable plain-text file MLQT owns besides Modelica source; it declares no encoding, and it holds proper nouns and engineering terms that are not all ASCII (Frössling, Krüger). A list saved in Windows-1252 decodes to replacement characters, and — the half that makes it corruption rather than a display problem — the next word the user accepts writes those characters back, so the damage survives the edit and is committed. This is exactly the failure `ModelicaFileEncoding` was written for, on the one file nobody thought to route through it: `package.order`, which is no more Modelica than this is, already goes through `ReadAllLinesOnly`/`WriteAllLines`. **✅ shipped (2026-09-04)** — both ends now do, and `ModelicaFileEncoding` gained the `WriteAllLinesAsync` its text pair already had so the service's async signature did not have to change. Three tests: a Latin-1 list read intact, the same list still Latin-1 and unmangled after a word is added, and a UTF-8 list round-tripping. |
+| B90 | **Excluding a library from the checks does nothing until the project is reloaded** | ninth review 2026-09-04 | ⭐⭐ | S | `SettingsRepositories.ConfirmChanges` asks `StyleSettingsChanged` whether Apply has to re-check. It compared the severity map, the two formatter flags, the naming config and the spell languages — and not `ExcludedLibraries`, which **the same dialog edits**. So adding a library to the excluded list saved the setting, raised nothing, and left its findings on the Code Review list and its classes in the coverage figures until the project was reloaded; removing one left the library unchecked the same way. The phase 6 note named this risk in as many words for rules — "each needing its own switch *and* a field in `StyleSettingsChanged` (miss the latter and persistence/re-check silently break)" — and solved it for rules by making the list data-driven. `ExcludedLibraries` is not a rule, arrived later, and was missed. **✅ shipped (2026-09-04)** — the comparison moved onto `StyleCheckingSettings` as `ChecksDifferFrom` / `FormattingDiffersFrom`, beside the properties it has to keep up with and where it can be tested at all; `ExcludedLibraries` and `FormattingExcludedModels` are in it. `StyleCheckingSettingsComparisonTests` walks every persisted property by reflection and fails on one that is neither compared nor written down in a reasoned exemption list — and checks the exemptions are true, so the list cannot become a way of silencing the test. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -928,6 +934,41 @@ way.
 desktop app; and of CLAUDE.md's four "only place" claims it followed two to their edge cases
 (`WithinClause`, and `ClassSuppressions.For`, which B71 had already closed) and took the other two on
 the evidence of earlier reviews.
+
+
+### Ninth review (2026-09-04)
+
+**B89–B90 came out of a ninth read**, continuing the seventh's lens. **Both are closed.**
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green.
+
+**The lens has a second half now, and this read is what showed it.** The seventh review took a
+documented absolute and walked its verbs; the eighth took an absolute of the form "X is the only place
+that does Y" and asked whether X gets Y right. This one asked the third question: **which things
+*like* the ones the absolute covers are not covered by it?** `ModelicaFileEncoding` is the only reader
+and writer of `.mo` and `package.order`, and it is — but `.mlqt/dictionary.txt` is the same kind of
+file, committed and hand-edited and holding non-ASCII, and it was going through `File.ReadAllLines`
+(**B89**). `SeverityFor` really is the only way to ask what a rule will do, and every direct read of
+the map is inside `StyleCheckingSettings` itself; nothing to report there.
+
+**B90 is the one a user would notice.** Adding a library to **Excluded libraries** and pressing Apply
+saved the setting and did nothing else: the dialog's change comparison did not include the field the
+dialog itself edits, so no re-check was raised and the excluded library's findings stayed on the
+screen. The phase 6 note had named this exact risk — "miss the field and persistence/re-check silently
+break" — and closed it for rules by making the rule list data-driven, leaving the fields that are not
+rules with no guard at all.
+
+**What the fixes converged on**, for the sixth review running. `ChecksDifferFrom` moved out of the
+page and onto `StyleCheckingSettings`, next to the properties it has to keep up with — which is both
+the fix and the only way to test it, since a private static in a `.razor` cannot be reached. The test
+that came with it is the ledger shape this project keeps arriving at: walk every persisted property by
+reflection, and fail on one that is neither compared nor written down as deliberately ignored, with
+the exemptions checked to be true so the list cannot be used to silence the test.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app, so B90 is verified by the extracted comparison and its tests rather than by pressing
+Apply; and it did not review the Dymola help parsing.
 
 
 ---

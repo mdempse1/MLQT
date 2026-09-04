@@ -126,6 +126,55 @@ public class StyleCheckingSettings
         return null;
     }
 
+    /// <summary>
+    /// Whether these settings would produce a different set of findings from <paramref name="other"/>
+    /// — the question a settings dialog asks to decide whether Apply has to re-check.
+    ///
+    /// <para><b>Here rather than in the dialog</b>, next to the properties it has to keep up with.
+    /// Written out there, it compared the severity map and three of the other fields and missed
+    /// <see cref="ExcludedLibraries"/>, which the same dialog edits: adding a library to the excluded
+    /// list saved the setting, raised nothing, and left its findings on the Code Review list and its
+    /// classes in the coverage figures until the project was reloaded. The phase 6 note named this
+    /// exact risk for rules — "miss the field and persistence/re-check silently break" — and solved it
+    /// for rules by making the list data-driven; this is the same failure on a field that is not a
+    /// rule.</para>
+    ///
+    /// <para>What is deliberately <em>not</em> compared: the commit-message policy and the SVN branch
+    /// directory names, neither of which any rule reads. <c>StyleCheckingSettingsComparisonTests</c>
+    /// holds every persisted property to one list or the other, so a new one cannot be added to
+    /// neither.</para>
+    /// </summary>
+    public bool ChecksDifferFrom(StyleCheckingSettings other) =>
+        !SeveritiesEqual(other) ||
+        ApplyFormattingRules != other.ApplyFormattingRules ||
+        ComponentsBeforeClasses != other.ComponentsBeforeClasses ||
+        !NamingConvention.Equals(other.NamingConvention) ||
+        !SpellCheckLanguages.SequenceEqual(other.SpellCheckLanguages) ||
+        !ExcludedLibraries.SequenceEqual(other.ExcludedLibraries, StringComparer.OrdinalIgnoreCase) ||
+        !FormattingExcludedModels.SequenceEqual(other.FormattingExcludedModels, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the formatter would lay a class out differently. Narrower than
+    /// <see cref="ChecksDifferFrom"/>: only the options that reach
+    /// <see cref="ToFormattingOptions"/> count, and a caller also has to decide whether formatting is
+    /// switched on at all.
+    /// </summary>
+    public bool FormattingDiffersFrom(StyleCheckingSettings other) =>
+        !ToFormattingOptions().Equals(other.ToFormattingOptions()) ||
+        InitialEQAlgoFirst != other.InitialEQAlgoFirst;
+
+    private bool SeveritiesEqual(StyleCheckingSettings other)
+    {
+        if (RuleSeverities.Count != other.RuleSeverities.Count)
+            return false;
+
+        foreach (var (ruleId, severity) in RuleSeverities)
+            if (!other.RuleSeverities.TryGetValue(ruleId, out var theirs) || theirs != severity)
+                return false;
+
+        return true;
+    }
+
     /// <summary>True if the rule is enabled (severity != Off). Public so a data-driven settings UI
     /// can render a toggle per rule id from the catalog.</summary>
     public bool IsRuleEnabled(string ruleId) => SeverityFor(ruleId) != RuleSeverity.Off;
