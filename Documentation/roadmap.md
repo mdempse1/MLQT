@@ -83,7 +83,12 @@ nothing** — it read the last unreviewed subsystem, the Dymola help parser, and
 report; every sweep came back clean; and the backlog checks out. **A fifteenth read, asked for as a
 pass over the code itself, then found the most serious defect of the series** — **B100**, a coverage
 ratchet that cannot fail when invoked the way the documentation says to invoke it. It also ran the
-Wave-1 analyses over MSL's 6,487 classes for the first time and found them sound.
+Wave-1 analyses over MSL's 6,487 classes for the first time and found them sound. **A sixteenth read
+added no items** — it acted on B100's lesson instead, running all 27 commands the documentation prints
+against a real fixture (all behave as documented, and git invoked the generated pre-commit hook for
+the first time), and turning the rule into `DocumentedCommandTests`, which fails the build when a
+printed command's flag combination is exercised by no test. Six such combinations existed; all six now
+have tests.
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
@@ -1241,6 +1246,60 @@ prints a command, that exact command is a test case.**
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app; and it read the CLI, the Wave-1 analyses and the new rules but not `RevisionControl`'s
 Git internals or the resolver family, which remain covered by their own suites and by the MSL run.
+
+
+---
+
+### Sixteenth review (2026-09-04) — running every command the documentation prints
+
+Scoped deliberately narrowly, to act on the fifteenth review's own closing lesson: *when a document
+prints a command, that exact command is a test case*. Not another read — an execution. A git-backed
+fixture library was built and **every runnable command printed in `Documentation/*.md` was run against
+it** — 27 of them, across `check`, `baseline`, `compare` and `hook` — with the exit code and output
+compared against what the surrounding prose claims.
+
+**All 27 behave as documented.** No new backlog items. That is a statement about an enumerated
+surface, not about how hard anyone looked: the fourteenth review's mistake was reporting a clean sweep
+as a clean codebase, and this pass is reported as what it is.
+
+**The pre-commit hook was exercised end to end for the first time.** `mlqt hook install` has had unit
+tests since phase 3, but no test had ever let git *invoke* the generated script. Installed against the
+fixture at `--fail-on warning`, it blocks a commit touching a `.mo` file (exit 1, findings printed),
+`--no-verify` skips it (exit 0), it stands aside silently for a commit touching no `.mo` file, and
+reinstalled at the default `--fail-on error` it lets the same warnings through. The generated hook is
+correct, and this is the first evidence of that rather than of the code that writes it.
+
+**Two apparent findings were my own test artefacts, not defects** — a `--sarif-base` result whose file
+a later run had overwritten, and a `�` in a review body that was a valid UTF-8 em-dash the terminal
+could not render. Both were chased to the ground before being written down. Recording them because the
+alternative — filing them — is how a review's credibility goes.
+
+**The gap this exposed, and closed.** Comparing the flag combinations the documentation prints against
+those any test passes to `Cli.Run` found **six documented combinations that no test exercised**. All
+six involve `--baseline`; two pair it with `--metrics`. That is B100's exact shape — two features that
+both touch persisted state in one run — and all six were among the 27 that had just been run by hand
+and behaved correctly. So: test-coverage gaps, not defects, and the interesting thing is not the six
+but that nothing would have told us about the seventh.
+
+**✅ `DocumentedCommandTests` now enforces the rule mechanically** (`MLQT.Cli.Tests`), following B97's
+pattern of turning a review's sweep into a build-time check. It extracts every `mlqt` invocation from
+the fenced blocks in `Documentation/*.md`, skips the `<…>`/`[…]` syntax templates, and fails when a
+printed flag combination is a subset of no `Cli.Run` in the suite — naming the file and line, and
+telling the reader to add a test or stop printing the command. Like `SharedUiConventionTests` it
+asserts it can *see* the sources rather than skipping when it cannot. It was verified by making it
+fail before it was trusted to pass. The six uncovered combinations are closed by six real tests
+alongside it, each asserting what its document claims: a green JUnit suite, SARIF URIs carrying the
+subdirectory, both artefacts written from one run, a postable review body, and a metrics point
+recorded with a baseline in play.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings; all six suites pass — **4,725 tests**
+(4,718 + 7); coverage gate 86.9%; SARIF valid against the 2.1.0 schema.
+
+**What this review did not do:** it ran the documented commands, not every command the CLI accepts;
+the flag combinations tested are those the documentation prints, and a combination a user invents is
+still unguarded. The guard cannot say a documented command is *correct*, only that something runs it —
+the assertions inside the six new tests are what make the claim, and they are as good as the fixture
+they run against.
 
 
 ---
