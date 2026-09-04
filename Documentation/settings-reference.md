@@ -158,8 +158,10 @@ mode; with that setting off it writes the composition in source order and moves 
 their own the other rules would report an arrangement that pressing **Format All Files** could never
 produce — findings nobody can clear, against a setting that looks enabled.
 
-- **In the app**, the four switches are greyed out until you turn **One of each section** on. What
-  they were set to is kept, so turning it on brings them back exactly as they were.
+- **In the app**, the four switches are greyed out until you turn **One of each section** on. They
+  keep showing what they are set to rather than jumping to off, because nothing has been switched
+  off — the settings are still there, and are simply not in effect. Turning the prerequisite back on
+  makes them active again exactly as they were.
 - **In a settings file**, the rules simply do not run, and `mlqt check` prints a warning naming the
   setting to turn on:
 

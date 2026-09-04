@@ -58,13 +58,17 @@ public static class RuleSettingsLayout
 
     private static readonly RuleSettingsRow[] _rows =
     [
-        // Formatting. Bespoke because the checker and the formatter read the same switches, and
-        // several of them are mutually exclusive — a plain severity picker would let a repository
-        // ask for "initial sections first" and "initial sections last" at once.
+        // Formatting. Bespoke because the checker and the formatter read the same switches, several
+        // of them are mutually exclusive — a plain severity picker would let a repository ask for
+        // "initial sections first" and "initial sections last" at once — and their level is derived
+        // rather than chosen, so there is nothing for a picker to set. Three of them bind to
+        // IsRuleSwitchedOn rather than to the rule facades: a facade reports its rule as off while
+        // OneOfEachSection is off, and a dialog drawn from that reads as MLQT having silently
+        // switched the user's settings off.
         new(RuleIds.OneOfEachSection, Formatting, RuleControl.Bespoke, Binding: "SelectedSettings.OneOfEachSection"),
-        new(RuleIds.ImportStatementsFirst, Formatting, RuleControl.Bespoke, Binding: "SelectedSettings.ImportStatementsFirst"),
-        new(RuleIds.InitialEqAlgoFirst, Formatting, RuleControl.Bespoke, Binding: "SelectedSettings.InitialEQAlgoFirst"),
-        new(RuleIds.InitialEqAlgoLast, Formatting, RuleControl.Bespoke, Binding: "SelectedSettings.InitialEQAlgoLast"),
+        new(RuleIds.ImportStatementsFirst, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"),
+        new(RuleIds.InitialEqAlgoFirst, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"),
+        new(RuleIds.InitialEqAlgoLast, Formatting, RuleControl.Bespoke, Binding: "IsRuleSwitchedOn(RuleIds.InitialEqAlgoLast)"),
 
         // Spelling. Bespoke because switching either on reveals the dictionary picker.
         new(RuleIds.SpellingDescription, Spelling, RuleControl.Bespoke, Binding: "SelectedSettings.SpellCheckDescription"),

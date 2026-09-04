@@ -325,4 +325,47 @@ public class GovernedRuleTests
 
         Assert.True(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.ExtendsAtTop));
     }
+
+    /// <summary>
+    /// What a settings dialog asks, as against what the checker asks.
+    ///
+    /// <para>Turning off One of each section makes the ordering rules inert, and the dialog used to
+    /// bind its switches to the rule facades — so three of the four redrew themselves as unticked
+    /// while the fourth, a plain bool with nothing to mask it, stayed on. Four disabled, three
+    /// apparently switched off, and MLQT looking like it had silently changed the user's settings.
+    /// Nothing had changed: the entries were all still there.</para>
+    /// </summary>
+    [Fact]
+    public void SwitchedOnIsWhatIsConfigured_NotWhatCurrentlyTakesEffect()
+    {
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
+
+        settings.OneOfEachSection = false;
+
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst));   // still configured
+        Assert.False(settings.IsRuleEnabled(RuleIds.ImportStatementsFirst));     // but not in effect
+    }
+
+    [Fact]
+    public void AGovernedRuleReportsItsGovernorsSwitch()
+    {
+        // ExtendsAtTop has no switch of its own, so "is it switched on" is a question about the one
+        // it is governed by — the same indirection SeverityFor makes.
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
+
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.ExtendsAtTop));
+
+        settings.ImportStatementsFirst = false;
+
+        Assert.False(settings.IsRuleSwitchedOn(RuleIds.ExtendsAtTop));
+    }
+
+    [Fact]
+    public void ARuleWithNothingBlockingIt_IsSwitchedOnAndEnabledAlike()
+    {
+        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.ClassDescription));
+        Assert.True(settings.IsRuleEnabled(RuleIds.ClassDescription));
+    }
 }

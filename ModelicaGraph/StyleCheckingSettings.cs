@@ -129,6 +129,22 @@ public class StyleCheckingSettings
     /// can render a toggle per rule id from the catalog.</summary>
     public bool IsRuleEnabled(string ruleId) => SeverityFor(ruleId) != RuleSeverity.Off;
 
+    /// <summary>
+    /// Whether the rule is switched on in this configuration, <b>ignoring</b> whether something else
+    /// currently makes it inert.
+    ///
+    /// <para>This is the question a settings <em>editor</em> asks, and it is not the same as
+    /// <see cref="IsRuleEnabled"/>, which answers whether the rule will run. Turning off
+    /// <c>OneOfEachSection</c> makes the ordering rules inert, and a dialog binding to the effective
+    /// answer would redraw them as unticked — telling the user MLQT had switched four of their
+    /// settings off, when it had done nothing of the kind and ticking the prerequisite back on would
+    /// bring them all straight back. Showing what is configured, greyed out, is the honest version.</para>
+    /// </summary>
+    public bool IsRuleSwitchedOn(string ruleId) =>
+        RuleCatalog.GovernorOf(ruleId) is { } governor
+            ? IsRuleSwitchedOn(governor)
+            : RuleSeverities.ContainsKey(ruleId);
+
     /// <summary>Enable a rule at its catalog default severity, or disable it. Public so a data-driven
     /// settings UI can bind a toggle to a rule id.</summary>
     public void SetRuleEnabled(string ruleId, bool enabled)
