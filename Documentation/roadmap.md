@@ -74,7 +74,11 @@ read closed **B93–B94** by running the same sweeps over the rest of CLAUDE.md'
 came back clean, one found a source-swap written twice and out of date since B75, and one found two
 coding rules that describe a codebase which does not exist. A twelfth read closed **B95–B97**, two
 of them small and the third the one that matters: the sweeps that had found three defects across two
-reviews existed only in the review transcripts, and are now four tests that run on every build.
+reviews existed only in the review transcripts, and are now four tests that run on every build. A
+thirteenth read closed **B98–B99**, both documentation, and both found by turning the review on its
+own output: what the twelve commits had made the docs wrong about (almost nothing — the docs had been
+right and the code wrong), and what twelve reviews had taken on trust (**B99** — the encrypted-library
+accuracy figures are not, and never were, "checked on every build").
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
@@ -97,8 +101,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Eighth review](#eighth-review-2026-09-04)), B89–B90 by the ninth (see
 [Ninth review](#ninth-review-2026-09-04)), B91–B92 by the tenth (see
 [Tenth review](#tenth-review-2026-09-04)), B93–B94 by the eleventh (see
-[Eleventh review](#eleventh-review-2026-09-04)) and B95–B97 by the twelfth (see
-[Twelfth review](#twelfth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Eleventh review](#eleventh-review-2026-09-04)), B95–B97 by the twelfth (see
+[Twelfth review](#twelfth-review-2026-09-04)) and B98–B99 by the thirteenth (see
+[Thirteenth review](#thirteenth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -297,12 +302,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the twelve end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the thirteen end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, B93–B94 the eleventh, and B95–B97 the twelfth.
+B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, B93–B94 the eleventh, B95–B97 the twelfth, and B98–B99 the thirteenth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -403,6 +408,8 @@ B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the 
 | B95 | **The load-bearing `"StyleChecking"` source is a literal in nine places** | twelfth review 2026-09-04 | ⭐ | S | The phase 1 note lists `Source == "StyleChecking"` as one of the string contracts that must be preserved or migrated in lockstep, and its counterpart already has a constant (`ParserErrorReporter.SourceName`). This one was written out nine times across six files — the one place that produces it and five that filter on it, including the two deciding what the Metrics tab counts and what a re-check clears from the Code Review list. A typo in a consumer filters nothing, which looks exactly like "there were no findings". **✅ shipped (2026-09-04)** — `LogMessage.StyleCheckingSource`, `ParserSource` and `ExternalToolSource` are the three values the field takes, declared on the type that owns it; every site uses them, and `ParserErrorReporter.SourceName` is now an alias for one of them rather than a second definition. |
 | B96 | **Two settings buttons swallow every exception and log nothing** | twelfth review 2026-09-04 | ⭐ | S | `BrowseForDymolaFolder` and `BrowseForOpenModelicaFolder` wrap the folder picker in `catch (Exception) { }` — empty, no log, no message. A picker that throws (an open picker, a permissions problem, a shell failure) leaves the button doing nothing and no trace anywhere, which is indistinguishable from the user cancelling and undiagnosable afterwards. The rest of the codebase logs; B27's whole subject was an exception vanishing. Found by sweeping for empty catch blocks: the only other one is covered by the comment on the sibling `catch` immediately above it. **✅ shipped (2026-09-04)** — both log a warning naming the tool and the message. |
 | B97 | **The sweeps that found B88, B91 and B93 exist only in the review** | twelfth review 2026-09-04 | ⭐⭐ | S | Three defects in two reviews were found by fifteen-line scripts over the `MLQT.Shared` source, and every one of those scripts then lived in a review transcript and nowhere else — so the next occurrence waits for somebody to think of running it again. That is the whole failure the eleventh review's own closing note named ("a sweep worth running twice is worth a test"), left unactioned in the same breath. B91 makes the case: nine reviews read past an unsubscribe method that nothing called, because it was there and looked right, and only asking *who calls it* found it — which is the kind of question a machine should ask on every build, not a person once a review. **✅ shipped (2026-09-04)** — `SharedUiConventionTests` runs four of them: every subscription in a component is matched by an unsubscribe, every component that subscribes declares `IDisposable`, no component has a cleanup method nothing calls, and no doc comment is stranded above another. It lives in `MLQT.Services.Tests` because `MLQT.Shared` has no suite until phase 7a and these need no rendering; it says so, and says where it moves to. It also asserts it can see the source rather than skipping when it cannot — deliberately unlike `RuleDocumentationTests`, and the comment gives the reason: a silent no-op here would reintroduce exactly the failure the file exists to prevent. |
+| B98 | **The Size panel counts a reference library, and the page does not say it does not** | thirteenth review 2026-09-04 | ⭐ | S | B80's user-visible half. `metrics-dashboard.md` explains that a library in `ExcludedLibraries` is "still counted in the **Size** panel: it is your code, and only the quality judgement is suppressed" — and says nothing about the other exclusion, leaving a reader to conclude the same of a reference library. It is the one place on the page where the two behave differently: a reference library is out of the Size census and out of the scope box entirely, which is precisely what B80 changed. **✅ shipped (2026-09-04)** — the Size section states both, and says the consequence a user would want to know: pointing MLQT at a tool's library folder does not add tens of thousands of classes to the panel. |
+| B99 | **"Accuracy is checked on every build" — no build has ever checked it** | thirteenth review 2026-09-04 | ⭐⭐ | S | `design-encrypted-libraries.md` reports the reconstruction's accuracy against MSL (6269 classes recovered, 0 invented, 2/5129 descriptions differing) and says it is "checked on every build" because MSL ships both source and generated help. `encrypted-libraries.md` repeats it to users. But `DocumentationAccuracyTests` needs an **installed Dymola** — `DymolaInstall` finds one or the suite skips — and no CI runner has one, so the figures are re-measured only on a developer machine that does. This is B8's defect ("conformance is asserted, never validated") and B21's ("CI has never seen this work") on the one subsystem twelve reviews declined to read closely **on the strength of that very claim**. What does run everywhere is real and worth naming: 82 fixture-based tests over `DymolaHelpParser`, `HelpHtml` and `DymolaHelpReader`. **✅ shipped (2026-09-04)** — both pages say what is verified where, and the design note says plainly that the shape is covered on every build and the accuracy against real vendor output is not, so the next reviewer weighing whether to read the parser is weighing the truth. Committing a fixture to close the gap properly was considered and not done: the input is a vendor's generated HTML, and shipping enough of it to reproduce a 6269-class comparison is a licensing question rather than a build one. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -1096,6 +1103,38 @@ is the only open item, and it belongs to phase 7a.
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app, so B96 is verified by the build rather than by making a picker throw; and it did not
 review the Dymola help parsing.
+
+
+### Thirteenth review (2026-09-04)
+
+**B98–B99 came out of a thirteenth read.** **Both are closed.** Both are documentation, and both were
+found by turning the review on its own output rather than on the code.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green. Every sweep from the tenth, eleventh and twelfth reviews re-run clean —
+four of them now as tests (B97), so that will stay true without anyone checking.
+
+**Two questions, neither of which was about the code.**
+
+*What did my own twelve commits make the documentation wrong about?* Mostly nothing, and the reason is
+worth recording: `code-formatting.md` already promised that `__MLQT(format=false)` "takes the class out
+of **every** formatting pass — startup, VCS…", which is what B65 made true rather than something B65
+invalidated. The documentation was right and the code was not, twice over. The one real gap is
+**B98**: B80 took reference libraries out of the Size census, and the page explains the contrasting
+case for `ExcludedLibraries` and not this one.
+
+*What did twelve reviews take on trust?* **B99** is the answer, and it is the more interesting of the
+two. Every one of these sections has closed by saying it did not review the Dymola help parsing,
+"whose accuracy is measured against MSL on every build, which is a stronger check than reading it".
+That sentence came from the design note, and it is false: the measurement needs an installed Dymola,
+and no runner has one. Twelve reviews declined to read a 442-line parser of a format MLQT does not
+control, on the strength of a claim none of them checked — which is the same mistake as B8, on the
+review process rather than on the code.
+
+**What this review did not do**, now stated accurately: it did not read all 47,000 changed lines; it
+did not exercise the desktop app; and it did not read the Dymola help parsing, which is covered on
+every build by 82 fixture tests over the shapes it handles, and compared against real vendor output
+only on a machine with Dymola installed.
 
 
 ---

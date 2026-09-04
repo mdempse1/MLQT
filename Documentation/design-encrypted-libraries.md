@@ -11,11 +11,21 @@
 > `--dependency`, the MCP `load_library` tool, and a **Settings → Reference Libraries** tab in the
 > desktop app. User documentation is [encrypted-libraries.md](encrypted-libraries.md).
 >
-> **Measured against MSL 4.1.0** (both source and generated help ship, so accuracy is checked on
-> every build): 6269 classes recovered, **0** invented, 3.4% of source classes undocumented (the
-> protected/hidden ones), 2/5129 descriptions differing, 35/4674 extends lists differing, and
-> **0** classes wrongly reported as having no icon. Across all 53 installed encrypted libraries,
-> 37,686 classes recovered and every synthesized declaration parses.
+> **Measured against MSL 4.1.0**, which ships both source and generated help so the reconstruction
+> can be compared with the truth: 6269 classes recovered, **0** invented, 3.4% of source classes
+> undocumented (the protected/hidden ones), 2/5129 descriptions differing, 35/4674 extends lists
+> differing, and **0** classes wrongly reported as having no icon. Across all 53 installed encrypted
+> libraries, 37,686 classes recovered and every synthesized declaration parses.
+>
+> **Where that is checked, precisely.** `DocumentationAccuracyTests` performs the comparison above,
+> and it needs an installed Dymola — `DymolaInstall` finds one or the suite skips. **No CI runner has
+> one**, so those figures are re-measured only on a developer machine that does; this note said
+> "checked on every build" and that was never true of a build on a runner (backlog B99). What *does*
+> run everywhere is the parser's own suite: 82 fixture-based tests in
+> `ModelicaParser.Tests/ExternalDocs/` over `DymolaHelpParser`, `HelpHtml` and `DymolaHelpReader`,
+> including the two version-specific facts recorded below. The distinction matters because it is what
+> the reviews leaned on when deciding not to read the parser closely: its *shape* is covered on every
+> build, its *accuracy against real vendor output* is not.
 >
 > Two deviations from the plan below, both forced by the evidence and both covered by tests:
 > a class heading is now identified by its anchor rather than by being an `<h2>` (vendors put

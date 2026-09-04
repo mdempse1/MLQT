@@ -77,6 +77,18 @@ The panel on the right counts the classes in scope, broken down by kind — `pac
 worth a glance when a percentage looks surprising: a scope that turns out to be 90% `record` explains
 a lot about its icon coverage.
 
+**What it counts is your code**, and the two ways of taking a class out of the *coverage* figures
+differ here — which is the one place on this page where they do:
+
+- A library named in `ExcludedLibraries` **is** counted. It is yours; only the quality judgement is
+  suppressed.
+- A **reference library**, and anything in a repository marked **Reference only**, is **not**. It is
+  not yours to count, any more than it is yours to improve — the same reason it is measured for
+  nothing. Classes recovered from an [encrypted library](encrypted-libraries.md) are left out too.
+
+So pointing MLQT at a tool's installed library folder does not add tens of thousands of classes to
+this panel or offer their packages in the scope box.
+
 ## Scope: the whole project, one library, or one package
 
 The **Scope (package)** box at the top narrows everything on the page — coverage, size, findings and

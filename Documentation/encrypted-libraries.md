@@ -143,7 +143,8 @@ empty, would turn every reference into it into a fabricated broken-reference fin
 
 The Modelica Standard Library ships **both** readable source and Dymola-generated documentation, so
 the reconstruction can be measured exactly rather than assumed. MLQT's test suite loads MSL 4.1.0
-both ways on every build and compares them:
+both ways and compares them (on a machine with Dymola installed — the comparison needs the vendor's
+generated help, which no build server has):
 
 | Measure | Result |
 |---|---|
