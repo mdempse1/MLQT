@@ -13,6 +13,16 @@ public interface IFileMonitoringService
     bool IsMonitoring { get; }
 
     /// <summary>
+    /// Whether one particular repository is being watched.
+    ///
+    /// <para>Separate from <see cref="IsMonitoring"/>, which answers for the whole project. Some
+    /// repositories are deliberately not watched — a reference-only one, because a change in a
+    /// vendor's checkout must not start a pipeline that ends in MLQT writing to it — and "is this one
+    /// watched" is the only way to ask whether that held.</para>
+    /// </summary>
+    bool IsMonitoringRepository(string repositoryId);
+
+    /// <summary>
     /// Gets the current list of pending changes.
     /// </summary>
     IReadOnlyList<FileChangeInfo> PendingChanges { get; }

@@ -288,7 +288,12 @@ public class RepositoryService : IRepositoryService
             // Start file monitoring for this repository (unless we're in initial load).
             // Monitor VcsRootPath rather than LocalPath so that changes to any file in the
             // VCS working copy are detected, even when LocalPath is a subdirectory of the root.
-            if (startMonitoring)
+            //
+            // Never for a reference-only repository: watching it feeds its changes into a pipeline
+            // that reloads, re-analyses and reformats — so a vendor's checkout being updated outside
+            // MLQT ended in MLQT writing to it. The encrypted-library design note lists this guard
+            // and it was not built.
+            if (startMonitoring && !repository.IsReferenceOnly)
             {
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
             }
@@ -901,14 +906,19 @@ public class RepositoryService : IRepositoryService
 
     public void StartMonitoringAllRepositories()
     {
+        var started = 0;
         lock (_lock)
         {
             foreach (var repository in _repositories)
             {
+                // Reference-only repositories are not watched — see AddRepositoryAsync.
+                if (repository.IsReferenceOnly)
+                    continue;
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+                started++;
             }
         }
-        Info("RepositoryService", $"Started file monitoring for {_repositories.Count} repositories");
+        Info("RepositoryService", $"Started file monitoring for {started} repositories");
     }
 
     public void ClearAllRepositories()

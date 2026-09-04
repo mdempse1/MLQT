@@ -55,7 +55,12 @@ the spell-checking rework, and the two pages B20 covers — and found something 
 checking, which came through clean. Two matter: **B79**, the layout coverage dimensions blaming a
 class for a nested class's failures (B12 on the dimensions B12 did not reach, verified by running
 it), and **B80**, a readable reference library counted as the user's own code by the Metrics tab
-while the coverage sweep beside it excludes it. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+while the coverage sweep beside it excludes it. A seventh read, also on 2026-09-04, opened **B84–B86**
+and closed them: it took one sentence the documentation states as an absolute — a reference library is
+"never checked, formatted, committed or written to" — and walked its verbs, finding that three of the
+four held nowhere (**B84**), and separately that **B85**, the MCP edit tools, would overwrite a
+vendor's encrypted `package.moe` with Modelica text whenever the library happened to sit somewhere
+writable. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -71,8 +76,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Second review](#second-review-2026-09-04)), B37–B49 by the third (see
 [Third review](#third-review-2026-09-04)), B50–B64 by the fourth (see
 [Fourth review](#fourth-review-2026-09-04)), B65–B78 by the fifth (see
-[Fifth review](#fifth-review-2026-09-04)) and B79–B83 by the sixth (see
-[Sixth review](#sixth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Fifth review](#fifth-review-2026-09-04)), B79–B83 by the sixth (see
+[Sixth review](#sixth-review-2026-09-04)) and B84–B86 by the seventh (see
+[Seventh review](#seventh-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -271,11 +277,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the six end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the seven end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
-second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, and B79–B83 the sixth.
+second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth, and
+B84–B86 the seventh.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -362,6 +369,9 @@ second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, 
 | B81 | **The encrypted-library note's Settings section describes settings that do not exist** | sixth review 2026-09-04 | ⭐⭐ | S | `design-encrypted-libraries.md` says "In `.mlqt/settings.json`: `ReferenceLibraryPaths: string[]` … `UseEncryptedLibraryDocumentation: bool` … `TreatAsExternalNamespaces: string[]`". None of that is right. The two that shipped live in **application** settings as `AppSettings.ReferenceLibraries.Paths` and `.UseEncryptedLibraryDocumentation`, and `ReferenceLibrarySettings` explains at length why the repository file was the wrong home — an install path is a property of the machine, so a colleague's checkout or a CI runner would not share it, and CI supplies the equivalent with `--dependency`. That reasoning is the interesting part of the decision and the note records neither it nor the outcome. `TreatAsExternalNamespaces` was never built at all: it belongs to the Wave-2 confidence-aware resolver (§2, phase 8), and listing it in a note headed **IMPLEMENTED** reads as a shipped setting. The same section's "add an assertion so [stubs] stay outside the reported set" was not done either — the property holds by construction in `CheckPipeline` and `LibraryCheckSession` filters stubs anyway, which is worth saying instead of leaving the step looking outstanding. **✅ shipped (2026-09-04)** — the Settings section says where the two settings actually live, keeps the reasoning the code records (an install path is a property of the machine, so a committed `.mlqt/settings.json` would break for everyone else and CI uses `--dependency`), and says plainly that `TreatAsExternalNamespaces` was not built and belongs to the Wave-2 resolver. The `CheckPipeline` row says the assertion was not added and why none is needed. |
 | B82 | **An orphaned doc comment in the Code Review page** | sixth review 2026-09-04 | ⭐ | S | Two `<summary>` blocks are stacked on `StyleSettingsForModel`: the first ("The repository whose word list an accepted spelling belongs in — the one owning the class the finding was raised against…") belongs to `RepositoryForCurrentFinding`, which now sits below with a one-line summary of its own. So the method that returns a repository's *style settings* is documented as returning the repository a *word* would be recorded in. B63's shape, on another file. **✅ shipped (2026-09-04)** — the summary is on `DictionaryRootForCurrentFinding`, where it belongs. |
 | B83 | **Three documentation surfaces have drifted from the code** | sixth review 2026-09-04 | ⭐ | S | `ModelicaGraph/README.md` names `PackageCodeTrimmer`, `ExternalStubBuilder`, `CoverageDimensions`, `MetricsCalculator` and every analyzer, and none of `ClassSuppressions`, `FormattingExclusion` or `RuleSettingsLayout` — two of the three conventions CLAUDE.md tells a reader to go through, and the third added by B65 without the README being updated with it. Its **StyleCheckingSettings Properties** table lists five of the ten serialized properties, missing `RuleSeverities`, `ExcludedLibraries`, `NamingConvention`, `ApplyFormattingRules`, `ComponentsBeforeClasses` and both commit settings — the same table a memory note already records as having gone stale once. And `code-review.md` still says the Suppress button is on "each style-rule finding row (anything other than a spelling finding)"; since B69 a diagnostic has none either. **✅ shipped (2026-09-04)** — `ModelicaGraph/README.md` gains a **Conventions** table naming all five questions-with-one-answer (`Borrow`, `ClassSuppressions.For`, `FormattingExclusion.Excludes`, `CoverageDimensions.ForClass`, `RuleSettingsLayout.Rows`), and its settings table is the whole persisted surface plus the methods that matter — including `SeverityFor`, which is the only way to ask what a rule will do. It also stops naming an `AnnotationAtEnd` setting that has never existed, and says the file wins if the two disagree. `code-review.md` names both exclusions from the Suppress button. |
+| B84 | **"Never formatted, committed or written to" holds for none of the three** | seventh review 2026-09-04 | ⭐⭐⭐ | M | `settings-reference.md` and `encrypted-libraries.md` both promise a reference library is "never checked, formatted, committed or written to". B66 and B80 delivered *checked*. The other three are unguarded, and they chain. **Formatted:** the four incremental-format call sites in `MainLayout` — startup (`FormatModifiedFilesAsync`), `OnVcsFilesChanged`, `FormatChangedFilesForCommitAsync` and `RefreshLibrariesAsync` — each resolve a repository, take `repository.StyleSettings`, and format; none asks `IsReferenceOnly`. B80 fixed only the *full* save. A reference-only repository whose committed `.mlqt/settings.json` sets `ApplyFormattingRules: true` — which another team's MLQT-managed library naturally would — has its modified files reformatted and written at startup. **Monitored:** `RepositoryService.StartMonitoringAllRepositories` watches every repository, so a change made to a vendor's checkout outside MLQT feeds straight into that pipeline; the encrypted-library design note lists "`FileMonitoringService` — never monitor a reference library path" as a required guard and it was never built. **Committed:** `LibraryBrowser`'s repository toolbar offers Update, Commit, Revert, Rebase, Merge, Push, Create pull request and Switch branch with no `IsReferenceOnly` anywhere in the file. Three consumers of one question, none of which asks it — and the question now has a single answer (`ReferenceOnlyScope`) that B80 put there. **✅ shipped (2026-09-04)** — one `SkipReferenceOnly` guard in `MainLayout` on all four formatting paths; `RepositoryService` no longer watches a reference-only repository, at either place monitoring starts; and the library browser shows a **Reference only** chip where the write actions were, with a tooltip saying how to change it. `IFileMonitoringService.IsMonitoringRepository` was added so the second of those could be tested at all — the service could say whether anything was watched, not whether this was. Three tests, each with its positive control. |
+| B85 | **The MCP edit tools can overwrite an encrypted `package.moe` with Modelica text** | seventh review 2026-09-04 | ⭐⭐⭐ | S | `ExternalStubBuilder` gives every recovered class a `FileNode` whose path is the vendor's `package.moe`, because that genuinely is where it came from. `EditTools.UpdateClassSource` (and every other tool through `ClassBodyEditor`: `create_class`, `delete_class`, `move_class`, the structure edits, `correct_spelling`, `suppress_rule`) takes `ctx.FilePath` from that node and writes to it. The **only** guard is `FileWritability`, whose own summary says the server "does not track a 'read-only library' flag" and relies on reference libraries living under `Program Files` — so a library installed anywhere the user can write (a home directory, a network share, a shared drive, or MLQT running elevated) is unprotected, and the write replaces an encrypted binary with a page of synthesized Modelica. Nothing in `MLQT.McpServer` mentions `IsExternalStub` at all. This is the failure the design note calls "the highest-severity failure mode … MLQT trying to rewrite a vendor library it cannot read", for which it prescribed `ModelicaPackageSaver` **throwing** rather than skipping, "so a missed guard fails a test rather than a customer's `Program Files`" — and the MCP write path does not go through the saver. The file the stub points at is also the evidence: `ExternalStubBuilder` carries a comment about a spelling correction that already "came to read, and try to parse, a vendor's encrypted blob", fixed for the superseded-by-source case and not for editing a stub itself. The guard belongs beside `FileWritability` in `ClassBodyEditor`, where every write funnels, not at each tool. **✅ shipped (2026-09-04)** — `ExternalStubBuilder.IsEncryptedPackageFile` is the one definition of "this is a vendor's encrypted package" (`DirectedGraph` had its own spelling of `.moe`), and `FileWritability` refuses one before it looks at permissions, with a message that says what it is rather than suggesting admin rights would help. Inside `FileWritability` because every MCP write already calls it — at each tool instead, it would cover the twelve that exist and none of the next one. `IsWritable` answers false too, so `get_class_info` stops advertising a stub as editable and inviting the attempt. Five tests over a genuinely writable `package.moe`, which is the case permissions do not catch. |
+| B86 | **The one case-sensitive `.mo` test in the solution** | seventh review 2026-09-04 | ⭐ | S | Twenty-two places ask whether a path is a Modelica file and twenty-one pass `StringComparison.OrdinalIgnoreCase`. `LibraryDataService.GetPackageModelicaFiles` does not: `rootDirectory.EndsWith(".mo")`. `LibraryDiscovery.DiscoverLibraryPaths` accepts `Foo.MO` case-insensitively, so a file named that way is offered as a library and then loads **zero** classes — a silent empty library rather than an error. The same line reads `validFiles.AddRange(rootDirectory)` where `rootDirectory` is a `string`; it does the right thing (the `params ReadOnlySpan<T>` overload treats it as one element) but reads as if it were splitting the path into characters, and `Add` is what is meant. **✅ shipped (2026-09-04)** — case-insensitive like the other twenty-one, and `Add` rather than `AddRange`. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -810,6 +820,59 @@ and it did not exercise the desktop app, so **B79** and **B80** are established 
 B79, from a driver run against `MetricsCalculator`, not from the Metrics tab itself. `CodeReview.razor`
 and `MetricsDashboard.razor` were read this time, but for defects rather than for the extraction B20
 covers.
+
+
+### Seventh review (2026-09-04)
+
+**B84–B86 came out of a seventh read of the branch**, on the same terms as the five before it. **All
+three are closed.** Two of them are the write side of a promise the previous two reviews had only
+fixed the read side of.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green. Nothing below unships a phase.
+
+**This read used one lens: take a sentence the documentation states as an absolute and check every
+consumer of it.** The sentence was `settings-reference.md`'s "reference libraries are never checked,
+formatted, committed or written to", and three of its four clauses turned out to hold nowhere.
+
+**B84 — formatted, watched, committed.** B66 and B80 delivered *checked*. The four incremental-format
+call sites each resolve a repository and take its `StyleSettings` and none of them asked, so a
+reference-only repository whose committed `.mlqt/settings.json` sets `ApplyFormattingRules` — which
+another team's MLQT-managed library naturally would — had its modified files reformatted and written
+at startup. `StartMonitoringAllRepositories` watched it, which is what fed changes into that pipeline
+in the first place; the encrypted-library design note lists that guard and it had never been built.
+And the library browser offered Commit, Revert, Push, Merge, Rebase, Switch branch and Create pull
+request on it, with no `IsReferenceOnly` anywhere in the file.
+
+**B85 is the one to take seriously, and it is destructive.** `ExternalStubBuilder` gives every class
+recovered from a vendor's documentation a file node pointing at the `package.moe` it came from —
+honestly, because that is where it came from. Every MCP edit tool takes the class's file path from
+that node and writes to it, and the only guard was `FileWritability`, which infers read-only from
+filesystem permissions. Its own summary says the server "does not track a read-only library flag" and
+relies on reference libraries living under `Program Files`. A library installed in a home directory,
+on a share, or opened with MLQT elevated is unprotected, and the write replaces an encrypted binary
+with a page of synthesized Modelica. The design note names this exact scenario as "the highest-severity
+failure mode" and prescribes a **throw** rather than a skip, "so a missed guard fails a test rather
+than a customer's `Program Files`" — which `ModelicaPackageSaver` does, on the path MCP does not use.
+Nothing in `MLQT.McpServer` mentioned `IsExternalStub` at all.
+
+**What the fixes converged on**, for the fourth review running: a question that was being asked in
+several places, or in none, became one named thing. `ExternalStubBuilder.IsEncryptedPackageFile` is
+the single definition of "this file is a vendor's encrypted package" — `DirectedGraph` had its own
+spelling of `.moe` and `FileWritability` had none — and putting the refusal inside `FileWritability`,
+which every MCP write already calls, is what makes it cover the tools nobody has written yet.
+`IFileMonitoringService.IsMonitoringRepository` was added because the guard could not otherwise be
+tested: the service could say whether *anything* was watched and not whether *this* was.
+
+**The pattern worth naming.** B66, B80 and B84 are one sentence in the documentation, checked against
+its consumers three times, finding a different unguarded consumer each time. Reading the code and
+asking "what else asks this?" found two of the three; the third — the VCS toolbar — was only found by
+reading the *sentence* and enumerating its verbs. When a document states an absolute, the verbs in it
+are a checklist, and the cheapest review is to walk them one at a time.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app, so B84's toolbar change is verified by build and by reading rather than by clicking; and
+it did not review the Dymola help parsing, whose accuracy is measured against MSL on every build.
 
 
 ---

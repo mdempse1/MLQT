@@ -25,6 +25,9 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
 
     public bool IsMonitoring => _watchers.Count > 0;
 
+    /// <inheritdoc/>
+    public bool IsMonitoringRepository(string repositoryId) => _watchers.ContainsKey(repositoryId);
+
     public IReadOnlyList<FileChangeInfo> PendingChanges
     {
         get

@@ -1458,6 +1458,25 @@
     /// have been modified (or are untracked) since the last commit need formatting.
     /// This is much faster than SaveAllLibrariesWithFormattingAsync for large repositories.
     /// </summary>
+    /// <summary>
+    /// Whether this repository is one MLQT must not write to. <c>settings-reference.md</c> promises a
+    /// reference library is "never checked, formatted, committed or written to"; B66 delivered
+    /// <em>checked</em> and this is <em>formatted</em>.
+    ///
+    /// <para>The formatting paths each resolve a repository and take its <c>StyleSettings</c>, and
+    /// none of them asked. A reference-only repository whose committed <c>.mlqt/settings.json</c> sets
+    /// <c>ApplyFormattingRules</c> — which another team's MLQT-managed library naturally would — had
+    /// its modified files reformatted and written back at startup, and again after every refresh.</para>
+    /// </summary>
+    private static bool SkipReferenceOnly(Repository repository, string what)
+    {
+        if (!repository.IsReferenceOnly)
+            return false;
+
+        Debug("MainLayout", $"Skipping {what} for {repository.Name} — reference only");
+        return true;
+    }
+
     private async Task FormatModifiedFilesAsync()
     {
         LogProcessStart("MainLayout", "Formatting VCS-modified files");
@@ -1465,7 +1484,7 @@
 
         foreach (var repository in RepositoryService.Repositories)
         {
-            if (string.IsNullOrEmpty(repository.LocalPath))
+            if (string.IsNullOrEmpty(repository.LocalPath) || SkipReferenceOnly(repository, "formatting"))
                 continue;
 
             try
@@ -2113,7 +2132,7 @@
     private async Task FormatChangedFilesForCommitAsync(string repositoryId)
     {
         var repository = RepositoryService.GetRepository(repositoryId);
-        if (repository == null) return;
+        if (repository == null || SkipReferenceOnly(repository, "formatting")) return;
 
         var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
         if (!styleSettings.ApplyFormattingRules)
@@ -2359,7 +2378,7 @@
         _ = Task.Run(async () =>
         {
             var repository = RepositoryService.GetRepository(repositoryId);
-            if (repository == null) return;
+            if (repository == null || SkipReferenceOnly(repository, "the VCS-change pipeline")) return;
 
             try
             {
@@ -2678,6 +2697,8 @@
                 foreach (var repoGroup in filesByRepo)
                 {
                     var repository = RepositoryService.GetRepository(repoGroup.Key);
+                    if (repository is not null && SkipReferenceOnly(repository, "formatting"))
+                        continue;
                     var styleSettings = repository?.StyleSettings ?? new StyleCheckingSettings();
                     var repoPaths = repoGroup.Select(c => c.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                     await SaveChangedFilesWithFormattingAsync(repoPaths, styleSettings);

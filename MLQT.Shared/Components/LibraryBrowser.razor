@@ -107,6 +107,15 @@ else if (Repository != null)
                         <MudText Typo="Typo.body1">Detached HEAD</MudText>
                     }
                     <MudSpacer />
+                    @if (Repository.IsReferenceOnly)
+                    {
+                        <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                                     Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
                     <MudTooltip Text="Switch branch">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" />
                     </MudTooltip>
@@ -141,6 +150,7 @@ else if (Repository != null)
                             </MudPopover>
                         </MudTooltip>
                     }
+                    }
                 </MudStack>
                 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Spacing="1">
                     @switch (Repository.VcsType)
@@ -164,6 +174,11 @@ else if (Repository != null)
                         </MudTooltip>
                     }
                     <MudSpacer/>
+                    @* Nothing that writes, for a repository the user marked hands-off. The promise in
+                       settings-reference.md is "never checked, formatted, committed or written to",
+                       and the commit, revert and branch actions were all still offered. *@
+                    @if (!Repository.IsReferenceOnly)
+                    {
                     <MudTooltip Text="Update repository">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Download" Size="Size.Medium" OnClick="RefreshRepository" Class="compact-icon-button" />
                     </MudTooltip>
@@ -173,6 +188,7 @@ else if (Repository != null)
                     <MudTooltip Text="Revert changes">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Undo" Size="Size.Medium" OnClick="ShowRevertFilesDialog" Class="compact-icon-button" Disabled="@(!_hasUncommittedChanges)" />
                     </MudTooltip>
+                    }
                 </MudStack>
             }
 

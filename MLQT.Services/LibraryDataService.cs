@@ -357,9 +357,12 @@ public class LibraryDataService : ILibraryDataService
         {
             // Root doesn't have package.mo - just load any .mo files in the root directory
             // (this handles single-file libraries or loose model files)
-            if (File.Exists(rootDirectory) && rootDirectory.EndsWith(".mo"))
+            // Case-insensitively, like the other twenty-one places that ask this — LibraryDiscovery
+            // accepts "Foo.MO" as a library, and this was the one test that then rejected it, so the
+            // library loaded with no classes at all rather than failing.
+            if (File.Exists(rootDirectory) && rootDirectory.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
             {
-                validFiles.AddRange(rootDirectory);
+                validFiles.Add(rootDirectory);
             }
             else if (Directory.Exists(rootDirectory))
             {

@@ -289,7 +289,7 @@ public class DirectedGraph
     /// yet.
     /// </summary>
     private static bool IsExternalStubFile(FileNode fileNode) =>
-        fileNode.FilePath.EndsWith(".moe", StringComparison.OrdinalIgnoreCase);
+        ExternalStubBuilder.IsEncryptedPackageFile(fileNode.FilePath);
 
     /// <summary>
     /// Creates a relationship where one model uses another model.

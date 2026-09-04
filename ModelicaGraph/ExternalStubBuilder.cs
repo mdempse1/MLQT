@@ -22,6 +22,21 @@ namespace ModelicaGraph;
 /// </summary>
 public static class ExternalStubBuilder
 {
+    /// <summary>The extension of an encrypted Modelica package — the whole library in one unreadable file.</summary>
+    public const string EncryptedPackageExtension = ".moe";
+
+    /// <summary>
+    /// Whether a path names an encrypted package: a file MLQT can neither read nor, above all,
+    /// <b>write</b>. A stub's file node points at it, honestly, because that is where the class came
+    /// from — so every write path has to ask this before taking a class's file path at face value.
+    ///
+    /// <para>Decided by the extension rather than by what the file contains, so the answer does not
+    /// depend on how much of the graph has been built yet, and so it is still the right answer for a
+    /// path that has not been loaded at all.</para>
+    /// </summary>
+    public static bool IsEncryptedPackageFile(string? path) =>
+        path is not null && path.EndsWith(EncryptedPackageExtension, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Adds a stub node for every documented class to <paramref name="graph"/>, plus one file node
     /// standing for the encrypted package the classes came from.

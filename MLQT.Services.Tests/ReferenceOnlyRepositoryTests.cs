@@ -39,7 +39,7 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
     private sealed record Harness(
         LibraryDataService Libraries, RepositoryService Repositories,
-        StyleCheckingService Checking, CodeReviewService Review);
+        StyleCheckingService Checking, CodeReviewService Review, FileMonitoringService Monitoring);
 
     private static Harness Build()
     {
@@ -54,7 +54,7 @@ public class ReferenceOnlyRepositoryTests : IDisposable
             new CustomDictionaryService(),
             new DictionaryManagerService(),
             review);
-        return new Harness(libraries, repositories, checking, review);
+        return new Harness(libraries, repositories, checking, review, monitoring);
     }
 
     [Fact]
@@ -209,6 +209,46 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
         lock (found)
             Assert.Contains(found, m => m.RuleId == RuleIds.PackageOrder);
+    }
+
+    // ---- the write side: never formatted, never watched (B84) ---------------------------------
+
+    [Fact]
+    public async Task AReferenceRepository_IsNotWatchedForChanges()
+    {
+        // Watching it feeds its changes into a pipeline that reloads, re-analyses and reformats, so a
+        // vendor's checkout being updated outside MLQT ended in MLQT writing to it. The
+        // encrypted-library design note lists this guard; it was never built.
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: true, isReferenceOnly: true);
+
+        Assert.False(h.Monitoring.IsMonitoringRepository(added.Repository!.Id));
+    }
+
+    [Fact]
+    public async Task ARepositoryTheTeamMaintains_IsWatched()
+    {
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: true, isReferenceOnly: false);
+
+        Assert.True(h.Monitoring.IsMonitoringRepository(added.Repository!.Id));
+    }
+
+    [Fact]
+    public async Task StartMonitoringAllRepositories_LeavesTheReferenceOnesAlone()
+    {
+        var h = Build();
+        var vendor = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Vendor"), startMonitoring: false, isReferenceOnly: true);
+        var ours = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+
+        h.Repositories.StartMonitoringAllRepositories();
+
+        Assert.False(h.Monitoring.IsMonitoringRepository(vendor.Repository!.Id));
+        Assert.True(h.Monitoring.IsMonitoringRepository(ours.Repository!.Id));
     }
 
     [Fact]
