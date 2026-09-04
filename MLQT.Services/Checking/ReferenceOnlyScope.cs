@@ -1,3 +1,4 @@
+using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.Services.Checking;
@@ -5,10 +6,21 @@ namespace MLQT.Services.Checking;
 /// <summary>
 /// Which classes belong to code the user has no say over.
 ///
-/// <para>A repository marked reference only is loaded so that references into it resolve, and left
-/// alone otherwise: not checked, not measured, not written to. Every surface asks here so that what
-/// counts as the user's own code is decided once — a class reported on by one part of the app and
-/// excluded by another is the sort of difference nobody can explain from the outside.</para>
+/// <para>Loaded so that references into it resolve, and left alone otherwise: not checked, not
+/// measured, not written to. Every surface asks here so that what counts as the user's own code is
+/// decided once — a class reported on by one part of the app and excluded by another is the sort of
+/// difference nobody can explain from the outside.</para>
+///
+/// <para><b>Two ways of saying it, and both are asked here.</b> A repository can be marked
+/// <see cref="Repository.IsReferenceOnly"/>, and a library can be loaded from
+/// <b>Settings → Reference Libraries</b> with no repository at all
+/// (<see cref="LoadedLibrary.IsReferenceOnly"/>). The second was not asked anywhere: an
+/// <em>encrypted</em> reference library was covered by <c>ModelNode.IsExternalStub</c>, and a
+/// <em>readable</em> one — which the reference folder holds by design, since a tool's library folder
+/// ships MSL as source — fell through both, so the Metrics tab counted a vendor's library in its Size
+/// census, offered its packages as scopes and wrote a trend snapshot about it. Adding a third
+/// mechanism without asking who consumes the existing ones is how the last three of these
+/// happened.</para>
 /// </summary>
 public static class ReferenceOnlyScope
 {
@@ -31,15 +43,12 @@ public static class ReferenceOnlyScope
             .Select(r => r.Id)
             .ToHashSet(StringComparer.Ordinal);
 
-        if (referenceOnly.Count == 0)
-            return new HashSet<string>(StringComparer.Ordinal);
-
         var excluded = new HashSet<string>(StringComparer.Ordinal);
         var alsoTheUsers = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var library in libraries.Libraries)
         {
-            if (library.RepositoryId is { Length: > 0 } id && referenceOnly.Contains(id))
+            if (IsReference(library, referenceOnly))
                 excluded.UnionWith(library.ModelIds);
             else
                 alsoTheUsers.UnionWith(library.ModelIds);
@@ -48,4 +57,19 @@ public static class ReferenceOnlyScope
         excluded.ExceptWith(alsoTheUsers);
         return excluded;
     }
+
+    /// <summary>
+    /// Whether a library is loaded only for reference — by its own flag, or by the repository it came
+    /// from. Public because the question is also asked per library rather than per class: the metrics
+    /// history is written per library, and a snapshot describing a vendor's code belongs in no file.
+    /// </summary>
+    public static bool IsReference(LoadedLibrary library, IRepositoryService repositories) =>
+        IsReference(library, repositories.Repositories
+            .Where(r => r.IsReferenceOnly)
+            .Select(r => r.Id)
+            .ToHashSet(StringComparer.Ordinal));
+
+    private static bool IsReference(LoadedLibrary library, IReadOnlySet<string> referenceOnlyRepositoryIds) =>
+        library.IsReferenceOnly
+        || (library.RepositoryId is { Length: > 0 } id && referenceOnlyRepositoryIds.Contains(id));
 }

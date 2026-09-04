@@ -27,12 +27,12 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    private string WriteLibrary(string name)
+    private string WriteLibrary(string name, string package = "P")
     {
-        var lib = Path.Combine(_dir, name, "P");
+        var lib = Path.Combine(_dir, name, package);
         Directory.CreateDirectory(lib);
         File.WriteAllText(Path.Combine(lib, "package.mo"),
-            "within;\npackage P\n  model A\n    Real x;\n  equation\n    x = 1;\n  end A;\nend P;\n");
+            $"within;\npackage {package}\n  model A\n    Real x;\n  equation\n    x = 1;\n  end A;\nend {package};\n");
         File.WriteAllText(Path.Combine(lib, "package.order"), "A\n");
         return Path.Combine(_dir, name);
     }
@@ -251,6 +251,74 @@ public class ReferenceOnlyRepositoryTests : IDisposable
 
         Assert.NotEmpty(excluded);
         Assert.Contains("P.A", excluded);
+    }
+
+    // ---- the other way of saying it: a library with no repository at all (B80) -----------------
+
+    [Fact]
+    public async Task AReadableLibraryLoadedForReference_IsOutOfScopeToo()
+    {
+        // Settings > Reference Libraries loads libraries with no repository, and it holds readable
+        // ones by design — a tool's library folder ships MSL as source. Such a library was neither an
+        // external stub nor in a reference-only repository, so nothing recognised it and the Metrics
+        // tab counted a vendor's library in its Size census.
+        var h = Build();
+        var library = await h.Libraries.AddLibraryFromPathAsync(Path.Combine(WriteLibrary("Vendor"), "P"));
+        library.IsReferenceOnly = true;
+
+        var excluded = ReferenceOnlyScope.ModelIds(h.Libraries, h.Repositories);
+
+        Assert.Contains("P.A", excluded);
+        Assert.True(ReferenceOnlyScope.IsReference(library, h.Repositories));
+    }
+
+    [Fact]
+    public async Task TheSameLibraryLoadedNormally_IsNot()
+    {
+        // The guard: the flag is what makes the difference, not "has no repository". A library the
+        // user opened directly is their own code.
+        var h = Build();
+        var library = await h.Libraries.AddLibraryFromPathAsync(Path.Combine(WriteLibrary("Mine"), "P"));
+
+        Assert.Empty(ReferenceOnlyScope.ModelIds(h.Libraries, h.Repositories));
+        Assert.False(ReferenceOnlyScope.IsReference(library, h.Repositories));
+    }
+
+    [Fact]
+    public async Task AClassTheUserAlsoHasFromSource_SurvivesAReferenceLibraryClaimingIt()
+    {
+        // Same rule as for a reference-only repository: a vendor's copy of a class the user also has
+        // must not take the user's own copy out of scope.
+        var h = Build();
+        var reference = await h.Libraries.AddLibraryFromPathAsync(Path.Combine(WriteLibrary("Vendor"), "P"));
+        reference.IsReferenceOnly = true;
+        var ours = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(ours.Repository!.Id);
+
+        Assert.DoesNotContain("P.A", ReferenceOnlyScope.ModelIds(h.Libraries, h.Repositories));
+    }
+
+    [Fact]
+    public async Task AReferenceLibraryIsNotMeasuredForCoverageEither()
+    {
+        // Distinct package names, so the two libraries really do contribute different classes and the
+        // assertion has something to be about.
+        var h = Build();
+        var library = await h.Libraries.AddLibraryFromPathAsync(
+            Path.Combine(WriteLibrary("Vendor", "Vend"), "Vend"));
+        library.IsReferenceOnly = true;
+        var ours = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+        await h.Repositories.LoadLibrariesAsync(ours.Repository!.Id);
+        ours.Repository!.StyleSettings = new StyleCheckingSettings { ClassHasDescription = true };
+
+        h.Checking.StartBackgroundCheckingForRepositories([ours.Repository]);
+        await h.Checking.WaitForCompletionAsync();
+
+        // The vendor's classes are measured for nothing; the user's own are measured.
+        Assert.Null(h.Libraries.GetModelById("Vend.A")!.Definition.Coverage);
+        Assert.NotNull(h.Libraries.GetModelById("P.A")!.Definition.Coverage);
     }
 
     [Fact]

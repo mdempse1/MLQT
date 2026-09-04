@@ -165,7 +165,7 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 #### Suppressing a Rule
 
-Each style-rule finding row (anything other than a spelling finding) has a **Suppress** button at the end of the row; the same action also appears in the Finding Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
+Each style-rule finding row has a **Suppress** button at the end of the row — except a spelling finding, which gets the word-scoped **Ignore** in the correction menu instead, and a diagnostic (`MLQT.Parse.*`, `MLQT.Check.Failed`), which cannot be waived at all because it reports that the results are incomplete; the same action also appears in the Finding Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:
 
 - MLQT writes a Modelica vendor annotation, `__MLQT(suppress="<rule id>")`, onto the class or, when the finding is about a specific component, onto that component.
 - The annotation is scoped to the element the finding is about: a component-level waiver silences the rule only for that component; a class-level waiver silences it for the whole class (but not for sibling classes in the same file).

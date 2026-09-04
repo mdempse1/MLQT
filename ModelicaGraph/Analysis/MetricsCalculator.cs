@@ -340,7 +340,7 @@ public sealed class CoverageMeasurer
             realWithUnit = Math.Clamp(realTotal - missing, 0, realTotal);
         }
 
-        var (hasDocInfo, hasDocRevisions) = MeasureDocumentation(tree, needed);
+        var (hasDocInfo, hasDocRevisions) = MeasureDocumentation(tree, model.Id, needed);
 
         return new CoverageFacts(
             HasDescription: !string.IsNullOrWhiteSpace(iface.Description),
@@ -355,7 +355,7 @@ public sealed class CoverageMeasurer
             ConstantTotal: constantTotal,
             ConstantsWithDescription: constantWithDesc,
             Measured: needed,
-            Failed: MeasureLayout(tree, needed),
+            Failed: MeasureLayout(tree, model.Id, needed),
             FormattingPreserved: PreservesFormatting(model));
     }
 
@@ -384,18 +384,51 @@ public sealed class CoverageMeasurer
     /// for both, and only when either is wanted.
     /// </summary>
     private static (bool Info, bool Revisions) MeasureDocumentation(
-        modelicaParser.Stored_definitionContext tree, CoverageDimension needed)
+        modelicaParser.Stored_definitionContext tree, string modelId, CoverageDimension needed)
     {
         var wantsInfo = (needed & CoverageDimension.DocumentationInfo) != 0;
         var wantsRevisions = (needed & CoverageDimension.DocumentationRevisions) != 0;
         if (!wantsInfo && !wantsRevisions)
             return (false, false);
 
-        var visitor = new CheckClassAnnotations(wantsInfo, wantsRevisions, checkIcon: false);
-        visitor.VisitStored_definition(tree);
-        var missing = visitor.Findings.Select(f => f.RuleId).ToHashSet(StringComparer.Ordinal);
+        var missing = FailedRules(
+            new CheckClassAnnotations(
+                wantsInfo, wantsRevisions, checkIcon: false, ModelicaName.EnclosingPackageOf(modelId)),
+            tree, modelId);
+
         return (wantsInfo && !missing.Contains(RuleIds.ClassDocumentationInfo),
                 wantsRevisions && !missing.Contains(RuleIds.ClassDocumentationRevisions));
+    }
+
+    /// <summary>
+    /// The rule ids <paramref name="visitor"/> reports <b>about <paramref name="modelId"/> itself</b>.
+    ///
+    /// <para>Both halves matter and both were missing. A rule visitor walks into a nested
+    /// <c>replaceable</c>/<c>redeclare</c> class — deliberately, because such a class cannot be
+    /// parsed on its own — and attributes what it finds there to that nested class. Taking every
+    /// finding the visitor produced therefore recorded the <em>parent</em> as failing a dimension its
+    /// child failed: a tidy class holding a <c>replaceable</c> model whose import was out of place
+    /// read as failing <i>Imports first</i>, while the only finding the checker raises names the
+    /// nested class. The dashboard then showed a gap no finding would ever name — the one thing
+    /// <see cref="CoverageDimensions"/> exists to prevent — and, because the nested class has a node
+    /// of its own and is measured in its own right, one problem cost two classes in the denominator.
+    /// This is the walk <c>StyleCheckRunner.OnlyAbout</c> exists for on the finding side, and the one
+    /// the unit measurement above already guards against by hand.</para>
+    ///
+    /// <para>And the visitor has to be given the class's enclosing package, or the ids it produces are
+    /// bare names and match nothing: <c>Lib.Sub.Outer</c> is reported as <c>Outer</c>, so a filter
+    /// without the base package would drop every finding rather than only the nested ones.</para>
+    /// </summary>
+    private static HashSet<string> FailedRules(
+        VisitorWithModelNameTracking visitor,
+        modelicaParser.Stored_definitionContext tree,
+        string modelId)
+    {
+        visitor.VisitStored_definition(tree);
+        return visitor.Findings
+            .Where(f => f.ModelId == modelId)
+            .Select(f => f.RuleId)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -405,7 +438,7 @@ public sealed class CoverageMeasurer
     /// was requested, and one that nobody asked about is never run.
     /// </summary>
     private static CoverageDimension MeasureLayout(
-        modelicaParser.Stored_definitionContext tree, CoverageDimension needed)
+        modelicaParser.Stored_definitionContext tree, string modelId, CoverageDimension needed)
     {
         var wanted = needed & CoverageDimension.Layout;
         if (wanted == CoverageDimension.None)
@@ -413,31 +446,32 @@ public sealed class CoverageMeasurer
 
         var failed = CoverageDimension.None;
         var broken = new HashSet<string>(StringComparer.Ordinal);
+        var basePackage = ModelicaName.EnclosingPackageOf(modelId);
 
+        // Only what this class itself failed — see FailedRules for why that is not the same as what
+        // the visitor reported.
         void Run(VisitorWithModelNameTracking visitor)
-        {
-            visitor.VisitStored_definition(tree);
-            foreach (var finding in visitor.Findings)
-                broken.Add(finding.RuleId);
-        }
+            => broken.UnionWith(FailedRules(visitor, tree, modelId));
 
         if ((wanted & CoverageDimension.ImportsFirst) != 0)
-            Run(new ImportStatementsFirst(true));
+            Run(new ImportStatementsFirst(true, basePackage));
         if ((wanted & CoverageDimension.ExtendsAtTop) != 0)
-            Run(new ExtendsClausesAtTop(false));
+            Run(new ExtendsClausesAtTop(false, basePackage));
         if ((wanted & (CoverageDimension.InitialSectionsFirst | CoverageDimension.InitialSectionsLast)) != 0)
             Run(new InitialEquationFirst(
                 (wanted & CoverageDimension.InitialSectionsFirst) != 0,
-                (wanted & CoverageDimension.InitialSectionsLast) != 0));
+                (wanted & CoverageDimension.InitialSectionsLast) != 0,
+                basePackage));
         if ((wanted & (CoverageDimension.OneOfEachSection | CoverageDimension.EquationAlgorithmNotMixed)) != 0)
         {
             var sections = (wanted & CoverageDimension.OneOfEachSection) != 0;
             Run(new OneOfEachSection(
                 sections, sections, sections, sections,
-                allowEquationAndAlgorithm: (wanted & CoverageDimension.EquationAlgorithmNotMixed) == 0));
+                allowEquationAndAlgorithm: (wanted & CoverageDimension.EquationAlgorithmNotMixed) == 0,
+                basePackage: basePackage));
         }
         if ((wanted & CoverageDimension.ConnectionsNotMixed) != 0)
-            Run(new MixConnectionsAndEquations());
+            Run(new MixConnectionsAndEquations(basePackage));
 
         if (broken.Contains(RuleIds.ImportStatementsFirst)) failed |= CoverageDimension.ImportsFirst;
         if (broken.Contains(RuleIds.ExtendsAtTop)) failed |= CoverageDimension.ExtendsAtTop;

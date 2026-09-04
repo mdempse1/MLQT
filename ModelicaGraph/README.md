@@ -212,17 +212,34 @@ var users = graph.GetModelUsedBy("m1");     // Returns [DerivedModel]
 var models = graph.GetModelsInFile("f1");   // Returns [BaseModel, DerivedModel]
 ```
 
-### StyleCheckingSettings Properties
+### StyleCheckingSettings
 
-Beyond the individual style rule toggles (e.g., `ImportStatementsFirst`, `AnnotationAtEnd`), `StyleCheckingSettings` includes these additional properties:
+Everything a repository persists in its `.mlqt/settings.json`. The individual rule toggles
+(`ImportStatementsFirst`, `ClassHasDescription`, …) are **facades over `RuleSeverities`** and are not
+serialized in their own right; the file is the map plus the entries below.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `FormattingExcludedModels` | `List<string>` | Model IDs excluded from formatting. Use the helper method `IsModelExcludedFromFormatting(string modelId)` to check membership. |
-| `SvnBranchDirectories` | `List<string>` | Configurable SVN branch directory names. Defaults to `["trunk", "branches", "tags"]`. |
-| `HasAnyStyleRuleEnabled` | `bool` (computed) | Returns `true` if any style checking rule is enabled. |
-| `SpellCheckLanguages` | `List<string>` | Language codes for spell checking dictionaries (e.g., `"en_US"`). |
-| `ValidateModelReferences` | `bool` | Whether to validate `modelica://` model references. |
+| `RuleSeverities` | `SortedDictionary<string, RuleSeverity>` | The authoritative store: rule id → Off/Info/Warning/Error, written in id order so an unchanged save produces an unchanged file. |
+| `FormattingExcludedModels` | `List<string>` | Model ids the formatter must leave alone. Ask `FormattingExclusion.Excludes` rather than this list — `__MLQT(format=false)` says the same thing in the source. |
+| `ExcludedLibraries` | `List<string>` | Library-name patterns whose classes are loaded but never reported on — usually the examples or test library sharing the repository. |
+| `NamingConvention` | `NamingConventionSettings` | Per-element-kind naming styles and the exception names. |
+| `SpellCheckLanguages` | `List<string>` | Dictionary language codes; defaults to `["en_US", "en_GB"]`. |
+| `SvnBranchDirectories` | `List<string>` | SVN branch directory names; defaults to `["trunk", "branches", "tags"]`. |
+| `ApplyFormattingRules` / `ComponentsBeforeClasses` | `bool` | Formatter flags, not check rules — consumed by `ModelicaRenderer`, absent from the severity map. |
+| `CommitRequiresIssueNumber` / `IssueNumberAtEnd` | `bool` | Commit-message policy for this repository. |
+
+The methods matter more than the fields:
+
+| Member | Answers |
+|--------|---------|
+| `SeverityFor(id)` | **The only way to ask what a rule will do.** Resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw map. |
+| `StampSeverities(findings)` | The one place configuration is applied to findings, shared by the per-class checker and the graph analyses. |
+| `IsRuleEnabled(id)` / `HasAnyStyleRuleEnabled` | Whether a rule, or any rule, resolves to something other than Off. |
+| `IsModelExcludedFromFormatting(id)` / `IsLibraryExcluded(id)` | Membership of the two name lists above. |
+
+*(This table has gone stale twice — once naming an `AnnotationAtEnd` setting that never existed. If
+it disagrees with `StyleCheckingSettings.cs`, the file is right.)*
 
 ## Architecture
 
@@ -272,6 +289,19 @@ Resolution shared with the analyses and the MCP tooling: `TypeResolver` (a type 
 means, through imports and the package hierarchy), `ClassElementResolver` (a class's full element
 set with inheritance merged in, derived declarations shadowing inherited ones) and `UnitResolver`
 (whether a declared type carries a unit, through alias and SI type chains).
+
+### Conventions — the questions with one answer
+
+Each of these exists because the same question was being answered in several places and the answers
+came apart. Call them; do not re-derive what they say.
+
+| Convention | The question |
+|------------|--------------|
+| `ModelDefinition.Borrow` | **How to read a class you do not own.** Parses if needed and releases the tree again *only if this call is what parsed it*. See its summary for the one deliberate exception (`GraphBuilder`'s bulk load). |
+| `ClassSuppressions.For(definition, modelId)` | **What `__MLQT` directives a class carries.** Read once and kept on the class; three passes want the same answer in one run. |
+| `FormattingExclusion.Excludes(model, settings)` | **Must the formatter write this source back unchanged?** Over both the `FormattingExcludedModels` name list and the in-source annotation. Deliberately a different question from the one the checker and the dashboard ask — see its summary. |
+| `CoverageDimensions.ForClass(...)` | **Which coverage dimensions apply to this class.** The single narrowing: every way of taking a class out of scope is asked there. |
+| `RuleSettingsLayout.Rows` | **Where is this rule set in the settings dialog?** The dialog renders from it, and a test holds it to `RuleCatalog`. |
 
 ### Metrics and coverage (`Analysis/`)
 

@@ -1949,18 +1949,17 @@ document.head.appendChild(style);
         SpellingMessage.WordFrom(finding?.Summary);
 
     /// <summary>
-    /// The repository whose word list an accepted spelling belongs in — the one owning the class the
-    /// finding was raised against. Null when the class is not in a repository, in which case there is
-    /// nowhere to record the word and the action is offered as disabled rather than silently doing
-    /// nothing.
-    /// </summary>
-    /// <summary>
     /// The style settings of the repository a class belongs to, or null when it belongs to none —
     /// a library loaded only for reference, which has no rules of its own.
     /// </summary>
     private StyleCheckingSettings? StyleSettingsForModel(string modelId) =>
         DictionaryScope.RepositoryForModel(LibraryDataService, RepositoryService, modelId)?.StyleSettings;
 
+    /// <summary>
+    /// The repository whose word list an accepted spelling belongs in. Null when the class is not in
+    /// a repository, in which case there is nowhere to record the word and the action is offered as
+    /// disabled rather than silently doing nothing.
+    /// </summary>
     private string? DictionaryRootForCurrentFinding() => RepositoryForCurrentFinding()?.LocalPath;
 
     /// <summary>The repository owning the class the current finding is about, or null if it has none.</summary>

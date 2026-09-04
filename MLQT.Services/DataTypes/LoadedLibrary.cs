@@ -60,6 +60,25 @@ public class LoadedLibrary
     public string? RelativePathInRepository { get; set; }
 
     /// <summary>
+    /// Loaded only so that references out of the user's own code resolve — a tool's installed library
+    /// folder, listed under <b>Settings → Reference Libraries</b>. Never checked, measured, formatted
+    /// or written to.
+    ///
+    /// <para>A fact about the <em>library</em>, and there was nowhere to record one. MLQT had two
+    /// other ways of saying "not the user's code" — a repository marked <c>IsReferenceOnly</c>, and
+    /// <see cref="ModelicaGraph.DataTypes.ModelNode.IsExternalStub"/> for a class rebuilt from a
+    /// vendor's documentation — and a <b>readable</b> library from the reference folder is neither,
+    /// because it has no repository at all. The reference folder holds readable libraries by design
+    /// (Dymola's <c>Modelica\Library</c>, the example the settings page gives, ships MSL as source),
+    /// so the loader knew and threw the knowledge away, leaving every consumer to re-derive it and
+    /// the Metrics tab to count a vendor's library as the user's own.</para>
+    ///
+    /// <para>Ask <c>ReferenceOnlyScope</c> rather than this flag directly: it is one of three answers
+    /// to the same question and the only one that covers all of them.</para>
+    /// </summary>
+    public bool IsReferenceOnly { get; set; }
+
+    /// <summary>
     /// For an encrypted library, how many classes the vendor's documentation described — whether or
     /// not they became nodes. Null for a library loaded from source.
     ///

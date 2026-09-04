@@ -629,8 +629,11 @@
 
             // Nothing is measured for a reference-only library, and nothing is written to its
             // repository — a snapshot there would dirty a checkout the user marked hands-off with
-            // numbers about code that is not theirs to improve.
-            if (repo?.IsReferenceOnly == true)
+            // numbers about code that is not theirs to improve. Asked of the library rather than of
+            // its repository, because one loaded from Settings > Reference Libraries has none: those
+            // were landing in the per-user history, which for a machine with a tool's library folder
+            // configured meant a trend describing a vendor's library.
+            if (ReferenceOnlyScope.IsReference(lib, RepositoryService))
                 continue;
 
             string path;

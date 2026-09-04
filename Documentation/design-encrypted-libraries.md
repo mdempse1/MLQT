@@ -430,7 +430,7 @@ The highest-severity failure mode is MLQT trying to **rewrite a vendor library i
 | `LibraryDiscovery.DiscoverLibraryPaths` | recognise a directory containing `package.moe` as a library root (today it only looks for `package.mo`) |
 | `ILibraryDataService` | `AddEncryptedLibraryFromDirectoryAsync(path)`; `LoadedLibrary.SourceType = EncryptedDirectory` |
 | `MLQT.Cli` `--dependency` | accepts an encrypted library path; the existing *"loaded X for reference resolution (not reported on)"* note already covers it |
-| `CheckPipeline` | stubs arrive only via `dependencyPaths`, so they are already outside the reported `models` set — add an assertion so it stays that way |
+| `CheckPipeline` | stubs arrive only via `dependencyPaths`, so they are already outside the reported `models` set. No assertion was added and none is needed: `models` is built from the checked libraries alone, and `LibraryCheckSession` filters stubs centrally in any case |
 | `LibraryCheckSession` | no change |
 | GUI | new **Reference libraries** setting: a list of directories (e.g. the whole Dymola `Modelica\Library` folder) loaded read-only into the combined graph; scan-on-add finds every library beneath |
 | MCP | same path handling in `load_library`; a `list_reference_libraries` tool |
@@ -439,14 +439,33 @@ The highest-severity failure mode is MLQT trying to **rewrite a vendor library i
 
 ## Settings
 
-In `.mlqt/settings.json`:
+*(This section planned them for `.mlqt/settings.json`; **they shipped in application settings
+instead**, and one of the three was not built. Corrected below rather than left describing something
+that does not exist.)*
 
-- `ReferenceLibraryPaths: string[]` — directories scanned for reference libraries (encrypted
-  *and* plain source; the same mechanism serves "point MLQT at my MSL install").
-- `UseEncryptedLibraryDocumentation: bool` (default `true`) — off falls back to today's
+In `AppSettings.ReferenceLibraries` (the per-project application settings file, **not** a
+repository's `.mlqt/settings.json`):
+
+- `Paths: string[]` — directories scanned for reference libraries (encrypted *and* plain source; the
+  same mechanism serves "point MLQT at my MSL install").
+- `UseEncryptedLibraryDocumentation: bool` (default `true`) — off falls back to the
   "assume valid, never gates" behaviour.
-- `TreatAsExternalNamespaces: string[]` — already implied by roadmap §2; the fallback for a
-  library that ships no `help/` at all (`CATIAMultiBody` is the one such case in this install).
+
+**Why not the repository file**, which is where this note first put them, and which is the
+interesting half of the decision: an install location is a property of the *machine*. A colleague's
+checkout or a CI runner will not have Dymola at the same path, and baking one into a committed
+`.mlqt/settings.json` breaks it for everyone else. CI supplies the equivalent explicitly with the
+CLI's `--dependency`. `ReferenceLibrarySettings` says so at the declaration, and
+[settings-reference.md](settings-reference.md#reference-libraries) says so to the user.
+
+A library loaded this way is flagged `LoadedLibrary.IsReferenceOnly`, which is what keeps it out of
+the checks, the coverage figures and the metrics trend — the *encrypted* ones were covered by
+`ModelNode.IsExternalStub`, and a readable one needed a fact of its own (backlog B80).
+
+**`TreatAsExternalNamespaces` was not built.** It belongs to the Wave-2 confidence-aware resolver
+(roadmap §2, phase 8) rather than to this feature, and the case it was for — a library shipping no
+`help/` at all, `CATIAMultiBody` being the only one in this install — is handled today by that
+library simply not resolving, which is the pre-existing "assume valid, never gates" behaviour.
 
 ---
 

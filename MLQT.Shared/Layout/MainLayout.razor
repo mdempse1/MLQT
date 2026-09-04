@@ -1155,6 +1155,12 @@
 
                     var library = await LibraryDataService.AddLibraryFromPathAsync(libraryPath);
 
+                    // The one place that knows this library is reference material. It has no
+                    // repository to carry the fact and — if it is readable rather than encrypted —
+                    // no stub nodes either, so without recording it here every consumer had to
+                    // re-derive it and the Metrics tab could not.
+                    library.IsReferenceOnly = true;
+
                     if (library.ModelIds.Count == 0)
                     {
                         // An encrypted library with no documentation contributes nothing. Removing it
@@ -1182,11 +1188,15 @@
     {
         LogProcessStart("MainLayout", "Saving all libraries with formatting");
 
-        // Encrypted reference libraries are dropped before anything else looks at the list. Their
-        // classes exist only as reconstructions from vendor documentation, so there is nothing here
-        // that could be formatted and written back — and the saver refuses them outright.
+        // Reference libraries are dropped before anything else looks at the list — every kind of
+        // them. The encrypted ones hold only reconstructions from vendor documentation, so there is
+        // nothing here that could be written back and the saver refuses them outright; a readable one
+        // is a tool's installed library, which the settings page promises is never formatted. That
+        // half used to rest on filterRepositoryId being non-null, which is true of every caller today
+        // and is not what the parameter means.
         IReadOnlyList<LoadedLibrary> libraries = LibraryDataService.Libraries
             .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
+            .Where(l => !ReferenceOnlyScope.IsReference(l, RepositoryService))
             .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
             .ToList();
 

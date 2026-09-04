@@ -48,7 +48,14 @@ Three of the fourteen matter on their own: **B65**, the incremental formatter ig
 **B66**, a reference-only repository being style-checked by three of the four entry points, against a
 documented promise that it is not; and **B67**, `Compare-Findings.ps1` — the only tool that exists to
 explain an app-vs-CI disagreement — silently broken by B1 and now reporting nearly every finding as
-exclusive to both sides. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+exclusive to both sides. A sixth read, still on 2026-09-04, opened **B79–B83**, and those are
+closed too: it re-confirmed phases 1–6 against a 0-warning Release build and all 4,660 tests, then went
+into the three areas the fifth review had recorded as unvisited — the encrypted-library subsystem,
+the spell-checking rework, and the two pages B20 covers — and found something in all but the spell
+checking, which came through clean. Two matter: **B79**, the layout coverage dimensions blaming a
+class for a nested class's failures (B12 on the dimensions B12 did not reach, verified by running
+it), and **B80**, a readable reference library counted as the user's own code by the Metrics tab
+while the coverage sweep beside it excludes it. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -63,8 +70,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Branch review](#branch-review-2026-09-03)), B26–B35 by the second read on 2026-09-04 (see
 [Second review](#second-review-2026-09-04)), B37–B49 by the third (see
 [Third review](#third-review-2026-09-04)), B50–B64 by the fourth (see
-[Fourth review](#fourth-review-2026-09-04)) and B65–B78 by the fifth (see
-[Fifth review](#fifth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Fourth review](#fourth-review-2026-09-04)), B65–B78 by the fifth (see
+[Fifth review](#fifth-review-2026-09-04)) and B79–B83 by the sixth (see
+[Sixth review](#sixth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -263,11 +271,11 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the five end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the six end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
-second one did, B37–B49 the third, B50–B64 the fourth, and B65–B78 the fifth.
+second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, and B79–B83 the sixth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -349,6 +357,11 @@ second one did, B37–B49 the third, B50–B64 the fourth, and B65–B78 the fif
 | B76 | **`MLQT.Services/README.md` describes `ParserErrorReporter` backwards** | fifth review 2026-09-04 | ⭐ | S | Its `Checking/` table says "`ParserErrorReporter` — Parse failures as findings, **with real file line numbers**". `ToFindings` converts to class-relative lines (`error.Line - classStart + 1`) and comments at length on why: it is the half of B1 that stopped the app scrolling to the wrong place. The same table omits `ChangedLineResolver` and `ClassLocation`, both load-bearing and both introduced by this branch — B49's shape on the other README. **✅ shipped (2026-09-04)** — the `Checking/` table says what `ParserErrorReporter` actually produces, and lists `ChangedLineResolver` and `ClassLocation`. |
 | B77 | **The Release build is not warning-free, and the record says it is** | fifth review 2026-09-04 | ⭐ | S | The fourth review records "0 warnings" twice. A clean Release build of `MLQT.slnx` emits three: two pre-existing `xUnit2002`s in `DymolaInterface.Tests` (untouched by this branch), and one this branch added — `CS4014` at `MLQT.Services.Tests/LibraryDataServiceTests.cs:1197`, where `Assert.Single` over an `IEnumerable<Task>` yields a `Task` discarded as an expression statement. The reading was almost certainly taken from an incremental build, which reprints nothing: a warning count is only true of a build that actually compiled. Second time a roadmap claim was true when written and never re-measured (compare B16). **✅ shipped (2026-09-04)** — the `CS4014` is gone (`Assert.Single`'s result discarded explicitly, which satisfies the xUnit analyzer too), and so are the two pre-existing `xUnit2002`s: `CdAsync` returns `bool`, so the `Assert.NotNull` beside them asserted nothing — they assert the calls succeeded. A full Release build of `MLQT.slnx` is 0 warnings, measured from a build that actually compiled. |
 | B78 | **Two small presentation defects in user-facing text** | fifth review 2026-09-04 | ⭐ | S | `mlqt --help`: the `--metrics` entry's two continuation lines are indented to column 32 while every other option's sit at column 40, so it is the one row that does not line up. And `Compare-Findings.ps1`'s own `.DESCRIPTION` tells the reader to produce "the app's exported issue list (`mlqt-issues-<timestamp>.json`)" — `ExportFindingsAsync` writes `mlqt-findings-<timestamp>.json`, which is what `code-review.md` says. **✅ shipped (2026-09-04)** — the `--metrics` continuation lines line up with every other option's, and `Compare-Findings.ps1` names the file the app really writes. |
+| B79 | **Layout coverage blames a class for its nested class's failures** | sixth review 2026-09-04 | ⭐⭐⭐ | S | Every coverage dimension but one is measured through `ClassInterfaceExtractor`, which by design "walks only the outermost class; nested classes are listed as elements but not recursed into". The layout dimensions are the exception: `MetricsCalculator.MeasureLayout` measures them by running the rules' own visitors, and `VisitorWithModelNameTracking` **does** descend into a nested `replaceable`/`redeclare` class — deliberately, because such a class cannot be parsed on its own. `MeasureLayout` then does `broken.Add(finding.RuleId)` for every finding the visitor produced, whoever it is about. Verified: a tidy `model Outer` holding a `replaceable model Inner` whose import sits after a component reads **0/1 on *Imports first***, while the only finding the checker raises names `Outer.Inner`. So the dashboard shows a gap for a class no finding will ever name — the one thing `CoverageDimensions` says it exists to prevent — and, because `Outer.Inner` has a node of its own and is measured in its own right, one misplaced import costs two classes in the denominator. This is **B12** on the layout dimensions: B12 fixed the duplicate *findings* and fixed the Unit numbers by hand, and the guard it added (`f.ModelId == model.Id`, with a comment saying exactly why) sits fifteen lines above `MeasureLayout` and was not applied to it. The fix is the same two lines: give the visitors `ModelicaName.EnclosingPackageOf(model.Id)` as their base package, as the unit measurement already does, and keep only findings whose `ModelId` is this class. **✅ shipped (2026-09-04)** — `MetricsCalculator.FailedRules` is the one way a measurement reads a rule visitor's verdict: it gives the visitor the class's enclosing package and keeps only findings whose `ModelId` is this class. Both families that run visitors call it — the layout dimensions and, as it turned out, the **documentation** ones, which had the identical defect and were not in the item: `CheckClassAnnotations` descends the same way, so a class documenting itself fully was recorded as missing its docstring when a nested `replaceable` class had none. Six tests, each with the positive control beside it, including that a fully-qualified name still matches — without the base package the filter would have dropped every finding and made every class read as compliant with everything. |
+| B80 | **A readable reference library is reference material to everything except the Metrics tab** | sixth review 2026-09-04 | ⭐⭐⭐ | S | MLQT has two ways of saying "this is not the user's code": `Repository.IsReferenceOnly`, and **Settings → Reference Libraries**, which loads libraries with no repository at all. `ReferenceOnlyScope` answers only for the first, and `IsExternalStub` only for the *encrypted* half of the second — so a **readable** library loaded from the reference folder is neither, and the reference folder is documented as holding both ("point MLQT at my MSL install"; Dymola's `Modelica\Library`, the example the UI itself gives, contains MSL as readable source). `MetricsDashboard.ReportableModels` filters `IsExternalStub` and `ReferenceOnlyScope`, so it counts every class of that library in the **Size** census and offers its packages in the scope picker; `StorageGroups` puts it in the per-user history group, so **Save snapshot** records a point describing a vendor's library. `metrics-dashboard.md` says the opposite in as many words — "A reference library, or anything marked **Reference only**, is loaded so references resolve and is measured for nothing" — and the *next* bullet makes staying in the Size panel the deliberate exception for `ExcludedLibraries`, on the grounds that "it is your code", which this is not. Two consumers of the same question already disagree: `StyleCheckingService.RunCoverageSweep` gets it right, because it drives off per-repository masks and a class in no repository gets `None`; the report does not. The fix is a fact about the library, not about the class — `LoadedLibrary` has no "loaded for reference" flag, and `LoadReferenceLibrariesAsync` knows and throws the knowledge away. Note also `SaveAllLibrariesWithFormattingAsync`'s comment claims reference libraries are "dropped before anything else looks at the list", which is true only of the encrypted ones; its `filterRepositoryId` defaults to null, and with null it would format a readable reference library. No caller passes null today, so that half is a trap rather than a defect. **✅ shipped (2026-09-04)** — `LoadedLibrary.IsReferenceOnly` records the fact the loader had and was throwing away, and `ReferenceOnlyScope` answers for both mechanisms: `ModelIds` for the per-class question and a new `IsReference(library, repositories)` for the per-library one, since the metrics history is written per library. The three consumers call it — the Metrics tab's reportable set and its snapshot grouping, and `SaveAllLibrariesWithFormattingAsync`, whose comment claimed reference libraries were already dropped and whose readable half rested on `filterRepositoryId` happening to be non-null at every call site. Five tests, including that a library the user simply opened is *not* reference material and that a class the user also has from source survives a reference copy claiming it. |
+| B81 | **The encrypted-library note's Settings section describes settings that do not exist** | sixth review 2026-09-04 | ⭐⭐ | S | `design-encrypted-libraries.md` says "In `.mlqt/settings.json`: `ReferenceLibraryPaths: string[]` … `UseEncryptedLibraryDocumentation: bool` … `TreatAsExternalNamespaces: string[]`". None of that is right. The two that shipped live in **application** settings as `AppSettings.ReferenceLibraries.Paths` and `.UseEncryptedLibraryDocumentation`, and `ReferenceLibrarySettings` explains at length why the repository file was the wrong home — an install path is a property of the machine, so a colleague's checkout or a CI runner would not share it, and CI supplies the equivalent with `--dependency`. That reasoning is the interesting part of the decision and the note records neither it nor the outcome. `TreatAsExternalNamespaces` was never built at all: it belongs to the Wave-2 confidence-aware resolver (§2, phase 8), and listing it in a note headed **IMPLEMENTED** reads as a shipped setting. The same section's "add an assertion so [stubs] stay outside the reported set" was not done either — the property holds by construction in `CheckPipeline` and `LibraryCheckSession` filters stubs anyway, which is worth saying instead of leaving the step looking outstanding. **✅ shipped (2026-09-04)** — the Settings section says where the two settings actually live, keeps the reasoning the code records (an install path is a property of the machine, so a committed `.mlqt/settings.json` would break for everyone else and CI uses `--dependency`), and says plainly that `TreatAsExternalNamespaces` was not built and belongs to the Wave-2 resolver. The `CheckPipeline` row says the assertion was not added and why none is needed. |
+| B82 | **An orphaned doc comment in the Code Review page** | sixth review 2026-09-04 | ⭐ | S | Two `<summary>` blocks are stacked on `StyleSettingsForModel`: the first ("The repository whose word list an accepted spelling belongs in — the one owning the class the finding was raised against…") belongs to `RepositoryForCurrentFinding`, which now sits below with a one-line summary of its own. So the method that returns a repository's *style settings* is documented as returning the repository a *word* would be recorded in. B63's shape, on another file. **✅ shipped (2026-09-04)** — the summary is on `DictionaryRootForCurrentFinding`, where it belongs. |
+| B83 | **Three documentation surfaces have drifted from the code** | sixth review 2026-09-04 | ⭐ | S | `ModelicaGraph/README.md` names `PackageCodeTrimmer`, `ExternalStubBuilder`, `CoverageDimensions`, `MetricsCalculator` and every analyzer, and none of `ClassSuppressions`, `FormattingExclusion` or `RuleSettingsLayout` — two of the three conventions CLAUDE.md tells a reader to go through, and the third added by B65 without the README being updated with it. Its **StyleCheckingSettings Properties** table lists five of the ten serialized properties, missing `RuleSeverities`, `ExcludedLibraries`, `NamingConvention`, `ApplyFormattingRules`, `ComponentsBeforeClasses` and both commit settings — the same table a memory note already records as having gone stale once. And `code-review.md` still says the Suppress button is on "each style-rule finding row (anything other than a spelling finding)"; since B69 a diagnostic has none either. **✅ shipped (2026-09-04)** — `ModelicaGraph/README.md` gains a **Conventions** table naming all five questions-with-one-answer (`Borrow`, `ClassSuppressions.For`, `FormattingExclusion.Excludes`, `CoverageDimensions.ForClass`, `RuleSettingsLayout.Rows`), and its settings table is the whole persisted surface plus the methods that matter — including `SeverityFor`, which is the only way to ask what a rule will do. It also stops naming an `AnnotationAtEnd` setting that has never existed, and says the file wins if the two disagree. `code-review.md` names both exclusions from the Suppress button. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -362,6 +375,17 @@ rather than a fix. Then **B68/B69/B72** (three unheld promises over `RuleIds`/`R
 same guard) and **B70/B71** (two conventions with rivals). **B74** should go with whichever of B65's
 fixes lands, since the phase 5 note is what made the renderer look like it already handled this.
 **B73** joins B20 in phase 7a rather than being done now. **B75–B78** are tidy-ups.
+
+**What B79–B83 converged on** — the same shape as the three reviews before them, and by now the
+answer this codebase gives to almost everything: a question that had been answered in several places
+became one named thing. `MetricsCalculator.FailedRules` is the one way a measurement reads a rule
+visitor's verdict (B79), and asking it that way immediately turned up a second family with the
+identical defect that the item had not named. `ReferenceOnlyScope` answers "is this reference
+material" for both mechanisms and for both shapes of the question, per class and per library (B80).
+The one thing worth carrying forward from B79 specifically: **the fix already existed fifteen lines
+away**. B12 found the same nested-class walk corrupting the Unit numbers, wrote the filter, and
+explained it in a comment — and the two measurements beside it went on without one. A guard written
+for one caller and left there is the shape to look for.
 
 **B1–B12 are all done (2026-09-03).** B8–B11 came out of asking how the SARIF work would be tested,
 and they were what actually closed phase 4: until then the output had never been validated, and the
@@ -727,6 +751,65 @@ against the closed backlog. What it did **not** do, for the fifth time, is read 
 lines; it did not review `CodeReview.razor` or `MetricsDashboard.razor` line by line (B20/B73), only
 the paths reached from the findings above; and it did not exercise the encrypted-library recovery or
 the spell-checking rework beyond their seams with the check pipeline.
+
+
+### Sixth review (2026-09-04)
+
+**B79–B83 came out of a sixth read of the branch**, on the same terms as the four before it: phases
+1–6 against the roadmap and the design notes, then the code for problems, duplication, missing tests
+and logic implemented twice, then the documentation against what shipped. **All five are open.**
+
+**Phases 1–6 verify as delivered.** Release build **0 warnings**; all six gated suites pass —
+**4,660 tests** (ModelicaParser 1860, ModelicaGraph 795, Services 785, RevisionControl 651, McpServer
+286, CLI 283), the total the fifth review's fixes left. Nothing below unships a phase, and nothing
+below is a regression from those fixes.
+
+**This read went into the three areas the fifth review recorded as unvisited**: the encrypted-library
+subsystem, the spell-checking rework, and the two pages B20 covers. Four of the five items come from
+there, and the fifth (**B79**) came from following one of them into the metrics code. That is the
+useful result rather than any individual finding — *five reviews had said "we did not read that", and
+the sixth found something in every part of it.* The spell-checking rework is the exception and is
+worth saying so: `DictionaryScope` answers "whose word list" in one place and every surface asks it,
+the dialect split is tested in both directions (including the trap that would have made the term
+lists silently not load — an MSBuild culture in the filename), and the possessive rule is tested
+against the word list, the repository list and the in-source waiver alike. Nothing to report.
+
+**Two are worth taking seriously on their own.**
+
+**B79** is the one to fix first, and the only item this review found by running code rather than
+reading it. Every coverage dimension except layout is measured through `ClassInterfaceExtractor`,
+which stops at the class boundary by design. Layout is measured by running the rules' own visitors,
+which descend into a nested `replaceable`/`redeclare` class — so a tidy class holding one whose
+import is out of place is recorded as failing *Imports first*, while the only finding names the
+nested class. It is **B12** on the dimensions B12 did not reach: B12 found this exact walk corrupting
+the Unit numbers, fixed it with a `f.ModelId == model.Id` filter, and wrote a comment explaining
+precisely why — fifteen lines above the layout measurement that has no such filter.
+
+**B80** is the third mechanism problem in three reviews, and the pattern the fourth review named is
+now doing what it warned about: *when adding any way to take a class out of scope, find every
+consumer of the existing ones.* **Settings → Reference Libraries** is a way of saying "not my code"
+that arrived beside `Repository.IsReferenceOnly`, and the Metrics tab knows only the latter plus the
+encrypted subset of the former. A readable reference library — Dymola's `Modelica\Library`, the
+example the settings page itself gives, which ships MSL as source — is counted in the Size census,
+offered in the scope picker, and given a snapshot of its own. `metrics-dashboard.md` says it is
+"measured for nothing". The coverage sweep already gets this right and the report does not, which is
+two consumers of one question disagreeing rather than a question nobody asked.
+
+**Documentation.** B81 is the substantial one: `design-encrypted-libraries.md` is headed
+**IMPLEMENTED** and its Settings section names a file, two property names and a whole setting that do
+not exist, missing in the process the one interesting thing about the decision — that reference paths
+were deliberately kept out of `.mlqt/settings.json` because an install location is a property of the
+machine. B82 and B83 are smaller: a doc comment attached to the wrong member, a README missing two of
+the three conventions CLAUDE.md sends a reader to (and the third added by B65 without it), and one
+sentence in `code-review.md` that B69 made a word out of date.
+
+**What this review did not do**, so the gaps stay on the record: it did not read all 47,000 changed
+lines; it did not review the `DymolaHelpParser`/`HelpHtml` parsing in detail — the accuracy numbers in
+the design note are measured against MSL on every build, which is a stronger check than reading it —
+and it did not exercise the desktop app, so **B79** and **B80** are established from the code and, for
+B79, from a driver run against `MetricsCalculator`, not from the Metrics tab itself. `CodeReview.razor`
+and `MetricsDashboard.razor` were read this time, but for defects rather than for the extraction B20
+covers.
 
 
 ---
