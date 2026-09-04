@@ -164,6 +164,106 @@ public class CoverageGateTests
         Assert.Contains("is below the last recorded 100%", stderr);
     }
 
+    /// <summary>
+    /// The ratchet still fails when the same run is also recording — which is the invocation both
+    /// <c>cli.md</c> and <c>ci-quality-gate.md</c> tell people to use.
+    ///
+    /// <para>It did not. The run appended its point before the gate read the history, so the "last
+    /// recorded snapshot" the ratchet compared itself against was the one it had just written — and a
+    /// drop appends the lower numbers and then measures itself against them, so the gate passed most
+    /// reliably in the one case it exists for. Every test above runs the two flags in separate
+    /// invocations, which is why it survived: the suite exercised the ratchet in a way the
+    /// documentation does not recommend and never in the way it does (backlog B100).</para>
+    /// </summary>
+    [Fact]
+    public void TheRatchetFailsOnADrop_EvenWhenTheSameRunRecordsMetrics()
+    {
+        using var lib = new TempLibrary(
+            """
+            within ;
+            package Cov "A library"
+              model A "Described"
+              end A;
+              model B "Described"
+              end B;
+            end Cov;
+            """, "A\nB\n");
+
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--metrics");                     // 100%
+
+        lib.Replace(Library, "A\nB\nC\n");                                            // now 75%
+
+        var (code, _, stderr) = Cli.Run(
+            "check", lib.Path, "--fail-on", "off", "--metrics", "--coverage-ratchet");
+
+        Assert.Equal(1, code);
+        Assert.Contains("is below the last recorded 100%", stderr);
+    }
+
+    [Fact]
+    public void RecordingStillHappensWhenTheRatchetFails()
+    {
+        // The ordering the fix had to preserve: a failing build is exactly the one whose numbers you
+        // want on the trend, so reading the history earlier must not stop the point being written.
+        using var lib = new TempLibrary(
+            """
+            within ;
+            package Cov "A library"
+              model A "Described"
+              end A;
+              model B "Described"
+              end B;
+            end Cov;
+            """, "A\nB\n");
+
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--metrics");
+        lib.Replace(Library, "A\nB\nC\n");
+
+        var (code, _, _) = Cli.Run(
+            "check", lib.Path, "--fail-on", "off", "--metrics", "--coverage-ratchet");
+
+        Assert.Equal(1, code);
+        Assert.Equal(2, WholeSetSnapshots(lib).Count);
+    }
+
+    [Fact]
+    public void AnImprovementStillPassesWhenTheSameRunRecords()
+    {
+        // The other direction, so the fix cannot be "always fail".
+        using var lib = new TempLibrary();
+        Cli.Run("check", lib.Path, "--fail-on", "off", "--metrics");                      // 75%
+
+        lib.Replace(
+            """
+            within ;
+            package Cov "A library"
+              model A "Described"
+              end A;
+              model B "Described"
+              end B;
+              model C "Described now"
+              end C;
+            end Cov;
+            """, "A\nB\nC\n");
+
+        var (code, _, _) = Cli.Run(
+            "check", lib.Path, "--fail-on", "off", "--metrics", "--coverage-ratchet");
+
+        Assert.Equal(0, code);
+    }
+
+    /// <summary>The whole-set points in the library's recorded history.</summary>
+    private static List<JsonElement> WholeSetSnapshots(TempLibrary lib)
+    {
+        var path = System.IO.Path.Combine(lib.Path, ".mlqt", "metrics-history.json");
+        using var document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+        return document.RootElement.EnumerateArray()
+            .Where(s => !s.TryGetProperty("Scope", out var scope)
+                        || string.IsNullOrEmpty(scope.GetString()))
+            .Select(s => s.Clone())
+            .ToList();
+    }
+
     [Fact]
     public void TheRatchetAllowsAnImprovement()
     {

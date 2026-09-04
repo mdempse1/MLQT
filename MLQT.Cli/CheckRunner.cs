@@ -181,6 +181,17 @@ internal static class CheckRunner
             ? MetricsCalculator.Compute(load.Graph, load.Models, _ => load.Settings)
             : null;
 
+        // What the ratchet compares against, read BEFORE this run records anything.
+        //
+        // This is the whole defect the ordering here exists to prevent. `--metrics --coverage-ratchet`
+        // is the invocation both cli.md and ci-quality-gate.md recommend, and with the read left where
+        // it used to be — inside the gate, after the record — the point this run had just appended was
+        // the "last recorded snapshot" the ratchet compared itself to. It therefore passed always, and
+        // most emphatically in the one case it exists for: a drop appends the lower numbers and then
+        // measures itself against them. Verified before and after: coverage falling from 100% to 33%
+        // exited 0 with `--metrics` and 1 without it.
+        var previousSnapshot = opts.Coverage.Ratchet ? LastWholeSetSnapshot(opts) : null;
+
         // Record before formatting/exit-code so the point still lands when the gate fails — a failing
         // build is exactly the one whose numbers you want on the trend.
         if (opts.RecordMetrics && load.Graph is not null && load.Models is not null && load.Settings is not null)
@@ -190,7 +201,7 @@ internal static class CheckRunner
                 DateTime.UtcNow, VcsLocator.Stamp(opts.LibraryPath), opts.MetricsForce, stderr, wholeSet);
         }
 
-        var coverageResults = EvaluateCoverageGate(opts, load, wholeSet, stderr);
+        var coverageResults = EvaluateCoverageGate(opts, load, wholeSet, previousSnapshot, stderr);
 
         var report = new CheckReport(
             opts.LibraryPath, load.ModelsChecked, classified, load.Locations,
@@ -241,8 +252,11 @@ internal static class CheckRunner
     /// </summary>
     /// <param name="metrics">The whole checked set's figures, computed once by the caller and shared
     /// with the trend point — see the call site.</param>
+    /// <param name="previous">The last recorded whole-set snapshot, read by the caller <b>before</b>
+    /// this run appended one of its own — see the call site for why that ordering is the point.</param>
     private static IReadOnlyList<CoverageGateResult>? EvaluateCoverageGate(
-        CheckOptions opts, LoadResult load, LibraryMetrics? metrics, TextWriter stderr)
+        CheckOptions opts, LoadResult load, LibraryMetrics? metrics, MetricsSnapshot? previous,
+        TextWriter stderr)
     {
         if (!opts.Coverage.IsActive || metrics is null)
             return null;
@@ -260,20 +274,10 @@ internal static class CheckRunner
                 $"warning: --min-coverage names '{unmatched}', which this run does not measure — " +
                 "its rule is switched off for this repository, so the requirement checks nothing");
 
-        MetricsSnapshot? previous = null;
-        if (opts.Coverage.Ratchet)
-        {
-            // The whole checked set: the history also holds a point per library, and a gate that
-            // silently compared against one library's numbers would be answering another question.
-            previous = MetricsHistoryStore.Load(opts.ResolvedMetricsPath)
-                .Where(s => string.IsNullOrEmpty(s.Scope))   // a snapshot written before Scope existed carries none
-                .LastOrDefault();
-
-            if (previous is null)
-                stderr.WriteLine(
-                    $"note: --coverage-ratchet has nothing to compare against yet — no snapshot in " +
-                    $"{opts.ResolvedMetricsPath}. Record one with --metrics.");
-        }
+        if (opts.Coverage.Ratchet && previous is null)
+            stderr.WriteLine(
+                $"note: --coverage-ratchet has nothing to compare against yet — no snapshot in " +
+                $"{opts.ResolvedMetricsPath}. Record one with --metrics.");
 
         var results = opts.Coverage.Evaluate(metrics, previous);
         foreach (var failure in results.Where(r => !r.Passed))
@@ -284,6 +288,19 @@ internal static class CheckRunner
 
         return results;
     }
+
+    /// <summary>
+    /// The most recent snapshot for the whole checked set.
+    ///
+    /// <para>The whole set, not a library: the history also holds a point per library, and a gate that
+    /// silently compared against one library's numbers would be answering a different question. A
+    /// snapshot written before <c>Scope</c> existed carries none, which reads as the whole set — which
+    /// is what it was.</para>
+    /// </summary>
+    private static MetricsSnapshot? LastWholeSetSnapshot(CheckOptions opts) =>
+        MetricsHistoryStore.Load(opts.ResolvedMetricsPath)
+            .Where(s => string.IsNullOrEmpty(s.Scope))
+            .LastOrDefault();
 
     private static bool WritesSarif(CheckOptions opts) =>
         opts.Format == OutputFormat.Sarif || opts.Reports.Any(r => r.Format == OutputFormat.Sarif);

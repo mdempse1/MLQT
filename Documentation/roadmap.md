@@ -80,8 +80,10 @@ own output: what the twelve commits had made the docs wrong about (almost nothin
 right and the code wrong), and what twelve reviews had taken on trust (**B99** — the encrypted-library
 accuracy figures are not, and never were, "checked on every build"). **A fourteenth read added
 nothing** — it read the last unreviewed subsystem, the Dymola help parser, and found nothing to
-report; every sweep came back clean; and the backlog checks out at 99 items with one open. The loop
-stops there.
+report; every sweep came back clean; and the backlog checks out. **A fifteenth read, asked for as a
+pass over the code itself, then found the most serious defect of the series** — **B100**, a coverage
+ratchet that cannot fail when invoked the way the documentation says to invoke it. It also ran the
+Wave-1 analyses over MSL's 6,487 classes for the first time and found them sound.
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
@@ -107,7 +109,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Eleventh review](#eleventh-review-2026-09-04)), B95–B97 by the twelfth (see
 [Twelfth review](#twelfth-review-2026-09-04)) and B98–B99 by the thirteenth (see
 [Thirteenth review](#thirteenth-review-2026-09-04)). A
-[fourteenth read](#fourteenth-review-2026-09-04--no-new-items) added nothing. B8–B11 had been added earlier the same day after
+[fourteenth read](#fourteenth-review-2026-09-04--no-new-items-and-it-was-wrong) added nothing, and
+B100 was opened by the fifteenth (see
+[Fifteenth review](#fifteenth-review-2026-09-04--reading-the-code-after-the-sweeps-said-there-was-nothing)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -306,12 +310,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the thirteen end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the fifteen end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, B93–B94 the eleventh, B95–B97 the twelfth, and B98–B99 the thirteenth.
+B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the tenth, B93–B94 the eleventh, B95–B97 the twelfth, B98–B99 the thirteenth, and B100 the fifteenth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -414,6 +418,7 @@ B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the 
 | B97 | **The sweeps that found B88, B91 and B93 exist only in the review** | twelfth review 2026-09-04 | ⭐⭐ | S | Three defects in two reviews were found by fifteen-line scripts over the `MLQT.Shared` source, and every one of those scripts then lived in a review transcript and nowhere else — so the next occurrence waits for somebody to think of running it again. That is the whole failure the eleventh review's own closing note named ("a sweep worth running twice is worth a test"), left unactioned in the same breath. B91 makes the case: nine reviews read past an unsubscribe method that nothing called, because it was there and looked right, and only asking *who calls it* found it — which is the kind of question a machine should ask on every build, not a person once a review. **✅ shipped (2026-09-04)** — `SharedUiConventionTests` runs four of them: every subscription in a component is matched by an unsubscribe, every component that subscribes declares `IDisposable`, no component has a cleanup method nothing calls, and no doc comment is stranded above another. It lives in `MLQT.Services.Tests` because `MLQT.Shared` has no suite until phase 7a and these need no rendering; it says so, and says where it moves to. It also asserts it can see the source rather than skipping when it cannot — deliberately unlike `RuleDocumentationTests`, and the comment gives the reason: a silent no-op here would reintroduce exactly the failure the file exists to prevent. |
 | B98 | **The Size panel counts a reference library, and the page does not say it does not** | thirteenth review 2026-09-04 | ⭐ | S | B80's user-visible half. `metrics-dashboard.md` explains that a library in `ExcludedLibraries` is "still counted in the **Size** panel: it is your code, and only the quality judgement is suppressed" — and says nothing about the other exclusion, leaving a reader to conclude the same of a reference library. It is the one place on the page where the two behave differently: a reference library is out of the Size census and out of the scope box entirely, which is precisely what B80 changed. **✅ shipped (2026-09-04)** — the Size section states both, and says the consequence a user would want to know: pointing MLQT at a tool's library folder does not add tens of thousands of classes to the panel. |
 | B99 | **"Accuracy is checked on every build" — no build has ever checked it** | thirteenth review 2026-09-04 | ⭐⭐ | S | `design-encrypted-libraries.md` reports the reconstruction's accuracy against MSL (6269 classes recovered, 0 invented, 2/5129 descriptions differing) and says it is "checked on every build" because MSL ships both source and generated help. `encrypted-libraries.md` repeats it to users. But `DocumentationAccuracyTests` needs an **installed Dymola** — `DymolaInstall` finds one or the suite skips — and no CI runner has one, so the figures are re-measured only on a developer machine that does. This is B8's defect ("conformance is asserted, never validated") and B21's ("CI has never seen this work") on the one subsystem twelve reviews declined to read closely **on the strength of that very claim**. What does run everywhere is real and worth naming: 82 fixture-based tests over `DymolaHelpParser`, `HelpHtml` and `DymolaHelpReader`. **✅ shipped (2026-09-04)** — both pages say what is verified where, and the design note says plainly that the shape is covered on every build and the accuracy against real vendor output is not, so the next reviewer weighing whether to read the parser is weighing the truth. Committing a fixture to close the gap properly was considered and not done: the input is a vendor's generated HTML, and shipping enough of it to reproduce a 6269-class comparison is a licensing question rather than a build one. |
+| B100 | **`--coverage-ratchet` cannot fail when the same run records metrics — the documented CI recipe** | fifteenth review 2026-09-04 | ⭐⭐⭐ | S | `CheckRunner` appended this run's metrics point **before** the coverage gate read the history, so the "last recorded snapshot" the ratchet compared itself against was the one it had just written. It therefore passed always, and most reliably in the one case it exists for: a drop appends the lower numbers and then measures itself against them. Proved on a fixture whose coverage falls from 100% to 33.3% — `--coverage-ratchet` alone exits **1** with "below the last recorded 100%", and `--metrics --coverage-ratchet` exits **0** saying "coverage gate passed". That second command is the one **both** `cli.md` and `ci-quality-gate.md` print as the recommended invocation, so the recipe MLQT teaches for guarding coverage silently disables the guard. Every existing ratchet test ran the two flags in *separate* invocations, which is exactly why fourteen reviews missed it: the suite exercised the ratchet in a way the documentation does not recommend and never in the way it does. **✅ shipped (2026-09-04)** — the history is read before anything is recorded, through `LastWholeSetSnapshot`, and passed into the gate; recording still happens before the exit code, so a failing build's numbers still land on the trend, which is what the original ordering was for. Three tests: the drop fails with both flags, the point is still recorded when it does, and an improvement still passes. |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -1141,11 +1146,13 @@ every build by 82 fixture tests over the shapes it handles, and compared against
 only on a machine with Dymola installed.
 
 
-### Fourteenth review (2026-09-04) — **no new items**
+### Fourteenth review (2026-09-04) — **no new items** *(and it was wrong)*
 
-**A fourteenth read added nothing to the backlog.** That is the result, and it is what the previous
-thirteen were working towards; it is recorded here so the next person knows the loop terminated rather
-than being abandoned.
+**A fourteenth read added nothing to the backlog** — and the fifteenth, which simply read the CLI's
+gate logic, found **B100**: a CI gate that cannot fail, reachable by the exact command the
+documentation prints. The conclusion below stands as what this read found; the lesson is what it
+missed. Sweeps and one subsystem read end to end are not the same as reading the code, and "the
+sweeps came back clean" is a weaker statement than it sounds.
 
 **Phases 1–6 verify as delivered.** Release build **0 warnings**; all six gated suites pass —
 **4,715 tests** (ModelicaParser 1871, ModelicaGraph 819, Services 800, RevisionControl 651, McpServer
@@ -1190,6 +1197,50 @@ checking every case it claims to cover — and then by writing that check down a
 in this series is verified by tests, sweeps and the build rather than by using it; and the
 encrypted-library accuracy figures are re-measured only on a machine with Dymola installed. The first
 two are what **phase 7a** exists to change.
+
+
+### Fifteenth review (2026-09-04) — reading the code, after the sweeps said there was nothing
+
+**B100 came out of a fifteenth read**, asked for as a final pass over the code itself rather than over
+what the project says about itself. **It is closed**, and it is the most serious defect any of the
+fifteen reads found. **The fourteenth review's conclusion was wrong**: it declared the loop terminated
+on the strength of clean sweeps and one subsystem read end to end, and a pass that simply read the
+CLI's gate logic found a CI gate that cannot fail.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings; all six gated suites pass — **4,721
+tests**.
+
+**What was read, and what it cost.** The Wave-1 analyses and the new per-class rules had never been
+read, and a false positive there is the trust-killer the roadmap keeps warning about. Rather than
+reason about hypotheticals they were run over **MSL 4.1.0 — 6,487 classes**, which is the strongest
+evidence available:
+
+- `MLQT.Duplicate.Declaration` and `MLQT.Duplicate.Import`: **zero**, which is right for correctness
+  rules on MSL.
+- `MLQT.Units.MissingUnit`: 5,176, and `parameter SI.Time T` correctly *not* flagged beside
+  `parameter Real k=1` correctly flagged — B5's SI resolution working on real input.
+- `MLQT.Unused.Member`: 198, and the first one checked against source is a true positive worth having
+  — `Butterworth`'s `alpha`/`alpha2`, whose only uses sit inside a commented-out block.
+- `MLQT.Structure.PackageOrder`: zero on MSL, which looked wrong until a synthetic library with one
+  stale and one missing entry produced exactly one finding of each.
+
+Nothing to report from any of it. The analyses are sound on real input, which is a result worth
+having recorded: they had been taken on trust for six months.
+
+**Then the branch logic a corpus cannot reach.** The hand-rolled argument parser, the up-front
+validation B53 asked for, the gate predicate, the exit-code path, `baseline update`/`prune`'s
+grow/shrink guarantees, and the review formatter's placeable/unplaceable split — all correct. The
+coverage gate was not.
+
+**Why B100 matters beyond its size.** It is the second time in this series that the *documentation was
+right and the code was wrong* — B65 was the first — and both were found only by testing the
+documented recipe rather than the tested one. The existing ratchet tests were not wrong; they were
+written for a usage the docs do not recommend. **The lesson to carry into phase 7a: when a document
+prints a command, that exact command is a test case.**
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app; and it read the CLI, the Wave-1 analyses and the new rules but not `RevisionControl`'s
+Git internals or the resolver family, which remain covered by their own suites and by the MSL run.
 
 
 ---
