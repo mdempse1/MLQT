@@ -19,10 +19,20 @@ public static class ChangedModelResolver
     private static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
+    /// <param name="systems">
+    /// The version control systems to try, in order. Left empty in production, where
+    /// <see cref="VcsLocator"/> supplies Git and SVN. It is here because the interesting paths below
+    /// are the ones a real repository will not perform on demand — above all a diff that <b>fails</b>,
+    /// which is the whole point of distinguishing null from empty and was the one branch of that fix
+    /// with no test behind it.
+    /// </param>
     public static ChangedModelResult Resolve(
-        string libraryPath, string sinceRevision, IReadOnlyDictionary<string, string> modelToFile)
+        string libraryPath, string sinceRevision, IReadOnlyDictionary<string, string> modelToFile,
+        params IRevisionControlSystem[] systems)
     {
-        var (vcs, root) = VcsLocator.Find(libraryPath);
+        var (vcs, root) = systems.Length > 0
+            ? VcsLocator.Find(libraryPath, systems)
+            : VcsLocator.Find(libraryPath);
         if (vcs is null || root is null)
             return Failed($"'{libraryPath}' is not inside a Git or SVN working copy");
 
