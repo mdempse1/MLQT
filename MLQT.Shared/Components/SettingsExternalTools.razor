@@ -6,6 +6,7 @@
 @inject IJSRuntime JSRuntime
 @inject AppState NavState
 @inject IFilePickerService FilePickerService
+@implements IDisposable
 
 <MudPaper Elevation="0">
     <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">Dymola</MudText>
@@ -72,7 +73,17 @@
         base.OnInitialized();
     }
 
-    protected void OnDispose()
+    /// <summary>
+    /// Unsubscribes from the singleton services this component listens to.
+    ///
+    /// <para>Blazor calls this because the component declares <c>@implements IDisposable</c> at the
+    /// top of the file. It did not: the method was here, named <c>OnDispose</c>, <c>protected</c>, and
+    /// called by nothing — so every handler stayed on the singleton after the component was gone.
+    /// The settings tabs are re-created on every switch (MudTabs renders only the active panel), so
+    /// the subscriptions accumulated for the life of the process: <b>Save Settings</b> ran once per
+    /// instance ever created, and each dead one raised <c>StateHasChanged</c> on itself.</para>
+    /// </summary>
+    public void Dispose()
     {
         NavState.OnSaveSettings -= SaveSettings;
     }  

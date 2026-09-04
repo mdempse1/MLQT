@@ -66,7 +66,11 @@ clause and that it got the clause wrong — a file with a licence header above i
 none, so **every such file was silently never formatted** (**B87**). A ninth read closed **B89–B90**,
 asking the same lens's third question — what is *like* the things an absolute covers but not covered
 by it — and finding the accepted-spellings list read as UTF-8 and written back mangled, and
-**Excluded libraries** saving but never re-checking. **B20 is deliberately left**: it belongs inside phase 7a, because the logic
+**Excluded libraries** saving but never re-checking. A tenth read closed **B91–B92**, found not by
+reading but by two fifteen-line sweeps over patterns CLAUDE.md states in one line each: three settings
+components have an unsubscribe method nothing calls, and the five coverage dimensions hidden from the
+user on the grounds that the formatter closes them had nothing checking that it does. **B20 is
+deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
 last of the two on purpose — it is the big task, and the point was to start it against a toolchain
@@ -85,8 +89,9 @@ B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Fifth review](#fifth-review-2026-09-04)), B79–B83 by the sixth (see
 [Sixth review](#sixth-review-2026-09-04)), B84–B86 by the seventh (see
 [Seventh review](#seventh-review-2026-09-04)), B87–B88 by the eighth (see
-[Eighth review](#eighth-review-2026-09-04)) and B89–B90 by the ninth (see
-[Ninth review](#ninth-review-2026-09-04)). B8–B11 had been added earlier the same day after
+[Eighth review](#eighth-review-2026-09-04)), B89–B90 by the ninth (see
+[Ninth review](#ninth-review-2026-09-04)) and B91–B92 by the tenth (see
+[Tenth review](#tenth-review-2026-09-04)). B8–B11 had been added earlier the same day after
 asking how the SARIF work would actually be tested — it had never been checked against the 2.1.0
 schema or against the one consumer it was written for. Before B4 started, the work since the list was
 written had been bug-driven or user-driven rather than planned:
@@ -285,12 +290,12 @@ Building on existing spell-checking.
 ## Backlog — finishing phases 1–6 (current focus)
 
 Everything below sits *inside* phases 1–6: gaps left behind when a phase shipped, an item a phase
-half-delivered, or — for B13 onwards — a defect one of the nine end-of-branch reviews found in what
+half-delivered, or — for B13 onwards — a defect one of the ten end-of-branch reviews found in what
 was delivered. None of it is a new workstream, and none of it is cross-platform (§1). The point of
 the list is a CI/CD toolchain with nothing outstanding before the big migration starts; B1–B12 got it
 feature-complete, B13–B25 are what the first careful read of the result turned up, B26–B35 what the
 second one did, B37–B49 the third, B50–B64 the fourth, B65–B78 the fifth, B79–B83 the sixth,
-B84–B86 the seventh, B87–B88 the eighth, and B89–B90 the ninth.
+B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, and B91–B92 the tenth.
 
 | # | Item | From | Value | Effort | What is missing |
 |---|------|------|-------|--------|-----------------|
@@ -384,6 +389,8 @@ B84–B86 the seventh, B87–B88 the eighth, and B89–B90 the ninth.
 | B88 | **Seven stale doc summaries, two of them contradicting the member they sit on** | eighth review 2026-09-04 | ⭐ | S | B82 fixed one orphaned `<summary>`; a mechanical sweep for `</summary>` immediately followed by `<summary>` finds **seven**, so it is a class rather than a slip — a rewritten comment left above its replacement. Two are worse than untidy because the old text contradicts the new. `ILibraryDataService.SuppressTreeDataChanged` opens by describing a **flag** the caller must set and unset, and is immediately followed by the summary explaining that a flag could not express nesting and that this is a disposable scope; a reader taking the first goes looking for a property. `StyleCheckingSettings.HasAnyStyleRuleEnabled` opens with "the severity map holds only enabled rules" and is followed by the summary explaining that it does not — a rule whose prerequisite is off is in the map and does nothing, which is the whole reason the member asks `SeverityFor`. The other five strand a method's summary on the member that was later inserted above it (`LoadReferenceLibrariesAsync`, `SkipReferenceOnly`, `RunDeferredStyleCheckingFromEventAsync`, `UpdateGraphIncremental`, `ExternalStubBuilder.StubHeader`) — and one of those five was introduced by **B84's own edit**, which is the argument for sweeping rather than fixing them one at a time. **✅ shipped (2026-09-04)** — all seven gone, and the sweep that found them (`</summary>` immediately followed by `<summary>`) now returns nothing. Two were deleted, being old text the summary beneath it contradicts; five were **moved** onto the member they describe, which is what the delete-only first pass got wrong — four members would have been left with no summary at all, so the fix was checked by re-running the sweep *and* by looking at each member afterwards. `RunDeferredStyleCheckingAsync` gained the one-line summary it had never had beside its `<param>`. |
 | B89 | **The accepted-spellings list is read as UTF-8 and written back mangled** | ninth review 2026-09-04 | ⭐⭐ | S | `CustomDictionaryService` reads `<repo>/.mlqt/dictionary.txt` with `File.ReadAllLines` and writes it with `File.WriteAllLinesAsync`. That file is the one committed, hand-editable plain-text file MLQT owns besides Modelica source; it declares no encoding, and it holds proper nouns and engineering terms that are not all ASCII (Frössling, Krüger). A list saved in Windows-1252 decodes to replacement characters, and — the half that makes it corruption rather than a display problem — the next word the user accepts writes those characters back, so the damage survives the edit and is committed. This is exactly the failure `ModelicaFileEncoding` was written for, on the one file nobody thought to route through it: `package.order`, which is no more Modelica than this is, already goes through `ReadAllLinesOnly`/`WriteAllLines`. **✅ shipped (2026-09-04)** — both ends now do, and `ModelicaFileEncoding` gained the `WriteAllLinesAsync` its text pair already had so the service's async signature did not have to change. Three tests: a Latin-1 list read intact, the same list still Latin-1 and unmangled after a word is added, and a UTF-8 list round-tripping. |
 | B90 | **Excluding a library from the checks does nothing until the project is reloaded** | ninth review 2026-09-04 | ⭐⭐ | S | `SettingsRepositories.ConfirmChanges` asks `StyleSettingsChanged` whether Apply has to re-check. It compared the severity map, the two formatter flags, the naming config and the spell languages — and not `ExcludedLibraries`, which **the same dialog edits**. So adding a library to the excluded list saved the setting, raised nothing, and left its findings on the Code Review list and its classes in the coverage figures until the project was reloaded; removing one left the library unchecked the same way. The phase 6 note named this risk in as many words for rules — "each needing its own switch *and* a field in `StyleSettingsChanged` (miss the latter and persistence/re-check silently break)" — and solved it for rules by making the list data-driven. `ExcludedLibraries` is not a rule, arrived later, and was missed. **✅ shipped (2026-09-04)** — the comparison moved onto `StyleCheckingSettings` as `ChecksDifferFrom` / `FormattingDiffersFrom`, beside the properties it has to keep up with and where it can be tested at all; `ExcludedLibraries` and `FormattingExcludedModels` are in it. `StyleCheckingSettingsComparisonTests` walks every persisted property by reflection and fails on one that is neither compared nor written down in a reasoned exemption list — and checks the exemptions are true, so the list cannot become a way of silencing the test. |
+| B91 | **Three settings components have a `Dispose` that nothing calls** | tenth review 2026-09-04 | ⭐⭐ | S | CLAUDE.md states the pattern in one line — "Subscribe in `OnInitializedAsync`, unsubscribe in `Dispose()`" — and `SettingsUI`, `SettingsExternalTools` and `SettingsRepositories` each have the unsubscribe method, named `OnDispose`, `protected`, and **called by nothing**: none of the three declares `@implements IDisposable`, so Blazor never invokes it. `SettingsReferenceLibraries`, the newest of the four, does declare it, which is what makes this a slip rather than a design. `MudTabs` renders only the active panel, so every switch between settings tabs — and every switch away from Settings and back — creates a new instance whose handlers stay on the singletons for the life of the process. **Save Settings** therefore fires `NavState.OnSaveSettings` once per instance ever created, running `SaveRepositorySettingsAsync` that many times over; and each dead instance's handler calls `InvokeAsync(StateHasChanged)` on a disposed component, which throws inside an `async void`. `SettingsRepositories` also never listed `RepositoryService.OnRepositoriesChanged` in the method at all. **✅ shipped (2026-09-04)** — all three declare the interface and the method is `public void Dispose()`; the missing subscription is in it. Two sweeps re-run and clean: every `+=` in a component has a matching `-=`, and no component subscribes without declaring the interface. |
+| B92 | **Nothing checks that the formatter closes the gaps coverage credits it with** | tenth review 2026-09-04 | ⭐⭐ | S | `CoverageDimensions.FormatterRewrites` takes five dimensions off the report when the formatter is on, because "reporting them would measure the moment before the save rather than the library". That is only honest while the renderer really satisfies those five rules, and it has already been wrong once: `InitialSectionsLast` was in the set while `ModelicaRenderer` wrote initial sections first whatever the setting said, so the report hid a gap every save reintroduced — recorded in the file's own comment. The only test on the constant asserts it against itself (those dimensions drop out when the formatter is on), which is true by construction and would have passed throughout. The claim that justifies **hiding numbers from a user** had nothing holding it to the code that is supposed to make it true. **✅ shipped (2026-09-04)** — `FormatterClosesTheGapTests` does the round trip the claim describes: a class breaking all four order rules, rendered with the formatting a repository would have on, then checked again — and the rule reports nothing. Eight tests, including a control asserting the fixture really does break the rules before formatting, one asserting the two dimensions the renderer *cannot* fix stay on the report, and one holding the credited set itself to what switching the formatter on actually drops (asked twice, since the two initial-section rules are mutually exclusive and no single configuration sees both). |
 
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
@@ -969,6 +976,41 @@ the exemptions checked to be true so the list cannot be used to silence the test
 **What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
 desktop app, so B90 is verified by the extracted comparison and its tests rather than by pressing
 Apply; and it did not review the Dymola help parsing.
+
+
+### Tenth review (2026-09-04)
+
+**B91–B92 came out of a tenth read.** **Both are closed.** Neither was found by reading a file: both
+came from running a mechanical sweep for a stated pattern and looking at what it printed.
+
+**Phases 1–6 verify as delivered.** Release build 0 warnings, all six gated suites pass, coverage gate
+and SARIF validation green.
+
+**The lens this time was the cheapest one yet, and it should have been used sooner.** CLAUDE.md states
+several patterns in a single line each. Two of them can be checked by a fifteen-line script rather
+than by reading: "Subscribe in `OnInitializedAsync`, unsubscribe in `Dispose()`" is a `+=` with a
+matching `-=`, and "a component that subscribes must be disposable" is a `@implements` directive. The
+first sweep found one unbalanced subscription; the second found the reason — three components have the
+unsubscribe method and none of them is ever asked for it, because none declares the interface
+(**B91**). Nine reviews had read those files and not noticed, because the method is *there* and looks
+right; only asking "who calls it" shows it is dead.
+
+**B92 is the signature shape again**, on the claim with the most user-visible consequence so far: five
+coverage dimensions are **hidden from the user** on the grounds that the formatter closes them on
+every save, and nothing checked that it does. The one existing test asserts the constant against
+itself. The history proves the risk is real rather than theoretical — `InitialSectionsLast` sat in
+that set while the renderer ignored the setting, and the file's own comment records it. The test now
+does the round trip the claim describes: break the rules, render with the repository's formatting,
+check again.
+
+**The pattern worth carrying forward.** Nine reviews found defects by reading; this one found two by
+listing. Anywhere the project states a rule that can be expressed as a grep — a matching pair, a
+declared interface, a naming convention — the sweep is worth more than the reading, because it covers
+the files nobody thought to open. The two scripts used here are three lines of regex each.
+
+**What this review did not do:** it did not read all 47,000 changed lines; it did not exercise the
+desktop app, so B91 is verified by the sweeps and the build rather than by opening the settings tabs
+repeatedly and watching the handler count; and it did not review the Dymola help parsing.
 
 
 ---
