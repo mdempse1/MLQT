@@ -19,13 +19,13 @@ with those tools, and it stays optional.
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
 
-**The CI/CD toolchain is feature-complete.** The gaps left inside phases 1–6 were collected in
+**The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
 [Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. B1–B12 closed
 the feature list; reviewing the branch end to end before merging it opened **B13–B25**, and those are
 closed — five correctness defects, two pieces of duplication, and documentation that had drifted from
-the code. A second read on 2026-09-04 opened **B26–B35**, all open: it confirmed every phase 1–6
-claim against the code and a green build of all 4,714 tests, and found one exception path outside the
-documented exit codes, two rule-classification mistakes, and a set of test and documentation gaps.
+the code. A second read on 2026-09-04 opened **B26–B35**, and those are closed too: it confirmed every phase
+1–6 claim against the code and a green build, and found one exception path outside the documented
+exit codes, two rule-classification mistakes, and a set of duplication, test and documentation gaps.
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic sitting in the two largest
 pages is what makes a GUI test harness expensive to build. Cross-platform (§1) was kept last of the
 two on purpose — it is the big task, and the point was to start it against a toolchain that is
@@ -34,7 +34,7 @@ complete rather than one still being finished.
 Then **phase 7, the desktop host migration**, opening with the WebKitGTK spike — no longer pulled
 early, because the CI work ahead of it does not depend on the answer.
 
-**Backlog: B1–B19 and B21–B25 are shipped; B20 and B26–B35 are open.** B20 belongs to phase 7a.
+**Backlog: everything is shipped except B20, which belongs to phase 7a.**
 B13–B25 were opened by the end-of-branch review on 2026-09-03 (see
 [Branch review](#branch-review-2026-09-03)) and B26–B35 by the second read on 2026-09-04 (see
 [Second review](#second-review-2026-09-04)). B8–B11 had been added earlier the same day after
@@ -321,7 +321,7 @@ places the design notes said a risk lived.
 
 **B26–B35 came out of a second read of the branch**, asked for after B13–B25 closed: phases 1–6
 against the roadmap and the design notes, then the code for duplication, missing tests, logic
-implemented twice, and the documentation against what shipped. **All ten are open.**
+implemented twice, and the documentation against what shipped. **All ten are now closed.**
 
 **Phases 1–6 verify as delivered.** Every claim in the six implementation notes has code behind it,
 the whole solution builds, and all 4,714 tests pass (ModelicaParser 1835, Services 747, ModelicaGraph
@@ -343,8 +343,12 @@ dashboard's missing page (**B34**), and CLAUDE.md never naming the roadmap it is
 
 The pattern across B26–B29 is worth naming, because it is the same one: a *catalogued* thing —
 a rule id, a category — carries an implicit promise that some other surface honours it, and no test
-holds anyone to that promise. B16 built exactly that test for the documentation. The catalog needs
-the same test pointed at the settings UI, at the severity map, and at what may be baselined.
+holds anyone to that promise. B16 built exactly that test for the documentation, and the fixes point
+it at the rest: `RuleCatalog.IsConfigurable` now splits every id into configurable, governed or
+diagnostic, `RuleSettingsLayoutTests` fails when a configurable rule has nowhere in the settings
+dialog to be set, and `mlqt check` warns about any key a settings file cannot actually set. The three
+questions — can this be configured, can it be baselined, can it be found in the UI — are now answered
+in one place each rather than implied in several.
 
 What this review covered, so its gaps are on the record too: the six design notes claim by claim
 against the code; the rule catalog against `RuleIds`, `settings-reference.md`, the settings UI and
