@@ -48,7 +48,7 @@ public class CoverageDimensionsTests
     {
         // The style checker runs ExtendsClausesAtTop alongside ImportStatementsFirst rather than from
         // a severity of its own, so gating it on its own rule id would keep it permanently off.
-        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
 
         var tracked = CoverageDimensions.TrackedFor(settings);
 
@@ -103,7 +103,7 @@ public class CoverageDimensionsTests
     public void InitialSectionsLast_StaysTracked_WhenTheFormatterIsNotRunning()
     {
         // Nothing is rewriting the class, so the gap is real debt and worth measuring.
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         Assert.True(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.InitialSectionsLast));
     }

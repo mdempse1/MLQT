@@ -24,7 +24,7 @@ public class GovernedRuleTests
     {
         // Whatever the governor resolves to — and for this pair that is itself derived from the
         // formatter, so the assertion is that the two agree rather than that either is a fixed value.
-        var advisory = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var advisory = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
         Assert.Equal(
             advisory.SeverityFor(RuleIds.ImportStatementsFirst),
             advisory.SeverityFor(RuleIds.ExtendsAtTop));
@@ -57,7 +57,7 @@ public class GovernedRuleTests
     [Fact]
     public void SettingAGovernedRuleDirectly_DoesNotOverrideItsGovernor()
     {
-        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
         settings.SetRuleSeverity(RuleIds.ExtendsAtTop, RuleSeverity.Off);
 
         // Still on: the governor decides, and the direct value is reported as ignored below rather
@@ -65,17 +65,19 @@ public class GovernedRuleTests
         Assert.NotEqual(RuleSeverity.Off, settings.SeverityFor(RuleIds.ExtendsAtTop));
     }
 
+    private static string ReasonFor(StyleCheckingSettings settings, string ruleId) =>
+        settings.IgnoredRuleKeys().Single(entry => entry.RuleId == ruleId).Reason;
+
     [Fact]
     public void AKeyThatCannotBeSet_IsReportedAsIgnored()
     {
         var settings = new StyleCheckingSettings();
         settings.SetRuleSeverity(RuleIds.ExtendsAtTop, RuleSeverity.Error);
 
-        var ignored = settings.IgnoredRuleKeys();
+        var reason = ReasonFor(settings, RuleIds.ExtendsAtTop);
 
-        Assert.Contains(RuleIds.ExtendsAtTop, ignored);
-        Assert.Contains("governed by", StyleCheckingSettings.WhyIgnored(RuleIds.ExtendsAtTop));
-        Assert.Contains(RuleIds.ImportStatementsFirst, StyleCheckingSettings.WhyIgnored(RuleIds.ExtendsAtTop));
+        Assert.Contains("governed by", reason);
+        Assert.Contains(RuleIds.ImportStatementsFirst, reason);
     }
 
     [Fact]
@@ -85,8 +87,7 @@ public class GovernedRuleTests
         var settings = new StyleCheckingSettings();
         settings.SetRuleSeverity("MLQT.Doc.ClassDescriptions", RuleSeverity.Error);
 
-        Assert.Contains("MLQT.Doc.ClassDescriptions", settings.IgnoredRuleKeys());
-        Assert.Contains("not a known rule id", StyleCheckingSettings.WhyIgnored("MLQT.Doc.ClassDescriptions"));
+        Assert.Contains("not a known rule id", ReasonFor(settings, "MLQT.Doc.ClassDescriptions"));
     }
 
     [Fact]
@@ -95,8 +96,7 @@ public class GovernedRuleTests
         var settings = new StyleCheckingSettings();
         settings.SetRuleSeverity(RuleIds.SyntaxError, RuleSeverity.Info);
 
-        Assert.Contains(RuleIds.SyntaxError, settings.IgnoredRuleKeys());
-        Assert.Contains("always reported", StyleCheckingSettings.WhyIgnored(RuleIds.SyntaxError));
+        Assert.Contains("always reported", ReasonFor(settings, RuleIds.SyntaxError));
     }
 
     [Fact]
@@ -104,6 +104,30 @@ public class GovernedRuleTests
     {
         var settings = new StyleCheckingSettings();
         settings.SetRuleSeverity(RuleIds.ClassDescription, RuleSeverity.Error);
+
+        Assert.Empty(settings.IgnoredRuleKeys());
+    }
+
+    /// <summary>
+    /// The case a hand-edited settings file falls into. The dialog greys these switches out while
+    /// One of each section is off; a file has no such protection, so `mlqt check` says it.
+    /// </summary>
+    [Fact]
+    public void ALayoutRuleWithoutItsPrerequisite_IsReportedAsIgnored()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleSeverity(RuleIds.ImportStatementsFirst, RuleSeverity.Warning);
+
+        var reason = ReasonFor(settings, RuleIds.ImportStatementsFirst);
+
+        Assert.Contains(RuleIds.OneOfEachSection, reason);
+        Assert.Contains("does nothing", reason);
+    }
+
+    [Fact]
+    public void ALayoutRuleWithItsPrerequisite_IsNotReportedAsIgnored()
+    {
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
 
         Assert.Empty(settings.IgnoredRuleKeys());
     }
@@ -152,7 +176,7 @@ public class GovernedRuleTests
     [Fact]
     public void TheGuiSwitchEnablesAtTheCatalogDefault()
     {
-        var settings = new StyleCheckingSettings();
+        var settings = new StyleCheckingSettings { OneOfEachSection = true };
 
         settings.ImportStatementsFirst = true;   // what the MudSwitch binds to
 
@@ -236,17 +260,44 @@ public class GovernedRuleTests
     }
 
     /// <summary>
-    /// Applying formatting is not on its own enough. <c>ModelicaRenderer</c> only reorders inside its
-    /// one-of-each-section branch, so with that rule off nothing is being maintained and calling a
-    /// finding an error would claim something untrue.
+    /// Without One of each section the ordering rules do not run at all, whatever else is set.
+    /// <c>ModelicaRenderer</c> only reorders inside its one-of-each-section branch, so on their own
+    /// they would report an arrangement the formatter cannot produce — findings nobody can clear by
+    /// pressing Format, on a setting that looks enabled.
     /// </summary>
     [Fact]
-    public void ApplyingFormattingWithoutOneOfEachSection_LeavesTheRulesAdvisory()
+    public void WithoutOneOfEachSection_TheOrderingRulesDoNotRun()
     {
         var settings = new StyleCheckingSettings { ApplyFormattingRules = true, ImportStatementsFirst = true };
 
+        Assert.Equal(RuleSeverity.Off, settings.SeverityFor(RuleIds.ImportStatementsFirst));
+        Assert.Equal(RuleSeverity.Off, settings.SeverityFor(RuleIds.ExtendsAtTop));
+        Assert.False(settings.ImportStatementsFirst);   // the facade agrees, so the checker skips it
+    }
+
+    /// <summary>
+    /// And the setting is not destroyed by that — turning the prerequisite back on restores it, which
+    /// is what makes the greyed-out switch in the dialog safe to leave alone.
+    /// </summary>
+    [Fact]
+    public void EnablingThePrerequisiteRestoresTheRule()
+    {
+        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        Assert.Equal(RuleSeverity.Off, settings.SeverityFor(RuleIds.ImportStatementsFirst));
+
+        settings.OneOfEachSection = true;
+
         Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ImportStatementsFirst));
-        Assert.Equal(RuleSeverity.Warning, settings.SeverityFor(RuleIds.ExtendsAtTop));
+    }
+
+    [Fact]
+    public void ARuleWhoseOnlyEntryIsInert_DoesNotCountAsRulesEnabled()
+    {
+        // Otherwise a run announces that rules are enabled and then reports nothing, which is the
+        // least debuggable outcome available.
+        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+
+        Assert.False(settings.HasAnyStyleRuleEnabled);
     }
 
     [Fact]
@@ -267,7 +318,7 @@ public class GovernedRuleTests
     [Fact]
     public void TheExtendsCoverageDimensionFollowsTheSameSwitch()
     {
-        var settings = new StyleCheckingSettings();
+        var settings = new StyleCheckingSettings { OneOfEachSection = true };
         Assert.False(CoverageDimensions.TrackedFor(settings).HasFlag(CoverageDimension.ExtendsAtTop));
 
         settings.ImportStatementsFirst = true;

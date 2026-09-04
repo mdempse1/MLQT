@@ -71,6 +71,13 @@ public class StyleCheckingSettings
         if (RuleCatalog.GovernorOf(ruleId) is { } governor)
             return SeverityFor(governor);
 
+        // A rule whose prerequisite is off does nothing, so it reads as off rather than as enabled
+        // and quietly inert. See RuleDefinition.RequiresRule: the ordering rules need
+        // OneOfEachSection, because without it the formatter never reorders and they would report an
+        // arrangement no one can reach by formatting.
+        if (RuleCatalog.RequiredRuleFor(ruleId) is { } prerequisite && !IsRuleEnabled(prerequisite))
+            return RuleSeverity.Off;
+
         if (!RuleSeverities.TryGetValue(ruleId, out var stored))
             return RuleSeverity.Off;
 
@@ -78,47 +85,45 @@ public class StyleCheckingSettings
         // warning while it is advice, and an error once the formatter is rewriting every class on save
         // to satisfy it, because a violation that survives that is not a matter of taste.
         return RuleCatalog.SeverityFollowsFormatter(ruleId)
-            ? (FormatterMaintainsLayout ? RuleSeverity.Error : RuleSeverity.Warning)
+            ? (ApplyFormattingRules ? RuleSeverity.Error : RuleSeverity.Warning)
             : stored;
     }
 
     /// <summary>
-    /// True when saving a class rewrites its layout — which is what makes a surviving layout finding
-    /// an error rather than advice.
-    ///
-    /// <para>It takes <em>both</em> switches. <c>ApplyFormattingRules</c> turns the formatter on, but
-    /// <c>ModelicaRenderer</c> only reorders anything inside its one-of-each-section branch: with
-    /// <c>OneOfEachSection</c> off it writes the composition in source order and moves nothing, so
-    /// nothing is being maintained and Error would be claiming something untrue. The coverage
-    /// dimensions have used the same pair since they were written, for the same reason.</para>
-    ///
-    /// <para>Read straight from the map rather than through <see cref="IsRuleEnabled"/>: that would
-    /// call back into <see cref="SeverityFor"/> for a rule whose severity is what we are working out.</para>
-    /// </summary>
-    private bool FormatterMaintainsLayout =>
-        ApplyFormattingRules && RuleSeverities.ContainsKey(RuleIds.OneOfEachSection);
-
-    /// <summary>
-    /// Keys in <see cref="RuleSeverities"/> that this settings file cannot actually set: a rule
-    /// governed by another, or an id no catalog rule matches (a typo, or a rule from a newer MLQT).
+    /// Keys in <see cref="RuleSeverities"/> that are not doing what the file says, each with the
+    /// reason: a rule governed by another, a diagnostic, an id no catalog rule matches (a typo, or a
+    /// rule from a newer MLQT), or a rule sitting behind a prerequisite that is off.
     ///
     /// <para>A quality gate configured by a file nobody validates is a gate that can be switched off
     /// by a spelling mistake and never say so. The caller decides what to do about it — the CLI warns
     /// on stderr — but the answer is computed here so every surface asks the same question.</para>
     /// </summary>
-    public IReadOnlyList<string> IgnoredRuleKeys() =>
+    public IReadOnlyList<(string RuleId, string Reason)> IgnoredRuleKeys() =>
         RuleSeverities.Keys
-            .Where(id => !RuleCatalog.IsConfigurable(id))
-            .OrderBy(id => id, StringComparer.Ordinal)
+            .Select(id => (RuleId: id, Reason: ReasonIgnored(id)))
+            .Where(entry => entry.Reason is not null)
+            .OrderBy(entry => entry.RuleId, StringComparer.Ordinal)
+            .Select(entry => (entry.RuleId, entry.Reason!))
             .ToList();
 
-    /// <summary>Why <paramref name="ruleId"/> is in <see cref="IgnoredRuleKeys"/>, as a sentence.</summary>
-    public static string WhyIgnored(string ruleId) =>
-        RuleCatalog.GovernorOf(ruleId) is { } governor
-            ? $"'{ruleId}' is governed by '{governor}' and has no setting of its own — set that instead"
-            : RuleIds.IsDiagnostic(ruleId)
-                ? $"'{ruleId}' is a diagnostic, not a rule: it is always reported and cannot be configured"
-                : $"'{ruleId}' is not a known rule id — check the spelling against settings-reference.md";
+    /// <summary>Why this key is not doing what it says, or null when it is.</summary>
+    private string? ReasonIgnored(string ruleId)
+    {
+        if (RuleCatalog.GovernorOf(ruleId) is { } governor)
+            return $"'{ruleId}' is governed by '{governor}' and has no setting of its own — set that instead";
+
+        if (RuleIds.IsDiagnostic(ruleId))
+            return $"'{ruleId}' is a diagnostic, not a rule: it is always reported and cannot be configured";
+
+        if (!RuleCatalog.IsKnown(ruleId))
+            return $"'{ruleId}' is not a known rule id — check the spelling against settings-reference.md";
+
+        if (RuleCatalog.RequiredRuleFor(ruleId) is { } prerequisite && !IsRuleEnabled(prerequisite))
+            return $"'{ruleId}' does nothing while '{prerequisite}' is off: the formatter only reorders " +
+                   "a class when that rule is on, so this one would report an arrangement it cannot produce";
+
+        return null;
+    }
 
     /// <summary>True if the rule is enabled (severity != Off). Public so a data-driven settings UI
     /// can render a toggle per rule id from the catalog.</summary>
@@ -382,5 +387,11 @@ public class StyleCheckingSettings
     /// rules are counted automatically (the severity map holds only enabled rules; formatter flags
     /// such as ApplyFormattingRules/ComponentsBeforeClasses are plain bools and never appear here).
     /// </summary>
-    public bool HasAnyStyleRuleEnabled => RuleSeverities.Values.Any(s => s != RuleSeverity.Off);
+    /// <summary>
+    /// True when at least one rule will actually run. Asks <see cref="SeverityFor"/> rather than
+    /// reading the stored values, because the two can disagree: a rule whose prerequisite is off is
+    /// in the map and does nothing, and a settings file holding only those would otherwise announce
+    /// that rules are enabled and then report nothing, which is the least debuggable outcome there is.
+    /// </summary>
+    public bool HasAnyStyleRuleEnabled => RuleSeverities.Keys.Any(IsRuleEnabled);
 }

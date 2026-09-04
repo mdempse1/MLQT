@@ -136,7 +136,10 @@ public class BaselineMaintenanceTests
         end Lib;
         """;
 
-    private const string RepeatedFindingSettings = """{ "ImportStatementsFirst": true }""";
+    // OneOfEachSection is the prerequisite for the ordering rules: without it the formatter never
+    // reorders, so they do not run. See RuleDefinition.RequiresRule.
+    private const string RepeatedFindingSettings =
+        """{ "OneOfEachSection": true, "ImportStatementsFirst": true }""";
 
     [Fact]
     public void Create_SaysHowManyFindingsTheEntriesCover()

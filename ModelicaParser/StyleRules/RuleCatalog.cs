@@ -3,6 +3,17 @@ using ModelicaParser.DataTypes;
 namespace ModelicaParser.StyleRules;
 
 /// <summary>Metadata for a single rule (built-in or, later, custom).</summary>
+/// <param name="RequiresRule">
+/// A rule that must also be enabled for this one to do anything, or null. When the prerequisite is
+/// off this rule resolves to <see cref="RuleSeverity.Off"/> however it is configured.
+///
+/// <para>It exists because of one real dependency rather than as a general mechanism.
+/// <c>ModelicaRenderer</c> reorders a class only inside its one-of-each-section branch: with
+/// <c>MLQT.Style.OneOfEachSection</c> off it writes the composition in source order and moves
+/// nothing. So the other layout rules on their own would report an ordering the formatter is not able
+/// to establish — findings nobody can clear by pressing Format, on a setting that looks enabled. The
+/// dependency is enforced rather than documented, and the settings dialog greys the switches out.</para>
+/// </param>
 /// <param name="SeverityFollowsFormatter">
 /// True when the rule's <em>level</em> is decided by whether the formatter is maintaining the layout
 /// it checks, rather than stored: <see cref="RuleSeverity.Error"/> when it is, and
@@ -30,7 +41,8 @@ public sealed record RuleDefinition(
     RuleSeverity DefaultSeverity,
     string Description,
     string? GovernedBy = null,
-    bool SeverityFollowsFormatter = false);
+    bool SeverityFollowsFormatter = false,
+    string? RequiresRule = null);
 
 /// <summary>
 /// Catalog of the built-in rules. This is the extensibility seam: the severity map, suppression
@@ -64,6 +76,13 @@ public static class RuleCatalog
         _builtIn.TryGetValue(ruleId, out var def) && def.SeverityFollowsFormatter;
 
     /// <summary>
+    /// The rule that must also be enabled for <paramref name="ruleId"/> to have any effect, or null.
+    /// See <see cref="RuleDefinition.RequiresRule"/>.
+    /// </summary>
+    public static string? RequiredRuleFor(string ruleId) =>
+        _builtIn.TryGetValue(ruleId, out var def) ? def.RequiresRule : null;
+
+    /// <summary>
     /// True if the rule has a setting of its own — i.e. it is not a diagnostic and not governed by
     /// another rule. This is the set a settings UI must offer and a settings file may name.
     /// </summary>
@@ -87,15 +106,15 @@ public static class RuleCatalog
         {
             new RuleDefinition(RuleIds.ParameterDescription, "Parameter has description", "Documentation", RuleSeverity.Warning, "Public parameters must have a description string."),
             new RuleDefinition(RuleIds.ConstantDescription, "Constant has description", "Documentation", RuleSeverity.Warning, "Public constants must have a description string."),
-            new RuleDefinition(RuleIds.ImportStatementsFirst, "Imports first", "Ordering", RuleSeverity.Warning, "Import statements must appear before the rest of the class definition.", SeverityFollowsFormatter: true),
+            new RuleDefinition(RuleIds.ImportStatementsFirst, "Imports first", "Ordering", RuleSeverity.Warning, "Import statements must appear before the rest of the class definition.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.OneOfEachSection),
             // Governed by ImportStatementsFirst: the two describe one ordering convention ("imports
             // first, extends next"), the formatter applies them together, and the settings page has
             // always offered them as one switch. Keeping a separate id is still right — a finding
             // about a misplaced extends should say so, and be suppressible on its own — but there is
             // no second switch behind it, and now nothing pretends otherwise.
             new RuleDefinition(RuleIds.ExtendsAtTop, "Extends clauses at top", "Ordering", RuleSeverity.Warning, "Extends clauses must appear at the top of the class. Enabled and configured through MLQT.Style.ImportStatementsFirst, which is the same convention seen from the other end.", GovernedBy: RuleIds.ImportStatementsFirst),
-            new RuleDefinition(RuleIds.InitialEqAlgoFirst, "Initial sections first", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear before regular ones.", SeverityFollowsFormatter: true),
-            new RuleDefinition(RuleIds.InitialEqAlgoLast, "Initial sections last", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear after regular ones.", SeverityFollowsFormatter: true),
+            new RuleDefinition(RuleIds.InitialEqAlgoFirst, "Initial sections first", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear before regular ones.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.OneOfEachSection),
+            new RuleDefinition(RuleIds.InitialEqAlgoLast, "Initial sections last", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear after regular ones.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.OneOfEachSection),
             new RuleDefinition(RuleIds.OneOfEachSection, "One of each section", "Ordering", RuleSeverity.Warning, "A class must not contain more than one of each section type.", SeverityFollowsFormatter: true),
             new RuleDefinition(RuleIds.DontMixEquationAndAlgorithm, "Don't mix equation and algorithm", "Ordering", RuleSeverity.Warning, "A class must not mix equation and algorithm sections."),
             new RuleDefinition(RuleIds.DontMixConnections, "Don't mix connections and equations", "Ordering", RuleSeverity.Warning, "An equation section must not mix connect statements and equations."),

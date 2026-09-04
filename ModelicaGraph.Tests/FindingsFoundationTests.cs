@@ -141,19 +141,42 @@ public class FindingsFoundationTests
 
     // ---- JSON migration / round-trip -----------------------------------------------------------
 
+    /// <summary>
+    /// A legacy file that enables an ordering rule <em>without</em> One of each section. The rule is
+    /// inert now — the formatter only reorders when that rule is on, so on its own it would report an
+    /// arrangement nobody can reach by formatting — and `mlqt check` says so rather than leaving a
+    /// repository to notice that findings stopped.
+    /// </summary>
+    [Fact]
+    public void LegacyBoolJson_OrderingRuleWithoutItsPrerequisite_IsInertAndSaysSo()
+    {
+        const string json = """{ "ImportStatementsFirst": true }""";
+
+        var s = JsonSerializer.Deserialize<StyleCheckingSettings>(json)!;
+
+        Assert.False(s.ImportStatementsFirst);
+        Assert.Equal(RuleSeverity.Off, s.SeverityFor(RuleIds.ImportStatementsFirst));
+        Assert.False(s.HasAnyStyleRuleEnabled);
+
+        var (ruleId, reason) = Assert.Single(s.IgnoredRuleKeys());
+        Assert.Equal(RuleIds.ImportStatementsFirst, ruleId);
+        Assert.Contains(RuleIds.OneOfEachSection, reason);
+    }
+
     [Fact]
     public void LegacyBoolJson_MigratesToSeverityMap()
     {
         // A settings file written before Phase 1 has only the booleans.
-        const string json = """{ "ImportStatementsFirst": true, "ClassHasIcon": true }""";
+        const string json =
+            """{ "OneOfEachSection": true, "ImportStatementsFirst": true, "ClassHasIcon": true }""";
 
         var s = JsonSerializer.Deserialize<StyleCheckingSettings>(json)!;
 
         Assert.True(s.ImportStatementsFirst);
         Assert.True(s.ClassHasIcon);
-        Assert.False(s.OneOfEachSection);
+        Assert.True(s.OneOfEachSection);
         Assert.Equal(RuleSeverity.Warning, s.SeverityFor(RuleIds.ImportStatementsFirst));
-        Assert.Equal(RuleSeverity.Off, s.SeverityFor(RuleIds.OneOfEachSection));
+        Assert.Equal(RuleSeverity.Warning, s.SeverityFor(RuleIds.OneOfEachSection));
     }
 
     [Fact]

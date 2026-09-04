@@ -14,8 +14,11 @@ Formatting behavior is controlled by the **Apply formatting rules** toggle in ea
 | **Initial equation/algorithm first** / **last** | Writes `initial equation` and `initial algorithm` blocks before, or after, the regular ones |
 
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
-source order and moves nothing at all, so the other three have no effect — enabling *Import statements
-first* on its own reorders nothing.
+source order and moves nothing at all — so the other three are **switched off with it**, both as
+formatting transforms and as style rules. Enabling *Import statements first* on its own would report
+an arrangement the formatter could never produce, so MLQT does not let you: the switches are greyed
+out in repository settings, and a hand-edited settings file gets a warning from `mlqt check`. See
+[One of each section is required by the rest](settings-reference.md#one-of-each-section-is-required-by-the-rest).
 
 > **Formatting and checking agree about these.** Each row above is also a style rule, and the
 > formatter writes what the rule asks for. That was not always true of *Initial equation/algorithm

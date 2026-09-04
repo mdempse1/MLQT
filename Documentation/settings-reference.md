@@ -147,26 +147,47 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 | **Initial equation/algorithm first** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
 | **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
 
+#### One of each section is required by the rest
+
+The last four settings in that table — **Imports first, extends at top**, **Components before
+classes**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
+section is also on**, and MLQT enforces that rather than leaving it to be discovered.
+
+The reason is in the formatter. `ModelicaRenderer` reorders a class only in its one-of-each-section
+mode; with that setting off it writes the composition in source order and moves nothing at all. So on
+their own the other rules would report an arrangement that pressing **Format All Files** could never
+produce — findings nobody can clear, against a setting that looks enabled.
+
+- **In the app**, the four switches are greyed out until you turn **One of each section** on. What
+  they were set to is kept, so turning it on brings them back exactly as they were.
+- **In a settings file**, the rules simply do not run, and `mlqt check` prints a warning naming the
+  setting to turn on:
+
+  ```
+  warning: 'MLQT.Style.ImportStatementsFirst' does nothing while 'MLQT.Style.OneOfEachSection' is
+           off: the formatter only reorders a class when that rule is on, so this one would report
+           an arrangement it cannot produce
+  ```
+
+  This is worth knowing if you have hand-edited `.mlqt/settings.json`, or are carrying one written
+  before MLQT enforced it: such a file used to report ordering findings and now reports none.
+
 #### How severely these are reported
 
 The layout rules above are the only ones whose **level is worked out rather than chosen**. They are
 switches, not Off/Info/Warning/Error rows, and the level follows what the formatter is doing:
 
-| Switch | Apply formatting rules | Reported as |
-|--------|------------------------|-------------|
+| Switch (with One of each section on) | Apply formatting rules | Reported as |
+|--------------------------------------|------------------------|-------------|
 | Off | — | nothing — the rule does not run |
 | On | Off | **Warning** |
-| On | On (with **One of each section** on) | **Error** |
+| On | On | **Error** |
 
 The reasoning is that those two situations mean genuinely different things. With formatting off, the
 rule is advice about how code should be laid out, and advice is a warning. With formatting on, MLQT
 rewrites the class on every save *specifically to satisfy this rule* — so a violation that survives
 is not a matter of taste. Something is wrong: a file saved outside MLQT, a class on the formatting
 exclusion list that nobody remembers adding. That deserves to stop a build.
-
-**One of each section has to be on as well**, because it is the master switch for reordering: with it
-off the formatter writes the class in source order and moves nothing, so nothing is being maintained
-and an error would be claiming otherwise.
 
 A level written against one of these rules in `ruleSeverities` records only that the rule is on — the
 value itself is not read.

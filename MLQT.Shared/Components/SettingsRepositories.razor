@@ -201,13 +201,33 @@
                 Label="Apply formatting rules.  If off then just used as part of style guidelines" />
             <MudSwitch @bind-Value="SelectedSettings.OneOfEachSection" Color="Color.Primary" Size="Size.Small"
                 Label="A class may only have 1 public, 1 protected, 1 equation or algorithm section" />
+
+            @* The four below only mean anything with "one of each section" on: that is the branch in
+               which the renderer reorders a class at all, so without it the formatter cannot produce
+               the arrangement they ask for and the rules do not run. Greyed out rather than left to
+               be discovered - and the settings they hold are kept, so ticking the switch above brings
+               them back. StyleCheckingSettings.SeverityFor enforces the same thing for a settings
+               file somebody edited by hand. *@
+            @if (!SelectedSettings.OneOfEachSection)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="my-1">
+                    <MudText Typo="Typo.body1">
+                        The ordering rules below need <b>one of each section</b> — it is the only mode in
+                        which formatting reorders a class. They are switched off until you enable it.
+                    </MudText>
+                </MudAlert>
+            }
             <MudSwitch @bind-Value="SelectedSettings.ImportStatementsFirst" Color="Color.Primary" Size="Size.Small"
+                Disabled="!SelectedSettings.OneOfEachSection"
                 Label="Composition must be imports first; then extends at the top of the public/protected sections" />
             <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+                Disabled="!SelectedSettings.OneOfEachSection"
                 Label="Composition must have components before classes" />
             <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Value="@SelectedSettings.InitialEQAlgoFirst" Color="Color.Primary" Size="Size.Small"
+                Disabled="!SelectedSettings.OneOfEachSection"
                 Label="If there is an initial equation/algorithm section it should appear before the equation/algorithm section"/>
             <MudSwitch T="bool" ValueChanged="OnInitialEqLast" Value="@SelectedSettings.InitialEQAlgoLast" Color="Color.Primary" Size="Size.Small"
+                Disabled="!SelectedSettings.OneOfEachSection"
                 Label="If there is an initial equation/algorithm section it should appear after the equation/algorithm section" />
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Spell checking</MudText>

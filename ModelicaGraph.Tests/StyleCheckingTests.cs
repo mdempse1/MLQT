@@ -213,7 +213,7 @@ equation
 end TestModel;
 """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -234,7 +234,7 @@ initial equation
 end TestModel;
 """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -254,7 +254,7 @@ equation
 end TestModel;
 """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1080,7 +1080,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1102,7 +1102,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1123,7 +1123,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1144,7 +1144,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1165,7 +1165,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1187,7 +1187,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1206,7 +1206,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1224,7 +1224,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoLast = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoLast = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings);
 
@@ -1248,7 +1248,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, ImportStatementsFirst = true };
 
         // First verify it produces findings normally
         var normalFindings = StyleChecking.RunStyleChecking(model, settings);
@@ -1274,7 +1274,7 @@ end TestModel;
             end TestModel;
             """;
         var model = MakeModel("TestModel", code);
-        var settings = new StyleCheckingSettings { InitialEQAlgoFirst = true };
+        var settings = new StyleCheckingSettings { OneOfEachSection = true, InitialEQAlgoFirst = true };
 
         var findings = StyleChecking.RunStyleChecking(model, settings, isExcludedFromFormatting: true);
 

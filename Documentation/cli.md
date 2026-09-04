@@ -72,9 +72,14 @@ strict gate, or `--fail-on off` to never fail.
 
 Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
 [below](#diagnostics). The other is a **layout rule the formatter is maintaining**: with
-`applyFormattingRules` and `MLQT.Style.OneOfEachSection` both on, MLQT rewrites every class on save to
-satisfy the ordering rules, so a violation that survives that means something is wrong rather than
-untidy. See [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
+`applyFormattingRules` on, MLQT rewrites every class on save to satisfy the ordering rules, so a
+violation that survives that means something is wrong rather than untidy. See
+[How severely these are reported](settings-reference.md#how-severely-these-are-reported).
+
+Those ordering rules also need `MLQT.Style.OneOfEachSection`, which is the only mode in which the
+formatter reorders anything; without it they do not run and `mlqt check` warns that they are inert.
+Worth checking if a hand-written settings file has stopped producing ordering findings — see
+[One of each section is required by the rest](settings-reference.md#one-of-each-section-is-required-by-the-rest).
 
 ## Resolving references into other libraries
 
