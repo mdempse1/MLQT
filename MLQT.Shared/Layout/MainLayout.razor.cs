@@ -1,4 +1,5 @@
 using MLQT.Shared.Pages;
+using MLQT.Shared.Theming;
 using DymolaInterface;
 using OpenModelicaInterface;
 using System.IO;
@@ -59,7 +60,7 @@ public partial class MainLayout : IDisposable
     /// <summary>Tracks files that have been formatted, keyed by path with the file's LastWriteTimeUtc at format time.</summary>
     private readonly Dictionary<string, DateTime> _formattedFileTimestamps = new(StringComparer.OrdinalIgnoreCase);
     private bool _isDarkMode = false;
-    private MudTheme _myTheme = BuildTheme(GetDefaultPaletteLight());
+    private MudTheme _myTheme = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
     private string? _currentProjectName = null;
     private bool _showAboutDialog = false;
     private string version = GetAppVersion();
@@ -2526,8 +2527,8 @@ public partial class MainLayout : IDisposable
     {
         _isDarkMode = uiSettings.Theme == Theme.Dark;
         _myTheme = uiSettings.Theme == Theme.Custom
-            ? BuildTheme(BuildCustomPalette(uiSettings))
-            : BuildTheme(GetDefaultPaletteLight());
+            ? MlqtTheme.BuildTheme(MlqtTheme.BuildCustomPalette(uiSettings))
+            : MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
     }
 
     private async void OnThemeChangedHandler(UISettings uiSettings)
@@ -2535,98 +2536,6 @@ public partial class MainLayout : IDisposable
         ApplyThemeFromSettings(uiSettings);
         await InvokeAsync(StateHasChanged);
     }
-
-    private static PaletteLight GetDefaultPaletteLight() => new PaletteLight()
-    {
-        Primary = "#6a70b1",
-        Secondary = "#666666",
-        Tertiary = "#a18ac1",
-        TextPrimary = "#6a70b1",
-        AppbarBackground = "#6a93b1",
-        AppbarText = "#ffffff",
-        Info = "#cccccc",
-        PrimaryContrastText = "#ffffff"
-    };
-
-    private static PaletteDark GetDefaultPaletteDark() => new PaletteDark()
-    {
-        Primary = "#6a70b1",
-        Secondary = "#666666",
-        Tertiary = "#a18ac1",
-        AppbarBackground = "#6a93b1",
-        AppbarText = "#ffffff",
-        Background = "#32333d"
-    };
-
-    private static PaletteLight BuildCustomPalette(UISettings uiSettings) => new PaletteLight()
-    {
-        Black = uiSettings.CustomBlack,
-        White = uiSettings.CustomWhite,
-        Primary = uiSettings.CustomPrimary,
-        PrimaryContrastText = uiSettings.CustomPrimaryContrastText,
-        Secondary = uiSettings.CustomSecondary,
-        SecondaryContrastText = uiSettings.CustomSecondaryContrastText,
-        Tertiary = uiSettings.CustomTertiary,
-        TertiaryContrastText = uiSettings.CustomTertiaryContrastText,
-        Info = uiSettings.CustomInfo,
-        InfoContrastText = uiSettings.CustomInfoContrastText,
-        TextPrimary = uiSettings.CustomPrimary,
-        AppbarBackground = uiSettings.CustomPrimary,
-        AppbarText = uiSettings.CustomPrimaryContrastText
-    };
-
-    private static MudTheme BuildTheme(PaletteLight paletteLight) => new MudTheme()
-    {
-        PaletteLight = paletteLight,
-        PaletteDark = GetDefaultPaletteDark(),
-        LayoutProperties = new LayoutProperties()
-        {
-            DrawerWidthLeft = "200px",
-            DrawerWidthRight = "200px",
-            AppbarHeight = "2rem"
-        },
-        Typography = new Typography()
-        {
-            H4 = new DefaultTypography()
-            {
-                FontSize = "1.25rem",
-                FontWeight = "500"
-            },
-            H5 = new DefaultTypography()
-            {
-                FontSize = "1.125rem",
-                FontWeight = "500"
-            },
-            H6 = new DefaultTypography()
-            {
-                FontSize = "1rem",
-                FontWeight = "500"
-            },
-            Body1 = new DefaultTypography()
-            {
-                FontSize = "0.75rem"
-            },
-            Body2 = new DefaultTypography()
-            {
-                FontFamily = new[] { "monospace"},
-                FontSize = "0.75rem"
-            },
-            Subtitle1 = new DefaultTypography()
-            {
-                FontSize = "0.875rem",
-                FontWeight = "500"
-            },
-            Subtitle2 = new DefaultTypography()
-            {
-                FontSize = "0.75rem",
-                FontWeight = "500"
-            },
-            Caption = new DefaultTypography()
-            {
-                FontSize = "0.625rem"
-            }
-        }
-    };
 
     private void ToggleView() {
         _settings.UI.RepositoryMode = !_settings.UI.RepositoryMode;
