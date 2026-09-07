@@ -1393,25 +1393,7 @@ public partial class MainLayout : IDisposable
     /// Builds a mapping from model ID to the style checking settings for its repository.
     /// </summary>
     private Dictionary<string, StyleCheckingSettings> BuildModelToStyleSettingsMap()
-    {
-        var result = new Dictionary<string, StyleCheckingSettings>();
-        var defaultSettings = new StyleCheckingSettings();
-
-        foreach (var library in LibraryDataService.Libraries)
-        {
-            StyleCheckingSettings settings = defaultSettings;
-            if (!string.IsNullOrEmpty(library.RepositoryId))
-            {
-                var repo = RepositoryService.GetRepository(library.RepositoryId);
-                if (repo?.StyleSettings != null)
-                    settings = repo.StyleSettings;
-            }
-
-            foreach (var modelId in library.ModelIds)
-                result[modelId] = settings;
-        }
-        return result;
-    }
+        => ModelScope.ModelToStyleSettings(LibraryDataService.Libraries, RepositoryService.GetRepository);
 
     /// <summary>
     /// Which repository each model belongs to, so the combined pass can give each class its own
@@ -1419,26 +1401,12 @@ public partial class MainLayout : IDisposable
     /// list, rather than someone else's.
     /// </summary>
     private Dictionary<string, string> BuildModelToRepositoryMap()
-    {
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var library in LibraryDataService.Libraries)
-        {
-            if (library.RepositoryId is not { Length: > 0 } repositoryId)
-                continue;
-
-            foreach (var modelId in library.ModelIds)
-                result[modelId] = repositoryId;
-        }
-        return result;
-    }
+        => ModelScope.ModelToRepository(LibraryDataService.Libraries);
 
     // True if any loaded repository has a style rule enabled that requires dependency analysis
     // (e.g. unused-class, uses hygiene), so the graph analyses can produce their findings.
     private bool AnyEnabledRuleNeedsDependencies()
-        => RepositoryService.Repositories
-            .Select(r => r.StyleSettings)
-            .Where(s => s is not null)
-            .Any(s => ModelicaGraph.Analysis.GraphAnalysisRunner.RequiresDependencyAnalysis(s!));
+        => ModelScope.RequiresDependencyAnalysis(RepositoryService.Repositories);
 
     /// <summary>
     /// Entry point for the AppState event, which carries no arguments. Pages asking for a run have

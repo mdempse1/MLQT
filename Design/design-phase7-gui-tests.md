@@ -618,6 +618,33 @@ service rather than instantiate a layout.
 
 **Size: L — the long pole**, and the only step in 7a whose risk is not shallow.
 
+### Progress (2026-09-07)
+
+Started from the outside in, smallest first, each move landing with its own tests before the next.
+`MainLayout.razor.cs` is **2,635 → 2,512 lines** so far.
+
+| Moved | To | Why it went first |
+|---|---|---|
+| The four theme builders | `MLQT.Shared/Theming/MlqtTheme.cs` | Pure functions of a `UISettings` with no dependencies at all — it proves the shape of a move without risking anything |
+| `BuildModelToRepositoryMap`, `BuildModelToStyleSettingsMap`, `AnyEnabledRuleNeedsDependencies` | `MLQT.Services/Checking/ModelScope.cs` | The first genuinely pipeline-shaped piece: they decide what every re-analysis pass does, and they only needed the *loaded libraries and repositories*, not the services holding them |
+
+**Taking the collections rather than the services is the pattern the rest of the move should
+follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
+mocks at all — `ModelToStyleSettings` takes a `Func<string, Repository?>` where the component passed
+`RepositoryService.GetRepository`.
+
+Two behaviours are now written down that were previously only implied by the code:
+`ModelToRepository` deliberately *omits* classes from a library with no repository, while
+`ModelToStyleSettings` deliberately *includes* them against the defaults — a class missing from the
+second map is checked against nothing, and an unchecked class reads as a clean one. And every
+defaulted class shares one settings instance, because the checker groups its work by distinct
+settings object and a fresh instance per library would split one pass into several.
+
+Still in `MainLayout`: the formatting paths, the VCS reaction path, the four deferred-analysis
+orchestrations and the startup sequence. Those are the ones with `StateHasChanged`, dialog state and
+background threads woven through them, and they need the characterisation tests the note calls for
+before they move.
+
 ---
 
 ## 7a-5 — the coverage gate
