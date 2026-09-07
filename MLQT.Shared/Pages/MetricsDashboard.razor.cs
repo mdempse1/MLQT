@@ -165,7 +165,7 @@ public partial class MetricsDashboard : IDisposable
     /// this page write the same <c>.mlqt/metrics-history.json</c>, one trend was stepping up and down
     /// according to which of them recorded the point.</para>
     /// </summary>
-    private static bool IsStyleDebt(LogMessage m)
+    internal static bool IsStyleDebt(LogMessage m)
         => m.Source == LogMessage.StyleCheckingSource && !(m.RuleId is { } id && RuleIds.IsDiagnostic(id));
 
     // A finding count is only worth recording once the full analysis has finished; while it is still
@@ -173,7 +173,15 @@ public partial class MetricsDashboard : IDisposable
     private int? ReliableFindings(int? current)
         => (_analysisRunning || !AnalysisComplete) ? (int?)null : current;
 
-    private static bool InScope(string modelId, string scope)
+    /// <summary>
+    /// Whether a class is inside a scope: the scope itself, or something beneath it. Empty scope
+    /// means everything.
+    /// </summary>
+    /// <remarks>
+    /// The dot matters. A scope of <c>Modelica.Blocks</c> covers <c>Modelica.Blocks.Sources.Sine</c>
+    /// and must not cover <c>Modelica.BlocksExtra</c>, which a bare <c>StartsWith(scope)</c> would.
+    /// </remarks>
+    internal static bool InScope(string modelId, string scope)
         => string.IsNullOrEmpty(scope) || modelId == scope
            || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
 
@@ -584,13 +592,20 @@ public partial class MetricsDashboard : IDisposable
     // The direct child packages of the current scope. When no scope is set and a single root
     // library is loaded (e.g. "Modelica"), drill one level into it so MSL breaks straight into its
     // sub-libraries rather than showing a single root row.
-    private List<string> SubPackages(IEnumerable<string> packageIds)
+    private List<string> SubPackages(IEnumerable<string> packageIds) => SubPackagesOf(packageIds, _scope);
+
+    /// <summary>
+    /// The packages one level below <paramref name="scope"/>, which is what the comparison table
+    /// lists. With no scope, the children of the single root package if there is exactly one,
+    /// otherwise the roots themselves — a project holding two libraries compares those.
+    /// </summary>
+    internal static List<string> SubPackagesOf(IEnumerable<string> packageIds, string? scope)
     {
         var packages = packageIds.ToHashSet(System.StringComparer.Ordinal);
         string parent;
-        if (!string.IsNullOrEmpty(_scope))
+        if (!string.IsNullOrEmpty(scope))
         {
-            parent = _scope;
+            parent = scope;
         }
         else
         {
