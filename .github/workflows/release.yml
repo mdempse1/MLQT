@@ -3,7 +3,13 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # Triggered by pushing a tag like v1.0.0
+      # Both spellings, because this repository uses the second one. Every release so far has been
+      # tagged bare (2026.1.0 ... 2026.3.1), which the 'v*' pattern does not match - so the tag
+      # trigger had never once fired, and each release was cut by dispatching this workflow by hand
+      # and attaching its artifacts to a release created separately. 'v*' is kept so an existing
+      # habit does not silently stop working.
+      - 'v*'
+      - '[0-9]*'
   workflow_dispatch:
     inputs:
       version:
@@ -54,6 +60,10 @@ jobs:
           dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
           dotnet test MLQT.Services.Tests -c Release --no-restore
           dotnet test MLQT.McpServer.Tests -c Release --no-restore
+          # The CLI is a shipped artifact of this workflow, so it is tested by it. It was absent
+          # while it was only built here; now that the release packs and publishes the tool, a
+          # release could otherwise ship an `mlqt` that no step in this workflow ever ran.
+          dotnet test MLQT.Cli.Tests -c Release --no-restore
 
       # Stage the SlikSVN command-line client into MLQT/svn-tools/win-x64 so the publish
       # step (via MLQT.csproj) copies it into the app output under svn/. The zip URL is
@@ -99,6 +109,55 @@ jobs:
           -p:PublishSingleFile=false
           -o publish/MLQT.McpServer
 
+      # The CLI is a `dotnet tool` (PackageId MLQT.Cli, command `mlqt`), which is how
+      # Documentation/cli.md tells people to install it - so a release that did not carry the package
+      # left those instructions with nothing to install from. Packed at the release's version rather
+      # than the 0.1.0 in the csproj, so the tool and the app a user downloads say the same thing.
+      #
+      # This package is framework-dependent and carries no runtime identifier, so it is already the
+      # Linux and macOS build as well as the Windows one: MLQT.Cli targets plain net10.0 and nothing
+      # in its dependency chain is Windows-only. The linux-x64 archive below is not a second package
+      # for a platform this one misses - it is for machines with no .NET 10 runtime to install into.
+      - name: Pack the mlqt CLI tool
+        run: >
+          dotnet pack MLQT.Cli/MLQT.Cli.csproj
+          -c Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -o publish/nupkg
+
+      # Same reasoning as the bundled svn client: fail here rather than publish a release whose
+      # documented install command has no package behind it.
+      - name: Verify the CLI package
+        shell: pwsh
+        run: |
+          $nupkg = "publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg"
+          if (-not (Test-Path $nupkg)) {
+            throw "Expected $nupkg. Check the pack step and MLQT.Cli's PackageId/Version."
+          }
+          Write-Host "CLI package OK: $nupkg"
+
+      # A self-contained linux-x64 `mlqt` for machines with no .NET 10 runtime - a CI agent or a
+      # container where installing one is not wanted. Cross-published from this Windows runner, which
+      # needs no Linux toolchain: the output is managed code plus the runtime's own native libraries.
+      - name: Publish the mlqt CLI (self-contained linux-x64)
+        run: >
+          dotnet publish MLQT.Cli/MLQT.Cli.csproj
+          -c Release
+          -r linux-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:Version=${{ steps.version.outputs.version }}
+          -o publish/mlqt-linux-x64
+
+      # tar, not zip: it preserves the executable bit on `mlqt`, which a zip does not, so the file a
+      # user extracts is one they can run without being told to chmod it first.
+      - name: Archive the Linux CLI
+        shell: bash
+        run: |
+          test -f publish/mlqt-linux-x64/mlqt || { echo "no mlqt binary in the linux-x64 publish"; exit 1; }
+          chmod +x publish/mlqt-linux-x64/mlqt
+          tar -czf "mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz" -C publish/mlqt-linux-x64 .
+
       - name: Create zip archives
         shell: pwsh
         run: |
@@ -112,13 +171,18 @@ jobs:
           path: |
             MLQT-${{ steps.version.outputs.version }}-win-x64.zip
             MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
+            publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
+            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
 
+      # Any tag, not only 'v'-prefixed ones - see the trigger above for why that mattered.
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             MLQT-${{ steps.version.outputs.version }}-win-x64.zip
             MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
+            publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
+            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
           generate_release_notes: true
           draft: true
