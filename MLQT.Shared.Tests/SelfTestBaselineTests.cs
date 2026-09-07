@@ -88,11 +88,19 @@ public class SelfTestBaselineTests
     public void TheProbesTheMigrationIsMostLikelyToBreak_AreInIt()
     {
         // Named explicitly so that dropping one is a decision rather than an omission. These are the
-        // four the design note predicts will go wrong on a new host, and a baseline without them
+        // ones the design note predicts will go wrong on a new host, and a baseline without them
         // would let the migration's likeliest failures through unnoticed.
+        //
+        // The last two were added before 7b started, and could not have been added afterwards: a new
+        // probe has no MAUI answer once MAUI has stopped building, and the drift guard above then
+        // refuses the baseline. The probe set freezes when the host is retired, not when 7a ended.
         var recorded = MauiBaseline().Probes.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
 
-        foreach (var id in new[] { "assets.rcl", "scripts.globals", "cytoscape.init", "cytoscape.layouts" })
+        foreach (var id in new[]
+                 {
+                     "assets.rcl", "scripts.globals", "cytoscape.init", "cytoscape.layouts",
+                     "mudblazor.overlays", "settings.location",
+                 })
             Assert.Contains(id, recorded);
     }
 

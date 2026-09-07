@@ -111,4 +111,7 @@ public sealed class HeadlessSettingsService : ISettingsService
             }
         }
     }
+
+    /// <inheritdoc />
+    public string BackingStore => _filePath;
 }

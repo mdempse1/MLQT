@@ -36,6 +36,8 @@ public partial class SelfTest
     [Inject] private ISettingsService Settings { get; set; } = null!;
     [Inject] private IPowerManagementService Power { get; set; } = null!;
     [Inject] private IFilePickerService FilePicker { get; set; } = null!;
+    [Inject] private IDialogService Dialogs { get; set; } = null!;
+    [Inject] private ISnackbar Snackbar { get; set; } = null!;
 
     private List<ProbeResult> _results = [];
     private bool _running = true;
@@ -231,6 +233,38 @@ public partial class SelfTest
             return (ok, ok ? "both responded" : "one of them threw");
         });
 
+        await Probe("mudblazor.overlays", "A dialog, a snackbar and the popover layer reach the DOM", async () =>
+        {
+            // The probe the design note asked for and the first pass left out. MudBlazor positions
+            // its overlays from JavaScript, and that is the part most likely to behave differently
+            // under WebKitGTK - a dialog that renders off-screen or a popover that never appears is
+            // the failure mode, and it is invisible to every test that does not involve a browser.
+            //
+            // What this proves is that the overlays reach the DOM. It does not prove they are in the
+            // right place: comparing pixel geometry across two engines produces differences on every
+            // glyph, which the note rules out on purpose. Where they land stays a human's judgement,
+            // once, per platform.
+            var reference = await Dialogs.ShowAsync<SelfTestProbeDialog>("self-test");
+            Snackbar.Add("self-test", Severity.Normal);
+
+            // Both are rendered by providers that re-render in response to this call, so the DOM is
+            // a frame behind until the renderer catches up.
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(250);
+
+            var found = await JS.InvokeAsync<string[]>("eval", """
+                ['.mud-dialog', '.mud-snackbar', '.mud-popover-provider']
+                    .filter(sel => document.querySelector(sel) === null)
+                """);
+
+            reference.Close();
+            Snackbar.Clear();
+
+            return (found.Length == 0,
+                    found.Length == 0 ? "dialog, snackbar and popover layer all present"
+                                      : "missing from the DOM: " + string.Join(", ", found));
+        });
+
         await Probe("fonts.roboto", "Roboto is available to the page", async () =>
         {
             var available = await JS.InvokeAsync<bool>("eval",
@@ -258,6 +292,31 @@ public partial class SelfTest
                      && read.CustomPrimary == "#123456"
                      && afterRemove is null;
             return (ok, ok ? "round-tripped a complex type" : "the value did not survive");
+        });
+
+        await Probe("settings.location", "Settings have a real backing store", () =>
+        {
+            // The round-trip above cannot tell persistence from the appearance of it: an
+            // implementation holding values in a dictionary passes it and loses everything on
+            // restart. This does not prove persistence either - it makes the store visible, so the
+            // baseline records where settings lived under MAUI and a new host's answer is a diff
+            // rather than a guess. It is the note's probe 9, which the first pass folded into the
+            // round-trip and thereby lost.
+            var store = Settings.BackingStore;
+
+            if (string.IsNullOrWhiteSpace(store))
+                return Task.FromResult((false, "the settings service does not say where it stores anything"));
+
+            // When the store is a path, the directory holding it has to exist - that is the
+            // XDG-versus-LocalAppData failure, and it is the one case this can check properly.
+            if (Path.IsPathRooted(store))
+            {
+                var directory = Path.GetDirectoryName(store);
+                var exists = !string.IsNullOrEmpty(directory) && Directory.Exists(directory);
+                return Task.FromResult((exists, exists ? store : $"{store} (its directory does not exist)"));
+            }
+
+            return Task.FromResult((true, store));
         });
 
         await Probe("power.sleep", "Sleep prevention can be turned on and off", () =>

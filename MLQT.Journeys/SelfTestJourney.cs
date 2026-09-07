@@ -52,7 +52,7 @@ public class SelfTestJourney(TestHostFixture host)
         // would show.
         var report = await RunAsync(host);
 
-        Assert.Equal(14, report.Probes.Count);
+        Assert.Equal(16, report.Probes.Count);
         Assert.Equal(report.Probes.Count, report.Probes.Select(p => p.Id).Distinct().Count());
     }
 
@@ -76,7 +76,11 @@ public class SelfTestJourney(TestHostFixture host)
         var report = await RunAsync(host);
         var byId = report.Probes.ToDictionary(p => p.Id);
 
-        foreach (var id in new[] { "assets.rcl", "scripts.globals", "cytoscape.init", "cytoscape.layouts", "culture.invariant" })
+        foreach (var id in new[]
+                 {
+                     "assets.rcl", "scripts.globals", "cytoscape.init", "cytoscape.layouts",
+                     "culture.invariant", "mudblazor.overlays", "settings.location",
+                 })
         {
             Assert.True(byId.ContainsKey(id), $"the route no longer has a probe called {id}");
             Assert.Equal("Pass", byId[id].Status);

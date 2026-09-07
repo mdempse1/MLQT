@@ -46,4 +46,12 @@ public sealed class InMemorySettingsService : ISettingsService
         _values.Clear();
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Says "in memory" rather than reporting <see cref="BackingPath"/> as though it were real. The
+    /// probe that reads this exists to make a store that does not persist visible, so a fake that
+    /// claimed a path would defeat the one thing it is for.
+    /// </remarks>
+    public string BackingStore => $"in memory (would be {BackingPath})";
 }

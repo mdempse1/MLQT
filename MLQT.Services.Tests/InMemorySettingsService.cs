@@ -35,4 +35,7 @@ internal class InMemorySettingsService : ISettingsService
         _settings.Clear();
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public string BackingStore => "in memory (test double)";
 }

@@ -39,6 +39,12 @@
       "Detail": "both responded"
     },
     {
+      "Id": "mudblazor.overlays",
+      "Name": "A dialog, a snackbar and the popover layer reach the DOM",
+      "Status": "Pass",
+      "Detail": "dialog, snackbar and popover layer all present"
+    },
+    {
       "Id": "fonts.roboto",
       "Name": "Roboto is available to the page",
       "Status": "Pass",
@@ -49,6 +55,12 @@
       "Name": "Settings survive a write, read and delete",
       "Status": "Pass",
       "Detail": "round-tripped a complex type"
+    },
+    {
+      "Id": "settings.location",
+      "Name": "Settings have a real backing store",
+      "Status": "Pass",
+      "Detail": "MAUI Preferences (platform key/value store)"
     },
     {
       "Id": "power.sleep",

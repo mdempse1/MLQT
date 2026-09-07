@@ -132,7 +132,7 @@ against a fixture that was already canonically formatted, one against a rule tha
 **7a-7 closed phase 7a's one item with a deadline.** The `/selftest` route lives in `MLQT.Shared`, so
 MAUI, Photino and the test host run literally the same probes; each host declares itself through
 `MLQT_SELFTEST_HOST`, after a first capture labelled a report with the *process* name. **The MAUI
-baseline is captured and committed** — 14 probes, all passing, from the real WebView2 app — and it is
+baseline is captured and committed** — 16 probes, all passing, from the real WebView2 app — and it is
 the artefact that could not have been produced after the migration started. `HostConformance.Compare`
 is written and exercised now rather than at the migration, and reports a probe present on only one
 side as a difference, because the failure worth guarding against is not a host that answers
@@ -140,7 +140,7 @@ differently but two probe sets that drifted apart while their intersection still
 were wrong on their first run, both failing against a host that works rather than passing against one
 that does not: `klayjs` publishes `klayregister`, not `klay`, so the probe now asks Cytoscape which
 layouts it registered; and `diffViewer.initSyncScroll` takes elements, not ids. **The test host
-matches the MAUI baseline on all 14 probes with no allowances** — the journey was written with an
+matches the MAUI baseline on all 16 probes with no allowances** — the journey was written with an
 empty allowance list so the run would say what actually differs, and there was nothing.
 
 **7a-3 finished, and cost five defects to finish.** The long tail was `SettingsUI` and the dialogs'
@@ -161,6 +161,16 @@ The Layer 1b pattern the note called for now exists: `ShowDialogAsync` on `MlqtC
 opens a dialog through `IDialogService` inside a rendered provider, which is the only way to reach
 what a dialog closes with — `MudDialog.Close` goes to a cascaded instance that a directly rendered
 component does not have, so every Close and Cancel in one is a silent no-op.
+
+**Two probes were added before 7b, and that was the last chance to add any.** The baseline's drift
+guard refuses a probe with no MAUI answer, and producing one needs a MAUI build that still runs — so
+the probe set freezes when the host is retired, not when 7a ended. The two put back are the ones the
+design note planned and the first pass dropped: `mudblazor.overlays` (MudBlazor positions its overlays
+from JavaScript, which is the part most likely to differ under WebKitGTK) and `settings.location`,
+which needed a new `ISettingsService.BackingStore` because a write-read round-trip cannot tell
+persistence from the appearance of it — and the Photino port replaces `Preferences` with exactly the
+kind of file-backed implementation that could cache and never flush. Re-capturing gave 16 passing
+probes with **no carried-over probe changing status**, so the new file is a clean superset of the old.
 
 **Backlog: everything is shipped except B107 — and B20 is closed by 7a-4, which took 737 lines out of
 `MainLayout` in ten extractions.**

@@ -103,4 +103,14 @@ public class SettingsService : ISettingsService
 
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// MAUI's <c>Preferences</c> is a platform-native key/value store, not a file MLQT owns — on
+    /// Windows it is the app's local settings, not a path under <c>%LocalAppData%\MLQT</c> where the
+    /// logs and dictionaries go. Saying so is the point: a Photino host will use a JSON file
+    /// instead, and that difference should be visible in the baseline diff rather than discovered
+    /// when a user's settings do not come back.
+    /// </remarks>
+    public string BackingStore => "MAUI Preferences (platform key/value store)";
 }

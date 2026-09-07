@@ -1074,20 +1074,27 @@ afterwards.
 ### Shipped (2026-09-07) — the route, the baseline, and the comparison
 
 **The MAUI baseline is captured and committed** as
-`MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json`: 14 probes, all passing, `Host: MLQT`,
+`MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json`: 16 probes, all passing, `Host: MLQT`,
 runtime 10.0.8, produced by the real MAUI app driving WebView2. This is the artefact with the
 deadline, and it now exists. The step it was blocked on was mundane and worth recording: the running
 desktop app holds a lock on `MLQT.Shared.dll`, so the MAUI project cannot build while MLQT is open.
 
-**14 probes, not the 14 sketched above.** The list changed on contact:
+**16 probes, and not the 14 sketched above.** The list changed on contact:
 
-- Probes 2 and 9 of the sketch (a second `ISettingsService` probe for its backing path) collapsed
-  into one round-trip probe; `logging.writes` already asserts a real path on disk.
-- The sketch's probe 6 (MudBlazor dialog, popover and snackbar in the DOM) is **not** in the shipped
-  list. The route runs under `EmptyLayout`, whose whole purpose is that no application is booting
-  underneath it, and MudBlazor's overlays need the providers plus a render cycle the probe would have
-  to drive. Journey coverage already opens dialogs against a real host. It is listed as an open item
-  rather than quietly dropped.
+- Probe 2 of the sketch is `assets.rcl`. Probe 9 was folded into the round-trip in the first pass,
+  which was a mistake worth naming: **a write-read-delete cannot tell persistence from the appearance
+  of it.** An implementation holding values in a dictionary passes it and loses everything on
+  restart — and the Photino port replaces MAUI's `Preferences` with exactly the kind of JSON-file
+  implementation that could cache and never flush. `settings.location` does not prove persistence
+  either; it makes the store *visible*, so the baseline records `MAUI Preferences (platform key/value
+  store)` and a host that answers with a temporary directory is a difference rather than a surprise.
+- The sketch's probes 6 and 9 were dropped in the first pass and **put back before 7b started**, which
+  is the only window in which that was possible — see the note below on when the probe set freezes.
+  Probe 6 is `mudblazor.overlays`: a dialog, a snackbar and the popover layer, asserted to reach the
+  DOM. `EmptyLayout` renders the four MudBlazor providers, so the objection that stopped it the first
+  time was wrong. It proves the overlays *arrive*, not that they are positioned correctly — comparing
+  geometry across two engines is ruled out elsewhere in this note and stays a human's judgement.
+  Probe 9 is `settings.location`, which required a new `ISettingsService.BackingStore`.
 - `cytoscape.layouts` replaced the sketch's assumption that each layout script defines a global named
   after it. **`klayjs` does not** — it publishes `klayregister`/`klaycallback`. The probe now asks
   Cytoscape which layouts it has registered, which is the question that actually matters and is not
@@ -1109,7 +1116,7 @@ answers differently, which is loud, but two probe sets that have drifted apart w
 intersection still matches, so the diff comes back empty and reads as success. Phase 7b points the
 same code at Photino.
 
-**The test host matches the MAUI baseline on all 14 probes, with no allowances.** That was not
+**The test host matches the MAUI baseline on all 16 probes, with no allowances.** That was not
 assumed: the journey was written with an empty allowance list so the run would say what actually
 differs, and there was nothing. A Blazor Server host over Kestrel and a WebView2 host answer these
 questions identically, which raises the confidence that a difference under Photino will be a real
@@ -1121,8 +1128,14 @@ its probe ids match the ones the route actually runs, read from the route's own 
 guard, and the one that matters most); no duplicates; and the four probes the migration is most
 likely to break are named individually, so dropping one is a decision rather than an omission.
 
-Still open: the per-platform CI `selftest` job, the nightly WebKit journey run, and the MudBlazor
-overlay probe.
+**The probe set freezes when MAUI is retired, not when 7a ended.** `ItRecordsEveryProbeTheRouteRuns`
+fails if a probe is added without re-capturing, and re-capturing needs a MAUI build that runs — so a
+probe added after the migration starts has no MAUI answer and never can have. That is why the two
+dropped probes went back in first, and why the question to ask before 7b is not "is the baseline
+captured?" but "is this the right set of probes?". Re-capturing also confirmed the additions disturbed
+nothing: no carried-over probe changed status, so the 16-probe file is a clean superset of the 14.
+
+Still open: the per-platform CI `selftest` job, and the nightly WebKit journey run.
 
 
 ---
@@ -1160,7 +1173,7 @@ Each step compiles and leaves the suite green.
 | **7a-4** | ✅ **shipped 2026-09-07** — ten extractions out of `MainLayout` and its neighbours, each with tests verified by mutation; `MainLayout` 2,635 → 1,898 lines of logic | **L — the long pole** |
 | **7a-5** | ✅ **shipped 2026-09-07** — `MLQT.Shared` into the coverage ratchet: `$bars`, `$suites`, baseline with 29 reasons. No file filter: the measurement said it would hide five classes | S |
 | **7a-6** | ✅ **shipped 2026-09-07** — `AddMlqtCore()`, `HostAssetManifest` + drift test, `MLQT.TestHost` + fakes + `LibraryFixture`, **23 journeys**, the Linux CI job and `PortabilityTests` | M |
-| **7a-7** | ✅ **shipped 2026-09-07** — `SelfTest.razor` + 14 probes, the MAUI launcher, **the captured MAUI baseline**, `HostConformance.Compare`, 5 baseline guards and 5 conformance journeys | M |
+| **7a-7** | ✅ **shipped 2026-09-07** — `SelfTest.razor` + 16 probes, the MAUI launcher, **the captured MAUI baseline**, `HostConformance.Compare`, 5 baseline guards and 5 conformance journeys | M |
 
 **7a-7 is the step with a deadline attached** — the MAUI baseline must be captured while the MAUI
 build is still the reference implementation. If phase 7 has to start early, **7a-1, 7a-2, 7a-4 and
