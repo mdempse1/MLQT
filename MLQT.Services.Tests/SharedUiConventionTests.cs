@@ -14,7 +14,7 @@ namespace MLQT.Services.Tests;
 /// be asking on every build.</para>
 ///
 /// <para><b>Why here.</b> <c>MLQT.Shared</c> has no test project of its own until phase 7a builds the
-/// GUI harness (see <c>design-phase7-gui-tests.md</c>), and these need no rendering — only the source
+/// GUI harness (see <c>Design/design-phase7-gui-tests.md</c>), and these need no rendering — only the source
 /// text. They belong in <c>MLQT.Shared.Tests</c> the day it exists; until then they live in a suite
 /// that runs, which is the same reasoning <c>RuleDocumentationTests</c> uses for reading
 /// <c>Documentation/</c> from a CLI test.</para>

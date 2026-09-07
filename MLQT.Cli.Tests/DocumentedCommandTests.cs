@@ -34,12 +34,20 @@ public class DocumentedCommandTests
         return null;
     }
 
+    /// <summary>
+    /// The folders whose markdown counts. <c>Design/</c> is in as well as <c>Documentation/</c>: the
+    /// design notes print commands too, and a rule that stops at the user-facing folder would have
+    /// gone quiet the moment those notes moved out of it.
+    /// </summary>
+    private static readonly string[] DocumentedIn = ["Documentation", "Design"];
+
     /// <summary>The flag sets of the `mlqt …` commands the documentation prints inside fenced blocks.</summary>
     private static List<(string Where, string Command, HashSet<string> Flags)> DocumentedCommands(string root)
     {
         var found = new List<(string, string, HashSet<string>)>();
 
-        foreach (var path in Directory.EnumerateFiles(Path.Combine(root, "Documentation"), "*.md"))
+        foreach (var path in DocumentedIn.SelectMany(
+                     folder => Directory.EnumerateFiles(Path.Combine(root, folder), "*.md")))
         {
             var lines = File.ReadAllLines(path);
             var inFence = false;

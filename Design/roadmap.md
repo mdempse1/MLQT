@@ -138,7 +138,7 @@ backlog has not.
 
 ## 1. Cross-platform support (Linux / macOS) — **including the UI**
 
-The docs promise macOS and Linux support ([getting-started.md](getting-started.md)),
+The docs promise macOS and Linux support ([getting-started.md](../Documentation/getting-started.md)),
 currently unfulfilled. Key architectural fact: **.NET MAUI has no official Linux
 target**, so the current BlazorWebView shell cannot simply be recompiled for Linux — the
 UI must be **re-hosted, not re-targeted**.
@@ -154,7 +154,7 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
-| **Headless CLI** (`mlqt`) reusing the service layer | ⭐⭐⭐ | M | **✅ shipped** — `mlqt check`, `mlqt baseline` and `mlqt compare`, packaged as a `dotnet tool`. See [cli.md](cli.md). |
+| **Headless CLI** (`mlqt`) reusing the service layer | ⭐⭐⭐ | M | **✅ shipped** — `mlqt check`, `mlqt baseline` and `mlqt compare`, packaged as a `dotnet tool`. See [cli.md](../Documentation/cli.md). |
 | **MCP server on Linux/macOS** as a tested target | ⭐⭐ | S | Built and shipping on Windows; headless stdio, so likely close to working. Not yet *tested* on Linux/macOS — that claim belongs with the phase-7 work. |
 | **Single cross-platform desktop host (Photino.Blazor)** replacing MAUI | ⭐⭐⭐ | L | In-process webview → keeps direct filesystem + git/svn access, near drop-in reuse of `MLQT.Shared`. Reimplement the 3 platform services once. Retires MAUI. |
 | — *fallback host:* Blazor Server (+ desktop wrapper) | — | L | If in-process webview proves limiting; also opens a future hosted/browser option. |
@@ -196,7 +196,7 @@ of expected-invisible namespaces) + encrypted-file detection + an explicit
 treat-as-external config in `.mlqt/settings.json`. Severity follows confidence.
 
 **Encrypted libraries now move *individual classes* from state 2 to state 1** (shipped —
-see [encrypted-libraries.md](encrypted-libraries.md) and
+see [encrypted-libraries.md](../Documentation/encrypted-libraries.md) and
 [design-encrypted-libraries.md](design-encrypted-libraries.md)). MLQT reads the vendor's
 generated help HTML and recovers each documented class's name, description, base classes and
 whether it has an icon, so references into commercial libraries resolve and inherited icons are

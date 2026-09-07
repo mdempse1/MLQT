@@ -180,7 +180,7 @@ the same markup, byte-identical output between a release and its Refresh.
 **OpenModelica** — not applicable. OpenModelica ships no per-class documentation for any library
 and has no command to generate any, so there is nothing to read. Its encrypted format is different
 too (a SEMLA `.mol` archive), and reading one requires a key the library vendor must grant to a
-specific tool. See [design-encrypted-libraries.md](design-encrypted-libraries.md) for the detail.
+specific tool. See [design-encrypted-libraries.md](../Design/design-encrypted-libraries.md) for the detail.
 
 ---
 
@@ -189,4 +189,4 @@ specific tool. See [design-encrypted-libraries.md](design-encrypted-libraries.md
 - [cli.md](cli.md) — `--dependency` and reference resolution in CI
 - [settings-reference.md](settings-reference.md) — all settings
 - [code-review.md](code-review.md) — where findings are shown
-- [design-encrypted-libraries.md](design-encrypted-libraries.md) — the design and the evidence behind it
+- [design-encrypted-libraries.md](../Design/design-encrypted-libraries.md) — the design and the evidence behind it

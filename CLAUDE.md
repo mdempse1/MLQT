@@ -327,22 +327,23 @@ User-facing documentation is in `Documentation/`:
 
 ## Planning and Design Notes
 
-Not user documentation — the record of what was decided and what shipped. **Read the roadmap before
+In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
+record of what was decided and what shipped. **Read the roadmap before
 starting anything substantial**: it holds the agreed sequencing, the decisions behind it, and the
 backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
 
 | Document | Covers |
 |----------|--------|
-| `Documentation/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
-| `Documentation/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
-| `Documentation/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
-| `Documentation/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
-| `Documentation/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
-| `Documentation/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
-| `Documentation/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
-| `Documentation/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
-| `Documentation/design-phase7-gui-tests.md` | Phase 7a — the GUI test harness that must precede the desktop-host migration |
-| `Documentation/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
+| `Design/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
+| `Design/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
+| `Design/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
+| `Design/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
+| `Design/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
+| `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
+| `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
+| `Design/design-phase7-gui-tests.md` | Phase 7a — the GUI test harness that must precede the desktop-host migration |
+| `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
 
 Each phase note records what actually landed, including where the implementation deviated from the
 sketch — so when the note and the code disagree, that is a defect in one of them, not a detail.
@@ -355,7 +356,7 @@ Update this file when:
 - Modifying service interfaces
 - Adding/removing NuGet packages
 
-Update `Documentation/roadmap.md` when:
+Update `Design/roadmap.md` when:
 - A backlog item is finished, or a new one is found — the backlog is the working list, and an item
   that is done but still open reads as outstanding work to whoever picks it up next
 - A phase ships, or a decision changes the agreed sequencing
@@ -404,4 +405,4 @@ beside the untestable ones, indistinguishable from them and never asked about ag
 Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
 lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
 assert nothing), as is source-generated code. `MLQT.Shared` has no tests at all until phase 7a builds
-the harness — see `Documentation/design-phase7-gui-tests.md`.
+the harness — see `Design/design-phase7-gui-tests.md`.

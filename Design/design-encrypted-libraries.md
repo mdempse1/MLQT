@@ -9,7 +9,7 @@
 > `ModelNode.IsExternalStub` (`ModelicaGraph/`), write-path guards, and wiring through
 > `LibraryDiscovery`, `ILibraryDataService.AddEncryptedLibraryFromDirectoryAsync`, the CLI's
 > `--dependency`, the MCP `load_library` tool, and a **Settings → Reference Libraries** tab in the
-> desktop app. User documentation is [encrypted-libraries.md](encrypted-libraries.md).
+> desktop app. User documentation is [encrypted-libraries.md](../Documentation/encrypted-libraries.md).
 >
 > **Measured against MSL 4.1.0**, which ships both source and generated help so the reconstruction
 > can be compared with the truth: 6269 classes recovered, **0** invented, 3.4% of source classes
@@ -466,7 +466,7 @@ interesting half of the decision: an install location is a property of the *mach
 checkout or a CI runner will not have Dymola at the same path, and baking one into a committed
 `.mlqt/settings.json` breaks it for everyone else. CI supplies the equivalent explicitly with the
 CLI's `--dependency`. `ReferenceLibrarySettings` says so at the declaration, and
-[settings-reference.md](settings-reference.md#reference-libraries) says so to the user.
+[settings-reference.md](../Documentation/settings-reference.md#reference-libraries) says so to the user.
 
 A library loaded this way is flagged `LoadedLibrary.IsReferenceOnly`, which is what keeps it out of
 the checks, the coverage figures and the metrics trend — the *encrypted* ones were covered by
