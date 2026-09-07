@@ -187,6 +187,12 @@ jobs:
       # Every suite that contributes coverage, not the three this job used to build. MLQT.Cli,
       # RevisionControl and MLQT.McpServer were measured nowhere, so the per-class bar CLAUDE.md sets
       # was unverified for exactly the code the CI/CD work added.
+      #
+      # This list must match $suites in build/check-coverage.ps1, which runs them with --no-build - a
+      # suite missing here does not get measured, it fails the whole job with "expected N reports,
+      # found N-1". MLQT.Shared.Tests was missing for exactly that reason after 7a-5 added it to the
+      # ratchet, and the job never ran to say so because the jobs it depends on had already failed.
+      # CoverageSuitesTests holds the two lists together.
       - name: Restore and build
         run: |
           dotnet restore MLQT.slnx
@@ -195,6 +201,7 @@ jobs:
           dotnet build MLQT.Services.Tests -c Release --no-restore
           dotnet build MLQT.Cli.Tests -c Release --no-restore
           dotnet build MLQT.McpServer.Tests -c Release --no-restore
+          dotnet build MLQT.Shared.Tests -c Release --no-restore
           dotnet build RevisionControl.Tests -c Release --no-restore
 
       - name: Install ReportGenerator
