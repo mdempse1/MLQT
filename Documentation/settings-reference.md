@@ -128,8 +128,8 @@ diagnostics, which are not settings — see
 | **Every public parameter must have a description** | `MLQT.Doc.ParameterDescription` | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
 | **Every public constant must have a description** | `MLQT.Doc.ConstantDescription` | Off | Checks that every public `constant` declaration includes a description string. |
 | **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
-| **Don't mix equation and algorithm sections** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
-| **Do not mix connections and equations** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
+| **A class may only have either an equation or algorithm section, not both** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
+| **Do not mix connections and equations in the same class** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
 
 ### Formatting Rules
 
@@ -141,11 +141,16 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 | Setting | Rule id | Default | Description |
 |---------|---------|---------|-------------|
 | **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
-| **One of each section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Imports first, extends at top** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
-| **Components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
-| **Initial equation/algorithm first** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
-| **Initial equation/algorithm last** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
+| **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
+| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
+| **Composition must have components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
+| **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
+| **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
+
+The **Setting** column gives each checkbox's label exactly as the dialog shows it, so you can find
+it. The rest of this documentation uses the short names — **One of each section**, **Imports
+first**, **Extends at top**, **Components before classes**, **Initial equation/algorithm
+first**/**last** — and those are the same six settings.
 
 #### One of each section is required by the rest
 
@@ -234,7 +239,7 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 
 | Setting | Rule id | Default | Description |
 |---------|---------|---------|-------------|
-| **Validate modelica:// model references** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
+| **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
 The reference validator handles several edge cases found in real Modelica libraries:
 
@@ -252,8 +257,12 @@ rule has a per-rule **Off / Info / Warning / Error** selector (grouped by catego
 fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
 below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
 
-| Rule id | Default | Checks | Runs in |
-|---------|---------|--------|---------|
+**Severity when on** is the level a rule reports at once you switch it on — it is not a statement
+that the rule is running. Like every other rule on this page, each of these is **Off** until you
+enable it, and you can pick any level you like in place of the one shown.
+
+| Rule id | Severity when on | Checks | Runs in |
+|---------|------------------|--------|---------|
 | `MLQT.Duplicate.Declaration` | Error | A name declared more than once in the same class. | GUI, CLI, MCP |
 | `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
