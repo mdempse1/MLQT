@@ -90,8 +90,8 @@ public partial class MainLayout : IDisposable
 
     protected override async Task OnInitializedAsync()
     {
-        // Initialize logging first
-        LoggingService.Initialize();
+        // Logging is initialised by AddMlqtCore, which every host calls, rather than here - a layout
+        // component is not the right owner for it, and a route that does not render this one had none.
         Info("MainLayout", "Application starting");
 
         _settings.UI = await SettingsService.GetAsync("UI", new UISettings());

@@ -243,12 +243,18 @@ public class DialogResultTests : MlqtComponentTestBase
         // Input, not Change. The field is Immediate, so MudBlazor wires oninput and never onchange -
         // and bUnit throws MissingEventHandlerException rather than silently doing nothing, which is
         // the one thing that made this quick to find.
-        var input = provider.Find("input");
+        //
+        // WaitForElement, not Find: CreateBranchDialog's OnInitializedAsync loads the branch list on
+        // a background thread and renders a progress indicator until it returns, so the form is not
+        // in the DOM yet. Find() passed on a fast developer machine and failed on a CI runner - the
+        // usual shape, and the reason this helper waits rather than assumes.
+        var input = provider.WaitForElement("input");
         await provider.InvokeAsync(() => input.Input(name));
     }
 
     private static async Task TypeInto(IRenderedComponent<MudDialogProvider> provider, int index, string text)
     {
+        provider.WaitForElement("input");
         var input = provider.FindAll("input")[index];
         await provider.InvokeAsync(() => input.Input(text));
     }
@@ -260,10 +266,14 @@ public class DialogResultTests : MlqtComponentTestBase
 
     private static async Task ClickButton(IRenderedComponent<MudDialogProvider> provider, string label)
     {
+        // Waits for the button rather than failing on a dialog that is still loading, for the same
+        // reason TypeBranchName does.
+        provider.WaitForAssertion(() => Assert.Contains(
+            provider.FindAll("button"),
+            b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase)));
+
         var button = provider.FindAll("button")
-                             .FirstOrDefault(b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase))
-                     ?? throw new InvalidOperationException(
-                         $"no button labelled '{label}' in:\n{provider.Markup}");
+                             .First(b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase));
 
         await provider.InvokeAsync(() => button.Click());
     }

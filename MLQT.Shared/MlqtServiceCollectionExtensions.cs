@@ -50,6 +50,14 @@ public static class MlqtServiceCollectionExtensions
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
+        // Logging, for the same reason and after the same defect: this used to be MainLayout's first
+        // line, so a host had logging only once that particular component rendered. The /selftest
+        // route runs under EmptyLayout by design, so it had none - and the probe that was supposed to
+        // notice passed anyway, because the developer's machine already had log files in the folder
+        // from ordinary use of the app. A clean Linux runner said otherwise. Initialising here means
+        // every host and every route has logging, including one that never renders MainLayout.
+        LoggingService.Initialize();
+
         services.AddSingleton<AppState>();
         services.AddSingleton<ILibraryDataService, LibraryDataService>();
         services.AddSingleton<IFileMonitoringService, FileMonitoringService>();

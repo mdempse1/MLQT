@@ -263,6 +263,14 @@ Unchanged from 7a, restated because this is the phase where it matters:
 
 ## Key decisions and risks
 
+**Already earned its keep.** The first CI run after the 16-probe capture failed on Linux with
+`logging.writes: MAUI=Pass, this host=Fail`, and the cause was not the host: `LoggingService.Initialize()`
+was the first line of `MainLayout.OnInitializedAsync`, so `/selftest` — which runs under `EmptyLayout`
+by design — had no logging, and the probe meant to catch that passed anyway because it asked whether
+the log folder contained *any* file rather than whether this run wrote one. Both are fixed (B111), and
+initialisation now lives in `AddMlqtCore()` beside the invariant-culture setup. **The Photino host
+would have inherited the same defect**, and nothing but a clean machine was ever going to say so.
+
 | Risk | Standing | Mitigation |
 |---|---|---|
 | `Photino.Blazor` has no `net10.0` release and is ~20 months stale | **Highest, and gating** | 7b-0 answers it in a day. Fallback (test host as shipping host) is credible and already built. |

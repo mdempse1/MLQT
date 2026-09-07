@@ -341,13 +341,35 @@ public partial class SelfTest
             return Task.FromResult((separator == "." && parsed, $"separator '{separator}', 1.5 parsed: {parsed}"));
         });
 
-        await Probe("logging.writes", "The log file is being written", () =>
+        await Probe("logging.writes", "This process wrote a line to the log file", () =>
         {
-            LoggingService.Info(nameof(SelfTest), "self-test probe");
-            var directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MLQT");
-            var exists = Directory.Exists(directory) && Directory.EnumerateFiles(directory, "*.log").Any();
-            return Task.FromResult((exists, exists ? directory : $"no log file under {directory}"));
+            // Asks whether *this run* logged, not whether the folder has a log file in it. The first
+            // version asked the latter and passed on any machine where the app had ever run - which
+            // is every developer machine and no clean one. It reported Pass on a host that had not
+            // initialised logging at all, and a Linux CI runner was the first thing to disagree.
+            var token = "selftest-" + Guid.NewGuid().ToString("N");
+            LoggingService.Info(nameof(SelfTest), token);
+            LoggingService.Flush();
+
+            var directory = LoggingService.LogDirectory;
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                return Task.FromResult((false, $"logging was never initialised (directory: {directory ?? "none"})"));
+
+            var newest = new DirectoryInfo(directory)
+                .EnumerateFiles("*.log")
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+
+            if (newest is null)
+                return Task.FromResult((false, $"no log file under {directory}"));
+
+            // Shared read: NLog has the file open when KeepFileOpen is on, and a probe must not be
+            // the reason a host cannot log.
+            using var stream = new FileStream(newest.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            var wrote = reader.ReadToEnd().Contains(token, StringComparison.Ordinal);
+
+            return Task.FromResult((wrote, wrote ? directory : $"{newest.FullName} did not receive this run's line"));
         });
 
         await Probe("svn.client", "An svn client can be found", () =>

@@ -82,7 +82,7 @@
     },
     {
       "Id": "logging.writes",
-      "Name": "The log file is being written",
+      "Name": "This process wrote a line to the log file",
       "Status": "Pass",
       "Detail": "C:\\Users\\mike\\AppData\\Local\\MLQT"
     },

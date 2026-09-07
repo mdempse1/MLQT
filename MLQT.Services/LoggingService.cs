@@ -34,6 +34,8 @@ public static class LoggingService
         var logFolder = Path.Combine(appDataPath, "MLQT");
         Directory.CreateDirectory(logFolder);
 
+        LogDirectory = logFolder;
+
         var logFilePath = Path.Combine(logFolder, "mlqt-${shortdate}.log");
 
         // File target for logging
@@ -66,6 +68,25 @@ public static class LoggingService
 
         Info("LoggingService", "Logging initialized. Log file location: " + logFolder);
     }
+
+    /// <summary>
+    /// The directory log files are written to, or <c>null</c> until <see cref="Initialize"/> has run.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so that callers asking "where do the logs go?" read the value that was configured
+    /// rather than recomputing it. The <c>/selftest</c> route's <c>logging.writes</c> probe used to
+    /// recompute it, which meant the probe could agree with itself while disagreeing with NLog.
+    /// </remarks>
+    public static string? LogDirectory { get; private set; }
+
+    /// <summary>
+    /// Blocks until buffered log events have been written, or the timeout elapses.
+    /// </summary>
+    /// <remarks>
+    /// For callers that need to observe the file immediately after writing to it. Ordinary logging
+    /// never needs this.
+    /// </remarks>
+    public static void Flush() => LogManager.Flush(TimeSpan.FromSeconds(5));
 
     /// <summary>
     /// Gets a logger for a specific class/component.
