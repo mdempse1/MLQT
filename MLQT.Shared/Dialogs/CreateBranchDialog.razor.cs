@@ -60,7 +60,16 @@ public partial class CreateBranchDialog
             b.Name.Equals($"origin/{newName}", StringComparison.OrdinalIgnoreCase));
     }
 
-    private bool IsValidBranchName(string name)
+    /// <summary>
+    /// Whether a name is one git will accept as a branch.
+    /// </summary>
+    /// <remarks>
+    /// A subset of git's check-ref-format rules, applied here so the dialog can say no while the
+    /// user is still typing. Rejecting a valid name is the more visible failure; accepting an
+    /// invalid one means git refuses it later with a message about ref formats that says nothing
+    /// about which character was the problem.
+    /// </remarks>
+    internal static bool IsValidBranchName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return false;
