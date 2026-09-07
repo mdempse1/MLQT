@@ -233,6 +233,41 @@ tests call directly can be `internal` rather than reached by reflection.
 **Size: L, but shallow.** 31 mechanical commits, of which three (`MainLayout`, `CodeReview`,
 `LibraryBrowser`) are large enough to want their own review.
 
+### ✅ Shipped (2026-09-07)
+
+All 31 converted, in ten commits — the three largest one each, the rest batched by kind. Solution
+builds clean in Release with 0 warnings; all 4,453 tests pass. `MainLayout`, `CodeReview` and
+`LibraryBrowser` were verified line-by-line against their pre-move source and are byte-identical.
+
+Four things the sketch above did not anticipate, each of which landed as its own commit:
+
+- **`MLQT.Shared/GlobalUsings.cs`.** A `.razor.cs` does not read `_Imports.razor`, so without this
+  every converted file would open with the same twenty-line using block and the two halves of one
+  class would disagree about what is in scope. The list is `_Imports.razor`'s minus the entries only
+  markup references. `Microsoft.AspNetCore.Components.Web` looks like one of those and is not — the
+  DOM event-argument types live there and appear in handler signatures.
+- **`<SupportedPlatform Include="browser" />` removed from the csproj.** Moving
+  `CreatePullRequestDialog` surfaced three CA1416 warnings on its `Process.Start`: Razor-generated
+  code is excluded from analyzers, so the `@code` block had been hiding them. The call is not the
+  problem — the declaration is template boilerplate that was never true, in a project that reads and
+  writes files directly in three other components. Removing it also stopped the rest of the sweep
+  regenerating the same false warning each time it moved a file-writing handler out of markup.
+- **`SharedUiConventionTests` broke silently, and that is the finding worth keeping.** All four
+  sweeps enumerate `*.razor`, which was the whole of the C# when they were written. After the sweep
+  those files are markup: every check still ran, over nothing, and all five tests still passed — the
+  exact failure the file's own comment says it exists to prevent, reintroduced by the commit that
+  moved the code. `TheSweepCanSeeTheSource` did not catch it because it counted *files*, and
+  `*.razor` still returned 39 of them. It now asserts the enumeration actually contains event
+  subscriptions, verified by restoring the markup-only scan and watching the guard fail. **The
+  lesson for 7a-2's three new guards: a guard that counts inputs does not prove it read the right
+  ones.**
+- **`@inherits` stays in the markup** while `@implements` moves to the partial. The base class
+  belongs to the component declaration and the compiler wants it in one half only; the interfaces
+  belong next to the methods that implement them.
+
+Deferred to their own commits, as the rule requires: `ProjectSelectionDialog`'s
+`NullReferenceException` and `CurrentModelDisplay`'s duplicated resolution are both still there.
+
 ---
 
 ## 7a-2 — `MLQT.Shared.Tests`, and the convention guards
@@ -692,7 +727,7 @@ Each step compiles and leaves the suite green.
 
 | Step | Work | Size |
 |---|---|---|
-| **7a-1** | The code-behind sweep: 31 components, one behaviour-neutral commit each; `@inject` → `[Inject]` throughout | **L, shallow** |
+| **7a-1** | ✅ **shipped 2026-09-07** — the code-behind sweep: 31 components, `@inject` → `[Inject]` throughout, plus `GlobalUsings.cs` and the browser-platform removal | **L, shallow** |
 | **7a-2** | `MLQT.Shared.Tests` project; move `SharedUiConventionTests`; the three new convention guards; `MlqtComponentTestBase` | S |
 | **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
 | **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
