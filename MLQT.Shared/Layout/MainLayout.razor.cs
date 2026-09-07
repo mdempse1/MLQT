@@ -16,6 +16,7 @@ public partial class MainLayout : IDisposable
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFormattingPipeline FormattingPipeline { get; set; } = null!;
     [Inject] private IFilePickerService FilePickerService { get; set; } = null!;
     [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
     [Inject] private ICodeReviewService CodeReviewService { get; set; } = null!;
@@ -58,7 +59,6 @@ public partial class MainLayout : IDisposable
     private bool _runningDeferredStep = false;
     private bool _showStyleCheckingCompleteMessage = false;
     /// <summary>Tracks files that have been formatted, keyed by path with the file's LastWriteTimeUtc at format time.</summary>
-    private readonly Dictionary<string, DateTime> _formattedFileTimestamps = new(StringComparer.OrdinalIgnoreCase);
     private bool _isDarkMode = false;
     private MudTheme _myTheme = MlqtTheme.BuildTheme(MlqtTheme.GetDefaultPaletteLight());
     private string? _currentProjectName = null;
@@ -637,7 +637,7 @@ public partial class MainLayout : IDisposable
         _step5color = Color.Info;
         _step6color = Color.Info;
         _showStyleCheckingCompleteMessage = false;
-        _formattedFileTimestamps.Clear();
+        FormattingPipeline.ClearWrittenFileTimestamps();
         NavState.ResetDeferredState();
     }
 
@@ -739,258 +739,12 @@ public partial class MainLayout : IDisposable
     /// 3. Deletes orphaned files that are no longer part of the new structure
     /// 4. Updates FileNodes in the graph with new file paths
     /// </summary>
-    private async Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
-    {
-        LogProcessStart("MainLayout", "Saving all libraries with formatting");
+    private Task SaveAllLibrariesWithFormattingAsync(string? filterRepositoryId = null)
+        => FormattingPipeline.SaveAllLibrariesWithFormattingAsync(
+            filterRepositoryId,
+            onLibraryFailed: (name, ex) =>
+                _ = InvokeAsync(() => Snackbar.Add($"Failed to format {name}: {ex.Message}", Severity.Warning)));
 
-        // Reference libraries are dropped before anything else looks at the list — every kind of
-        // them. The encrypted ones hold only reconstructions from vendor documentation, so there is
-        // nothing here that could be written back and the saver refuses them outright; a readable one
-        // is a tool's installed library, which the settings page promises is never formatted. That
-        // half used to rest on filterRepositoryId being non-null, which is true of every caller today
-        // and is not what the parameter means.
-        IReadOnlyList<LoadedLibrary> libraries = LibraryDataService.Libraries
-            .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
-            .Where(l => !ReferenceOnlyScope.IsReference(l, RepositoryService))
-            .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
-            .ToList();
-
-        // Collect all original file paths before we start saving
-        // When filtering by repository, only consider files from those libraries
-        var originalFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var librarySourcePaths = libraries.Select(l => l.SourcePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var fileNode in LibraryDataService.CombinedGraph.FileNodes)
-        {
-            if (File.Exists(fileNode.FilePath) &&
-                (filterRepositoryId == null || librarySourcePaths.Any(sp => fileNode.FilePath.StartsWith(sp, StringComparison.OrdinalIgnoreCase))))
-            {
-                originalFiles.Add(fileNode.FilePath);
-            }
-        }
-
-        // Also collect package.order files that exist in the library directories
-        // (excluding hidden directories like .svn, .git which may contain their own package.order files)
-        var originalOrderFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var library in libraries)
-        {
-            if (!string.IsNullOrEmpty(library.SourcePath) && Directory.Exists(library.SourcePath))
-            {
-                foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
-                {
-                    // Skip files inside hidden directories (e.g., .svn, .git)
-                    if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
-                    {
-                        originalOrderFiles.Add(orderFile);
-                    }
-                }
-            }
-        }
-
-        Debug("MainLayout", $"Found {originalFiles.Count} original .mo files and {originalOrderFiles.Count} package.order files");
-
-        // Track all files written during save operations
-        var allWrittenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var allCreatedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var modelIdToFilePath = new Dictionary<string, string>();
-
-        // Process libraries sequentially to limit peak memory. Each library already
-        // parallelizes its parse/render phases internally (Parallel.ForEach in batches).
-        // Running libraries concurrently causes nested parallelism: N libraries × M cores
-        // of parse trees coexisting in memory simultaneously, overwhelming 16GB machines.
-        foreach (var library in libraries)
-        {
-            // Skip libraries without a valid source path or zip-based libraries
-            if (string.IsNullOrEmpty(library.SourcePath) || library.SourceType == LibrarySourceType.Zip)
-            {
-                continue;
-            }
-
-            // Skip single-file libraries (they don't have a directory structure)
-            if (library.SourceType == LibrarySourceType.File && !Directory.Exists(library.SourcePath))
-            {
-                continue;
-            }
-
-            try
-            {
-                Debug("MainLayout", $"Saving library: {library.Name}");
-
-                // Get repository-specific style settings, falling back to global settings
-                StyleCheckingSettings styleSettings;
-                if (!string.IsNullOrEmpty(library.RepositoryId))
-                {
-                    var repository = RepositoryService.GetRepository(library.RepositoryId);
-                    styleSettings = repository?.StyleSettings ?? new StyleCheckingSettings();
-                }
-                else
-                {
-                    styleSettings = new StyleCheckingSettings();
-                }
-
-                // Skip formatting if ApplyFormattingRules is disabled for this repository
-                // But still mark the library's existing files as "written" to prevent them from being deleted as orphans
-                if (!styleSettings.ApplyFormattingRules)
-                {
-                    Debug("MainLayout", $"Skipping formatting for library: {library.Name} (ApplyFormattingRules is disabled)");
-
-                    // Collect existing files for this library to prevent them from being deleted
-                    lock (allWrittenFiles)
-                    {
-                        foreach (var modelId in library.ModelIds)
-                        {
-                            var model = LibraryDataService.GetModelById(modelId);
-                            if (model?.ContainingFileId != null)
-                            {
-                                var fileNode = LibraryDataService.CombinedGraph.GetNode(model.ContainingFileId) as FileNode;
-                                if (fileNode != null && File.Exists(fileNode.FilePath))
-                                {
-                                    allWrittenFiles.Add(fileNode.FilePath);
-                                }
-                            }
-                        }
-
-                        // Also preserve package.order files
-                        if (!string.IsNullOrEmpty(library.SourcePath) && Directory.Exists(library.SourcePath))
-                        {
-                            foreach (var orderFile in Directory.GetFiles(library.SourcePath, "package.order", SearchOption.AllDirectories))
-                            {
-                                if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(orderFile))
-                                {
-                                    allWrittenFiles.Add(orderFile);
-                                }
-                            }
-                        }
-                    }
-
-                    continue;
-                }
-
-                await Task.Run(() =>
-                {
-                    // Get the graph containing all models
-                    var graph = LibraryDataService.CombinedGraph;
-
-                    // Where a library is written depends on how it was loaded: beside a single
-                    // file, into the parent of a package directory (the saver creates the library
-                    // folder itself), or into a loose directory as it stands.
-                    var saveDirectory = ModelicaPackageSaver.ResolveSaveDirectory(
-                        library.SourcePath, File.Exists, Directory.Exists);
-
-                    if (saveDirectory is null)
-                    {
-                        Warn("MainLayout", $"No writable save directory for library {library.Name} at {library.SourcePath}");
-                        return;
-                    }
-
-                    // Save the library and get information about written files using repository-specific settings
-                    var saveResult = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-                        graph,
-                        library.ModelIds,
-                        saveDirectory,
-                        showAnnotations: true,
-                        formatting: styleSettings.ToFormattingOptions(),
-                        excludedModelIds: styleSettings.FormattingExcludedModels);
-
-                    // Collect written files and directories
-                    lock (allWrittenFiles)
-                    {
-                        foreach (var file in saveResult.WrittenFiles)
-                        {
-                            allWrittenFiles.Add(file);
-                        }
-                        foreach (var dir in saveResult.CreatedDirectories)
-                        {
-                            allCreatedDirectories.Add(dir);
-                        }
-                        foreach (var kvp in saveResult.ModelIdToFilePath)
-                        {
-                            modelIdToFilePath[kvp.Key] = kvp.Value;
-                        }
-                    }
-
-                    Debug("MainLayout", $"Successfully saved library: {library.Name} ({saveResult.WrittenFiles.Count} files)");
-                });
-            }
-            catch (Exception ex)
-            {
-                Error("MainLayout", $"Failed to format library {library.Name}", ex);
-                await InvokeAsync(() => Snackbar.Add($"Failed to format {library.Name}: {ex.Message}", Severity.Warning));
-            }
-        }
-
-        // Collect files that are scheduled for VCS addition so we don't delete them.
-        // A file added by an SVN/Git merge is "scheduled for addition" in the VCS but may
-        // not be written by the formatter if it has a malformed within-clause or mismatched
-        // model name.  Deleting it would cause a "scheduled for addition, but is missing"
-        // commit error.
-        var vcsAddedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(filterRepositoryId))
-        {
-            try
-            {
-                var repo = RepositoryService.GetRepository(filterRepositoryId);
-                if (repo?.LocalPath != null)
-                {
-                    foreach (var wc in RepositoryService.GetWorkingCopyChanges(filterRepositoryId)
-                        .Where(c => c.Status == VcsFileStatus.Added))
-                    {
-                        vcsAddedFiles.Add(Path.Combine(repo.LocalPath, wc.Path));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Warn("MainLayout", $"Could not read VCS status to protect added files: {ex.Message}");
-            }
-        }
-
-        var orphaned = OrphanedFileSelector.SelectOrphans(
-            originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles);
-
-        Debug("MainLayout", $"Deleting {orphaned.Count} orphaned file(s) left by the save");
-
-        foreach (var orphanedFile in orphaned)
-        {
-            try
-            {
-                if (File.Exists(orphanedFile))
-                {
-                    File.Delete(orphanedFile);
-                    Debug("MainLayout", $"Deleted orphaned file: {orphanedFile}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Warn("MainLayout", $"Failed to delete orphaned file {orphanedFile}: {ex.Message}");
-            }
-        }
-
-        // Clean up empty directories that may have been left behind
-        CleanupEmptyDirectories(libraries);
-
-        // Record formatted file timestamps for skip-if-unchanged optimization
-        foreach (var filePath in allWrittenFiles)
-        {
-            if (filePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) && File.Exists(filePath))
-                _formattedFileTimestamps[filePath] = File.GetLastWriteTimeUtc(filePath);
-        }
-
-        // Update FileNodes in the graph with new file paths
-        UpdateFileNodesAfterSave(modelIdToFilePath);
-
-        LogProcessEnd("MainLayout", "Saving all libraries with formatting");
-    }
-
-    /// <summary>
-    /// Whether this repository is one MLQT must not write to. <c>settings-reference.md</c> promises a
-    /// reference library is "never checked, formatted, committed or written to"; B66 delivered
-    /// <em>checked</em> and this is <em>formatted</em>.
-    ///
-    /// <para>The formatting paths each resolve a repository and take its <c>StyleSettings</c>, and
-    /// none of them asked. A reference-only repository whose committed <c>.mlqt/settings.json</c> sets
-    /// <c>ApplyFormattingRules</c> — which another team's MLQT-managed library naturally would — had
-    /// its modified files reformatted and written back at startup, and again after every refresh.</para>
-    /// </summary>
     private static bool SkipReferenceOnly(Repository repository, string what)
     {
         if (!repository.IsReferenceOnly)
@@ -1006,53 +760,8 @@ public partial class MainLayout : IDisposable
     /// have been modified (or are untracked) since the last commit need formatting.
     /// This is much faster than SaveAllLibrariesWithFormattingAsync for large repositories.
     /// </summary>
-    private async Task FormatModifiedFilesAsync()
-    {
-        LogProcessStart("MainLayout", "Formatting VCS-modified files");
-        int totalFormatted = 0;
+    private Task FormatModifiedFilesAsync() => FormattingPipeline.FormatModifiedFilesAsync();
 
-        foreach (var repository in RepositoryService.Repositories)
-        {
-            if (string.IsNullOrEmpty(repository.LocalPath) || SkipReferenceOnly(repository, "formatting"))
-                continue;
-
-            try
-            {
-                // Get per-repository style settings
-                var styleSettings = repository.StyleSettings ?? new StyleCheckingSettings();
-                if (!styleSettings.ApplyFormattingRules)
-                {
-                    Debug("MainLayout", $"Skipping formatting for repository {repository.Name} (ApplyFormattingRules is disabled)");
-                    continue;
-                }
-
-                // Get modified and untracked files from VCS
-                var changedFilePaths = GetModifiedFilePathsFromVcs(repository);
-                if (changedFilePaths.Count == 0)
-                {
-                    Debug("MainLayout", $"No modified files in repository {repository.Name}");
-                    continue;
-                }
-
-                Info("MainLayout", $"Formatting {changedFilePaths.Count} modified file(s) in repository {repository.Name}");
-                await SaveChangedFilesWithFormattingAsync(changedFilePaths, styleSettings);
-                totalFormatted += changedFilePaths.Count;
-            }
-            catch (Exception ex)
-            {
-                Warn("MainLayout", $"Failed to format modified files in repository {repository.Name}: {ex.Message}");
-            }
-        }
-
-        Info("MainLayout", $"Formatted {totalFormatted} modified file(s) across all repositories");
-        LogProcessEnd("MainLayout", "Formatting VCS-modified files");
-    }
-
-    /// <summary>
-    /// Gets the full paths of modified, added, and untracked .mo files within the
-    /// repository's Modelica library directory. VCS status covers the full VcsRootPath,
-    /// so paths are filtered to LocalPath to scope analysis to Modelica files only.
-    /// </summary>
     private HashSet<string> GetModifiedFilePathsFromVcs(Repository repository)
     {
         try
@@ -1548,7 +1257,7 @@ public partial class MainLayout : IDisposable
 
         // Skip files that have already been formatted and not modified since
         var alreadyFormatted = changedFilePaths
-            .Where(f => _formattedFileTimestamps.TryGetValue(f, out var formattedAt)
+            .Where(f => FormattingPipeline.WrittenFileTimestamps.TryGetValue(f, out var formattedAt)
                         && File.GetLastWriteTimeUtc(f) == formattedAt)
             .ToList();
 
@@ -1684,7 +1393,7 @@ public partial class MainLayout : IDisposable
                 if (formattingChanged)
                 {
                     // Clear cached timestamps since formatting rules changed
-                    _formattedFileTimestamps.Clear();
+                    FormattingPipeline.ClearWrittenFileTimestamps();
 
                     // Show progress dialog — full formatting can take several minutes
                     _fullFormatStatusMessage = $"Formatting all files in {repository.Name}...";
@@ -2156,16 +1865,9 @@ public partial class MainLayout : IDisposable
     /// </summary>
     /// <param name="changedFilePaths">File paths that have been modified.</param>
     /// <param name="styleSettings">The style settings of the repository the files belong to.</param>
-    private async Task SaveChangedFilesWithFormattingAsync(IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
-    {
-        var written = await IncrementalFormatter.FormatAndWriteAsync(
-            LibraryDataService.CombinedGraph, changedFilePaths, styleSettings);
-
-        // Recorded so the file monitor can tell MLQT's own writes from the user's: a change whose
-        // timestamp matches one of these is the formatter's and must not start another pass.
-        foreach (var (filePath, writtenAt) in written)
-            _formattedFileTimestamps[filePath] = writtenAt;
-    }
+    private Task SaveChangedFilesWithFormattingAsync(
+        IEnumerable<string> changedFilePaths, StyleCheckingSettings styleSettings)
+        => FormattingPipeline.FormatChangedFilesAsync(changedFilePaths, styleSettings);
 
     private async Task OpenAddRepositoryDialog()
     {

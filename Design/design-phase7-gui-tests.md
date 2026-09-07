@@ -621,7 +621,7 @@ service rather than instantiate a layout.
 ### Progress (2026-09-07)
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
-`MainLayout.razor.cs` is **2,635 → 2,388 lines** so far.
+`MainLayout.razor.cs` is **2,635 → 1,938 lines**, and 897 tests now cover the pieces taken out of it.
 
 | Moved | To | Why it went first |
 |---|---|---|
@@ -631,6 +631,9 @@ Started from the outside in, smallest first, each move landing with its own test
 | `GetModifiedFilePathsFromVcs` | `VcsChangeResolver.FormattableModelicaFiles` | Four narrowings that decide what the formatter is allowed to rewrite in a user's working copy |
 | `CleanupEmptyDirectories` | `MLQT.Services/Helpers/EmptyDirectoryCleaner.cs` | It deletes things. Now driven against real temp directories rather than reasoned about |
 | `UpdateFileNodesAfterSave` | `ModelicaGraph/FileNodeReconciler.cs` | Pure graph work, so it belongs with the graph — and a real `DirectedGraph` drives the tests |
+| `SaveChangedFilesWithFormattingAsync` | `MLQT.Services/Helpers/IncrementalFormatter.cs` | The path B65 lived in — the formatter most users meet, run at startup and after every VCS operation |
+| The orphan and save-directory rules | `OrphanedFileSelector`, `ModelicaPackageSaver.ResolveSaveDirectory` | Both decide what happens to files on disk: what gets deleted, and where a library is written |
+| `FormatModifiedFilesAsync`, `SaveAllLibrariesWithFormattingAsync` | `MLQT.Services/Helpers/FormattingPipeline.cs` behind `IFormattingPipeline` | The named deliverable: a service the 7a-6 test host can register, rather than two private methods only the running app could reach |
 
 **Taking the collections rather than the services is the pattern the rest of the move should
 follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
@@ -675,8 +678,25 @@ what said so. That is the "one rule in two places" shape this repository keeps f
 is gone; the test that covered it asserts the invariant (a class lives in one file) rather than the
 mechanism, which is why it holds either way and why it was not the thing that noticed.
 
-Still in `MainLayout`: the save-and-format paths, the four deferred-analysis orchestrations and the
-startup sequence. Those are the ones with `StateHasChanged`, dialog state and
+### What "done" means here, and what is not done
+
+**The formatting half is finished.** Both ways MLQT writes formatted Modelica now live behind
+`IFormattingPipeline`, registered in `MauiProgram`, and the write timestamps the file monitor uses to
+tell MLQT's own writes from the user's have **one owner** — they were briefly split between the
+service and the component during the move, which would have made the monitor start a formatting pass
+on the formatter's own output.
+
+**The analysis half is not, and the note should not pretend otherwise.** `RunStartUpAsync`, the four
+`RunDeferred*Async` methods and `RefreshLibrariesAsync` remain in `MainLayout`. Every *decision*
+inside them has been extracted and tested — which was the goal that mattered for testability — but
+the sequencing has progress-dialog state, `InvokeAsync(StateHasChanged)` and `PowerManagementService`
+interleaved with the work, and moving it needs a progress seam (`IProgress<T>` or a callback) rather
+than more helper-lifting. That is a smaller job than what has been done, and it is the remainder of
+7a-4.
+
+What this means for **7a-6**: the test host can register `IFormattingPipeline` today, so journey 4
+("change a repository setting → formatting reruns → the file on disk changes") is reachable. Journey
+1, which drives the startup pipeline, still needs the analysis half. Those are the ones with `StateHasChanged`, dialog state and
 background threads woven through them, and they need the characterisation tests the note calls for
 before they move.
 
