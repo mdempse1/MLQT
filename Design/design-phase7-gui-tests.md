@@ -515,6 +515,9 @@ Started, not finished. **51 tests** in `MLQT.Shared.Tests`, covering the first t
 | `CytoscapeGraph` (Layer 1b) | The six interop calls: init once with its elements, update rather than re-init, nothing on an unchanged re-render, destroy on disposal |
 | `CodeViewer` | The HTML conversion: encoding, line numbering, and spell-check markup confined to strings and comments |
 | `DiffViewer` | `ComputeLcsDiff`, the edit script every diff view is built on — minimality, operation order, and that replaying it reproduces either file |
+| `ChangeReview` | The commit dialog's folder tree: Git `/` and SVN `\` normalised to one shape, folders before files, status on files only |
+| `ExternalResources` | File-type classification, plus a guard that every category has a filter chip and every chip is a category |
+| `NamingStyleSelect` | What the settings page accepts as a naming exception — anything accepted must compile |
 
 **Every one was verified by mutation, not by going green.** Breaking the rule under test and watching
 the specific test fail is the only thing that distinguishes a test from a formality — this phase has
@@ -543,8 +546,15 @@ equality shortcut cannot answer, and one asserting a changed line is delete-then
 side-by-side renderers depend on to pair the two halves of an edit on one row. Property tests that
 check validity are not enough for an algorithm whose whole value is optimality.
 
-Still to do: `ChangeReview` file-tree building, `ExternalResources` type filtering,
-`NamingStyleSelect`/`SettingsUI`, and the five other dialogs' results.
+**168 tests.** Mutation testing has now changed the tests three times rather than merely confirming
+them, and the pattern in all three was the same: the obvious case does not discriminate. A diff's
+property tests pass on a non-minimal script; the file tree's depth test used siblings that were
+already in order, because the builder walks its input in path order; and the resource classifier's
+`ToLowerInvariant` turned out to be redundant against an `OrdinalIgnoreCase` set — an *equivalent*
+mutation, which is a legitimate outcome and got the dead call removed. Assume a test does not bite
+until it has been watched failing.
+
+Still to do: `SettingsUI`, and the five other dialogs' results. Neither blocks 7a-4.
 
 Writing them turned up **B105** — `CodeReview.ReportPathOf` and the CLI's
 `CheckReport.RelativeFileFor` implementing one rule twice, and `FileLineOf`/`LineFor` doing the same

@@ -24,12 +24,24 @@ public partial class NamingStyleSelect
         await ValueChanged.InvokeAsync(newValue);
     }
 
-    private async Task AddPattern()
+    /// <summary>
+    /// Turns what the user typed into an exception pattern, or into the reason it is not one.
+    /// </summary>
+    /// <returns>
+    /// The pattern to add, and the error to show. Both null means there was nothing to add — an
+    /// empty box is not a mistake, so it is neither accepted nor complained about.
+    /// </returns>
+    /// <remarks>
+    /// A rejected pattern matters more than it looks: an exception name that never compiles would
+    /// be stored, reloaded on every check, and throw somewhere far from the settings page that
+    /// accepted it. The sanitising step exists because the settings UI shows patterns wrapped in
+    /// brackets and users paste them back in that form.
+    /// </remarks>
+    internal static (string? Pattern, string? Error) ParsePattern(string? input)
     {
-        _patternError = null;
-        var pattern = _newPattern.Trim();
+        var pattern = input?.Trim();
         if (string.IsNullOrEmpty(pattern))
-            return;
+            return (null, null);
 
         // Sanitize accidental bracket-wrapping (e.g., "[^[A-Z]...$]" → "^[A-Z]...$")
         pattern = NamingValidator.SanitizePattern(pattern);
@@ -40,9 +52,18 @@ public partial class NamingStyleSelect
         }
         catch (RegexParseException ex)
         {
-            _patternError = $"Invalid regex: {ex.Message}";
-            return;
+            return (null, $"Invalid regex: {ex.Message}");
         }
+
+        return (pattern, null);
+    }
+
+    private async Task AddPattern()
+    {
+        var (pattern, error) = ParsePattern(_newPattern);
+        _patternError = error;
+        if (pattern is null)
+            return;
 
         if (Patterns != null && !Patterns.Contains(pattern))
         {
