@@ -1,7 +1,3 @@
-using Microsoft.AspNetCore.Components;
-using MLQT.Services.Interfaces;
-using MLQT.Shared.Models;
-
 namespace MLQT.Shared.Components;
 
 public partial class CurrentModelDisplay : IDisposable
