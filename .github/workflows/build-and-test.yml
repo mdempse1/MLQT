@@ -103,6 +103,42 @@ jobs:
           name: test-results
           path: ${{ github.workspace }}/TestResults/*.trx
 
+  ui-journeys:
+    # The project's first Linux job, and it earns its place twice over: it runs the browser journeys
+    # against MLQT.TestHost, and it is the only proof that everything except the MAUI app builds on
+    # Linux at all - which is a phase-7 deliverable in its own right and is otherwise not discovered
+    # until the Photino port is underway.
+    #
+    # Deliberately does NOT install the MAUI workload. If this job ever needs it, something
+    # non-portable has reached a project that is supposed to be portable, and that is the finding.
+    name: UI Journeys (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the test host and journeys
+        run: dotnet build MLQT.Journeys/MLQT.Journeys.csproj -c Release
+
+      - name: Install Chromium
+        # --with-deps pulls the shared libraries a headless browser needs, which a bare runner does
+        # not have. Without it the launch fails with a missing .so rather than a test failure.
+        run: pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run the journeys
+        run: dotnet test MLQT.Journeys -c Release --no-build --report-trx --report-trx-filename journeys.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Upload journey results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: journey-results
+          path: ${{ github.workspace }}/TestResults/*.trx
+
   build-maui:
     name: Build MAUI App (Windows)
     runs-on: windows-latest

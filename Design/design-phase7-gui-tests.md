@@ -940,6 +940,27 @@ The journeys are verified by breaking things rather than by being green: droppin
 `UseStaticWebAssets` fails 3, removing Cytoscape from the generated page fails 1, and re-enabling
 prerendering fails 2.
 
+**23 journeys** now, across three files. Journey 6 (Cytoscape) is the one that matters most for 7b:
+it asserts the graph *instantiates*, that its nodes end up at distinct positions — a layout extension
+that failed to register does not throw, it silently stacks every node at the origin — and that all
+five layouts the UI offers actually run. `CytoscapeGraphInteropTests` already pins that the right
+calls are made; only a browser can say whether Cytoscape then does anything, and that is precisely
+the WebKitGTK question.
+
+Journey 2 also passed by asserting nothing on its first run: checking with default settings found no
+findings, because **every rule ships off**. Correct behaviour, useless test. It now enables a rule
+explicitly, and a fourth test pins the default so nobody reads the others as "MLQT finds naming
+problems" when they mean "MLQT finds them once asked to".
+
+**CI**: a `ui-journeys` job on `ubuntu-latest`, deliberately installing **no MAUI workload**. It is
+the project's first Linux job and the only proof that everything except the MAUI app builds there —
+otherwise not discovered until the Photino port is underway. `PortabilityTests` holds that: the
+closure of `MLQT.Journeys`, `MLQT.TestHost`, `MLQT.Shared`, `MLQT.Cli` and `MLQT.McpServer` may not
+reference MAUI in any of its three spellings, nor the `MLQT` host project. Without it, a MAUI
+reference in a shared project builds on Windows and fails on the runner with a missing workload — at
+which point the obvious fix is to install the workload in CI, burying the problem instead of showing
+it.
+
 Journey 4 (settings change → formatting reruns → the file changes) is driven through
 `IFormattingPipeline` rather than by clicking, because 7a-4 put both formatting paths behind that
 interface precisely so this could reach them. Its first version passed by doing nothing — the fixture
@@ -1034,7 +1055,7 @@ Each step compiles and leaves the suite green.
 | **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
 | **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
 | **7a-5** | ✅ **shipped 2026-09-07** — `MLQT.Shared` into the coverage ratchet: `$bars`, `$suites`, baseline with 29 reasons. No file filter: the measurement said it would hide five classes | S |
-| **7a-6** | `AddMlqtCore()`; `HostAssetManifest` + the index.html drift test; `MLQT.TestHost` + fakes + `LibraryFixture`; first two journeys | M |
+| **7a-6** | ✅ **shipped 2026-09-07** — `AddMlqtCore()`, `HostAssetManifest` + drift test, `MLQT.TestHost` + fakes + `LibraryFixture`, **23 journeys**, the Linux CI job and `PortabilityTests` | M |
 | **7a-7** | `SelfTest.razor` + probes; MAUI launcher test; **commit the MAUI baseline JSON**; remaining journeys; Linux CI job; nightly WebKit run | M |
 
 **7a-7 is the step with a deadline attached** — the MAUI baseline must be captured while the MAUI
