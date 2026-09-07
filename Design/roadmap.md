@@ -236,7 +236,8 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 | **Platform-service ports** (file dialog, power/sleep, settings paths) | ⭐⭐ | M | Per-OS implementations behind the existing interfaces. Settings is mostly path differences. |
 | **GUI test harness** (phase 7a — code-behind sweep, unit + bUnit tests, Playwright test host, `/selftest` route) | ⭐⭐⭐ | L | `MLQT.Shared` currently has **no tests**, so a host swap has no mechanical parity check. Must run **before** the port: the MAUI conformance baseline cannot be captured once MAUI is retired. Restructured 2026-09-07 around the **code-behind policy** — the 11,700 lines of C# inside `@code { }` blocks move to `.razor.cs` partials first, which makes most of them testable without a renderer at all. See [design-phase7-gui-tests.md](design-phase7-gui-tests.md). |
 
-**Migration approach:** build the **GUI test harness (phase 7a)** first — "confirm feature parity
+**Migration approach (planned in full 2026-09-08 — [design-phase7b-photino.md](design-phase7b-photino.md)):**
+build the **GUI test harness (phase 7a)** first — "confirm feature parity
 against the known-good MAUI build" below is an empty promise while `MLQT.Shared` has no tests, and the
 conformance baseline it captures is only obtainable while MAUI still runs. 7a itself opens with the
 **code-behind sweep**, because the logic that has to be tested is currently unreachable without a
@@ -244,6 +245,13 @@ renderer. Then run the WebKitGTK spike, then build the Photino host and port the
 (confirm feature parity against the known-good MAUI build before adding OS variables), then Linux,
 then macOS. When it lands, the `MLQT` MAUI project is superseded by a new desktop host project —
 update CLAUDE.md and docs accordingly.
+
+Three things the original sketch of this missed, all named in the 7b plan: **`MLQT.McpTester` is a
+second MAUI app**, so the workload cannot be retired until it is dealt with; **existing users' settings
+live in MAUI `Preferences`** and are lost on cutover unless migrated on first run; and **Linux has no
+install story** — packaging was never discussed. Against that, 7a made the job smaller than the sketch
+assumed: `MLQT.TestHost` has been running `MLQT.Shared` outside MAUI since 7a-6, so the open question
+is no longer "does the shared code survive a host swap" but only "does Photino work".
 
 ---
 
@@ -1466,12 +1474,15 @@ across all workstreams — ✅ marks a phase whose implementation note records i
    **Implementation plan:** [design-phase6-analyses-dashboard.md](design-phase6-analyses-dashboard.md).
 7. **Desktop host migration (Photino, retire MAUI)** — delivers the **Linux UI**. Opens with the
    WebKitGTK interop spike to de-risk the engine, then host + platform-service ports, validated
-   Windows-parity → Linux → macOS. **Starts once the backlog above is clear.**
+   Windows-parity → Linux → macOS. **Phase 7a is complete and this is unblocked**; planned in full
+   (2026-09-08) in [design-phase7b-photino.md](design-phase7b-photino.md).
    Preceded by **phase 7a, the GUI test harness** — the code-behind sweep that makes component
    logic reachable at all, unit tests over the resulting `.razor.cs` partials (bUnit only where a
    render tree is genuinely required), the B20/B73 extraction into `IAnalysisPipeline`, a Blazor
    Server test host driven by Playwright, and a `/selftest` conformance route whose MAUI baseline
-   must be captured *before* the port begins. **Implementation plan:** [design-phase7-gui-tests.md](design-phase7-gui-tests.md).
+   must be captured *before* the port begins — **all shipped 2026-09-07**.
+   **Implementation plans:** [design-phase7-gui-tests.md](design-phase7-gui-tests.md) (7a, complete)
+   and [design-phase7b-photino.md](design-phase7b-photino.md) (7b, proposed).
 8. **Wave-2 analyses** — confidence-aware resolver, then broken references, connection
    integrity, deprecated-API, cyclic dependencies.
 9. **Extensibility, then flagships** — declarative custom rules → compiled plugins; finally

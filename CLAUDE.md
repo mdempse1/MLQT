@@ -350,7 +350,8 @@ backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
 | `Design/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
 | `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
 | `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
-| `Design/design-phase7-gui-tests.md` | Phase 7a — the code-behind sweep, the test harness it enables, and the `/selftest` conformance baseline captured before the desktop-host migration; §7b sketches the migration |
+| `Design/design-phase7-gui-tests.md` | Phase 7a — the code-behind sweep, the test harness it enables, and the `/selftest` conformance baseline captured before the desktop-host migration |
+| `Design/design-phase7b-photino.md` | Phase 7b — replacing MAUI with Photino: the gating spike, the host, the three platform services, Windows-then-Linux conformance, and the cutover |
 | `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
 
 Each phase note records what actually landed, including where the implementation deviated from the

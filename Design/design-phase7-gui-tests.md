@@ -1243,29 +1243,19 @@ does not behave as expected, the fix is to change the filter, not to lower the b
 
 ---
 
-## 7b — the host migration (sketch)
+## 7b — the host migration
 
-Detail lands once the spike reports; the sequence is fixed by the roadmap and by what 7a produces.
+**Planned in full on 2026-09-08 in [design-phase7b-photino.md](design-phase7b-photino.md).** The
+sketch that stood here was written before 7a shipped and assumed a harder job than the one now in
+front of us: a second non-MAUI host already exists and works, the composition root and host page are
+already extracted, and conformance is a diff against a committed 16-probe capture rather than a
+judgement. The sketch also missed three things the plan names — `MLQT.McpTester` is a *second* MAUI
+app and blocks retiring the workload, existing users' settings live in MAUI `Preferences` and are lost
+on cutover unless migrated, and Linux has no install story at all.
 
-1. **WebKitGTK / Photino spike (S).** Opens phase 7b. Two questions, both gating: does a
-   `net10.0`-compatible `Photino.Blazor` exist, and do Cytoscape.js, MudBlazor and the syntax
-   highlighting behave under WebKitGTK? Answered against a throwaway host, not the real one. A "no"
-   on the first promotes `MLQT.TestHost` to the shipping host and rewrites the rest of this list.
-2. **`MLQT.Photino` host (M).** `AddMlqtCore()` + three platform services + `PhotinoBlazorApp`. The
-   composition root is already extracted by 7a-6, so this is the three-line file that design promises.
-3. **The three platform services (M).** `IFilePickerService` → GTK/Win32, `ISettingsService` → JSON at
-   an XDG/LocalAppData path, `IPowerManagementService` → `org.freedesktop.ScreenSaver`/`caffeinate`.
-   Probes 8–11 are their acceptance criteria.
-4. **The host page (S).** Generated from `HostAssetManifest`, not copied; the drift test from 7a-6 is
-   what makes that safe. Bundle Roboto here (probe 7).
-5. **`svn` on Linux (S).** The bundled `svn/` payload is Windows-only; probe 13 is the check.
-6. **Validate on Windows first (S).** Photino on Windows against the committed MAUI baseline — same
-   OS, same engine family, one variable changed. Only then Linux.
-7. **Cutover (S).** Retire the `MLQT` MAUI project and the MAUI workload from CI. The `selftest` job
-   per platform becomes the parity gate that replaces the baseline diff.
-
-The one-time manual passes 7a explicitly does not cover — visual fidelity, native window behaviour,
-real file dialogs — are checklist items in step 6, once per platform.
+Two of this note's own leftovers land there rather than here, because until there is a Linux host
+there is nothing to run them against: the per-platform CI `selftest` job, and the nightly WebKit
+journey run.
 
 ---
 
