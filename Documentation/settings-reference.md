@@ -2,7 +2,7 @@
 
 MLQT has two levels of settings:
 
-- **Application-level settings** — UI theme, syntax highlighting, external tool paths, and default style checking rules. These are stored locally on your machine and are personal to you.
+- **Application-level settings** — UI theme, syntax highlighting, external tool paths and reference-library paths. These are stored locally on your machine and are personal to you.
 - **Repository-level settings** — Style checking, formatting, commit requirements, and spell checking rules for a specific repository. These are stored inside the repository itself so they can be shared with your team.
 
 This guide covers both levels and explains every setting in detail.
@@ -15,26 +15,66 @@ Application settings are found in the **Settings** tab on the right panel. They 
 |-----|---------|
 | **UI Settings** | Theme and syntax highlighting colors |
 | **External Tools** | Paths to Dymola and OpenModelica |
-| **Style Checking** | Default style rules for new repositories |
+| **Reference Libraries** | Read-only libraries loaded so references out of your code resolve |
 | **Manage Repositories** | Project and repository management |
 
-Changes to UI Settings, External Tools, and Style Checking are saved by clicking the **Save Settings** button at the bottom of the settings panel.
+Changes to UI Settings, External Tools and Reference Libraries are saved by clicking the **Save Settings** button at the bottom of the settings panel.
 
-![Screenshot: The Settings panel showing the four sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
+![Screenshot: The Settings panel showing the sub-tabs with the "Save Settings" and "Reset to Defaults" buttons visible at the bottom.](Images/settings-reference-1.png)
 
 ---
 
-## Default Style Checking Settings
+## Where the rules live
 
-Found under **Settings > Style Checking**, these are the default rules applied to any newly added repository. They serve as a template — once a repository is added, it gets its own copy of these settings which can be customized independently.
+Style, formatting and spell-checking rules belong to a **repository**, not to the application — they
+are set under **Settings > Manage Repositories** and stored in that repository's
+`.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
+CLI, the MCP server) applies the same ones.
 
-A note at the top of this tab reminds you: *"These are the default rules that will be applied to any new repository. They are overridden by the repository specific settings — see Manage Repositories."*
+A newly added repository starts with every rule **Off**, and a library loaded outside any repository
+— a reference library, say — has no rules at all and is never reported on.
 
-![Screenshot: The Style Checking defaults tab showing all the toggle switches with the explanatory note at the top.](Images/settings-reference-2.png)
+---
+
+## Reference Libraries
+
+Found under **Settings > Reference Libraries**. These are libraries MLQT loads **read-only** so that references out of your own code resolve — most often a tool's installed library folder, such as Dymola's `Modelica\Library`. Without them, a reference into a library you have not loaded is reported as broken, and an icon inherited from one is reported as missing.
+
+| Setting | Purpose |
+|---------|---------|
+| **Library folders** | Directories to scan. Each may hold a single library or many; MLQT finds every library beneath. |
+| **Recover encrypted libraries from their documentation** | On by default. Reconstructs the classes of encrypted (`package.moe`) libraries from the vendor's shipped HTML documentation. Turn it off to leave those namespaces opaque. |
+
+The table shows how many libraries each folder contributes and how many are encrypted, so a mistyped or moved path shows up immediately rather than later as unresolved references. Changes take effect the next time the project is loaded.
+
+Reference libraries are never checked, formatted, committed or written to. They appear in the library browser for reading only.
+
+These paths live in application settings rather than in a repository's `.mlqt/settings.json`, because an install location is a property of your machine — a colleague's checkout or a CI runner will not share it. In CI, pass the equivalent with the CLI's `--dependency` option instead.
+
+See [encrypted-libraries.md](encrypted-libraries.md) for what is recovered from an encrypted library and how accurate it is.
 
 ---
 
 ## Repository Settings
+
+### Reference-only repositories
+
+Some repositories hold code you depend on but do not maintain: a tool's library folder, or another
+team's repository. Tick **Reference only** — when adding the repository, or later in
+**Settings > Repositories** — and MLQT loads it so that references into it resolve and leaves it
+alone otherwise:
+
+- it is not style-checked, so no findings are raised against code you cannot change;
+- its classes do not count towards coverage, so a vendor's descriptions and icons do not move your
+  percentages;
+- it is not formatted;
+- nothing is written into it — no `.mlqt` directory, and so no settings, baseline or accepted
+  spellings kept beside it.
+
+A folder MLQT cannot write into is offered as reference-only automatically when you add it, since it
+could never keep those files anyway. The tick is only ever suggested: you can untick it, and marking
+a perfectly writable repository as reference-only is the point of the setting — a Git repository you
+have read access to is exactly the case.
 
 Repository settings are edited through **Settings > Manage Repositories** by clicking on a repository row. Each repository has its own independent copy of all style, formatting, and commit settings.
 
@@ -67,37 +107,108 @@ For example, a repository that uses `main` instead of `trunk` and keeps release 
 
 ### Style Guidelines
 
-Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, any violation is reported as an issue in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
+Style guidelines are rules that MLQT checks against your Modelica code. When a rule is enabled, what it finds is reported in the **Code Review** tab. These checks help ensure code quality and consistency across your library.
 
-Style guidelines are **passive** — they only report issues and never modify your code.
+Each rule below sets its severity on a row of four buttons — **Off / Info / Warning / Error** — rather than a plain on/off switch. **Off** disables the rule; **Error** fails the CI quality gate, while **Warning** and **Info** are reported only. All four are shown at once so you can read how strictly a rule is set, and compare it with the rules above and below, without opening anything. The spell-check and naming-convention rules use the same row: each also reveals a settings panel when it is not **Off**, but that is no reason to hide its level — a misspelling or a misnamed component can fail a build like anything else.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Every class must have a description** | Off | Checks that every Modelica class (model, package, block, etc.) has a description string. Descriptions appear after the class name, e.g., `model MyModel "A short description"`. Missing descriptions make libraries harder to browse and understand. |
-| **Every class must have documentation info** | Off | Checks that every class has an `annotation(Documentation(info="..."))` section. The info section typically contains HTML documentation explaining the purpose and usage of the class. |
-| **Every class must have documentation revisions** | Off | Checks that every class has an `annotation(Documentation(revisions="..."))` section. The revisions section documents the change history of the class. |
-| **Every class must have an icon** | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
-| **Every public parameter must have a description** | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
-| **Every public constant must have a description** | Off | Checks that every public `constant` declaration includes a description string. |
-| **Check that the naming convention is followed** | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When enabled, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
-| **Don't mix equation and algorithm sections** | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
-| **Do not mix connections and equations** | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
+Style guidelines are **passive** — they only report findings and never modify your code.
+
+The **Rule id** column is the identifier the rule reports under everywhere outside this app: in
+`RuleSeverities`, in a `__MLQT(suppress="…")` annotation, in the CLI's output and in a SARIF alert,
+whose "learn more" link comes to this page. Every id MLQT can report is on this page except the parse
+diagnostics, which are not settings — see
+[Diagnostics](cli.md#diagnostics).
+
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Every class must have a description** | `MLQT.Doc.ClassDescription` | Off | Checks that every Modelica class (model, package, block, etc.) has a description string. Descriptions appear after the class name, e.g., `model MyModel "A short description"`. Missing descriptions make libraries harder to browse and understand. |
+| **Every class must have documentation info** | `MLQT.Doc.ClassDocumentationInfo` | Off | Checks that every class has an `annotation(Documentation(info="..."))` section. The info section typically contains HTML documentation explaining the purpose and usage of the class. |
+| **Every class must have documentation revisions** | `MLQT.Doc.ClassDocumentationRevisions` | Off | Checks that every class has an `annotation(Documentation(revisions="..."))` section. The revisions section documents the change history of the class. |
+| **Every class must have an icon** | `MLQT.Doc.ClassIcon` | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
+| **Every public parameter must have a description** | `MLQT.Doc.ParameterDescription` | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
+| **Every public constant must have a description** | `MLQT.Doc.ConstantDescription` | Off | Checks that every public `constant` declaration includes a description string. |
+| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
+| **A class may only have either an equation or algorithm section, not both** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
+| **Do not mix connections and equations in the same class** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
 
 ### Formatting Rules
 
 Formatting rules define structural ordering requirements for Modelica code. These rules serve a dual purpose:
 
-1. **As style checks** — When a formatting rule is enabled but "Apply formatting rules" is off, violations are reported as issues in the Code Review tab (just like style guidelines).
+1. **As style checks** — When a formatting rule is enabled but "Apply formatting rules" is off, findings are reported as findings in the Code Review tab (just like style guidelines).
 2. **As automatic formatting** — When "Apply formatting rules" is on, MLQT will automatically restructure your code to comply with the enabled formatting rules whenever files are saved.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Apply formatting rules** | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
-| **One of each section** | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Imports first, extends at top** | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
-| **Components before classes** | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
-| **Initial equation/algorithm first** | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
-| **Initial equation/algorithm last** | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
+| **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
+| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
+| **Composition must have components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
+| **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
+| **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
+
+The **Setting** column gives each checkbox's label exactly as the dialog shows it, so you can find
+it. The rest of this documentation uses the short names — **One of each section**, **Imports
+first**, **Extends at top**, **Components before classes**, **Initial equation/algorithm
+first**/**last** — and those are the same six settings.
+
+#### One of each section is required by the rest
+
+The last four settings in that table — **Imports first, extends at top**, **Components before
+classes**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
+section is also on**, and MLQT enforces that rather than leaving it to be discovered.
+
+The reason is in the formatter. `ModelicaRenderer` reorders a class only in its one-of-each-section
+mode; with that setting off it writes the composition in source order and moves nothing at all. So on
+their own the other rules would report an arrangement that pressing **Format All Files** could never
+produce — findings nobody can clear, against a setting that looks enabled.
+
+- **In the app**, the four switches are greyed out until you turn **One of each section** on. They
+  keep showing what they are set to rather than jumping to off, because nothing has been switched
+  off — the settings are still there, and are simply not in effect. Turning the prerequisite back on
+  makes them active again exactly as they were.
+- **In a settings file**, the rules simply do not run, and `mlqt check` prints a warning naming the
+  setting to turn on:
+
+  ```
+  warning: 'MLQT.Style.ImportStatementsFirst' does nothing while 'MLQT.Style.OneOfEachSection' is
+           off: the formatter only reorders a class when that rule is on, so this one would report
+           an arrangement it cannot produce
+  ```
+
+  This is worth knowing if you have hand-edited `.mlqt/settings.json`, or are carrying one written
+  before MLQT enforced it: such a file used to report ordering findings and now reports none.
+
+#### How severely these are reported
+
+The layout rules above are the only ones whose **level is worked out rather than chosen**. They are
+switches, not Off/Info/Warning/Error rows, and the level follows what the formatter is doing:
+
+| Switch (with One of each section on) | Apply formatting rules | Reported as |
+|--------------------------------------|------------------------|-------------|
+| Off | — | nothing — the rule does not run |
+| On | Off | **Warning** |
+| On | On | **Error** |
+
+The reasoning is that those two situations mean genuinely different things. With formatting off, the
+rule is advice about how code should be laid out, and advice is a warning. With formatting on, MLQT
+rewrites the class on every save *specifically to satisfy this rule* — so a violation that survives
+is not a matter of taste. Something is wrong: a file saved outside MLQT, a class on the formatting
+exclusion list that nobody remembers adding. That deserves to stop a build.
+
+A level written against one of these rules in `ruleSeverities` records only that the rule is on — the
+value itself is not read.
+
+> **One switch, two rule ids.** `MLQT.Style.ExtendsAtTop` reports a misplaced `extends` clause and
+> `MLQT.Style.ImportStatementsFirst` a misplaced `import`, but they are one convention and one
+> setting: `ExtendsAtTop` is **governed by** `ImportStatementsFirst` and has no entry of its own. It
+> keeps a separate id so a finding says which of the two it is, and so a single `extends` can be
+> waived with `__MLQT(suppress="Style.ExtendsAtTop")` without waiving the import rule as well.
+>
+> Naming `MLQT.Style.ExtendsAtTop` in `ruleSeverities` therefore sets nothing. `mlqt check` prints a
+> warning naming the setting to use instead, rather than reading the key and ignoring it — which is
+> what it used to do, so a repository that wrote `"MLQT.Style.ExtendsAtTop": "Off"` went on being
+> reported at for years.
 
 #### Mutually Exclusive Settings
 
@@ -112,7 +223,7 @@ Individual models can be excluded from automatic formatting. This is useful for 
 
 | Setting | Description |
 |---------|-------------|
-| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style violations are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
+| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
 
 A helper method `IsModelExcludedFromFormatting(string modelId)` is available for checking whether a given model is in the exclusion list.
 
@@ -126,9 +237,9 @@ When you exclude a model that belongs to a VCS-managed repository, MLQT automati
 
 ### Reference Validation
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Validate modelica:// model references** | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Validate modelica:// model references point to existing models** | `MLQT.Reference.ModelReferences` | Off | Checks that `modelica://` URIs pointing to other models (e.g., `modelica://Modelica.Blocks.Continuous`) reference models that actually exist in the loaded libraries. This catches broken cross-references caused by renamed or removed models — a common issue since many Modelica tools do not update these URIs automatically. Only model references are checked (URIs without a `/` path separator); file resource references (URIs with `/`) are handled separately by the External Resources system. |
 
 The reference validator handles several edge cases found in real Modelica libraries:
 
@@ -136,27 +247,141 @@ The reference validator handles several edge cases found in real Modelica librar
 - **HTML entity-encoded links** — Example markup that uses `&quot;modelica://...&quot;` (entity-encoded `href` attributes shown as visible documentation text) is ignored
 - **Plain text mentions** — Text like `Replace modelica://-URIs` that mentions the scheme without being inside an HTML attribute is ignored; only URIs inside attribute values (e.g., `href="modelica://..."`) are validated
 - **Hash fragments** — URIs with `#` fragments (e.g., `modelica://Model.Name#info`) are handled correctly, validating only the model path before the fragment
-- **Accurate line numbers** — Violations report the actual line within multi-line documentation strings where the broken reference appears, not the line where the annotation starts
+- **Accurate line numbers** — Findings report the actual line within multi-line documentation strings where the broken reference appears, not the line where the annotation starts
+
+### Static Analysis Rules
+
+These rules find structural problems beyond the style/documentation checks above. They are **off by
+default**. Enable them in the **Static analysis** section of the Edit Repository Details dialog — each
+rule has a per-rule **Off / Info / Warning / Error** selector (grouped by category), where **Error**
+fails the CI quality gate and Warning/Info are reported only — or edit `settings.json` directly (see
+below). Each has a stable rule id used by the CLI/MCP output and by `__MLQT(suppress="…")` annotations.
+
+**Severity when on** is the level a rule reports at once you switch it on — it is not a statement
+that the rule is running. Like every other rule on this page, each of these is **Off** until you
+enable it, and you can pick any level you like in place of the one shown.
+
+| Rule id | Severity when on | Checks | Runs in |
+|---------|------------------|--------|---------|
+| `MLQT.Duplicate.Declaration` | Error | A name declared more than once in the same class. | GUI, CLI, MCP |
+| `MLQT.Duplicate.Import` | Warning | The same name imported more than once in a class. | GUI, CLI, MCP |
+| `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
+| `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
+| `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
+| `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
+| `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
+| `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
+| `MLQT.Unused.PublicClass` | Info | A *public* nested class that nothing in the loaded libraries references. Lower confidence — a downstream library you can't see may use it — so **Info** and off by default. Best on an application library, not a foundational one like MSL. ‡ † | GUI, CLI, MCP |
+| `MLQT.Shadowing.InheritedMember` | Warning | A declaration that silently shadows a same-named member inherited via `extends` (use `redeclare` to override intentionally). | GUI, CLI, MCP |
+| `MLQT.Unused.Member` | Warning | A protected component/parameter/constant never referenced, in a class that nothing extends and has no nested classes. | GUI, CLI, MCP |
+
+§ **Imports are scoped to the whole subtree.** Modelica looks a simple name up in the class itself and
+then in each enclosing class in turn, and a package directory's children are lexically nested inside
+its `package.mo` — so `import SI = Modelica.Units.SI;` in a library's root package is usable by every
+class in the library, which is exactly how libraries use it. The rule therefore searches the declaring
+class *and everything below it* before reporting, and a use anywhere in that subtree is enough. Two
+deliberate biases keep it from crying wolf: a name appearing in a comment or string counts as a use,
+and an `encapsulated` class (which cannot see enclosing scopes) is not treated as a boundary. Both
+under-report rather than call a live import dead.
+
+‡ **Never reported by the unused-class rules:** a class carrying an `experiment(...)` annotation (a
+simulation entry point — it exists to be run, not to be instantiated by something else), and an
+`ExternalObject`'s `constructor`/`destructor` (Modelica calls those implicitly, so no code references
+them by name). Without the first, a library's example package reads as entirely dead.
+
+A library's *public API* is still reported — nothing inside the library uses it because its users are
+downstream — which is why `MLQT.Unused.PublicClass` is Info and off by default, and best suited to an
+application library. For a foundational library, either leave it off or exclude the library (below).
+
+### Excluding whole libraries from the checks
+
+A repository often holds the libraries under development alongside their test-case and example
+libraries, where the same rules are not wanted. `ExcludedLibraries` lists the top-level library names
+to leave alone:
+
+```jsonc
+{
+  "ClassHasDescription": true,
+  "ExcludedLibraries": ["Examples", "*_Tests"]
+}
+```
+
+- Matched against the **first segment** of a class id — the library name — so `"Tests"` excludes
+  `Tests.SomeCase` but not `Lib.Tests.Thing`.
+- Case-insensitive, and `*` is a wildcard, so `"*_Tests"` covers `Foo_Tests` and `Bar_Tests`.
+- An excluded library is still **loaded**, and still counts as a *user* of everything it references —
+  so excluding your test library will not make the code it exercises look unused. Only the reporting
+  is suppressed.
+- **Parse errors are still reported.** Those say the file could not be read at all rather than
+  expressing an opinion about its style; see [cli.md](cli.md#diagnostics).
+- `mlqt check` prints `note: N class(es) skipped as excluded libraries`, so a mistyped name shows up
+  as an unexpected number rather than as a quiet pass.
+
+Honoured identically by the desktop app, the CLI and the MCP server. In the app it is edited under
+**Excluded libraries** in the repository settings dialog.
+
+† **Needs dependency analysis.** The `mlqt check` CLI runs it automatically when one of these rules is
+enabled (you'll see `note: running dependency analysis…`); via the MCP server, call
+`analyze_dependencies` before `check_library`. In the GUI these rules produce findings once dependency
+analysis has run in the load/analysis pipeline. Graph findings appear in Code Review alongside the
+per-class ones and are re-run for the affected repository after an incremental re-check (e.g. following
+a VCS operation or a file edit), so they stay in step with the per-class findings.
+
+**Enabling them via JSON.** Add on/off toggles to `settings.json` (each enabled rule takes the default
+severity above) — equivalent to choosing the default severity in the dialog:
+
+```json
+{
+    "CheckDuplicateDeclarations": true,
+    "CheckDuplicateImports": true,
+    "CheckMissingUnits": true,
+    "CheckUnusedImports": true,
+    "CheckPackageOrder": true,
+    "CheckUsesUndeclared": true,
+    "CheckUsesDeclaredUnused": true,
+    "CheckUnusedClass": true,
+    "CheckUnusedPublicClass": true,
+    "CheckShadowing": true,
+    "CheckUnusedMembers": true
+}
+```
+
+Or set an explicit severity (`Off`/`Info`/`Warning`/`Error`) per rule with the id-keyed map — this
+also works for the built-in style rules:
+
+```json
+{
+    "RuleSeverities": {
+        "MLQT.Units.MissingUnit": "Error",
+        "MLQT.Unused.Class": "Info"
+    }
+}
+```
+
+A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
+(see [Code Review](code-review.md#suppressing-a-rule)).
 
 ### Spell Checking
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Spell check every description string** | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
-| **Spell check all documentation** | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
-| **Language Dictionaries** | English (US), English (UK) | Multi-select dropdown to choose which language dictionaries are active. A word is correct if it appears in any selected dictionary. Additional languages can be imported using the **Import Language** button (requires Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. |
+| Setting | Rule id | Default | Description |
+|---------|---------|---------|-------------|
+| **Spell check every description string** | `MLQT.Spelling.Description` | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
+| **Spell check all documentation** | `MLQT.Spelling.Documentation` | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
+| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two severity rows, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
 
-The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica-specific terms (Modelica, Dymola, Jacobian, linearization, etc.) is also included.
+The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica and engineering terms (Modelica, Dymola, Jacobian, revolute, enthalpy, thyristor, linearization, etc.) is also included, in the spelling of the language you selected. The possessive of an accepted word is accepted too, so a name in the repository's word list does not come back as a mistake the moment it is written as "Stodola's".
 
-Spelling violations appear in the **Code Review** issues table with the line number where the misspelled word appears. Clicking a violation navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, add the word to your custom dictionary, ignore the violation, or close the menu. See [Spell Checking](spell-checking.md) for full details.
+Spelling findings appear in the **Code Review** findings table with the line number where the misspelled word appears. Clicking a finding navigates to the model and scrolls the misspelled word into view, underlined in the code. Right-clicking the underlined word opens a correction menu with options to apply a suggested or custom spelling, accept the word into the repository's word list, ignore the finding, or close the menu. See [Spell Checking](spell-checking.md) for full details.
 
-#### Custom Dictionary
+#### Accepted Spellings
 
-A custom dictionary stores additional words that should be accepted as correct (company names, domain terms, abbreviations). It is shared across all repositories and stored at `%LocalAppData%/MLQT/custom_dictionary.txt`.
+Words that no dictionary knows but that are not mistakes (company names, domain terms, abbreviations) are kept per repository, in `.mlqt/dictionary.txt` beside `settings.json`. Committing it means the app and `mlqt check` in CI accept the same words and report the same spelling findings.
 
-In the default settings (**Settings > Style Checking**), the **Custom Dictionary** expandable panel lets you add, remove, filter, import, and export custom words. Words can also be added directly by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary** — this is the fastest workflow.
+The **Accepted spellings** expandable panel in this repository's settings lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
 
-![Screenshot: The Spell checking section of the Settings dialog showing the two spell check toggle switches, the language dictionary dropdown, and the Import Language button.](Images/settings-reference-6.png)
+A word applies only to the repository holding it; the same term in another repository has to be accepted there too. Earlier versions kept one machine-wide list at `%LocalAppData%/MLQT/custom_dictionary.txt`; it is no longer used for checking, and an **Import machine list** button appears while it exists so its words can be copied into a repository.
+
+![Screenshot: The Spell checking section of the Settings dialog showing the two spell-check severity rows, the language dictionary dropdown, and the Import Language button.](Images/settings-reference-6.png)
 
 ---
 
@@ -169,7 +394,7 @@ The **Apply formatting rules** setting is the most impactful setting in MLQT and
 The formatting rules (One of each section, Imports first, Components before classes, etc.) behave purely as **style checks**. MLQT will:
 
 - Analyze your code structure against the enabled rules
-- Report any violations as issues in the Code Review tab
+- Report any findings as findings in the Code Review tab
 - **Never modify your files**
 
 This is the safe default. You can see what your code looks like relative to the rules without any risk of changes.
@@ -213,7 +438,7 @@ MLQT assumes that once a repository has been formatted, it stays formatted. This
 
 5. **Initial formatting may produce large diffs.** When you first enable formatting rules on an existing library, use "Format All Files" to reformat the entire repository. Consider doing this on a new branch, reviewing the changes, and then merging.
 
-![Screenshot: The Code Review tab showing a model with style checking issues for formatting rule violations (e.g., "Multiple public sections found" or "Import statements should appear before other declarations").](Images/settings-reference-7.png)
+![Screenshot: The Code Review tab showing a model with style checking findings for formatting rule findings (e.g., "Multiple public sections found" or "Import statements should appear before other declarations").](Images/settings-reference-7.png)
 
 ---
 
@@ -223,7 +448,7 @@ MLQT uses a two-tier storage approach for settings:
 
 ### Application-Level Settings
 
-Application settings (UI theme, syntax highlighting, external tool paths, and default style checking rules) are stored in the platform's application preferences storage. On Windows, this uses the standard MAUI Preferences API.
+Application settings (UI theme, syntax highlighting, external tool paths and reference-library paths) are stored in the platform's application preferences storage. On Windows, this uses the standard MAUI Preferences API.
 
 These settings are:
 - **Personal** — Each user has their own copy
@@ -234,12 +459,13 @@ This also includes the project/repository configuration (which projects exist, w
 
 ### Repository-Level Settings (`.mlqt/settings.json`)
 
-Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository:
+Style checking, formatting, commit, and spell checking settings for each repository are stored in a file called `settings.json` inside a `.mlqt` directory at the root of the repository. The repository's accepted spellings sit beside it in `dictionary.txt` — a plain list, one word per line, sorted, with `#` comment lines allowed:
 
 ```
 your-repository/
     .mlqt/
         settings.json
+        dictionary.txt
     MyLibrary/
         package.mo
         ...
@@ -316,6 +542,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 - **On repository load:** MLQT reads `.mlqt/settings.json` from the repository root. If the file does not exist, default settings are used.
 - **On settings change:** When you click **Apply** in the Edit Repository Details dialog, MLQT writes the updated settings to `.mlqt/settings.json` and also saves the repository configuration to the application preferences.
+- **After a settings change:** Style checking is re-run for that repository alone. Findings for the project's other repositories are left as they are — their rules have not changed, so there is nothing to re-check.
 - **The `.mlqt` directory is created automatically** if it does not exist when settings are first saved.
 
 > **Tip:** Add the `.mlqt/` directory to your version control system. You may want to add `.mlqt/settings.json` to your repository's tracked files and commit it so your team shares the same settings. If individual developers need to override settings locally, they can change them in MLQT — the changes will appear as local modifications that they can choose not to commit.
@@ -328,7 +555,7 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 
 1. Start with all settings off (the default)
 2. As a team, decide which style guidelines matter for your project
-3. Enable the agreed-upon style guidelines and review the reported issues
+3. Enable the agreed-upon style guidelines and review the reported findings
 4. Once the team is comfortable, consider enabling formatting rules
 5. Enable "Apply formatting rules" and click **Format All Files** to do the initial formatting pass
 6. Review and commit the formatting changes on a dedicated branch
@@ -338,8 +565,8 @@ The `.mlqt/settings.json` file is deliberately placed inside the repository dire
 ### For Existing Projects
 
 1. Load your repository in MLQT
-2. Enable style guidelines one at a time to assess the number of violations
-3. Fix violations incrementally or accept them
+2. Enable style guidelines one at a time to assess the number of findings
+3. Fix findings incrementally or accept them
 4. Only enable "Apply formatting rules" after the team has agreed on the structural rules
 5. Click **Format All Files** to do the initial formatting pass and commit it as a single change
 6. After the initial pass, MLQT only reformats files you modify — no more slow full-library formatting on every startup

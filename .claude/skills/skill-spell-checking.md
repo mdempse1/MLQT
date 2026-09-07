@@ -8,7 +8,7 @@ Spell checking uses **WeCantSpell.Hunspell** (v7.x, MPL 1.1 licensed, fully mana
 - **Description strings** (`string_comment` in Modelica grammar) on classes, components, parameters, and constants
 - **Documentation annotations** (`Documentation(info=..., revisions=...)` HTML content)
 
-Bundled dictionaries: en_US and en_GB (embedded resources in ModelicaParser). Users can import additional Hunspell dictionaries and maintain a custom word list.
+Bundled dictionaries: en_US and en_GB (embedded resources in ModelicaParser). Users can import additional Hunspell dictionaries; accepted words are kept per repository in `.mlqt/dictionary.txt`.
 
 ## Architecture
 
@@ -17,8 +17,9 @@ ModelicaParser (core logic, no service dependencies)
   SpellChecking/
     SpellChecker.cs          - Hunspell wrapper, thread-safe word checking
     TextExtractor.cs         - HTML stripping, tokenization, word filtering
-    Dictionaries/            - Embedded .aff/.dic files + modelica_terms.txt
+    Dictionaries/            - Embedded .aff/.dic files + modelica_terms*.txt
   StyleRules/
+    SpellCheckVisitorBase.cs   - Shared scope handling (names in scope, own + inherited)
     SpellCheckDescriptions.cs  - Visitor for description strings
     SpellCheckDocumentation.cs - Visitor for Documentation annotations
 
@@ -29,13 +30,17 @@ ModelicaGraph (orchestration)
 MLQT.Services (lifecycle, persistence)
   StyleCheckingService.cs    - Spell checker lifecycle, lazy init, language invalidation
   StyleCheckingWorker.cs     - Passes spell checker to RunStyleChecking()
-  CustomDictionaryService.cs - User word list at %LocalAppData%/MLQT/custom_dictionary.txt
+  CustomDictionaryService.cs - Per-repo accepted words at <repo>/.mlqt/dictionary.txt
+  Checking/DictionaryScope.cs - Which repo's word list applies to a class/library
   DictionaryManagerService.cs - Imported dictionaries at %LocalAppData%/MLQT/Dictionaries/
 
 MLQT.Shared (UI)
   Pages/CodeReview.razor     - Click issue -> scroll/underline word; right-click word -> correction menu (Suggestions, Replace with, Add to Dictionary, Ignore, Close)
-  Components/SettingsStyleChecking.razor  - Default language selection + custom dictionary management
-  Components/SettingsRepositories.razor   - Per-repo language selection
+    Ignore writes __MLQT(spelling="word") onto the class (MlqtSuppressionWriter) and saves the file
+  Components/SettingsRepositories.razor   - Per-repo language selection + Import Language, with a
+                                            warning when a chosen language has no dictionary here
+                                            (DictionaryAvailability.WarningFor)
+  Components/SettingsRepositoryDictionary.razor - Per-repo accepted spellings (add/remove/filter/import/export)
 ```
 
 ## SpellChecker Class
@@ -64,9 +69,11 @@ checker.AddCustomWord("newterm");
 
 Key design decisions:
 - `WordList.Check()` is thread-safe for concurrent reads
-- Custom words use `HashSet<string>(StringComparer.OrdinalIgnoreCase)` with a `lock` for thread-safe adds
+- Accepted words use `HashSet<string>(StringComparer.OrdinalIgnoreCase)` with a `lock` for thread-safe adds
 - Embedded dictionaries loaded via `Assembly.GetManifestResourceStream()`
-- `modelica_terms.txt` embedded resource provides built-in Modelica-specific terms
+- `modelica_terms.txt` (embedded) provides the built-in Modelica/engineering vocabulary, and
+  `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt` the dialect-specific spellings — see
+  **Built-in Term Lists** below
 - `contextWords` parameter allows callers to pass model-scoped valid words without modifying shared state
 - `DictionarySource` record: `(string AffixFilePath, string DictionaryFilePath)` for file-based dictionaries
 
@@ -101,15 +108,24 @@ Static utility methods for preparing text before spell checking.
 
 ## Style Rule Visitors
 
-Both extend `VisitorWithModelNameTracking` and follow the standard style rule pattern.
+Both extend `SpellCheckVisitorBase` (itself a `VisitorWithModelNameTracking`) and follow the standard style rule pattern.
+
+### SpellCheckVisitorBase
+
+**File:** `ModelicaParser/StyleRules/SpellCheckVisitorBase.cs`
+
+Owns the names that count as valid words inside the class being checked, and the `IsSpelledCorrectly(word)` both visitors call.
+
+- **Collected up front.** On entering a class the base scans the class body's element lists for component names and nested class names, so the class's own description string and `Documentation` annotation — both written before the declarations are reached — see every name. Names are pushed/popped per class scope via `OnClassEntered`/`OnClassExited`; `AddNameToScope` still catches declarations the scan does not reach.
+- **Inherited names.** The optional `inheritedElementNames` callback, `Func<string modelId, IReadOnlySet<string>>`, supplies the names a class inherits through `extends`. Resolving a base class needs the dependency graph, so the callback comes from `ModelicaGraph.StyleChecking.CreateInheritedElementNamesCallback(graph)` (which uses `ClassElementResolver`, including protected members and the whole chain, cached per class). With no callback only the class's own declarations are known.
+- **`OnClassScopeReady(context)`** — hook called once the scope is populated and before the class body is walked; `SpellCheckDescriptions` checks the class description there.
+- **Known model names are not merged into the scope.** They are passed straight to `IsCorrect(word, knownModelNames)`; merging built a fresh copy of a set holding every class in the graph for every description string checked.
 
 ### SpellCheckDescriptions
 
 **File:** `ModelicaParser/StyleRules/SpellCheckDescriptions.cs`
 
-Checks `string_comment()` on classes and `comment().string_comment()` on components. Collects component/variable names per class scope as context words.
-
-**Scoped context words:** As the visitor traverses, it collects component names from `component_declaration.declaration.IDENT()` into a per-class `HashSet<string>`. These are passed to `IsCorrect(word, contextWords)` so references to local variables in descriptions are not flagged.
+Checks `string_comment()` on classes (via `OnClassScopeReady`) and `comment().string_comment()` on components. The names in scope come from `SpellCheckVisitorBase`, so references to the class's own and inherited members are not flagged.
 
 **Line number calculation:**
 ```csharp
@@ -123,7 +139,7 @@ var lineNumber = startLine + TextExtractor.CountNewlinesBefore(text, charOffset)
 
 Overrides `VisitElement_modification` to detect `Documentation` -> `info` / `revisions` annotation paths. Uses `StripHtmlPreservingNewlines()` for accurate line counting in multi-line HTML content.
 
-Same scoped component name collection as SpellCheckDescriptions. Same context words pattern.
+Uses the same scope handling as SpellCheckDescriptions, from `SpellCheckVisitorBase`.
 
 **Violation messages:**
 - `"Misspelled word '{word}' in description"` (from SpellCheckDescriptions)
@@ -141,10 +157,12 @@ public static List<LogMessage> RunStyleChecking(
     string fullModelId = "",
     IReadOnlySet<string>? knownModelIds = null,
     SpellChecker? spellChecker = null,
-    IReadOnlySet<string>? knownModelNames = null)
+    IReadOnlySet<string>? knownModelNames = null,
+    ...
+    Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
 ```
 
-Spell check visitors are instantiated at the end of the method when the corresponding setting is enabled and a `spellChecker` is provided.
+Spell check visitors are instantiated at the end of the method when the corresponding setting is enabled and a `spellChecker` is provided. `inheritedElementNames` is passed to both; `StyleCheckContext.InheritedElementNames` builds it once per check operation (GUI, CLI and MCP all go through `StyleCheckRunner`, so they agree).
 
 ## StyleCheckingSettings
 
@@ -162,24 +180,24 @@ These settings exist both in the default app settings and per-repository setting
 
 **File:** `MLQT.Services/StyleCheckingService.cs`
 
-The `SpellChecker` instance is lazily created and cached. It is invalidated and recreated when:
-- Language selection changes (`_lastLanguages` tracks current languages)
-- Custom dictionary changes (`OnDictionaryChanged` event from `ICustomDictionaryService`)
-- Imported dictionaries change (`OnDictionariesChanged` event from `IDictionaryManagerService`)
-- `ReloadSpellChecker()` is called explicitly
+`SpellChecker` instances are cached **one per repository root** (`_spellCheckers`), because each
+repository has its own accepted words — a shared instance would let one repository's spellings silence
+findings in another. An entry is dropped and rebuilt when:
+- That repository's languages change (the cached languages are compared on every `EnsureSpellChecker`)
+- That repository's word list changes (`OnDictionaryChanged(root)` removes just that entry)
+- Imported dictionaries change (`OnDictionariesChanged` clears them all — the language data itself moved)
 
 ```csharp
-private SpellChecker? GetSpellCheckerIfNeeded(StyleCheckingSettings settings)
+public SpellChecker? GetSpellCheckerIfNeeded(Repository repository)
 {
-    if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-        return EnsureSpellChecker(settings.SpellCheckLanguages);
-    return null;
+    // ... returns null unless a spell-check rule is on
+    return EnsureSpellChecker(repository.LocalPath, settings.SpellCheckLanguages);
 }
 ```
 
 **Dictionary separation:** `CreateSpellChecker()` separates bundled language codes (loaded from embedded resources) from imported ones (loaded from file paths via `IDictionaryManagerService.GetImportedDictionaryPaths()`).
 
-**Custom dictionary loading:** On first use, `EnsureSpellChecker` calls `ICustomDictionaryService.LoadAsync()` to ensure the custom dictionary is loaded from disk before creating the spell checker.
+**Accepted words:** `EnsureSpellChecker(repositoryRoot, languages)` takes the words from `ICustomDictionaryService.WordsFor(repositoryRoot)`. The CLI and MCP server go through `SpellCheckerFactory.Build(languages, customWords, dictionaryManager)`, which takes the words as a parameter so every call site has to state whose they are.
 
 ## StyleCheckingWorker
 
@@ -200,16 +218,32 @@ This ensures any loaded model name (e.g., "Step" from "Modelica.Blocks.Sources.S
 **File:** `MLQT.Services/CustomDictionaryService.cs`
 **Interface:** `MLQT.Services/Interfaces/ICustomDictionaryService.cs`
 
-Persists user-specific custom words at `%LocalAppData%/MLQT/custom_dictionary.txt`. One word per line, sorted, case-insensitive. Shared across all repositories.
+Accepted words belong to a **repository**, not to a machine or a user: `<repo>/.mlqt/dictionary.txt`,
+beside `settings.json`, committed with the code. That is the whole point — the app and `mlqt check`
+read the same file, so a word accepted in the app is accepted in CI. A machine-wide list could not
+give that, and the resulting disagreement was invisible in both results.
+
+Every method takes the repository root. One word per line, sorted, case-insensitive, `#` comments
+allowed. Words are cached per root and re-read when the file changes.
 
 | Method | Purpose |
 |--------|---------|
-| `LoadAsync()` | Load from disk (called lazily on first spell check) |
-| `AddWordAsync(word)` | Add word, persist, fire `OnDictionaryChanged` |
-| `RemoveWordAsync(word)` | Remove word, persist, fire `OnDictionaryChanged` |
-| `ImportAsync(filePath)` | Replace dictionary with file contents |
-| `ExportAsync(filePath)` | Write current dictionary to file |
-| `MergeAsync(filePath)` | Union file words into current dictionary |
+| `WordsFor(root)` | Cached words for a repository; empty for `null`/unknown roots (never someone else's) |
+| `LoadAsync(root)` | Read from disk and refresh the cache |
+| `AddWordAsync(root, word)` | Add, persist, fire `OnDictionaryChanged(root)` |
+| `RemoveWordAsync(root, word)` | Remove, persist, fire `OnDictionaryChanged(root)` |
+| `MergeFromAsync(root, file)` | Union a file's words in; returns how many were new |
+| `ExportAsync(root, file)` | Write this repository's words out |
+| `PathFor(root)` | `<root>/.mlqt/dictionary.txt` |
+| `LegacyMachineDictionaryPath` | The pre-move `%LocalAppData%/MLQT/custom_dictionary.txt`, if it still exists — offered for import only, **never read for checking** |
+
+`OnDictionaryChanged` carries the root so listeners can invalidate just that repository.
+
+**`DictionaryScope`** (`MLQT.Services/Checking/DictionaryScope.cs`) is the single answer to "whose list
+applies?" — `RootForModel(libraries, repositories, modelId)` and `RootForLibrary(repositories,
+library)`. Null means *no list*, not *some other list*: libraries loaded outside a repository, and
+encrypted libraries reconstructed from vendor documentation. Use it everywhere rather than re-deriving
+the mapping, or the app and the CLI drift apart one level below where they used to.
 
 ## Dictionary Manager Service
 
@@ -250,7 +284,7 @@ Misspelled words are highlighted directly in the rendered Modelica source on the
 **Correction menu options:** (this is the only spelling action surface — the old click-popover was removed)
 - One entry per `SpellChecker.Suggest(word)` suggestion — selecting one applies it.
 - A free-text input (`_customCorrection`, applied on Enter via `OnCustomCorrectionKeyDown` or the **Apply** button) so the user can type their own spelling when no suggestion fits.
-- **Add to Dictionary** (`AddToDictionary`) — adds the word to the custom dictionary and removes ALL violations for that word across all models.
+- **Add to Dictionary** (`AddToDictionary`) — adds the word to the list of the repository owning the class being viewed (via `DictionaryScope`) and removes violations for that word within that repository. Disabled, with a tooltip, when the class belongs to no repository.
 - **Ignore** (`IgnoreSpellingViolation`) — removes this single violation without touching the dictionary.
 - **Close** (`CloseContextMenu`) — dismisses the menu without any action.
 
@@ -275,7 +309,7 @@ Default settings page includes:
 - Toggle switches for `SpellCheckDescription` and `SpellCheckDocumentation`
 - Multi-select dropdown for active language dictionaries (bundled + imported)
 - "Import Language" button (picks `.aff` file, validates matching `.dic` exists)
-- Collapsible custom dictionary panel with add/remove/filter/import/export
+- Per-repository accepted-spellings panel (`SettingsRepositoryDictionary.razor`) with add/remove/filter/import/export, plus an "Import machine list" button while the pre-move file still exists
 
 ### Settings - Repositories (SettingsRepositories.razor)
 
@@ -290,6 +324,61 @@ Per-repository settings dialog includes the same language multi-select and impor
 5. Update `StyleCheckingSettings.SpellCheckLanguages` default if it should be enabled by default
 6. Optionally add a display name mapping in `DictionaryManagerService.FormatDisplayName()`
 
+## Built-in Term Lists
+
+**Files:** `ModelicaParser/SpellChecking/Dictionaries/modelica_terms.txt`,
+`modelica_terms_en_US.txt`, `modelica_terms_en_GB.txt` (embedded resources, loaded in
+`SpellChecker.Create` into the same accepted-word set as a repository's `.mlqt/dictionary.txt`).
+
+The vocabulary every Modelica library needs and no English dictionary has: the language and its
+tools, and the engineering, thermodynamic, electrical and mathematical terms the bundled
+en_US/en_GB dictionaries do not carry. It exists so the same words are not accepted repository by
+repository, one `.mlqt/dictionary.txt` entry at a time.
+
+- **Always loaded**, whichever languages a repository selected; `#` starts a comment, so the lists
+  carry their own explanation and are grouped by subject.
+- **No affix rules.** A form the dictionaries cannot derive — a plural, a participle — needs its own
+  line, which is why `linearize`, `linearized` and `linearizing` are all listed.
+- **Dialect-split.** A term whose American and British spellings differ, and that *neither*
+  dictionary carries, lives in `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt`, loaded only
+  when that language is among the repository's chosen ones. A repository that has settled on one
+  dialect is not handed the other's spelling by the tool — an `en_US` repository accepts
+  `linearization` and still reports `linearisation`, and the reverse for `en_GB`.
+- **No duplication with the dictionaries.** Nothing belongs in these lists that the bundled
+  dictionaries already accept; that only makes the list look bigger than the gap it fills. The
+  bundled en_GB is roughly twice the size of en_US (94k vs 48k entries) and carries a lot of
+  technical vocabulary en_US lacks — that vocabulary belongs here, where every repository gets it,
+  rather than being had by enabling en_GB, which would also accept every British spelling.
+
+**Naming:** the dialect files are `modelica_terms_en_US.txt`, not `modelica_terms.en_US.txt` —
+MSBuild reads a language between two dots as a culture and compiles the file into a satellite
+assembly, where it is not an embedded resource of ModelicaParser and never loads.
+
+## Accepting a Word: Three Scopes
+
+| Scope | Where it lives | Written by |
+|-------|----------------|------------|
+| One class | `__MLQT(spelling="word")` in the class's source | Code Review's **Ignore**, MCP `accept_spelling_in_class` |
+| One repository | `<repo>/.mlqt/dictionary.txt` | Code Review's **Add to Dictionary**, the repository dictionary settings page |
+| Every check, every repository | `modelica_terms.txt` (+ the dialect list for the chosen language) | Editing ModelicaParser |
+
+`__MLQT(spelling="…")` is a comma-separated list on the class, read by `MlqtSuppressionExtractor`
+into `SuppressionSet` and applied in `StyleChecking.RunStyleCheckingFindings`'s suppression pass —
+so the GUI, the CLI and MCP all honour it, and `mlqt check --no-suppress` audits past it.
+
+- **Word-scoped, not rule-scoped.** Suppressing `MLQT.Spelling.Description` for the class would
+  silence every other misspelling in it. `spelling` waives only the listed words.
+- **The word comes from the finding's message** (`SpellingMessage.WordFrom`), not its
+  `Discriminator`: a documentation finding's discriminator carries the section as well as the word,
+  and its shape is part of the fingerprint baselines are keyed on.
+- **Case-insensitive, and covers the possessive**, exactly as the repository word list does.
+- **Written on a component, read as the class's.** A spelling finding names no element, so a
+  component-scoped list could never match one; reading it as the class's keeps such an annotation
+  from silently doing nothing.
+- `MlqtSuppressionWriter.TryAddSpellingException(ToFile)` writes it, merging into an existing
+  `__MLQT`, an existing `spelling` list, or an existing plain annotation. Words carrying a quote or
+  a comma are refused — the list is a comma-separated Modelica string.
+
 ## Test Files
 
 | Test File | Coverage |
@@ -298,16 +387,21 @@ Per-repository settings dialog includes the same language multi-select and impor
 | `ModelicaParser.Tests/SpellChecking/TextExtractorTests.cs` | HTML stripping, tokenization, ShouldSkipWord, line counting |
 | `ModelicaParser.Tests/StyleRuleChecks/SpellCheckDescriptionsTests.cs` | Description checking, component names, model names, multi-line |
 | `ModelicaParser.Tests/StyleRuleChecks/SpellCheckDocumentationTests.cs` | Documentation checking, HTML handling, code blocks, line numbers |
+| `ModelicaParser.Tests/StyleRuleChecks/SpellCheckInheritedNamesTests.cs` | Names in scope: declared in any order, inherited via the lookup, possessives |
+| `ModelicaGraph.Tests/InheritedElementNamesTests.cs` | `CreateInheritedElementNamesCallback` over a graph, and end-to-end with/without the chain |
 | `MLQT.Services.Tests/DictionaryManagerServiceTests.cs` | Import, remove, scan, display names, events |
 | `MLQT.Services.Tests/StyleCheckingServiceTests.cs` | End-to-end style checking with spell checker stubs |
 | `ModelicaGraph.Tests/StyleCheckingTests.cs` | HasAnyStyleRuleEnabled includes spell check settings |
+| `ModelicaGraph.Tests/SpellingSuppressionTests.cs` | `__MLQT(spelling="…")` end to end: word scope, class scope, possessives, `--no-suppress` |
+| `ModelicaParser.Tests/StyleRuleChecks/MlqtSuppressionWriterTests.cs` | Writing and merging the annotation, including the spelling list |
+| `MLQT.McpServer.Tests/SuppressionToolsTests.cs` | `accept_spelling_in_class` |
 
 ## Key Design Decisions
 
 1. **No `Suggest()` during background checking** — only called on-demand from the right-click correction menu to avoid performance overhead
-2. **Context words are per-call, not shared** — component names are scoped to the model being checked, model names are shared across all checks in a run
+2. **Context words are per-call, not shared** — element names are scoped to the class being checked (its own plus everything up its `extends` chain), model names are shared across all checks in a run
 3. **Spell checker is cached and invalidated** — recreated only when languages or dictionaries change, not per-model
-4. **Custom dictionary is separate from language dictionaries** — custom words are always included regardless of language selection
+4. **Accepted words are separate from language dictionaries** — a repository's words are always included regardless of language selection
 5. **HTML entity handling** — decoded entities with non-ASCII characters (e.g., `\u0394` from `&Delta;`) are skipped entirely via `ShouldSkipWord`
 6. **Line numbers use newline counting** — `StripHtmlPreservingNewlines` + `CountNewlinesBefore` provides accurate line mapping even through HTML removal and `<pre>` blocks
 7. **Nested classes skipped** — `VisitorWithModelNameTracking` skips nested class definitions (depth > 1). Each nested class has its own `ModelNode` and is checked independently, preventing duplicate violations

@@ -375,4 +375,34 @@ public class NamingValidatorTests
         Assert.DoesNotMatch(regex, "frame");
     }
 
+
+    [Fact]
+    public void IsValid_APatternThatTimesOut_DoesNotThrow()
+    {
+        // The additional patterns come from settings and are matched with a timeout, which is
+        // wall-clock: a thread that loses the CPU, or a blocking collection, can spend the budget
+        // without the pattern doing any work. Letting that exception escape cost the class every one
+        // of its findings — whole classes vanished from a run, and the totals moved between runs of
+        // the same tool on the same code.
+        var catastrophic = new Regex(@"^(a+)+$", RegexOptions.None, TimeSpan.FromMilliseconds(1));
+        var name = new string('a', 40) + "!";
+
+        var valid = NamingValidator.IsValid(
+            name, NamingStyle.PascalCase, allowSuffixes: false, additionalPatterns: [catastrophic]);
+
+        // The pattern could not answer, so it does not excuse the name — but the check completes.
+        Assert.False(valid);
+    }
+
+    [Fact]
+    public void IsValid_APatternThatTimesOut_DoesNotStopTheOnesAfterIt()
+    {
+        var catastrophic = new Regex(@"^(a+)+$", RegexOptions.None, TimeSpan.FromMilliseconds(1));
+        var accepts = new Regex(@"^a+!$");
+        var name = new string('a', 40) + "!";
+
+        Assert.True(NamingValidator.IsValid(
+            name, NamingStyle.PascalCase, allowSuffixes: false,
+            additionalPatterns: [catastrophic, accepts]));
+    }
 }

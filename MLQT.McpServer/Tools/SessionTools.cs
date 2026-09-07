@@ -4,6 +4,8 @@ using ModelContextProtocol.Server;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
+using MLQT.Services;
+using ModelicaParser.Helpers;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
@@ -133,8 +135,8 @@ public sealed class SessionTools
             return new ToolError($"Could not create the library folder '{libraryDir}': {ex.Message}.");
         }
 
-        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), packageContent);
-        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), string.Empty);
+        await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), packageContent);
+        await ModelicaFileEncoding.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), string.Empty);
 
         if (!loadIntoSession)
             return new CreateLibraryResult(name, libraryDir, null, Loaded: false, PreviewOnly: false, null);
@@ -147,33 +149,43 @@ public sealed class SessionTools
     [Description("Load a single Modelica library directly (not via a repository): pass either the library " +
                 "directory (containing package.mo), the path to its package.mo, or a single standalone .mo " +
                 "file. Pointing at a package.mo loads the WHOLE library (its directory, including standalone " +
-                "child .mo files), not just that one file. Returns the loaded library summary. For a " +
+                "child .mo files), not just that one file. Also accepts an ENCRYPTED library (a directory " +
+                "holding a package.moe): its classes are recovered from the vendor's generated help " +
+                "documentation, giving names, descriptions, base classes and whether each has an icon — " +
+                "enough for references into it to resolve — but no source, so it is read-only and is never " +
+                "reported on. Returns the loaded library summary. For a " +
                 "repository root containing several libraries, use load_repository instead.")]
     public async Task<object> LoadLibrary(
         [Description("Absolute path to a library directory, its package.mo, or a single standalone .mo file.")]
         string path)
     {
         LoadedLibrary library;
-        if (File.Exists(path) && string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            // A package.mo IS the root of a directory package: load the whole library (its directory), not
-            // just that one file — otherwise standalone child .mo files are missed. Callers routinely point
-            // load_library at ".../MyLib/package.mo" meaning "load MyLib".
-            library = await _libraries.AddLibraryFromDirectoryAsync(Path.GetDirectoryName(path)!);
+            // How each shape of path loads — a directory, a package.mo meaning its whole library, a
+            // standalone .mo file, an encrypted package.moe — is decided in one place for every
+            // surface, so this tool cannot fall out of step with the app or the CLI.
+            library = await _libraries.AddLibraryFromPathAsync(path);
         }
-        else if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-        {
-            library = await _libraries.AddLibraryFromFileAsync(path);
-        }
-        else if (Directory.Exists(path))
-        {
-            library = await _libraries.AddLibraryFromDirectoryAsync(path);
-        }
-        else
+        catch (ArgumentException)
         {
             return new ToolError(
                 $"Path not found, or not a .mo file / directory: '{path}'. Pass an absolute path to a " +
                 "library directory containing a package.mo file, or to a single .mo file.");
+        }
+
+        if (library.SourceType == LibrarySourceType.EncryptedDirectory)
+        {
+            if (library.ModelIds.Count == 0)
+            {
+                _libraries.RemoveLibrary(library.Id);
+                return new ToolError(
+                    $"'{library.Name}' at '{path}' is an encrypted library that ships no usable " +
+                    "documentation, so none of its classes could be recovered. References into it will " +
+                    "stay unresolved; there is nothing to load.");
+            }
+
+            return ToSummary(library);
         }
 
         // A directory with no package.mo (or an empty one) loads nothing — tell the caller how to fix it
@@ -309,13 +321,12 @@ public sealed class SessionTools
             return;
         }
 
-        // Directly-loaded library: rebuild it from its source path (handles added/removed/edited files).
+        // Directly-loaded library: rebuild it from its source path (handles added/removed/edited
+        // files). The path is reloaded the same way it was loaded, because that decision is made
+        // from the path rather than remembered here.
         var path = library.SourcePath;
         _libraries.RemoveLibrary(library.Id);
-        if (library.SourceType == LibrarySourceType.File)
-            await _libraries.AddLibraryFromFileAsync(path);
-        else
-            await _libraries.AddLibraryFromDirectoryAsync(path);
+        await _libraries.AddLibraryFromPathAsync(path);
     }
 
     private void ResetAnalysis()

@@ -82,6 +82,55 @@ public class ViewToolsTests
         return new ViewTools(h.Libraries);
     }
 
+    // A parameter carrying both a type modification and a binding — one parameter declaration in eight
+    // in the Modelica Standard Library, and the shape that used to come back as "(min=0)=1".
+    private const string ConstrainedPackage = """
+        within;
+        package C "c"
+          model Sized "a sized thing"
+            parameter Real length(min = 0) = 1 "the length";
+            parameter Real plain = 2 "no constraint";
+            Real x(unit = "m") "constrained, unbound";
+          end Sized;
+        end C;
+        """;
+
+    [Fact]
+    public void Interface_AParametersDefaultIsAValue_NotItsTypeConstraint()
+    {
+        // An agent reads `default` to answer "what is this set to?" and to write a modification. Handing
+        // it "(min=0)=1" answers neither question and does not parse if written back.
+        using var host = new TestHost();
+        var view = ToolAssert.Ok<ClassInterfaceView>(
+            LoadContent(host, ConstrainedPackage).GetClassInterface("C.Sized"));
+
+        var length = view.Parameters.Single(p => p.Name == "length");
+        Assert.Equal("1", length.Default);
+        Assert.Equal("(min=0)", length.TypeModification);
+
+        var plain = view.Parameters.Single(p => p.Name == "plain");
+        Assert.Equal("2", plain.Default);
+        Assert.Null(plain.TypeModification);
+    }
+
+    [Fact]
+    public void ListElements_ReportsTheBindingAndTheTypeModificationApart()
+    {
+        using var host = new TestHost();
+        var result = ToolAssert.Ok<ClassElementsResult>(
+            LoadContent(host, ConstrainedPackage).ListClassElements("C.Sized"));
+
+        var length = result.Elements.Single(e => e.Name == "length");
+        Assert.Equal("1", length.Default);
+        Assert.Equal("(min=0)", length.TypeModification);
+
+        // Constrained but bound to nothing: it has no default at all, which is a different answer from
+        // "its default is (unit=\"m\")".
+        var x = result.Elements.Single(e => e.Name == "x");
+        Assert.Null(x.Default);
+        Assert.Equal("(unit=\"m\")", x.TypeModification);
+    }
+
     [Fact]
     public void Interface_ParametersConnectorsExtendsDescription()
     {

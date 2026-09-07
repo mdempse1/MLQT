@@ -66,7 +66,7 @@ Pulls the latest changes from the remote repository into your local working copy
 
 Opens the **Commit Changes** dialog where you can review modified files, select which ones to include, and write a commit message.
 
-![Screenshot: The Commit Changes dialog showing the commit message text field at top, the optional issue ID field, and below that the ChangeReview component listing modified files with checkboxes. The "Commit (4 files)" button should be visible at the bottom.](Images/git-operations-1.png)
+![Screenshot: The Commit Changes dialog showing the commit message text field at top, the optional finding ID field, and below that the ChangeReview component listing modified files with checkboxes. The "Commit (4 files)" button should be visible at the bottom.](Images/git-operations-1.png)
 
 ### Dialog Fields
 
@@ -75,10 +75,10 @@ Opens the **Commit Changes** dialog where you can review modified files, select 
 | **Commit message** | Required. A description of what you changed and why. |
 | **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). The issue or ticket number associated with this change. |
 
-### Issue Number Handling
+### Finding Number Handling
 
 If the repository setting **Require an issue number as part of the commit message** is enabled:
-- An additional text field appears for the issue ID
+- An additional text field appears for the finding ID
 - You cannot commit without entering an issue number
 - The issue number is automatically prepended or appended to your commit message depending on the **Issue number position** setting
 
@@ -95,7 +95,7 @@ A Git commit is a purely local operation — it records your staged changes in t
 - The commit dialog closes and shows a success message
 - The repository header updates to show the new commit hash
 - The tree refreshes to clear VCS status chips from committed files
-- The issues list is **not** recalculated (a commit does not change file content)
+- The findings list is **not** recalculated (a commit does not change file content)
 
 ---
 

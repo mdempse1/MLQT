@@ -81,12 +81,35 @@ public static class SpellingCorrector
     }
 
     /// <summary>
+    /// Puts a file's own line endings and trailing newline back after a correction.
+    /// <see cref="ReplaceWordInStrings"/> works on normalised text, so without this a one-word fix
+    /// rewrites every line of a CRLF file and the change is unreviewable.
+    /// </summary>
+    public static string MatchFileEnding(string original, string corrected)
+    {
+        if (original.Contains("\r\n"))
+            corrected = corrected.Replace("\n", "\r\n");
+
+        return corrected + original[original.TrimEnd(' ', '\t', '\r', '\n').Length..];
+    }
+
+    /// <summary>
     /// Builds a case-sensitive whole-word matcher whose boundaries mirror
-    /// <see cref="TextExtractor.TokenizeToWords"/> (word characters are letters, digits,
-    /// apostrophes and underscores), so a correction never matches a substring of a larger token.
+    /// <see cref="TextExtractor.TokenizeToWords"/>, so a correction matches exactly the tokens the
+    /// spell checker reported and never a substring of a larger one.
+    ///
+    /// <para>The tokenizer treats apostrophes and underscores as word characters but then trims them
+    /// off the ends, so <c>'ivc'</c> is reported as <c>ivc</c> while <c>Stodola's</c> is reported
+    /// whole. Treating them simply as word characters here — which is what this did — meant a word
+    /// the source had quoted could be reported and then not found when the user tried to correct it.
+    /// So an apostrophe or underscore beside the word is allowed when it is the end of the token, and
+    /// refused when something word-like follows it: <c>ivc</c> matches inside <c>'ivc'</c>, and
+    /// <c>Stodola</c> still does not match inside <c>Stodola's</c>.</para>
     /// </summary>
     private static Regex BuildWordRegex(string word) =>
-        new(@"(?<![\p{L}\p{N}'_])" + Regex.Escape(word) + @"(?![\p{L}\p{N}'_])",
+        new(@"(?<![\p{L}\p{N}])(?<![\p{L}\p{N}'_]['_])"
+            + Regex.Escape(word)
+            + @"(?![\p{L}\p{N}])(?!['_][\p{L}\p{N}'_])",
             RegexOptions.Compiled);
 
     /// <summary>

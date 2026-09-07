@@ -86,6 +86,7 @@ public static class GraphBuilder
                 modelNode.StartIndex = modelInfo.StartIndex;
                 modelNode.StopIndex = modelInfo.StopIndex;
                 modelNode.IsNested = modelInfo.IsNested;
+                modelNode.IsPublic = modelInfo.IsPublic;
                 modelNode.CanBeStoredStandalone = modelInfo.CanBeStoredStandalone;
                 modelNode.HasExperimentAnnotation = modelInfo.HasExperimentAnnotation;
                 modelNode.ElementPrefix = modelInfo.ElementPrefix;
@@ -134,6 +135,19 @@ public static class GraphBuilder
             // This makes errors available immediately after loading (before EnsureParsed runs).
             if (fileParserErrors.Count > 0)
             {
+                // The file's diagnosis is settled here, and it is the good one: whole-file context,
+                // real line numbers. Every class in the file is therefore barred from recording its
+                // own copy when something parses it later — which each enclosing class would
+                // otherwise do, since they all contain the broken text and all fail for the same
+                // reason. See ModelDefinition.MayRecordParserErrors.
+                foreach (var modelInfo in models)
+                {
+                    var id = GenerateModelId(modelInfo.ParentModelName, modelInfo.Name);
+                    var node = graph.GetNode<ModelNode>(id);
+                    if (node is not null)
+                        node.Definition.MayRecordParserErrors = false;
+                }
+
                 foreach (var error in fileParserErrors)
                 {
                     // Find the model whose line range contains this error
@@ -331,7 +345,7 @@ public static class GraphBuilder
             {
                 try
                 {
-                    var models = LoadModelicaFile(graph, filePath, File.ReadAllText(filePath, Encoding.Latin1));
+                    var models = LoadModelicaFile(graph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                     foreach (var model in models)
                     {
                         modelIDs.Add(model);
@@ -389,7 +403,7 @@ public static class GraphBuilder
                     if (File.Exists(packageOrderPath))
                     {
                         // Read the package.order file
-                        var packageOrderContent = File.ReadAllLines(packageOrderPath, Encoding.Latin1);
+                        var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
 
                         // Find the TOP-LEVEL package model from the package.mo file
                         // A package.order file only applies to the main package in the file, not nested packages
@@ -453,16 +467,31 @@ public static class GraphBuilder
     /// </summary>
     /// <param name="graph">The graph to analyze.</param>
     /// <param name="libraries">Library information for resolving modelica:// URIs.</param>
+    /// <param name="onModelFailed">Optional callback for a model that could not be analysed, or whose
+    /// <paramref name="postAnalysisAction"/> threw. Without it such a model is skipped in silence: its
+    /// edges are absent and any work the caller hung on the callback never happened, which reads as a
+    /// smaller library rather than as a failure.</param>
     /// <param name="postAnalysisAction">Optional callback invoked for each model after dependency
     /// analysis while the parse tree is still available. This allows callers to piggyback on the
     /// parse (e.g., run style checking) without requiring a separate re-parse pass.</param>
-    public static async Task AnalyzeDependenciesAsync(DirectedGraph graph, IEnumerable<LibraryInfo>? libraries = null, Action<string>? progressLog = null, Action<ModelNode>? postAnalysisAction = null)
+    public static async Task AnalyzeDependenciesAsync(DirectedGraph graph, IEnumerable<LibraryInfo>? libraries = null, Action<string>? progressLog = null, Action<ModelNode>? postAnalysisAction = null, Action<ModelNode, Exception>? onModelFailed = null)
     {
         const int batchSize = 500;
 
         // Placeholder nodes carry raw (unparseable) file content and already have a fatal
         // error attached — re-parsing them wastes work and produces noise. Skip them here.
-        var allModels = graph.ModelNodes.Where(m => !m.IsParseFailurePlaceholder).ToList();
+        //
+        // External stubs are skipped for a different reason: there is nothing in them to analyse.
+        // A stub's source is a synthesized declaration — a name, a description, its extends clauses
+        // and an icon — with no components, equations or resource references, so visiting it can
+        // only ever produce edges to its own base classes. Nothing reads those: the analyses ask
+        // what uses a *checked* class, and the edges that answer that are created from the user's
+        // side when the user's own models are analysed. Reference libraries can outnumber the code
+        // under check many times over (a Dymola install contributes ~38k classes), so analysing
+        // them is the difference between a check that takes seconds and one that takes minutes.
+        var allModels = graph.ModelNodes
+            .Where(m => !m.IsParseFailurePlaceholder && !m.IsExternalStub)
+            .ToList();
         progressLog?.Invoke($"Starting dependency analysis for {allModels.Count} models");
 
         // Phase 1+2: Parse, analyze, and add edges in batches to limit peak memory.
@@ -489,17 +518,32 @@ public static class GraphBuilder
                     var analyzer = new ModelAnalyzer(model.Id, graph);
                     analyzer.Visit(parseTree);
 
-                    // Run the post-analysis callback while the parse tree is still available
-                    postAnalysisAction?.Invoke(model);
+                    // Run the post-analysis callback while the parse tree is still available, under
+                    // its own guard. The caller hangs its own work here — the app checks style during
+                    // this pass rather than walking every class twice — and sharing one catch meant a
+                    // check that threw also cost the model its dependency edges, or the other way
+                    // round. Both then went missing without a word, which is how a startup run came to
+                    // report fewer findings than the same check run again a minute later.
+                    try
+                    {
+                        postAnalysisAction?.Invoke(model);
+                    }
+                    catch (Exception ex)
+                    {
+                        onModelFailed?.Invoke(model, ex);
+                    }
 
                     // Release parse tree immediately to free memory
                     model.Definition.ParsedCode = null;
 
                     batchResults.Add((model.Id, analyzer.ReferencedModels, analyzer.Resources));
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // If analysis fails, skip this model
+                    // One model that cannot be analysed must not stop the pass, but it must not
+                    // vanish from it either: its edges are missing, and everything downstream that
+                    // reads them is quietly working from less than it thinks.
+                    onModelFailed?.Invoke(model, ex);
                 }
             });
 
@@ -534,6 +578,8 @@ public static class GraphBuilder
 
         if (hasTrackedParams)
         {
+            // Built once for the whole pass: it describes the graph, not any one model.
+            var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
             totalProcessed = 0;
             foreach (var batch in Batch(allModels, batchSize))
             {
@@ -546,7 +592,7 @@ public static class GraphBuilder
                         var parseTree = model.Definition.EnsureParsed();
                         if (parseTree == null) return;
 
-                        var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph);
+                        var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph, parameterIndex);
                         modAnalyzer.Visit(parseTree);
 
                         // Release parse tree immediately
@@ -616,6 +662,9 @@ public static class GraphBuilder
             }
         }
 
+        // Only now are UsedModelIds/UsedByModelIds complete. Consumers that need the edges gate on
+        // this flag rather than inspecting the graph, so it must be set last.
+        graph.MarkDependenciesAnalyzed();
         progressLog?.Invoke("Dependency analysis complete");
     }
 
@@ -646,13 +695,18 @@ public static class GraphBuilder
     /// <param name="graph">The graph to update.</param>
     /// <param name="modelIds">IDs of models to re-analyze. IDs not found in the graph are ignored.</param>
     /// <param name="libraries">Library information for resolving modelica:// URIs.</param>
+    /// <param name="onModelFailed">Optional callback for a model that could not be analysed, or whose
+    /// <paramref name="postAnalysisAction"/> threw. Without it such a model is skipped in silence: its
+    /// edges are absent and any work the caller hung on the callback never happened, which reads as a
+    /// smaller library rather than as a failure.</param>
     /// <param name="postAnalysisAction">Optional callback invoked for each model after dependency
     /// analysis while the parse tree is still available.</param>
     public static async Task AnalyzeDependenciesForModelsAsync(
         DirectedGraph graph,
         IReadOnlySet<string> modelIds,
         IEnumerable<LibraryInfo>? libraries = null,
-        Action<ModelNode>? postAnalysisAction = null)
+        Action<ModelNode>? postAnalysisAction = null,
+        Action<ModelNode, Exception>? onModelFailed = null)
     {
         if (modelIds.Count == 0)
             return;
@@ -682,17 +736,24 @@ public static class GraphBuilder
                 var analyzer = new ModelAnalyzer(model.Id, graph);
                 analyzer.Visit(parseTree);
 
-                // Run the post-analysis callback while the parse tree is still available
-                postAnalysisAction?.Invoke(model);
+                // Its own guard — see the full-graph pass above.
+                try
+                {
+                    postAnalysisAction?.Invoke(model);
+                }
+                catch (Exception ex)
+                {
+                    onModelFailed?.Invoke(model, ex);
+                }
 
                 // Release parse tree immediately to free memory
                 model.Definition.ParsedCode = null;
 
                 analysisResults.Add((model.Id, analyzer.ReferencedModels, analyzer.Resources));
             }
-            catch
+            catch (Exception ex)
             {
-                // If analysis fails, skip this model
+                onModelFailed?.Invoke(model, ex);
             }
         });
 
@@ -718,6 +779,7 @@ public static class GraphBuilder
         if (hasTrackedParams)
         {
             var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
+            var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
 
             Parallel.ForEach(models, model =>
             {
@@ -726,7 +788,7 @@ public static class GraphBuilder
                     var parseTree = model.Definition.EnsureParsed();
                     if (parseTree == null) return;
 
-                    var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph);
+                    var modAnalyzer = new LoadSelectorModificationAnalyzer(model.Id, graph, parameterIndex);
                     modAnalyzer.Visit(parseTree);
 
                     // Release parse tree immediately
@@ -1057,7 +1119,7 @@ public static class GraphBuilder
     /// </summary>
     private static string? GetDefaultIncludeDirectory(string modelId, List<LibraryInfo> libraries)
     {
-        var libraryName = modelId.Split('.')[0];
+        var libraryName = ModelicaName.RootLibraryOf(modelId);
         var library = libraries.FirstOrDefault(l =>
             l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
 
@@ -1073,7 +1135,7 @@ public static class GraphBuilder
     /// </summary>
     private static string? GetDefaultLibraryDirectory(string modelId, List<LibraryInfo> libraries)
     {
-        var libraryName = modelId.Split('.')[0];
+        var libraryName = ModelicaName.RootLibraryOf(modelId);
         var library = libraries.FirstOrDefault(l =>
             l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
 
@@ -1217,10 +1279,6 @@ public static class GraphBuilder
     }
 
     /// <summary>
-    /// Generates a unique file ID from a file path.
-    /// On Windows, paths are normalized to lowercase for case-insensitive matching.
-    /// </summary>
-    /// <summary>
     /// Incrementally updates a graph by re-parsing only the files that changed.
     /// Removes models from changed/deleted files and re-parses changed/added files.
     /// </summary>
@@ -1290,7 +1348,7 @@ public static class GraphBuilder
             if (packageModels.Count > 0)
             {
                 var packageNode = packageModels[0]; // The package model
-                var orderLines = File.ReadAllLines(fullPath)
+                var orderLines = ModelicaFileEncoding.ReadAllLinesOnly(fullPath)
                     .Select(l => l.Trim())
                     .Where(l => !string.IsNullOrEmpty(l))
                     .ToArray();
@@ -1301,6 +1359,10 @@ public static class GraphBuilder
         return affectedModelIds.Distinct().ToList();
     }
 
+    /// <summary>
+    /// Generates a unique file ID from a file path.
+    /// On Windows, paths are normalized to lowercase for case-insensitive matching.
+    /// </summary>
     public static string GenerateFileId(string filePath)
     {
         var fullPath = Path.GetFullPath(filePath);

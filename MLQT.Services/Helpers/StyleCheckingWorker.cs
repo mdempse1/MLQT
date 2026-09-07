@@ -1,7 +1,9 @@
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using ModelicaParser.SpellChecking;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using MLQT.Services.Checking;
 using System.Collections.Concurrent;
 
 namespace MLQT.Services.Helpers;
@@ -21,16 +23,24 @@ public class StyleCheckingWorker
     private string _repositoryName;
     private int _processedCount = 0;
 
-    public event EventHandler<List<LogMessage>>? OnViolationFound;
+    public event EventHandler<List<LogMessage>>? OnFindingFound;
     public event Action? OnProgressChanged;
     public event EventHandler<string>? OnWorkCompleted;
 
-    public StyleCheckingWorker(DirectedGraph graph, StyleCheckingSettings settings, string repositoryName, SpellChecker? spellChecker = null)
+    /// <summary>
+    /// The repository whose classes this worker checks, or empty for classes that belong to none.
+    /// Lets the service cancel one repository's work without touching another's.
+    /// </summary>
+    public string RepositoryId { get; }
+
+    public StyleCheckingWorker(DirectedGraph graph, StyleCheckingSettings settings, string repositoryName,
+        SpellChecker? spellChecker = null, string repositoryId = "")
     {
         _currentGraph = graph;
         _repositoryName = repositoryName;
         _settings = settings;
         _spellChecker = spellChecker;
+        RepositoryId = repositoryId;
     }
 
     public void AddToQueue(string modelID)
@@ -72,28 +82,12 @@ public class StyleCheckingWorker
                     modelIds.Add(modelId);
             }
 
-            // Build set of known model IDs for reference validation
-            IReadOnlySet<string>? knownModelIds = null;
-            if (_settings.ValidateModelReferences)
-            {
-                knownModelIds = _currentGraph.ModelNodes
-                    .Select(n => n.Id)
-                    .ToHashSet(StringComparer.Ordinal);
-            }
-
-            // Build set of known model names for spell checking context
-            IReadOnlySet<string>? knownModelNames = null;
-            if ((_settings.SpellCheckDescription || _settings.SpellCheckDocumentation) && _spellChecker != null)
-            {
-                knownModelNames = _currentGraph.ModelNodes
-                    .Select(n => n.Id.Contains('.') ? n.Id[(n.Id.LastIndexOf('.') + 1)..] : n.Id)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            }
-
-            // Create callback for inherited icon checking (uses graph to resolve base classes)
-            var baseClassHasIcon = _settings.ClassHasIcon
-                ? StyleChecking.CreateBaseClassHasIconCallback(_currentGraph)
-                : null;
+            // Build the per-check context (known ids/names, icon callback) through the shared
+            // StyleCheckContext so the GUI derives it identically to the CLI and MCP — reusing the
+            // service's cached spell checker rather than rebuilding one.
+            // Coverage is measured alongside: this pass has parsed the class anyway, and the app's
+            // Metrics tab would otherwise parse every one of them again the first time it is opened.
+            var context = StyleCheckContext.Build(_settings, _currentGraph, _spellChecker, collectCoverage: true);
 
             // Process models in parallel with bounded concurrency
             var parallelOptions = new ParallelOptions
@@ -109,22 +103,26 @@ public class StyleCheckingWorker
                 try
                 {
                     var node = _currentGraph.GetNode<ModelNode>(modelId);
-                    if (node != null && !node.Definition.StyleRulesChecked && node.CanBeStoredStandalone)
+                    // Check every class, including non-standalone ones (replaceable/redeclare/inner/outer).
+                    // CanBeStoredStandalone is a file-storage flag resolved non-deterministically by parse
+                    // order, so filtering on it here made the GUI's finding set unstable and inconsistent
+                    // with the CLI/MCP (which check all classes). StyleRulesChecked still dedups re-checks.
+                    if (node != null && !node.Definition.StyleRulesChecked)
                     {
-                        var violations = StyleChecking.RunStyleChecking(node.Definition, _settings, modelId, knownModelIds, _spellChecker, knownModelNames,
-                            isExcludedFromFormatting: _settings.IsModelExcludedFromFormatting(modelId),
-                            baseClassHasIcon: baseClassHasIcon);
+                        // Same per-model entry point (StyleCheckRunner → RunStyleChecking) as the CLI/MCP;
+                        // it releases the parse tree after checking to bound memory.
+                        var findings = StyleCheckRunner.Run(node, _settings, context);
 
-                        if (violations.Count > 0)
-                            OnViolationFound?.Invoke(this, violations);
-
-                        // Release parse tree after checking to free memory
-                        node.Definition.ParsedCode = null;
+                        if (findings.Count > 0)
+                            OnFindingFound?.Invoke(this, findings);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Skip models that fail to parse or check — don't stall the worker
+                    // Report it rather than dropping the class: one class that cannot be checked
+                    // should not stop the worker, but silence here cost the class every finding it
+                    // had and made the app's totals disagree with the CLI's for no visible reason.
+                    OnFindingFound?.Invoke(this, [CheckFailure.Message(modelId, ex)]);
                 }
 
                 // Batch progress notifications — fire every 50 models instead of every model

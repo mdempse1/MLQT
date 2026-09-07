@@ -4,45 +4,28 @@ using ModelicaParser.SpellChecking;
 namespace ModelicaParser.StyleRules;
 
 /// <summary>
-/// Visitor that spell checks Documentation annotation strings (info and revisions).
-/// Strips HTML before checking, and collects component/variable names per class scope
-/// so that references to local identifiers in documentation are not flagged.
+/// Visitor that spell checks Documentation annotation strings (info and revisions). Strips HTML
+/// before checking, and takes the names in scope — the class's own elements and those it inherits —
+/// from <see cref="SpellCheckVisitorBase"/> so that references to them are not flagged as
+/// misspellings.
 /// </summary>
-public class SpellCheckDocumentation : VisitorWithModelNameTracking
+public class SpellCheckDocumentation : SpellCheckVisitorBase
 {
-    private readonly SpellChecker _spellChecker;
-    private readonly IReadOnlySet<string>? _knownModelNames;
-    private readonly Stack<HashSet<string>> _scopedNames = new();
-
     public SpellCheckDocumentation(
         SpellChecker spellChecker,
         IReadOnlySet<string>? knownModelNames = null,
-        string basePackage = "")
-        : base(basePackage)
+        string basePackage = "",
+        Func<string, IReadOnlySet<string>>? inheritedElementNames = null)
+        : base(spellChecker, knownModelNames, basePackage, inheritedElementNames)
     {
-        _spellChecker = spellChecker;
-        _knownModelNames = knownModelNames;
-    }
-
-    protected override void OnClassEntered()
-    {
-        _scopedNames.Push(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-    }
-
-    protected override void OnClassExited()
-    {
-        if (_scopedNames.Count > 0)
-            _scopedNames.Pop();
     }
 
     public override object? VisitComponent_declaration([NotNull] modelicaParser.Component_declarationContext context)
     {
-        // Collect component names into the current scope
-        var declaration = context.declaration();
-        if (declaration?.IDENT() != null && _scopedNames.Count > 0)
-        {
-            _scopedNames.Peek().Add(declaration.IDENT().GetText());
-        }
+        // The class's own components are collected when the class is entered; this covers the ones
+        // declared somewhere the class scope scan does not reach, such as inside a nested class this
+        // visitor still walks.
+        AddNameToScope(context.declaration()?.IDENT()?.GetText());
 
         return base.VisitComponent_declaration(context);
     }
@@ -115,18 +98,20 @@ public class SpellCheckDocumentation : VisitorWithModelNameTracking
                 if (string.IsNullOrWhiteSpace(plainText))
                     continue;
 
-                var contextWords = BuildContextWords();
-                var label = paramName == "info" ? "documentation info" : "documentation revisions";
+                var label = paramName == "info"
+                    ? SpellingMessage.InDocumentationInfo
+                    : SpellingMessage.InDocumentationRevisions;
 
                 foreach (var (word, charOffset) in TextExtractor.TokenizeToWords(plainText))
                 {
                     if (TextExtractor.ShouldSkipWord(word))
                         continue;
 
-                    if (!_spellChecker.IsCorrect(word, contextWords))
+                    if (!IsSpelledCorrectly(word))
                     {
                         var lineNumber = startLine + TextExtractor.CountNewlinesBefore(plainText, charOffset);
-                        AddViolation(lineNumber, $"Misspelled word '{word}' in {label}");
+                        AddFinding(lineNumber, SpellingMessage.For(word, label),
+                            RuleIds.SpellingDocumentation, discriminator: $"{label}:{word}");
                     }
                 }
             }
@@ -159,33 +144,5 @@ public class SpellCheckDocumentation : VisitorWithModelNameTracking
         {
             CollectStringTokens(tree.GetChild(i), result);
         }
-    }
-
-    private HashSet<string>? BuildContextWords()
-    {
-        var hasScoped = _scopedNames.Count > 0 && _scopedNames.Peek().Count > 0;
-        var hasModelNames = _knownModelNames != null && _knownModelNames.Count > 0;
-
-        if (!hasScoped && !hasModelNames)
-            return null;
-
-        var context = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (hasScoped)
-        {
-            foreach (var scope in _scopedNames)
-            {
-                foreach (var name in scope)
-                    context.Add(name);
-            }
-        }
-
-        if (_knownModelNames != null)
-        {
-            foreach (var name in _knownModelNames)
-                context.Add(name);
-        }
-
-        return context;
     }
 }

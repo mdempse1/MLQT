@@ -52,6 +52,17 @@ public class Repository
     public RepositoryVcsType VcsType { get; set; } = RepositoryVcsType.Local;
 
     /// <summary>
+    /// Code this user has no say over: a tool's library folder, or someone else's repository that
+    /// theirs depends on. It is loaded so that references into it resolve, and left alone otherwise.
+    ///
+    /// <para>Nothing is reported about it and nothing is written into it — no style checking, no
+    /// coverage, no formatting, and no <c>.mlqt</c> directory. Findings against code the user cannot
+    /// change are noise, and settings written beside a vendor's library are settings nobody will ever
+    /// read, if the write is even permitted.</para>
+    /// </summary>
+    public bool IsReferenceOnly { get; set; }
+
+    /// <summary>
     /// Current revision identifier (commit hash for Git, revision number for SVN).
     /// </summary>
     public string? CurrentRevision { get; set; }

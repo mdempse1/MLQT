@@ -40,8 +40,9 @@ public class ImportStatementsFirst : VisitorWithModelNameTracking
             _foundImports = true;
             if (_foundOtherElement.Peek())
             {
-                AddViolation(context.Start.Line,
-                    "This class does not have its import statements before the rest of the class definition");
+                AddFinding(context.Start.Line,
+                    "This class does not have its import statements before the rest of the class definition",
+                    RuleIds.ImportStatementsFirst);
             }
         }
         else if (context.extends_clause() != null)
@@ -52,8 +53,9 @@ public class ImportStatementsFirst : VisitorWithModelNameTracking
             }
             if (_foundImports && !_importsFirst)
             {
-                AddViolation(context.Start.Line,
-                    "This class does not have its extends clauses before the import statements");
+                AddFinding(context.Start.Line,
+                    "This class does not have its extends clauses before the import statements",
+                    RuleIds.ImportStatementsFirst);
             }
         }
         else

@@ -115,4 +115,79 @@ public class ReferenceLocatorTests
         Assert.All(sites, s => Assert.Equal("Base",
             code.Substring(s.Leaf.StartIndex, s.Leaf.StopIndex - s.Leaf.StartIndex + 1)));
     }
+
+    // ── the class's own declaration, which a rename has to rewrite too ──
+
+    private static IReadOnlyList<DefinitionSite> Definitions(
+        string code, DirectedGraph graph, params string[] targets)
+    {
+        var locator = new ReferenceLocator(graph, targets.Length == 0 ? null : targets);
+        locator.Visit(ModelicaParserHelper.Parse(code));
+        return locator.Definitions;
+    }
+
+    [Fact]
+    public void ADefinitionIsNotAReference()
+    {
+        // `model User` declares the class; it is not a usage of it. Counting it would make a rename
+        // rewrite the declaration twice and an impact count report the class as its own user.
+        var graph = GraphWith("P.User");
+        const string code = "within P;\nmodel User\n  Real x;\nend User;";
+
+        Assert.Empty(Locate(code, graph, "P.User"));
+        Assert.Equal("P.User", Assert.Single(Definitions(code, graph, "P.User")).Id);
+    }
+
+    [Fact]
+    public void ADefinitionSpansTheWholeClass()
+    {
+        // The span is what a move cuts out. It runs from the class keyword to the closing name;
+        // the separating semicolon belongs to the enclosing list, so a caller splicing the class
+        // out has to take that with it.
+        var graph = GraphWith("P.User");
+        const string code = "within P;\nmodel User \"a user\"\n  Real x;\nend User;";
+
+        var definition = Assert.Single(Definitions(code, graph, "P.User"));
+
+        Assert.Equal("model User \"a user\"\n  Real x;\nend User",
+            code[definition.StartIndex..(definition.StopIndex + 1)]);
+        Assert.Equal(';', code[definition.StopIndex + 1]);
+        Assert.Equal(2, definition.Line);
+    }
+
+    [Fact]
+    public void BothNameTokensOfAClassAreLocated()
+    {
+        // `model X … end X;` names the class twice, and a rename that rewrote only the first would
+        // leave source that does not compile.
+        var graph = GraphWith("P.User");
+        const string code = "within P;\nmodel User\n  Real x;\nend User;";
+
+        var definition = Assert.Single(Definitions(code, graph, "P.User"));
+
+        Assert.Equal(2, definition.NameTokens.Count);
+        Assert.All(definition.NameTokens, token => Assert.Equal(
+            "User", code[token.StartIndex..(token.StopIndex + 1)]));
+    }
+
+    [Fact]
+    public void ANestedClassIsDefinedByItsFullyQualifiedId()
+    {
+        var graph = GraphWith("P.Outer", "P.Outer.Inner");
+        const string code = "within P;\npackage Outer\n  model Inner\n    Real x;\n  end Inner;\nend Outer;";
+
+        var definition = Assert.Single(Definitions(code, graph, "P.Outer.Inner"));
+
+        Assert.Equal("P.Outer.Inner", definition.Id);
+        Assert.Equal(3, definition.Line);
+    }
+
+    [Fact]
+    public void WithNoTargets_EveryClassInTheFileIsADefinition()
+    {
+        var graph = GraphWith("P.Outer", "P.Outer.Inner");
+        const string code = "within P;\npackage Outer\n  model Inner\n    Real x;\n  end Inner;\nend Outer;";
+
+        Assert.Equal(["P.Outer", "P.Outer.Inner"], Definitions(code, graph).Select(d => d.Id));
+    }
 }

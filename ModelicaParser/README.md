@@ -197,7 +197,7 @@ Detected reference types:
 
 ### Style Rule Checking
 
-All style rules extend `VisitorWithModelNameTracking` and populate a `RuleViolations` list:
+All style rules extend `VisitorWithModelNameTracking` and populate a `RuleFindings` list:
 
 ```csharp
 using ModelicaParser.Helpers;
@@ -211,8 +211,8 @@ var rule = new CheckClassAnnotations(
     basePackage: "MyLibrary");
 rule.Visit(parseTree);
 
-foreach (var violation in rule.RuleViolations)
-    Console.WriteLine($"{violation.ModelName} line {violation.LineNumber}: {violation.Summary}");
+foreach (var finding in rule.RuleFindings)
+    Console.WriteLine($"{finding.ModelName} line {finding.LineNumber}: {finding.Summary}");
 ```
 
 #### VisitorWithModelNameTracking and Nested Class Skipping
@@ -221,7 +221,7 @@ All style rule visitors extend `VisitorWithModelNameTracking`, which provides mo
 
 - Style rule visitors only check the **outermost class definition** in the parse tree.
 - Nested class definitions are skipped when the depth exceeds 1, because each nested class has its own `ModelNode` in the graph and is checked independently.
-- This prevents duplicate violations when a parent package's code includes nested class source code.
+- This prevents duplicate findings when a parent package's code includes nested class source code.
 - The nesting-level counter is used to skip deeper class definitions (depth > 1) — **except** non-standalone classes (those with a `replaceable`/`redeclare`/`inner`/`outer` prefix), which are stored in their parent and so are still visited in place.
 
 Available style rules:
@@ -239,6 +239,14 @@ Available style rules:
 | `FollowNamingConvention` | Checks class/element names against configurable naming conventions |
 | `SpellCheckDescriptions` | Spell checks description strings on classes and components |
 | `SpellCheckDocumentation` | Spell checks Documentation annotation HTML content |
+| `CheckModelReferences` | Referenced classes must exist among the loaded libraries |
+| `DuplicateDeclarations` | No duplicate declarations, and no duplicate imports, in a class |
+| `MissingUnits` | A plain `Real` variable or parameter should declare a unit |
+
+Both spell-check visitors extend `SpellCheckVisitorBase`, which owns the names that count as words
+inside the class being checked: everything it declares, collected before any of its text is checked,
+plus everything it inherits (supplied by the caller — resolving a base class needs the dependency
+graph, which this layer does not have).
 
 ### Spell Checking
 
@@ -273,6 +281,108 @@ foreach (var (word, offset) in TextExtractor.TokenizeToWords(plainText))
         Console.WriteLine($"Misspelled: {word} at offset {offset}");
 }
 ```
+
+#### Built-in term lists
+
+`SpellChecking/Dictionaries/modelica_terms.txt` is the vocabulary every Modelica library needs and
+no English dictionary carries — the language and its tools, and the engineering, thermodynamic,
+electrical and mathematical terms the bundled en_US/en_GB dictionaries lack. It is always loaded,
+alongside `modelica_terms_en_US.txt` / `modelica_terms_en_GB.txt`, which hold the spellings that
+differ between dialects and are loaded only for the languages the caller asked for — so a repository
+that has settled on one dialect is not handed the other's spelling.
+
+The lists take `#` comments and have no affix rules: a form the dictionaries cannot derive (a
+plural, a participle) needs its own line. Nothing belongs in them that the bundled dictionaries
+already accept.
+
+### In-source suppression (`__MLQT` annotations)
+
+A finding can be waived where it occurs, with a Modelica vendor annotation that survives reformatting
+and is ignored by Dymola and OpenModelica.
+
+```csharp
+using ModelicaParser.StyleRules;
+
+// Read the directives out of a parse tree
+var extractor = new MlqtSuppressionExtractor(basePackage);
+extractor.VisitStored_definition(parseTree);
+SuppressionSet suppressions = extractor.Build();
+bool waived = suppressions.IsSuppressed(finding);
+
+// Write one: a rule for a class or one of its components...
+MlqtSuppressionWriter.TryAddSuppressionToFile(
+    fileContent, classPath, component, ruleId, reason, out var newContent, out var error);
+
+// ...or a single word, accepted as spelled correctly in that class alone
+MlqtSuppressionWriter.TryAddSpellingExceptionToFile(
+    fileContent, classPath, word, reason, out newContent, out error);
+```
+
+Recognised arguments: `suppress="<rule ids>"` (comma-separated, `*` for all), `spelling="<words>"`,
+and `preserveOrder=true` / `format=false` for a class whose declaration order is deliberate. An
+optional `reason="…"` records why. The writer merges into an existing annotation rather than adding
+a second one, and the caller is expected to persist through a path that re-parses, so a malformed
+splice is caught rather than written.
+
+### File Encoding
+
+Modelica source files carry no encoding declaration, and the population in the wild is mixed:
+older libraries use single-byte Windows-1252 for curly quotes and accented characters, while most
+files are UTF-8 with no byte-order mark. Neither encoding reads all of them, so it is detected per
+file — and, critically, a file is **written back in the encoding it was read in**.
+
+```csharp
+using ModelicaParser.Helpers;
+
+var (text, encoding) = ModelicaFileEncoding.ReadAllText(path);
+// ... modify text ...
+ModelicaFileEncoding.WriteAllText(path, text, encoding);
+
+// Callers that only read:
+string source = ModelicaFileEncoding.ReadAllTextOnly(path);
+
+// Callers that only write: the existing file's encoding is preserved automatically.
+ModelicaFileEncoding.WriteAllText(path, rendered);
+```
+
+**Every `.mo` and `package.order` read and write must go through this class.** Reading here and
+then writing with a plain `File.WriteAllText` re-encodes whatever was decoded: a Latin-1 read of
+the two UTF-8 bytes for `ü` yields two characters, which UTF-8 then writes as four bytes — and the
+damage doubles again on every subsequent save.
+
+### Reading an Encrypted Library's Documentation
+
+Commercial libraries ship as a single encrypted `package.moe` with no readable source, but almost
+all include the vendor's generated HTML documentation. `ExternalDocs/` recovers from it the three
+things the checks need — whether a class exists, what it extends, and whether it has an icon.
+
+```csharp
+using ModelicaParser.ExternalDocs;
+
+// Read a whole library's help directory
+DymolaHelpDocument document = DymolaHelpReader.Read(@"C:\...\Battery 2.9.0\help");
+
+foreach (DocumentedClass documented in document.Classes)
+{
+    Console.WriteLine(documented.FullName);        // Battery.BMS.Interfaces.CurrentRestrictor
+    Console.WriteLine(documented.Description);     // Interface model for current restrictor
+    Console.WriteLine(documented.ExtendsClasses);  // null = NOT KNOWN, empty = extends nothing
+    Console.WriteLine(documented.HasIcon);         // null = NOT KNOWN
+}
+
+// A single file, if you already have the content
+ParsedHelpFile parsed = DymolaHelpParser.ParseFile(html);
+```
+
+Two things to know before changing this code:
+
+- **`ExtendsClasses` and `HasIcon` are nullable on purpose.** "The documentation did not say" and
+  "the documentation says there is none" are different answers, and collapsing them is what turns a
+  missing input into a fabricated finding.
+- **Scanning is tag-oriented and must stay that way.** Dymola 2024x Refresh 1 shipped a generator
+  regression that emits a literal numeric token where newlines belong (~57k times in MSL alone),
+  collapsing whole tables onto one line. Anything that anchors a marker to "the next line" cannot
+  read that release.
 
 ### Using the Visitor Pattern
 

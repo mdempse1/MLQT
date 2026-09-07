@@ -6,13 +6,31 @@ namespace MLQT.McpServer.Tests;
 public class QualityToolsTests
 {
     private static StyleTools Style(TestHost h)
-        => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager);
+        => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Session);
     private static SpellingTools Spelling(TestHost h)
         => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Resources, h.Session);
     private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Resources, h.Session);
 
     private static void LoadSingle(TestHost h, string file, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(file, content)).GetAwaiter().GetResult();
+
+    [Fact]
+    public void CheckLibrary_SurfacesGraphFindings_PackageOrder()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage P \"p\"\n  constant Real c = 1;\nend P;",
+            ["A.mo"] = "within P;\nmodel A \"a\"\nend A;",
+            ["package.order"] = "A\nGhost\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        var result = Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckPackageOrder = true }).GetAwaiter().GetResult();
+
+        var cr = Assert.IsType<CheckResult>(result);
+        Assert.Contains(cr.Findings, v => v.Summary.Contains("Ghost"));   // stale package.order entry
+    }
 
     // ----- style -----
 
@@ -32,7 +50,7 @@ public class QualityToolsTests
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckStyle(
             "model B\n Real p;\nequation\n p=1;\nend B;",
             new StyleSettingsInput { ClassHasDescription = true }));
-        Assert.Equal(1, res.ViolationCount);
+        Assert.Equal(1, res.FindingCount);
     }
 
     [Fact]
@@ -43,17 +61,17 @@ public class QualityToolsTests
     }
 
     [Fact]
-    public void CheckClass_StoresViolations_VisibleInListIssues()
+    public void CheckClass_StoresFindings_VisibleInListFindings()
     {
         using var host = new TestHost();
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
         var style = Style(host);
 
         var res = ToolAssert.Ok<CheckResult>(style.CheckClass("B", new StyleSettingsInput { ClassHasDescription = true }));
-        Assert.Equal(1, res.ViolationCount);
+        Assert.Equal(1, res.FindingCount);
 
-        var issues = ToolAssert.Ok<IssuesResult>(style.ListIssues());
-        Assert.Contains(issues.Items, i => i.ModelId == "B" && i.Category == "style");
+        var findings = ToolAssert.Ok<FindingsResult>(style.ListFindings());
+        Assert.Contains(findings.Items, i => i.ModelId == "B" && i.Category == "style");
     }
 
     [Fact]
@@ -65,7 +83,7 @@ public class QualityToolsTests
         // (known model ids and the base-class icon callback) in the check runner.
         var res = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("B",
             new StyleSettingsInput { ValidateModelReferences = true, ClassHasIcon = true }));
-        Assert.NotNull(res.Violations);
+        Assert.NotNull(res.Findings);
     }
 
     [Fact]
@@ -80,27 +98,123 @@ public class QualityToolsTests
     {
         using var host = new TestHost();
         LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
-        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }));
+        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult());
         Assert.True(res.ModelsChecked >= 1);
-        Assert.True(res.ViolationCount >= 1);
+        Assert.True(res.FindingCount >= 1);
+    }
+
+    // ----- parse diagnostics -----
+    // A file that does not parse is the one problem no style rule can report — every rule reads a
+    // parse tree that is missing the code in question. The MCP surface must say so, or an agent
+    // reads "no findings" as "this class is fine".
+
+    // A Documentation(info=...) annotation missing its closing quote. The parser recovers, so the
+    // class still loads and nothing else flags it.
+    private const string UnterminatedString = """
+        model B "b"
+          annotation(Documentation(info="<html><p>docs</p>));
+        end B;
+        """;
+
+    [Fact]
+    public void CheckClass_ReportsSyntaxError_AlongsideStyleFindings()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckClass("B", new StyleSettingsInput { ClassHasDescription = true }));
+
+        Assert.Contains(res.Findings, v => v.Summary == "Parser error");
+    }
+
+    [Fact]
+    public void CheckClass_ReportsSyntaxError_EvenWithNoRulesEnabled()
+    {
+        // "No rules enabled" means no style opinions; it cannot mean silence about unreadable code.
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("B", new StyleSettingsInput()));
+
+        Assert.Contains(res.Findings, v => v.Summary == "Parser error");
+    }
+
+    [Fact]
+    public void CheckLibrary_ReportsSyntaxError()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", UnterminatedString);
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+                .GetAwaiter().GetResult());
+
+        // One unterminated string produces both a lexer and a parser diagnostic.
+        var parseErrors = res.Findings.Where(v => v.Summary == "Parser error").ToList();
+        Assert.NotEmpty(parseErrors);
+        // Error, not the "Style warning" every other finding projects to, and tagged as the parser's
+        // so a style re-run cannot clear it.
+        Assert.All(parseErrors, v => Assert.Equal("Error", v.Severity));
+        Assert.All(parseErrors, v => Assert.Equal("Parser", v.Source));
+        Assert.Contains(parseErrors, v => v.Details.Contains("Unterminated string literal"));
+    }
+
+    [Fact]
+    public void CheckLibrary_CleanLibrary_ReportsNoParseDiagnostics()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B \"b\"\n  Real p \"p\";\nend B;");
+
+        var res = ToolAssert.Ok<CheckResult>(
+            Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+                .GetAwaiter().GetResult());
+
+        Assert.DoesNotContain(res.Findings, v => v.Summary is "Parser error" or "Fatal parse failure");
     }
 
     [Fact]
     public void CheckLibrary_NothingLoaded_Errors()
     {
         using var host = new TestHost();
-        Assert.IsType<ToolError>(Style(host).CheckLibrary());
+        Assert.IsType<ToolError>(Style(host).CheckLibrary().GetAwaiter().GetResult());
     }
 
     [Fact]
-    public void ListIssues_IncludesParseErrors()
+    public void CheckLibrary_AutoRunsDependencyAnalysis_WhenRuleRequiresIt()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
+        Assert.False(host.Session.DependenciesAnalyzed);
+
+        // The unused-class rule needs cross-model edges. check_library must run dependency analysis
+        // itself (as the GUI and CLI do) so its count includes those findings without an extra step.
+        Style(host).CheckLibrary(settings: new StyleSettingsInput { CheckUnusedClass = true }).GetAwaiter().GetResult();
+
+        Assert.True(host.Session.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public void CheckLibrary_SkipsDependencyAnalysis_WhenNoRuleRequiresIt()
+    {
+        using var host = new TestHost();
+        LoadSingle(host, "B.mo", "model B\n Real p;\nequation\n p=1;\nend B;");
+
+        // A plain style rule needs no dependency edges — the auto-run must stay off to keep it cheap.
+        Style(host).CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true }).GetAwaiter().GetResult();
+
+        Assert.False(host.Session.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public void ListFindings_IncludesParseErrors()
     {
         using var host = new TestHost();
         LoadSingle(host, "Bad.mo", "model Bad \"broken\"\n  Real x;\nequation\n  x = ;\nend Bad;");
-        var issues = ToolAssert.Ok<IssuesResult>(Style(host).ListIssues(includeParseErrors: true));
-        Assert.Contains(issues.Items, i => i.Category == "parse");
+        var findings = ToolAssert.Ok<FindingsResult>(Style(host).ListFindings(includeParseErrors: true));
+        Assert.Contains(findings.Items, i => i.Category == "parse");
 
-        var noParse = ToolAssert.Ok<IssuesResult>(Style(host).ListIssues(includeParseErrors: false));
+        var noParse = ToolAssert.Ok<FindingsResult>(Style(host).ListFindings(includeParseErrors: false));
         Assert.DoesNotContain(noParse.Items, i => i.Category == "parse");
     }
 
@@ -126,8 +240,9 @@ public class QualityToolsTests
     {
         using var host = new TestHost();
         var fromSource = Spelling(host).SpellCheck(source: "model P\n Real q \"The postion of q\";\nequation\n q=1;\nend P;");
-        var list = Assert.IsAssignableFrom<IReadOnlyList<StyleViolationDto>>(fromSource);
-        Assert.Contains(list, v => v.Summary.Contains("postion"));
+        var result = Assert.IsType<SpellCheckResult>(fromSource);
+        Assert.Contains(result.Findings, v => v.Summary.Contains("postion"));
+        Assert.Null(result.Note);   // the bundled dictionaries are always present
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck());
     }
@@ -138,10 +253,34 @@ public class QualityToolsTests
         using var host = new TestHost();
         LoadSingle(host, "P.mo", "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;");
         var res = Spelling(host).SpellCheck(classId: "P");
-        var list = Assert.IsAssignableFrom<IReadOnlyList<StyleViolationDto>>(res);
-        Assert.Contains(list, v => v.Summary.Contains("postion"));
+        var result = Assert.IsType<SpellCheckResult>(res);
+        Assert.Contains(result.Findings, v => v.Summary.Contains("postion"));
 
         Assert.IsType<ToolError>(Spelling(host).SpellCheck(classId: "Nope"));
+    }
+
+    [Fact]
+    public async Task SpellCheck_SaysSoWhenAConfiguredDictionaryIsMissing()
+    {
+        // The languages are committed with the repository; the dictionaries are installed per machine.
+        // An agent on a box without one gets results that are not the ones the settings describe, and
+        // the CLI has always warned about exactly this on stderr.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P.mo"] = "model P\n  Real q \"The postion\";\nequation\n q=1;\nend P;",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings
+        {
+            SpellCheckLanguages = ["en_GB", "de_DE"],
+        };
+
+        var result = Assert.IsType<SpellCheckResult>(Spelling(host).SpellCheck(classId: "P"));
+
+        Assert.NotNull(result.Note);
+        Assert.Contains("de_DE", result.Note);
     }
 
     [Fact]
@@ -171,6 +310,82 @@ public class QualityToolsTests
             spelling.CorrectSpelling("Foo", "postion", "position").GetAwaiter().GetResult());
         Assert.True(written.Changed);
         Assert.Contains("position", File.ReadAllText(path));
+    }
+
+    /// <summary>
+    /// A package that stores its classes inline has them trimmed out of its stored source once
+    /// checking has run — each class has its own node. Rewriting the file from that stored source
+    /// would write the file back without them, so the file on disk has to be the source of truth.
+    /// </summary>
+    private static string TrimmedInlinePackage(TestHost host)
+    {
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = @"within;
+package P ""The postion package""
+  model A ""a""
+  end A;
+  model B ""b""
+  end B;
+end P;
+",
+            ["package.order"] = @"A
+B
+",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+
+        ModelicaGraph.PackageCodeTrimmer.TrimStandaloneChildren(host.Libraries.CombinedGraph);
+        var stored = host.Libraries.GetModelById("P")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model A", stored);   // the situation this guards against is real
+
+        return dir;
+    }
+
+    [Fact]
+    public void CorrectSpelling_KeepsClassesTrimmedFromTheStoredSource()
+    {
+        using var host = new TestHost();
+        var dir = TrimmedInlinePackage(host);
+
+        var res = ToolAssert.Ok<CorrectSpellingResult>(
+            Spelling(host).CorrectSpelling("P", "postion", "position").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(Path.Combine(dir, "package.mo"));
+        Assert.Equal(1, res.Replacements);
+        Assert.Contains("position", onDisk);
+        Assert.Contains("model A", onDisk);
+        Assert.Contains("model B", onDisk);
+    }
+
+    [Fact]
+    public void FormatClass_KeepsClassesTrimmedFromTheStoredSource()
+    {
+        using var host = new TestHost();
+        var dir = TrimmedInlinePackage(host);
+
+        ToolAssert.Ok<FormatClassResult>(Formatting(host).FormatClass("P").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(Path.Combine(dir, "package.mo"));
+        Assert.Contains("model A", onDisk);
+        Assert.Contains("model B", onDisk);
+    }
+
+    [Fact]
+    public void CorrectSpelling_ChangesTheWordAndNothingElse()
+    {
+        // The tool used to rebuild the file through the formatter, so an agent's spelling fix and a
+        // user's produced different diffs for the same correction. The word is the only change now,
+        // including the file's own line endings.
+        using var host = new TestHost();
+        var original = "model Foo \"The postion\"\r\n  Real x;\r\nequation\r\n  x=1;\r\nend Foo;\r\n";
+        var path = host.WriteMoFile("Foo.mo", original);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+
+        ToolAssert.Ok<CorrectSpellingResult>(
+            Spelling(host).CorrectSpelling("Foo", "postion", "position").GetAwaiter().GetResult());
+
+        Assert.Equal(original.Replace("postion", "position"), File.ReadAllText(path));
     }
 
     [Fact]

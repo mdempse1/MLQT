@@ -7,12 +7,12 @@ namespace ModelicaParser.StyleRules;
 /// <summary>
 /// Base class for style rule visitors that tracks the fully qualified model name
 /// as it traverses nested class definitions. Provides common infrastructure for
-/// rule violations, model name resolution, and hooks for subclass-specific stack management.
+/// rule findings, model name resolution, and hooks for subclass-specific stack management.
 /// </summary>
 public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 {
     private readonly Stack<string> _parentModelNames = new();
-    private readonly List<LogMessage> _ruleViolations = new();
+    private readonly List<Finding> _findings = new();
     private string _withinPackage = string.Empty;
     private int _classDepth;
 
@@ -31,9 +31,16 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
     }
 
     /// <summary>
-    /// Gets all rule violations found.
+    /// Gets all structured findings produced by this visitor.
     /// </summary>
-    public List<LogMessage> RuleViolations => _ruleViolations;
+    public IReadOnlyList<Finding> Findings => _findings;
+
+    /// <summary>
+    /// Gets the findings projected to the legacy <see cref="LogMessage"/> shape. Retained so
+    /// existing consumers and tests keep working unchanged; new code should prefer
+    /// <see cref="Findings"/>.
+    /// </summary>
+    public List<LogMessage> RuleFindings => _findings.Select(f => f.ToLogMessage()).ToList();
 
     /// <summary>
     /// Gets the fully qualified name of the current model being visited.
@@ -41,13 +48,24 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
     protected string CurrentModelName => _parentModelNames.Count > 0 ? _parentModelNames.Peek() : string.Empty;
 
     /// <summary>
-    /// Adds a style warning violation for the current model.
+    /// Records a rule finding for the current model.
     /// </summary>
-    protected void AddViolation(int lineNumber, string message)
+    /// <param name="lineNumber">Source line (display only — not part of the fingerprint).</param>
+    /// <param name="message">Human-readable message (preserved verbatim).</param>
+    /// <param name="ruleId">Stable rule identifier from <see cref="RuleIds"/>.</param>
+    /// <param name="elementPath">The element the finding is about (e.g. a component name), or null for class-level.</param>
+    /// <param name="discriminator">Disambiguator for rules that fire multiple times on one element (e.g. a misspelled word).</param>
+    protected void AddFinding(int lineNumber, string message, string ruleId,
+        string? elementPath = null, string? discriminator = null)
     {
-        _ruleViolations.Add(new LogMessage(CurrentModelName, "Style warning", lineNumber, message)
+        _findings.Add(new Finding
         {
-            Source = "StyleChecking"
+            RuleId = ruleId,
+            ModelId = CurrentModelName,
+            ElementPath = elementPath,
+            Discriminator = discriminator,
+            Message = message,
+            LineNumber = lineNumber
         });
     }
 
@@ -65,11 +83,10 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 
     public override object? VisitStored_definition([NotNull] modelicaParser.Stored_definitionContext context)
     {
-        var nameContexts = context.name();
+        var nameContext = context.name();
 
-        if (nameContexts != null && nameContexts.Length > 0)
+        if (nameContext != null)
         {
-            var nameContext = nameContexts[0];
             var identTokens = nameContext.IDENT();
             if (identTokens != null && identTokens.Length > 0)
             {
@@ -87,7 +104,7 @@ public class VisitorWithModelNameTracking : modelicaBaseVisitor<object?>
 
         // Skip standalone nested class definitions — each has its own ModelNode and
         // will be style-checked independently. Without this guard, a parent package's
-        // code (which includes nested classes) would produce duplicate violations.
+        // code (which includes nested classes) would produce duplicate findings.
         // However, non-standalone class definitions (replaceable/redeclare) cannot be
         // parsed as valid stored_definitions, so they must be checked here as elements
         // of their parent class.

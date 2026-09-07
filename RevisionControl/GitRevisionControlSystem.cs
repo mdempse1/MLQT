@@ -7,7 +7,7 @@ namespace RevisionControl;
 /// Git implementation of the revision control system interface.
 /// Uses LibGit2Sharp to interact with Git repositories.
 /// </summary>
-public class GitRevisionControlSystem : IRevisionControlSystem
+public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 {
     /// <summary>
     /// Checks out a specific revision to a temporary directory.
@@ -390,7 +390,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
                     entries.Add(new VcsLogEntry
                     {
                         Revision = commit.Sha,
-                        ShortRevision = commit.Sha[..Math.Min(7, commit.Sha.Length)],
+                        ShortRevision = RevisionId.Shorten(commit.Sha),
                         Author = commit.Author.Name,
                         AuthorEmail = commit.Author.Email,
                         Date = commit.Author.When,
@@ -448,7 +448,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem
                 var entry = new VcsLogEntry
                 {
                     Revision = commit.Sha,
-                    ShortRevision = commit.Sha.Length >= 7 ? commit.Sha.Substring(0, 7) : commit.Sha,
+                    ShortRevision = RevisionId.Shorten(commit.Sha),
                     Author = commit.Author.Name,
                     AuthorEmail = commit.Author.Email,
                     Date = commit.Author.When,
@@ -524,6 +524,122 @@ public class GitRevisionControlSystem : IRevisionControlSystem
         }
 
         return changedFiles;
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision)
+    {
+        var result = new List<string>();
+
+        try
+        {
+            using var repo = new Repository(repositoryPath);
+            var baseCommit = ResolveDiffBase(repo, sinceRevision);
+            if (baseCommit == null)
+                return null;
+
+            // Against the current working state (staged + unstaged), so we capture everything this
+            // branch changed since the base, committed or not.
+            var changes = repo.Diff.Compare<TreeChanges>(
+                baseCommit.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+
+            var root = repo.Info.WorkingDirectory;
+            foreach (var change in changes)
+            {
+                if (change.Status == ChangeKind.Deleted)
+                    continue; // a deleted file can't be checked
+
+                var relative = change.Path.Replace('/', Path.DirectorySeparatorChar);
+                result.Add(Path.GetFullPath(Path.Combine(root, relative)));
+            }
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetChangedFilePathsSince", ex);
+            return null;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The commit to diff a working copy against when asked for what changed "since" a revision:
+    /// the <em>merge base</em> of that revision and HEAD, not the revision itself.
+    ///
+    /// <para>The distinction only shows up once the base branch moves ahead, and then it decides
+    /// who gets blamed. Diffing the named ref directly reports every file someone else changed on
+    /// that branch after this one left it, as though this change had touched them — so the ratchet
+    /// escalates their debt to this author, and a review comment lands on a line outside the pull
+    /// request's diff, which GitHub rejects along with the rest of the review. The merge base is
+    /// what a forge means by "the diff", and what a person means by "what I changed".</para>
+    ///
+    /// <para>Null when there is nothing to diff from: an unresolvable ref, an unborn branch, or two
+    /// histories with no common ancestor. All three are failures rather than empty diffs — see
+    /// <see cref="GetChangedFilePathsSince"/>.</para>
+    /// </summary>
+    private Commit? ResolveDiffBase(Repository repo, string sinceRevision)
+    {
+        var since = ResolveToCommit(repo, sinceRevision);
+        var head = repo.Head?.Tip;
+        if (since == null || head == null)
+            return null;
+
+        return repo.ObjectDatabase.FindMergeBase(since, head);
+    }
+
+    /// <summary>
+    /// The lines this branch added or rewrote since <paramref name="sinceRevision"/>, keyed by
+    /// absolute file path, with the line numbers counted in the working copy.
+    ///
+    /// <para>Measured from the merge base, like <see cref="GetChangedFilePathsSince"/> — see
+    /// <see cref="ResolveDiffBase"/> for why that matters.</para>
+    ///
+    /// <para>Deleted lines are absent by construction: they exist in the base, and there is nothing
+    /// in the working copy to point at. An empty result means no line changed, which is different
+    /// from the failure case — that comes back as null, so a caller can tell "nothing to say" from
+    /// "could not be worked out".</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlySet<int>>? GetChangedLinesSince(
+        string repositoryPath, string sinceRevision)
+    {
+        try
+        {
+            using var repo = new Repository(repositoryPath);
+
+            var baseCommit = ResolveDiffBase(repo, sinceRevision);
+            if (baseCommit == null)
+                return null;
+
+            var patch = repo.Diff.Compare<Patch>(
+                baseCommit.Tree, DiffTargets.Index | DiffTargets.WorkingDirectory);
+
+            var root = repo.Info.WorkingDirectory;
+            var result = new Dictionary<string, IReadOnlySet<int>>(
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+            foreach (var entry in patch)
+            {
+                if (entry.Status == ChangeKind.Deleted || entry.IsBinaryComparison)
+                    continue;
+
+                var lines = new HashSet<int>();
+                foreach (var line in entry.AddedLines)
+                    lines.Add(line.LineNumber);
+
+                if (lines.Count == 0)
+                    continue;   // a rename or a mode change moves no line
+
+                var relative = entry.Path.Replace('/', Path.DirectorySeparatorChar);
+                result[Path.GetFullPath(Path.Combine(root, relative))] = lines;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetChangedLinesSince", ex);
+            return null;
+        }
     }
 
     /// <summary>

@@ -52,6 +52,28 @@ public class DirectedGraph
     public int NodeCount => _nodes.Count;
 
     /// <summary>
+    /// True once <see cref="GraphBuilder.AnalyzeDependenciesAsync"/> has completed over this graph,
+    /// so <c>UsedModelIds</c>/<c>UsedByModelIds</c> are populated.
+    ///
+    /// This is the single source of truth for that question. Consumers must never infer it by
+    /// sniffing whether any model happens to have edges — during a run in progress that sniff is
+    /// true for a partly-built graph, which silently changes how many findings the dependency-based
+    /// analyzers (unused class, uses hygiene) produce.
+    /// </summary>
+    public bool DependenciesAnalyzed { get; private set; }
+
+    /// <summary>Records that full dependency analysis has completed over this graph.</summary>
+    public void MarkDependenciesAnalyzed() => DependenciesAnalyzed = true;
+
+    /// <summary>
+    /// Records that the graph has gained content that has never been through dependency analysis
+    /// (a newly loaded library), so the next consumer that needs the edges re-runs it. Incremental
+    /// re-analysis of already-loaded models (<see cref="GraphBuilder.AnalyzeDependenciesForModelsAsync"/>)
+    /// maintains the edges itself and must not call this.
+    /// </summary>
+    public void InvalidateDependencyAnalysis() => DependenciesAnalyzed = false;
+
+    /// <summary>
     /// Adds a node to the graph.
     /// </summary>
     public void AddNode(IGraphNode node)
@@ -64,12 +86,33 @@ public class DirectedGraph
             }
             else if (node is ModelNode newModel && _nodes[node.Id] is ModelNode existingModel)
             {
+                // Readable source always beats a class reconstructed from vendor documentation, in
+                // whichever order the two arrive. The same library really does turn up twice: a tool's
+                // library folder ships the encrypted build of a library the user also has checked out
+                // as source, and both land in the one graph.
+                //
+                // This has to be decided before the standalone rule below, because that rule cannot
+                // see the difference. A stub is never standalone, so a stub colliding with a nested
+                // `redeclare` class — which is not standalone either — matched none of its cases and
+                // left the stub in place. The class then had no source to check, so every rule went
+                // quiet on it while the standalone classes beside it were checked normally.
+                if (existingModel.IsExternalStub != newModel.IsExternalStub)
+                {
+                    if (existingModel.IsExternalStub)
+                    {
+                        DetachFromFile(existingModel);
+                        _nodes[node.Id] = node;
+                    }
+
+                    // Otherwise the existing node is the real source: keep it.
+                }
                 // When a standalone model collides with a non-standalone (prefixed) model,
                 // prefer the standalone version — it has the full class definition and can
                 // be saved as a separate file. The non-standalone version (e.g., redeclare
                 // function extends X) is just a modification embedded in the parent.
-                if (!existingModel.CanBeStoredStandalone && newModel.CanBeStoredStandalone)
+                else if (!existingModel.CanBeStoredStandalone && newModel.CanBeStoredStandalone)
                 {
+                    DetachFromFile(existingModel);
                     _nodes[node.Id] = node;
                 }
                 else if (existingModel.CanBeStoredStandalone && !newModel.CanBeStoredStandalone
@@ -180,16 +223,73 @@ public class DirectedGraph
     /// </summary>
     public void AddFileContainsModel(string fileNodeId, string modelNodeId)
     {
+        // Under the graph lock, all of it. Libraries load in parallel, and a class that moves between
+        // files now touches the set belonging to the file it is leaving — a set another thread may be
+        // adding to for a file of its own. Two threads inside one HashSet do not merely race for an
+        // outcome: they corrupt it, and a corrupted set can spin forever on the next lookup, which
+        // presents as a load that never finishes rather than as an error.
+        lock (_lock)
+        {
+            AddFileContainsModelLocked(fileNodeId, modelNodeId);
+        }
+    }
+
+    /// <summary>Caller must hold the lock.</summary>
+    private void AddFileContainsModelLocked(string fileNodeId, string modelNodeId)
+    {
         var fileNode = GetNode<FileNode>(fileNodeId);
         var modelNode = GetNode<ModelNode>(modelNodeId);
 
         if (fileNode == null || modelNode == null)
             throw new ArgumentException("Both file and model nodes must exist.");
 
+        // A class whose source is loaded keeps the file its source is in. The only thing that ever
+        // asks otherwise is a library recovered from a vendor's documentation being loaded over a
+        // checked-out copy of the same library, and letting it win pointed the real class at an
+        // encrypted package — which then got read, parsed and, in the worst case, written.
+        if (!modelNode.IsExternalStub && IsExternalStubFile(fileNode))
+            return;
+
+        // A class lives in one file. Leaving it listed in the file it came from made it a member of
+        // two: after a class recovered from an encrypted package was replaced by its real source, the
+        // package still claimed it, and anything asking what a file contains — the CLI's model-to-file
+        // map, which decides the path a finding is reported against — could name the encrypted
+        // package for a class whose source is checked out. The same detach keeps the graph honest
+        // when formatting restructures a library and classes genuinely move between files.
+        if (!string.IsNullOrEmpty(modelNode.ContainingFileId) && modelNode.ContainingFileId != fileNodeId)
+        {
+            GetNode<FileNode>(modelNode.ContainingFileId)?.ContainedModelIds.Remove(modelNodeId);
+            RemoveEdge(modelNode.ContainingFileId, modelNodeId);
+        }
+
         fileNode.AddContainedModel(modelNodeId);
         modelNode.ContainingFileId = fileNodeId;
         AddEdge(fileNodeId, modelNodeId);
     }
+
+    /// <summary>
+    /// Lets go of a model node's file before that node is replaced by another. The replacement is a
+    /// different object, so it does not carry the old one's file link — and the file went on listing
+    /// a class it no longer holds. An encrypted package kept claiming classes whose real source had
+    /// since been loaded, and asking that file what it contained handed back the real ones.
+    /// </summary>
+    private void DetachFromFile(ModelNode model)
+    {
+        if (string.IsNullOrEmpty(model.ContainingFileId))
+            return;
+
+        GetNode<FileNode>(model.ContainingFileId)?.ContainedModelIds.Remove(model.Id);
+        RemoveEdge(model.ContainingFileId, model.Id);
+    }
+
+    /// <summary>
+    /// Whether a file is an encrypted package, which holds no readable source at all — only classes
+    /// MLQT rebuilt from the vendor's documentation. Decided by the extension rather than by what the
+    /// file currently contains, so the answer does not depend on how much of it has been registered
+    /// yet.
+    /// </summary>
+    private static bool IsExternalStubFile(FileNode fileNode) =>
+        ExternalStubBuilder.IsEncryptedPackageFile(fileNode.FilePath);
 
     /// <summary>
     /// Creates a relationship where one model uses another model.
@@ -216,7 +316,17 @@ public class DirectedGraph
         if (fileNode == null)
             return Enumerable.Empty<ModelNode>();
 
-        return fileNode.ContainedModelIds
+        // Copied under the lock rather than returned as a query over the live set: the caller decides
+        // when to enumerate, and a class moving between files mutates that set from a loading thread.
+        // An enumeration that outlives the lock is an enumeration of something that can change under
+        // it.
+        string[] ids;
+        lock (_lock)
+        {
+            ids = fileNode.ContainedModelIds.ToArray();
+        }
+
+        return ids
             .Select(id => GetNode<ModelNode>(id))
             .Where(node => node != null)
             .Cast<ModelNode>();
@@ -543,5 +653,6 @@ public class DirectedGraph
             _edges.Clear();
             _resourceEdges.Clear();
         }
+        InvalidateDependencyAnalysis();
     }
 }

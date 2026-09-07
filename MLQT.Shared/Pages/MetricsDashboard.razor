@@ -1,0 +1,998 @@
+@using ModelicaGraph.Analysis
+@using RevisionControl
+@using ModelicaGraph.DataTypes
+@using ModelicaParser.StyleRules
+@using MLQT.Services.Helpers
+@using MudBlazor
+@implements IDisposable
+@inject ILibraryDataService LibraryDataService
+@inject IRepositoryService RepositoryService
+@inject ICodeReviewService CodeReviewService
+@inject IStyleCheckingService StyleCheckingService
+@inject AppState NavState
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="0" Class="pa-2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+        <MudText Typo="Typo.body1">Metrics</MudText>
+        <MudAutocomplete T="string" Value="_scope" ValueChanged="OnScopeChanged" SearchFunc="SearchScopes"
+                         Placeholder="All libraries" Label="Scope (package)" Dense="true" Margin="Margin.Dense"
+                         Clearable="true" ResetValueOnEmptyText="true" Class="ml-4" Style="max-width:320px;"
+                         Typo="Typo.body1" />
+        <MudSpacer />
+        @if (_metrics is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mr-2"
+                       OnClick="SaveSnapshot" Disabled="_loading" StartIcon="@Icons.Material.Filled.Timeline">
+                Save snapshot
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mr-2"
+                   OnClick="ComputeSummary" Disabled="_loading" StartIcon="@Icons.Material.Filled.TableChart">
+            Compare sub-libraries
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   OnClick="Compute" Disabled="_loading" StartIcon="@Icons.Material.Filled.Refresh">
+            @(_metrics is null ? "Compute" : "Refresh")
+        </MudButton>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-3" />
+        <MudText Typo="Typo.body2">Analysing @(_modelCount) classes…</MudText>
+    }
+    else if (_metrics is null)
+    {
+        <MudText Typo="Typo.body1" Class="mt-3">
+            @(LibraryDataService.GetAllModels().Any()
+                ? "Click Compute to calculate metrics for the loaded libraries."
+                : "Load a library to see metrics.")
+        </MudText>
+    }
+    else
+    {
+        <MudGrid Spacing="2" Class="mt-1">
+            <MudItem xs="12" md="9">
+                <MudText Typo="Typo.body1" Class="mb-1">
+                    Coverage — <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
+                </MudText>
+                @foreach (var c in _metrics.Coverage)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0" Class="mb-1">
+                        <MudText Typo="Typo.body1" Style="width:220px;">@c.Dimension</MudText>
+                        <MudProgressLinear Color="@CoverageColor(c.Percent)" Value="@c.Percent" Rounded="true"
+                                           Class="flex-grow-1 mx-2" Style="height:14px;" />
+                        <MudText Typo="Typo.body2" Style="width:120px; text-align:right;">
+                            @($"{c.Percent:0.#}%") <span style="opacity:0.6;">(@c.Compliant/@c.Eligible)</span>
+                        </MudText>
+                    </MudStack>
+                }
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-2 mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small" Color="Color.Error" />
+                    <MudText Typo="Typo.body1">Active rule findings:</MudText>
+                    @if (_findings is not null)
+                    {
+                        <MudText Typo="Typo.body1"><b>@_findings</b></MudText>
+                    }
+                    @if (_analysisRunning)
+                    {
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="ml-1" />
+                        <MudText Typo="Typo.caption">analysing…</MudText>
+                    }
+                    else if (_findings is null)
+                    {
+                        <MudText Typo="Typo.body1"><b>—</b></MudText>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   OnClick="RunAnalysis" Class="ml-1">Run analysis</MudButton>
+                    }
+                </MudStack>
+                <MudStack Row="false" AlignItems="AlignItems.Start" Spacing="0" Class="mt-2 mb-1">
+                    <MudText Typo="Typo.caption" Class="mb-1">
+                        Findings still open after suppression — drops when a rule is fixed <b>or</b> deliberately
+                        suppressed. This is the measure that moves when the percentages barely do.
+                        True source state — in-source waivers do not raise it. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        A dimension is listed only where its rule is on — a rule set to Off is a decision that its gap is not worth tracking.
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        The layout dimensions (imports, extends, sections) drop off as well when the formatter rewrites them on save, since the number would
+                        measure the moment before the save. They count every class checked, so a class with nothing to order counts as complying.
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Icon</b> counts a class's own <code>Icon</code> graphics or one inherited via <code>extends</code>. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Parameter description</b> and <b>Constant description</b> count public declarations only — protected ones and plain variables are
+                        outside both the numerator and the denominator. 
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        <b>Unit</b> counts every Real-derived variable (plain <code>Real</code> and SI/quantity types), public and protected alike, as united when its type
+                        fixes a unit or it declares one inline.
+                    </MudText>
+                </MudStack>
+            </MudItem>
+
+            <MudItem xs="12" md="3">
+                <MudText Typo="Typo.body1" Class="mb-1">Size</MudText>
+                <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Total Classes</td><td style="text-align:right;">@_metrics.TotalClasses</td></tr>
+                        @foreach (var kv in _metrics.ClassesByType.OrderByDescending(k => k.Key))
+                        {
+                            <tr>
+                                <td style="padding-left:20px; opacity:0.75;">@kv.Key</td>
+                                <td style="text-align:right; opacity:0.75;">@kv.Value</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @if (_summary.Count > 0)
+    {
+        <MudText Typo="Typo.body1" Class="mt-4 mb-1">
+            Sub-library comparison — <b>@(string.IsNullOrEmpty(_scope) ? "loaded libraries" : _scope)</b>
+        </MudText>
+        <div style="overflow-x:auto;">
+            <MudSimpleTable Dense="true" Hover="true" Bordered="false" Striped="true" Elevation="0">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Package</th>
+                        <th style="text-align:right;">Classes</th>
+                        @foreach (var d in _summaryDimensions)
+                        {
+                            <th style="text-align:right;">@d</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _summary)
+                    {
+                        <tr>
+                            <td>
+                                <MudLink Typo="Typo.body2" Style="cursor:pointer;"
+                                         @onclick="@(() => OnScopeChanged(row.Package))">@ModelicaName.LeafOf(row.Package)</MudLink>
+                            </td>
+                            <td style="text-align:right;">@row.Metrics.TotalClasses</td>
+                            @foreach (var d in _summaryDimensions)
+                            {
+                                var c = row.Metrics.Coverage.FirstOrDefault(x => x.Dimension == d);
+                                <td style="text-align:right;">
+                                    @if (c is null)
+                                    {
+                                        <MudText Typo="Typo.body2" Inline="true">—</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Inline="true" Color="@CoverageColor(c.Percent)">@($"{c.Percent:0}%")</MudText>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+        <MudText Typo="Typo.caption">Click a package to focus the whole dashboard on it.</MudText>
+    }
+
+    @if (_scopedHistory.Count >= 2)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1" Class="mt-4 mb-1">
+            <MudText Typo="Typo.body1">
+                @(_showCounts ? "Outstanding-finding burndown" : "Coverage trend") —
+                <b>@(string.IsNullOrEmpty(_scope) ? "all libraries" : _scope)</b>
+            </MudText>
+            <MudSpacer />
+            <MudSwitch T="bool" Value="_showCounts" ValueChanged="OnShowCountsChanged" Color="Color.Primary"
+                       Size="Size.Small" Label="Outstanding counts" />
+        </MudStack>
+        @* The axis fits the data rather than starting at zero, and clicking a series in the chart's
+           own legend hides it and refits to what is left. *@
+        @* The class sits on a wrapping div rather than on the MudChart: Blazor stamps its scope
+           attribute onto this component's own HTML elements only, never onto a child component, so
+           the scoped rule that sizes the legend could not reach it from there. *@
+        <div class="mlqt-trend-chart">
+            <MudChart T="double" ChartType="ChartType.Timeseries" ChartSeries="_trendChartSeries"
+                      ChartOptions="_trendChartOptions" MatchBoundsToSize="true" CanHideSeries="true"
+                      Width="100%" Height="400px" Class="mb-1" />
+        </div>
+
+        <div style="overflow-x:auto;">
+            <MudSimpleTable Dense="true" Bordered="false" Striped="true" Elevation="0">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;"><MudText Typo="Typo.caption"><strong>Snapshot</strong></MudText></th>
+                        <th style="text-align:left;"><MudText Typo="Typo.caption"><strong>Revision</strong></MudText></th>
+                        <th style="text-align:right;"><MudText Typo="Typo.caption"><strong>Classes</strong></MudText></th>
+                        @foreach (var d in _dimensions)
+                        {
+                            <th style="text-align:center;"><MudText Typo="Typo.caption"><strong>@d</strong></MudText></th>
+                        }
+                        <th style="text-align:center;"><MudText Typo="Typo.caption"><strong>Findings</strong></MudText></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _scopedHistory.AsEnumerable().Reverse().Take(15))
+                    {
+                        <tr>
+                            <td><MudText Typo="Typo.caption">@s.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText></td>
+                            <td style="text-align:left;">
+                                @* A Git hash is shown short, as it is everywhere else in the app; the
+                                   full one is a hover away. An SVN revision number is already short. *@
+                                <MudTooltip Text="@s.Revision" Disabled="@(!RevisionId.IsCommitHash(s.Revision))">
+                                    <MudText Typo="Typo.caption">@RevisionId.Shorten(s.Revision)</MudText>
+                                </MudTooltip>
+                            </td>
+                            <td style="text-align:right;"><MudText Typo="Typo.caption">@s.TotalClasses</MudText></td>
+                            @foreach (var d in _dimensions)
+                            {
+                                <td style="text-align:right;">
+                                    @if (_showCounts)
+                                    {
+                                        var outstanding = Outstanding(s, d);
+                                        <MudText Typo="Typo.caption">@(outstanding.HasValue ? outstanding.Value.ToString() : "—")</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption">@(s.Coverage.TryGetValue(d, out var v) ? $"{v:0.#}%" : "—")</MudText>
+                                    }
+                                </td>
+                            }
+                            <td style="text-align:right;"><MudText Typo="Typo.caption">@(s.Findings.HasValue ? s.Findings.Value.ToString() : "—")</MudText></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+        <MudText Typo="Typo.caption">
+            @if (_showCounts)
+            {
+                <text><b>Outstanding counts</b> plot the number of findings still open per dimension (eligible − compliant), plus the total <b>Rule findings</b> line — for a large library these move well before the percentage does. Snapshots taken before counts were recorded are omitted from this view. </text>
+            }
+            else
+            {
+                <text>Line chart shows coverage % over time; toggle <b>Outstanding counts</b> to watch the raw finding count burn down. </text>
+            }
+            The table lists exact values (most recent first) for the selected scope. Snapshots are saved per library in each repository's version-controlled <code>.mlqt/metrics-history.json</code> — commit them so reviewers share the same burndown. The "all libraries" view aggregates the per-repository snapshots.
+        </MudText>
+    }
+    else if (_metrics is not null)
+    {
+        <MudText Typo="Typo.body1" Class="mt-4">
+            Save snapshots over time to build a coverage-burndown trend for this scope.
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    private LibraryMetrics? _metrics;
+    private bool _loading;
+    private int _modelCount;
+    private string _scope = "";   // "" = all loaded libraries; else a package id
+
+    private List<MetricsSnapshot> _history = new();
+    private List<MetricsSnapshot> _scopedHistory = new();
+    private List<string> _dimensions = new();
+    private bool _showCounts;   // trend Y-axis: false = coverage %, true = outstanding count
+
+    // The chart's own state. Which series are hidden is recorded on these objects, so they outlive a
+    // render — see RebuildTrendChart. The options carry the palette, which the legend reads so that a
+    // swatch cannot disagree with the line it stands for.
+    private List<ChartSeries<double>> _trendChartSeries = new();
+    private TimeSeriesChartOptions _trendChartOptions = new() { ChartPalette = TrendPalette, XAxisLabelRotation = 60, YAxisLines = true, XAxisLines = true, ShowLegend = true };
+
+    private int? _findings;          // active (unsuppressed) rule findings in scope; null until known
+    private bool _analysisRunning;   // dependency analysis / style checking still in progress
+
+    // Distinct line colour for the "Rule findings" burndown series (kept out of TrendPalette).
+    private const string FindingsColor = "#f44336";
+
+    private List<(string Package, LibraryMetrics Metrics)> _summary = new();
+    private List<string> _summaryDimensions = new();
+
+    // Line colours for the coverage-trend chart, one per dimension. Chosen to read on light and dark,
+    // and long enough for every dimension: the palette used to hold six, so with fourteen dimensions
+    // available two lines could share a colour and the legend could not tell them apart — which now
+    // also decides which line a click switches off.
+    private static readonly string[] TrendPalette =
+    {
+        "#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4",
+        "#3f51b5", "#009688", "#8bc34a", "#ff5722", "#607d8b", "#795548",
+        "#673ab7", "#afb42b"
+    };
+
+    // Session cache of the last computed metrics, keyed by scope + a signature of the loaded libraries.
+    // Static so it survives the tab panel being recreated on navigation — returning to the tab restores
+    // the result instantly instead of recomputing, while a change to the libraries invalidates it.
+    private static string? _cacheScope;
+    private static string? _cacheSignature;
+    private static LibraryMetrics? _cacheMetrics;
+
+    protected override void OnInitialized()
+    {
+        NavState.OnDeferredAnalysisCompleted += OnDeferredAnalysisCompleted;
+        LibraryDataService.OnLibrariesChanged += OnLibrariesChanged;
+        CodeReviewService.OnLogMessagesChanged += OnFindingsChanged;
+        StyleCheckingService.OnProgressChanged += OnStyleCheckProgress;
+
+        // Restore the scope chosen earlier this session, but drop it if it no longer names a package
+        // this report covers (e.g. after switching project, or after its repository was marked
+        // reference only).
+        _scope = NavState.MetricsScope;
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels()
+                .Any(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)))
+        {
+            _scope = "";
+            NavState.MetricsScope = "";
+        }
+
+        _history = LoadAllHistory();
+        RecountFindings();   // from whatever findings the background checker has already delivered
+
+        // Restore a still-valid cached result so navigating back is instant; otherwise first render
+        // triggers an automatic compute.
+        if (_cacheMetrics is not null && _cacheScope == _scope && _cacheSignature == LibrarySignature())
+            _metrics = _cacheMetrics;
+        else if (LibraryDataService.GetAllModels().Any())
+            _loading = true;   // show the progress state right away for the pending auto-compute
+
+        RebuildTrend();
+        base.OnInitialized();
+    }
+
+    // Compute metrics automatically when the tab first renders (unless a cached result was restored), so
+    // the Coverage page shows numbers for the selected scope without the user clicking Compute.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // First render can't overlap a running compute, so _loading here only reflects the placeholder
+        // flag set in OnInitialized — don't let it suppress the pending auto-compute.
+        if (firstRender && _metrics is null && LibraryDataService.GetAllModels().Any())
+            await Compute();
+    }
+
+    // Manual "Run analysis" button (shown when analysis has never run this session).
+    private void RunAnalysis()
+    {
+        EnsureAnalysisStarted();
+        StateHasChanged();
+    }
+
+    // A complete finding count needs dependency analysis (for the graph-based rules) AND style
+    // checking to have run — anything less is a partial picture.
+    private bool AnalysisComplete => NavState.HasDependencyAnalysisRun && NavState.HasStyleCheckingRun;
+
+    // Findings arrive asynchronously from the background analysis; recount when they change.
+    private void OnFindingsChanged()
+    {
+        RecountFindings();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Style checking reports completion (done == true) once every repository has been checked.
+    private void OnStyleCheckProgress(bool done)
+    {
+        if (done && AnalysisComplete)
+            _analysisRunning = false;
+        RecountFindings();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Each deferred step (dependency analysis, style checking) reports completion here.
+    private void OnDeferredAnalysisCompleted()
+    {
+        if (AnalysisComplete)
+            _analysisRunning = false;
+        RecountFindings();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Count active (unsuppressed) style/analysis findings whose model falls within the current scope.
+    // Suppressed findings never reach CodeReviewService, so this drops when a rule is fixed OR suppressed.
+    private void RecountFindings()
+    {
+        if (!_analysisRunning && !AnalysisComplete)
+        {
+            _findings = null;   // unknown until analysis has run at least once
+            return;
+        }
+        _findings = CountFindingsForScope(_scope);
+    }
+
+    private int CountFindingsForScope(string scope)
+        => CodeReviewService.LogMessages.Count(m => IsStyleDebt(m) && InScope(m.ModelName, scope));
+
+    private int CountFindingsForModels(HashSet<string> modelIds)
+        => CodeReviewService.LogMessages.Count(m => IsStyleDebt(m) && modelIds.Contains(m.ModelName));
+
+    /// <summary>
+    /// What the trend's finding count is about: style debt, not diagnostics.
+    ///
+    /// <para>The source check alone excludes the two parse diagnostics, which are projected as
+    /// "Parser" messages — and lets <c>MLQT.Check.Failed</c> through, because
+    /// <see cref="Finding.ToLogMessage"/> gives every other finding the style source. That is the
+    /// exact id B26 moved out of the Parse category for looking like a parse error when it is not.
+    /// <see cref="RuleIds.IsDiagnostic"/> is the question actually being asked — is this a diagnostic
+    /// rather than a rule — and its own summary says none of them counts as style debt in the metrics
+    /// trend. <c>MetricsRecorder</c> in the CLI has always asked it that way, and since the CLI and
+    /// this page write the same <c>.mlqt/metrics-history.json</c>, one trend was stepping up and down
+    /// according to which of them recorded the point.</para>
+    /// </summary>
+    private static bool IsStyleDebt(LogMessage m)
+        => m.Source == LogMessage.StyleCheckingSource && !(m.RuleId is { } id && RuleIds.IsDiagnostic(id));
+
+    // A finding count is only worth recording once the full analysis has finished; while it is still
+    // running (or has never run) the number is partial, so store null rather than a misleading figure.
+    private int? ReliableFindings(int? current)
+        => (_analysisRunning || !AnalysisComplete) ? (int?)null : current;
+
+    private static bool InScope(string modelId, string scope)
+        => string.IsNullOrEmpty(scope) || modelId == scope
+           || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
+
+    // Ensure the full analysis has run so the finding count is complete: dependency analysis (for the
+    // graph-based rules) plus style checking. Kicks off whatever is missing; findings then stream in and
+    // update the count reactively. RunAllDeferredAnalysisAsync runs dependency analysis + style + graph
+    // analyses together; if dependencies are already done, only style checking is needed.
+    private void EnsureAnalysisStarted()
+    {
+        if (_analysisRunning || AnalysisComplete)
+            return;
+        if (!LibraryDataService.GetAllModels().Any())
+            return;
+        _analysisRunning = true;
+        // Offload to a background thread. The deferred analysis performs sync-over-async work (settings
+        // and custom-dictionary loads) before it reaches its own Task.Run, which would deadlock the
+        // Blazor renderer if it ran on the UI thread — the same reason the startup dialog wraps these
+        // calls in Task.Run.
+        if (!NavState.HasDependencyAnalysisRun)
+            _ = Task.Run(() => NavState.RunAllDeferredAnalysisAsync());
+        else
+            _ = Task.Run(() => NavState.RunDeferredStyleCheckingAsync());
+    }
+
+    // A cheap fingerprint of the loaded library set; when it changes, cached metrics are stale.
+    private string LibrarySignature()
+        => string.Join("|", LibraryDataService.Libraries.Select(l => $"{l.Id}:{l.ModelIds.Count}"));
+
+    // The set of loaded libraries/repositories changed: reload the merged history so a newly loaded
+    // library's shared trend appears without reopening the tab, and drop a measured result that now
+    // describes a library set that is gone. (The metrics cache is keyed on LibrarySignature(), so it
+    // invalidates itself; only this instance's displayed figures need clearing.)
+    private void OnLibrariesChanged()
+    {
+        // A remembered scope from the previous project may not exist any more, and a repository
+        // marked reference only since takes its packages out of this report.
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels().Any(m => m.Id == _scope))
+        {
+            _scope = string.Empty;
+            NavState.MetricsScope = string.Empty;
+        }
+
+        _metrics = null;
+        _summary = new();
+        _findings = null;
+
+        _history = LoadAllHistory();
+        RebuildTrend();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Packages the user can scope to (matched against what they type). Only packages from
+    // <see cref="ReportableModels"/> — scoping to a reference-only library would measure nothing, so
+    // offering it is offering an empty report. Capped so the list stays usable.
+    private Task<IEnumerable<string>> SearchScopes(string value, System.Threading.CancellationToken token)
+    {
+        var packages = ReportableModels()
+            .Where(m => m.ClassType == "package")
+            .Select(m => m.Id);
+        if (!string.IsNullOrWhiteSpace(value))
+            packages = packages.Where(id => id.Contains(value, System.StringComparison.OrdinalIgnoreCase));
+
+        // Rank before capping. Sorting the matches alphabetically and taking the first fifty is what
+        // hid the library itself: in a library with fifty packages named after "Suspensions", the one
+        // actually called Suspensions sorts after every Chassis.*, Kinematics.* and Vehicle.* that
+        // mentions it, and falls off the end of the list. What the user typed goes first, then the
+        // packages named that, then the shallowest.
+        var term = (value ?? string.Empty).Trim();
+        return Task.FromResult<IEnumerable<string>>(
+            packages
+                .OrderBy(id => string.Equals(id, term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(id => string.Equals(ModelicaName.LeafOf(id), term, System.StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(id => id.Count(c => c == '.'))
+                .ThenBy(id => id, System.StringComparer.Ordinal)
+                .Take(50)
+                .ToList());
+    }
+
+    private async Task OnScopeChanged(string? scope)
+    {
+        _scope = scope ?? "";
+        NavState.MetricsScope = _scope;   // remember for when the user returns to this tab
+        _summary = new();   // stale relative to the new scope; user re-runs Compare to break it down
+        RebuildTrend();
+        await Compute();      // re-measure for the new scope
+    }
+
+    private async Task SaveSnapshot()
+    {
+        if (_metrics is null)
+            return;
+
+        var timestamp = System.DateTime.UtcNow;
+        int sharedCount = 0;
+        bool anyPerUser = false;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(_scope))
+            {
+                // A scope belongs to exactly one library — its repository's shared file, or the per-user
+                // file for a library not loaded from a repository. _metrics already covers this scope.
+                var repo = OwningRepository(_scope);
+                var repoLocalPath = repo?.LocalPath;
+                var path = !string.IsNullOrEmpty(repoLocalPath)
+                    ? MetricsHistoryStore.RepoPath(repoLocalPath)
+                    : MetricsHistoryStore.DefaultPath;
+                MetricsHistoryStore.Append(path, MetricsSnapshot.From(
+                    _metrics, _scope, timestamp, ReliableFindings(_findings),
+                    repo?.CurrentRevision, repo?.CurrentBranch));
+                if (!string.IsNullOrEmpty(repoLocalPath)) sharedCount++; else anyPerUser = true;
+            }
+            else
+            {
+                // "All libraries": store a per-library snapshot in each repository's own shared file
+                // (and one per-user file for any non-repo libraries), so each travels with its library
+                // and RebuildTrend aggregates them on read — no combined blob in an arbitrary place.
+                var groups = StorageGroups();
+                if (groups.Count == 0)
+                {
+                    Snackbar.Add("Load a library first.", Severity.Info);
+                    return;
+                }
+
+                if (groups.Count == 1)
+                {
+                    // Single target: _metrics already covers exactly this group's models — reuse it.
+                    var g = groups[0];
+                    MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
+                        _metrics, "", timestamp, ReliableFindings(_findings),
+                        g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
+                    if (g.Shared) sharedCount++; else anyPerUser = true;
+                }
+                else
+                {
+                    _loading = true;
+                    StateHasChanged();
+                    var graph = LibraryDataService.CombinedGraph;
+                    var settingsFor = StyleSettingsLookup();
+                    var findingsReliable = !_analysisRunning && AnalysisComplete;
+                    await Task.Run(() =>
+                    {
+                        foreach (var g in groups)
+                        {
+                            var metrics = MetricsCalculator.Compute(graph, g.Models, settingsFor);
+                            int? v = findingsReliable
+                                ? CountFindingsForModels(g.Models.Select(m => m.Id).ToHashSet(System.StringComparer.Ordinal))
+                                : (int?)null;
+                            MetricsHistoryStore.Append(g.Path, MetricsSnapshot.From(
+                                metrics, "", timestamp, v, g.Repo?.CurrentRevision, g.Repo?.CurrentBranch));
+                        }
+                    });
+                    sharedCount = groups.Count(g => g.Shared);
+                    anyPerUser = groups.Any(g => !g.Shared);
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Snackbar.Add($"Could not save snapshot: {ex.Message}", Severity.Error);
+            return;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        _history = LoadAllHistory();
+        RebuildTrend();
+        var where = sharedCount > 0
+            ? $"{sharedCount} repository .mlqt file(s) — commit them to share with reviewers"
+            : "the per-user file (no repository-backed libraries)";
+        Snackbar.Add($"Snapshot saved to {where}.", Severity.Success);
+        if (_analysisRunning || !AnalysisComplete)
+            Snackbar.Add("Analysis hasn't finished — the finding count was left out of this snapshot. Save again once it completes.", Severity.Info);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Every loaded library grouped by the history file it belongs to (a repository's shared .mlqt file,
+    // or the per-user file for non-repo libraries), with that group's model nodes for per-group metrics.
+    private List<(string Path, bool Shared, List<ModelNode> Models, Repository? Repo)> StorageGroups()
+    {
+        var graph = LibraryDataService.CombinedGraph;
+        var byPath = new Dictionary<string, List<ModelNode>>(System.StringComparer.OrdinalIgnoreCase);
+        var sharedPaths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        // The repository each history file belongs to, so its snapshots can name the revision they
+        // describe — the same stamp `mlqt check --metrics` writes, so points from the desktop app and
+        // from CI are comparable in the one shared file.
+        var repoByPath = new Dictionary<string, Repository?>(System.StringComparer.OrdinalIgnoreCase);
+
+        foreach (var lib in LibraryDataService.Libraries)
+        {
+            var repo = string.IsNullOrEmpty(lib.RepositoryId)
+                ? null
+                : RepositoryService.Repositories.FirstOrDefault(r => r.Id == lib.RepositoryId);
+
+            // Nothing is measured for a reference-only library, and nothing is written to its
+            // repository — a snapshot there would dirty a checkout the user marked hands-off with
+            // numbers about code that is not theirs to improve. Asked of the library rather than of
+            // its repository, because one loaded from Settings > Reference Libraries has none: those
+            // were landing in the per-user history, which for a machine with a tool's library folder
+            // configured meant a trend describing a vendor's library.
+            if (ReferenceOnlyScope.IsReference(lib, RepositoryService))
+                continue;
+
+            string path;
+            if (repo is not null && !string.IsNullOrEmpty(repo.LocalPath))
+            {
+                path = MetricsHistoryStore.RepoPath(repo.LocalPath);
+                sharedPaths.Add(path);
+            }
+            else
+            {
+                path = MetricsHistoryStore.DefaultPath;
+            }
+            repoByPath[path] = repo;
+
+            if (!byPath.TryGetValue(path, out var list))
+                byPath[path] = list = new List<ModelNode>();
+            foreach (var id in lib.ModelIds)
+            {
+                var node = graph.GetNode<ModelNode>(id);
+                if (node is not null)
+                    list.Add(node);
+            }
+        }
+
+        return byPath
+            .Select(kv => (kv.Key, sharedPaths.Contains(kv.Key), kv.Value, repoByPath.GetValueOrDefault(kv.Key)))
+            .ToList();
+    }
+
+    // The local path of the repository whose library owns this scope, or null when there is none:
+    // a non-empty scope resolves via the library that contains it; an empty scope resolves only when a
+    // single repository is loaded (otherwise it spans several).
+    private Repository? OwningRepository(string scope)
+    {
+        string? repoId;
+        if (!string.IsNullOrEmpty(scope))
+        {
+            repoId = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(scope))?.RepositoryId;
+        }
+        else
+        {
+            var repoIds = LibraryDataService.Libraries
+                .Select(l => l.RepositoryId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(System.StringComparer.Ordinal)
+                .ToList();
+            repoId = repoIds.Count == 1 ? repoIds[0] : null;
+        }
+        if (string.IsNullOrEmpty(repoId))
+            return null;
+        return RepositoryService.Repositories.FirstOrDefault(r => r.Id == repoId);
+    }
+
+    // Merge every loaded repository's shared history with the per-user file (which covers file/directory
+    // libraries and any pre-existing snapshots). Each snapshot carries its own scope, so RebuildTrend's
+    // per-scope filter still applies; ordered by time so the chart/table read chronologically.
+    private List<MetricsSnapshot> LoadAllHistory()
+    {
+        var all = new List<MetricsSnapshot>();
+        var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var repo in RepositoryService.Repositories)
+        {
+            // A reference-only repository may carry its owner's own history file. Its points describe
+            // classes this report does not measure, so merging them would move the trend — and, at the
+            // "all libraries" scope, be aggregated into our own points by timestamp.
+            if (string.IsNullOrEmpty(repo.LocalPath) || repo.IsReferenceOnly)
+                continue;
+            var p = MetricsHistoryStore.RepoPath(repo.LocalPath);
+            if (seen.Add(p))
+                all.AddRange(MetricsHistoryStore.Load(p));
+        }
+        all.AddRange(MetricsHistoryStore.Load(MetricsHistoryStore.DefaultPath));
+        return all.OrderBy(s => s.TimestampUtc).ToList();
+    }
+
+    // The trend for the current scope: its snapshots, and the union of their coverage dimensions. For
+    // the "all libraries" scope, per-repository snapshots written together share a timestamp and are
+    // combined into one aggregate point (exactly, via their raw counts) so the trend reads as one line.
+    private void RebuildTrend()
+    {
+        var matching = _history.Where(s => (s.Scope ?? "") == _scope).ToList();
+        if (string.IsNullOrEmpty(_scope))
+            matching = MetricsSnapshot.AggregateByTimestamp(matching);
+        _scopedHistory = matching.OrderBy(s => s.TimestampUtc).ToList();
+        _dimensions = _scopedHistory.SelectMany(s => s.Coverage.Keys).Distinct().ToList();
+        RebuildTrendChart();
+    }
+
+    /// <summary>
+    /// The classes these figures are about: the user's own code. A repository marked reference only is
+    /// loaded so references resolve and is nobody's to improve, so counting its descriptions and icons
+    /// would move the percentages for reasons no one here can act on — the same reason classes
+    /// recovered from an encrypted library are left out.
+    /// </summary>
+    private List<ModelNode> ReportableModels()
+    {
+        var referenceOnly = ReferenceOnlyScope.ModelIds(LibraryDataService, RepositoryService);
+        // Stubs go too, for the same reason and to the same end as in MetricsCalculator: a class
+        // rebuilt from a vendor's help HTML has no source to measure, so offering its package as a
+        // scope offers a report of nothing.
+        return LibraryDataService.GetAllModels()
+            .Where(m => !m.IsExternalStub && !referenceOnly.Contains(m.Id))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The rule settings that decide which dimensions each class is measured and reported for — its
+    /// repository's, or none for a class in no repository, which no rule checks either. Built as a
+    /// map up front: a per-class repository lookup scans every loaded library, which on a library of
+    /// tens of thousands of classes is the report.
+    /// </summary>
+    private Func<ModelNode, StyleCheckingSettings?> StyleSettingsLookup()
+    {
+        var byModel = new Dictionary<string, StyleCheckingSettings?>(System.StringComparer.Ordinal);
+        foreach (var library in LibraryDataService.Libraries)
+        {
+            var settings = string.IsNullOrEmpty(library.RepositoryId)
+                ? null
+                : RepositoryService.Repositories
+                    .FirstOrDefault(r => r.Id == library.RepositoryId)?.StyleSettings;
+            if (settings is null)
+                continue;   // absent means "no rules", which is what a missing entry already says
+            foreach (var id in library.ModelIds)
+                byModel[id] = settings;
+        }
+
+        return model => byModel.GetValueOrDefault(model.Id);
+    }
+
+    private async Task Compute()
+    {
+        EnsureAnalysisStarted();   // run dependency analysis + style checking if needed for a full count
+        RecountFindings();
+
+        var all = ReportableModels();
+        var models = string.IsNullOrEmpty(_scope)
+            ? all
+            : all.Where(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)).ToList();
+        _modelCount = models.Count;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var graph = LibraryDataService.CombinedGraph;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var settingsFor = StyleSettingsLookup();
+            _metrics = await Task.Run(() => MetricsCalculator.Compute(graph, models, settingsFor));
+            // Says where a slow report went: classes measured here are ones no check had reached, so
+            // the number names the gap rather than leaving the wait unexplained.
+            MLQT.Services.LoggingService.Info("MetricsDashboard",
+                $"Coverage over {models.Count} class(es) took {watch.ElapsedMilliseconds} ms; " +
+                $"{_metrics.MeasuredNow} measured here, {models.Count - _metrics.MeasuredNow} already done");
+            _cacheScope = _scope;
+            _cacheSignature = LibrarySignature();
+            _cacheMetrics = _metrics;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // Break the current scope into its direct sub-packages and measure each side by side, so a
+    // lead can compare across teams. Resolution still uses the full graph, so a sub-package that
+    // inherits icons/units from outside its own subtree still scores correctly.
+    private async Task ComputeSummary()
+    {
+        var all = ReportableModels();
+        var children = SubPackages(all.Where(m => m.ClassType == "package").Select(m => m.Id));
+        if (children.Count == 0)
+        {
+            Snackbar.Add("No sub-packages to compare in this scope.", Severity.Info);
+            return;
+        }
+        _modelCount = all.Count;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var graph = LibraryDataService.CombinedGraph;
+            var settingsFor = StyleSettingsLookup();
+            _summary = await Task.Run(() => children.Select(pkg =>
+            {
+                var models = all.Where(m => m.Id == pkg
+                    || m.Id.StartsWith(pkg + ".", System.StringComparison.Ordinal)).ToList();
+                return (pkg, MetricsCalculator.Compute(graph, models, settingsFor));
+            }).ToList());
+            // The union, not the first row's: sub-packages can sit in repositories with different
+            // rules, and a header taken from one of them would put another's numbers in its columns.
+            var present = _summary.SelectMany(r => r.Metrics.Coverage.Select(c => c.Dimension))
+                .ToHashSet(System.StringComparer.Ordinal);
+            _summaryDimensions = CoverageDimensions.Ordered
+                .Select(d => d.Name)
+                .Where(present.Contains)
+                .ToList();
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // The direct child packages of the current scope. When no scope is set and a single root
+    // library is loaded (e.g. "Modelica"), drill one level into it so MSL breaks straight into its
+    // sub-libraries rather than showing a single root row.
+    private List<string> SubPackages(IEnumerable<string> packageIds)
+    {
+        var packages = packageIds.ToHashSet(System.StringComparer.Ordinal);
+        string parent;
+        if (!string.IsNullOrEmpty(_scope))
+        {
+            parent = _scope;
+        }
+        else
+        {
+            var roots = packages.Where(id => !id.Contains('.')).ToList();
+            parent = roots.Count == 1 ? roots[0] : "";
+        }
+        IEnumerable<string> children = parent.Length == 0
+            ? packages.Where(id => !id.Contains('.'))
+            : packages.Where(id => id.StartsWith(parent + ".", System.StringComparison.Ordinal)
+                                   && id.IndexOf('.', parent.Length + 1) < 0);
+        return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
+    }
+
+    private static Color CoverageColor(double percent)
+        => percent >= 80 ? Color.Success : percent >= 50 ? Color.Warning : Color.Error;
+
+    // The lines drawn on the trend, shared by the chart and its legend: one per coverage dimension, plus
+    // a "Rule findings" line in count mode (it's a raw count with no percentage) when any snapshot in
+    // view recorded a findings total.
+    private List<(string Label, string Color, Func<MetricsSnapshot, double?> Value)> TrendSeries()
+    {
+        var series = new List<(string, string, Func<MetricsSnapshot, double?>)>();
+        for (int i = 0; i < _dimensions.Count; i++)
+        {
+            var dim = _dimensions[i];
+            var color = TrendPalette[i % TrendPalette.Length];
+            series.Add((dim, color, s => TrendValue(s, dim)));
+        }
+        if (_showCounts && _scopedHistory.Any(s => s.Findings.HasValue))
+            series.Add(("Rule findings", FindingsColor,
+                s => s.Findings.HasValue ? s.Findings.Value : (double?)null));
+        return series;
+    }
+
+    // The outstanding count for a dimension in a snapshot (eligible − compliant), or null when
+    // that snapshot predates raw counts. Used by the "Outstanding counts" burndown view.
+    private static int? Outstanding(MetricsSnapshot s, string dim)
+        => s.Counts is not null && s.Counts.TryGetValue(dim, out var c) ? c.Eligible - c.Compliant : null;
+
+    // The value plotted for a dimension: coverage % (0–100) or outstanding count, honouring _showCounts.
+    private double? TrendValue(MetricsSnapshot s, string dim)
+        => _showCounts
+            ? Outstanding(s, dim)
+            : (s.Coverage.TryGetValue(dim, out var p) ? p : (double?)null);
+
+    // Percentages and outstanding counts are different scales and different series (the findings line
+    // only exists in count mode), so the chart is rebuilt rather than re-pointed.
+    private void OnShowCountsChanged(bool value)
+    {
+        _showCounts = value;
+        RebuildTrendChart();
+    }
+
+    /// <summary>
+    /// Rebuilds the chart's series and options from the scoped history.
+    ///
+    /// <para>The series objects are kept in a field rather than built during render because hidden-ness
+    /// lives <i>on them</i> — rebuilding them every render would silently un-hide everything on the next
+    /// redraw. For the same reason a rebuild carries the hidden set across: saving a snapshot should not
+    /// undo what the user switched off.</para>
+    /// </summary>
+    private void RebuildTrendChart()
+    {
+        // Called from RebuildTrend, which also runs for a scope with no history at all.
+        if (_scopedHistory.Count == 0)
+        {
+            _trendChartSeries = new();
+            return;
+        }
+
+        var hidden = _trendChartSeries
+            .Where(cs => !cs.Visible)
+            .Select(cs => cs.Name)
+            .ToHashSet(System.StringComparer.Ordinal);
+
+        var definitions = TrendSeries();
+        _trendChartSeries = definitions.Select(sv => new ChartSeries<double>
+        {
+            Name = sv.Label,
+            Visible = !hidden.Contains(sv.Label),
+            Data = new ChartData<double>(_scopedHistory
+                // Plotted in local time — a snapshot is remembered as "before lunch", not as 11:03Z.
+                // SpecifyKind because a timestamp read back from JSON need not still say it is UTC,
+                // and ToLocalTime on a value that has forgotten would be a no-op.
+                .Select(s => (Time: DateTime.SpecifyKind(s.TimestampUtc, DateTimeKind.Utc).ToLocalTime(),
+                              Value: sv.Value(s)))
+                .Where(point => point.Value.HasValue)
+                .Select(point => (point.Time, point.Value!.Value))
+                .ToList()),
+        }).ToList();
+
+        var values = definitions
+            .SelectMany(sv => _scopedHistory.Select(s => sv.Value(s)))
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+
+        // Snapshots are taken when someone runs a check, so they are spaced by however the team works
+        // — a burst during a cleanup, then nothing for a month. The label spacing has to come from the
+        // range on screen: MudBlazor's default is five minutes, which over a year of history would ask
+        // for a hundred thousand labels.
+        //
+        // Ten labels' worth of that range is a raw number like 84.7 minutes, and MudBlazor places its
+        // labels on multiples of whatever it is given — so the axis came out reading 18:24, 19:49,
+        // 21:14, which looks like the times belong to somewhere else. Rounding the spacing up first,
+        // to ten minutes or (once the ticks are a day or more apart) to whole days, puts the labels
+        // back on times a person would have chosen.
+        var span = _scopedHistory[^1].TimestampUtc - _scopedHistory[0].TimestampUtc;
+        var raw = span > TimeSpan.Zero ? TimeSpan.FromTicks(span.Ticks / 10) : TimeSpan.FromDays(1);
+        var unit = raw < TimeSpan.FromDays(1) ? TimeSpan.FromMinutes(10) : TimeSpan.FromDays(1);
+        var spacing = TimeSpan.FromTicks((raw.Ticks + unit.Ticks - 1) / unit.Ticks * unit.Ticks);
+
+        // Whole days between ticks means every label is a different day, so the time says nothing and
+        // the date alone reads better — which is where a history spanning months or years always ends
+        // up. Below that the date would repeat across neighbouring labels, so the time stays.
+        var dateOnly = spacing >= TimeSpan.FromDays(1);
+
+        _trendChartOptions = new TimeSeriesChartOptions
+        {
+            ChartPalette = definitions.Select(sv => sv.Color).ToArray(),
+            YAxisRequireZeroPoint = false,   // fit the data: a burndown of 100 in 25,000 is invisible from zero
+            YAxisTicks = TrendAxis.TickInterval(values),
+            MaxNumYAxisTicks = 8,
+            YAxisToStringFunc = v => _showCounts
+                ? v.ToString("#,##0", System.Globalization.CultureInfo.CurrentCulture)
+                : v.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + "%",
+            LineStrokeWidth = 2,
+            TimeLabelSpacing = spacing,
+            TimeLabelSpacingRounding = true,
+            TimeLabelFormat = dateOnly ? "dd-MM-yy" : "dd-MM-yy HH:mm",
+            TooltipTimeLabelFormat = "dd-MM-yyyy HH:mm",
+            ShowToolTips = true,
+            ShowLegend = true,
+            YAxisLines = true,
+            XAxisLines = true,
+            XAxisLabelRotation = 60,
+            ShowDataMarkers = true
+        };
+    }
+
+    public void Dispose()
+    {
+        NavState.OnDeferredAnalysisCompleted -= OnDeferredAnalysisCompleted;
+        LibraryDataService.OnLibrariesChanged -= OnLibrariesChanged;
+        CodeReviewService.OnLogMessagesChanged -= OnFindingsChanged;
+        StyleCheckingService.OnProgressChanged -= OnStyleCheckProgress;
+    }
+}

@@ -95,6 +95,18 @@
                 </MudTabPanel>
             </MudTabs>
 
+            <MudCheckBox @bind-Value="_isReferenceOnly" Dense="true" Size="Size.Small" Color="Color.Primary">
+                <MudText Typo="Typo.body1">Reference only — I do not maintain this code</MudText>
+            </MudCheckBox>
+            <MudText Typo="Typo.caption" Class="ml-8 mt-n2">
+                Loaded so that references into it resolve. It is not style-checked, does not count
+                towards coverage, and nothing is written into it — no <code>.mlqt</code> directory.
+                @if (_readOnlyOnDisk)
+                {
+                    <text><b>This folder cannot be written to, so it has been ticked for you.</b></text>
+                }
+            </MudText>
+
             @if (_isLoading)
             {
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
@@ -121,6 +133,12 @@
     private string _path = "";
     private string _url = "";
     private string _checkoutPath = "";
+    private bool _isReferenceOnly;
+
+    // True when the chosen folder cannot be written to, which decides the checkbox for the user the
+    // first time rather than leaving them to discover it from failed writes all session.
+    private bool _readOnlyOnDisk;
+
     private RepositoryVcsType? _detectedVcsType = null;
     private string? _detectedVcsRoot = null;
     private bool _isLocal = true;
@@ -156,12 +174,20 @@
             {
                 _detectedVcsRoot = null;
             }
+
+            // Offer the answer the filesystem already gives: a folder MLQT cannot write into is one it
+            // could never keep settings, a baseline or accepted spellings in. Only ever ticks the box —
+            // a user who has unticked it for a writable folder is not overruled by a later keystroke.
+            _readOnlyOnDisk = !MLQT.Services.Helpers.DirectoryWritability.CanWriteInto(newPath);
+            if (_readOnlyOnDisk)
+                _isReferenceOnly = true;
         }
         else
         {
             _detectedVcsType = null;
             _detectedVcsRoot = null;
             _isLocal = true;
+            _readOnlyOnDisk = false;
         }
     }
 
@@ -273,7 +299,8 @@
             var result = await RepositoryService.AddRepositoryAsync(
                 _activeIndex == 0 ? _path : _url,
                 _isLocal ? null : _checkoutPath,
-                null);
+                null,
+                isReferenceOnly: _isReferenceOnly);
 
             if (result.Success && result.Repository != null)
             {

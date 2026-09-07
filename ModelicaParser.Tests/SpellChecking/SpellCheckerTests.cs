@@ -51,6 +51,78 @@ public class SpellCheckerTests
         Assert.True(checker.IsCorrect("xyzzyplugh"));
     }
 
+    [Theory]
+    // Modelica and its ecosystem
+    [InlineData("Modelica")]
+    [InlineData("Dymola")]
+    [InlineData("FMUs")]
+    [InlineData("redeclaration")]
+    [InlineData("subpackages")]
+    // engineering vocabulary neither bundled dictionary carries
+    [InlineData("revolute")]
+    [InlineData("airgap")]
+    [InlineData("setpoint")]
+    [InlineData("multibody")]
+    [InlineData("psychrometric")]
+    [InlineData("polytropic")]
+    [InlineData("magnetomotive")]
+    [InlineData("thyristor")]
+    [InlineData("quaternions")]
+    [InlineData("Hessenberg")]
+    [InlineData("nullspace")]
+    public void IsCorrect_BuiltInTerm_ReturnsTrue(string word)
+        => Assert.True(SpellChecker.Create().IsCorrect(word), $"'{word}' should be a built-in term");
+
+    [Fact]
+    public void IsCorrect_PolytropicIsSpelledCorrectly()
+    {
+        // The list carried "polytrophic" — a biology word — so the thermodynamic term beside it was
+        // reported and the misspelling was not.
+        var checker = SpellChecker.Create();
+        Assert.True(checker.IsCorrect("polytropic"));
+        Assert.False(checker.IsCorrect("polytrophic"));
+    }
+
+    [Fact]
+    public void BuiltInTerms_AreDialectScoped()
+    {
+        // A term whose spelling differs between dialects is only accepted in the dialect that was
+        // chosen. Accepting both would quietly undo the consistency a single-language repository is
+        // relying on the spell checker for.
+        var american = SpellChecker.Create(["en_US"]);
+        var british = SpellChecker.Create(["en_GB"]);
+
+        Assert.True(american.IsCorrect("linearization"));
+        Assert.False(american.IsCorrect("linearisation"));
+
+        Assert.True(british.IsCorrect("linearisation"));
+        Assert.False(british.IsCorrect("linearization"));
+    }
+
+    [Fact]
+    public void BuiltInTerms_DialectNeutralOnesApplyToEveryLanguage()
+    {
+        foreach (var checker in new[]
+                 {
+                     SpellChecker.Create(["en_US"]), SpellChecker.Create(["en_GB"]), SpellChecker.Create(),
+                 })
+        {
+            Assert.True(checker.IsCorrect("revolute"));
+            Assert.True(checker.IsCorrect("Modelica"));
+        }
+    }
+
+    [Fact]
+    public void BuiltInTerms_CommentLinesAreNotWords()
+    {
+        // The lists carry section headings and an explanation of what they are for.
+        Assert.DoesNotContain(SpellChecker.Create().CustomWords, w => w.StartsWith('#'));
+    }
+
+    [Fact]
+    public void BuiltInTerms_PossessiveOfATermIsAccepted()
+        => Assert.True(SpellChecker.Create().IsCorrect("Dymola's"));
+
     [Fact]
     public void IsCorrect_ModelicaTerm_ReturnsTrue()
     {
@@ -259,5 +331,135 @@ public class SpellCheckerTests
     public void Suggest_WhitespaceInput_ReturnsEmpty()
     {
         Assert.Empty(_checker.Suggest("  "));
+    }
+
+    [Fact]
+    public void IsCorrect_AcceptsThePossessiveOfAnAcceptedWord()
+    {
+        // A name a repository has accepted appears in prose as often in the possessive as not, and
+        // no dictionary — Hunspell or hand-written — carries possessive forms. Reporting "Stodola's"
+        // while "Stodola" beside it is fine reads as the word list being ignored.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("Stodola"));
+        Assert.True(checker.IsCorrect("Stodola's"));
+    }
+
+    [Fact]
+    public void IsCorrect_AcceptsThePossessiveOfADictionaryWord()
+    {
+        var checker = SpellChecker.Create(["en_US"]);
+
+        Assert.True(checker.IsCorrect("engine's"));
+    }
+
+    [Fact]
+    public void IsCorrect_AcceptsAPossessiveWrittenWithATypographicApostrophe()
+    {
+        // Documentation is HTML prose and carries either apostrophe.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("Stodola\u2019s"));
+    }
+
+    [Fact]
+    public void IsCorrect_DoesNotAcceptThePossessiveOfAMisspelling()
+    {
+        // Accepting possessives must not become a way for any word ending in 's to pass.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.False(checker.IsCorrect("Stodolla's"));
+        Assert.False(checker.IsCorrect("qwertys"));
+    }
+
+    [Fact]
+    public void AcceptedWords_IgnoreCase()
+    {
+        // The repository's word list is matched case-insensitively, so a term does not have to be
+        // listed once per casing it appears in. (The language dictionaries follow Hunspell's own
+        // rules instead: a lowercase entry covers "engine", "Engine" and "ENGINE", while a proper
+        // noun listed capitalised is not matched in lowercase.)
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Stodola"]);
+
+        Assert.True(checker.IsCorrect("stodola"));
+        Assert.True(checker.IsCorrect("STODOLA"));
+        Assert.True(checker.IsCorrect("StOdOlA"));
+        Assert.True(checker.IsCorrect("stodola's"));
+    }
+
+    [Theory]
+    [InlineData("Stodola's", "Stodola")]
+    [InlineData("Stodola\u2019s", "Stodola")]
+    [InlineData("engine's", "engine")]
+    [InlineData("Stodola", null)]
+    [InlineData("its", null)]
+    [InlineData("'s", null)]
+    public void PossessiveBaseOf_NamesTheWordAPossessiveBelongsTo(string word, string? expected)
+    {
+        // Anything recording an accepted word uses this, so the list gets "Stodola" whichever form
+        // the user happened to click on.
+        Assert.Equal(expected, SpellChecker.PossessiveBaseOf(word));
+    }
+
+    [Fact]
+    public void Suggest_OffersAnAcceptedWordThatIsNearlyRight()
+    {
+        // The case that prompted this: a repository accepts "Pacejka", someone types "Pacjeka", and
+        // no English dictionary has anything to say about either. The word the team accepted was one
+        // transposition away and was not being offered.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("Pacjeka");
+
+        Assert.Contains("Pacejka", suggestions);
+    }
+
+    [Fact]
+    public void Suggest_PutsAcceptedWordsFirst()
+    {
+        // They are the likelier intent: someone took the trouble to accept that exact term here.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("Pacjeka");
+
+        Assert.Equal("Pacejka", suggestions[0]);
+    }
+
+    [Fact]
+    public void Suggest_OffersAnAcceptedWordInItsAcceptedCasing()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["VeSyMA"]);
+
+        Assert.Contains("VeSyMA", checker.Suggest("VeSyMa1"));
+    }
+
+    [Fact]
+    public void Suggest_DoesNotOfferAcceptedWordsThatAreNothingLikeIt()
+    {
+        // A repository's vocabulary must not start answering for unrelated words.
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka", "enthalpy", "SOC"]);
+
+        var suggestions = checker.Suggest("qwertyuiop");
+
+        Assert.DoesNotContain("Pacejka", suggestions);
+        Assert.DoesNotContain("enthalpy", suggestions);
+    }
+
+    [Fact]
+    public void Suggest_DoesNotOfferTheWordItself()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        Assert.DoesNotContain("Pacejka", checker.Suggest("pacejka"));
+    }
+
+    [Fact]
+    public void Suggest_StillOffersTheDictionarysOwnSuggestions()
+    {
+        var checker = SpellChecker.Create(["en_US"], customWords: ["Pacejka"]);
+
+        var suggestions = checker.Suggest("tempurature");
+
+        Assert.Contains(suggestions, s => s.Equals("temperature", StringComparison.OrdinalIgnoreCase));
     }
 }

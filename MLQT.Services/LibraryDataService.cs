@@ -1,7 +1,9 @@
 using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
 using ModelicaGraph;
+using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.ExternalDocs;
 using ModelicaParser.Icons;
 using static MLQT.Services.LoggingService;
 using MLQT.Services.Helpers;
@@ -45,12 +47,79 @@ public class LibraryDataService : ILibraryDataService
     public event Action? OnTreeDataChanged;
 
     /// <inheritdoc/>
-    public bool SuppressTreeDataChangedEvents { get; set; }
+    // Depth rather than a flag: a project switch suppresses across the whole switch while each
+    // repository's load suppresses within it, and only the outermost announcement is the one worth
+    // making.
+    private int _treeNotificationDepth;
+
+    /// <inheritdoc/>
+    public IDisposable SuppressTreeDataChanged()
+    {
+        Interlocked.Increment(ref _treeNotificationDepth);
+        return new TreeNotificationScope(this);
+    }
+
+    private sealed class TreeNotificationScope(LibraryDataService owner) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;   // disposing twice must not lift someone else's suppression
+
+            if (Interlocked.Decrement(ref owner._treeNotificationDepth) == 0)
+                owner.OnTreeDataChanged?.Invoke();
+        }
+    }
 
     private void RaiseTreeDataChanged()
     {
-        if (!SuppressTreeDataChangedEvents)
+        if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
+    }
+
+    /// <inheritdoc/>
+    public void NotifyTreeDataChanged() => RaiseTreeDataChanged();
+
+    // Guards EnsureDependenciesAnalyzedAsync so concurrent callers share one run instead of racing.
+    private readonly object _dependencyAnalysisGate = new();
+    private Task? _dependencyAnalysisTask;
+
+    /// <inheritdoc/>
+    public List<LibraryInfo> GetLibraryInfos()
+    {
+        return Libraries.Select(lib =>
+        {
+            // A file-backed library resolves modelica:// URIs relative to its containing directory.
+            var rootPath = lib.SourceType == LibrarySourceType.File
+                ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
+                : lib.SourcePath;
+            return new LibraryInfo(lib.Name, rootPath);
+        }).ToList();
+    }
+
+    /// <inheritdoc/>
+    public Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null)
+    {
+        if (_combinedGraph.DependenciesAnalyzed)
+            return Task.CompletedTask;
+
+        lock (_dependencyAnalysisGate)
+        {
+            // Re-check inside the gate: a run may have finished while we waited for it.
+            if (_combinedGraph.DependenciesAnalyzed)
+                return Task.CompletedTask;
+
+            // Join an in-flight run rather than starting a second, competing one.
+            if (_dependencyAnalysisTask is { IsCompleted: false })
+                return _dependencyAnalysisTask;
+
+            var libraryInfos = GetLibraryInfos();
+            _dependencyAnalysisTask = Task.Run(() =>
+                GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, libraryInfos, progressLog));
+            return _dependencyAnalysisTask;
+        }
     }
 
     /// <inheritdoc/>
@@ -75,10 +144,14 @@ public class LibraryDataService : ILibraryDataService
                 }
                 else
                 {
-                    modelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, File.ReadAllText(filePath));
+                    modelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                 }
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
+
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
 
             lock (_lock)
             {
@@ -127,6 +200,10 @@ public class LibraryDataService : ILibraryDataService
                 BuildLibraryIndex(library, _combinedGraph, modelIDs);
             });
 
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
+
             lock (_lock)
             {
                 _libraries.Add(library);
@@ -142,6 +219,120 @@ public class LibraryDataService : ILibraryDataService
         catch (Exception ex)
         {
             LogProcessFailed("LibraryDataService", $"Loading library from directory: {directoryPath}", ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<LoadedLibrary> AddLibraryFromPathAsync(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            return EncryptedLibraryDetector.IsEncryptedLibraryRoot(path)
+                ? AddEncryptedLibraryFromDirectoryAsync(path)
+                : AddLibraryFromDirectoryAsync(path);
+        }
+
+        if (File.Exists(path) && path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+        {
+            // A package.mo is the root of a directory package: loading only that file would miss
+            // every standalone child beside it, which is never what the caller meant.
+            return string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase)
+                ? AddLibraryFromDirectoryAsync(Path.GetDirectoryName(path)!)
+                : AddLibraryFromFileAsync(path);
+        }
+
+        throw new ArgumentException(
+            $"'{path}' is not a Modelica library: expected a directory, a package.mo, or a .mo file.",
+            nameof(path));
+    }
+
+    /// <inheritdoc/>
+    public async Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath)
+    {
+        LogProcessStart("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+        var library = new LoadedLibrary
+        {
+            SourcePath = directoryPath,
+            SourceType = LibrarySourceType.EncryptedDirectory
+        };
+
+        try
+        {
+            var detected = EncryptedLibraryDetector.Detect(directoryPath)
+                ?? throw new InvalidOperationException(
+                    $"'{directoryPath}' is not an encrypted Modelica library (no {EncryptedLibraryDetector.EncryptedPackageFileName}).");
+
+            library.Name = detected.Name;
+
+            if (!detected.HasDocumentation)
+            {
+                // Nothing shipped that describes the library. Loading zero classes is the honest
+                // outcome: the namespace stays opaque, so references into it remain unresolved
+                // and are treated as external rather than as pointing at classes we "know" are
+                // absent. Claiming an empty library would turn every such reference into a
+                // fabricated broken-reference finding.
+                Warn("LibraryDataService",
+                    $"Encrypted library '{detected.Name}' ships no documentation; its classes cannot be recovered");
+                library.DocumentedClassCount = 0;
+
+                lock (_lock)
+                {
+                    _libraries.Add(library);
+                }
+
+                OnLibrariesChanged?.Invoke();
+                RaiseTreeDataChanged();
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
+
+            var supersededCount = 0;
+            await Task.Run(() =>
+            {
+                var document = DymolaHelpReader.Read(detected.HelpDirectory!);
+                Debug("LibraryDataService",
+                    $"Read {document.Classes.Count} documented classes from {document.FilesRead} help files " +
+                    $"({document.FilesSkipped} skipped) for '{detected.Name}'");
+
+                List<string> modelIds;
+                int supersededBySource;
+                lock (_graphLock)
+                {
+                    modelIds = ExternalStubBuilder.AddDocumentedClasses(
+                        _combinedGraph, document.Classes, detected.EncryptedPackagePath,
+                        out supersededBySource, detected.Version);
+                }
+
+                library.DocumentedClassCount = document.Classes.Count;
+                supersededCount = supersededBySource;
+                BuildLibraryIndex(library, _combinedGraph, modelIds);
+            });
+
+            // The new models have no dependency edges yet, so anything that needs them must
+            // re-analyse before it can trust the graph.
+            _combinedGraph.InvalidateDependencyAnalysis();
+
+            lock (_lock)
+            {
+                _libraries.Add(library);
+            }
+
+            OnLibrariesChanged?.Invoke();
+            RaiseTreeDataChanged();
+
+            Info("LibraryDataService",
+                $"Loaded encrypted library '{library.Name}' {detected.Version} with {library.ModelIds.Count} " +
+                "classes recovered from documentation (reference only)" +
+                (supersededCount > 0
+                    ? $"; {supersededCount} left to the source already loaded for them"
+                    : ""));
+            LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+            return library;
+        }
+        catch (Exception ex)
+        {
+            LogProcessFailed("LibraryDataService", $"Loading encrypted library: {directoryPath}", ex);
             throw;
         }
     }
@@ -166,9 +357,12 @@ public class LibraryDataService : ILibraryDataService
         {
             // Root doesn't have package.mo - just load any .mo files in the root directory
             // (this handles single-file libraries or loose model files)
-            if (File.Exists(rootDirectory) && rootDirectory.EndsWith(".mo"))
+            // Case-insensitively, like the other twenty-one places that ask this — LibraryDiscovery
+            // accepts "Foo.MO" as a library, and this was the one test that then rejected it, so the
+            // library loaded with no classes at all rather than failing.
+            if (File.Exists(rootDirectory) && rootDirectory.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
             {
-                validFiles.AddRange(rootDirectory);
+                validFiles.Add(rootDirectory);
             }
             else if (Directory.Exists(rootDirectory))
             {
@@ -228,7 +422,7 @@ public class LibraryDataService : ILibraryDataService
             if (!File.Exists(packageOrderPath)) continue;
 
             // Read the package.order file
-            var packageOrderContent = File.ReadAllLines(packageOrderPath);
+            var packageOrderContent = ModelicaFileEncoding.ReadAllLinesOnly(packageOrderPath);
 
             // Find the top-level package model from the package.mo file
             var fileId = GraphBuilder.GenerateFileId(packageMoFile);
@@ -482,7 +676,7 @@ public class LibraryDataService : ILibraryDataService
         {
             await Task.Run(() =>
             {
-                var newModelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, File.ReadAllText(filePath));
+                var newModelIds = GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, ModelicaFileEncoding.ReadAllTextOnly(filePath));
                 affectedModelIds.AddRange(newModelIds);
 
                 // Update library index with new models
@@ -522,7 +716,12 @@ public class LibraryDataService : ILibraryDataService
 
         RaiseTreeDataChanged();
 
-        return affectedModelIds;
+        // Each class once. A file whose classes are unchanged contributes every id twice — once as
+        // removed, once as re-added — and a caller cannot tell that from a class genuinely listed for
+        // two reasons. It reaches a parallel re-check as two entries, where both can pass the
+        // already-checked guard before either sets it, and the class's findings are then reported
+        // twice.
+        return affectedModelIds.Distinct(StringComparer.Ordinal).ToList();
     }
 
     /// <inheritdoc/>
@@ -618,9 +817,29 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    /// <summary>
+    /// Whether this library is the one whose copy of <paramref name="node"/> is actually in the
+    /// graph.
+    ///
+    /// <para>The same library can be loaded twice — a tool's library folder ships the encrypted
+    /// build of a library the user also has checked out as source, and both are perfectly ordinary
+    /// repositories in the same project. Only one copy of each class survives in the graph (source
+    /// wins), but both <see cref="LoadedLibrary"/> entries still list the same ids, so "which
+    /// library does this class belong to" has two answers and only one of them is right.</para>
+    /// </summary>
+    private static bool Owns(LoadedLibrary library, ModelNode node) =>
+        node.IsExternalStub == (library.SourceType == LibrarySourceType.EncryptedDirectory);
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
-        var items = new List<ModelNode>();
+        // Keyed by model id, because two libraries claiming the same top-level class are claiming
+        // the *same node object*. Adding it once per claiming library put the library in the tree
+        // twice, and — since preparing it for display stamps the library id onto the shared node —
+        // both copies ended up attributed to whichever library was processed last. That is why a
+        // library appeared twice under one repository and not at all under the other, and why which
+        // repository it landed in varied from one library to the next.
+        var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
 
         lock (_lock)
         {
@@ -629,16 +848,26 @@ public class LibraryDataService : ILibraryDataService
                 foreach (var modelId in library.TopLevelModelIds)
                 {
                     var model = _combinedGraph.GetNode<ModelNode>(modelId);
-                    if (model != null)
-                    {
-                        PrepareModelForDisplay(model, library);
-                        items.Add(model);
-                    }
+                    if (model == null)
+                        continue;
+
+                    // First claim wins unless a later library is the one that actually owns the node.
+                    if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
+                        continue;
+
+                    byModelId[modelId] = (model, library);
                 }
             }
-        }
 
-        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            var items = new List<ModelNode>(byModelId.Count);
+            foreach (var (node, library) in byModelId.Values)
+            {
+                PrepareModelForDisplay(node, library);
+                items.Add(node);
+            }
+
+            return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+        }
     }
 
     /// <inheritdoc/>
@@ -653,36 +882,36 @@ public class LibraryDataService : ILibraryDataService
 
         lock (_lock)
         {
-            // Find the library for this parent
-            foreach (var library in _libraries)
+            var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
+            if (parentModel == null)
+                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+
+            // The library for this parent is the one that owns it, not merely the first that claims
+            // it. Both copies of a doubly-loaded library list the same parent, but their child lists
+            // differ: the encrypted one knows only what its documentation named, the source one knows
+            // what is actually there. Taking the first claimant meant expanding a package could show
+            // the wrong set of children entirely.
+            var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
+            var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
+            if (library == null)
+                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+
+            if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
             {
-                if (library.ModelIds.Contains(parentNode.Id))
+                var childModels = childIds
+                    .Where(id => library.ModelIds.Contains(id))
+                    .Select(id => _combinedGraph.GetNode<ModelNode>(id))
+                    .Where(m => m != null)
+                    .Cast<ModelNode>()
+                    .ToList();
+
+                // Sort by package.order if available
+                childModels = SortByPackageOrder(childModels, parentModel);
+
+                foreach (var child in childModels)
                 {
-                    var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
-                    if (parentModel == null)
-                        break;
-
-                    // Get children from the ChildrenByParent dictionary
-                    if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
-                    {
-                        var childModels = childIds
-                            .Where(id => library.ModelIds.Contains(id))
-                            .Select(id => _combinedGraph.GetNode<ModelNode>(id))
-                            .Where(m => m != null)
-                            .Cast<ModelNode>()
-                            .ToList();
-
-                        // Sort by package.order if available
-                        childModels = SortByPackageOrder(childModels, parentModel);
-
-                        foreach (var child in childModels)
-                        {
-                            PrepareModelForDisplay(child, library);
-                            items.Add(child);
-                        }
-                    }
-
-                    break; // Found the parent, no need to check other libraries
+                    PrepareModelForDisplay(child, library);
+                    items.Add(child);
                 }
             }
         }

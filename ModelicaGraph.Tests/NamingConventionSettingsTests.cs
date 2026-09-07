@@ -385,7 +385,7 @@ public class NamingConventionSettingsTests
     {
         var settings = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -415,7 +415,7 @@ public class NamingConventionSettingsTests
     {
         var settings = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = [],
                 ["function"] = ["^get_"]
@@ -438,7 +438,7 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -446,7 +446,7 @@ public class NamingConventionSettingsTests
         };
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["function"] = ["^get_"],
                 ["model"] = ["^I[A-Z]", "^[A-Z]{2,}$"]
@@ -461,14 +461,14 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
         };
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[a-z]+$"]
             }
@@ -483,7 +483,7 @@ public class NamingConventionSettingsTests
         var a = new NamingConventionSettings();
         var b = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
@@ -506,7 +506,7 @@ public class NamingConventionSettingsTests
     {
         var a = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = []
             }
@@ -525,7 +525,7 @@ public class NamingConventionSettingsTests
     {
         var original = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$", "^I[A-Z]"],
                 ["function"] = ["^get_"]
@@ -545,7 +545,7 @@ public class NamingConventionSettingsTests
     {
         var original = new NamingConventionSettings
         {
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["model"] = ["^[A-Z]{2,}$"]
             }
@@ -571,7 +571,7 @@ public class NamingConventionSettingsTests
         var original = new NamingConventionSettings
         {
             RecordNaming = NamingStyle.PascalCase,
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["record"] = [
                     @"^[A-Z][a-zA-Z]*(_rec)$",
@@ -594,14 +594,14 @@ public class NamingConventionSettingsTests
     // ========================================================================
 
     [Fact]
-    public void EndToEnd_FrameRec_RecordWithPatterns_NoViolation()
+    public void EndToEnd_FrameRec_RecordWithPatterns_NoFinding()
     {
         // Simulate the full runtime flow: settings with patterns → JSON → deserialize → ToConfig → visitor
         var settings = new NamingConventionSettings
         {
             RecordNaming = NamingStyle.PascalCase,
             AllowUnderscoreSuffixes = true,
-            AdditionalPatterns = new Dictionary<string, List<string>>
+            AdditionalPatterns =
             {
                 ["record"] = [
                     @"^[A-Z][a-zA-Z]*(_rec)$",
@@ -628,11 +628,11 @@ public class NamingConventionSettingsTests
         var visitor = new FollowNamingConvention(config, "TestPackage");
         visitor.VisitStored_definition(parseTree);
 
-        Assert.Empty(visitor.RuleViolations);
+        Assert.Empty(visitor.RuleFindings);
     }
 
     [Fact]
-    public void EndToEnd_StyleCheckingSettings_FrameRec_NoViolation()
+    public void EndToEnd_StyleCheckingSettings_FrameRec_NoFinding()
     {
         // Simulate via StyleCheckingSettings (the outer container)
         var styleSettings = new StyleCheckingSettings
@@ -642,7 +642,7 @@ public class NamingConventionSettingsTests
             {
                 RecordNaming = NamingStyle.PascalCase,
                 AllowUnderscoreSuffixes = true,
-                AdditionalPatterns = new Dictionary<string, List<string>>
+                AdditionalPatterns =
                 {
                     ["record"] = [
                         @"^[A-Z][a-zA-Z]*(_rec)$",
@@ -660,7 +660,7 @@ public class NamingConventionSettingsTests
         var model = new ModelicaGraph.DataTypes.ModelDefinition(
             "frame_rec", "record frame_rec\nend frame_rec;");
 
-        var violations = StyleChecking.RunStyleChecking(model, loaded, "TestPackage.frame_rec");
-        Assert.Empty(violations);
+        var findings = StyleChecking.RunStyleChecking(model, loaded, "TestPackage.frame_rec");
+        Assert.Empty(findings);
     }
 }

@@ -155,19 +155,19 @@ var settings = new StyleCheckingSettings
 
 // Run style checks on a model definition. RunStyleChecking is synchronous and
 // returns a List<LogMessage>; the model is identified by its fullModelId.
-List<LogMessage> violations = StyleChecking.RunStyleChecking(
+List<LogMessage> findings = StyleChecking.RunStyleChecking(
     modelDefinition, settings, fullModelId: "MyLibrary.MyModel");
 
 // Run style checks on a model excluded from formatting
 // When isExcludedFromFormatting is true, formatting-related rules are skipped:
 // ImportStatementsFirst, InitialEQAlgoFirst/Last, OneOfEachSection,
 // DontMixEquationAndAlgorithm, DontMixConnections
-violations = StyleChecking.RunStyleChecking(
+findings = StyleChecking.RunStyleChecking(
     modelDefinition, settings, fullModelId: "MyLibrary.MyModel",
     isExcludedFromFormatting: true);
 
-foreach (var violation in violations)
-    Console.WriteLine($"{violation.ModelName}: {violation.Summary}");
+foreach (var finding in findings)
+    Console.WriteLine($"{finding.ModelName}: {finding.Summary}");
 ```
 
 ### Traversing Dependencies
@@ -212,17 +212,34 @@ var users = graph.GetModelUsedBy("m1");     // Returns [DerivedModel]
 var models = graph.GetModelsInFile("f1");   // Returns [BaseModel, DerivedModel]
 ```
 
-### StyleCheckingSettings Properties
+### StyleCheckingSettings
 
-Beyond the individual style rule toggles (e.g., `ImportStatementsFirst`, `AnnotationAtEnd`), `StyleCheckingSettings` includes these additional properties:
+Everything a repository persists in its `.mlqt/settings.json`. The individual rule toggles
+(`ImportStatementsFirst`, `ClassHasDescription`, …) are **facades over `RuleSeverities`** and are not
+serialized in their own right; the file is the map plus the entries below.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `FormattingExcludedModels` | `List<string>` | Model IDs excluded from formatting. Use the helper method `IsModelExcludedFromFormatting(string modelId)` to check membership. |
-| `SvnBranchDirectories` | `List<string>` | Configurable SVN branch directory names. Defaults to `["trunk", "branches", "tags"]`. |
-| `HasAnyStyleRuleEnabled` | `bool` (computed) | Returns `true` if any style checking rule is enabled. |
-| `SpellCheckLanguages` | `List<string>` | Language codes for spell checking dictionaries (e.g., `"en_US"`). |
-| `ValidateModelReferences` | `bool` | Whether to validate `modelica://` model references. |
+| `RuleSeverities` | `SortedDictionary<string, RuleSeverity>` | The authoritative store: rule id → Off/Info/Warning/Error, written in id order so an unchanged save produces an unchanged file. |
+| `FormattingExcludedModels` | `List<string>` | Model ids the formatter must leave alone. Ask `FormattingExclusion.Excludes` rather than this list — `__MLQT(format=false)` says the same thing in the source. |
+| `ExcludedLibraries` | `List<string>` | Library-name patterns whose classes are loaded but never reported on — usually the examples or test library sharing the repository. |
+| `NamingConvention` | `NamingConventionSettings` | Per-element-kind naming styles and the exception names. |
+| `SpellCheckLanguages` | `List<string>` | Dictionary language codes; defaults to `["en_US", "en_GB"]`. |
+| `SvnBranchDirectories` | `List<string>` | SVN branch directory names; defaults to `["trunk", "branches", "tags"]`. |
+| `ApplyFormattingRules` / `ComponentsBeforeClasses` | `bool` | Formatter flags, not check rules — consumed by `ModelicaRenderer`, absent from the severity map. |
+| `CommitRequiresIssueNumber` / `IssueNumberAtEnd` | `bool` | Commit-message policy for this repository. |
+
+The methods matter more than the fields:
+
+| Member | Answers |
+|--------|---------|
+| `SeverityFor(id)` | **The only way to ask what a rule will do.** Resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw map. |
+| `StampSeverities(findings)` | The one place configuration is applied to findings, shared by the per-class checker and the graph analyses. |
+| `IsRuleEnabled(id)` / `HasAnyStyleRuleEnabled` | Whether a rule, or any rule, resolves to something other than Off. |
+| `IsModelExcludedFromFormatting(id)` / `IsLibraryExcluded(id)` | Membership of the two name lists above. |
+
+*(This table has gone stale twice — once naming an `AnnotationAtEnd` setting that never existed. If
+it disagrees with `StyleCheckingSettings.cs`, the file is right.)*
 
 ## Architecture
 
@@ -240,12 +257,90 @@ GraphNode (abstract base)
 
 DirectedGraph           - Node/edge management, relationship queries
 GraphBuilder (static)   - File loading and dependency analysis (model queries live on DirectedGraph)
-StyleChecking (static)  - Style rule execution
-StyleCheckingSettings   - Configurable rule toggles and additional settings
+ExternalStubBuilder     - Nodes for encrypted libraries, from vendor documentation
+StyleChecking (static)  - Style rule execution, and the base-class icon / inherited-element lookups
+StyleCheckingSettings   - Rule severities, formatter flags, naming, spell-check languages
+GraphAnalysisRunner     - The whole-graph analyses (see below)
+MetricsCalculator       - Coverage by dimension, and the snapshots behind the burndown
 ModelDefinition         - Name, ModelicaCode, ParsedCode
 ResourceEdge            - ModelId, ResourceNodeId, RawPath, ReferenceType
 LibraryInfo             - Library metadata (name, path, root package)
 ```
+
+### Whole-graph analyses (`Analysis/`)
+
+The style rules judge a class from its own source. These judge it from its place in the graph — a
+question no single class can answer — and run per repository alongside the per-class checks, through
+`GraphAnalysisRunner`.
+
+| Analyzer | Answers |
+|----------|---------|
+| `UnusedImportAnalyzer` | An import nothing below it references (the referencing class is often another file, so this cannot be decided class by class) |
+| `UnusedClassAnalyzer` | A protected nested class nothing references; separately, a public one nothing *loaded* references, at lower confidence |
+| `UnusedMembersAnalyzer` | A protected member never referenced in its class — asked only where the answer is safe (nothing extends the class, and it has no nested classes that could reference the name) |
+| `ShadowingAnalyzer` | A declaration that silently shadows an inherited member |
+| `UsesHygieneAnalyzer` | A library referenced but not declared in `uses(...)`, or declared and never used |
+| `PackageOrderAnalyzer` | `package.order` entries that do not match the package's contents |
+
+They need dependency edges, so the runner arranges for `DirectedGraph.DependenciesAnalyzed` to be
+true first; without the edges the edge-dependent ones are skipped rather than guessing.
+
+Resolution shared with the analyses and the MCP tooling: `TypeResolver` (a type name → the class it
+means, through imports and the package hierarchy), `ClassElementResolver` (a class's full element
+set with inheritance merged in, derived declarations shadowing inherited ones) and `UnitResolver`
+(whether a declared type carries a unit, through alias and SI type chains).
+
+### Conventions — the questions with one answer
+
+Each of these exists because the same question was being answered in several places and the answers
+came apart. Call them; do not re-derive what they say.
+
+| Convention | The question |
+|------------|--------------|
+| `ModelDefinition.Borrow` | **How to read a class you do not own.** Parses if needed and releases the tree again *only if this call is what parsed it*. See its summary for the one deliberate exception (`GraphBuilder`'s bulk load). |
+| `ClassSuppressions.For(definition, modelId)` | **What `__MLQT` directives a class carries.** Read once and kept on the class; three passes want the same answer in one run. |
+| `FormattingExclusion.Excludes(model, settings)` | **Must the formatter write this source back unchanged?** Over both the `FormattingExcludedModels` name list and the in-source annotation. Deliberately a different question from the one the checker and the dashboard ask — see its summary. |
+| `CoverageDimensions.ForClass(...)` | **Which coverage dimensions apply to this class.** The single narrowing: every way of taking a class out of scope is asked there. |
+| `RuleSettingsLayout.Rows` | **Where is this rule set in the settings dialog?** The dialog renders from it, and a test holds it to `RuleCatalog`. |
+
+### Metrics and coverage (`Analysis/`)
+
+`CoverageDimension` names what can be measured — class description, documentation info and
+revisions, icon, parameter and constant description, unit, and the layout dimensions the formatter
+can rewrite — and `CoverageDimensions.TrackedFor(settings)` narrows that to what a repository's own
+rules ask for: a rule nobody enabled is not a gap anyone should be shown. `MetricsCalculator` and
+`CoverageMeasurer` do the measuring. Measurement
+happens while a class is being checked, since the parse tree is already in hand.
+
+`MetricsSnapshot` is a point in the burndown: coverage by dimension plus the raw compliant/eligible
+counts, so snapshots from several repositories combine exactly rather than by averaging percentages.
+They are appended to `.mlqt/metrics-history.json` by the dashboard or by `mlqt check --metrics`.
+
+### External Stubs
+
+A library that ships encrypted (`package.moe`) has no readable source, so `ExternalStubBuilder`
+builds its nodes from the classes `ModelicaParser.ExternalDocs` recovers from the vendor's
+documentation. Each node's `Definition.ModelicaCode` is a **synthesized declaration** carrying only
+what the documentation stated — name, description, `extends`, and whether there is an icon:
+
+```modelica
+within Battery.BMS.Interfaces;
+model CurrentRestrictor "Interface model for current restrictor"
+  extends DymolaModels.Icons.Templates.Box_Bottom;
+  annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}));
+end CurrentRestrictor;
+```
+
+Synthesizing source rather than carrying parallel metadata is what makes this cheap: every consumer
+already works through the parse tree — icon inheritance, the type and element resolvers, dependency
+analysis, reference validation — so a stub that parses is resolved by all of them with no rule
+changes.
+
+Such nodes are flagged `ModelNode.IsExternalStub`. That flag has one job: keep them off every path
+that **writes** or **reports**. `ModelicaPackageSaver` throws rather than skipping (a caller holding
+stubs has a bug, and it should surface in a test rather than as a rewritten third-party library),
+`PackageCodeTrimmer` and `MetricsCalculator` skip them, and `LibraryCheckSession` filters them out
+centrally so no surface can drift.
 
 ### Node Properties
 

@@ -1,3 +1,4 @@
+using ModelicaGraph.Analysis;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaParser.DataTypes;
@@ -30,7 +31,9 @@ public sealed class ViewTools
                 "with the base class it came from in inheritedFrom), so you get the complete picture without " +
                 "chasing base classes — set include_inherited=false for only what the class declares itself. " +
                 "Far smaller than get_class_source. A component is a connector when it has a causality or its " +
-                "type resolves to a loaded connector class. Needs only a loaded library.")]
+                "type resolves to a loaded connector class. A parameter's default is the value it takes; a " +
+                "typeModification (e.g. \"(min=0)\") constrains its type and is reported apart from the " +
+                "default, since a declaration can carry both. Needs only a loaded library.")]
     public object GetClassInterface(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -41,7 +44,7 @@ public sealed class ViewTools
             return error!;
 
         var isFunction = node!.ClassType == "function";
-        var merged = ClassElementResolver.Collect(_libraries, node, includeProtected: false, includeInherited);
+        var merged = ClassElementResolver.Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited);
 
         var extends = merged.Where(m => m.Element.Kind == ClassElementKind.Extends)
             .Select(m => m.Element.Name).ToList();
@@ -57,14 +60,16 @@ public sealed class ViewTools
                 continue;
 
             // Resolve the type in the scope of the class that DECLARED the component (base or self).
-            var typeNode = TypeResolver.Resolve(_libraries, m.OwnerId, e.Type, m.OwnerImports);
+            var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, m.OwnerId, e.Type, m.OwnerImports);
             var typeIsConnector = typeNode?.ClassType == "connector";
             var isConnector = !isFunction && (e.Causality is not null || typeIsConnector);
 
             if (isConnector)
                 connectors.Add(new ConnectorView(e.Name, e.Type, e.Causality, e.Connection, typeIsConnector, e.Description, m.InheritedFrom));
             else if (e.Variability is "parameter" or "constant")
-                parameters.Add(new ParameterView(e.Name, e.Type, e.Variability, e.DefaultValue, e.Description, m.InheritedFrom));
+                parameters.Add(new ParameterView(
+                    e.Name, e.Type, e.Variability, e.DefaultValue, e.TypeModification,
+                    e.Description, m.InheritedFrom));
             else
                 members.Add(new MemberView(e.Name, e.Type, e.Description, m.InheritedFrom));
         }
@@ -73,7 +78,8 @@ public sealed class ViewTools
         if (isFunction)
         {
             ParameterView ToArg(ResolvedElement m) =>
-                new(m.Element.Name, m.Element.Type, m.Element.Variability, m.Element.DefaultValue, m.Element.Description, m.InheritedFrom);
+                new(m.Element.Name, m.Element.Type, m.Element.Variability, m.Element.DefaultValue,
+                    m.Element.TypeModification, m.Element.Description, m.InheritedFrom);
             var comps = merged.Where(m => m.Element.Kind == ClassElementKind.Component).ToList();
             signature = new FunctionSignatureView(
                 comps.Where(m => m.Element.Causality == "input").Select(ToArg).ToList(),
@@ -93,7 +99,9 @@ public sealed class ViewTools
                 "for only the class's own declarations. By default only public elements are returned; set " +
                 "include_protected=true to also include protected ones. Each element also carries any " +
                 "leadingComments (the // or /* */ comments written just above it). This is the granular " +
-                "data behind get_class_interface. Needs only a loaded library.")]
+                "data behind get_class_interface. A component's default is the value it is bound to; its " +
+                "typeModification is any modification written on its type (e.g. \"(min=0)\" or \"(k=2)\"), " +
+                "which is not a value. Needs only a loaded library.")]
     public object ListClassElements(
         [Description("Fully-qualified class id.")] string classId,
         [Description("Include elements declared in protected sections. Default false.")]
@@ -104,7 +112,7 @@ public sealed class ViewTools
         if (Load(classId, out var node, out _, out var error))
             return error!;
 
-        var elements = ClassElementResolver.Collect(_libraries, node!, includeProtected, includeInherited)
+        var elements = ClassElementResolver.Collect(_libraries.CombinedGraph, node!, includeProtected, includeInherited)
             .Select(m => new ClassElementView(
                 m.Element.Kind.ToString().ToLowerInvariant(),
                 m.Element.Name,
@@ -114,6 +122,7 @@ public sealed class ViewTools
                 m.Element.Connection,
                 m.Element.IsPublic ? "public" : "protected",
                 m.Element.DefaultValue,
+                m.Element.TypeModification,
                 m.Element.Description,
                 m.Element.ClassType,
                 m.Element.Prefixes,
@@ -188,7 +197,7 @@ public sealed class ViewTools
             var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
             foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
             {
-                var baseNode = TypeResolver.Resolve(_libraries, id, ext.Type, imports);
+                var baseNode = TypeResolver.Resolve(_libraries.CombinedGraph, id, ext.Type, imports);
                 if (baseNode is null || !visited.Add(baseNode.Id))
                     continue;
                 if (BehaviorExtractor.ExtractFromCode(baseNode.Definition.ModelicaCode ?? string.Empty).HasAny)
@@ -241,7 +250,7 @@ public sealed class ViewTools
                 continue;
 
             checkedCount++;
-            if (TypeResolver.ResolveWithInheritance(_libraries, node!.Id, type, imports) is null)
+            if (TypeResolver.ResolveWithInheritance(_libraries.CombinedGraph, node!.Id, type, imports) is null)
                 unresolved.Add(new UnresolvedReference(type!.TrimStart('.').Trim(), kind, e.Line));
         }
 

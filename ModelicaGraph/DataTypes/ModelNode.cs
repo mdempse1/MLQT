@@ -54,6 +54,19 @@ public class ModelNode : GraphNode
     public int StartLine { get; set; }
 
     /// <summary>
+    /// True while the stored <c>Definition.ModelicaCode</c> is still the verbatim slice of the file
+    /// that starts at <see cref="StartLine"/> — which is what lets a line inside the class be mapped
+    /// back to a line in the file by adding the offset.
+    ///
+    /// <para>False once something has rewritten the stored source: trimming a package's inline
+    /// children, or re-rendering a class through the formatter. The text is then still correct
+    /// Modelica, but its lines are the renderer's, not the file's, and a report that added the offset
+    /// anyway would point at a real line that says something else. Consumers fall back to the class
+    /// declaration, which is never wrong about which class is meant.</para>
+    /// </summary>
+    public bool SourceMatchesFile { get; set; } = true;
+
+    /// <summary>
     /// Ending line number in the source file.
     /// </summary>
     public int StopLine { get; set; }
@@ -82,6 +95,65 @@ public class ModelNode : GraphNode
     /// Whether this is a nested model (contained within another model).
     /// </summary>
     public bool IsNested { get; set; }
+
+    /// <summary>
+    /// Whether the class sits in a public section of its enclosing class — false only for one
+    /// declared after a <c>protected</c> keyword. Top-level classes are always public.
+    ///
+    /// Captured at load time from the parse tree. Consumers must use this rather than re-deriving
+    /// visibility from the parent package's stored source: that source has its standalone children
+    /// trimmed out as a memory optimisation, so the answer would otherwise depend on whether the
+    /// trim had run — which differs between a fresh load and a file reload.
+    /// </summary>
+    public bool IsPublic { get; set; } = true;
+
+    /// <summary>
+    /// Set once <see cref="PackageCodeTrimmer"/> has processed this package, so a repeated trim is a
+    /// no-op instead of re-parsing and re-rendering it. A reload replaces the node, which clears the
+    /// flag and lets the reloaded source be trimmed again.
+    /// </summary>
+    public bool ChildrenTrimmed { get; set; }
+
+    /// <summary>
+    /// Everything a caller has to put back after swapping a class's stored source out and in again.
+    ///
+    /// <para>There is a type for it because there were two hand-written versions, each capturing the
+    /// source and the parse tree and neither capturing anything else — and what "anything else" means
+    /// has changed under them since. Setting <see cref="ModelDefinition.ModelicaCode"/> now also drops
+    /// the coverage facts and the suppression set, and trimming a package sets
+    /// <see cref="SourceMatchesFile"/> and <see cref="ChildrenTrimmed"/>. A snapshot that names the
+    /// fields is a list a reader can check; two tuples of two are not.</para>
+    /// </summary>
+    public readonly record struct SourceSnapshot(
+        string ModelicaCode,
+        modelicaParser.Stored_definitionContext? ParsedCode,
+        CoverageFacts? Coverage,
+        ModelicaParser.StyleRules.SuppressionSet? Suppressions,
+        bool SourceMatchesFile,
+        bool ChildrenTrimmed);
+
+    /// <summary>Captures this class's source and everything derived from it.</summary>
+    public SourceSnapshot TakeSourceSnapshot() => new(
+        Definition.ModelicaCode,
+        Definition.ParsedCode,
+        Definition.Coverage,
+        Definition.Suppressions,
+        SourceMatchesFile,
+        ChildrenTrimmed);
+
+    /// <summary>
+    /// Puts a snapshot back, in the order the setters require: the source first, because assigning it
+    /// clears the tree and the two caches, and then the things it cleared.
+    /// </summary>
+    public void RestoreSource(SourceSnapshot snapshot)
+    {
+        Definition.ModelicaCode = snapshot.ModelicaCode;
+        Definition.ParsedCode = snapshot.ParsedCode;
+        Definition.Coverage = snapshot.Coverage;
+        Definition.Suppressions = snapshot.Suppressions;
+        SourceMatchesFile = snapshot.SourceMatchesFile;
+        ChildrenTrimmed = snapshot.ChildrenTrimmed;
+    }
 
     /// <summary>
     /// Name of the parent model/package.
@@ -170,6 +242,23 @@ public class ModelNode : GraphNode
     /// and formatting, but may still present them to the user (e.g., in the library tree).
     /// </summary>
     public bool IsParseFailurePlaceholder { get; set; }
+
+    /// <summary>
+    /// True when this node does not stand for readable source at all, but for a class recovered
+    /// from a vendor's generated documentation because the library ships encrypted.
+    /// <see cref="ModelDefinition.ModelicaCode"/> holds a synthesized declaration carrying only
+    /// what the documentation stated — name, description, base classes, whether there is an icon —
+    /// so that reference resolution, extends-chain walking and icon inheritance work across the
+    /// boundary without every rule needing to know the class came from a different source.
+    ///
+    /// <para>Because that code is a reconstruction and not the vendor's source, a stub must never
+    /// reach a path that <b>writes</b>: formatting, saving, package restructuring, VCS staging or
+    /// commit. Those paths reject stubs outright rather than skipping them quietly, so a missing
+    /// guard surfaces as a failing test instead of as a rewritten third-party library on a user's
+    /// machine. Stubs are likewise never <b>reported</b> on — they are loaded to resolve
+    /// references, and findings about a vendor's library are not the user's to fix.</para>
+    /// </summary>
+    public bool IsExternalStub { get; set; }
 
     /// <summary>
     /// True when any <see cref="ParserError"/> has been recorded against this model —

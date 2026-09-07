@@ -1,8 +1,11 @@
 name: Build and Test
 
 on:
+  # Every branch, not just main/develop. A long-lived working branch used to build nowhere until the
+  # pull request that merged it, so 205 commits of the CI/CD work reached their first CI run at the
+  # moment they were being merged - which is the worst time to learn the build is broken.
   push:
-    branches: [main, develop]
+    branches: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch: # Allow manual trigger
@@ -39,6 +42,7 @@ jobs:
           dotnet build DymolaInterface/DymolaInterface.csproj -c Release --no-restore
           dotnet build OpenModelicaInterface/OpenModelicaInterface.csproj -c Release --no-restore
           dotnet build MLQT.McpServer/MLQT.McpServer.csproj -c Release --no-restore
+          dotnet build MLQT.Cli/MLQT.Cli.csproj -c Release --no-restore
 
       - name: Build test projects
         run: |
@@ -47,6 +51,13 @@ jobs:
           dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release --no-restore
           dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release --no-restore
           dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
+          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
+          # Built but not run, for the same reason as the SVN integration tests below: these drive a
+          # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
+          # rather than self-skipping. Building them still catches the thing CI can catch - a change
+          # to the interfaces that stops them compiling, which would otherwise reach main unnoticed.
+          dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
+          dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
 
       - name: Run ModelicaParser tests
         run: dotnet test ModelicaParser.Tests -c Release --no-build --logger "trx;LogFileName=parser.trx" --results-directory ${{ github.workspace }}/TestResults
@@ -69,6 +80,16 @@ jobs:
 
       - name: Run MLQT.McpServer tests
         run: dotnet test MLQT.McpServer.Tests -c Release --no-build --logger "trx;LogFileName=mcpserver.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Cli tests
+        run: dotnet test MLQT.Cli.Tests -c Release --no-build --logger "trx;LogFileName=cli.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      # The CLI tests assert the shape we expect of a SARIF document, which cannot catch one that is
+      # well-formed by our lights and rejected by a consumer's. This validates a report generated from
+      # a committed fixture against the SARIF 2.1.0 schema, and — because the fixture sits at a nested
+      # path — proves in the same step that --sarif-base writes paths a consumer can resolve.
+      - name: Validate SARIF output
+        run: pwsh -File build/validate-sarif.ps1
 
       - name: Upload test results
         uses: actions/upload-artifact@v6
@@ -122,29 +143,31 @@ jobs:
       - name: Install MAUI workload
         run: dotnet workload install maui-windows
 
+      # Every suite that contributes coverage, not the three this job used to build. MLQT.Cli,
+      # RevisionControl and MLQT.McpServer were measured nowhere, so the per-class bar CLAUDE.md sets
+      # was unverified for exactly the code the CI/CD work added.
       - name: Restore and build
         run: |
           dotnet restore MLQT.slnx
           dotnet build ModelicaParser.Tests -c Release --no-restore
           dotnet build ModelicaGraph.Tests -c Release --no-restore
           dotnet build MLQT.Services.Tests -c Release --no-restore
-
-      - name: Run tests with coverage
-        run: |
-          dotnet test ModelicaParser.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/parser
-          dotnet test ModelicaGraph.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/graph
-          dotnet test MLQT.Services.Tests -c Release --no-build --collect:"XPlat Code Coverage" --results-directory CoverageResults/services
+          dotnet build MLQT.Cli.Tests -c Release --no-restore
+          dotnet build MLQT.McpServer.Tests -c Release --no-restore
+          dotnet build RevisionControl.Tests -c Release --no-restore
 
       - name: Install ReportGenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool
 
-      - name: Generate coverage report
-        run: |
-          reportgenerator -reports:"CoverageResults/**/coverage.cobertura.xml" -targetdir:CoverageReport -reporttypes:"TextSummary;HtmlSummary" -assemblyfilters:"-DymolaInterface;-OpenModelicaInterface"
-          Get-Content CoverageReport\Summary.txt
+      # Runs the suites, merges the six reports, and fails when a class drops below what
+      # build/coverage-baseline.json records - see the script header for why it is a ratchet rather
+      # than a flat threshold.
+      - name: Run tests with coverage and gate on it
+        run: pwsh -File build/check-coverage.ps1
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v6
+        if: always()
         with:
           name: coverage-report
           path: CoverageReport/

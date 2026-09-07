@@ -57,15 +57,23 @@ Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write 
 
 The server returns a short set of instructions to the client on connect, and a `get_guidance` tool provides fuller, task-oriented recipes on demand (pass a topic such as `workflows`, `views`, `editing`, `dependencies`, `style`, `spelling`, `formatting`, `vcs`, or `resources`). The essential workflow:
 
-1. **Load first.** Almost every tool operates on an in-memory graph. Load a library with `load_repository` (a Git/SVN working copy or a directory of libraries) or `load_library` (one library directory, its `package.mo`, or a single `.mo` file). To start a brand-new project, `create_library` writes and loads an empty top-level library on disk.
+1. **Load first.** Almost every tool operates on an in-memory graph. Load a library with `load_repository` (a Git/SVN working copy or a directory of libraries) or `load_library` (one library directory, its `package.mo`, or a single `.mo` file). `load_library` also accepts an **encrypted** library (a directory holding a `package.moe`): its classes are recovered from the vendor's generated documentation so references into it resolve, but it is read-only and never reported on — see [encrypted-libraries.md](encrypted-libraries.md). To start a brand-new project, `create_library` writes and loads an empty top-level library on disk.
 
 2. **Load the dependencies too.** Loading a library does **not** load the libraries it depends on. Nearly every library builds on the **Modelica Standard Library (MSL)**, and most reference others. The load summary lists a library's declared dependencies (from its `uses` annotation) with the version it expects — load each one so type references resolve. Without dependencies loaded, types cannot be resolved and the agent is reduced to reading raw text; with them loaded, search, the compact "views", reference validation and connector/type checks all work across the whole model. Because the required MSL version varies by project, the agent may ask you for its path.
 
 3. **Learn classes from compact "views" rather than raw source.** `get_class_interface` (public parameters, connectors and, for functions, the signature — with inherited members merged in), `list_class_elements`, `get_class_documentation` and `get_class_behavior` (equations/connections) give an agent what it needs without reading the whole file. `search_classes` also returns each hit's description and a short documentation snippet so the agent can pick the right class — often a higher-level *aggregate* component the library provides — without opening each candidate.
 
-4. **Analysis is opt-in.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules.
+4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules. **Parse errors are not opt-in**: `check_class` and `check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine".
 
-5. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
+5. **A finding carries two line numbers, and they are not interchangeable.** `list_findings`
+returns `line` — the line in `filePath` — alongside `modelLine`, the same finding's line within the
+class's own source. For a class nested a long way down a `package.mo` they are hundreds of lines
+apart. Use `line` with `filePath` when editing the file; use `modelLine` when working from
+`get_class_source`. The names match the CLI's JSON report so the two surfaces cannot be read as
+meaning different things. (`check_class` and `check_library` return the class-relative number only,
+under `line`, because they answer a question about a class rather than about a file.)
+
+6. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
 ## What the tools cover
 
@@ -81,7 +89,7 @@ The server exposes 60+ tools. The full list is in [MLQT.McpServer/README.md](../
 | **Documentation** | Set description strings and the `Documentation(info/revisions)` HTML |
 | **Diagram** | Read and set component `Placement`; connection lines are drawn automatically (below) |
 | **Dependencies & impact** | Analyse dependencies, find usages, assess the impact of a change |
-| **Code quality** | Read/set style settings, run style checks, list issues |
+| **Code quality** | Read/set style settings, run style checks, list findings, suppress a rule in source (`suppress_rule`), and accept a word's spelling in one class (`accept_spelling_in_class`). `set_style_settings` merges: name only the rules you are changing, and the rest keep their current values — it writes the repository's committed `.mlqt/settings.json`, so an agent that sent a whole object to change one rule would rewrite the lot |
 | **Spelling** | Spell-check and correct descriptions and documentation |
 | **Formatting** | Format a class in place or format a snippet statelessly |
 | **External resources** | List resources a class references and report resource warnings |

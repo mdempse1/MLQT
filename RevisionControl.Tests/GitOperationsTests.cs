@@ -87,6 +87,72 @@ public class GitOperationsTests : IDisposable
         repo.Commit(message, sig, sig);
     }
 
+    #region GetChangedFilePathsSince Tests
+
+    [Fact]
+    public void GetChangedFilePathsSince_ReturnsCommittedAndUncommittedChanges()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new()
+        {
+            ["A.mo"] = "model A end A;",
+            ["B.mo"] = "model B end B;"
+        });
+        using (repo)
+        {
+            var baseRev = _git.GetCurrentRevision(repoPath)!;
+
+            // A committed change since the base…
+            AddCommit(repo, repoPath, new() { ["A.mo"] = "model A modified end A;" }, "edit A");
+            // …and an uncommitted change.
+            File.WriteAllText(Path.Combine(repoPath, "B.mo"), "model B edited end B;");
+
+            var changed = _git.GetChangedFilePathsSince(repoPath, baseRev);
+
+            Assert.NotNull(changed);
+            var names = changed!.Select(Path.GetFileName).ToHashSet();
+            Assert.Contains("A.mo", names);
+            Assert.Contains("B.mo", names);
+            Assert.All(changed, p => Assert.True(Path.IsPathRooted(p))); // absolute paths
+        }
+    }
+
+    [Fact]
+    public void GetChangedFilePathsSince_NoChanges_ReturnsEmpty()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["A.mo"] = "model A end A;" });
+        using (repo)
+        {
+            var rev = _git.GetCurrentRevision(repoPath)!;
+            var changed = _git.GetChangedFilePathsSince(repoPath, rev);
+
+            // Empty, not null: nothing changed is an answer, and a different one from "could not
+            // work it out" - which is what the ratchet needs to be able to tell apart.
+            Assert.NotNull(changed);
+            Assert.Empty(changed!);
+        }
+    }
+
+    [Fact]
+    public void GetChangedFilePathsSince_UnresolvableRef_ReturnsNull()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["A.mo"] = "model A end A;" });
+        using (repo)
+        {
+            Assert.Null(_git.GetChangedFilePathsSince(repoPath, "no-such-ref"));
+        }
+    }
+
+    [Fact]
+    public void GetChangedFilePathsSince_NotARepository_ReturnsNull()
+    {
+        var path = NewTempPath("GitOpsNoRepo");
+        Directory.CreateDirectory(path);
+
+        Assert.Null(_git.GetChangedFilePathsSince(path, "HEAD"));
+    }
+
+    #endregion
+
     #region FindRepositoryRoot Tests
 
     [Fact]

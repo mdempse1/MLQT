@@ -35,7 +35,7 @@ public interface ICodeReviewService
 
     /// <summary>
     /// Removes all log messages associated with the specified models.
-    /// Used when models are reloaded to clear old violations before re-checking.
+    /// Used when models are reloaded to clear old findings before re-checking.
     /// </summary>
     /// <param name="modelIds">The model IDs (full Modelica paths) to remove messages for.</param>
     void RemoveLogMessagesForModels(IEnumerable<string> modelIds);

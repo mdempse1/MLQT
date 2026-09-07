@@ -112,6 +112,30 @@ public interface IRevisionControlSystem
     List<VcsChangedFile> GetChangedFiles(string repositoryPath, string revision);
 
     /// <summary>
+    /// Gets the absolute paths of files changed between <paramref name="sinceRevision"/> and the
+    /// current working state (both committed and uncommitted changes). Deleted files are excluded
+    /// (they can no longer be checked). Used to scope the "changed models" for the baseline
+    /// ratchet's touched-debt escalation.
+    /// For Git: diffs the working directory + index against the <em>merge base</em> of that ref and
+    /// HEAD, so a base branch that has moved ahead does not report its own later commits as this
+    /// change's work — which would escalate somebody else's debt to this author.
+    /// For SVN: <c>svn diff --summarize -r &lt;rev&gt;</c> against the working copy. SVN has no merge
+    /// base to ask for; on a branch this reports what the branch changed *and* what trunk changed
+    /// after the branch point.
+    /// </summary>
+/// <param name="repositoryPath">Path to the repository or working copy</param>
+    /// <param name="sinceRevision">The revision to diff against (branch, tag, hash, or number)</param>
+    /// <returns>
+    /// Absolute paths of changed files, or <c>null</c> if the diff could not be taken.
+    ///
+    /// <para>Null and empty are different answers and must stay so. This feeds the ratchet's
+    /// touched-debt escalation, where "no file changed" means there is nothing to escalate and the
+    /// build passes — exactly what a diff that failed used to return, so a broken diff in CI passed
+    /// the build looking like a clean one.</para>
+    /// </returns>
+    IReadOnlyList<string>? GetChangedFilePathsSince(string repositoryPath, string sinceRevision);
+
+    /// <summary>
     /// Updates the working copy to the latest version from the remote.
     /// For Git: Fetches from origin and pulls changes for the current branch.
     /// For SVN: Updates to HEAD.

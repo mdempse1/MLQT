@@ -9,12 +9,25 @@ Formatting behavior is controlled by the **Apply formatting rules** toggle in ea
 | Setting | Effect |
 |---------|--------|
 | **One of each section** | Ensures each section type (declarations, equations, algorithms) appears at most once |
-| **Import statements first** | Moves import statements to the top of the model |
+| **Import statements first** | Moves import statements to the top of the model, then `extends` clauses |
 | **Components before classes** | Sorts component declarations before nested class definitions |
+| **Initial equation/algorithm first** / **last** | Writes `initial equation` and `initial algorithm` blocks before, or after, the regular ones |
 
-These three settings are the only ones that change layout during formatting. When **One of each section** is enabled the formatter always emits initial-equation and initial-algorithm blocks before the regular sections.
+**One of each section is the master switch for layout.** With it off the formatter writes the class in
+source order and moves nothing at all — so the other three are **switched off with it**, both as
+formatting transforms and as style rules. Enabling *Import statements first* on its own would report
+an arrangement the formatter could never produce, so MLQT does not let you: the switches are greyed
+out in repository settings, and a hand-edited settings file gets a warning from `mlqt check`. See
+[One of each section is required by the rest](settings-reference.md#one-of-each-section-is-required-by-the-rest).
 
-> **Note:** The *Initial equation/algorithm first* and *Initial equation/algorithm last* options are **style-checking rules**, not formatting transforms — they only detect and report violations (see [Settings Reference](settings-reference.md)). Enabling them does not cause the formatter to move initial blocks.
+> **Formatting and checking agree about these.** Each row above is also a style rule, and the
+> formatter writes what the rule asks for. That was not always true of *Initial equation/algorithm
+> last*: the formatter used to write initial blocks first whatever the setting said, so a repository
+> that chose "last" had the finding reintroduced on every save and the rule could never be satisfied.
+> It now writes them where you asked.
+>
+> Because the two agree, a layout finding that survives formatting is reported as an **error** rather
+> than a warning — see [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
 
 If **Apply formatting rules** is disabled for a repository, MLQT will not modify any files in that repository during formatting operations.
 
@@ -91,11 +104,45 @@ Individual models can be excluded from auto-formatting using the **FormatClear**
 - When you exclude a model that belongs to a VCS-tracked repository, MLQT reverts the model's file to undo any formatting changes that were already applied. This restores the file to its last committed state
 - To re-include a model, select it and toggle the same button again. The model will be formatted on the next formatting pass
 
+### In the source instead: `__MLQT(format=false)`
+
+The name list lives in the repository's settings, so it goes stale the moment a class is renamed or
+moved — the entry still names the old id, silently, and the class starts being reformatted again.
+Saying it in the class instead avoids that, and is the **preferred way** for anything you intend to
+keep:
+
+```modelica
+model Rectifier "Order matters to the solver"
+  // ...
+  annotation(__MLQT(preserveOrder = true,
+                    reason = "declaration order affects the nonlinear system"));
+end Rectifier;
+```
+
+`format = false` is a synonym. Either one:
+
+- **takes the class out of every formatting pass**, exactly as the name list does — startup, VCS
+  changes, pre-commit and **Format All Files** all leave it alone;
+- **suppresses the same formatting-related rules** in the checker, on every surface: the desktop app,
+  [`mlqt check`](cli.md) and the [MCP server](mcp-server.md);
+- **takes the class off the layout coverage dimensions** on the
+  [Coverage dashboard](metrics-dashboard.md), so it is not counted for a gap no finding will name;
+- **travels with the class** when it is renamed or moved to another file, because it is part of it.
+
+Give a `reason`. Nothing reads it, and the next person to wonder why this one class looks different
+will.
+
+`mlqt check --no-suppress` ignores it, along with every other `__MLQT` directive, so an audit run
+still shows what has been waived — including the layout rows on the coverage figures.
+
+The two mechanisms are otherwise interchangeable, and the name list stays supported: a class named in
+`FormattingExcludedModels` **or** carrying the annotation is excluded.
+
 ### Effect on Style Checking
 
-Excluding a model from formatting affects which style violations are reported:
+Excluding a model from formatting affects which style findings are reported:
 
-- **Formatting-related style rules are suppressed** for excluded models. These are the rules that correspond to formatting operations (section ordering, import placement, component ordering, etc.), since violations would be unfixable without the formatter
+- **Formatting-related style rules are suppressed** for excluded models. These are the rules that correspond to formatting operations (section ordering, import placement, component ordering, etc.), since findings would be unfixable without the formatter
 - **Non-formatting style rules still apply** to excluded models. This includes description checks, documentation checks, icon checks, naming convention checks, spell checking, and model reference validation
 
 ### When to Use
@@ -103,6 +150,9 @@ Excluding a model from formatting affects which style violations are reported:
 - When a model has intentional formatting that should not be changed (e.g., carefully aligned equations)
 - When adopting MLQT on an existing repository and certain models need to remain unchanged
 - When formatting a particular model causes undesirable structural changes
+
+Use the **annotation** for the first of those — a deliberate, permanent decision about one class — and
+the **toggle** for the second, where the exclusion is temporary scaffolding you expect to remove.
 
 ## When Formatting Does NOT Happen
 

@@ -12,6 +12,8 @@
     <Project Path="MLQT.McpServer/MLQT.McpServer.csproj" />
     <Project Path="MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj" />
     <Project Path="MLQT.McpTester/MLQT.McpTester.csproj" />
+    <Project Path="MLQT.Cli/MLQT.Cli.csproj" />
+    <Project Path="MLQT.Cli.Tests/MLQT.Cli.Tests.csproj" />
     <Project Path="OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj" />
     <Project Path="OpenModelicaInterface/OpenModelicaInterface.csproj" />
     <Project Path="RevisionControl.Tests/RevisionControl.Tests.csproj" />

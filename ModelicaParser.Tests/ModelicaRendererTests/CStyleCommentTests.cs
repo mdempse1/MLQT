@@ -9,6 +9,35 @@ namespace ModelicaParser.Tests.ModelicaRendererTests;
 /// </summary>
 public class CStyleCommentTests
 {
+    /// <summary>
+    /// A comment block at the top of a file renders as written, with no blank line inserted after
+    /// each line of it. The stored-definition visitor used to end the line itself on top of the
+    /// comment visitor already having done so, which doubled every leading comment line — visible
+    /// on any file that opens with a header comment.
+    /// </summary>
+    [Fact]
+    public void LeadingCommentBlock_DoesNotGainBlankLines()
+    {
+        const string source = """
+        // first line
+        // second line
+        within Lib;
+        model Test "A test"
+        end Test;
+        """;
+
+        var (parseTree, tokenStream) = ModelicaParserHelper.ParseWithTokens(source);
+        var renderer = new ModelicaRenderer(showAnnotations: true, tokenStream: tokenStream);
+        renderer.Visit(parseTree);
+
+        var rendered = renderer.Code.ToList();
+        var firstComment = rendered.FindIndex(l => l.Contains("first line"));
+
+        Assert.True(firstComment >= 0, "the leading comment was not rendered at all");
+        Assert.Contains("second line", rendered[firstComment + 1]);
+        Assert.Contains("within", rendered[firstComment + 2]);
+    }
+
     [Fact]
     public void CommentSameLineAsDeclaration_BeforeDeclaration()
     {

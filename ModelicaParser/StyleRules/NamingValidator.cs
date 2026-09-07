@@ -62,8 +62,17 @@ public static class NamingValidator
         {
             foreach (var pattern in additionalPatterns)
             {
-                if (pattern.IsMatch(name))
-                    return true;
+                try
+                {
+                    if (pattern.IsMatch(name))
+                        return true;
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    // This pattern could not answer in time, so it does not excuse the name. Contained
+                    // here on purpose: letting it escape took every finding for the whole class with
+                    // it, and a name checked against one pattern fewer is a far smaller loss.
+                }
             }
         }
 

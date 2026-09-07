@@ -42,8 +42,20 @@ public sealed record ClassElement
     /// <summary>True if the element is in a public section, false if in a protected section.</summary>
     public bool IsPublic { get; init; } = true;
 
-    /// <summary>Binding value or modifier text (e.g. "5" or "(k=1, T=2)"), if present. Components only.</summary>
+    /// <summary>
+    /// The value the component defaults to (e.g. "5"), without its <c>=</c>/<c>:=</c>, or null when it
+    /// has no binding. Components only. A type modification written alongside the binding is reported
+    /// separately in <see cref="TypeModification"/>, not folded in here.
+    /// </summary>
     public string? DefaultValue { get; init; }
+
+    /// <summary>
+    /// The modification applied to the component's type (e.g. "(min=0)" or "(k=1,T=2)"), or null when
+    /// there is none. Components only. This sets attributes on the type or configures a sub-component;
+    /// it is not a value the component takes, which is why it is kept apart from
+    /// <see cref="DefaultValue"/> — a declaration can carry both.
+    /// </summary>
+    public string? TypeModification { get; init; }
 
     /// <summary>Description string from the trailing comment. Components and nested classes.</summary>
     public string? Description { get; init; }

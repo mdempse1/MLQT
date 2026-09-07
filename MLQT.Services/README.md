@@ -23,14 +23,50 @@ All services follow the pattern:
 | `LibraryDataService` | `ILibraryDataService` | Manages loaded Modelica libraries, combined graph, tree data |
 | `RepositoryService` | `IRepositoryService` | Git/SVN repository management, library discovery, VCS operations |
 | `FileMonitoringService` | `IFileMonitoringService` | FileSystemWatcher-based change detection with debouncing |
-| `CodeReviewService` | `ICodeReviewService` | Log messages and issues from parsing/style checking |
+| `CodeReviewService` | `ICodeReviewService` | Log messages and findings from parsing/style checking |
 | `StyleCheckingService` | `IStyleCheckingService` | Background style rule checking for models |
 | `ImpactAnalysisService` | `IImpactAnalysisService` | Dependency impact analysis with network graph visualization |
 | `ExternalResourceService` | `IExternalResourceService` | External resource analysis, validation, and monitoring |
-| `CustomDictionaryService` | `ICustomDictionaryService` | User custom word list for spell checking |
+| `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
+| `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |
+
+### The shared check pipeline (`Checking/`)
+
+Every surface that reports findings — the app's background workers, `mlqt check`, and the MCP
+server — goes through the same primitives, so the same library and settings give all three the same
+count. A change belongs in the primitive, not in one tool's path.
+
+| Type | Purpose |
+|------|---------|
+| `StyleCheckContext` | The inputs a check needs, built **once** per run: known class ids and names, the spell checker, the inherited-icon and inherited-element lookups, the naming config, optional coverage collection |
+| `StyleCheckRunner` | Checks one class against that context. The single per-model entry point, which is why the guard against reporting on a class reconstructed from an encrypted library lives here |
+| `LibraryCheckSession` | A whole-library run: load, trim, check, and the whole-graph analyses, in the order they depend on each other |
+| `Baseline` / `FindingClassifier` | The accepted-debt file and the new / touched / accepted classification the ratchet gates on |
+| `ChangedModelResolver` | Which classes a VCS ref touched, for `--changed-from` |
+| `ChangedLineResolver` | Which *lines* a change touched, for the pull-request review comments. Git only — a line-level diff is `ILineLevelDiff`, which SVN does not implement |
+| `ClassLocation` | Where a class starts in its file. Findings carry class-relative lines; every report that names a file maps through here, so they all mean the same line |
+| `DictionaryScope` | Which repository's accepted spellings apply to a class |
+| `SpellCheckerFactory` / `DictionaryAvailability` | Builds a spell checker for the chosen languages, and says so when the machine has no dictionary for one |
+| `ReferenceOnlyScope` | The classes loaded only so references resolve, which are never reported on |
+| `ParserErrorReporter` | Parse failures as findings. The parser reads whole files, so its lines are the file's; these are converted to class-relative ones like every other finding, and mapped back through `ClassLocation` by whatever reports them |
+| `UsesVersionChecker` / `VcsStamp` | Dependency version mismatches, and the revision a report was produced at |
+
+### Static Helpers
+
+| Helper | Purpose |
+|--------|---------|
+| `LibraryDiscovery` | Finds the library roots under a path — a directory holding a `package.mo` *or* a `package.moe` |
+| `EncryptedLibraryDetector` | Recognises an encrypted library and reads its name, version and help directory. Version comes from the versioned directory name first (`Battery 2.9.0`) and `libraryinfo.mos` only as a fallback: the directory name is what a tool resolves against, so it states which copy is actually installed |
+
+Encrypted libraries are loaded through `ILibraryDataService.AddEncryptedLibraryFromDirectoryAsync`,
+which reconstructs their classes from the vendor's documentation via `ModelicaParser.ExternalDocs`
+and `ModelicaGraph.ExternalStubBuilder`. The result is read-only: `ModelicaPackageSaver` refuses to
+write such a class, and `LibraryCheckSession` filters them out of the reported set centrally. A
+library shipping no documentation loads **zero** classes rather than appearing empty — an empty
+library would make every reference into it a fabricated broken-reference finding.
 
 ### Platform Services
 
@@ -55,6 +91,15 @@ LoadedLibrary lib = await libraryDataService.AddLibraryFromDirectoryAsync(@"C:\M
 
 // Access the combined graph (all libraries merged)
 DirectedGraph graph = libraryDataService.CombinedGraph;
+
+// Run full dependency analysis once. Idempotent, and concurrent callers share a single run.
+// Everything that needs UsedModelIds/UsedByModelIds must go through here rather than calling
+// GraphBuilder.AnalyzeDependenciesAsync directly, so two runs can never overlap.
+await libraryDataService.EnsureDependenciesAnalyzedAsync();
+
+// graph.DependenciesAnalyzed is the single source of truth for "are the edges populated?".
+// Adding a library clears it; DirectedGraph.Clear() clears it.
+bool ready = libraryDataService.CombinedGraph.DependenciesAnalyzed;
 
 // Get model by ID
 ModelNode? model = libraryDataService.GetModelById("MyLibrary.MyModel");
@@ -145,7 +190,7 @@ List<LogMessage> messages = codeReviewService.LogMessages;
 
 ```csharp
 // Check a single model
-var violations = await styleCheckingService.CheckModelAsync(modelDefinition, settings);
+var findings = await styleCheckingService.CheckModelAsync(modelDefinition, settings);
 
 // Start background checking for a single repository (async)
 await styleCheckingService.StartBackgroundCheckingAsync(repository);
@@ -157,8 +202,18 @@ styleCheckingService.StartBackgroundChecking(repository);
 // OnProgressChanged fires true only after ALL repos finish (not per-repo)
 styleCheckingService.StartBackgroundCheckingForRepositories(repositories);
 
-// Re-check specific models after file changes (clears previous violations first)
+// Re-check specific models after file changes (clears previous findings first)
 await styleCheckingService.CheckModelsAsync(changedModelIds, graph);
+
+// Every entry point above runs BOTH the per-class rules and the whole-graph analyses
+// (package.order, uses hygiene, unused class/member, shadowing), and arranges dependency
+// analysis first when an enabled rule needs the edges. That is what keeps a single-repository
+// check (Apply in repository settings) reporting the same count as a whole-project check and
+// as `mlqt check`. OnProgressChanged(true) waits for the graph analyses too, so the total
+// shown on completion is final.
+
+// Graph analyses only — for the deferred pipeline, which runs the per-class rules itself
+await styleCheckingService.RunGraphAnalysesForRepositoriesAsync(repositories);
 
 // Subscribe to progress (bool = allComplete)
 styleCheckingService.OnProgressChanged += (allComplete) =>
@@ -166,37 +221,43 @@ styleCheckingService.OnProgressChanged += (allComplete) =>
     if (allComplete) Console.WriteLine("All style checks finished");
 };
 
-// Subscribe to violation results
-styleCheckingService.OnViolationsFound += (violations) =>
+// Subscribe to finding results
+styleCheckingService.OnFindingsFound += (findings) =>
 {
-    foreach (var v in violations)
+    foreach (var v in findings)
         Console.WriteLine($"{v.ModelName}: {v.Summary}");
 };
 ```
 
-### Custom Dictionary (ICustomDictionaryService)
+### Accepted Spellings (ICustomDictionaryService)
+
+Every call names the repository whose list it means. The words live in
+`<repo>/.mlqt/dictionary.txt` and are committed with the code, which is what makes the desktop app
+and `mlqt check` in CI accept the same words — a machine-wide list could only be seen by one of them.
 
 ```csharp
-// Load custom dictionary from disk
-await customDictionaryService.LoadAsync();
+// The words accepted for a repository (read on first use, then cached)
+IReadOnlyCollection<string> words = customDictionaryService.WordsFor(repositoryRoot);
 
-// Add a word
-await customDictionaryService.AddWordAsync("Dymola");
+// Where they are stored
+string path = customDictionaryService.PathFor(repositoryRoot);
 
-// Remove a word
-await customDictionaryService.RemoveWordAsync("typo");
+// Add and remove
+await customDictionaryService.AddWordAsync(repositoryRoot, "Pacejka");
+await customDictionaryService.RemoveWordAsync(repositoryRoot, "typo");
 
-// Access current words
-IReadOnlyCollection<string> words = customDictionaryService.CustomWords;
+// Re-read from disk, merge another list in, or write one out
+IReadOnlyCollection<string> reloaded = await customDictionaryService.LoadAsync(repositoryRoot);
+int added = await customDictionaryService.MergeFromAsync(repositoryRoot, @"C:\words.txt");
+await customDictionaryService.ExportAsync(repositoryRoot, @"C:\export.txt");
 
-// Import/export/merge word lists
-await customDictionaryService.ImportAsync(@"C:\words.txt");    // replaces
-await customDictionaryService.MergeAsync(@"C:\more-words.txt"); // unions
-await customDictionaryService.ExportAsync(@"C:\export.txt");
-
-// Subscribe to changes
-customDictionaryService.OnDictionaryChanged += () => { /* reload spell checker */ };
+// Fires with the repository root whose list changed — drop that repository's spell checker
+customDictionaryService.OnDictionaryChanged += root => { /* rebuild for `root` */ };
 ```
+
+Which repository's list applies to a given class is decided by `Checking/DictionaryScope`, so the
+app, the CLI and the MCP server all answer that question the same way. Words that every Modelica
+library needs are not here at all — they ship with the parser, in `modelica_terms.txt`.
 
 ### Dictionary Management (IDictionaryManagerService)
 
@@ -302,7 +363,7 @@ foreach (var file in result.WrittenFiles)
 
 **Formatting Exclusion**: Models can be excluded from formatting at multiple levels:
 - `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts an `excludedModelIds` parameter — excluded models use their original `ModelicaCode` instead of being rendered through the formatter.
-- `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting violations.
+- `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
 - `SaveChangedFilesWithFormattingAsync` in `MainLayout` skips excluded models during incremental formatting after VCS operations.
 
 ## Data Types

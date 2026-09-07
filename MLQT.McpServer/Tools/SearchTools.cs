@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using ModelicaParser.SpellChecking;
@@ -129,11 +130,11 @@ public sealed class SearchTools
     {
         var parameters = 0;
         var connectors = 0;
-        foreach (var m in ClassElementResolver.Collect(_libraries, node, includeProtected: false, includeInherited: true))
+        foreach (var m in ClassElementResolver.Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited: true))
         {
             if (m.Element.Kind != ClassElementKind.Component)
                 continue;
-            var typeNode = TypeResolver.Resolve(_libraries, m.OwnerId, m.Element.Type, m.OwnerImports);
+            var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, m.OwnerId, m.Element.Type, m.OwnerImports);
             if (m.Element.Causality is not null || typeNode?.ClassType == "connector")
                 connectors++;
             else if (m.Element.Variability is "parameter" or "constant")

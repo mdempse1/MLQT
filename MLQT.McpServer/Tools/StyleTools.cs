@@ -2,44 +2,51 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
+using ModelicaParser.StyleRules;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
+using MLQT.McpServer.Services;
+using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 
 namespace MLQT.McpServer.Tools;
 
 /// <summary>
-/// Style/quality checking, settings, and issue retrieval. Style checking is opt-in (nothing runs at
+/// Style/quality checking, settings, and finding retrieval. Style checking is opt-in (nothing runs at
 /// load). Rule settings are per-repository: they come from each repo's .mlqt/settings.json (loaded
 /// by load_repository), and set_style_settings writes changes back there.
 /// </summary>
 [McpServerToolType]
 public sealed class StyleTools
 {
-    private const int MaxReturnedViolations = 200;
-    private const int MaxIssueLimit = 1000;
+    private const int MaxReturnedFindings = 200;
+    private const int MaxFindingLimit = 1000;
 
     private readonly ILibraryDataService _libraries;
     private readonly ICodeReviewService _codeReview;
     private readonly IRepositoryService _repositories;
     private readonly ICustomDictionaryService _customDictionary;
     private readonly IDictionaryManagerService _dictionaryManager;
+    private readonly SessionState _session;
 
     public StyleTools(
         ILibraryDataService libraries,
         ICodeReviewService codeReview,
         IRepositoryService repositories,
         ICustomDictionaryService customDictionary,
-        IDictionaryManagerService dictionaryManager)
+        IDictionaryManagerService dictionaryManager,
+        SessionState session)
     {
         _libraries = libraries;
         _codeReview = codeReview;
         _repositories = repositories;
         _customDictionary = customDictionary;
         _dictionaryManager = dictionaryManager;
+        _session = session;
     }
 
     [McpServerTool(Name = "get_style_settings")]
@@ -63,13 +70,15 @@ public sealed class StyleTools
 
     [McpServerTool(Name = "set_style_settings")]
     [Description("Update a repository's style-checking rules and spell-check languages and PERSIST them " +
-                "to its .mlqt/settings.json (creating the file if needed), exactly like MLQT. Only the " +
-                "rule toggles and spell languages are changed; the naming-convention config and other " +
-                "settings are preserved. With one repository loaded, repositoryId is optional. Requires a " +
-                "repository — libraries loaded via load_library have no .mlqt/settings.json to write.")]
+                "to its .mlqt/settings.json (creating the file if needed), exactly like MLQT. This is a " +
+                "MERGE: send only the rules you are changing. A rule you omit keeps its current value, " +
+                "and the naming-convention config and every other setting are preserved. With one " +
+                "repository loaded, repositoryId is optional. Requires a repository — libraries loaded " +
+                "via load_library have no .mlqt/settings.json to write.")]
     public async Task<object> SetStyleSettings(
-        [Description("The new settings (rule toggles + spellCheckLanguages). Omitted spellCheckLanguages " +
-                     "keeps the current languages.")]
+        [Description("The rules to change, and optionally spellCheckLanguages. Every key is optional: " +
+                     "omit a rule to leave it as it is, omit spellCheckLanguages to keep the current " +
+                     "languages. Pass true/false only for what you mean to change.")]
         StyleSettingsInput settings,
         [Description("Optional repository id (GUID) or name. Omit when a single repository is loaded.")]
         string? repositoryId = null)
@@ -95,7 +104,7 @@ public sealed class StyleTools
 
     [McpServerTool(Name = "check_style")]
     [Description("Run style/spell rules against an arbitrary Modelica source snippet (stateless — no " +
-                "library needed) and return the violations. If 'settings' is omitted, the loaded " +
+                "library needed) and return the findings. If 'settings' is omitted, the loaded " +
                 "repository's settings are used when exactly one is loaded, otherwise all rules are off. " +
                 "Reference-validation and icon-inheritance rules need a loaded library and are inert here.")]
     public object CheckStyle(
@@ -108,13 +117,13 @@ public sealed class StyleTools
 
         var effective = settings?.ToSettings() ?? SingleRepoSettings() ?? new StyleCheckingSettings();
         var context = StyleCheckContext.BuildStateless(effective, _customDictionary, _dictionaryManager);
-        var violations = StyleCheckRunner.RunStateless(source, effective, context);
-        return ToCheckResult(violations, modelsChecked: 1);
+        var findings = StyleCheckRunner.RunStateless(source, effective, context);
+        return ToCheckResult(findings, modelsChecked: 1);
     }
 
     [McpServerTool(Name = "check_class")]
-    [Description("Run style/spell rules against a single loaded class and return the violations, which " +
-                "are also stored for list_issues. By default the rules come from the class's repository " +
+    [Description("Run style/spell rules against a single loaded class and return the findings, which " +
+                "are also stored for list_findings. By default the rules come from the class's repository " +
                 "(.mlqt/settings.json); pass a 'settings' object to override for this run.")]
     public object CheckClass(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -125,26 +134,40 @@ public sealed class StyleTools
         var node = _libraries.GetModelById(classId);
         if (node is null)
             return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        // A class that failed to parse still has something worth returning: the parse error itself.
+        // Refusing outright left the caller unable to tell "no findings" from "never looked".
         if (node.IsParseFailurePlaceholder)
-            return new ToolError($"Class '{classId}' failed to parse and cannot be style-checked.");
+        {
+            var parseOnly = ParserErrorReporter.ToLogMessages([node]);
+            _codeReview.RemoveLogMessagesForModels([classId]);
+            _codeReview.AddLogMessages(parseOnly);
+            return ToCheckResult(parseOnly, modelsChecked: 0);
+        }
 
         var effective = settings?.ToSettings() ?? RepoSettingsForClass(classId);
-        var context = StyleCheckContext.Build(effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager);
-        var violations = StyleCheckRunner.Run(node, effective, context);
+        var context = StyleCheckContext.Build(
+            effective, _libraries.CombinedGraph, _customDictionary, _dictionaryManager,
+            DictionaryScope.RootForModel(_libraries, _repositories, classId));
+        var findings = StyleCheckRunner.Run(node, effective, context);
+
+        // Parse errors are not style rules and are reported whatever the settings say — a class that
+        // only partly parsed makes every rule result below it unreliable.
+        findings.AddRange(ParserErrorReporter.ToLogMessages([node]));
 
         _codeReview.RemoveLogMessagesForModels([classId]);
-        _codeReview.AddLogMessages(violations);
+        _codeReview.AddLogMessages(findings);
 
-        return ToCheckResult(violations, modelsChecked: 1);
+        return ToCheckResult(findings, modelsChecked: 1);
     }
 
     [McpServerTool(Name = "check_library")]
     [Description("Run style/spell rules across all classes in a loaded library (or every loaded library " +
-                "if library_id is omitted) and return a summary plus the first 200 violations, all stored " +
-                "for list_issues. By default each library is checked with its own repository settings " +
-                "(.mlqt/settings.json); pass 'settings' to override for every class. Can be slow on a big " +
-                "library.")]
-    public object CheckLibrary(
+                "if library_id is omitted) and return a summary plus the first 200 findings, all stored " +
+                "for list_findings. By default each library is checked with its own repository settings " +
+                "(.mlqt/settings.json); pass 'settings' to override for every class. If an enabled rule " +
+                "needs cross-model dependencies (e.g. unused-class), dependency analysis is run first " +
+                "automatically (matching the GUI and CLI). Can be slow on a big library.")]
+    public async Task<object> CheckLibrary(
         [Description("Optional: one library to check, by its id (GUID from list_libraries) or its name " +
                      "(e.g. 'Modelica'). Omit to check every loaded library. Not a class id.")]
         string? libraryId = null,
@@ -173,48 +196,102 @@ public sealed class StyleTools
         var checkedIds = new List<string>();
         var modelsChecked = 0;
 
-        foreach (var library in targets)
+        // Style-check the trimmed representation (packages without their standalone children, which have
+        // their own nodes) so the count matches the GUI and CLI — via the shared PackageCodeTrimmer so the
+        // rule can't drift. The trim mutates stored source, so snapshot the affected packages first and
+        // restore them in the finally: this session's edit/query tools rely on the full original source.
+        var targetModelIds = targets.SelectMany(l => l.ModelIds).ToHashSet(StringComparer.Ordinal);
+        var packageSnapshots = graph.ModelNodes
+            .Where(m => m.ClassType == "package" && targetModelIds.Contains(m.Id))
+            .ToDictionary(m => m.Id, m => m.TakeSourceSnapshot(), StringComparer.Ordinal);
+        ModelicaGraph.PackageCodeTrimmer.TrimStandaloneChildren(graph, targetModelIds);
+
+        try
         {
-            var models = library.ModelIds
-                .Select(id => _libraries.GetModelById(id))
-                .Where(m => m is not null && !m.IsParseFailurePlaceholder)!
-                .Cast<ModelNode>()
-                .ToList();
-            if (models.Count == 0)
-                continue;
+            // Auto-run dependency analysis when an enabled rule needs cross-model edges (e.g. unused-class),
+            // so the count matches the GUI and CLI, which both do this. Skipped when already analysed or when
+            // no such rule is enabled, keeping a plain style-check cheap.
+            if (!_session.DependenciesAnalyzed &&
+                targets.Any(l => GraphAnalysisRunner.RequiresDependencyAnalysis(explicitSettings ?? RepoSettingsForLibrary(l))))
+            {
+                await GraphBuilder.AnalyzeDependenciesAsync(graph);
+                _session.DependenciesAnalyzed = true;
+            }
 
-            // Each library is checked with its own repository settings unless an override was passed.
-            var effective = explicitSettings ?? RepoSettingsForLibrary(library);
-            var context = StyleCheckContext.Build(effective, graph, _customDictionary, _dictionaryManager);
-            modelsChecked += models.Count;
-            checkedIds.AddRange(models.Select(m => m.Id));
+            foreach (var library in targets)
+            {
+                // Placeholders (files that failed to parse) are included: LibraryCheckSession skips
+                // them for the per-class rules but needs them to report the parse failure. Excluding
+                // them here meant the worst case — a file MLQT could not read — was reported as
+                // nothing at all.
+                var models = library.ModelIds
+                    .Select(id => _libraries.GetModelById(id))
+                    .Where(m => m is not null)!
+                    .Cast<ModelNode>()
+                    .ToList();
+                if (models.Count == 0)
+                    continue;
 
-            Parallel.ForEach(
-                models,
-                new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
-                node =>
-                {
-                    foreach (var v in StyleCheckRunner.Run(node, effective, context))
-                        all.Add(v);
-                });
+                // Each library is checked with its own repository settings unless an override was passed.
+                var effective = explicitSettings ?? RepoSettingsForLibrary(library);
+                modelsChecked += models.Count(m => !m.IsParseFailurePlaceholder);
+                checkedIds.AddRange(models.Select(m => m.Id));
+
+                // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
+                // the whole-graph analyses (package.order, uses hygiene, unused classes) can't drift between
+                // the tools. Dependency-requiring analyses only run if analyze_dependencies ran first.
+                // Whether the edges are present is read off the graph itself rather than the session
+                // flag, so this can't disagree with what the GUI and CLI see for the same library.
+                var findings = LibraryCheckSession.Check(
+                    graph, models, effective, _customDictionary, _dictionaryManager,
+                    honorSuppressions: true);
+                foreach (var finding in findings)
+                    // Finding.ToLogMessage renders everything as a style warning; a parse diagnostic
+                    // has to keep its Error/Fatal severity and its "Parser" source.
+                    all.Add(RuleIds.IsParseDiagnostic(finding.RuleId)
+                        ? ParserErrorReporter.ToLogMessage(finding)
+                        : finding.ToLogMessage());
+            }
+
+            if (modelsChecked == 0)
+                return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
+
+            var reported = all.ToList();
+            _codeReview.RemoveLogMessagesForModels(checkedIds);
+            _codeReview.AddLogMessages(reported);
+
+            return ToCheckResult(reported, modelsChecked);
         }
+        finally
+        {
+            // Restore the full package source so edit/query tools keep working on the real files.
+            foreach (var kv in packageSnapshots)
+            {
+                var node = graph.GetNode<ModelNode>(kv.Key);
+                if (node is null)
+                    continue;
 
-        if (modelsChecked == 0)
-            return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
+                node.RestoreSource(kv.Value);
 
-        var violations = all.ToList();
-        _codeReview.RemoveLogMessagesForModels(checkedIds);
-        _codeReview.AddLogMessages(violations);
-
-        return ToCheckResult(violations, modelsChecked);
+                // With one deliberate exception. The findings just recorded were measured against the
+                // TRIMMED source, so their line numbers do not describe the text now on the node —
+                // and list_findings maps them at read time. Reporting them at the class declaration
+                // is ClassLocation's own answer for that ("pointing at the right class is always
+                // true; pointing at the wrong line looks precise and is not"), so the flag stays
+                // down until a reload replaces the node.
+                node.SourceMatchesFile = false;
+            }
+        }
     }
 
-    [McpServerTool(Name = "list_issues")]
-    [Description("List issues currently known for the loaded libraries: parse errors (available " +
-                "immediately after loading) plus style/spell violations from any check that has been run " +
+    [McpServerTool(Name = "list_findings")]
+    [Description("List findings currently known for the loaded libraries: parse errors (available " +
+                "immediately after loading) plus style/spell findings from any check that has been run " +
                 "(check_class / check_library). Filter by severity, source ('Parser' or 'StyleChecking'), " +
-                "or a specific class id, and page with limit/offset.")]
-    public object ListIssues(
+                "or a specific class id, and page with limit/offset. Each item carries two line numbers: " +
+                "'line' is the line in 'filePath' - use that pair to edit the file - and 'modelLine' is " +
+                "the line within the class's own source, for a caller working from get_class_source.")]
+    public object ListFindings(
         [Description("Filter by severity substring (case-insensitive), e.g. 'Error', 'Warning'.")]
         string? severity = null,
         [Description("Filter by source, e.g. 'Parser' or 'StyleChecking'.")] string? source = null,
@@ -223,41 +300,44 @@ public sealed class StyleTools
         [Description("Max items to return (default 100, max 1000).")] int limit = 100,
         [Description("Items to skip for pagination (default 0).")] int offset = 0)
     {
-        if (ToolDiagnostics.RequireLibrary(_libraries, "listing issues") is { } noLib)
+        if (ToolDiagnostics.RequireLibrary(_libraries, "listing findings") is { } noLib)
             return noLib;
 
-        limit = Math.Clamp(limit, 1, MaxIssueLimit);
+        limit = Math.Clamp(limit, 1, MaxFindingLimit);
         offset = Math.Max(offset, 0);
 
-        var issues = new List<IssueItem>();
+        var findings = new List<FindingItem>();
 
         if (includeParseErrors)
         {
-            foreach (var node in _libraries.GetAllModels())
+            // Derived from the graph, through the same converter the GUI and CLI use, so a parse
+            // error reads identically on all three and carries a class-relative line like every
+            // other finding. Reading ParserErrors here directly used to give it the *file* line,
+            // which then sat next to filePath in one array with style findings counted from the
+            // class - one field, two conventions.
+            foreach (var finding in ParserErrorReporter.ToFindings(_libraries.GetAllModels()))
             {
-                var errors = node.Definition.ParserErrors;
-                if (errors.Count == 0)
-                    continue;
-                var filePath = ResolveFilePath(node);
-                foreach (var e in errors)
-                {
-                    issues.Add(new IssueItem(
-                        node.Id, "parse",
-                        e.Severity == ParserErrorSeverity.FatalParseFailure ? "FatalParseError" : "SyntaxError",
-                        e.Line, e.Message, e.OffendingToken ?? string.Empty, "Parser", filePath));
-                }
+                findings.Add(Item(
+                    finding.ModelId, "parse",
+                    finding.RuleId == RuleIds.ParseFailure ? "FatalParseError" : "SyntaxError",
+                    finding.LineNumber, finding.Message, string.Empty, ParserErrorReporter.SourceName));
             }
         }
 
         foreach (var m in _codeReview.LogMessages)
         {
-            issues.Add(new IssueItem(
+            // Parse errors are taken from the graph above whether or not a check has run, and a
+            // check records them here as well - so reporting both returned every parse error twice
+            // once check_class or check_library had been called.
+            if (string.Equals(m.Source, ParserErrorReporter.SourceName, StringComparison.Ordinal))
+                continue;
+
+            findings.Add(Item(
                 m.ModelName, "style", m.Severity, m.LineNumber, m.Summary, m.Details,
-                string.IsNullOrEmpty(m.Source) ? "StyleChecking" : m.Source,
-                ResolveFilePath(_libraries.GetModelById(m.ModelName))));
+                string.IsNullOrEmpty(m.Source) ? LogMessage.StyleCheckingSource : m.Source));
         }
 
-        IEnumerable<IssueItem> filtered = issues;
+        IEnumerable<FindingItem> filtered = findings;
         if (!string.IsNullOrWhiteSpace(severity))
             filtered = filtered.Where(i => i.Severity.Contains(severity, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(source))
@@ -271,7 +351,7 @@ public sealed class StyleTools
             .ToList();
 
         var page = list.Skip(offset).Take(limit).ToList();
-        return new IssuesResult(list.Count, offset, page.Count, page);
+        return new FindingsResult(list.Count, offset, page.Count, page);
     }
 
     // ----- settings resolution helpers -----
@@ -310,20 +390,46 @@ public sealed class StyleTools
     private StyleCheckingSettings? SingleRepoSettings()
         => _repositories.Repositories.Count == 1 ? _repositories.Repositories[0].StyleSettings : null;
 
-    private string? ResolveFilePath(ModelNode? node)
+    /// <summary>
+    /// One finding, with its class-relative line mapped to the line in the file it sits in. A caller
+    /// given a path and a line will edit that line, so the two have to be counted from the same place.
+    /// </summary>
+    private FindingItem Item(
+        string modelId, string category, string severity, int modelLine,
+        string summary, string details, string source)
+    {
+        var location = ResolveLocation(_libraries.GetModelById(modelId));
+
+        return new FindingItem(
+            modelId, category, severity,
+            location?.FileLine(modelLine) ?? modelLine, modelLine,
+            summary, details, source, location?.FilePath);
+    }
+
+    /// <summary>
+    /// Where a class sits on disk and how its lines map to the file's, or null when that is unknown
+    /// (a class with no file, a snippet). Built per class rather than through
+    /// <c>ClassLocation.ForGraph</c>, which walks every file in the graph - too much work when a
+    /// reference set of tens of thousands of classes is loaded and a handful have findings.
+    /// </summary>
+    private ClassLocation? ResolveLocation(ModelNode? node)
     {
         if (node?.ContainingFileId is null)
             return null;
-        return _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId)?.FilePath;
+
+        var file = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId);
+        return string.IsNullOrEmpty(file?.FilePath)
+            ? null
+            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile);
     }
 
-    private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> violations, int modelsChecked)
+    private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)
     {
-        var shown = violations
-            .Take(MaxReturnedViolations)
-            .Select(v => new StyleViolationDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
-                string.IsNullOrEmpty(v.Source) ? "StyleChecking" : v.Source))
+        var shown = findings
+            .Take(MaxReturnedFindings)
+            .Select(v => new StyleFindingDto(v.ModelName, v.Severity, v.LineNumber, v.Summary, v.Details,
+                string.IsNullOrEmpty(v.Source) ? LogMessage.StyleCheckingSource : v.Source))
             .ToList();
-        return new CheckResult(modelsChecked, violations.Count, shown, violations.Count > shown.Count);
+        return new CheckResult(modelsChecked, findings.Count, shown, findings.Count > shown.Count);
     }
 }

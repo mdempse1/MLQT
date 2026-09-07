@@ -34,7 +34,8 @@ public interface IRepositoryService
         string? checkoutPath = null,
         string? name = null,
         bool startMonitoring = true,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool? isReferenceOnly = null);
 
     /// <summary>
     /// Detects the VCS type for a given path or URL.
@@ -168,6 +169,13 @@ public interface IRepositoryService
     /// </summary>
     /// <param name="repositoryId">Specific repository to invalidate, or null to clear all.</param>
     void InvalidateWorkingCopyCache(string? repositoryId = null);
+
+    /// <summary>
+    /// Raised when a repository's working-copy VCS status may have changed — after a commit, revert,
+    /// update, or a file changing on disk. Carries the repository id, or null when every repository
+    /// is affected. Subscribe to this rather than asking each caller to notify you.
+    /// </summary>
+    event Action<string?>? OnWorkingCopyStatusChanged;
 
     /// <summary>
     /// Gets the list of available branches for a repository.

@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using Microsoft.Extensions.Logging;
 using MLQT.Services;
+using MLQT.Services.Checking;
 using MLQT.Services.Interfaces;
 using MLQT.Shared.Models;
 using MLQT.Shared.Services;
@@ -41,6 +42,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IFileMonitoringService, FileMonitoringService>();
         builder.Services.AddSingleton<IRepositoryService, RepositoryService>();
         builder.Services.AddSingleton<ICodeReviewService, CodeReviewService>();
+        builder.Services.AddSingleton<IBaselineStatusService, BaselineStatusService>();
         builder.Services.AddSingleton<IStyleCheckingService, StyleCheckingService>();
         builder.Services.AddSingleton<ICustomDictionaryService, CustomDictionaryService>();
         builder.Services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();

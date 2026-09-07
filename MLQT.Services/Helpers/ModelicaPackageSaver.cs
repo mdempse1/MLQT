@@ -27,12 +27,25 @@ public class ModelicaPackageSaver
     /// <param name="rootDirectory">The root directory to save to (parent of library directory)</param>
     /// <param name="showAnnotations">Whether to include annotations in the output</param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses, IReadOnlyList<string>? excludedModelIds = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, IReadOnlyList<string>? excludedModelIds = null)
     {
         var result = new SaveResult();
 
         // Get only the models belonging to this library
         var allModels = graph.ModelNodes.Where(m => modelIds.Contains(m.Id)).ToList();
+
+        // Refuse outright rather than filtering them out. A stub stands for a class in an encrypted
+        // third-party library, and its "source" is a reconstruction from documentation — writing it
+        // anywhere would replace a vendor's library with our own summary of it. Silently skipping
+        // would hide the fact that a caller assembled the wrong model set; a caller that has stubs
+        // in hand has a bug, and it should surface here rather than on a user's installation.
+        var stub = allModels.FirstOrDefault(m => m.IsExternalStub);
+        if (stub is not null)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to save '{stub.Id}': it belongs to an encrypted library and exists only as a " +
+                "reconstruction from vendor documentation. Reference libraries are read-only.");
+        }
 
         // PHASE 1: Pre-parse all models in parallel (batched to limit peak memory)
         PreParseModelsParallel(allModels, modelIds);
@@ -46,10 +59,19 @@ public class ModelicaPackageSaver
         // (parse trees will be released during rendering in Phase 3)
         var shortClassIds = new HashSet<string>();
         var preComputedElementNames = new Dictionary<string, List<string>>();
+        var formatPreserved = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in allModels)
         {
             if (IsShortClassDefinition(model))
                 shortClassIds.Add(model.Id);
+
+            // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
+            // the model's original text (no reformatting/reordering). Asked through the shared
+            // FormattingExclusion so the incremental format in MainLayout gets the same answer — it
+            // used to read the name list only, and reordered exactly the classes the annotation was
+            // written on.
+            if (FormattingExclusion.OptsOutInSource(model))
+                formatPreserved.Add(model.Id);
 
             // Pre-compute element names for packages without a stored package.order
             if (model.PackageOrder == null && model.Definition.ParsedCode != null
@@ -64,11 +86,13 @@ public class ModelicaPackageSaver
         // PHASE 3: Pre-render all models in parallel
         // Parse trees are released immediately after each model is rendered to avoid
         // having all parse trees and all rendered strings coexist in memory.
-        var excludedSet = excludedModelIds != null && excludedModelIds.Count > 0
-            ? new HashSet<string>(excludedModelIds, StringComparer.Ordinal)
-            : null;
+        var excludedSet = new HashSet<string>(StringComparer.Ordinal);
+        if (excludedModelIds != null)
+            excludedSet.UnionWith(excludedModelIds);
+        excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
+        var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
         var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            oneOfEachSection, importsFirst, componentsBeforeClasses, excludedSet);
+            formatting, excludedOrNull);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
@@ -100,7 +124,7 @@ public class ModelicaPackageSaver
     /// from its current <c>ModelicaCode</c> so a caller can mutate the source first.
     /// </para>
     /// </summary>
-    public static string RenderFileOwnerModel(ModelNode fileOwner, bool oneOfEachSection, bool importsFirst, bool componentsBeforeClasses)
+    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting)
     {
         // The stored ModelicaCode is the extracted class body without a 'within' clause.
         // The file written to disk must carry the within clause so that, when the library is
@@ -108,27 +132,60 @@ public class ModelicaPackageSaver
         // regenerates its original hierarchical ID (e.g. "VeSyMA.EnergyStorage.Summary.Null"
         // rather than a detached "Null"). Mirror the full-save path (PreParseModelsParallel) and
         // prepend the within clause for rendering, without mutating the stored within-less body.
-        var sourceCode = fileOwner.Definition.ModelicaCode ?? "";
-        if (!sourceCode.StartsWith("within"))
-        {
-            var parent = fileOwner.ParentModelName;
-            sourceCode = !string.IsNullOrEmpty(parent)
-                ? string.Concat("within ", parent, ";\n", sourceCode)
-                : string.Concat("within;\n", sourceCode);
-        }
+        var sourceCode = WithinClause.Ensure(fileOwner.Definition.ModelicaCode ?? "", fileOwner.ParentModelName);
 
         var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
         fileOwner.Definition.ParsedCode = parseTree;
 
+        return RenderStoredDefinition(parseTree, formatting);
+    }
+
+    /// <summary>
+    /// Renders a whole .mo file's source to the formatted text that should replace it, using the same
+    /// renderer configuration as a full library save.
+    /// <para>
+    /// Prefer this over <see cref="RenderFileOwnerModel"/> whenever the file's text is available on
+    /// disk. A model node's stored <c>ModelicaCode</c> is not always the whole file:
+    /// <c>PackageCodeTrimmer</c> trims a package's inline standalone children out of it (each child
+    /// has its own node), so rendering a package from its stored source would write the file back
+    /// without those classes. The file's own text is the one representation that always holds every
+    /// class stored in it, nested children included.
+    /// </para>
+    /// </summary>
+    /// <param name="fileSource">The complete current text of the file, as read from disk.</param>
+    /// <param name="withinParent">
+    /// Fully-qualified name of the package the file's classes live in, used only if
+    /// <paramref name="fileSource"/> carries no within clause of its own. Null or empty for a
+    /// top-level library.
+    /// </param>
+    public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting)
+        => RenderFileSource(fileSource, withinParent, formatting, out _);
+
+    /// <inheritdoc cref="RenderFileSource(string, string?, bool, bool, bool)"/>
+    /// <param name="parserErrors">
+    /// Syntax errors found in <paramref name="fileSource"/>. A caller about to overwrite the file
+    /// must check this and leave the file alone when it is non-empty: the renderer will still
+    /// produce output for malformed input, but that output is not a faithful copy of the file.
+    /// </param>
+    public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting,
+        out IReadOnlyList<ParserError> parserErrors)
+    {
+        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
+        parserErrors = errors;
+        return RenderStoredDefinition(parseTree, formatting);
+    }
+
+    /// <summary>Renders a parsed stored_definition with the standard save-time renderer settings.</summary>
+    private static string RenderStoredDefinition(modelicaParser.Stored_definitionContext parseTree,
+        FormattingOptions formatting)
+    {
         var visitor = new ModelicaRenderer(
             renderForCodeEditor: false,
             showAnnotations: true,
             excludeClassDefinitions: false,
             tokenStream: null,
             classNamesToExclude: null,
-            oneOfEachSection: oneOfEachSection,
-            importsFirst: importsFirst,
-            componentsBeforeClasses: componentsBeforeClasses);
+            formatting: formatting);
         visitor.VisitStored_definition(parseTree);
 
         var code = string.Join("\n", visitor.Code);
@@ -149,26 +206,20 @@ public class ModelicaPackageSaver
             {
                 try
                 {
-                    // Add within clause if needed
-                    if (!model.Definition.ModelicaCode.StartsWith("within"))
-                    {
-                        var parent = model.ParentModelName;
-                        if (!string.IsNullOrEmpty(parent))
-                            model.Definition.ModelicaCode = string.Concat("within ", parent, ";\n", model.Definition.ModelicaCode);
-                        else
-                            model.Definition.ModelicaCode = "within;\n" + model.Definition.ModelicaCode;
-                        model.Definition.ParsedCode = null;
-                    }
+                    // Parse from a within-prepended copy so the rendered file carries the clause and
+                    // re-parses with the right package context on reload. The clause stays in this
+                    // local: writing it back into ModelicaCode would leave every model in the graph
+                    // carrying one after a full save, shifting each finding's line number by one and
+                    // making it depend on whether a save had run — which is what let a later
+                    // formatter add a second clause. PreRenderModelsParallel releases ParsedCode
+                    // once it has rendered, so the with-clause tree does not outlive this save.
+                    var sourceToParse = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
 
-                    // Parse if needed
-                    if (model.Definition.ParsedCode == null)
+                    var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(sourceToParse);
+                    model.Definition.ParsedCode = parseTree;
+                    foreach (var error in errors)
                     {
-                        var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(model.Definition.ModelicaCode);
-                        model.Definition.ParsedCode = parseTree;
-                        foreach (var error in errors)
-                        {
-                            Error("ModelicaPackageSaver", $"Parse error in {model.Id} at line {error.Line}: {error.Message}");
-                        }
+                        Error("ModelicaPackageSaver", $"Parse error in {model.Id} at line {error.Line}: {error.Message}");
                     }
                 }
                 catch (Exception ex)
@@ -256,9 +307,7 @@ public class ModelicaPackageSaver
         List<ModelNode> allModels,
         Dictionary<string, List<ModelNode>> childrenByParent,
         Dictionary<string, HashSet<string>> standaloneChildren,
-        bool oneOfEachSection,
-        bool importsFirst,
-        bool componentsBeforeClasses,
+        FormattingOptions formatting,
         HashSet<string>? excludedModelIds = null)
     {
         const int batchSize = 500;
@@ -273,10 +322,14 @@ public class ModelicaPackageSaver
                     if (model.Definition.ParsedCode == null)
                         return;
 
-                    // Skip formatting for excluded models — use original code
+                    // Skip formatting for excluded models — use original code. The within clause still
+                    // has to go on: what this dictionary holds becomes the text of the file, and a
+                    // file with no within clause reloads as a detached top-level class instead of a
+                    // member of its package. Every other entry here comes from the renderer, which
+                    // emits the clause from the parse tree; this is the one path that bypasses it.
                     if (excludedModelIds != null && excludedModelIds.Contains(model.Id))
                     {
-                        renderedCode[model.Id] = model.Definition.ModelicaCode;
+                        renderedCode[model.Id] = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
                         model.Definition.ParsedCode = null;
                         return;
                     }
@@ -299,9 +352,7 @@ public class ModelicaPackageSaver
                         excludeClassDefinitions: false,
                         tokenStream: null,
                         classNamesToExclude: classNamesToExclude,
-                        oneOfEachSection: oneOfEachSection,
-                        importsFirst: importsFirst,
-                        componentsBeforeClasses: componentsBeforeClasses);
+                        formatting: formatting);
                     visitor.VisitStored_definition(model.Definition.ParsedCode);
                     var code = string.Join("\n", visitor.Code);
 
@@ -376,7 +427,7 @@ public class ModelicaPackageSaver
             var packageFile = Path.Combine(packageDir, "package.mo");
             try
             {
-                File.WriteAllText(packageFile, code);
+                ModelicaFileEncoding.WriteAllText(packageFile, code);
                 result.WrittenFiles.Add(packageFile);
                 result.ModelIdToFilePath[model.Id] = packageFile;
             }
@@ -385,8 +436,11 @@ public class ModelicaPackageSaver
                 Error("ModelicaPackageSaver", $"Failed to write package file: {packageFile}", e);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string
-            model.Definition.ModelicaCode = code;
+            // Update ModelicaCode with the rendered version to free the old source string.
+            // The within clause is stripped back off: it belongs to the file just written, not
+            // to the class, and every other path stores class source without one.
+            model.Definition.ModelicaCode = WithinClause.Strip(code);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
 
             // Get children for this package
             childrenByParent.TryGetValue(model.Id, out var children);
@@ -402,7 +456,7 @@ public class ModelicaPackageSaver
                 {
                     try
                     {
-                        File.WriteAllLines(packageOrderFile, packageOrderList);
+                        ModelicaFileEncoding.WriteAllLines(packageOrderFile, packageOrderList);
                         result.WrittenFiles.Add(packageOrderFile);
                     }
                     catch (Exception e)
@@ -441,7 +495,7 @@ public class ModelicaPackageSaver
             var filePath = Path.Combine(parentDirectory, fileName);
             try
             {
-                File.WriteAllText(filePath, code);
+                ModelicaFileEncoding.WriteAllText(filePath, code);
                 result.WrittenFiles.Add(filePath);
                 result.ModelIdToFilePath[model.Id] = filePath;
             }
@@ -450,8 +504,11 @@ public class ModelicaPackageSaver
                 Error("ModelicaPackageSaver", $"Failed to write model file: {filePath}", e);
             }
 
-            // Update ModelicaCode with the rendered version to free the old source string
-            model.Definition.ModelicaCode = code;
+            // Update ModelicaCode with the rendered version to free the old source string.
+            // The within clause is stripped back off: it belongs to the file just written, not
+            // to the class, and every other path stores class source without one.
+            model.Definition.ModelicaCode = WithinClause.Strip(code);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
 
             // Update non-standalone children embedded in this model (e.g., nested classes
             // inside a model/block/connector) so their displayed code matches what was saved
@@ -482,7 +539,10 @@ public class ModelicaPackageSaver
         savedModels.Add(model.Id);
         result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
-            model.Definition.ModelicaCode = childCode;
+        {
+            model.Definition.ModelicaCode = WithinClause.Strip(childCode);
+            model.SourceMatchesFile = false;   // renderer's lines now, not the file's — see ModelNode
+        }
 
         // Recurse into this model's own nested children
         if (childrenByParent.TryGetValue(model.Id, out var grandchildren))

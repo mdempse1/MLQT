@@ -878,6 +878,14 @@ public class CorrectingCodeOrder
     }
 
     private static List<string> RenderWithOneOfEachSection(string code, bool importsFirst = true)
+        => Render(code, new FormattingOptions(
+            OneOfEachSection: true, ImportsFirst: importsFirst, ComponentsBeforeClasses: importsFirst));
+
+    /// <summary>Renders with the repository's convention set to "initial sections last".</summary>
+    private static List<string> RenderWithInitialSectionsLast(string code)
+        => Render(code, new FormattingOptions(OneOfEachSection: true, InitialSectionsLast: true));
+
+    private static List<string> Render(string code, FormattingOptions formatting)
     {
         var modelicaCode = code.StartsWith("within") ? code : "within;\n" + code;
         var (parseTree, tokenStream) = ModelicaParserHelper.ParseWithTokens(modelicaCode);
@@ -888,11 +896,94 @@ public class CorrectingCodeOrder
             tokenStream,
             classNamesToExclude: null,
             maxLineLength: 100,
-            oneOfEachSection: true,
-            importsFirst: importsFirst,
-            componentsBeforeClasses: importsFirst);
+            formatting: formatting);
         visitor.Visit(parseTree);
         return visitor.Code;
+    }
+
+    private const string InitialAndOrdinaryEquations = """
+        model M
+          Real x;
+        equation
+          x = 1;
+        initial equation
+          x = 0;
+        end M;
+        """;
+
+    /// <summary>
+    /// The formatter can write initial sections after the ordinary ones.
+    ///
+    /// <para>It could not before, and that was not a missing nicety. The renderer wrote them first
+    /// unconditionally, so a repository that enabled <c>MLQT.Style.InitialEqAlgoLast</c> and applied
+    /// formatting had the violation reintroduced on every save: the rule could never be satisfied and
+    /// every class with an initial section was reported for ever. The rule and the formatter now agree
+    /// about what the convention means.</para>
+    /// </summary>
+    [Fact]
+    public void InitialSectionsLast_WritesInitialSectionsAfterTheOrdinaryOnes()
+    {
+        var text = string.Join("\n", RenderWithInitialSectionsLast(InitialAndOrdinaryEquations));
+
+        var initial = text.IndexOf("initial equation", StringComparison.Ordinal);
+        var ordinary = text.IndexOf("\nequation", StringComparison.Ordinal);
+
+        Assert.True(initial > ordinary, $"expected 'initial equation' after 'equation':\n{text}");
+    }
+
+    [Fact]
+    public void InitialSectionsFirst_IsStillTheDefault()
+    {
+        // The other convention, and the one every existing repository is on.
+        var text = string.Join("\n", RenderWithOneOfEachSection(InitialAndOrdinaryEquations, importsFirst: false));
+
+        var initial = text.IndexOf("initial equation", StringComparison.Ordinal);
+        var ordinary = text.IndexOf("\nequation", StringComparison.Ordinal);
+
+        Assert.True(initial < ordinary, $"expected 'initial equation' before 'equation':\n{text}");
+    }
+
+    [Fact]
+    public void InitialSectionsLast_KeepsTheContentsOfEachSection()
+    {
+        // Moving a section has to move what is in it, not just its header.
+        var text = string.Join("\n", RenderWithInitialSectionsLast(InitialAndOrdinaryEquations));
+
+        Assert.Contains("x = 0;", text);
+        Assert.Contains("x = 1;", text);
+        Assert.Contains("Real x;", text);
+    }
+
+    /// <summary>
+    /// The algorithm counterpart. Both initial sections are written by one helper, so a change to it
+    /// has to move the pair.
+    /// </summary>
+    [Fact]
+    public void InitialSectionsLast_MovesInitialAlgorithmsToo()
+    {
+        var text = string.Join("\n", RenderWithInitialSectionsLast("""
+            model M
+              Real x;
+            algorithm
+              x := 1;
+            initial algorithm
+              x := 0;
+            end M;
+            """));
+
+        var initial = text.IndexOf("initial algorithm", StringComparison.Ordinal);
+        var ordinary = text.IndexOf("\nalgorithm", StringComparison.Ordinal);
+
+        Assert.True(initial > ordinary, $"expected 'initial algorithm' after 'algorithm':\n{text}");
+    }
+
+    /// <summary>The output must re-parse, or the formatter has corrupted the file, not reordered it.</summary>
+    [Fact]
+    public void InitialSectionsLast_ProducesParseableCode()
+    {
+        var text = string.Join("\n", RenderWithInitialSectionsLast(InitialAndOrdinaryEquations));
+
+        Assert.NotNull(ModelicaParserHelper.Parse(text));
     }
 
     [Fact]

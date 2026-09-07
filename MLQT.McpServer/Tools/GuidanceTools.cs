@@ -62,8 +62,8 @@ public sealed class GuidanceTools
               analyze_dependencies -> analyze_change_impact (what downstream is affected?).
 
             Quality pass on a library:
-              get_style_settings -> enable rules -> check_library -> list_issues.
-              Parse errors are available from list_issues immediately after loading (no check needed).
+              get_style_settings -> enable rules -> check_library -> list_findings.
+              Parse errors are available from list_findings immediately after loading (no check needed).
 
             Fix a spelling mistake:
               spell_check -> spelling_suggestions -> correct_spelling.
@@ -234,10 +234,10 @@ public sealed class GuidanceTools
               .mlqt/settings.json. repositoryId is optional when one repo is loaded.
             - check_class(classId, settings?) / check_library(libraryId?, settings?): by default use the
               repository's settings; pass a 'settings' object to override for one run. Results are stored
-              and appear in list_issues.
+              and appear in list_findings.
             - check_style(source, settings?): stateless snippet check. Reference/icon rules need a loaded
               library and are inert here.
-            - list_issues aggregates parse errors (available at load) plus style/spell violations from any
+            - list_findings aggregates parse errors (available at load) plus style/spell findings from any
               check that has run. Filter by severity / source / classId.
             """,
 
@@ -253,6 +253,11 @@ public sealed class GuidanceTools
             - correct_spelling(classId, oldWord, newWord): whole-word, case-sensitive replacement across
               the file's prose (HTML tags, hrefs and code/pre blocks are preserved). By default it writes
               the file to disk and refreshes the graph; pass preview=true to just see the result.
+            - When the word is right and the checker is wrong, pick the narrowest waiver:
+              accept_spelling_in_class(classId, word) writes __MLQT(spelling="word") and accepts it in
+              that class alone; the repository's .mlqt/dictionary.txt accepts it everywhere in the
+              repository; suppress_rule with MLQT.Spelling.Description / MLQT.Spelling.Documentation
+              waives spell checking for a whole class, which silences its other misspellings too.
             """,
 
         ["formatting"] = """

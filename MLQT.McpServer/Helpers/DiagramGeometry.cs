@@ -1,3 +1,4 @@
+using ModelicaGraph.Analysis;
 using System.Text.RegularExpressions;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Visitors;
@@ -72,12 +73,12 @@ internal static class DiagramGeometry
         ILibraryDataService libraries, string classCode, string classId, string componentName, string connectorName)
     {
         var typeText = ComponentTypeText(classCode, componentName);
-        var typeNode = typeText is null ? null : TypeResolver.Resolve(libraries, classId, typeText, null);
+        var typeNode = typeText is null ? null : TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null);
         if (typeNode is null)
             return (0, 0);
 
         var member = ClassElementResolver
-            .Collect(libraries, typeNode, includeProtected: false, includeInherited: true)
+            .Collect(libraries.CombinedGraph, typeNode, includeProtected: false, includeInherited: true)
             .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
                                  string.Equals(m.Element.Name, connectorName, StringComparison.Ordinal));
         if (member is null)

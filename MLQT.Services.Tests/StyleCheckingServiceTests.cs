@@ -26,21 +26,27 @@ public class StyleCheckingServiceTests
         var customDictionaryService = new StubCustomDictionaryService();
         var dictionaryManagerService = new StubDictionaryManagerService();
         _codeReviewService = new CodeReviewService();
-        return new StyleCheckingService(_libraryDataService, _repositoryService, _settingsService, customDictionaryService, dictionaryManagerService, _codeReviewService);
+        return new StyleCheckingService(_libraryDataService,
+            _repositoryService,
+            customDictionaryService,
+            dictionaryManagerService,
+            _codeReviewService);
     }
 
     private class StubCustomDictionaryService : ICustomDictionaryService
     {
-        public IReadOnlyCollection<string> CustomWords => Array.Empty<string>();
 #pragma warning disable CS0067
-        public event Action? OnDictionaryChanged;
+        public event Action<string>? OnDictionaryChanged;
 #pragma warning restore CS0067
-        public Task AddWordAsync(string word) => Task.CompletedTask;
-        public Task RemoveWordAsync(string word) => Task.CompletedTask;
-        public Task ImportAsync(string filePath) => Task.CompletedTask;
-        public Task ExportAsync(string filePath) => Task.CompletedTask;
-        public Task MergeAsync(string filePath) => Task.CompletedTask;
-        public Task LoadAsync() => Task.CompletedTask;
+        public string? LegacyMachineDictionaryPath => null;
+        public string PathFor(string repositoryRoot) => Path.Combine(repositoryRoot, ".mlqt", "dictionary.txt");
+        public IReadOnlyCollection<string> WordsFor(string? repositoryRoot) => Array.Empty<string>();
+        public Task AddWordAsync(string repositoryRoot, string word) => Task.CompletedTask;
+        public Task RemoveWordAsync(string repositoryRoot, string word) => Task.CompletedTask;
+        public Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot) =>
+            Task.FromResult<IReadOnlyCollection<string>>(Array.Empty<string>());
+        public Task<int> MergeFromAsync(string repositoryRoot, string sourceFile) => Task.FromResult(0);
+        public Task ExportAsync(string repositoryRoot, string targetFile) => Task.CompletedTask;
     }
 
     private class StubDictionaryManagerService : IDictionaryManagerService
@@ -80,6 +86,32 @@ public class StyleCheckingServiceTests
         return repo;
     }
 
+    /// <summary>
+    /// A repository registered with the RepositoryService, so a model in it resolves to it. The
+    /// lightweight fixture above builds a Repository the service never sees, which used to be
+    /// papered over by an app-level fallback; rules now come only from the repository a class is in.
+    /// </summary>
+    private async Task<Repository> AddRegisteredRepositoryAsync(
+        string directory, StyleCheckingSettings settings, string classCode)
+    {
+        var libraryDir = Path.Combine(directory, "P");
+        Directory.CreateDirectory(libraryDir);
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.mo"), classCode);
+        await File.WriteAllTextAsync(Path.Combine(libraryDir, "package.order"), "");
+
+        var added = await _repositoryService.AddRepositoryAsync(directory, startMonitoring: false);
+        await _repositoryService.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = settings;
+        return added.Repository;
+    }
+
+    private static string NewTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-style-checking", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
     [Fact]
     public void IsRunning_InitiallyFalse()
     {
@@ -97,7 +129,7 @@ public class StyleCheckingServiceTests
     }
 
     [Fact]
-    public async Task CheckModelAsync_ReturnsViolationsForBadModel()
+    public async Task CheckModelAsync_ReturnsFindingsForBadModel()
     {
         var service = CreateService();
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
@@ -107,10 +139,10 @@ public class StyleCheckingServiceTests
   Real x;
 end TestModel;");
 
-        var violations = await service.CheckModelAsync(model, settings);
+        var findings = await service.CheckModelAsync(model, settings);
 
-        // Should have violation for missing description
-        Assert.NotEmpty(violations);
+        // Should have finding for missing description
+        Assert.NotEmpty(findings);
     }
 
     [Fact]
@@ -141,9 +173,9 @@ end TestModel;");
   Real x;
 end TestModel;");
 
-        var violations = await service.CheckModelAsync(model, settings);
+        var findings = await service.CheckModelAsync(model, settings);
 
-        Assert.Empty(violations);
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -181,13 +213,13 @@ end TestModel;");
     }
 
     [Fact]
-    public async Task StartBackgroundCheckingAsync_FiresOnViolationsFoundEvent()
+    public async Task StartBackgroundCheckingAsync_FiresOnFindingsFoundEvent()
     {
         var service = CreateService();
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var repo = await CreateRepositoryWithModelsAsync(
             settings,
@@ -198,17 +230,17 @@ end TestModel;");
         // Wait for background processing and flush to complete
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
     public async Task StartBackgroundCheckingAsync_UsesRepositorySettings()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        // Create repo with description checking disabled - should find no violations
+        // Create repo with description checking disabled - should find no findings
         var repo = await CreateRepositoryWithModelsAsync(
             new StyleCheckingSettings { ClassHasDescription = false },
             ("TestModel", "model TestModel Real x; end TestModel;"));
@@ -216,24 +248,23 @@ end TestModel;");
         await service.StartBackgroundCheckingAsync(repo);
         await WaitForCompletionAsync(service);
 
-        Assert.Empty(violationsReceived);
+        Assert.Empty(findingsReceived);
     }
 
     [Fact]
     public async Task CheckModelsAsync_ReChecksSpecificModels()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        var settings = new StyleCheckingSettings { ClassHasDescription = true };
-
-        // Store settings so CheckModelsAsync can find them via the fallback path
-        await _settingsService.SetAsync("StyleChecking", settings);
-
-        var repo = await CreateRepositoryWithModelsAsync(
-            settings,
-            ("TestModel", "model TestModel Real x; end TestModel;"));
+        var directory = NewTempDirectory();
+        try
+        {
+        await AddRegisteredRepositoryAsync(
+            directory,
+            new StyleCheckingSettings { ClassHasDescription = true },
+            "within;\npackage P\n  model TestModel\n    Real x;\n  end TestModel;\nend P;\n");
 
         // Mark models as already checked
         var graph = _libraryDataService.CombinedGraph;
@@ -247,19 +278,24 @@ end TestModel;");
         await service.CheckModelsAsync(modelIds, graph);
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]
     public async Task CheckModelsAsync_WithEmptyList_ReturnsEarly()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         await service.CheckModelsAsync(new List<string>(), _libraryDataService.CombinedGraph);
 
-        Assert.Empty(violationsReceived);
+        Assert.Empty(findingsReceived);
     }
 
     [Fact]
@@ -351,8 +387,8 @@ end TestModel;");
     public async Task StartBackgroundCheckingForRepositories_WithMultipleRepos_ProcessesAll()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
 
@@ -369,7 +405,7 @@ end TestModel;");
         service.StartBackgroundCheckingForRepositories(new List<Repository> { repo1, repo2 });
         await WaitForCompletionAsync(service);
 
-        Assert.NotEmpty(violationsReceived);
+        Assert.NotEmpty(findingsReceived);
     }
 
     [Fact]
@@ -385,6 +421,9 @@ end TestModel;");
             ("Model2", "model Model2 end Model2;"));
 
         service.StartBackgroundCheckingForRepositories(new List<Repository> { repo1, repo2 });
+        // Asynchronous now: nothing has rules, but the classes are still measured for the Coverage
+        // tab, and completion means that work has finished too.
+        await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(completionSignal);
     }
@@ -406,80 +445,99 @@ end TestModel;");
     }
 
     [Fact]
-    public void GetSpellChecker_InitiallyNull()
+    public void AClassWithNoRepository_StillGetsSuggestions()
     {
+        // Suggestions come from the language dictionaries, which are installed per machine and belong
+        // to nobody. Only recording an accepted word needs a repository. Tying the two together made
+        // the correction menu say "No suggestions found" for a class MLQT could not place in one,
+        // which is a different statement from "this word has no suggestions".
         var service = CreateService();
-        Assert.Null(service.GetSpellChecker());
+
+        var checker = service.EnsureSpellChecker(null);
+
+        Assert.False(checker.IsCorrect("presure"));
+        Assert.NotEmpty(checker.Suggest("presure"));
     }
 
     [Fact]
-    public void EnsureSpellChecker_CreatesSpellChecker()
+    public void TheNoRepositoryChecker_IsSeparateFromARepositorysOwn()
     {
+        // It has no accepted words, so it must not be handed out as any repository's checker.
         var service = CreateService();
-        var checker = service.EnsureSpellChecker();
-        Assert.NotNull(checker);
+
+        Assert.NotSame(service.EnsureSpellChecker(null), service.EnsureSpellChecker(@"C:\repos\Alpha"));
     }
 
     [Fact]
-    public void EnsureSpellChecker_ReturnsSameInstanceOnSecondCall()
+    public void EnsureSpellChecker_CreatesOnePerRepository()
     {
+        // The accepted words live with the repository, so two repositories must not share a checker
+        // — that would let one repository's spellings silence findings in another.
         var service = CreateService();
-        var checker1 = service.EnsureSpellChecker();
-        var checker2 = service.EnsureSpellChecker();
-        Assert.Same(checker1, checker2);
+
+        var first = service.EnsureSpellChecker(@"C:
+epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:
+epos\Beta");
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
     }
 
     [Fact]
-    public void EnsureSpellChecker_WithCustomWords_CreatesChecker()
+    public void EnsureSpellChecker_ReturnsSameInstanceForTheSameRepository()
     {
         var service = CreateService();
-        var checker = service.EnsureSpellChecker(new[] { "customword" });
-        Assert.NotNull(checker);
+
+        var first = service.EnsureSpellChecker(@"C:
+epos\Alpha");
+        var second = service.EnsureSpellChecker(@"C:
+epos\Alpha");
+
+        Assert.Same(first, second);
     }
 
     [Fact]
-    public void ReloadSpellChecker_CreatesNewInstance()
+    public void EnsureSpellChecker_RebuildsWhenTheLanguagesChange()
     {
         var service = CreateService();
-        var checker1 = service.EnsureSpellChecker();
-        service.ReloadSpellChecker();
-        var checker2 = service.GetSpellChecker();
-        Assert.NotNull(checker2);
-        Assert.NotSame(checker1, checker2);
-    }
 
-    [Fact]
-    public void ReloadSpellChecker_WithCustomWords_Works()
-    {
-        var service = CreateService();
-        service.EnsureSpellChecker();
-        service.ReloadSpellChecker(new[] { "testword" });
-        Assert.NotNull(service.GetSpellChecker());
+        var english = service.EnsureSpellChecker(@"C:
+epos\Alpha", new[] { "en_US" });
+        var british = service.EnsureSpellChecker(@"C:
+epos\Alpha", new[] { "en_GB" });
+
+        Assert.NotSame(english, british);
     }
 
     [Fact]
     public async Task CheckModelsAsync_GroupsModelsByRepository()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v => violationsReceived.AddRange(v);
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v => findingsReceived.AddRange(v);
 
-        var settings = new StyleCheckingSettings { ClassHasDescription = true };
+        var directory = NewTempDirectory();
+        try
+        {
+            await AddRegisteredRepositoryAsync(
+                directory,
+                new StyleCheckingSettings { ClassHasDescription = true },
+                "within;\npackage P\n  model Model1\n    Real x;\n  end Model1;\nend P;\n");
 
-        // Store settings so CheckModelsAsync uses them via the fallback path
-        // (repos aren't registered in RepositoryService, so it falls back to settings service)
-        await _settingsService.SetAsync("StyleChecking", settings);
+            var graph = _libraryDataService.CombinedGraph;
+            var modelIds = graph.ModelNodes.Select(m => m.Id).ToList();
+            await service.CheckModelsAsync(modelIds, graph);
+            await WaitForCompletionAsync(service);
 
-        // Create a library with a model missing a description
-        await _libraryDataService.AddLibraryFromFileAsync("Model1.mo", "model Model1 Real x; end Model1;");
-
-        var graph = _libraryDataService.CombinedGraph;
-        var modelIds = graph.ModelNodes.Select(m => m.Id).ToList();
-        await service.CheckModelsAsync(modelIds, graph);
-        await WaitForCompletionAsync(service);
-
-        // Model1 should have violations (description check enabled via fallback settings)
-        Assert.NotEmpty(violationsReceived);
+            // The classes are checked with their own repository's rules.
+            Assert.NotEmpty(findingsReceived);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
     }
 
     [Fact]
@@ -494,32 +552,32 @@ end TestModel;");
         await service.StartBackgroundCheckingAsync(repo);
         await WaitForCompletionAsync(service);
 
-        Assert.NotNull(service.GetSpellChecker());
+        Assert.NotNull(service.GetSpellCheckerIfNeeded(repo));
     }
 
     [Fact]
-    public async Task ReRun_ClearsOldStyleCheckingViolationsFromCodeReviewService()
+    public async Task ReRun_ClearsOldStyleCheckingFindingsFromCodeReviewService()
     {
         var service = CreateService();
-        var violationsReceived = new List<LogMessage>();
-        service.OnViolationsFound += v =>
+        var findingsReceived = new List<LogMessage>();
+        service.OnFindingsFound += v =>
         {
             _codeReviewService.AddLogMessages(v);
-            violationsReceived.AddRange(v);
+            findingsReceived.AddRange(v);
         };
 
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
         var repo = await CreateRepositoryWithModelsAsync(settings,
             ("TestModel", "model TestModel Real x; end TestModel;"));
 
-        // First run — produces violations
+        // First run — produces findings
         service.StartBackgroundChecking(repo);
         await WaitForCompletionAsync(service);
         var firstRunCount = _codeReviewService.LogMessages.Count;
-        Assert.True(firstRunCount > 0, "First run should produce violations");
+        Assert.True(firstRunCount > 0, "First run should produce findings");
 
-        // Second run — old violations should be cleared, not duplicated
-        violationsReceived.Clear();
+        // Second run — old findings should be cleared, not duplicated
+        findingsReceived.Clear();
         service.StartBackgroundChecking(repo);
         await WaitForCompletionAsync(service);
 
@@ -530,7 +588,7 @@ end TestModel;");
     public async Task ReRun_PreservesNonStyleCheckingMessages()
     {
         var service = CreateService();
-        service.OnViolationsFound += v => _codeReviewService.AddLogMessages(v);
+        service.OnFindingsFound += v => _codeReviewService.AddLogMessages(v);
 
         // Add a non-style-checking message (e.g., a parser error)
         _codeReviewService.AddLogMessage(new LogMessage("SomeModel", "Parser error", 1, "Syntax error"));
@@ -547,20 +605,233 @@ end TestModel;");
     }
 
     [Fact]
-    public void StyleCheckingViolations_HaveSourceSetToStyleChecking()
+    public void StyleCheckingFindings_HaveSourceSetToStyleChecking()
     {
         var settings = new StyleCheckingSettings { ClassHasDescription = true };
         var model = new ModelDefinition("TestModel", "model TestModel Real x; end TestModel;");
 
-        var violations = StyleChecking.RunStyleChecking(model, settings, "Pkg.TestModel");
+        var findings = StyleChecking.RunStyleChecking(model, settings, "Pkg.TestModel");
 
-        Assert.NotEmpty(violations);
-        Assert.All(violations, v => Assert.Equal("StyleChecking", v.Source));
+        Assert.NotEmpty(findings);
+        Assert.All(findings, v => Assert.Equal("StyleChecking", v.Source));
     }
 
     /// <summary>
     /// Waits for the style checking service to finish processing.
     /// </summary>
+    [Fact]
+    public void WaitForCompletionAsync_WithNothingRunning_IsAlreadyComplete()
+    {
+        Assert.True(CreateService().WaitForCompletionAsync().IsCompleted);
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_ReturnsOnlyOnceTheCheckingHasFinished()
+    {
+        // The Start* methods queue work and return, so a caller that treated them as the whole run
+        // reported the step complete and handed the app back while every core was still checking —
+        // a UI that barely responds under a dialog that says it has finished.
+        var service = CreateService();
+        var findings = new List<LogMessage>();
+        service.OnFindingsFound += v => { lock (findings) findings.AddRange(v); };
+
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A Real x; end A;"),
+            ("B", "model B Real y; end B;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.False(service.IsRunning);
+        lock (findings)
+            Assert.NotEmpty(findings);   // already delivered when the wait returned — no polling
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_WithNoRulesEnabled_DoesNotWaitForever()
+    {
+        // Nothing is queued, so no completion is ever signalled by the flush loop — the case that
+        // once left the startup dialog spinning with no way out.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings(), ("A", "model A Real x; end A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+
+        await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task StyleChecking_DoesNotMeasureCoverage_ForARepositoryWithNoRules()
+    {
+        // Coverage follows the rules. With everything Off the Coverage tab has no rows for this
+        // repository, so measuring its classes would be a tree walk each for a report nobody sees.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings(),   // nothing enabled
+            ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.Null(node.Definition.Coverage);
+    }
+
+    [Fact]
+    public async Task StyleChecking_MeasuresOnlyTheDimensionsTheRepositoryTracks()
+    {
+        // The sweep and the workers measure the same set — what this repository would show — so a
+        // class reached by neither still reports the same dimensions as one checked in full.
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        var coverage = node.Definition.Coverage;
+        Assert.NotNull(coverage);
+        Assert.Equal(CoverageDimension.ClassDescription, coverage!.Measured);
+        Assert.True(coverage.HasDescription);
+    }
+
+    [Fact]
+    public async Task StyleChecking_DoesNotMeasureAClassTwice()
+    {
+        var service = CreateService();
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A\n  Real x;\nequation\n  x = 1;\nend A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");
+        var measured = node.Definition.Coverage;
+        Assert.NotNull(measured);
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.Same(measured, node.Definition.Coverage);
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_ReturnsOnlyAfterTheCompletionHasBeenAnnounced()
+    {
+        // Whoever awaits the run resumes to look at what the run produced, and the completion event is
+        // part of that. Releasing the wait first let the two race, which is the sort of failure that
+        // shows up once in twenty runs and reads as flakiness rather than as ordering.
+        var service = CreateService();
+        var announced = false;
+        service.OnProgressChanged += done => { if (done) announced = true; };
+
+        var repo = await CreateRepositoryWithModelsAsync(
+            new StyleCheckingSettings { ClassHasDescription = true },
+            ("A", "model A Real x; end A;"));
+
+        service.StartBackgroundCheckingForRepositories([repo]);
+        await service.WaitForCompletionAsync();
+
+        Assert.True(announced);
+    }
+
+    /// <summary>
+    /// Two repositories, each with rules of its own, and one of them re-checked. Applying settings to
+    /// a repository re-checks that repository alone, so the other one's findings have to survive it —
+    /// nothing would put them back.
+    /// </summary>
+    private async Task<(StyleCheckingService Service, Repository First, Repository Second,
+        IReadOnlyList<string> FirstModels, IReadOnlyList<string> SecondModels)> TwoCheckedRepositoriesAsync()
+    {
+        var service = CreateService();
+        service.OnFindingsFound += v => _codeReviewService.AddLogMessages(v);
+
+        var first = new Repository
+        {
+            Name = "FirstRepo",
+            StyleSettings = new StyleCheckingSettings { ClassHasDescription = true }
+        };
+        var firstLibrary = await _libraryDataService.AddLibraryFromFileAsync(
+            "Model1.mo", "model Model1 Real x; end Model1;");
+        firstLibrary.RepositoryId = first.Id;
+
+        var second = new Repository
+        {
+            Name = "SecondRepo",
+            StyleSettings = new StyleCheckingSettings { ClassHasDescription = true }
+        };
+        var secondLibrary = await _libraryDataService.AddLibraryFromFileAsync(
+            "Model2.mo", "model Model2 Real y; end Model2;");
+        secondLibrary.RepositoryId = second.Id;
+
+        service.StartBackgroundCheckingForRepositories([first, second]);
+        await WaitForCompletionAsync(service);
+
+        return (service, first, second, firstLibrary.ModelIds.ToList(), secondLibrary.ModelIds.ToList());
+    }
+
+    private int FindingCountFor(IEnumerable<string> modelIds)
+    {
+        var ids = modelIds.ToHashSet(StringComparer.Ordinal);
+        return _codeReviewService.LogMessages.Count(m => ids.Contains(m.ModelName));
+    }
+
+    [Fact]
+    public async Task StartBackgroundChecking_ForOneRepository_KeepsTheOtherRepositorysFindings()
+    {
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var firstCount = FindingCountFor(firstModels);
+        var secondCount = FindingCountFor(secondModels);
+        Assert.True(firstCount > 0, "The first repository should have findings to re-check");
+        Assert.True(secondCount > 0, "The second repository should have findings to preserve");
+
+        service.StartBackgroundChecking(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+        Assert.Equal(firstCount, FindingCountFor(firstModels));   // re-checked, not duplicated
+    }
+
+    [Fact]
+    public async Task StartBackgroundCheckingAsync_ForOneRepository_KeepsTheOtherRepositorysFindings()
+    {
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var firstCount = FindingCountFor(firstModels);
+        var secondCount = FindingCountFor(secondModels);
+
+        await service.StartBackgroundCheckingAsync(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+        Assert.Equal(firstCount, FindingCountFor(firstModels));
+    }
+
+    [Fact]
+    public async Task StartBackgroundChecking_WithNoRulesEnabled_StillKeepsTheOtherRepositorysFindings()
+    {
+        // Turning every rule off for a repository clears its findings and starts nothing. The early
+        // return that path takes must not have taken the other repository's findings with it.
+        var (service, first, _, firstModels, secondModels) = await TwoCheckedRepositoriesAsync();
+
+        var secondCount = FindingCountFor(secondModels);
+        first.StyleSettings = new StyleCheckingSettings();
+
+        service.StartBackgroundChecking(first);
+        await WaitForCompletionAsync(service);
+
+        Assert.Equal(0, FindingCountFor(firstModels));
+        Assert.Equal(secondCount, FindingCountFor(secondModels));
+    }
+
     private static async Task WaitForCompletionAsync(StyleCheckingService service, int timeoutMs = 5000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);

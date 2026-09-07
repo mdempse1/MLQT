@@ -1,0 +1,7 @@
+{
+  "RuleSeverities": {
+    "MLQT.Doc.ClassDescription": "Warning",
+    "MLQT.Doc.ParameterDescription": "Error",
+    "MLQT.Units.MissingUnit": "Warning"
+  }
+}

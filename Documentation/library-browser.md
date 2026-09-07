@@ -128,4 +128,4 @@ For large libraries with many packages:
 - **Expand selectively** — Only expand the packages you need. Lazy loading keeps unexpanded branches lightweight.
 - **Use Library view** — When you don't need VCS operations, library view gives you more vertical space by removing repository headers.
 - **Use the Dependencies tab** — To find a model by its relationships rather than its location in the package hierarchy.
-- **Use the search in Issues table** — The Code Review tab's issues table lets you search by model name across all loaded libraries.
+- **Use the search in Findings table** — The Code Review tab's findings table lets you search by model name across all loaded libraries.

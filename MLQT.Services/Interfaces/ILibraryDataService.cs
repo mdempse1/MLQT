@@ -16,6 +16,25 @@ public interface ILibraryDataService
     IReadOnlyList<LoadedLibrary> Libraries { get; }
 
     /// <summary>
+    /// Gets the name and root path of each loaded library, as needed by
+    /// <c>GraphBuilder</c> to resolve <c>modelica://</c> URIs.
+    /// </summary>
+    List<LibraryInfo> GetLibraryInfos();
+
+    /// <summary>
+    /// Runs full dependency analysis over the combined graph exactly once, coalescing concurrent
+    /// callers onto a single run and returning immediately when the graph is already analysed.
+    ///
+    /// Every consumer that needs <c>UsedModelIds</c>/<c>UsedByModelIds</c> — the startup pipeline and
+    /// the style-checking graph analyses — must go through here. Calling
+    /// <c>GraphBuilder.AnalyzeDependenciesAsync</c> directly lets two runs overlap, which is how the
+    /// graph analyses used to observe a half-built graph and report a different number of findings
+    /// from one launch to the next.
+    /// </summary>
+    /// <param name="progressLog">Optional progress callback, used only if this call starts the run.</param>
+    Task EnsureDependenciesAnalyzedAsync(Action<string>? progressLog = null);
+
+    /// <summary>
     /// Adds a library from a file path.
     /// </summary>
     /// <param name="filePath">Path to the .mo file.</param>
@@ -29,6 +48,45 @@ public interface ILibraryDataService
     /// <param name="directoryPath">Path to the directory containing .mo files.</param>
     /// <returns>The loaded library.</returns>
     Task<LoadedLibrary> AddLibraryFromDirectoryAsync(string directoryPath);
+
+    /// <summary>
+    /// Adds whatever library is at <paramref name="path"/>, working out from the path itself how it
+    /// should be loaded.
+    ///
+    /// <para><b>Prefer this over the specific loaders.</b> Deciding between them at the call site
+    /// means every surface — the app's repository loader, its reference libraries, the CLI's checked
+    /// set, the CLI's dependencies, the MCP tools — has to make the same decision and keep making it
+    /// as new kinds of library appear. That is not hypothetical: when encrypted libraries were
+    /// added, one of those places was missed, and a library sitting in a repository silently loaded
+    /// as empty. Every reference into it was then reported broken, in the app but not the CLI.</para>
+    ///
+    /// <list type="bullet">
+    /// <item>a directory holding a <c>package.moe</c> → loaded from its documentation, read-only</item>
+    /// <item>a directory → loaded as Modelica source</item>
+    /// <item>a <c>package.mo</c> file → loads the <b>whole</b> library its directory holds, not just
+    ///   that file, since pointing at a package.mo means "this library"</item>
+    /// <item>another <c>.mo</c> file → loaded as a single standalone file</item>
+    /// </list>
+    /// </summary>
+    /// <param name="path">Absolute path to a library directory, its <c>package.mo</c>, or a
+    /// standalone <c>.mo</c> file.</param>
+    /// <exception cref="ArgumentException">The path is neither a directory nor a <c>.mo</c> file.</exception>
+    Task<LoadedLibrary> AddLibraryFromPathAsync(string path);
+
+    /// <summary>
+    /// Adds an encrypted library — one shipping an unreadable <c>package.moe</c> — by
+    /// reconstructing its classes from the vendor's generated documentation.
+    ///
+    /// <para>The result is read-only and deliberately incomplete: names, descriptions, base
+    /// classes and whether a class has an icon, and nothing else. It exists so that references
+    /// into the library resolve, inherited icons are seen, and extends chains can be walked. The
+    /// library is never reported on and never written to.</para>
+    /// </summary>
+    /// <param name="directoryPath">The encrypted library's root directory.</param>
+    /// <returns>The loaded library. Its <see cref="LoadedLibrary.ModelIds"/> is empty when the
+    /// library ships no usable documentation, which leaves its namespace opaque rather than
+    /// wrongly asserting that it contains no classes.</returns>
+    Task<LoadedLibrary> AddEncryptedLibraryFromDirectoryAsync(string directoryPath);
 
     /// <summary>
     /// Adds a library from a zip file.
@@ -124,10 +182,20 @@ public interface ILibraryDataService
     event Action? OnTreeDataChanged;
 
     /// <summary>
-    /// When true, OnTreeDataChanged events are suppressed. Used during batch
-    /// operations (e.g., refreshing multiple files) to avoid triggering expensive
-    /// side effects (VCS status queries) on every individual file reload.
-    /// The caller must fire OnTreeDataChanged once after unsetting this flag.
+    /// Holds back the per-library tree announcements until the returned scope is disposed, then makes
+    /// one. Each announcement costs every open library tree a working-copy status query and a full
+    /// rebuild, queued on the UI thread, so a load that brings in a hundred libraries queues a hundred
+    /// of those and everything after it waits for them.
+    ///
+    /// <para>Scopes nest: an outer bulk load keeps its suppression while an inner one comes and goes,
+    /// and only the outermost announces. A flag could not express that — whichever caller finished
+    /// first lifted the suppression for the one still running.</para>
     /// </summary>
-    bool SuppressTreeDataChangedEvents { get; set; }
+    IDisposable SuppressTreeDataChanged();
+
+    /// <summary>
+    /// Announces that the tree data has changed, once. For a caller that has changed what the tree
+    /// shows outside a suppression scope.
+    /// </summary>
+    void NotifyTreeDataChanged();
 }

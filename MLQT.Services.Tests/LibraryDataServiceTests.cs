@@ -1142,4 +1142,170 @@ end TestPkg;
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
     }
+
+    // --- Dependency analysis coordination -------------------------------------------------------
+
+    [Fact]
+    public async Task AddLibrary_LeavesGraphNeedingDependencyAnalysis()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+
+        // Newly loaded models have no edges yet, so nothing may treat the graph as analysed.
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_AnalysesTheGraph()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_IsIdempotent()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        var progressReports = 0;
+        await service.EnsureDependenciesAnalyzedAsync(_ => Interlocked.Increment(ref progressReports));
+
+        // Already analysed → returns without doing the work again.
+        Assert.Equal(0, progressReports);
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_ConcurrentCallers_ShareOneRun()
+    {
+        // The startup pipeline and style checking's graph analyses both need the edges. They must
+        // join one run: two overlapping runs are what let the analyzers observe a half-built graph.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;");
+
+        var tasks = Enumerable.Range(0, 8).Select(_ => service.EnsureDependenciesAnalyzedAsync()).ToList();
+        await Task.WhenAll(tasks);
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        // Every caller that started while a run was in flight got that same run back. Discarded
+        // explicitly: Assert.Single returns the element it found, and letting a Task fall out of an
+        // expression statement is a CS4014 the compiler is right to warn about.
+        _ = Assert.Single(tasks.Where(t => !ReferenceEquals(t, Task.CompletedTask)).Distinct());
+    }
+
+    [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_ReAnalysesAfterANewLibraryIsAdded()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        // Adding a repository mid-session brings in models nothing has analysed yet.
+        await service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;");
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task GetLibraryInfos_ReturnsNameAndRootPathPerLibrary()
+    {
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync(Path.Combine(Path.GetTempPath(), "A.mo"), "model A Real x; end A;");
+
+        var infos = service.GetLibraryInfos();
+
+        var info = Assert.Single(infos);
+        // A file-backed library resolves modelica:// URIs relative to its containing directory.
+        Assert.Equal(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), info.RootPath.TrimEnd(Path.DirectorySeparatorChar));
+    }
+
+    [Fact]
+    public async Task ABulkLoad_CanAnnounceTheTreeOnceInsteadOfPerLibrary()
+    {
+        // Every announcement costs each open library tree a working-copy status query and a full
+        // rebuild, queued on the UI thread. A project holding a tool's library folder announces a
+        // hundred times over, and the queue that builds up sits in front of everything the startup
+        // does next — which is where two minutes of a three-minute startup were going.
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        using (service.SuppressTreeDataChanged())
+        {
+            for (var i = 0; i < 5; i++)
+                await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
+
+            Assert.Equal(0, announcements);   // nothing while the load is in progress
+        }
+
+        Assert.Equal(1, announcements);
+        Assert.Equal(5, service.Libraries.Count);   // the libraries are all there
+    }
+
+    [Fact]
+    public async Task WithoutSuppression_EveryLibraryAnnouncesItself()
+    {
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        for (var i = 0; i < 5; i++)
+            await service.AddLibraryFromFileAsync($"L{i}.mo", $"model L{i} \"l\"\nend L{i};");
+
+        Assert.True(announcements >= 5, $"expected one per library, got {announcements}");
+    }
+
+    [Fact]
+    public async Task NestedSuppression_AnnouncesOnlyWhenTheOutermostFinishes()
+    {
+        // A project switch suppresses across the whole switch while each repository's load suppresses
+        // within it. A flag could not express that: whichever finished first lifted the suppression
+        // for the one still running, and the announcements resumed mid-load.
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        using (service.SuppressTreeDataChanged())
+        {
+            using (service.SuppressTreeDataChanged())
+            {
+                await service.AddLibraryFromFileAsync("A.mo", "model A \"a\"\nend A;");
+            }
+
+            Assert.Equal(0, announcements);   // the outer scope still holds
+            await service.AddLibraryFromFileAsync("B.mo", "model B \"b\"\nend B;");
+            Assert.Equal(0, announcements);
+        }
+
+        Assert.Equal(1, announcements);
+    }
+
+    [Fact]
+    public async Task ADisposedScopeDisposedAgain_DoesNotLiftSomeoneElsesSuppression()
+    {
+        var service = new LibraryDataService();
+        var announcements = 0;
+        service.OnTreeDataChanged += () => announcements++;
+
+        var outer = service.SuppressTreeDataChanged();
+        var inner = service.SuppressTreeDataChanged();
+        inner.Dispose();
+        inner.Dispose();
+
+        await service.AddLibraryFromFileAsync("A.mo", "model A \"a\"\nend A;");
+        Assert.Equal(0, announcements);
+
+        outer.Dispose();
+        Assert.Equal(1, announcements);
+    }
 }

@@ -1,5 +1,7 @@
 using MLQT.Services.Interfaces;
 using MLQT.Services.DataTypes;
+using MLQT.Services.Helpers;
+using MLQT.Services.Checking;
 using System.Text.Json;
 using ModelicaGraph;
 using ModelicaParser.Helpers;
@@ -110,18 +112,18 @@ public class RepositoryService : IRepositoryService
             }
         }
 
-        // Local path - check what VCS is present
+        // Local path - ask the one place that answers "which VCS owns this directory". The headless
+        // surfaces (baseline stamping, metrics, changed-model resolution) go through the same call,
+        // so a library that is Git to `mlqt check` cannot be Local to the app.
         if (Directory.Exists(pathOrUrl))
         {
-            if (_git.IsValidRepository(pathOrUrl))
+            var (vcs, _) = VcsLocator.Find(pathOrUrl, _git, _svn);
+            return vcs switch
             {
-                return (RepositoryVcsType.Git, true);
-            }
-            if (_svn.IsValidRepository(pathOrUrl))
-            {
-                return (RepositoryVcsType.SVN, true);
-            }
-            return (RepositoryVcsType.Local, true);
+                GitRevisionControlSystem => (RepositoryVcsType.Git, true),
+                SvnRevisionControlSystem => (RepositoryVcsType.SVN, true),
+                _ => (RepositoryVcsType.Local, true)
+            };
         }
 
         return (RepositoryVcsType.Local, false);
@@ -168,12 +170,17 @@ public class RepositoryService : IRepositoryService
         return localPath;
     }
 
+    /// <param name="isReferenceOnly">Code the user has no say over — loaded so references resolve,
+    /// never reported on or written to. Null asks the filesystem: a folder MLQT cannot write into is
+    /// one it cannot keep settings in either, which is the common case for a tool's library folder
+    /// under Program Files.</param>
     public async Task<AddRepositoryResult> AddRepositoryAsync(
         string pathOrUrl,
         string? checkoutPath = null,
         string? name = null,
         bool startMonitoring = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool? isReferenceOnly = null)
     {
         var result = new AddRepositoryResult();
 
@@ -226,6 +233,15 @@ public class RepositoryService : IRepositoryService
             // Detect the VCS working copy root (may differ from LocalPath for subdirectory repos)
             repository.VcsRootPath = DetectVcsRoot(repository.LocalPath, vcsType);
 
+            // What the caller said, or what the filesystem says. A folder MLQT cannot write into is
+            // one whose settings, baseline and accepted spellings could never be kept beside the code
+            // — a tool's library folder under Program Files being the case this exists for.
+            repository.IsReferenceOnly = isReferenceOnly
+                ?? !DirectoryWritability.CanWriteInto(repository.LocalPath);
+            if (repository.IsReferenceOnly && isReferenceOnly is null)
+                Info("RepositoryService",
+                    $"'{repository.Name}' is read-only on disk, so it is loaded for reference only");
+
             // Get current revision info
             await UpdateRevisionInfoAsync(repository);
 
@@ -272,7 +288,12 @@ public class RepositoryService : IRepositoryService
             // Start file monitoring for this repository (unless we're in initial load).
             // Monitor VcsRootPath rather than LocalPath so that changes to any file in the
             // VCS working copy are detected, even when LocalPath is a subdirectory of the root.
-            if (startMonitoring)
+            //
+            // Never for a reference-only repository: watching it feeds its changes into a pipeline
+            // that reloads, re-analyses and reformats — so a vendor's checkout being updated outside
+            // MLQT ended in MLQT writing to it. The encrypted-library design note lists this guard
+            // and it was not built.
+            if (startMonitoring && !repository.IsReferenceOnly)
             {
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
             }
@@ -316,52 +337,45 @@ public class RepositoryService : IRepositoryService
 
         await Task.Run(() =>
         {
-            // Check top-level for package.mo
-            var topLevelPackage = Path.Combine(basePath, "package.mo");
-            if (File.Exists(topLevelPackage))
+            // The "what counts as a library" rules are shared with the CLI via LibraryDiscovery so
+            // the two can't drift; enrich each discovered path with its name and repo-relative path.
+            foreach (var fullPath in LibraryDiscovery.DiscoverLibraryPaths(basePath))
             {
-                var libraryName = ExtractLibraryName(topLevelPackage);
+                var isFile = File.Exists(fullPath) && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase);
+                var packageMoPath = isFile ? fullPath : Path.Combine(fullPath, "package.mo");
+
+                // An encrypted library has no package.mo to read a name out of. Its name comes from
+                // the versioned directory name or its libraryinfo.mos — without this the fallback
+                // below would show it as "Battery 2.9.0", version suffix and all.
+                var libraryName = EncryptedLibraryDetector.Detect(fullPath)?.Name
+                                  ?? ExtractLibraryName(packageMoPath);
+
+                string relativePath;
+                string fallbackName;
+                if (string.Equals(fullPath, basePath, StringComparison.Ordinal))
+                {
+                    relativePath = "";
+                    fallbackName = Path.GetFileName(basePath);
+                }
+                else if (isFile)
+                {
+                    var fileName = Path.GetFileName(fullPath);
+                    relativePath = fileName;
+                    fallbackName = fileName.Replace(".mo", "");
+                }
+                else
+                {
+                    var dirName = Path.GetFileName(fullPath);
+                    relativePath = dirName;
+                    fallbackName = dirName;
+                }
+
                 libraries.Add(new DiscoveredLibraryInfo
                 {
-                    RelativePath = "",
-                    LibraryName = libraryName ?? Path.GetFileName(basePath),
-                    FullPath = basePath
+                    RelativePath = relativePath,
+                    LibraryName = libraryName ?? fallbackName,
+                    FullPath = fullPath
                 });
-            }
-            else 
-            {
-                // Check immediate subdirectories only if the top-level directory didn't contain a package.mo file
-                foreach (var subDir in Directory.GetDirectories(basePath))
-                {
-                    // Skip hidden directories (like .git, .svn)
-                    var dirName = Path.GetFileName(subDir);
-                    if (dirName.StartsWith("."))
-                        continue;
-
-                    var packagePath = Path.Combine(subDir, "package.mo");
-                    if (File.Exists(packagePath))
-                    {
-                        var libraryName = ExtractLibraryName(packagePath);
-                        libraries.Add(new DiscoveredLibraryInfo
-                        {
-                            RelativePath = dirName,
-                            LibraryName = libraryName ?? dirName,
-                            FullPath = subDir
-                        });
-                    }
-                }
-                //There might also be some models stored here
-                foreach (var file in Directory.GetFiles(basePath, "*.mo", SearchOption.TopDirectoryOnly))
-                {
-                    var fileName = Path.GetFileName(file);
-                    var libraryName = ExtractLibraryName(file);
-                    libraries.Add(new DiscoveredLibraryInfo
-                    {
-                        RelativePath = fileName,
-                        LibraryName = libraryName ?? fileName.Replace(".mo",""),
-                        FullPath = file
-                    });
-                }
             }
         });
 
@@ -372,7 +386,7 @@ public class RepositoryService : IRepositoryService
     {
         try
         {
-            var content = File.ReadAllText(packageMoPath);
+            var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
             var models = ModelicaParserHelper.ExtractModels(content);
             var topLevel = models.FirstOrDefault(m => m.ParentModelName == null);
             return topLevel?.Name;
@@ -422,10 +436,22 @@ public class RepositoryService : IRepositoryService
                 try
                 {
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
-                    var library = await _libraryDataService.AddLibraryFromDirectoryAsync(fullPath);
+
+                    // A repository can contain an encrypted library alongside the source that uses
+                    // it. AddLibraryFromPathAsync works out how to load whatever is here, so this
+                    // does not have to know the kinds of library that exist.
+                    var library = await _libraryDataService.AddLibraryFromPathAsync(fullPath);
+
                     library.RepositoryId = repositoryId;
                     library.RelativePathInRepository = relativePath;
-                    library.SourceType = sourceType;
+
+                    // An encrypted library keeps its own source type even inside a version-controlled
+                    // repository. It is what marks the library read-only — the formatter and the
+                    // "format all files" path both key off it — so overwriting it with Git/SVN would
+                    // put a library MLQT cannot read back on a write path.
+                    if (library.SourceType != LibrarySourceType.EncryptedDirectory)
+                        library.SourceType = sourceType;
+
                     library.Revision = repository.CurrentRevision;
 
                     lock (_lock)
@@ -558,8 +584,15 @@ public class RepositoryService : IRepositoryService
                     VcsType = repo.VcsType.ToString(),
                     PreferredRevision = repo.CurrentRevision,
                     AutoLoad = true,
+                    IsReferenceOnly = repo.IsReferenceOnly,
                     LibraryPaths = repo.DiscoveredLibraries.Keys.ToList()
                 });
+
+                // Nothing is written into a repository the user has no say over. Settings beside
+                // someone else's library are settings nobody will read — and under a tool's install
+                // folder the write fails anyway, once per repository per save.
+                if (repo.IsReferenceOnly)
+                    continue;
 
                 //Save the formatting settings into the repository so that every user gets the same
                 try
@@ -694,7 +727,8 @@ public class RepositoryService : IRepositoryService
                     null,
                     entry.Name,
                     startMonitoring: false,
-                    cancellationToken);
+                    cancellationToken,
+                    isReferenceOnly: entry.IsReferenceOnly);
 
                 if (result.Success && result.Repository != null)
                 {
@@ -817,6 +851,12 @@ public class RepositoryService : IRepositoryService
 
         Info("RepositoryService", $"Loading project '{project.Name}' with {project.Repositories.Count} repositories");
 
+        // One announcement for the whole switch. Without this every library in the new project told
+        // the tree separately, and each of those costs every open tree a working-copy status query
+        // and a full rebuild on the UI thread — four minutes of queued work for a project holding a
+        // tool's library folder, and everything after the switch waiting behind it.
+        using var treeNotifications = _libraryDataService.SuppressTreeDataChanged();
+
         // Load the new project's repos
         foreach (var entry in project.Repositories)
         {
@@ -833,7 +873,8 @@ public class RepositoryService : IRepositoryService
                     null,
                     entry.Name,
                     startMonitoring: false,
-                    cancellationToken);
+                    cancellationToken,
+                    isReferenceOnly: entry.IsReferenceOnly);
 
                 if (result.Success && result.Repository != null)
                 {
@@ -865,14 +906,19 @@ public class RepositoryService : IRepositoryService
 
     public void StartMonitoringAllRepositories()
     {
+        var started = 0;
         lock (_lock)
         {
             foreach (var repository in _repositories)
             {
+                // Reference-only repositories are not watched — see AddRepositoryAsync.
+                if (repository.IsReferenceOnly)
+                    continue;
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+                started++;
             }
         }
-        Info("RepositoryService", $"Started file monitoring for {_repositories.Count} repositories");
+        Info("RepositoryService", $"Started file monitoring for {started} repositories");
     }
 
     public void ClearAllRepositories()
@@ -1056,7 +1102,17 @@ public class RepositoryService : IRepositoryService
             else
                 _workingCopyCache.Clear();
         }
+
+        // Anything that invalidates this cache is saying the working copy's VCS status may have
+        // moved — a commit, a revert, an update, a file changing on disk. Announcing it lets the
+        // things derived from that status follow along instead of each caller having to remember
+        // them. A commit is the case that showed this was missing: it changes no file content, so
+        // nothing else fires, and the baseline classification silently kept the pre-commit answer.
+        OnWorkingCopyStatusChanged?.Invoke(repositoryId);
     }
+
+    /// <inheritdoc/>
+    public event Action<string?>? OnWorkingCopyStatusChanged;
 
     public List<VcsBranchInfo> GetBranches(string repositoryId, bool includeRemote = false)
     {
@@ -1261,7 +1317,7 @@ public class RepositoryService : IRepositoryService
         {
             // For local directories, just read the current file
             var fullPath = Path.Combine(repository.LocalPath, filePath);
-            return File.Exists(fullPath) ? File.ReadAllText(fullPath) : null;
+            return File.Exists(fullPath) ? ModelicaFileEncoding.ReadAllTextOnly(fullPath) : null;
         }
 
         IRevisionControlSystem vcs = repository.VcsType switch

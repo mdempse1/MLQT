@@ -1,160 +1,249 @@
 using MLQT.Services.Interfaces;
+using ModelicaParser.Helpers;
 
 namespace MLQT.Services;
 
-/// <summary>
-/// Manages a custom spell-checking dictionary stored at %LocalAppData%/MLQT/custom_dictionary.txt.
-/// One word per line, sorted, case-insensitive. Shared across all repositories.
-/// </summary>
+/// <inheritdoc cref="ICustomDictionaryService"/>
 public class CustomDictionaryService : ICustomDictionaryService
 {
-    private readonly HashSet<string> _words = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _lock = new();
-    private readonly string _dictionaryPath;
+    /// <summary>File name of a repository's word list, beside its <c>settings.json</c>.</summary>
+    public const string DictionaryFileName = "dictionary.txt";
 
-    public event Action? OnDictionaryChanged;
+    private const string MlqtDirectoryName = ".mlqt";
+    private const string LegacyFileName = "custom_dictionary.txt";
+
+    // One entry per repository root, with the file's timestamp when it was read. The timestamp is
+    // what makes a list that changed outside the app — pulled from version control, edited by hand —
+    // take effect: without it a spell checker built early in the session kept the words it was built
+    // with while the settings page showed the file's current contents, so words plainly listed there
+    // were still reported as misspelled.
+    private readonly Dictionary<string, Entry> _wordsByRoot =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record Entry(HashSet<string> Words, (DateTime When, long Length) Stamp);
+
+    private readonly object _lock = new();
+    private readonly string? _legacyPath;
+
+    public event Action<string>? OnDictionaryChanged;
 
     public CustomDictionaryService()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _dictionaryPath = Path.Combine(appData, "MLQT", "custom_dictionary.txt");
+        var legacy = Path.Combine(appData, "MLQT", LegacyFileName);
+        _legacyPath = File.Exists(legacy) ? legacy : null;
+    }
+
+    /// <summary>Constructor for testing, pointing the legacy list somewhere predictable.</summary>
+    internal CustomDictionaryService(string? legacyDictionaryPath)
+    {
+        _legacyPath = legacyDictionaryPath is not null && File.Exists(legacyDictionaryPath)
+            ? legacyDictionaryPath
+            : null;
+    }
+
+    public string? LegacyMachineDictionaryPath => _legacyPath;
+
+    public string PathFor(string repositoryRoot) =>
+        Path.Combine(repositoryRoot, MlqtDirectoryName, DictionaryFileName);
+
+    public IReadOnlyCollection<string> WordsFor(string? repositoryRoot) =>
+        string.IsNullOrEmpty(repositoryRoot) ? [] : Snapshot(Current(repositoryRoot));
+
+    public async Task<IReadOnlyCollection<string>> LoadAsync(string repositoryRoot) =>
+        await Task.Run(() => Snapshot(Current(repositoryRoot)));
+
+    /// <summary>
+    /// The repository's words, re-read when the file has changed on disk since the last read. A
+    /// re-read that changes the list is announced, so anything holding a spell checker built from the
+    /// old one drops it — otherwise a word visible in the settings page goes on being reported, with
+    /// nothing on screen to explain the difference.
+    ///
+    /// <para>Reads on first use rather than returning nothing: callers reach this from the checking
+    /// path, where "no accepted words" and "not loaded yet" look identical in the results and only one
+    /// of them is true.</para>
+    /// </summary>
+    private HashSet<string> Current(string repositoryRoot)
+    {
+        var path = PathFor(repositoryRoot);
+        var stamp = StampOf(path);
+
+        lock (_lock)
+        {
+            if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached) && cached.Stamp == stamp)
+                return cached.Words;
+        }
+
+        var words = ReadFile(path);
+        bool changed;
+        lock (_lock)
+        {
+            changed = _wordsByRoot.TryGetValue(repositoryRoot, out var previous)
+                      && !previous.Words.SetEquals(words);
+            _wordsByRoot[repositoryRoot] = new Entry(words, stamp);
+        }
+
+        if (changed)
+            OnDictionaryChanged?.Invoke(repositoryRoot);
+
+        return words;
     }
 
     /// <summary>
-    /// Constructor for testing that allows specifying the dictionary file path.
+    /// When the list was last written and how long it is, or zeroes if there is none. The length is
+    /// part of it because the system clock is coarser than a file write: two writes close together can
+    /// carry the same timestamp, and missing an edit here is exactly the failure this guards against.
     /// </summary>
-    internal CustomDictionaryService(string dictionaryPath)
+    private static (DateTime When, long Length) StampOf(string path)
     {
-        _dictionaryPath = dictionaryPath;
+        var file = new FileInfo(path);
+        return file.Exists ? (file.LastWriteTimeUtc, file.Length) : (DateTime.MinValue, 0);
     }
 
-    public IReadOnlyCollection<string> CustomWords
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
-            }
-        }
-    }
-
-    public async Task LoadAsync()
-    {
-        if (!File.Exists(_dictionaryPath))
-            return;
-
-        var lines = await File.ReadAllLinesAsync(_dictionaryPath);
-        lock (_lock)
-        {
-            _words.Clear();
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
-            }
-        }
-    }
-
-    public async Task AddWordAsync(string word)
+    public async Task AddWordAsync(string repositoryRoot, string word)
     {
         if (string.IsNullOrWhiteSpace(word))
             return;
 
-        bool added;
+        var trimmed = word.Trim();
         lock (_lock)
         {
-            added = _words.Add(word.Trim());
+            var words = Cached(repositoryRoot);
+            if (!words.Add(trimmed))
+                return;
         }
 
-        if (added)
-        {
-            await SaveAsync();
-            OnDictionaryChanged?.Invoke();
-        }
+        await SaveAsync(repositoryRoot);
+        OnDictionaryChanged?.Invoke(repositoryRoot);
     }
 
-    public async Task RemoveWordAsync(string word)
+    public async Task RemoveWordAsync(string repositoryRoot, string word)
     {
-        if (string.IsNullOrWhiteSpace(word))
-            return;
-
-        bool removed;
         lock (_lock)
         {
-            removed = _words.Remove(word.Trim());
+            var words = Cached(repositoryRoot);
+            if (!words.Remove(word))
+                return;
         }
 
-        if (removed)
-        {
-            await SaveAsync();
-            OnDictionaryChanged?.Invoke();
-        }
+        await SaveAsync(repositoryRoot);
+        OnDictionaryChanged?.Invoke(repositoryRoot);
     }
 
-    public async Task ImportAsync(string filePath)
+    public async Task<int> MergeFromAsync(string repositoryRoot, string sourceFile)
     {
-        var lines = await File.ReadAllLinesAsync(filePath);
+        var incoming = await Task.Run(() => ReadFile(sourceFile));
+        int added;
+
         lock (_lock)
         {
-            _words.Clear();
-            foreach (var line in lines)
+            var words = Cached(repositoryRoot);
+            var before = words.Count;
+            words.UnionWith(incoming);
+            added = words.Count - before;
+        }
+
+        if (added > 0)
+        {
+            await SaveAsync(repositoryRoot);
+            OnDictionaryChanged?.Invoke(repositoryRoot);
+        }
+
+        return added;
+    }
+
+    public async Task ExportAsync(string repositoryRoot, string targetFile)
+    {
+        var words = WordsFor(repositoryRoot);
+        var directory = Path.GetDirectoryName(targetFile);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        // A new file, so ModelicaFileEncoding's default (UTF-8, no BOM) — but through the same
+        // helper, so an export over an existing file keeps that file's encoding rather than
+        // rewriting it as something else.
+        await ModelicaFileEncoding.WriteAllLinesAsync(targetFile, words);
+    }
+
+    /// <summary>
+    /// Caller must hold the lock. Honours the file's timestamp like <see cref="Current"/>, so adding a
+    /// word does not write a stale list back over an edit made outside the app.
+    /// </summary>
+    private HashSet<string> Cached(string repositoryRoot)
+    {
+        var path = PathFor(repositoryRoot);
+        var stamp = StampOf(path);
+
+        if (_wordsByRoot.TryGetValue(repositoryRoot, out var cached) && cached.Stamp == stamp)
+            return cached.Words;
+
+        var words = ReadFile(path);
+        _wordsByRoot[repositoryRoot] = new Entry(words, stamp);
+        return words;
+    }
+
+    private static IReadOnlyCollection<string> Snapshot(HashSet<string> words) =>
+        words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
+
+    private static HashSet<string> ReadFile(string path)
+    {
+        var words = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(path))
+            return words;
+
+        try
+        {
+            // Through ModelicaFileEncoding for the same reason every .mo read goes through it: the
+            // list is a committed file people hand-edit, it holds proper nouns and engineering terms
+            // that are not all ASCII ("Frössling", "Krüger"), and it declares no encoding. Read as
+            // UTF-8 outright, a Windows-1252 list decoded to replacement characters — and the next
+            // word the user accepted wrote those characters back, so the corruption survived the
+            // edit. Detection is per file and cannot fail.
+            foreach (var line in ModelicaFileEncoding.ReadAllLinesOnly(path))
             {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
+                var word = line.Trim();
+                // '#' starts a comment so a team can explain why a word is accepted — the list is a
+                // reviewed file in the repository now, not a private scratch pad.
+                if (word.Length > 0 && !word.StartsWith('#'))
+                    words.Add(word);
             }
         }
+        catch (IOException)
+        {
+            // An unreadable list means no accepted words, which is the safe direction: it reports
+            // spellings rather than hiding them.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
 
-        await SaveAsync();
-        OnDictionaryChanged?.Invoke();
+        return words;
     }
 
-    public async Task ExportAsync(string filePath)
+    private async Task SaveAsync(string repositoryRoot)
     {
         List<string> sorted;
         lock (_lock)
         {
-            sorted = _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList();
+            sorted = _wordsByRoot.TryGetValue(repositoryRoot, out var entry)
+                ? entry.Words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList()
+                : [];
         }
 
-        var directory = Path.GetDirectoryName(filePath);
+        var path = PathFor(repositoryRoot);
+        var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllLinesAsync(filePath, sorted);
-    }
+        // Written back in the encoding it was read in — see ReadFile.
+        await ModelicaFileEncoding.WriteAllLinesAsync(path, sorted);
 
-    public async Task MergeAsync(string filePath)
-    {
-        var lines = await File.ReadAllLinesAsync(filePath);
+        // Record what we just wrote, so the next read does not mistake our own write for an outside
+        // change and announce it.
         lock (_lock)
         {
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                    _words.Add(trimmed);
-            }
+            if (_wordsByRoot.TryGetValue(repositoryRoot, out var entry))
+                _wordsByRoot[repositoryRoot] = entry with { Stamp = StampOf(path) };
         }
-
-        await SaveAsync();
-        OnDictionaryChanged?.Invoke();
-    }
-
-    private async Task SaveAsync()
-    {
-        List<string> sorted;
-        lock (_lock)
-        {
-            sorted = _words.OrderBy(w => w, StringComparer.OrdinalIgnoreCase).ToList();
-        }
-
-        var directory = Path.GetDirectoryName(_dictionaryPath);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        await File.WriteAllLinesAsync(_dictionaryPath, sorted);
     }
 }

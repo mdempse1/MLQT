@@ -1,3 +1,4 @@
+@using ModelicaParser.Helpers
 @using System.Threading.Tasks
 @using System.ComponentModel.DataAnnotations.Schema
 
@@ -421,7 +422,7 @@
                 var fullPath = Path.Combine(_repository.VcsRootPath, path);
                 if (File.Exists(fullPath))
                 {
-                    _modifiedContent = File.ReadAllText(fullPath);
+                    _modifiedContent = ModelicaFileEncoding.ReadAllTextOnly(fullPath);
                 }
             });
         }

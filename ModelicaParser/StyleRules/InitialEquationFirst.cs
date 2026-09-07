@@ -45,16 +45,18 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             SetFoundInitial();
             if (_initialFirst && _foundOtherElement.Peek())
             {
-                AddViolation(context.Start.Line,
-                    "The initial equation section should appear before the equation/algorithm section");
+                AddFinding(context.Start.Line,
+                    "The initial equation section should appear before the equation/algorithm section",
+                    RuleIds.InitialEqAlgoFirst);
             }
         }
         else
         {
             if (_initialLast && _foundInitialSection.Peek())
             {
-                AddViolation(context.Start.Line,
-                    "The initial equation section should appear after the equation/algorithm section");
+                AddFinding(context.Start.Line,
+                    "The initial equation section should appear after the equation/algorithm section",
+                    RuleIds.InitialEqAlgoLast);
             }
             SetFoundOther();
         }
@@ -68,16 +70,18 @@ public class InitialEquationFirst : VisitorWithModelNameTracking
             SetFoundInitial();
             if (_initialFirst && _foundOtherElement.Peek())
             {
-                AddViolation(context.Start.Line,
-                    "The initial algorithm section should appear before the equation/algorithm section");
+                AddFinding(context.Start.Line,
+                    "The initial algorithm section should appear before the equation/algorithm section",
+                    RuleIds.InitialEqAlgoFirst);
             }
         }
         else
         {
             if (_initialLast && _foundInitialSection.Peek())
             {
-                AddViolation(context.Start.Line,
-                    "The initial algorithm section should appear after the equation/algorithm section");
+                AddFinding(context.Start.Line,
+                    "The initial algorithm section should appear after the equation/algorithm section",
+                    RuleIds.InitialEqAlgoLast);
             }
             SetFoundOther();
         }

@@ -13,7 +13,7 @@ public class InitialEquationFirstTests
         var parseTree = ModelicaParserHelper.Parse(code);
         var visitor = new InitialEquationFirst(first, !first);
         visitor.Visit(parseTree);
-        return visitor.RuleViolations;
+        return visitor.RuleFindings;
     }
 
     [Fact]
@@ -31,10 +31,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -52,10 +52,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
 
@@ -74,10 +74,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -95,10 +95,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
 
@@ -117,10 +117,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -138,10 +138,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
 
@@ -160,10 +160,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }
 
     [Fact]
@@ -181,10 +181,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Empty(ruleViolations);
+        Assert.Empty(ruleFindings);
     }    
 
     [Fact]
@@ -202,10 +202,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }    
 
 
@@ -224,10 +224,10 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }    
 
     [Fact]
@@ -247,14 +247,14 @@ end SimpleModel;
 """;
 
         // Act
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
-    public void InitialAlgorithmFirst_ViolationWhenInitialLast()
+    public void InitialAlgorithmFirst_FindingWhenInitialLast()
     {
         // Arrange - initial algorithm appears first but rule requires it last
         var code = """
@@ -268,14 +268,14 @@ end SimpleModel;
 """;
 
         // Act - false means initial should be LAST
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
         // Assert - initial algorithm first violates "initial last" rule
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
-    public void AlgorithmAfterInitialAlgorithm_ViolationWhenInitialFirst()
+    public void AlgorithmAfterInitialAlgorithm_FindingWhenInitialFirst()
     {
         // Arrange - algorithm after initial algorithm when rule requires initial first
         var code = """
@@ -289,17 +289,17 @@ end SimpleModel;
 """;
 
         // Act - true means initial should be FIRST
-        var ruleViolations = CheckRule(code, true);
+        var ruleFindings = CheckRule(code, true);
 
         // Assert - initial algorithm last violates "initial first" rule
-        Assert.Single(ruleViolations);
+        Assert.Single(ruleFindings);
     }
 
     [Fact]
-    public void InitialAlgorithmLast_WithPreviousAlgorithm_ViolationWhenInitialFirst()
+    public void InitialAlgorithmLast_WithPreviousAlgorithm_FindingWhenInitialFirst()
     {
         // Covers VisitAlgorithm_section when _foundInitialSection && !_initialFirst
-        // Each non-initial algorithm section after an initial section fires a violation
+        // Each non-initial algorithm section after an initial section fires a finding
         var code = """
 model SimpleModel
   Real x;
@@ -313,10 +313,10 @@ end SimpleModel;
 """;
 
         // Act - false means initial should be LAST
-        var ruleViolations = CheckRule(code, false);
+        var ruleFindings = CheckRule(code, false);
 
-        // Assert - two violations: one per non-initial algorithm after the initial section
-        Assert.Equal(2, ruleViolations.Count);
+        // Assert - two findings: one per non-initial algorithm after the initial section
+        Assert.Equal(2, ruleFindings.Count);
     }
 
 }

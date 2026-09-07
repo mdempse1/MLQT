@@ -96,13 +96,14 @@ Same as Modelica Standard, but constants (both public and protected) use UPPER_C
 
 ## Enabling Naming Convention Checking
 
-1. Navigate to **Settings > Style Checking** (for defaults) or **Settings > Manage Repositories** and click a repository (for per-repo settings)
-2. Enable **Check that the naming convention is followed**
-3. An expansion panel appears below the toggle showing the current convention settings
+1. Navigate to **Settings > Manage Repositories** and click the repository
+2. Set **Check that the naming convention is followed** to a severity — **Warning** to report,
+   **Error** to fail the CI quality gate on a misnamed element
+3. An expansion panel appears below the row showing the current convention settings
 4. Select a preset or customize individual rules
 5. Save settings
 
-Naming convention violations appear in the **Code Review** issues table alongside other style checking issues. Each violation identifies the offending name, what convention it should follow, and whether it is a class name or element name.
+Naming convention findings appear in the **Code Review** findings table alongside other style checking findings. Each finding identifies the offending name, what convention it should follow, and whether it is a class name or element name.
 
 ![Screenshot: The naming convention expansion panel showing the preset dropdown set to "Modelica Standard", the Class Names section with nine NamingStyleSelect dropdowns, the Public Elements and Protected Elements sections, the Allow underscore suffixes toggle, and the Exception Names area with a text field and chip set.](Images/naming-conventions-1.png)
 
@@ -143,14 +144,14 @@ Adding patterns sets the preset to "Custom". Invalid regex patterns are rejected
 
 **Note on bracket-wrapped patterns:** If you have manually edited `.mlqt/settings.json` and accidentally wrapped a pattern in square brackets (e.g., `[^[A-Z]...$]` instead of `^[A-Z]...$`), MLQT will automatically detect and correct this. The outer brackets are stripped when the inner content contains regex anchors (`^` or `$`), restoring the intended pattern semantics.
 
-## Violation Examples
+## Finding Examples
 
-With Modelica Standard conventions enabled, the following code would produce violations:
+With Modelica Standard conventions enabled, the following code would produce findings:
 
 ```modelica
-model simpleModel          // Violation: Class name 'simpleModel' should be PascalCase (model)
-  Real MyVariable;         // Violation: Variable name 'MyVariable' should be camelCase (public variable)
-  parameter Real BadParam; // Violation: Parameter name 'BadParam' should be camelCase (public parameter)
+model simpleModel          // Finding: Class name 'simpleModel' should be PascalCase (model)
+  Real MyVariable;         // Finding: Variable name 'MyVariable' should be camelCase (public variable)
+  parameter Real BadParam; // Finding: Parameter name 'BadParam' should be camelCase (public parameter)
   Real pressure_in;        // OK: suffix stripped, "pressure" is camelCase
   Real T;                  // OK: single letter, always valid
   Real P3;                 // OK: short abbreviation (letter + digits), always valid
@@ -177,4 +178,4 @@ Repository naming convention settings are stored in `.mlqt/settings.json` inside
 
 - **Consider UPPER_CASE for constants.** Many teams find it helpful to visually distinguish constants from variables. The "Modelica + UPPER_CASE Constants" preset provides this with minimal changes from the standard convention.
 
-- **Review violations incrementally.** When first enabling naming convention checking on an existing library, you may see many violations. Address them in batches rather than trying to fix everything at once.
+- **Review findings incrementally.** When first enabling naming convention checking on an existing library, you may see many findings. Address them in batches rather than trying to fix everything at once.

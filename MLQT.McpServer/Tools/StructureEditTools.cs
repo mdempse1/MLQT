@@ -1,7 +1,9 @@
+using ModelicaGraph.Analysis;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -161,7 +163,7 @@ public sealed class StructureEditTools
 
         // Best-effort note if the type does not resolve to a loaded class (still allowed — may be added later).
         string? note = null;
-        if (!TypeResolver.IsPredefined(type) && TypeResolver.Resolve(_libraries, classId, type, null) is null)
+        if (!TypeResolver.IsPredefined(type) && TypeResolver.Resolve(_libraries.CombinedGraph, classId, type, null) is null)
             note = $"Note: type '{type}' does not resolve to a loaded class — check the name or load its library.";
 
         return ToResult(classId, note, await ClassBodyEditor.ApplyAsync(
@@ -285,7 +287,7 @@ public sealed class StructureEditTools
         var line = $"extends {baseType.Trim()}{mod};";
         var newClassCode = InsertElement(ctx!.ClassCode, ctx.Layout, line, atTop: true);
 
-        string? note = TypeResolver.Resolve(_libraries, classId, baseType, null) is null
+        string? note = TypeResolver.Resolve(_libraries.CombinedGraph, classId, baseType, null) is null
             ? $"Note: base class '{baseType}' does not resolve to a loaded class — check the name or load its library."
             : null;
 
@@ -504,7 +506,7 @@ public sealed class StructureEditTools
             var imports = iface.Elements.Where(e => e.Kind == ClassElementKind.Import).Select(e => e.Name).ToList();
             foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
             {
-                var baseNode = TypeResolver.Resolve(_libraries, id, ext.Type, imports);
+                var baseNode = TypeResolver.Resolve(_libraries.CombinedGraph, id, ext.Type, imports);
                 if (baseNode is null)
                     continue;
                 if (ClassBodyLocator.Analyze(baseNode.Definition.ModelicaCode ?? string.Empty).Connections.Count > 0
@@ -536,11 +538,11 @@ public sealed class StructureEditTools
     // be applied and null is returned (add_component already notes the unresolved type separately).
     private string? AcausalConnectorVariable(string classId, string type)
     {
-        var typeNode = TypeResolver.Resolve(_libraries, classId, type, null);
+        var typeNode = TypeResolver.Resolve(_libraries.CombinedGraph, classId, type, null);
         if (typeNode is null || typeNode.ClassType != "connector")
             return null;
         return ClassElementResolver
-            .Collect(_libraries, typeNode, includeProtected: false, includeInherited: true)
+            .Collect(_libraries.CombinedGraph, typeNode, includeProtected: false, includeInherited: true)
             .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
                                  string.IsNullOrEmpty(m.Element.Causality))?.Element.Name;
     }
@@ -634,7 +636,7 @@ public sealed class StructureEditTools
             var (ctx, error) = ClassBodyEditor.Open(_libraries, op.ClassId);
             if (error is not null)
                 return new ToolError($"Operation {i} ({op.Op} on '{op.ClassId}'): {((ToolError)error).Error}");
-            snapshots.TryAdd(ctx!.FilePath, await File.ReadAllTextAsync(ctx.FilePath));
+            snapshots.TryAdd(ctx!.FilePath, await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath));
         }
 
         // Apply in order; each op writes and reloads, so later ops see earlier ones.
@@ -652,7 +654,7 @@ public sealed class StructureEditTools
 
         if (preview)
         {
-            var contents = snapshots.Keys.Select(p => new BatchFileChange(p, File.ReadAllText(p))).ToList();
+            var contents = snapshots.Keys.Select(p => new BatchFileChange(p, ModelicaFileEncoding.ReadAllTextOnly(p))).ToList();
             await RollbackAsync(snapshots);
             return new BatchEditResult(PreviewOnly: true, operations.Count, contents);
         }
@@ -687,9 +689,9 @@ public sealed class StructureEditTools
         var affected = new List<string>();
         foreach (var (path, original) in snapshots)
         {
-            if (!File.Exists(path) || File.ReadAllText(path) == original)
+            if (!File.Exists(path) || ModelicaFileEncoding.ReadAllTextOnly(path) == original)
                 continue; // untouched (e.g. an op failed before writing this file)
-            await File.WriteAllTextAsync(path, original);
+            await ModelicaFileEncoding.WriteAllTextAsync(path, original);
             affected.AddRange(await _libraries.ReloadFileAsync(path));
         }
         if (affected.Count > 0)

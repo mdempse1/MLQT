@@ -246,6 +246,7 @@ string? headContent = git.GetFileContentAtRevision(
 | `VcsMergeResult` | Merge result (Success, HasConflicts, ConflictedFiles) |
 | `VcsOperationResult` | Generic operation result (Success, ErrorMessage) |
 | `VcsChangeType` | Enum: Added, Deleted, Modified, Renamed, Copied |
+| `RevisionId` | Displaying a revision: `Shorten` abbreviates a Git commit hash to 7 characters and leaves an SVN revision number alone; `IsCommitHash` says which it is |
 | `VcsFileStatus` | Enum: Modified, Added, Deleted, Renamed, Untracked, Conflicted |
 
 ## SVN Branch Directory Configurability

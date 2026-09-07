@@ -1,13 +1,25 @@
+using ModelicaGraph;
 using MLQT.McpServer.Dtos;
 
 namespace MLQT.McpServer.Helpers;
 
 /// <summary>
-/// Filesystem-inferred writability. The server does not track a "read-only library" flag; instead a
-/// file is editable iff the OS lets this process write it. This naturally scopes edits: a user's own
-/// library is writable, whereas reference libraries installed under Program Files (e.g. the Modelica
-/// Standard Library shipped with Dymola) typically require admin rights and so are treated as
-/// read-only. Multi-file operations pre-flight every target so they stay all-or-nothing.
+/// Whether a write may go ahead. Two questions, and the second is not a matter of permissions.
+///
+/// <para><b>Filesystem writability.</b> A file is editable iff the OS lets this process write it,
+/// which naturally scopes most edits: a user's own library is writable, whereas a reference library
+/// installed under <c>Program Files</c> typically needs admin rights and is therefore read-only.
+/// Multi-file operations pre-flight every target so they stay all-or-nothing.</para>
+///
+/// <para><b>An encrypted package is refused whatever the permissions say.</b> A class recovered from
+/// a vendor's documentation has a file node pointing at the <c>package.moe</c> it came from — that
+/// being the honest answer to where it lives — so an edit tool taking the class's file path at face
+/// value would write a page of synthesized Modelica over an encrypted binary. Permissions do not
+/// stop it: they only happen to, when the library sits somewhere the user cannot write, and a
+/// library installed in a home directory or on a share sits somewhere they can. The encrypted-library
+/// design note calls this "the highest-severity failure mode" and asks for a refusal rather than a
+/// skip, which is what <c>ModelicaPackageSaver</c> does on the desktop side; this is the same refusal
+/// on the path that does not go through it.</para>
 /// </summary>
 internal static class FileWritability
 {
@@ -18,6 +30,12 @@ internal static class FileWritability
     /// </summary>
     public static bool IsWritable(string path)
     {
+        // Not a permissions question, but it is the honest answer to "can this be written", and it is
+        // the one `get_class_info` reports: a stub whose library sits somewhere writable used to be
+        // advertised as editable, which is an invitation to try.
+        if (ExternalStubBuilder.IsEncryptedPackageFile(path))
+            return false;
+
         try
         {
             if (File.Exists(path))
@@ -64,7 +82,22 @@ internal static class FileWritability
     /// </summary>
     public static ToolError? PreflightWritable(IEnumerable<string> paths, string operation)
     {
-        var blocked = paths.Where(p => !IsWritable(p))
+        var pathList = paths as IReadOnlyCollection<string> ?? paths.ToList();
+
+        // Before permissions, because this one is not about permissions and its answer does not
+        // change with where the library happens to be installed.
+        var encrypted = pathList
+            .Where(ExternalStubBuilder.IsEncryptedPackageFile)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (encrypted.Count > 0)
+            return new ToolError(
+                $"Cannot {operation}: {string.Join(", ", encrypted.Take(10))} is an encrypted Modelica " +
+                "package. Its classes are reconstructions MLQT built from the vendor's documentation so " +
+                "that references into the library resolve — there is no source to edit, and writing here " +
+                "would destroy the package. No files were changed.");
+
+        var blocked = pathList.Where(p => !IsWritable(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (blocked.Count == 0)

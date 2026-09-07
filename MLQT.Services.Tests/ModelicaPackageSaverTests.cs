@@ -3,6 +3,7 @@ using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser;
 using ModelicaParser.Helpers;
+using ModelicaParser.Visitors;
 
 namespace MLQT.Services.Tests;
 
@@ -84,6 +85,105 @@ public class ModelicaPackageSaverTests : IDisposable
     #region SaveLibraryToDirectoryWithResult Tests
 
     [Fact]
+    public void SaveLibraryToDirectoryWithResult_LeavesStoredCodeWithoutAWithinClause()
+    {
+        // The saver adds a within clause to render each file, but it must not leave one behind on the
+        // node. Storing it made a model's code depend on whether a save had run this session: the
+        // convention everywhere else (ModelExtractorVisitor, PackageCodeTrimmer) is within-less, and
+        // a formatter that assumed so added a second clause to every file it then touched.
+        var packageCode = "package TestPackage\n  model Inner\n    Real y;\n  end Inner;\nend TestPackage;";
+        var graph = CreateGraphWithPackage("TestPackage", packageCode,
+            new List<(string, string, string)> { ("Inner", "model Inner\n  Real y;\nend Inner;", "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        foreach (var node in graph.ModelNodes)
+            Assert.DoesNotContain("within", node.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_WritesTheWithinClauseForAModelExcludedFromFormatting()
+    {
+        // An excluded model bypasses the renderer and its stored source is written verbatim, but that
+        // source is a class body with no within clause. Without one the file reloads as a detached
+        // top-level class instead of a member of its package, and the model disappears from the tree.
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", "model Inner\n  Real y;\nend Inner;", "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None,
+            excludedModelIds: new[] { "TestPackage.Inner" });
+
+        var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        Assert.StartsWith("within TestPackage;", ModelicaFileEncoding.ReadAllTextOnly(innerFile));
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_LeavesAnExcludedModelsSourceOtherwiseUntouched()
+    {
+        // The point of the exclusion is that the body is not reformatted. Adding the within clause
+        // must not turn into reformatting it by the back door.
+        const string original = "model Inner\n  Real    y;\nend Inner;";
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", original, "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None,
+            excludedModelIds: new[] { "TestPackage.Inner" });
+
+        var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        var written = ModelicaFileEncoding.ReadAllTextOnly(innerFile);
+
+        Assert.Equal(original, WithinClause.Strip(written));
+        Assert.Contains("Real    y;", written);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_StillWritesTheWithinClauseToDisk()
+    {
+        // The clause has to reach the file: without it a standalone .mo re-parses with no package
+        // context and its classes come back with detached, un-prefixed IDs.
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", "model Inner\n  Real y;\nend Inner;", "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        Assert.StartsWith("within TestPackage;", ModelicaFileEncoding.ReadAllTextOnly(innerFile));
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_IsIdempotentAcrossRepeatedSaves()
+    {
+        // "Format All Files" can be pressed twice. The second save reads the code the first one
+        // stored, so any clause left behind would compound.
+        var graph = CreateGraphWithPackage("TestPackage", "package TestPackage\nend TestPackage;",
+            new List<(string, string, string)> { ("Inner", "model Inner\n  Real y;\nend Inner;", "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var first = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+        var innerFile = first.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
+        var afterFirst = ModelicaFileEncoding.ReadAllTextOnly(innerFile);
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, FormattingOptions.None);
+
+        Assert.Equal(afterFirst, ModelicaFileEncoding.ReadAllTextOnly(innerFile));
+    }
+
+    [Fact]
     public void SaveLibraryToDirectoryWithResult_ReturnsWrittenFiles()
     {
         var packageCode = "within;\npackage TestPackage\nend TestPackage;";
@@ -92,7 +192,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.NotEmpty(result.WrittenFiles);
     }
@@ -106,10 +206,28 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.True(result.ModelIdToFilePath.ContainsKey("TestModel"));
         Assert.EndsWith("TestModel.mo", result.ModelIdToFilePath["TestModel"]);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_PreservesFormatting_ForMlqtFormatFalseAnnotation()
+    {
+        // Distinctive indentation the formatter would normally normalise.
+        var code = "within;\nmodel Foo\n        Real x;\n  annotation(__MLQT(format=false));\nend Foo;";
+        var graph = CreateGraphWithSingleModel("Foo", code);
+        var outputDir = CreateTempDirectory();
+
+        // Save WITH formatting flags on — the __MLQT(format=false) annotation must keep it verbatim.
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, new HashSet<string> { "Foo" }, outputDir,
+            showAnnotations: true,
+            formatting: new FormattingOptions(OneOfEachSection: true, ImportsFirst: true, ComponentsBeforeClasses: true));
+
+        var written = File.ReadAllText(result.ModelIdToFilePath["Foo"]);
+        Assert.Contains("        Real x;", written); // 8-space indent preserved => not reformatted
     }
 
     [Fact]
@@ -128,7 +246,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var model1File = Path.Combine(outputDir, "TestPackage", "Model1.mo");
         var model2File = Path.Combine(outputDir, "TestPackage", "Model2.mo");
@@ -145,7 +263,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.NotEmpty(result.CreatedDirectories);
     }
@@ -174,7 +292,7 @@ public class ModelicaPackageSaverTests : IDisposable
 
         // Should not throw and should create the file
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.True(result.ModelIdToFilePath.ContainsKey("TestModel"));
         var content = File.ReadAllText(result.ModelIdToFilePath["TestModel"]);
@@ -210,7 +328,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var childFilePath = Path.Combine(outputDir, "TestPackage", "ChildModel.mo");
         Assert.True(File.Exists(childFilePath));
@@ -236,7 +354,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var packageOrderFile = Path.Combine(outputDir, "TestPackage", "package.order");
         Assert.True(File.Exists(packageOrderFile));
@@ -264,7 +382,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var packageOrderFile = Path.Combine(outputDir, "TestPackage", "package.order");
         var orderContent = File.ReadAllLines(packageOrderFile);
@@ -302,7 +420,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         // Non-standalone child should NOT have its own .mo file
         var nestedFile = Path.Combine(outputDir, "TestPackage", "NestedModel.mo");
@@ -335,7 +453,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         // Should be saved as ShortPkg.mo, not ShortPkg/package.mo
         Assert.True(result.ModelIdToFilePath.ContainsKey("ShortPkg"));
@@ -383,7 +501,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         Assert.True(Directory.Exists(Path.Combine(outputDir, "RootPkg")));
         Assert.True(Directory.Exists(Path.Combine(outputDir, "RootPkg", "SubPkg")));
@@ -404,7 +522,8 @@ public class ModelicaPackageSaverTests : IDisposable
 
         // Enable all formatting options
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, true, true, true, true);
+            graph, modelIds, outputDir, true,
+            new FormattingOptions(OneOfEachSection: true, ImportsFirst: true, ComponentsBeforeClasses: true));
 
         Assert.NotEmpty(result.WrittenFiles);
         Assert.True(result.ModelIdToFilePath.ContainsKey("TestModel"));
@@ -433,7 +552,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var packageOrderFile = Path.Combine(outputDir, "TestPackage", "package.order");
         Assert.True(File.Exists(packageOrderFile));
@@ -453,7 +572,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, new HashSet<string>(), outputDir, false, false, false, false);
+            graph, new HashSet<string>(), outputDir, false, FormattingOptions.None);
 
         Assert.Empty(result.WrittenFiles);
         Assert.Empty(result.ModelIdToFilePath);
@@ -492,7 +611,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var outputDir = CreateTempDirectory();
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-            graph, modelIds, outputDir, false, false, false, false);
+            graph, modelIds, outputDir, false, FormattingOptions.None);
 
         var packageOrderFile = Path.Combine(outputDir, "TestPackage", "package.order");
         Assert.True(File.Exists(packageOrderFile));
@@ -513,7 +632,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var code = "within;\nmodel TestModel \"A description\"\n  Real x;\nend TestModel;";
         var node = new ModelNode("TestModel", new ModelDefinition("TestModel", code));
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         Assert.Contains("model TestModel", rendered);
         Assert.Contains("A description", rendered);
@@ -534,7 +653,7 @@ public class ModelicaPackageSaverTests : IDisposable
         node.Definition.ModelicaCode = original.Replace("exmaple", "example");
         node.Definition.ParsedCode = null;
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         Assert.Contains("An example model", rendered);
         Assert.DoesNotContain("exmaple", rendered);
@@ -549,7 +668,7 @@ public class ModelicaPackageSaverTests : IDisposable
         var node = new ModelNode("TestPackage", new ModelDefinition("TestPackage", code));
         node.ClassType = "package";
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         Assert.Contains("package TestPackage", rendered);
         Assert.Contains("constant Real pi", rendered);
@@ -570,7 +689,7 @@ public class ModelicaPackageSaverTests : IDisposable
             ParentModelName = "VeSyMA.EnergyStorage.Summary"
         };
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         Assert.Contains("within VeSyMA.EnergyStorage.Summary", rendered);
         Assert.Contains("model Null", rendered);
@@ -587,7 +706,7 @@ public class ModelicaPackageSaverTests : IDisposable
             ParentModelName = null
         };
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         Assert.Contains("within", rendered);
         Assert.Contains("model TopLevel", rendered);
@@ -602,11 +721,200 @@ public class ModelicaPackageSaverTests : IDisposable
             ParentModelName = "VeSyMA.EnergyStorage.Summary"
         };
 
-        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, false, false, false);
+        var rendered = ModelicaPackageSaver.RenderFileOwnerModel(node, FormattingOptions.None);
 
         // Exactly one within clause, not two.
         var occurrences = rendered.Split("within").Length - 1;
         Assert.Equal(1, occurrences);
+    }
+    #endregion
+
+    #region RenderFileSource (incremental file save)
+
+    [Fact]
+    public void RenderFileSource_KeepsTheFilesOwnWithinClause()
+    {
+        // Files on disk always carry a within clause. Prepending a second one is what corrupted the
+        // MSL working copy: every file opened "within P;\n\nwithin P;\nmodel ...", which will not parse.
+        var source = "within Modelica.Blocks.Continuous;\nblock PI \"Controller\"\n  Real k;\nend PI;";
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(
+            source, "Modelica.Blocks.Continuous", FormattingOptions.None);
+
+        Assert.Equal(1, CountWithinClauses(rendered));
+        Assert.StartsWith("within Modelica.Blocks.Continuous;", rendered);
+    }
+
+    [Fact]
+    public void RenderFileSource_IgnoresLeadingBlankLinesWhenLookingForTheWithinClause()
+    {
+        // A rendered or hand-edited file can open with a blank line. Reading that as "no within
+        // clause" is what let the duplicate through.
+        var source = "\n\nwithin Modelica.Blocks.Continuous;\nblock PI\nend PI;";
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(
+            source, "Modelica.Blocks.Continuous", FormattingOptions.None);
+
+        Assert.Equal(1, CountWithinClauses(rendered));
+    }
+
+    [Fact]
+    public void RenderFileSource_DoesNotMistakeAnIdentifierForAWithinClause()
+    {
+        // "withinTolerance" starts with "within" but is not a within clause, so one must be added.
+        var source = "model M\n  Real withinTolerance;\nend M;";
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(source, "Some.Package", FormattingOptions.None);
+
+        Assert.StartsWith("within Some.Package;", rendered);
+        Assert.Contains("withinTolerance", rendered);
+    }
+
+    [Fact]
+    public void RenderFileSource_AddsTheWithinClauseWhenTheSourceHasNone()
+    {
+        var source = "model Null \"Empty summary\"\nend Null;";
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(
+            source, "VeSyMA.EnergyStorage.Summary", FormattingOptions.None);
+
+        Assert.Contains("within VeSyMA.EnergyStorage.Summary;", rendered);
+        Assert.Equal(1, CountWithinClauses(rendered));
+    }
+
+    [Fact]
+    public void RenderFileSource_AddsABareWithinForATopLevelLibrary()
+    {
+        var rendered = ModelicaPackageSaver.RenderFileSource(
+            "package Modelica \"MSL\"\nend Modelica;", null, FormattingOptions.None);
+
+        Assert.Contains("within", rendered);
+        Assert.Contains("package Modelica", rendered);
+    }
+
+    [Fact]
+    public void RenderFileSource_KeepsNestedClassesNestedAndWrittenOnce()
+    {
+        // Every nested class has its own ModelNode and its own file-contains edge, so a caller that
+        // reassembles a file from "all models in the file" writes each nested class twice: once
+        // inside its parent and once appended as a top-level sibling. Rendering the file's own text
+        // emits each class exactly once, in place.
+        var source = """
+            within Modelica.Blocks.Continuous.Internal.Filter.Utilities;
+            function normalizationFactor "Compute correction factor"
+              input Real c1;
+              output Real alpha;
+
+              function findInterval "Find interval for the root"
+                input Real c;
+                output Real lo;
+              algorithm
+                lo := 0;
+              end findInterval;
+
+            algorithm
+              alpha := findInterval(c1);
+            end normalizationFactor;
+            """;
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(
+            source, "Modelica.Blocks.Continuous.Internal.Filter.Utilities", FormattingOptions.None);
+
+        Assert.Equal(1, CountOccurrences(rendered, "function findInterval"));
+        Assert.Equal(1, CountOccurrences(rendered, "end findInterval;"));
+        Assert.Equal(1, CountWithinClauses(rendered));
+        // The nested function stays inside its parent rather than following "end normalizationFactor;".
+        Assert.True(rendered.IndexOf("function findInterval", StringComparison.Ordinal)
+                    < rendered.IndexOf("end normalizationFactor;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RenderFileSource_KeepsAPackagesInlineChildren()
+    {
+        // A package node's stored ModelicaCode has had its standalone children trimmed out
+        // (PackageCodeTrimmer), so rendering from the node would drop them. The file's text has them.
+        var source = """
+            within Modelica;
+            package Examples "Examples"
+              model First "First"
+                Real x;
+              end First;
+
+              model Second "Second"
+                Real y;
+              end Second;
+            end Examples;
+            """;
+
+        var rendered = ModelicaPackageSaver.RenderFileSource(source, "Modelica", FormattingOptions.None);
+
+        Assert.Contains("model First", rendered);
+        Assert.Contains("model Second", rendered);
+        Assert.Equal(1, CountWithinClauses(rendered));
+    }
+
+    [Fact]
+    public void RenderFileSource_ReportsSyntaxErrorsSoCallersCanRefuseToOverwrite()
+    {
+        var source = "within Some.Package;\nmodel Broken\n  Real x\nend Wrong;";
+
+        ModelicaPackageSaver.RenderFileSource(
+            source, "Some.Package", FormattingOptions.None, out var errors);
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void RenderFileSource_ReportsADuplicatedWithinClauseAsASyntaxError()
+    {
+        // The exact shape the incremental formatter used to write. The grammar now allows at most one
+        // within clause, so a file already damaged this way is reported rather than silently rewritten.
+        var source = "within Modelica.Blocks.Continuous;\n\nwithin Modelica.Blocks.Continuous;\nblock PI\nend PI;";
+
+        ModelicaPackageSaver.RenderFileSource(
+            source, "Modelica.Blocks.Continuous", FormattingOptions.None, out var errors);
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void RenderFileSource_ReportsNoSyntaxErrorsForValidSource()
+    {
+        var source = "within Some.Package;\nmodel Fine\n  Real x;\nend Fine;";
+
+        ModelicaPackageSaver.RenderFileSource(
+            source, "Some.Package", FormattingOptions.None, out var errors);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void RenderFileSource_IsIdempotent()
+    {
+        // The incremental formatter re-runs over files it has already written (a VCS status still
+        // reports them as modified). A second pass must be a no-op, not another round of damage.
+        var source = "within Modelica.Blocks.Continuous;\nblock PI \"Controller\"\n  Real k;\nend PI;";
+
+        var once = ModelicaPackageSaver.RenderFileSource(
+            source, "Modelica.Blocks.Continuous", FormattingOptions.None);
+        var twice = ModelicaPackageSaver.RenderFileSource(
+            once, "Modelica.Blocks.Continuous", FormattingOptions.None);
+
+        Assert.Equal(once, twice);
+    }
+
+    private static int CountWithinClauses(string code) => CountOccurrences(code, "within ");
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+        return count;
     }
 
     #endregion

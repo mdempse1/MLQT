@@ -107,6 +107,15 @@ else if (Repository != null)
                         <MudText Typo="Typo.body1">Detached HEAD</MudText>
                     }
                     <MudSpacer />
+                    @if (Repository.IsReferenceOnly)
+                    {
+                        <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                                     Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
                     <MudTooltip Text="Switch branch">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" />
                     </MudTooltip>
@@ -141,13 +150,14 @@ else if (Repository != null)
                             </MudPopover>
                         </MudTooltip>
                     }
+                    }
                 </MudStack>
                 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Spacing="1">
                     @switch (Repository.VcsType)
                     {
                         case RepositoryVcsType.Git:
                             <MudTooltip Text="@Repository.CurrentRevision">
-                                <MudText Typo="Typo.body1">Commit: <strong>@TruncateRevision(Repository.CurrentRevision)</strong></MudText>
+                                <MudText Typo="Typo.body1">Commit: <strong>@RevisionId.Shorten(Repository.CurrentRevision)</strong></MudText>
                             </MudTooltip>
                             break;
                         case RepositoryVcsType.SVN:
@@ -164,6 +174,11 @@ else if (Repository != null)
                         </MudTooltip>
                     }
                     <MudSpacer/>
+                    @* Nothing that writes, for a repository the user marked hands-off. The promise in
+                       settings-reference.md is "never checked, formatted, committed or written to",
+                       and the commit, revert and branch actions were all still offered. *@
+                    @if (!Repository.IsReferenceOnly)
+                    {
                     <MudTooltip Text="Update repository">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Download" Size="Size.Medium" OnClick="RefreshRepository" Class="compact-icon-button" />
                     </MudTooltip>
@@ -173,6 +188,7 @@ else if (Repository != null)
                     <MudTooltip Text="Revert changes">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Undo" Size="Size.Medium" OnClick="ShowRevertFilesDialog" Class="compact-icon-button" Disabled="@(!_hasUncommittedChanges)" />
                     </MudTooltip>
+                    }
                 </MudStack>
             }
 
@@ -333,7 +349,6 @@ else if (Repository != null)
         NavState.OnChangeModel += OnModelChanged;
         NavState.OnEnableMultiSelect += OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged += OnExternalSelectedModelsChanged;
-        NavState.OnLibraryLoaded += OnLibraryLoaded;
         NavState.OnVcsFilesChanged += OnVcsFilesChangedHandler;
         LibraryDataService.OnTreeDataChanged += OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged += OnRepositoryLoadStateChanged;
@@ -459,7 +474,6 @@ else if (Repository != null)
         NavState.OnChangeModel -= OnModelChanged;
         NavState.OnEnableMultiSelect -= OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged -= OnExternalSelectedModelsChanged;
-        NavState.OnLibraryLoaded -= OnLibraryLoaded;
         NavState.OnVcsFilesChanged -= OnVcsFilesChangedHandler;
         LibraryDataService.OnTreeDataChanged -= OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged -= OnRepositoryLoadStateChanged;
@@ -622,8 +636,10 @@ else if (Repository != null)
         // warning icon bubbles up the tree and the user can find the problem model.
         RefreshDescendantParserErrors();
 
-        // Restore expansion state for previously expanded nodes
-        RestoreExpansionState(TreeItems);
+        // Restore expansion state for previously expanded nodes, materialising their children so the
+        // rebuilt tree renders a consistent expanded state (icon + children) rather than an "expanded"
+        // node with null children that MudTreeView won't auto-load after a programmatic rebuild.
+        await RestoreExpansionStateAsync(TreeItems);
     }
 
     /// <summary>
@@ -656,13 +672,13 @@ else if (Repository != null)
     private string GetParserErrorTooltip(ModelNode node)
     {
         if (node.HasFatalParseFailure)
-            return "This file could not be fully parsed. The contents shown may be incomplete or replaced with a placeholder. See the Issues panel for details.";
+            return "This file could not be fully parsed. The contents shown may be incomplete or replaced with a placeholder. See the Findings panel for details.";
         if (node.HasParserErrors)
         {
             var count = node.Definition.ParserErrors.Count;
             return count == 1
-                ? "This model has 1 parser error. See the Issues panel for details."
-                : $"This model has {count} parser errors. See the Issues panel for details.";
+                ? "This model has 1 parser error. See the Findings panel for details."
+                : $"This model has {count} parser errors. See the Findings panel for details.";
         }
         return "A model inside this package has a parser error.";
     }
@@ -683,6 +699,34 @@ else if (Repository != null)
             {
                 RestoreExpansionState(item.Children);
             }
+        }
+    }
+
+    /// <summary>
+    /// Like <see cref="RestoreExpansionState"/>, but for a programmatic tree rebuild it also
+    /// materialises the children of each expanded node (loading them on demand if the rebuilt item
+    /// has none). MudTreeView will not auto-invoke its <c>ServerData</c> for a node that is already
+    /// marked <c>Expanded</c> when the tree is replaced wholesale, so without this a previously
+    /// expanded package renders with the expanded icon but no children until it is clicked — and the
+    /// click then collapses it. Pre-loading the children keeps the icon and the rendered rows in sync.
+    /// </summary>
+    private async Task RestoreExpansionStateAsync(IEnumerable<ITreeItemData<ModelNode>> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Value == null || !_expandedNodeIds.Contains(item.Value.Id))
+                continue;
+
+            item.Expanded = true;
+
+            if (item.Children == null && item.Expandable)
+            {
+                var children = await LoadServerData(item.Value);
+                item.Children = children.Cast<ITreeItemData<ModelNode>>().ToList();
+            }
+
+            if (item.Children != null)
+                await RestoreExpansionStateAsync(item.Children);
         }
     }
 
@@ -775,11 +819,6 @@ else if (Repository != null)
         await InvokeAsync(StateHasChanged);
     }
 
-    private async void OnLibraryLoaded()
-    {
-        await InvokeAsync(StateHasChanged);
-    }
-
     private async Task RefreshRepository()
     {
         if (Repository == null)
@@ -831,18 +870,6 @@ else if (Repository != null)
             _isLoading = false;
             StateHasChanged();
         }
-    }
-
-    private string TruncateRevision(string? revision)
-    {
-        if (string.IsNullOrEmpty(revision))
-            return "";
-
-        // Truncate long commit hashes
-        if (revision.Length > 7)
-            return revision.Substring(0, 7);
-
-        return revision;
     }
 
     private async Task ShowHistory() {

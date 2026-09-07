@@ -87,11 +87,11 @@ public class IconExtractor : modelicaBaseVisitor<object?>
 
     public override object? VisitStored_definition(modelicaParser.Stored_definitionContext context)
     {
-        // Capture the package from the 'within' clause (e.g. "within Modelica.Blocks;")
-        // The name() array contains only names from within clauses in this rule context.
-        var names = context.name();
-        if (names != null && names.Length > 0)
-            _withinPackage = names[0].GetText();
+        // Capture the package from the 'within' clause (e.g. "within Modelica.Blocks;").
+        // Null for a top-level library, whose file carries a bare "within;" or none at all.
+        var name = context.name();
+        if (name != null)
+            _withinPackage = name.GetText();
         return base.VisitStored_definition(context);
     }
 

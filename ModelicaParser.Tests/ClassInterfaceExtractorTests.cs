@@ -164,10 +164,15 @@ public class ClassInterfaceExtractorTests
     }
 
     [Fact]
-    public void ComponentModifier_CapturedAsDefaultValue()
+    public void ComponentModifier_IsNotADefaultValue()
     {
+        // (k=2) configures the sub-component; the integrator itself is bound to nothing. Reporting
+        // it as the default told an agent the component defaults to a value it cannot be assigned.
         var iface = Extract("model M\n  Modelica.Blocks.Continuous.Integrator integrator(k=2);\nend M;");
-        Assert.Equal("(k=2)", iface.Elements.Single(e => e.Name == "integrator").DefaultValue);
+
+        var integrator = iface.Elements.Single(e => e.Name == "integrator");
+        Assert.Null(integrator.DefaultValue);
+        Assert.Equal("(k=2)", integrator.TypeModification);
     }
 
     [Fact]
@@ -194,5 +199,181 @@ public class ClassInterfaceExtractorTests
             "function f\n  input Real a;\n  input Real b;\n  output Real c;\nalgorithm\n  c := a + b;\nend f;");
         Assert.Equal(2, iface.Elements.Count(e => e.Causality == "input"));
         Assert.Equal(1, iface.Elements.Count(e => e.Causality == "output"));
+    }
+
+    [Fact]
+    public void Import_ExplicitList_KeepsTheWholeList()
+    {
+        // `import A.{B, C}` names two classes in one clause. Reducing it to A would make both
+        // unresolvable, and a name that does not resolve is reported against correct code.
+        var iface = Extract("model M\n  import Modelica.Units.SI.{Voltage, Current};\n  Real x;\nend M;");
+
+        var import = iface.Elements.Single(e => e.Kind == ClassElementKind.Import);
+        Assert.Contains("Modelica.Units.SI", import.Name);
+        Assert.Contains("Voltage", import.Name);
+        Assert.Contains("Current", import.Name);
+    }
+
+    [Fact]
+    public void NestedShortClassDefinition_IsListedByName()
+    {
+        // A `type` alias is a class of the package like any other, and it is what most unit
+        // definitions in a library actually are.
+        var iface = Extract("package P\n  type Gain = Real(min = 0) \"a gain\";\nend P;");
+
+        var nested = iface.Elements.Single(e => e.Kind == ClassElementKind.Class);
+        Assert.Equal("Gain", nested.Name);
+        Assert.Equal("type", nested.ClassType);
+    }
+
+    [Fact]
+    public void NestedDerivativeClassDefinition_IsListedByName()
+    {
+        var iface = Extract("package P\n  function df = der(f, x) \"the derivative\";\nend P;");
+
+        Assert.Equal("df", iface.Elements.Single(e => e.Kind == ClassElementKind.Class).Name);
+    }
+
+    [Fact]
+    public void AnAssignedDefault_IsReadWithoutItsOperator()
+    {
+        // Dymola accepts `:=` in a declaration and libraries in the field use it. Keeping the
+        // operator in the value would show ":= 1" as the default everywhere it is displayed.
+        var iface = Extract("function f\n  input Real x;\nprotected\n  Real t := 1;\nend f;");
+
+        Assert.Equal("1", iface.Elements.Single(e => e.Name == "t").DefaultValue);
+    }
+
+    [Fact]
+    public void AComponentThatIsOnlyDeclared_HasNoDefault()
+    {
+        Assert.Null(Assert.Single(Extract("model M\n  Real x;\nend M;").Elements).DefaultValue);
+    }
+
+    [Theory]
+    [InlineData("package Inner\n  end Inner;", "package")]
+    [InlineData("class Inner\n  end Inner;", "class")]
+    [InlineData("connector Inner\n  end Inner;", "connector")]
+    [InlineData("record Inner\n  end Inner;", "record")]
+    [InlineData("block Inner\n  end Inner;", "block")]
+    public void ANestedClassKeepsItsRestriction(string nested, string expected)
+    {
+        // The restriction decides which rules apply to it — a connector is not expected to have an
+        // icon, a record is not expected to have equations.
+        var iface = Extract($"package P\n  {nested}\nend P;");
+
+        Assert.Equal(expected, iface.Elements.Single(e => e.Kind == ClassElementKind.Class).ClassType);
+    }
+
+    [Fact]
+    public void ARedeclarationInAnExtendsClause_IsNotAScalarModification()
+    {
+        // `extends Base(redeclare package Medium = Water)` names no scalar parameter. Reading it as
+        // one would show "Medium" with a value that is a class, not a number.
+        var iface = Extract("model M\n  extends Base(redeclare package Medium = Water, k = 5);\nend M;");
+
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.Equal("5", ext.Modifications!["k"]);
+        Assert.False(ext.Modifications.ContainsKey("Medium"));
+    }
+
+    [Fact]
+    public void AnExtendsModifierWithNoValue_IsNotADefault()
+    {
+        // `extends Base(k)` breaks a modifier's binding rather than setting one.
+        var iface = Extract("model M\n  extends Base(k, T = 2);\nend M;");
+
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.Equal("2", ext.Modifications!["T"]);
+        Assert.False(ext.Modifications.ContainsKey("k"));
+    }
+
+    // ── the description, in each form a class can declare one ──
+
+    [Theory]
+    [InlineData("type Gain = Real(min = 0) \"a dimensionless gain\";")]
+    [InlineData("type Colour = enumeration(red, green) \"a dimensionless gain\";")]
+    [InlineData("connector Pin = Interfaces.Pin \"a dimensionless gain\";")]
+    [InlineData("function df = der(f, x) \"a dimensionless gain\";")]
+    public void AClassWithNoBody_StillHasItsDescriptionRead(string code)
+    {
+        // A short or der class definition has no composition, so its description hangs off the
+        // trailing comment. Reading only the long form scored a described type as undocumented in the
+        // coverage metrics and handed an agent description: null over MCP — while the description
+        // rule, which does read all three forms, said nothing was missing.
+        Assert.Equal("a dimensionless gain", Extract(code).Description);
+    }
+
+    [Fact]
+    public void AShortClassWithNoDescription_StillHasNone()
+    {
+        Assert.Null(Extract("type Plain = Real;").Description);
+    }
+
+    [Theory]
+    [InlineData("type Gain = Real \"a nested description\";")]
+    [InlineData("function df = der(f, x) \"a nested description\";")]
+    [InlineData("model Inner \"a nested description\"\n  end Inner;")]
+    public void ANestedClassKeepsItsDescriptionWhicheverFormItIs(string nested)
+    {
+        var iface = Extract($"package P\n  {nested}\nend P;");
+
+        Assert.Equal("a nested description",
+            iface.Elements.Single(e => e.Kind == ClassElementKind.Class).Description);
+    }
+
+    // ── a value and a type constraint are different things ──
+
+    [Fact]
+    public void ADeclarationCarryingBothAModifierAndABinding_ReportsThemApart()
+    {
+        // `parameter SI.Length L(min = 0) = 1` is one parameter declaration in eight in the Modelica
+        // Standard Library. Splitting the modification's text rather than reading the grammar gave
+        // its default as "(min=0)=1" — not a value, and not something that can be written back.
+        var iface = Extract("model M\n  parameter SI.Length L(min = 0) = 1 \"length\";\nend M;");
+
+        var length = Assert.Single(iface.Elements);
+        Assert.Equal("1", length.DefaultValue);
+        Assert.Equal("(min=0)", length.TypeModification);
+    }
+
+    [Fact]
+    public void SeveralAttributesOnTheType_StayWithTheTypeModification()
+    {
+        var k = Assert.Single(Extract(
+            "model M\n  parameter Real k(min = 0, max = 1) = 0.5;\nend M;").Elements);
+
+        Assert.Equal("0.5", k.DefaultValue);
+        Assert.Equal("(min=0,max=1)", k.TypeModification);
+    }
+
+    [Fact]
+    public void AModifierWithNoBinding_LeavesTheComponentWithNoDefault()
+    {
+        var x = Assert.Single(Extract("model M\n  Real x(unit = \"m\");\nend M;").Elements);
+
+        Assert.Null(x.DefaultValue);
+        Assert.Equal("(unit=\"m\")", x.TypeModification);
+    }
+
+    [Fact]
+    public void APlainBinding_HasNoTypeModification()
+    {
+        var k = Assert.Single(Extract("model M\n  parameter Real k = 2;\nend M;").Elements);
+
+        Assert.Equal("2", k.DefaultValue);
+        Assert.Null(k.TypeModification);
+    }
+
+    [Fact]
+    public void AnArrayBinding_IsReadWhole()
+    {
+        // The braces are part of the value, not a modification — a text-based split has to be told
+        // that and the grammar already knows it.
+        var n = Assert.Single(Extract(
+            "model M\n  parameter Real n[3] = {1, 2, 3};\nend M;").Elements);
+
+        Assert.Equal("{1,2,3}", n.DefaultValue);
+        Assert.Null(n.TypeModification);
     }
 }

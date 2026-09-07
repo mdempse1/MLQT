@@ -48,7 +48,7 @@ Once a tool is configured, its check button appears in the **Code Review** tab t
 1. Select a model in the library tree
 2. Click the Dymola or OpenModelica button in the Code Review toolbar
 3. The tool loads the model and checks it
-4. Any errors are added to the issues table
+4. Any errors are added to the findings table
 
 ### Checking an Entire Package
 
@@ -60,19 +60,19 @@ Once a tool is configured, its check button appears in the **Code Review** tab t
    - The name of the model currently being checked
    - A progress bar
 4. Click **Stop** to cancel the check at any time
-5. Errors for each model are added to the issues table as they are found
+5. Errors for each model are added to the findings table as they are found
 
 ![Screenshot: The check progress dialog showing "Dymola Check Progress - 7 checked out of 15" with a progress bar, the current model name, and the Stop button.](Images/code-review-4.png)
 
 ### Understanding Check Results
 
-Errors from external tools appear in the Code Review issues table with:
+Errors from external tools appear in the Code Review findings table with:
 - **Model**: The fully qualified name of the model that failed
 - **Description**: "Check Failed" or a summary of the error
 - **Type**: "Error"
 - **Details**: The full error message from the tool (visible by clicking the row)
 
-These errors represent issues that a simulation tool found when trying to load the model — things like:
+These errors represent findings that a simulation tool found when trying to load the model — things like:
 - Missing type references (a used model or connector doesn't exist)
 - Incorrect number of equations (over/under-determined systems)
 - Type mismatches in connections

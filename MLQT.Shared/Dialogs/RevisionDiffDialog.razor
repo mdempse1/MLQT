@@ -1,3 +1,4 @@
+@using ModelicaParser.Helpers
 @using MLQT.Services.Interfaces
 @using RevisionControl
 @using System.IO
@@ -104,7 +105,7 @@
             string? workingCopyContent = null;
             if (File.Exists(fullPath))
             {
-                workingCopyContent = await File.ReadAllTextAsync(fullPath);
+                workingCopyContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(fullPath);
             }
 
             switch (ChangeType)

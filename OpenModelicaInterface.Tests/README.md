@@ -296,7 +296,7 @@ OpenModelicaInterface talks to OMC over ZeroMQ on a configurable port (default 1
 - **Consistent test results**: Tests don't interfere with each other
 - **Faster execution**: OMC starts once, not per test
 - **Resource efficiency**: Lower memory and CPU usage
-- **Simpler debugging**: Easier to trace issues
+- **Simpler debugging**: Easier to trace findings
 
 ## Comparison with DymolaInterface.Tests
 

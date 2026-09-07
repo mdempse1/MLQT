@@ -17,6 +17,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
 - **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
 - **MLQT.McpTester** - MAUI Blazor (Windows) desktop app for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
+- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI (packaged as a `dotnet tool`). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
@@ -50,7 +51,8 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 3. Register in `MLQT/MauiProgram.cs`
 
 **Pattern for reusable .NET services:**
-1. Define interface in `MLQT.Services/Interfaces/`
+1. Define interface in `MLQT.Services/Interfaces/` — **always there**, even when the implementation
+   lives in a subfolder such as `Checking/`. One folder answers "what services are there?"
 2. Implement in `MLQT.Services/`
 3. Register as singleton in `MauiProgram.cs`
 
@@ -60,19 +62,37 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 | Service | Purpose |
 |---------|---------|
-| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data |
+| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run |
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
-| **ICodeReviewService** | Log messages and issues from parsing/style checking |
-| **IStyleCheckingService** | Background style rule checking for models with queue management |
+| **ICodeReviewService** | Log messages and findings from parsing/style checking |
+| **EncryptedLibraryDetector** | Recognises an encrypted library (`package.moe`) and reads its name/version — versioned directory name first, `libraryinfo.mos` as fallback |
+| **IBaselineStatusService** | Classifies findings against each repository's committed baseline (new / touched / accepted), so the Code Review list can be narrowed to what the working copy changed. "Touched" = pending commit, not a commit-to-commit diff |
+| **IStyleCheckingService** | Background style rule checking for models with queue management. Every entry point runs the per-class rules *and* the whole-graph analyses, arranging dependency analysis first when an enabled rule needs the edges, so all paths report the same finding count. Cancellation and finding removal are scoped to the repository being re-checked — a project holds several, each with rules of its own |
 | **IImpactAnalysisService** | Dependency impact analysis with BFS traversal |
 | **IExternalResourceService** | External resource analysis, validation, and monitoring |
-| **ICustomDictionaryService** | User custom word list persistence (`%LocalAppData%/MLQT/custom_dictionary.txt`) |
+| **ICustomDictionaryService** | Accepted spellings per repository (`<repo>/.mlqt/dictionary.txt`, committed with the code so the app and CLI accept the same words). `DictionaryScope` decides which repository's list applies to a class |
 | **IDictionaryManagerService** | Hunspell dictionary management (bundled + imported at `%LocalAppData%/MLQT/Dictionaries/`) |
 | **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
 | **DymolaCheckingService** | Model checking via Dymola HTTP JSON-RPC |
 | **OpenModelicaCheckingService** | Model checking via OpenModelica ZeroMQ |
 | **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`) |
+
+### The shared check pipeline (`MLQT.Services/Checking/`)
+
+Not services — the primitives that keep the desktop app, `mlqt check` and the MCP server reporting
+the **same findings with the same line numbers**. Change the primitive, never one tool's path.
+
+| Type | Role |
+|------|------|
+| **LibraryCheckSession** | `Check(...)` — the whole answer for a set of models: parse diagnostics, the per-class rules in parallel, then the whole-graph analyses. The CLI and MCP call this |
+| **StyleCheckRunner** | The per-class entry point *every* surface funnels through, including the GUI's workers, which is why the external-stub guard and the coverage measurement live here |
+| **StyleCheckContext** | The once-per-run inputs (spell checker, known ids, icon and inherited-name callbacks, unit lookup, coverage measurer) built once instead of per class |
+| **ParserErrorReporter** | Parse diagnostics as `Finding`s. Always reported, never configurable, never baselined — `RuleIds.IsDiagnostic` is that question |
+| **Baseline** / **FindingClassifier** | The accepted-debt ledger, New/AcceptedDebt/TouchedDebt classification, and drift against the rules the baseline was taken with |
+| **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
+| **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
+| **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation |
 
 **Platform-specific services** (in `MLQT/Services/`, use MAUI APIs):
 
@@ -86,17 +106,17 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 Centralized state container in `MLQT.Shared/Models/AppState.cs`:
 - **Model Selection**: `ModelID`, `SelectedModelIDs`, `SelectionMode`
-- **Library State**: `IsLibraryLoaded`
 - **Deferred Analysis**: `IsDeferredMode`, `HasDependencyAnalysisRun`, `HasStyleCheckingRun`, `HasExternalResourcesAnalyzed`
 - **Events**:
   - Model/UI: `OnChangeModel`, `OnSelectedModelsChanged`, `OnEnableMultiSelect`, `OnModelContentChanged`, `OnThemeChanged`
-  - Library: `OnLibraryLoaded`, `OnLibraryCleared`
   - Settings: `OnSaveSettings`, `OnClearLogMessages`, `OnRepositorySettingsApplied`
   - VCS: `OnVcsFilesChanged`, `OnVcsModelsChanged`
   - Projects: `OnProjectSwitchStarting`, `OnProjectChanged`
   - Deferred analysis: `OnRunDeferredDependencies`, `OnRunDeferredStyleChecking`, `OnRunDeferredExternalResources`, `OnRunAllDeferredAnalysis`, `OnDeferredAnalysisCompleted`
   - Formatting: `OnFormatChangedFilesForCommit`
-- Always use methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `LibraryLoaded()`, `LibraryCleared()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) not direct property access
+- Use the methods (`ChangeModelID()`, `SetSelectedModels()`, `ChangeSelectionMode()`, `RepositorySettingsApplied()`, `VcsFilesChanged()`, etc.) rather than assigning the property, **wherever the property has one** — the method is what raises the event, and an assignment leaves every subscriber unaware. A few members are plain session memory with no event and no method (`MetricsScope`, which the Metrics tab writes so its scope survives the tab being recreated); those are assigned directly and say so at the declaration
+- AppState carries no "library loaded/cleared" state — the set of loaded libraries is published by
+  `ILibraryDataService.OnLibrariesChanged`/`OnTreeDataChanged` and `IRepositoryService.OnProjectChanged`
 
 ### User Interface
 
@@ -107,8 +127,19 @@ Use the following styling guidelines
 * Use Dense styling options when available
 * Use minimal padding and margin spacing
 * RowStack components should have spacing=0
-* Use Typo.body1 for all text except code
-* Use Typo.body2 for code
+
+**Typography.** `Typo.body1` is the default for ordinary text and `Typo.body2` for code, file paths
+and de-emphasised values — but the UI uses a hierarchy above that, and a component built to
+"body1 for everything" looks wrong beside the ones already there. What the existing components do:
+
+| Typo | Used for |
+|------|----------|
+| `h6` | A dialog's title |
+| `subtitle1` | The name of the thing a panel is about (a repository, an external tool) |
+| `subtitle2` | A section heading inside a panel |
+| `body1` | Ordinary text — the default, and by far the most common |
+| `body2` | Modelica code, file paths, and values shown beside a label |
+| `caption` | Explanatory text under a control, and secondary detail in a tree |
 
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 
@@ -124,21 +155,34 @@ Use the following styling guidelines
 | `MLQT.Shared/Models/AppState.cs` | Application state and cross-component events |
 | `MLQT.Shared/Components/LibraryBrowser.razor` | Model tree navigation, VCS operation UI |
 | `MLQT.Shared/Components/SettingsRepositories.razor` | Repository settings with formatting/style rules |
-| `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, issues, external tool checks |
+| `MLQT.Shared/Pages/CodeReview.razor` | Code viewer, diff, findings, external tool checks |
 | `MLQT.Shared/Pages/Dependencies.razor` | Impact analysis with Cytoscape network graph |
 | `ModelicaParser/modelica.g4` | ANTLR grammar |
 | `ModelicaParser/Helpers/ModelicaParserHelper.cs` | Parser utilities |
 | `ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs` | Base class for all style rule visitors |
+| `ModelicaParser/DataTypes/Finding.cs` | The structured finding every rule and analysis emits — rule id, severity, element identity, reformat-stable fingerprint |
+| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry: the id constants, and each rule's title, category, default severity, governor and prerequisite |
 | `ModelicaGraph/DirectedGraph.cs` | Main graph structure |
 | `ModelicaGraph/GraphBuilder.cs` | Loads libraries, analyzes dependencies |
-| `ModelicaGraph/StyleChecking.cs` | Orchestrates all style rule checks |
-| `ModelicaGraph/StyleCheckingSettings.cs` | Persisted style/formatting settings |
+| `ModelicaGraph/StyleChecking.cs` | Orchestrates all per-class style rule checks |
+| `ModelicaGraph/StyleCheckingSettings.cs` | Persisted style/formatting settings, and the severity map every rule resolves through |
+| `ModelicaGraph/RuleSettingsLayout.cs` | Where each rule is set in the settings dialog — held to `RuleCatalog` by a test |
+| `ModelicaGraph/ClassSuppressions.cs` | The one read of a class's `__MLQT` directives, kept on the class |
+| `ModelicaGraph/Analysis/GraphAnalysisRunner.cs` | Runs the whole-graph analyses (`IGraphAnalyzer`), stamps severities, applies suppression |
+| `ModelicaGraph/Analysis/MetricsCalculator.cs` | Coverage/size figures and `CoverageMeasurer`, the per-class measurement |
+| `ModelicaGraph/Analysis/CoverageDimensions.cs` | Which coverage dimensions apply — to a repository (`TrackedFor`) and to one class (`ForClass`) |
+| `MLQT.Services/Checking/LibraryCheckSession.cs` | The shared load→check pipeline: parse diagnostics, per-class rules, graph analyses |
+| `MLQT.Services/Checking/StyleCheckRunner.cs` / `StyleCheckContext.cs` | Per-class entry point every surface funnels through, and its once-per-run inputs |
+| `MLQT.Services/Checking/Baseline.cs` | The accepted-debt ledger, its drift detection, and `FindingClassifier` |
+| `MLQT.Services/Checking/ClassLocation.cs` | Where a class starts in its file — turns a class-relative finding line into a file line |
 | `MLQT.Services/LibraryDataService.cs` | Library management |
 | `MLQT.Services/RepositoryService.cs` | VCS repository operations |
 | `MLQT.Services/StyleCheckingService.cs` | Background style checking with workers |
 | `MLQT.Services/Helpers/StyleCheckingWorker.cs` | Parallel style checking per repository |
 | `MLQT.Services/Helpers/ModelicaPackageSaver.cs` | Code formatting and file saving |
+| `MLQT.Cli/CheckPipeline.cs` / `CheckRunner.cs` | The CLI's load+check, and the gate/report/exit-code layer over it |
 | `RevisionControl/Interfaces/IRevisionControlSystem.cs` | Unified Git/SVN interface |
+| `RevisionControl/Interfaces/ILineLevelDiff.cs` | Line-level diff, implemented by Git only — why a pull-request review needs Git |
 
 ## ModelicaParser Project
 
@@ -159,8 +203,11 @@ var models = ModelicaParserHelper.ExtractModels(modelicaCode);
 - **ModelicaRenderer** (`Visitors/`) - Code formatting with configurable rules
 - **IconExtractor** (`Visitors/`) / **IconSvgRenderer** (`Icons/`) - Modelica icon annotation to SVG
 - **ExternalResourceExtractor** (`Visitors/`) - Extract resource references from parse trees
+- **ExternalDocs** (`ExternalDocs/`) - `DymolaHelpParser`/`DymolaHelpReader` recover classes (name, description, extends, has-icon) from a vendor's generated help HTML, for encrypted libraries with no readable source. Scanning is **tag-oriented, never line-oriented** — Dymola 2024x Refresh 1 emits a junk token where newlines belong
 - **StyleRules** (`StyleRules/`) - Style rule visitors (extends `VisitorWithModelNameTracking` base class). Visitors only check the outermost class — nested class definitions are skipped because each has its own `ModelNode` and is checked independently
 - **SpellChecking** (`SpellChecking/`) - Hunspell-based spell checker, text extraction, and embedded dictionaries
+- **WithinClause** (`Helpers/`) - **The only place that adds or removes a leading `within ...;` clause.** A within clause belongs to a *file*, not a class: a `ModelNode`'s stored `ModelicaCode` never carries one, while text written to a `.mo` file always must (or the file re-parses with no package context and its classes come back with detached IDs). Use `Ensure` when rendering to disk and `Strip` before storing rendered text back on a node. Never hand-roll the check — the versions drifted, some guarding against a clause that was already there and some not, and a formatter that assumed a model's code had none wrote a second clause into every file it touched. The grammar accepts at most one clause, so a duplicate is a syntax error, not a silent corruption
+- **ModelicaFileEncoding** (`Helpers/`) - **All `.mo`/`package.order` reads and writes must go through this.** Modelica files declare no encoding and the population is mixed: older libraries use single-byte Windows-1252, most files are BOM-less UTF-8. Encoding is detected per file (BOM → strict UTF-8 → Latin-1 fallback, which cannot fail) and **written back in the encoding it was read in**. A read here paired with a plain `File.WriteAllText` re-encodes the decoded characters and corrupts the file, progressively, on every save
 
 **Grammar modification**: Edit `modelica.g4`, then `dotnet build` to regenerate parser code.
 
@@ -175,10 +222,20 @@ Directed graph for tracking file/model relationships, dependencies, external res
 - `ResourceDirectoryNode` - Represents an external resource directory
 
 **Key Classes:**
-- `DirectedGraph` - Main graph structure with node/edge management
+- `DirectedGraph` - Main graph structure with node/edge management. `DependenciesAnalyzed` is the single source of truth for whether `UsedModelIds`/`UsedByModelIds` are populated — never infer it by checking whether some model happens to have edges
 - `GraphBuilder` (static) - Loads files (`LoadModelicaFile`, `LoadModelicaFiles`, `LoadModelicaDirectory`), analyzes dependencies (`AnalyzeDependenciesAsync`, `AnalyzeDependenciesForModelsAsync`). Model queries are instance methods on `DirectedGraph` (e.g. `GetModelsInFile`, `GetUsedModels`, `GetModelUsedBy`)
+- `ExternalStubBuilder` - Turns `DocumentedClass` records into graph nodes by synthesizing a minimal Modelica declaration, so every parse-tree-based consumer resolves them unchanged. Nodes are flagged `ModelNode.IsExternalStub`: never reported on, never written
 - `StyleChecking` / `StyleCheckingSettings` - Run configurable style checks on model definitions
-- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule violations) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags)
+- `StyleCheckingSettings` includes `FormattingExcludedModels` (models that skip the formatter and formatting-rule findings) and `SvnBranchDirectories` (configurable per-repository SVN branch directory names, default: trunk/branches/tags). `SeverityFor(id)` is the **only** way to ask what a rule will do — it resolves governors, prerequisites and formatter-derived levels, none of which are visible in the raw `RuleSeverities` map. `StampSeverities` is the one place configuration is applied to findings
+- `ModelDefinition.Borrow` - **The convention for reading a class you do not own.** Parses if needed, runs the work, and releases the tree again *only if this call is what parsed it*. Read it before adding any `EnsureParsed()`: the two halves have come apart in both directions, and a walk that keeps a base class's tree accumulates over tens of thousands of classes. The bulk load pass in `GraphBuilder` is the deliberate exception, and says so
+- `ClassSuppressions.For(definition, modelId)` - **The only read of a class's `__MLQT` directives.** Three passes want the same answer about the same class in one run — the checker, the coverage measurer and the graph analyses — and each used to walk the tree for itself. Kept on the class as `SuppressionSet.Empty` when there is nothing, so a library of tens of thousands costs a reference each
+- `FormattingExclusion.Excludes(model, settings)` - **The only answer to "must the formatter write this class back unchanged?"**, over both mechanisms: the `FormattingExcludedModels` name list and `__MLQT(format=false)` / `preserveOrder=true`. Asked per caller instead, the annotation reached the full library save and not the incremental format — the path that runs at startup and after every VCS operation — so the rename-safe mechanism the docs recommend was the one the formatter ignored. Note this is a **different question** from the one the checker and the dashboard ask: writing is per rendered definition (the renderer rewrites a class's whole source or none of it), reporting is per class (`SuppressionSet.PreservesFormatting`)
+
+**`Analysis/` — the whole-graph half (phase 6):**
+- `IGraphAnalyzer` / `GraphAnalysisContext` / `GraphAnalysisRunner` - Analyses that need the graph rather than one class: `PackageOrderAnalyzer`, `UsesHygieneAnalyzer`, `UnusedClassAnalyzer`, `UnusedImportAnalyzer`, `UnusedMembersAnalyzer`, `ShadowingAnalyzer`. `RequiresDependencyAnalysis(settings)` says whether the edges are needed first
+- `TypeResolver` / `ClassElementResolver` / `UnitResolver` - Inheritance- and import-aware resolution. They cache **the answer, not the tree**
+- `MetricsCalculator` / `CoverageMeasurer` - The dashboard's figures, and the per-class measurement the checker triggers while it still holds the tree
+- `CoverageDimensions` - `TrackedFor(settings)` for a repository, `ForClass(...)` for one class. **`ForClass` is the single narrowing**: every way of taking a class out of scope (`ExcludedLibraries`, `FormattingExcludedModels`, `__MLQT(format=false)`) is asked there, because each arrived separately and each was taught to the checker before anything asked what it meant for the report
 
 ```csharp
 var graph = new DirectedGraph();
@@ -248,11 +305,13 @@ User-facing documentation is in `Documentation/`:
 |----------|--------|
 | `getting-started.md` | Prerequisites, project/repo setup, first steps |
 | `library-browser.md` | Tree navigation, VCS status indicators, view modes |
-| `code-review.md` | Code viewer, diff, issues, external tool checks, formatting exclusion toggle |
+| `code-review.md` | Code viewer, diff, findings, external tool checks, formatting exclusion toggle |
 | `code-formatting.md` | Formatting rules, triggers, incremental vs full, exclusion |
 | `settings-reference.md` | All settings: style rules, formatting, spell check, SVN branch dirs, JSON schema |
 | `dependency-analysis.md` | Impact analysis, Cytoscape graph, layout options |
 | `external-resources.md` | Resource tracking, tree view, file type filters |
+| `metrics-dashboard.md` | Metrics tab: coverage dimensions, scope and sub-library comparison, the trend and its snapshots |
+| `encrypted-libraries.md` | Commercial `package.moe` libraries: what is recovered from vendor help HTML, accuracy, reference-library setup |
 | `external-tools.md` | Dymola and OpenModelica configuration |
 | `naming-conventions.md` | Naming styles, presets, exception names |
 | `spell-checking.md` | Dictionaries, custom words, Code Review workflow |
@@ -262,7 +321,32 @@ User-facing documentation is in `Documentation/`:
 | `modelica-concepts.md` | Modelica language primer for non-Modelica users |
 | `ui-customization.md` | Themes, syntax highlighting presets, custom colors |
 | `mcp-server.md` | MCP server for AI agents: registering, workflow, tool groups, McpTester, logging |
-| `troubleshooting.md` | Common issues, FAQ |
+| `cli.md` | Headless `mlqt` CLI: install, `check` options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown/review), baseline/ratchet, `compare` for missing classes, `hook` for the git pre-commit gate, `review` for pull-request comments, exit codes |
+| `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
+| `troubleshooting.md` | Common findings, FAQ |
+
+## Planning and Design Notes
+
+In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
+record of what was decided and what shipped. **Read the roadmap before
+starting anything substantial**: it holds the agreed sequencing, the decisions behind it, and the
+backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
+
+| Document | Covers |
+|----------|--------|
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
+| `Design/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
+| `Design/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
+| `Design/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
+| `Design/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
+| `Design/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
+| `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
+| `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
+| `Design/design-phase7-gui-tests.md` | Phase 7a — the GUI test harness that must precede the desktop-host migration |
+| `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
+
+Each phase note records what actually landed, including where the implementation deviated from the
+sketch — so when the note and the code disagree, that is a defect in one of them, not a detail.
 
 ## Documentation Maintenance
 
@@ -272,10 +356,53 @@ Update this file when:
 - Modifying service interfaces
 - Adding/removing NuGet packages
 
+Update `Design/roadmap.md` when:
+- A backlog item is finished, or a new one is found — the backlog is the working list, and an item
+  that is done but still open reads as outstanding work to whoever picks it up next
+- A phase ships, or a decision changes the agreed sequencing
+
+Update the phase's design note when its implementation deviates from what the note describes. The
+notes are read as the record of what was built; a note describing something that was planned and not
+built is worse than no note.
+
 Update relevant skill files for specialized subsystem changes.
 
 Update project readme files when changes are made.
 
+## Test Fixtures
+
+`TestFixtures/SarifSmoke/` is a deliberately imperfect Modelica library committed at a **nested**
+path (`Libraries/Smoke`). `build/validate-sarif.ps1` checks a report generated from it against the
+SARIF 2.1.0 schema with `Sarif.Multitool`, and the nesting is what proves `--sarif-base` writes paths
+a consumer can resolve. Run on every push by `build-and-test.yml`; run it locally the same way.
+
 ## Test Cases
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.
+
+**CI enforces this** — `build/check-coverage.ps1` runs all six suites, merges their reports, and fails
+the build per class. Run it locally the same way:
+
+```powershell
+dotnet build MLQT.slnx -c Release
+./build/check-coverage.ps1                 # gate
+./build/check-coverage.ps1 -SkipTests      # re-judge coverage already collected
+./build/check-coverage.ps1 -UpdateBaseline # re-record accepted debt; review the diff
+```
+
+It is a **ratchet, not a flat threshold**, for the same reason MLQT offers its users one: some debt
+predates the bar, and some of it cannot be paid on a runner at all — the SVN tests need a working copy
+and a server no runner has. `build/coverage-baseline.json` records the classes currently below their
+bar, and the build fails when one goes further backwards, when a class that met the bar stops meeting
+it, or when a new class arrives below it.
+
+That file is a debt ledger, so **every entry carries a `reason` and the build fails on one that does
+not** — `-UpdateBaseline` writes a `TODO` placeholder for anything new, which the gate then refuses.
+"Needs a working SVN server" and "nobody has written the tests yet" are both acceptable reasons and
+are *different facts*: the ledger existed for a while with six ordinary in-process classes sitting
+beside the untestable ones, indistinguishable from them and never asked about again.
+
+Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
+lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
+assert nothing), as is source-generated code. `MLQT.Shared` has no tests at all until phase 7a builds
+the harness — see `Design/design-phase7-gui-tests.md`.
