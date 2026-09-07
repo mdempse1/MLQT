@@ -513,6 +513,8 @@ Started, not finished. **51 tests** in `MLQT.Shared.Tests`, covering the first t
 | `MetricsDashboard` | Scope matching (the dot that keeps `Modelica.BlocksExtra` out of a `Modelica.Blocks` scope), sub-package listing, what counts as style debt |
 | `ColorPicker` (both layers) | What it accepts as a colour, and that a change round-trips back in a form the next render accepts |
 | `CytoscapeGraph` (Layer 1b) | The six interop calls: init once with its elements, update rather than re-init, nothing on an unchanged re-render, destroy on disposal |
+| `CodeViewer` | The HTML conversion: encoding, line numbering, and spell-check markup confined to strings and comments |
+| `DiffViewer` | `ComputeLcsDiff`, the edit script every diff view is built on — minimality, operation order, and that replaying it reproduces either file |
 
 **Every one was verified by mutation, not by going green.** Breaking the rule under test and watching
 the specific test fail is the only thing that distinguishes a test from a formality — this phase has
@@ -532,7 +534,16 @@ is not a rename: raising a component's own callback has to go through `cut.Invok
 planned `JSInterop.SetupVoid` stays pending until `SetVoidResult`, which stalls the component's own
 `await` — under the loose mode this suite uses, read `JSInterop.Invocations[...]` instead.
 
-Still to do: `ChangeReview`/`CodeViewer`/`DiffViewer`/`ExternalResources` filtering,
+**Mutation testing earned its place on the diff.** Three mutations of `ComputeLcsDiff` were tried;
+the first pass of tests caught only one. Replaying the script and checking every line is accounted
+for proves a script is *valid*, and an all-delete-then-all-insert script is valid too — so
+`Math.Min` for `Math.Max` in the LCS table survived, and so did flipping the backtrack tie-break.
+Catching them needed two more tests: one asserting the script is *minimal* on a pair where the
+equality shortcut cannot answer, and one asserting a changed line is delete-then-insert, which the
+side-by-side renderers depend on to pair the two halves of an edit on one row. Property tests that
+check validity are not enough for an algorithm whose whole value is optimality.
+
+Still to do: `ChangeReview` file-tree building, `ExternalResources` type filtering,
 `NamingStyleSelect`/`SettingsUI`, and the five other dialogs' results.
 
 Writing them turned up **B105** — `CodeReview.ReportPathOf` and the CLI's

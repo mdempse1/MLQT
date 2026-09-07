@@ -205,7 +205,16 @@ public partial class DiffViewer : IAsyncDisposable
         }
     }
 
-    private List<DiffOp> ComputeLcsDiff(string[] original, string[] modified)
+    /// <summary>
+    /// The edit script between two sets of lines: which lines match, which were inserted, which
+    /// were deleted, in file order.
+    /// </summary>
+    /// <remarks>
+    /// Static and pure — it reads no component state, and the three side-by-side and unified
+    /// renderings are all built on top of whatever this returns, so an error here is an error in
+    /// every diff the user sees.
+    /// </remarks>
+    internal static List<DiffOp> ComputeLcsDiff(string[] original, string[] modified)
     {
         // Simple LCS-based diff algorithm
         int m = original.Length;
@@ -658,14 +667,14 @@ public partial class DiffViewer : IAsyncDisposable
         Empty
     }
 
-    private class DiffOp
+    internal sealed class DiffOp
     {
         public DiffOpType Type { get; set; }
         public int OriginalIndex { get; set; }
         public int ModifiedIndex { get; set; }
     }
 
-    private enum DiffOpType
+    internal enum DiffOpType
     {
         Equal,
         Insert,
