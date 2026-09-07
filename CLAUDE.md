@@ -12,7 +12,7 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 
 ## Solution Structure
 
-- **MLQT.Shared** - Shared Blazor components, pages, layouts, services
+- **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards and the bUnit harness
 - **MLQT** - .NET MAUI application
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
 - **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
@@ -337,8 +337,8 @@ beside the untestable ones, indistinguishable from them and never asked about ag
 
 Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
 lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
-assert nothing), as is source-generated code. `MLQT.Shared` has no tests at all until phase 7a builds
-the harness — see `Design/design-phase7-gui-tests.md`. It joins the ratchet at the end of 7a, measuring
+assert nothing), as is source-generated code. `MLQT.Shared.Tests` exists as of phase 7a-2 but
+`MLQT.Shared` is **not yet in the ratchet** — it joins at the end of 7a (step 7a-5), measuring
 `.razor.cs` files and ignoring `.razor` markup, which is the same incentive as the code-behind policy:
-logic is gated, markup is not.
+logic is gated, markup is not. See `Design/design-phase7-gui-tests.md`.
 >>>>>>> Stashed changes

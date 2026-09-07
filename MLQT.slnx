@@ -2,6 +2,7 @@
     <Project Path="DymolaInterface.Tests/DymolaInterface.Tests.csproj" />
     <Project Path="DymolaInterface/DymolaInterface.csproj" />
     <Project Path="MLQT.Shared/MLQT.Shared.csproj" />
+    <Project Path="MLQT.Shared.Tests/MLQT.Shared.Tests.csproj" />
     <Project Path="MLQT/MLQT.csproj" />
     <Project Path="ModelicaParser.Tests/ModelicaParser.Tests.csproj" />
     <Project Path="ModelicaParser/ModelicaParser.csproj" />

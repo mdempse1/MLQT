@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- So a component test can call the testable surface of a code-behind directly, rather
+         than reaching it by reflection, which reads badly and breaks silently on a rename. -->
+    <InternalsVisibleTo Include="MLQT.Shared.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.9" />
     <PackageReference Include="MudBlazor" Version="9.6.0" />
     <PackageReference Include="MudBlazor.Extensions" Version="9.5.0" />

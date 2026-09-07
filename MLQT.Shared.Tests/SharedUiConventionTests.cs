@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace MLQT.Services.Tests;
+namespace MLQT.Shared.Tests;
 
 /// <summary>
 /// Conventions that hold over the <c>MLQT.Shared</c> source itself, checked by reading it.
@@ -13,11 +13,9 @@ namespace MLQT.Services.Tests;
 /// asking "who calls it" showed it was dead. That is precisely the kind of question a machine should
 /// be asking on every build.</para>
 ///
-/// <para><b>Why here.</b> <c>MLQT.Shared</c> has no test project of its own until phase 7a builds the
-/// GUI harness (see <c>Design/design-phase7-gui-tests.md</c>), and these need no rendering — only the source
-/// text. They belong in <c>MLQT.Shared.Tests</c> the day it exists; until then they live in a suite
-/// that runs, which is the same reasoning <c>RuleDocumentationTests</c> uses for reading
-/// <c>Documentation/</c> from a CLI test.</para>
+/// <para><b>Why here.</b> These lived in <c>MLQT.Services.Tests</c> until phase 7a-2, because
+/// <c>MLQT.Shared</c> had no test project and a suite that runs beat a suite that does not. This is
+/// the project they always said they belonged in.</para>
 /// </summary>
 public class SharedUiConventionTests
 {

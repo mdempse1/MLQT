@@ -1,15 +1,17 @@
 # Design Note — Phase 7a: making the UI testable, then testing it
 
-> **Status: PROPOSED (2026-09-02, restructured 2026-09-07).** Companion to phase 7 of the locked
-> roadmap ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note
-> covers everything built **before the host migration starts**, so the Photino build can be proved
+> **Status: IN PROGRESS (proposed 2026-09-02, restructured 2026-09-07).** **7a-1 and 7a-2 are
+> shipped**; 7a-3 onwards are not. Each step's own section carries a *Shipped* note recording what
+> actually landed and where it differed from the sketch. Companion to phase 7 of the locked roadmap
+> ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note covers
+> everything built **before the host migration starts**, so the Photino build can be proved
 > equivalent to the known-good MAUI build rather than eyeballed. §7b at the end sketches the
 > migration itself.
 >
-> MLQT has a large test suite across eight projects and **zero tests covering `MLQT.Shared`**.
-> That gap is tolerable while one host exists and a human drives it daily. It stops being
-> tolerable the moment the host is swapped, because there is then no mechanical answer to
-> "does it still do what it did?".
+> The problem this note opened on: MLQT had a large test suite across eight projects and **zero tests
+> covering `MLQT.Shared`**. That gap is tolerable while one host exists and a human drives it daily.
+> It stops being tolerable the moment the host is swapped, because there is then no mechanical answer
+> to "does it still do what it did?".
 >
 > The headline constraint from the roadmap: MAUI is being *replaced*, not supplemented. There is
 > no period where both hosts ship. So the baseline has to be captured **while MAUI still works**.
@@ -43,11 +45,11 @@ Patterns, *Code-Behind Files vs `@code` Blocks*, and adapted from the workspace-
 This was not in the first draft of this note, which was bUnit-first throughout. It changes the plan
 more than it looks like it should, so the reasoning is worth stating plainly.
 
-`MLQT.Shared` is **16,652 lines of `.razor` across 39 components, of which 11,935 sit inside
-`@code { }` blocks** — 71% of the project's UI source is C# that no test can reach without starting a
-renderer. There are **zero `.razor.cs` files today**. Every one of those 11,935 lines is reachable
-only by rendering the component, wiring MudBlazor's service graph and provider tree, faking JS
-interop, and driving the DOM.
+The measurement this turned on, taken before 7a-1: `MLQT.Shared` was **16,652 lines of `.razor`
+across 39 components, of which 11,935 sat inside `@code { }` blocks** — 71% of the project's UI
+source was C# that no test could reach without starting a renderer, and there were **zero `.razor.cs`
+files**. Every one of those 11,935 lines was reachable only by rendering the component, wiring
+MudBlazor's service graph and provider tree, faking JS interop, and driving the DOM.
 
 With the logic in a partial class, most of it becomes an ordinary C# type: construct it, set
 `[Inject]` and `[Parameter]` properties, call the handler, assert. No renderer at all. That is the
@@ -326,6 +328,29 @@ code-behind policy is exactly that shape, so it gets tests in the same file:
 3. **Every `.razor.cs` declares a `partial class` matching its file name, in the namespace matching
    its folder.** The failure is a build error rather than a silent one, but the test names the rule
    where someone will read it.
+
+### ✅ Shipped (2026-09-07)
+
+`MLQT.Shared.Tests` exists, `SharedUiConventionTests` moved into it, and `CodeBehindPolicyTests`
+holds six checks rather than the three sketched above. All six were verified by breaking the source
+and watching each fail — which is the only reason two of them are worth having, and which changed
+one of them:
+
+- The namespace/partial-class guard **can only fire against sources the build has not seen**, because
+  a mismatch is a compile error. On its own that is close to the vacuous guard 7a-1 warned about, so
+  a sixth check was added beside it — **`NoCodeBehindIsOrphaned`** — for the failure the compiler
+  genuinely cannot see: rename or delete a `.razor` and leave its `.razor.cs`, and everything still
+  builds while a whole class in a plausible namespace is paired with no component and never runs.
+- The size limit is **30 lines**, not 25. The largest block left after 7a-1 is `RuleSeverityPicker`
+  at 25, and a limit one line above the largest survivor trips on the next parameter anyone adds.
+- **The ledger is empty**, against the sketch above, which said to seed it with the eight thin
+  components. None of them needs exempting — all eight are comfortably under the limit — and an
+  empty ledger states that fact, where eight entries would have read as eight accepted debts.
+
+`MLQT.Shared` gained `[InternalsVisibleTo]` for the test project, and the suite is wired into the
+`build-libraries` CI job. bUnit is pinned at **1.40.0**: 2.x requires xUnit v3 and every other suite
+here is on v2. It pulls AngleSharp 1.2.0, which carries advisory GHSA-pgww-w46g-26qg and would put a
+`NU1902` warning into a build held at zero, so AngleSharp is pinned forward to 1.8.0.
 
 ### Shared bUnit context (Layer 1b only)
 
@@ -728,7 +753,7 @@ Each step compiles and leaves the suite green.
 | Step | Work | Size |
 |---|---|---|
 | **7a-1** | ✅ **shipped 2026-09-07** — the code-behind sweep: 31 components, `@inject` → `[Inject]` throughout, plus `GlobalUsings.cs` and the browser-platform removal | **L, shallow** |
-| **7a-2** | `MLQT.Shared.Tests` project; move `SharedUiConventionTests`; the three new convention guards; `MlqtComponentTestBase` | S |
+| **7a-2** | ✅ **shipped 2026-09-07** — `MLQT.Shared.Tests`; `SharedUiConventionTests` moved; six convention guards, each verified by breaking the source; `MlqtComponentTestBase` | S |
 | **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
 | **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
 | **7a-5** | `MLQT.Shared` into the coverage ratchet: `-filefilters:-*.razor`, `$bars`, `$suites`, baseline with real reasons | S |
