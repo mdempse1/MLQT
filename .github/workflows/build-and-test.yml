@@ -171,3 +171,48 @@ jobs:
         with:
           name: coverage-report
           path: CoverageReport/
+
+  # The release ships a self-contained linux-x64 `mlqt`, and the tool package it also ships is
+  # framework-dependent, so both run on Linux. Nothing here ever tested that: every other job is
+  # windows-latest, so "the CLI works on Linux" was a claim held up by one person trying it once.
+  cli-linux:
+    name: CLI on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      # Project by project rather than the solution: MLQT.slnx contains the MAUI app, whose workload
+      # does not exist on Linux. The CLI and everything beneath it are plain net10.0.
+      - name: Build the CLI and its tests
+        run: |
+          dotnet build MLQT.Cli/MLQT.Cli.csproj -c Release
+          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
+
+      - name: Run CLI tests
+        run: dotnet test MLQT.Cli.Tests -c Release --no-build --logger "trx;LogFileName=cli-linux.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      # Produce and run the exact artifact the release ships, against the committed fixture, so a
+      # release cannot be the first time that binary is built or executed on Linux. The check's exit
+      # code depends on the fixture's severities and is not what this asserts - that a report came
+      # out is.
+      - name: Publish and smoke-test the self-contained linux-x64 build
+        run: |
+          dotnet publish MLQT.Cli/MLQT.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -o publish/mlqt-linux-x64
+          chmod +x publish/mlqt-linux-x64/mlqt
+          ./publish/mlqt-linux-x64/mlqt --version
+          ./publish/mlqt-linux-x64/mlqt check TestFixtures/SarifSmoke/Libraries/Smoke --format json --out smoke.json || true
+          test -s smoke.json
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: test-results-linux
+          path: ${{ github.workspace }}/TestResults/*.trx

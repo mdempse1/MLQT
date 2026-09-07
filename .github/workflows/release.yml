@@ -113,6 +113,11 @@ jobs:
       # Documentation/cli.md tells people to install it - so a release that did not carry the package
       # left those instructions with nothing to install from. Packed at the release's version rather
       # than the 0.1.0 in the csproj, so the tool and the app a user downloads say the same thing.
+      #
+      # This package is framework-dependent and carries no runtime identifier, so it is already the
+      # Linux and macOS build as well as the Windows one: MLQT.Cli targets plain net10.0 and nothing
+      # in its dependency chain is Windows-only. The linux-x64 archive below is not a second package
+      # for a platform this one misses - it is for machines with no .NET 10 runtime to install into.
       - name: Pack the mlqt CLI tool
         run: >
           dotnet pack MLQT.Cli/MLQT.Cli.csproj
@@ -131,6 +136,28 @@ jobs:
           }
           Write-Host "CLI package OK: $nupkg"
 
+      # A self-contained linux-x64 `mlqt` for machines with no .NET 10 runtime - a CI agent or a
+      # container where installing one is not wanted. Cross-published from this Windows runner, which
+      # needs no Linux toolchain: the output is managed code plus the runtime's own native libraries.
+      - name: Publish the mlqt CLI (self-contained linux-x64)
+        run: >
+          dotnet publish MLQT.Cli/MLQT.Cli.csproj
+          -c Release
+          -r linux-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:Version=${{ steps.version.outputs.version }}
+          -o publish/mlqt-linux-x64
+
+      # tar, not zip: it preserves the executable bit on `mlqt`, which a zip does not, so the file a
+      # user extracts is one they can run without being told to chmod it first.
+      - name: Archive the Linux CLI
+        shell: bash
+        run: |
+          test -f publish/mlqt-linux-x64/mlqt || { echo "no mlqt binary in the linux-x64 publish"; exit 1; }
+          chmod +x publish/mlqt-linux-x64/mlqt
+          tar -czf "mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz" -C publish/mlqt-linux-x64 .
+
       - name: Create zip archives
         shell: pwsh
         run: |
@@ -145,6 +172,7 @@ jobs:
             MLQT-${{ steps.version.outputs.version }}-win-x64.zip
             MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
             publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
+            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
 
       # Any tag, not only 'v'-prefixed ones - see the trigger above for why that mattered.
       - name: Create GitHub Release
@@ -155,5 +183,6 @@ jobs:
             MLQT-${{ steps.version.outputs.version }}-win-x64.zip
             MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
             publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
+            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
           generate_release_notes: true
           draft: true

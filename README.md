@@ -122,6 +122,8 @@ at the moment it is being merged:
 - **Build & Test** — Builds all library and test projects, runs all test suites, uploads test results as artifacts
 - **Build MAUI App** — Verifies the Windows desktop application builds successfully
 - **Code Coverage** — Runs tests with coverage collection and generates a summary report
+- **CLI on Linux** — Builds and tests the `mlqt` CLI on Ubuntu, then produces and runs the
+  self-contained `linux-x64` binary the release ships
 
 ### What isn't tested in CI
 
@@ -144,9 +146,10 @@ RevisionControl coverage will appear low in CI reports because the SVN integrati
 
 ## Releasing
 
-Tag `main` and the Release workflow builds the desktop app, the MCP server and the `mlqt` CLI
-package, then opens a draft release with all three attached. See [RELEASING.md](RELEASING.md) for the
-version scheme, the dry-run route, and what to check before tagging.
+Tag `main` and the Release workflow builds the desktop app, the MCP server, the `mlqt` CLI tool
+package and a self-contained Linux CLI binary, then opens a draft release with all four attached. See
+[RELEASING.md](RELEASING.md) for the version scheme, the dry-run route, and what to check before
+tagging.
 
 ## Architecture Overview
 
