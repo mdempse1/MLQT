@@ -3,7 +3,6 @@ namespace MLQT.Shared.Dialogs;
 public partial class ProjectSelectionDialog
 {
     [Inject] private ISettingsService SettingsService { get; set; } = null!;
-    [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
@@ -14,11 +13,15 @@ public partial class ProjectSelectionDialog
 
     protected override async Task OnInitializedAsync()
     {
-        // Read projects directly from settings since RepositoryService hasn't loaded yet
+        // Read projects directly from settings: this dialog runs before IRepositoryService has
+        // loaded them.
         var settings = await SettingsService.GetAsync("Repositories", new RepositorySettingsCollection());
         _projects = settings.Projects;
-        _selectedProject = _projects.FirstOrDefault(p => p.Id == settings.ActiveProjectId)!.Id
-                           ?? _projects.FirstOrDefault()!.Id;
+
+        // Preselect the active project, or the first one when the saved ActiveProjectId names a
+        // project that is no longer there — a deleted or renamed project leaves exactly that state.
+        _selectedProject = (_projects.FirstOrDefault(p => p.Id == settings.ActiveProjectId)
+                            ?? _projects.FirstOrDefault())?.Id;
     }
 
     private void Select()

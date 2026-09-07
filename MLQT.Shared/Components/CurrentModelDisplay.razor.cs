@@ -17,28 +17,29 @@ public partial class CurrentModelDisplay : IDisposable
     private async void OnModelSelected()
     {
         _currentModelName = NavState.ModelID;
-        var modelNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>(NavState.ModelID);
-        if (modelNode?.ContainingFileId != null)
-        {
-            var fileNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(modelNode.ContainingFileId);
-            _currentModelFileName = fileNode?.FilePath ?? string.Empty;
-        }
-        else
-            _currentModelFileName = string.Empty;
+        _currentModelFileName = FilePathOf(NavState.ModelID);
         await InvokeAsync(StateHasChanged);
     }
 
     private async void OnSelectedModelsChanged()
     {
         _currentModelName = string.Join(", ", NavState.SelectedModelIDs);
-        _currentModelFileName = string.Empty;
-        var modelNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>(NavState.ModelID);
-        if (modelNode?.ContainingFileId != null)
-        {
-            var fileNode = LibraryDataService.CombinedGraph.GetNode<ModelicaGraph.DataTypes.FileNode>(modelNode.ContainingFileId);
-            _currentModelFileName = fileNode?.FilePath ?? string.Empty;
-        }
+        _currentModelFileName = FilePathOf(NavState.ModelID);
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// The path of the file a class is stored in, or empty when the class is unknown or its file
+    /// node is not in the graph.
+    /// </summary>
+    internal string FilePathOf(string modelId)
+    {
+        var modelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
+        if (modelNode?.ContainingFileId is null)
+            return string.Empty;
+
+        var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(modelNode.ContainingFileId);
+        return fileNode?.FilePath ?? string.Empty;
     }
 
     public void Dispose()
