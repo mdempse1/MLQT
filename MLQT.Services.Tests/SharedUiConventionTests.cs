@@ -39,13 +39,25 @@ public class SharedUiConventionTests
         return null;
     }
 
+    /// <summary>
+    /// Every component file, markup and code-behind alike.
+    ///
+    /// <para>Both halves are enumerated because phase 7a-1 moved component logic out of
+    /// <c>@code</c> blocks into <c>.razor.cs</c> partial classes. Scanning only <c>*.razor</c> — which
+    /// is what this did when it was written, when that was the whole of the C# — leaves these checks
+    /// reading markup files with no code in them: five tests passing over nothing. Each file is a unit
+    /// in its own right, so no pairing is needed: a converted component keeps its subscriptions and
+    /// its interface declaration together in the code-behind, and an unconverted one keeps both in the
+    /// markup.</para>
+    /// </summary>
     private static IEnumerable<(string Path, string Text)> Components()
     {
         var root = SharedDirectory();
         if (root is null)
             yield break;
 
-        foreach (var path in Directory.EnumerateFiles(root, "*.razor", SearchOption.AllDirectories))
+        foreach (var pattern in new[] { "*.razor", "*.razor.cs" })
+        foreach (var path in Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories))
         {
             if (path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
                 || path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
@@ -76,6 +88,14 @@ public class SharedUiConventionTests
         // tree: CI checks out and builds in place, and so does build/check-coverage.ps1.
         Assert.NotNull(SharedDirectory());
         Assert.True(Components().Count() > 20);
+
+        // And that it can see the C#, not just the markup. Counting files is not enough: after the
+        // 7a-1 sweep moved every @code block into a .razor.cs, an enumeration of *.razor alone still
+        // returned 39 files and every check below still passed — over markup with no code in it.
+        // Assert on the material the checks actually consume.
+        Assert.True(Components().Count(c => Subscribe.IsMatch(c.Text)) > 10,
+            "The sweep is reading files but finding no event subscriptions in any of them, which "
+            + "means it is looking at the wrong half of the components.");
     }
 
     [Fact]
@@ -112,8 +132,11 @@ public class SharedUiConventionTests
             if (!subscribes)
                 continue;
 
+            // Both spellings: the @implements directive in an unconverted component, and the
+            // interface on the partial class declaration in a converted one.
             var declares = text.Contains("@implements IDisposable")
-                           || text.Contains("@implements IAsyncDisposable");
+                           || text.Contains("@implements IAsyncDisposable")
+                           || Regex.IsMatch(text, @"partial class \w+\s*:.*Disposable");
             if (!declares)
                 notDisposable.Add(name);
         }
