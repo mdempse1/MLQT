@@ -1906,63 +1906,29 @@ public partial class MainLayout : IDisposable
                 await InvokeAsync(() => Snackbar.Add("Processing VCS file changes...", Severity.Normal));
                 LogProcessStart("MainLayout", $"Processing VCS changes for repository {repository.Name}");
 
-                var affectedModelIds = new HashSet<string>();
-                var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var graph = LibraryDataService.CombinedGraph;
 
-                // Read pending changes that accumulated before the monitor was paused (dialog-based
-                // VCS ops where we cannot pause before the operation). These give us the specific
-                // files that changed, enabling targeted analysis instead of full-repo re-analysis.
-                var pendingChanges = FileMonitoringService.GetPendingChangesForRepository(repositoryId).ToList();
-                bool hasSpecificChanges = false;
+                // The fallback chain lives in VcsChangeResolver: pending monitor changes, then VCS
+                // status, then the whole repository — and the last of those deliberately gives the
+                // formatter nothing, so a branch switch does not rewrite the working copy.
+                var pendingChanges = FileMonitoringService.GetPendingChangesForRepository(repositoryId);
 
+                var changes = VcsChangeResolver.Resolve(
+                    pendingChanges,
+                    () => GetModifiedFilePathsFromVcs(repository),
+                    () => LibraryDataService.Libraries
+                        .Where(l => l.RepositoryId == repositoryId)
+                        .SelectMany(l => l.ModelIds),
+                    filePath => graph.GetModelsInFile(GraphBuilder.GenerateFileId(filePath)).Select(m => m.Id));
+
+                // Cleared whenever there were any, not only when they answered: pending changes that
+                // resolved to nothing are still handled, and leaving them queued makes the Refresh
+                // button report work that is already done.
                 if (pendingChanges.Count > 0)
-                {
-                    foreach (var change in pendingChanges.Where(c => c.IsModelicaFile))
-                    {
-                        if (change.ChangeType == FileChangeType.Deleted)
-                            continue; // RefreshRepositoryAsync already removed deleted models
-
-                        var fileId = GraphBuilder.GenerateFileId(change.FilePath);
-                        var modelsInFile = graph.GetModelsInFile(fileId).ToList();
-                        // Only format files that are part of the loaded library (within LocalPath).
-                        // The monitor covers VcsRootPath, so changes outside LocalPath are valid
-                        // for VCS purposes but should not be formatted by MLQT.
-                        if (modelsInFile.Count > 0)
-                            changedFilePaths.Add(change.FilePath);
-                        foreach (var model in modelsInFile)
-                            affectedModelIds.Add(model.Id);
-                    }
-                    hasSpecificChanges = affectedModelIds.Count > 0;
                     FileMonitoringService.ClearPendingChanges(repositoryId);
-                }
 
-                // Fallback: monitor was paused before the VCS op, so no pending changes were
-                // captured. Use VCS status to determine which files were modified.
-                if (!hasSpecificChanges)
-                {
-                    var vcsModifiedPaths = GetModifiedFilePathsFromVcs(repository);
-                    foreach (var filePath in vcsModifiedPaths)
-                    {
-                        changedFilePaths.Add(filePath);
-                        var fileId = GraphBuilder.GenerateFileId(filePath);
-                        foreach (var model in graph.GetModelsInFile(fileId))
-                            affectedModelIds.Add(model.Id);
-                    }
-                    hasSpecificChanges = affectedModelIds.Count > 0;
-
-                    // If VCS reports no changes either, fall back to all models for re-analysis
-                    // (e.g., after a branch switch where all files are replaced)
-                    if (!hasSpecificChanges)
-                    {
-                        foreach (var id in LibraryDataService.Libraries
-                            .Where(l => l.RepositoryId == repositoryId)
-                            .SelectMany(l => l.ModelIds))
-                        {
-                            affectedModelIds.Add(id);
-                        }
-                    }
-                }
+                var affectedModelIds = changes.AffectedModelIds;
+                var changedFilePaths = changes.ChangedFilePaths;
 
                 if (affectedModelIds.Count == 0)
                 {

@@ -621,12 +621,13 @@ service rather than instantiate a layout.
 ### Progress (2026-09-07)
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
-`MainLayout.razor.cs` is **2,635 → 2,512 lines** so far.
+`MainLayout.razor.cs` is **2,635 → 2,478 lines** so far.
 
 | Moved | To | Why it went first |
 |---|---|---|
 | The four theme builders | `MLQT.Shared/Theming/MlqtTheme.cs` | Pure functions of a `UISettings` with no dependencies at all — it proves the shape of a move without risking anything |
 | `BuildModelToRepositoryMap`, `BuildModelToStyleSettingsMap`, `AnyEnabledRuleNeedsDependencies` | `MLQT.Services/Checking/ModelScope.cs` | The first genuinely pipeline-shaped piece: they decide what every re-analysis pass does, and they only needed the *loaded libraries and repositories*, not the services holding them |
+| The `OnVcsFilesChanged` fallback chain | `MLQT.Services/Checking/VcsChangeScope.cs` | The load-bearing one, and the first to need genuine characterisation rather than tests-after-the-fact |
 
 **Taking the collections rather than the services is the pattern the rest of the move should
 follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
@@ -640,7 +641,23 @@ second map is checked against nothing, and an unchecked class reads as a clean o
 defaulted class shares one settings instance, because the checker groups its work by distinct
 settings object and a fresh instance per library would split one pass into several.
 
-Still in `MainLayout`: the formatting paths, the VCS reaction path, the four deferred-analysis
+**The VCS chain is where "port it verbatim" stopped being a slogan.** Two behaviours would have been
+lost by writing out what the code appears to do:
+
+- The whole-repository fallback hands the formatter **nothing**. Re-analysing every class after a
+  branch switch is cheap and correct; reformatting every file on the strength of *not knowing* what
+  changed would rewrite the working copy. "Affected" and "changed" are not the same set, and the
+  first draft of the extraction collapsed them.
+- Pending changes are cleared whenever there **were** any, not only when they answered. The first
+  draft cleared them only when they won the fallback, which would have left changes queued that had
+  already been handled — and the Refresh button reads that queue.
+
+A third is preserved without being endorsed: VCS-reported paths whose classes do not resolve stay on
+the formatter's list while the chain falls through to the whole-repository case. That is what
+`MainLayout` has always done; a refactor is the wrong place to find out whether it matters, so the
+test says so in as many words.
+
+Still in `MainLayout`: the formatting paths, the four deferred-analysis
 orchestrations and the startup sequence. Those are the ones with `StateHasChanged`, dialog state and
 background threads woven through them, and they need the characterisation tests the note calls for
 before they move.
