@@ -115,7 +115,9 @@ dotnet test MLQT.McpServer.Tests
 
 ## Continuous Integration
 
-GitHub Actions workflows run automatically on pushes to `main`/`develop` and on pull requests:
+GitHub Actions workflows run automatically on a push to **any** branch and on pull requests to
+`main` — deliberately every branch, so a long-lived working branch does not reach its first CI run
+at the moment it is being merged:
 
 - **Build & Test** — Builds all library and test projects, runs all test suites, uploads test results as artifacts
 - **Build MAUI App** — Verifies the Windows desktop application builds successfully
@@ -139,6 +141,12 @@ These tests should be run locally when making changes to the affected projects.
 DymolaInterface and OpenModelicaInterface are excluded from CI coverage reports since they cannot be tested without their respective tools installed.
 
 RevisionControl coverage will appear low in CI reports because the SVN integration tests are excluded (they require a local SVN repository). The full test suite, including SVN tests, should be run locally to verify actual coverage meets the >80% target.
+
+## Releasing
+
+Tag `main` and the Release workflow builds the desktop app, the MCP server and the `mlqt` CLI
+package, then opens a draft release with all three attached. See [RELEASING.md](RELEASING.md) for the
+version scheme, the dry-run route, and what to check before tagging.
 
 ## Architecture Overview
 
