@@ -236,14 +236,34 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
+    /// <summary>
+    /// What an edit to a repository's style settings obliges the pipeline to redo — the two flags
+    /// <see cref="AppState.RepositorySettingsApplied"/> carries.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="ConfirmChanges"/> and pure, because these two booleans decide whether
+    /// every file in the repository is reformatted and every class re-checked, and that is the part
+    /// worth holding to a test. Two of the three rules are easy to get subtly wrong:
+    /// <list type="bullet">
+    /// <item>A formatting rule that changed while <c>ApplyFormattingRules</c> is off means nothing —
+    /// the formatter will not run, so there is nothing to redo.</item>
+    /// <item>Turning <c>ApplyFormattingRules</c> on <em>is</em> a formatting change even when no
+    /// formatting rule was touched: the files have never been written under these rules.</item>
+    /// </list>
+    /// </remarks>
+    internal static (bool Formatting, bool StyleChecks) EffectOfEdit(
+        StyleCheckingSettings before, StyleCheckingSettings after)
+    {
+        var styleChecks = after.ChecksDifferFrom(before);
+        var formatting = after.ApplyFormattingRules
+                         && (!before.ApplyFormattingRules || after.FormattingDiffersFrom(before));
+        return (formatting, styleChecks);
+    }
+
     private async Task ConfirmChanges()
     {
         var oldSettings = _backupItem.StyleSettings ?? new StyleCheckingSettings();
-        var newSettings = SelectedSettings;
-
-        bool styleSettingsChanged = newSettings.ChecksDifferFrom(oldSettings);
-        bool formattingChanged = newSettings.ApplyFormattingRules &&
-                                 (!oldSettings.ApplyFormattingRules || newSettings.FormattingDiffersFrom(oldSettings));
+        var (formattingChanged, styleSettingsChanged) = EffectOfEdit(oldSettings, SelectedSettings);
 
         _editRepository = false;
         await RepositoryService.SaveRepositorySettingsAsync();
