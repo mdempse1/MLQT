@@ -67,14 +67,15 @@ public class RefreshPathParityTests : IDisposable
             StyleChecking.OnFindingsFound += v => CodeReview.AddLogMessages(v);
         }
 
-        public void WaitForChecking()
-        {
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            Thread.Sleep(100);
-            while (StyleChecking.IsRunning && DateTime.UtcNow < deadline)
-                Thread.Sleep(50);
-            Thread.Sleep(700);   // final flush
-        }
+        /// <summary>
+        /// Waits on the signal the service arms for this, not on IsRunning. IsRunning is set by the
+        /// flush loop, which starts on a thread-pool thread, so polling it a fixed moment after
+        /// queuing can see false before the loop has begun and read a partial finding list - which
+        /// is what made this suite fail in the coverage job and pass everywhere else. The signal is
+        /// released after the final flush, so the counts below are complete when this returns.
+        /// </summary>
+        public Task WaitForCheckingAsync() =>
+            StyleChecking.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(30));
 
         public int IssueCount => CodeReview.LogMessages.Count;
 
@@ -99,7 +100,7 @@ public class RefreshPathParityTests : IDisposable
         await f.Libraries.EnsureDependenciesAnalyzedAsync();
 
         f.StyleChecking.StartBackgroundCheckingForRepositories(f.Repositories.Repositories);
-        f.WaitForChecking();
+        await f.WaitForCheckingAsync();
         return f;
     }
 
@@ -119,7 +120,7 @@ public class RefreshPathParityTests : IDisposable
 
         f.CodeReview.RemoveLogMessagesForModels(affected);
         await f.StyleChecking.CheckModelsAsync(affected, f.Libraries.CombinedGraph);
-        f.WaitForChecking();
+        await f.WaitForCheckingAsync();
     }
 
     [Fact]

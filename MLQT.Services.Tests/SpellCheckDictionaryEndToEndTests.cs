@@ -65,11 +65,10 @@ public class SpellCheckDictionaryEndToEndTests : IDisposable
 
         await service.StartBackgroundCheckingAsync(repository);
 
-        await Task.Delay(200);   // let the worker pick the queue up before watching IsRunning
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (service.IsRunning && DateTime.UtcNow < deadline)
-            await Task.Delay(100);
-        await Task.Delay(600);
+        // Not "delay, then watch IsRunning": the flush loop that sets it starts on a thread-pool
+        // thread, so the delay is a guess at how long that takes and a loaded runner beats it. Wait
+        // on the completion the service arms for the purpose, which is released after the final flush.
+        await service.WaitForCompletionAsync().WaitAsync(TimeSpan.FromSeconds(30));
 
         List<string> flagged;
         lock (found)

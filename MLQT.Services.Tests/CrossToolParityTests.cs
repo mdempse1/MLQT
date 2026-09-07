@@ -197,12 +197,15 @@ end Q;
         else
             service.StartBackgroundChecking(repo);
 
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        Thread.Sleep(100);
-        while (service.IsRunning && DateTime.UtcNow < deadline)
-            Thread.Sleep(50);
-        Assert.False(service.IsRunning, "style checking did not complete in time");
-        Thread.Sleep(600); // final flush
+        // Not a poll of IsRunning, for the reason the service documents: it is set by the flush loop,
+        // which starts on a thread-pool thread, so a caller that looks a fixed moment after queuing
+        // can see false before the loop has begun and conclude the run is over. On a CI runner under
+        // the coverage collector it did exactly that, and this returned before the graph analyses had
+        // reported - a failure that only ever appeared in the coverage job. The signal is armed
+        // synchronously by the Start* call above and released after the final flush, so every finding
+        // has been delivered through OnFindingsFound by the time this returns.
+        Assert.True(service.WaitForCompletionAsync().Wait(TimeSpan.FromSeconds(30)),
+            "style checking did not complete in time");
 
         lock (found)
             return found.ToList();
