@@ -621,7 +621,7 @@ service rather than instantiate a layout.
 ### Progress (2026-09-07)
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
-`MainLayout.razor.cs` is **2,635 → 2,434 lines** so far.
+`MainLayout.razor.cs` is **2,635 → 2,388 lines** so far.
 
 | Moved | To | Why it went first |
 |---|---|---|
@@ -630,6 +630,7 @@ Started from the outside in, smallest first, each move landing with its own test
 | The `OnVcsFilesChanged` fallback chain | `MLQT.Services/Checking/VcsChangeScope.cs` | The load-bearing one, and the first to need genuine characterisation rather than tests-after-the-fact |
 | `GetModifiedFilePathsFromVcs` | `VcsChangeResolver.FormattableModelicaFiles` | Four narrowings that decide what the formatter is allowed to rewrite in a user's working copy |
 | `CleanupEmptyDirectories` | `MLQT.Services/Helpers/EmptyDirectoryCleaner.cs` | It deletes things. Now driven against real temp directories rather than reasoned about |
+| `UpdateFileNodesAfterSave` | `ModelicaGraph/FileNodeReconciler.cs` | Pure graph work, so it belongs with the graph — and a real `DirectedGraph` drives the tests |
 
 **Taking the collections rather than the services is the pattern the rest of the move should
 follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
@@ -665,6 +666,14 @@ removing its emptiness check changes nothing, because `Directory.Delete` is call
 avoids one thrown exception per non-empty directory — not the safety net it reads as. Both the
 source and a test now say which is which, since the next person to tidy that line needs to know
 what they are removing.
+
+The file reconciler produced the session's third finding of this kind, and the most useful:
+`MainLayout` carried its own copy of the detach-from-the-old-file step, which
+`DirectedGraph.AddFileContainsModel` already performs — and whose comment names *this exact case*
+as the reason it does. Two mutations survived by removing the copy and changing nothing, which is
+what said so. That is the "one rule in two places" shape this repository keeps finding, and the copy
+is gone; the test that covered it asserts the invariant (a class lives in one file) rather than the
+mechanism, which is why it holds either way and why it was not the thing that noticed.
 
 Still in `MainLayout`: the save-and-format paths, the four deferred-analysis orchestrations and the
 startup sequence. Those are the ones with `StateHasChanged`, dialog state and

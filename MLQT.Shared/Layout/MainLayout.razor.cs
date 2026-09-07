@@ -1136,54 +1136,8 @@ public partial class MainLayout : IDisposable
     /// </summary>
     private void UpdateFileNodesAfterSave(Dictionary<string, string> modelIdToFilePath)
     {
-        var graph = LibraryDataService.CombinedGraph;
-
-        foreach (var kvp in modelIdToFilePath)
-        {
-            var modelId = kvp.Key;
-            var newFilePath = kvp.Value;
-            var newFileId = GraphBuilder.GenerateFileId(newFilePath);
-
-            var modelNode = graph.GetNode<ModelNode>(modelId);
-            if (modelNode == null)
-                continue;
-
-            var oldFileId = modelNode.ContainingFileId;
-
-            if (oldFileId == newFileId)
-                continue;
-
-            // Ensure the new FileNode exists
-            if (graph.GetNode<FileNode>(newFileId) == null)
-            {
-                var newFileNode = new FileNode(newFileId, newFilePath);
-                graph.AddNode(newFileNode);
-            }
-
-            // Detach from old FileNode
-            if (oldFileId != null)
-            {
-                var oldFileNode = graph.GetNode<FileNode>(oldFileId);
-                if (oldFileNode != null)
-                {
-                    oldFileNode.ContainedModelIds.Remove(modelId);
-                    graph.RemoveEdge(oldFileId, modelId);
-                }
-            }
-
-            // Attach to new FileNode (sets ContainingFileId, ContainedModelIds, and edge)
-            graph.AddFileContainsModel(newFileId, modelId);
-            Debug("MainLayout", $"Model {modelId} moved: {oldFileId} -> {newFileId}");
-        }
-
-        // Remove FileNodes that contain no models — these are original files that were
-        // restructured into a directory hierarchy during formatting
-        var emptyFileNodes = graph.FileNodes.Where(f => f.ContainedModelIds.Count == 0).ToList();
-        foreach (var emptyFile in emptyFileNodes)
-        {
-            graph.RemoveNode(emptyFile.Id);
-            Debug("MainLayout", $"Removed empty FileNode: {emptyFile.FilePath}");
-        }
+        foreach (var modelId in FileNodeReconciler.ReassignModels(LibraryDataService.CombinedGraph, modelIdToFilePath))
+            Debug("MainLayout", $"Model {modelId} moved to {modelIdToFilePath[modelId]}");
     }
 
     // ========== Deferred Analysis Methods ==========
