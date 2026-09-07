@@ -420,23 +420,37 @@ public partial class ExternalResources : IDisposable
                 return false;
         }
 
-        var ext = node.FileExtension.ToLowerInvariant();
-        if (string.IsNullOrEmpty(ext))
-            return _selectedFileTypes.Contains("other");
-
-        if (DataExtensions.Contains(ext))
-            return _selectedFileTypes.Contains("data");
-        if (CCodeExtensions.Contains(ext))
-            return _selectedFileTypes.Contains("ccode");
-        if (LibExtensions.Contains(ext))
-            return _selectedFileTypes.Contains("lib");
-        if (ImageExtensions.Contains(ext))
-            return _selectedFileTypes.Contains("images");
-        if (DocumentExtensions.Contains(ext))
-            return _selectedFileTypes.Contains("documents");
-
-        return _selectedFileTypes.Contains("other");
+        return _selectedFileTypes.Contains(CategoryOf(node.FileExtension));
     }
+
+    /// <summary>
+    /// Which of the file-type filters a resource belongs to, by extension: <c>data</c>,
+    /// <c>ccode</c>, <c>lib</c>, <c>images</c>, <c>documents</c>, or <c>other</c>.
+    /// </summary>
+    /// <remarks>
+    /// Every resource lands in exactly one, and <c>other</c> is the catch-all rather than a
+    /// category of its own — an extension nobody listed still has to be reachable, or a user who
+    /// has all the boxes ticked is silently not shown some of their own files.
+    /// </remarks>
+    internal static string CategoryOf(string? extension)
+    {
+        // No lower-casing needed: every set below is built with StringComparer.OrdinalIgnoreCase.
+        var ext = extension;
+        if (string.IsNullOrEmpty(ext))
+            return "other";
+
+        if (DataExtensions.Contains(ext)) return "data";
+        if (CCodeExtensions.Contains(ext)) return "ccode";
+        if (LibExtensions.Contains(ext)) return "lib";
+        if (ImageExtensions.Contains(ext)) return "images";
+        if (DocumentExtensions.Contains(ext)) return "documents";
+
+        return "other";
+    }
+
+    /// <summary>Every category <see cref="CategoryOf"/> can return.</summary>
+    internal static readonly string[] AllCategories =
+        ["data", "ccode", "lib", "images", "documents", "other"];
 
     private bool PassesWarningFilter(ResourceTreeNode node)
     {
