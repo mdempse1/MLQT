@@ -722,4 +722,42 @@ public class ModelicaPackageSaver
         for (int i = 0; i < source.Count; i += batchSize)
             yield return source.GetRange(i, Math.Min(batchSize, source.Count - i));
     }
+
+    /// <summary>
+    /// Where a library's files are written, given where it was loaded from.
+    /// </summary>
+    /// <remarks>
+    /// <para>Three shapes, and the difference between them is one directory level:</para>
+    /// <list type="bullet">
+    /// <item>A single <c>.mo</c> file: written back beside itself.</item>
+    /// <item>A package directory — one holding a <c>package.mo</c> — is written to its
+    /// <em>parent</em>, because <see cref="SaveLibraryToDirectoryWithResult"/> creates the library
+    /// folder itself. Handing it the package directory would nest a second copy inside the first.</item>
+    /// <item>A directory of loose classes with no <c>package.mo</c>: written to that directory,
+    /// since there is no library folder to create.</item>
+    /// </list>
+    /// <para>Null when the source is gone or resolves to nothing, which the caller reports rather
+    /// than guessing at a location to write a user's library to.</para>
+    /// </remarks>
+    public static string? ResolveSaveDirectory(
+        string? sourcePath, Func<string, bool> fileExists, Func<string, bool> directoryExists)
+    {
+        if (string.IsNullOrEmpty(sourcePath))
+            return null;
+
+        string? saveDirectory = null;
+
+        if (fileExists(sourcePath))
+        {
+            saveDirectory = Path.GetDirectoryName(sourcePath);
+        }
+        else if (directoryExists(sourcePath))
+        {
+            saveDirectory = fileExists(Path.Combine(sourcePath, "package.mo"))
+                ? Path.GetDirectoryName(sourcePath)
+                : sourcePath;
+        }
+
+        return string.IsNullOrEmpty(saveDirectory) || !directoryExists(saveDirectory) ? null : saveDirectory;
+    }
 }

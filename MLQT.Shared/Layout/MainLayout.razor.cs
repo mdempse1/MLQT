@@ -870,39 +870,15 @@ public partial class MainLayout : IDisposable
                     // Get the graph containing all models
                     var graph = LibraryDataService.CombinedGraph;
 
-                    // Determine the correct save directory based on the library structure
-                    string? saveDirectory = null;
-                    var sourcePath = library.SourcePath;
+                    // Where a library is written depends on how it was loaded: beside a single
+                    // file, into the parent of a package directory (the saver creates the library
+                    // folder itself), or into a loose directory as it stands.
+                    var saveDirectory = ModelicaPackageSaver.ResolveSaveDirectory(
+                        library.SourcePath, File.Exists, Directory.Exists);
 
-                    if (File.Exists(sourcePath))
+                    if (saveDirectory is null)
                     {
-                        // SourcePath is a file (standalone .mo file, not a package directory)
-                        // Save to the same directory the file came from
-                        saveDirectory = Path.GetDirectoryName(sourcePath);
-                    }
-                    else if (Directory.Exists(sourcePath))
-                    {
-                        // SourcePath is a directory
-                        // Check if it's a proper package (has package.mo) or just a directory with loose files
-                        var packageMoPath = Path.Combine(sourcePath, "package.mo");
-                        if (File.Exists(packageMoPath))
-                        {
-                            // This is a proper package directory - save to parent so SaveLibraryToDirectory
-                            // can create the library folder structure
-                            saveDirectory = Path.GetDirectoryName(sourcePath);
-                        }
-                        else
-                        {
-                            // Directory without package.mo - contains standalone files
-                            // Save directly to this directory
-                            saveDirectory = sourcePath;
-                        }
-                    }
-
-                    // Verify the save directory exists
-                    if (string.IsNullOrEmpty(saveDirectory) || !Directory.Exists(saveDirectory))
-                    {
-                        Warn("MainLayout", $"Save directory does not exist: {saveDirectory}");
+                        Warn("MainLayout", $"No writable save directory for library {library.Name} at {library.SourcePath}");
                         return;
                     }
 
