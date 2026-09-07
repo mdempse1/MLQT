@@ -88,7 +88,12 @@ added no items** — it acted on B100's lesson instead, running all 27 commands 
 against a real fixture (all behave as documented, and git invoked the generated pre-commit hook for
 the first time), and turning the rule into `DocumentedCommandTests`, which fails the build when a
 printed command's flag combination is exercised by no test. Six such combinations existed; all six now
-have tests.
+have tests. **A seventeenth read** — the user documentation against the GUI, CLI and MCP surfaces,
+after the design notes moved to `Design/` — found every inventory complete (65 MCP tools, 24 CLI
+flags, 37 settings properties, all documented) and opened **B101–B103**, three defects in one table on
+`settings-reference.md`: a **Default** column meaning two different things and contradicting its own
+prose, four setting names that appear nowhere in the app, and the guard that should have caught both
+asserting only that a rule id occurs on the page — and returning silently when it cannot find it.
 **B20 is deliberately left**: it belongs inside phase 7a, because the logic
 sitting in the largest pages is what makes a GUI test harness expensive to build — and **B73** adds
 `MainLayout.razor`, larger than either page B20 names, to that list. Cross-platform (§1) was kept
@@ -425,6 +430,9 @@ B84–B86 the seventh, B87–B88 the eighth, B89–B90 the ninth, B91–B92 the 
 | B99 | **"Accuracy is checked on every build" — no build has ever checked it** | thirteenth review 2026-09-04 | ⭐⭐ | S | `design-encrypted-libraries.md` reports the reconstruction's accuracy against MSL (6269 classes recovered, 0 invented, 2/5129 descriptions differing) and says it is "checked on every build" because MSL ships both source and generated help. `encrypted-libraries.md` repeats it to users. But `DocumentationAccuracyTests` needs an **installed Dymola** — `DymolaInstall` finds one or the suite skips — and no CI runner has one, so the figures are re-measured only on a developer machine that does. This is B8's defect ("conformance is asserted, never validated") and B21's ("CI has never seen this work") on the one subsystem twelve reviews declined to read closely **on the strength of that very claim**. What does run everywhere is real and worth naming: 82 fixture-based tests over `DymolaHelpParser`, `HelpHtml` and `DymolaHelpReader`. **✅ shipped (2026-09-04)** — both pages say what is verified where, and the design note says plainly that the shape is covered on every build and the accuracy against real vendor output is not, so the next reviewer weighing whether to read the parser is weighing the truth. Committing a fixture to close the gap properly was considered and not done: the input is a vendor's generated HTML, and shipping enough of it to reproduce a 6269-class comparison is a licensing question rather than a build one. |
 | B100 | **`--coverage-ratchet` cannot fail when the same run records metrics — the documented CI recipe** | fifteenth review 2026-09-04 | ⭐⭐⭐ | S | `CheckRunner` appended this run's metrics point **before** the coverage gate read the history, so the "last recorded snapshot" the ratchet compared itself against was the one it had just written. It therefore passed always, and most reliably in the one case it exists for: a drop appends the lower numbers and then measures itself against them. Proved on a fixture whose coverage falls from 100% to 33.3% — `--coverage-ratchet` alone exits **1** with "below the last recorded 100%", and `--metrics --coverage-ratchet` exits **0** saying "coverage gate passed". That second command is the one **both** `cli.md` and `ci-quality-gate.md` print as the recommended invocation, so the recipe MLQT teaches for guarding coverage silently disables the guard. Every existing ratchet test ran the two flags in *separate* invocations, which is exactly why fourteen reviews missed it: the suite exercised the ratchet in a way the documentation does not recommend and never in the way it does. **✅ shipped (2026-09-04)** — the history is read before anything is recorded, through `LastWholeSetSnapshot`, and passed into the gate; recording still happens before the exit code, so a failing build's numbers still land on the trend, which is what the original ordering was for. Three tests: the drop fails with both flags, the point is still recorded when it does, and an improvement still passes. |
 
+| B101 | **"Default" means two different things in the same rule reference, and one of them contradicts the prose above it** | seventeenth review 2026-09-07 | ⭐⭐ | S | `settings-reference.md` has two rule tables with a **Default** column. In the per-class table it means *enablement* and every row reads `Off`. In the Static Analysis table it means *the severity the rule takes once you switch it on*, so the rows read `Error`/`Warning`/`Info` — two lines under a sentence stating those rules are "**off by default**". A reader comparing `MLQT.Doc.ClassDescription | Off` with `MLQT.Duplicate.Declaration | Error` concludes the second is on and already failing their gate. Verified against the code: `StyleCheckingSettings.SeverityFor` returns `RuleSeverity.Off` for any rule not present in `RuleSeverities`, and the map starts empty, so **every** rule is off until enabled — the Static Analysis column is describing something other than a default and calling it one. |
+| B102 | **Four documented setting names appear nowhere in the app** | seventeenth review 2026-09-07 | ⭐ | S | The **Setting** column of the per-class rule table is the name a user looks for in the Edit Repository Details dialog. Eleven of the fifteen match a real label. Four do not, and they are the section-ordering rules: the doc says **One of each section**, **Initial equation/algorithm first**, **Initial equation/algorithm last** and **Don't mix equation and algorithm sections**, while the dialog shows full sentences hardcoded in `SettingsRepositories.razor` ("A class may only have 1 public, 1 protected, 1 equation or algorithm section") or in `RuleSettingsLayout` ("A class may only have either an equation or algorithm section, not both"). There are now **three** vocabularies for these rules — the dialog label, the `RuleCatalog` title ("Initial sections first") and the doc — and no two agree. A user searching the dialog for the documented name finds nothing. |
+| B103 | **The guard on rule documentation cannot fail, and checks the wrong thing** | seventeenth review 2026-09-07 | ⭐⭐ | S | `RuleDocumentationTests` opens with `if (docs is null) return;` — run anywhere the sources are not, it passes without reading a page, which is B100's shape exactly (a gate that cannot fail) on the guard protecting every SARIF `helpUri`. B97 noticed this and made `SharedUiConventionTests` deliberately unlike it rather than fixing it. Worse, what it asserts is that the rule **id string occurs somewhere on the page** — so B101 and B102 both sit on rows that contain their id and satisfy it completely. The check to make is that each row's Setting label matches a real UI label and its Default column matches `SeverityFor` on empty settings; both are mechanical, and both are the assertions that would have caught these two. |
 **Sequencing within the backlog:** B1–B3 are the ones a real pipeline hits (they are why a working
 GitHub or TeamCity setup still needed hand-holding), so they came first; B4 next, since it is what
 turns the metrics work into a gate; B6 and B7 last, being conveniences rather than gaps.
@@ -1300,6 +1308,48 @@ the flag combinations tested are those the documentation prints, and a combinati
 still unguarded. The guard cannot say a documented command is *correct*, only that something runs it —
 the assertions inside the six new tests are what make the claim, and they are as good as the fixture
 they run against.
+
+
+---
+
+### Seventeenth review (2026-09-07) — the user documentation against the three surfaces
+
+Asked as a documentation review after the design notes and roadmap moved out of `Documentation/` into
+`Design/`: what does the app do that the docs do not cover, and where do the docs and the code
+disagree?
+
+**Coverage is essentially complete.** Every inventory checked came back whole:
+
+| Surface | Result |
+|---------|--------|
+| MCP tools | 65 declared, **all 65** named in `MLQT.McpServer/README.md`, which `mcp-server.md` delegates to by design |
+| CLI flags | 24 accepted, **all 24** in `cli.md`; nothing documented that the parser rejects |
+| CLI exit codes | 0/1/2 documented, 0/1/2 in `CliEntry` |
+| `StyleCheckingSettings` | 37 public properties, **all 37** named in `settings-reference.md` |
+| Main tabs | five, each with its own page |
+| `__MLQT` keys | four accepted (`suppress`, `format`, `preserveOrder`, `spelling`), four documented |
+| Screenshots | every `Images/` link resolves |
+| Markdown links | all 31 cross-references in both folders resolve after the move |
+
+**Four false alarms, each chased down rather than filed.** 34 MCP tools looked undocumented until it
+was clear `mcp-server.md` delegates the list to the server README on purpose; `reload` looked absent
+from that README until the regex was found to require an underscore; `--ratchet` looked like a flag
+the parser rejects and is the anchor `#baseline--ratchet`; and 15 setting labels looked wrong before
+`RuleSettingsLayout` — which holds nine of them — was read. **The last one matters most**: the honest
+number in B102 is four, and the first number this review produced was fifteen.
+
+**Three real findings, all in the same table, and one reason they survived.** `settings-reference.md`
+is the page every SARIF alert links to, and `RuleDocumentationTests` guards it — but that guard
+asserts only that a rule's **id** appears somewhere on the page, and it returns silently when it
+cannot find the sources at all. B101 and B102 both sit on rows carrying their id, so the guard was
+satisfied by rows that misstate a rule's default and name a control that does not exist. **B103 is
+the one to fix first**: it is why the other two were reachable.
+
+**What this review did not do:** it did not read the prose of every page for accuracy — it compared
+enumerable surfaces (tool names, flags, properties, labels, keys, links) and read closely only where
+a mismatch showed. Claims a user could act on that are not tied to an enumerable surface — the
+workflow descriptions in `git-operations.md` and `svn-operations.md` especially — are unverified, and
+the GUI remains the one surface nothing can execute until phase 7a.
 
 
 ---
