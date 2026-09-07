@@ -1,0 +1,47 @@
+@page "/selftest"
+@layout MLQT.Shared.Layout.EmptyLayout
+
+@*
+    The conformance route. Deliberately in MLQT.Shared so it is literally the same code running under
+    MAUI, Photino and the test host - the comparison is worthless if each host runs its own version.
+
+    Rendered as a table for a person and as JSON for a diff. The JSON is the artefact: the MAUI
+    baseline is captured while MAUI is still the reference implementation, and Photino conformance is
+    then a diff against a committed file rather than a judgement call.
+*@
+
+<div style="padding: 12px; font-family: system-ui, sans-serif;">
+    <h1 style="font-size: 1.1rem;">MLQT self-test</h1>
+
+    @if (_running)
+    {
+        <p id="selftest-status">running</p>
+    }
+    else
+    {
+        <p id="selftest-status">complete</p>
+
+        <table style="border-collapse: collapse; font-size: 0.8rem;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:2px 12px 2px 0;">Probe</th>
+                    <th style="text-align:left; padding:2px 12px 2px 0;">Result</th>
+                    <th style="text-align:left; padding:2px 0;">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var result in _results)
+                {
+                    <tr data-probe="@result.Id">
+                        <td style="padding:2px 12px 2px 0;">@result.Name</td>
+                        <td class="@StatusClass(result.Status)" style="padding:2px 12px 2px 0;">@result.Status</td>
+                        <td style="padding:2px 0; color:#666;">@result.Detail</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @* The machine-readable half. Read by the journey and by each host's launcher. *@
+        <pre id="selftest-result" style="display:none;">@_json</pre>
+    }
+</div>

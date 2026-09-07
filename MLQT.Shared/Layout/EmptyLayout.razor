@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+
+@*
+    A layout with nothing in it, for the self-test route.
+
+    MainLayout starts the whole application - it loads the last project, formats modified files and
+    kicks off analysis - and none of that is what the self-test is asking about. Worse, it would mean
+    the probes ran against a host busy doing something else, and a host comparison has to compare the
+    host rather than whatever a library happened to be doing at the time.
+*@
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@Body

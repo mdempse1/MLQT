@@ -38,6 +38,12 @@ public static class TestHostFactory
         // likeliest Photino failure. It was the first thing to go wrong here too.
         builder.WebHost.UseStaticWebAssets();
 
+        // The /selftest route reports whichever host it is running under, and each host says so
+        // rather than the page inferring it: a journey starts this host in-process, where the entry
+        // assembly is the test runner.
+        Environment.SetEnvironmentVariable(
+            MLQT.Shared.Pages.SelfTest.HostNameVariable, "MLQT.TestHost");
+
         // The same list the desktop app registers, from the same place. That is the point of the
         // host: a journey that passes here exercised the implementation the app runs, not a copy.
         builder.Services.AddMlqtCore();
