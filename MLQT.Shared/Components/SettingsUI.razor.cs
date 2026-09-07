@@ -1,3 +1,4 @@
+using MLQT.Shared.Theming;
 using System.Threading.Tasks;
 
 namespace MLQT.Shared.Components;
@@ -45,7 +46,7 @@ public partial class SettingsUI : IDisposable
             _settings.UI = await SettingsService.GetAsync("UI", new UISettings());
             _settings.SyntaxHighlighting = await SettingsService.GetAsync("SyntaxHighlighting", new SyntaxHighlightingSettings());
             _customUIStyles = _settings.UI.Theme == Theme.Custom;
-            _customSyntaxStyles = _settings.SyntaxHighlighting.ThemeName == "Custom";
+            _customSyntaxStyles = ThemePresets.IsCustomSyntax(_settings.SyntaxHighlighting.ThemeName);
         }
         catch (Exception ex)
         {
@@ -78,7 +79,7 @@ public partial class SettingsUI : IDisposable
             _settings.UI = new UISettings();
             _settings.SyntaxHighlighting = new SyntaxHighlightingSettings();
             _customUIStyles = _settings.UI.Theme == Theme.Custom;
-            _customSyntaxStyles = _settings.SyntaxHighlighting.ThemeName == "Custom";
+            _customSyntaxStyles = ThemePresets.IsCustomSyntax(_settings.SyntaxHighlighting.ThemeName);
 
             await SettingsService.SetAsync("UI", _settings.UI);
             await SettingsService.SetAsync("SyntaxHighlighting", _settings.SyntaxHighlighting);
@@ -94,36 +95,7 @@ public partial class SettingsUI : IDisposable
 
     private async Task ApplyPresetUITheme(string themeName)
     {
-        switch (themeName)
-        {
-            case "Light":
-                _customUIStyles = false;
-                _settings.UI.Theme = Theme.Light;
-                // Reset custom colors to defaults to match the light palette
-                _settings.UI.CustomBlack = "#272c34";
-                _settings.UI.CustomWhite = "#ffffff";
-                _settings.UI.CustomPrimary = "#6a70b1";
-                _settings.UI.CustomPrimaryContrastText = "#ffffff";
-                _settings.UI.CustomSecondary = "#666666";
-                _settings.UI.CustomSecondaryContrastText = "#ffffff";
-                _settings.UI.CustomTertiary = "#a18ac1";
-                _settings.UI.CustomTertiaryContrastText = "#ffffff";
-                _settings.UI.CustomInfo = "#cccccc";
-                _settings.UI.CustomInfoContrastText = "#ffffff";
-                break;
-            case "Dark":
-                _customUIStyles = false;
-                _settings.UI.Theme = Theme.Dark;
-                break;
-            case "Custom":
-                _customUIStyles = true;
-                _settings.UI.Theme = Theme.Custom;
-                break;
-            default:
-                _customUIStyles = false;
-                _settings.UI.Theme = Theme.Light;
-                break;
-        }
+        _customUIStyles = ThemePresets.ApplyUiPreset(themeName, _settings.UI);
 
         NavState.ThemeChanged(_settings.UI);
         await ApplyPresetSyntaxTheme(_settings.SyntaxHighlighting.ThemeName);
@@ -148,19 +120,17 @@ public partial class SettingsUI : IDisposable
         NavState.ThemeChanged(_settings.UI);
     }
 
-    private async Task ApplyPresetSyntaxTheme(string themeName)
+    private Task ApplyPresetSyntaxTheme(string themeName)
     {
-        var darkMode = _settings.UI.Theme == Theme.Dark;
-        _settings.SyntaxHighlighting = themeName switch
-        {
-            "Dymola" => SyntaxHighlightingSettings.GetDymolaTheme(darkMode),
-            "OpenModelica" => SyntaxHighlightingSettings.GetOpenModelicaTheme(darkMode),
-            "VSCode" => (darkMode ? SyntaxHighlightingSettings.GetDarkTheme() : SyntaxHighlightingSettings.GetLightTheme()),
-            _ => _settings.SyntaxHighlighting
-        };
-        _settings.SyntaxHighlighting.ThemeName = themeName;
-        _customSyntaxStyles = false;
+        _settings.SyntaxHighlighting = ThemePresets.SyntaxThemeFor(
+            themeName, _settings.UI.Theme == Theme.Dark, _settings.SyntaxHighlighting);
+
+        // B108: this used to be an unconditional false, so changing the UI theme hid the custom
+        // colour pickers while the stored theme name was still Custom.
+        _customSyntaxStyles = ThemePresets.IsCustomSyntax(themeName);
+
         StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private string GetPreviewStyle()
@@ -173,9 +143,10 @@ public partial class SettingsUI : IDisposable
                $"font-family: var(--mud-typography-default-family);";
     }
 
-    private async Task SetCustomSyntaxTheme() {
+    private void SetCustomSyntaxTheme()
+    {
         _customSyntaxStyles = true;
-        _settings.SyntaxHighlighting.ThemeName = "Custom";
+        _settings.SyntaxHighlighting.ThemeName = ThemePresets.CustomThemeName;
     }
 
     // Individual color change handlers — method references are stable across Blazor renders,

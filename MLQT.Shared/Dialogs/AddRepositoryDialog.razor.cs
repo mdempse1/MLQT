@@ -132,48 +132,30 @@ public partial class AddRepositoryDialog
 
     private async Task AddRepository()
     {
+        // B109: validate before the spinner goes up, not after. These checks return early, and the
+        // only place _isLoading was cleared was the finally of the try below - so choosing a path
+        // that does not exist left the dialog spinning for the rest of the session, with the error
+        // message behind the overlay and no way out but Cancel.
+        _errorMessage = AddRepositoryInput.Validate(_activeIndex == 0, _path, _url, _checkoutPath);
+        if (_errorMessage != null)
+            return;
+
+        if (_activeIndex != 0 && !Directory.Exists(_checkoutPath))
+        {
+            try
+            {
+                Directory.CreateDirectory(_checkoutPath);
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"The specified checkout directory does not exist and failed to create it.\n{ex}";
+                return;
+            }
+        }
+
         _isLoading = true;
         _loadingMessage = "Loading selected libraries...";
         StateHasChanged();
-
-        //Need to check _path, _url and _checkoutPath here before proceeding
-        if (_activeIndex==0) {
-            if (string.IsNullOrEmpty(_path)) 
-            {
-                _errorMessage = "You need to select a directory before you can add a repository";
-                return;
-            } 
-            else if (!Directory.Exists(_path)) 
-            {
-                _errorMessage = $"The directory selected does not exist ({@_path}). You need to select a directory on this machine";
-                return;
-            }
-        }
-        else 
-        {
-            if (string.IsNullOrEmpty(_url)) 
-            {
-                _errorMessage = "You need to specify a url to checkout the repository from";
-                return;
-            } 
-            if (string.IsNullOrEmpty(_checkoutPath)) 
-            {
-                _errorMessage = "You need to specify a directory that the repository can be checked out to";
-                return;
-            } 
-            if (!Directory.Exists(_checkoutPath)) 
-            {
-                try 
-                {
-                    Directory.CreateDirectory(_checkoutPath);
-                }
-                catch (Exception ex) 
-                {
-                    _errorMessage = $"The specified checkout directory does not exist and failed to create it.\n{ex.ToString()}";
-                    return;
-                }
-            }
-        }
 
         try
         {
@@ -194,7 +176,13 @@ public partial class AddRepositoryDialog
             }
             else
             {
+                // B110: this used to fall through to the Close below, so a failed add closed the
+                // dialog reporting DialogResult.Ok(null). The error was computed and thrown away
+                // with the dialog that would have shown it, and MainLayout - seeing a result that
+                // was not cancelled - switched the UI into repository mode for a repository that
+                // had not been added. Staying open is what puts the message in front of the user.
                 _errorMessage = result.ErrorMessage ?? "Failed to add repository.";
+                return;
             }
 
             if (_addedRepositoryId != null)

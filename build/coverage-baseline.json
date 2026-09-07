@@ -1,272 +1,260 @@
-{
-    "_comment": "Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. \"excluded\" is the separate list of classes the report does not measure at all: a baselined class that vanishes from the report is not a class that was fixed, and without that list it could leave the ledger by ceasing to be measured. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.",
-    "minimumLines": 25,
-    "bars": {
-        "RevisionControl": 80,
-        "mlqt": 80,
-        "ModelicaGraph": 80,
-        "MLQT.McpServer": 80,
-        "MLQT.Shared": 80,
-        "MLQT.Services": 80,
-        "ModelicaParser": 95
-    },
-    "classes": {
-        "MLQT.McpServer::MLQT.McpServer.Helpers.ClassBodyEditor": {
-            "coverage": 78.9,
-            "lines": 57,
-            "bar": 80,
-            "reason": "1.1 points under the bar. The gap is the splice paths for class shapes no fixture builds yet. Reachable; not yet written."
-        },
-        "MLQT.McpServer::MLQT.McpServer.Helpers.EntityResolver": {
-            "coverage": 79.4,
-            "lines": 34,
-            "bar": 80,
-            "reason": "0.6 points under the bar. The gap is the ambiguous- and not-found-entity branches. Reachable; not yet written."
-        },
-        "MLQT.McpServer::MLQT.McpServer.Services.ToolUsageLogger": {
-            "coverage": 65.5,
-            "lines": 61,
-            "bar": 80,
-            "reason": "Writes a usage log to disk. The gap is the IO-failure branches, which the logger swallows by design so a logging fault cannot fail a tool call. Reachable with a locked file; not yet written."
-        },
-        "MLQT.McpServer::MLQT.McpServer.Tools.SuppressionTools": {
-            "coverage": 73.3,
-            "lines": 75,
-            "bar": 80,
-            "reason": "Phase 5c's authoring path. The covered half is the tool contract; the gap is the failure branches (unwritable file, class not found, malformed rule id). Reachable; not yet written."
-        },
-        "MLQT.Services::MLQT.Services.DymolaCheckingService": {
-            "coverage": 33.6,
-            "lines": 184,
-            "bar": 80,
-            "reason": "Talks to a running Dymola over HTTP JSON-RPC. No licence and no install on a runner; the parsing and error paths are covered, the conversation is not."
-        },
-        "MLQT.Services::MLQT.Services.Helpers.FormattingPipeline": {
-            "coverage": 25,
-            "lines": 180,
-            "bar": 80,
-            "reason": "25%, and new debt this branch created rather than inherited: 7a-4 moved both formatting paths here out of MainLayout. FormatChangedFilesAsync and FormatModifiedFilesAsync are tested against a temp directory, and the decisions inside the full save are tested separately (IncrementalFormatter, OrphanedFileSelector, ResolveSaveDirectory, EmptyDirectoryCleaner, FileNodeReconciler). What is uncovered is the 250-line sequencing of SaveAllLibrariesWithFormattingAsync itself, which needs a library on disk with a real file layout to restructure - a fixture, not a mock. Worth writing: it is the path Format All Files takes."
-        },
-        "MLQT.Services::MLQT.Services.OpenModelicaCheckingService": {
-            "coverage": 33.5,
-            "lines": 185,
-            "bar": 80,
-            "reason": "Talks to a running OpenModelica over ZeroMQ. Same reason as DymolaCheckingService."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.BranchSelector": {
-            "coverage": 0,
-            "lines": 112,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.ChangeReview": {
-            "coverage": 29.2,
-            "lines": 181,
-            "bar": 80,
-            "reason": "29%: the file-tree building is tested. The rest is tree selection state and the folder check-state cascade, which are MudTreeView interactions and need a render tree."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.DiffViewer": {
-            "coverage": 6.5,
-            "lines": 322,
-            "bar": 80,
-            "reason": "The diff algorithm itself is tested to sixteen cases including minimality and operation order. The uncovered part is the three renderings built on top of it - unified, side-by-side, and their context-collapsed variants - which produce DiffLine lists for a template to draw and are read by looking at them."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.LibraryBrowser": {
-            "coverage": 22,
-            "lines": 439,
-            "bar": 80,
-            "reason": "22%: the tree building and the lazy-load selection regression are covered, the latter by the bUnit tests that exist for it specifically. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.NamingStyleSelect": {
-            "coverage": 35.7,
-            "lines": 28,
-            "bar": 80,
-            "reason": "36%: the pattern validation is tested, which is the part that can accept something that later throws. The rest is the MudBlazor select and the pattern list's add/remove."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.SettingsExternalTools": {
-            "coverage": 0,
-            "lines": 56,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.SettingsReferenceLibraries": {
-            "coverage": 0,
-            "lines": 43,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.SettingsRepositories": {
-            "coverage": 1.6,
-            "lines": 241,
-            "bar": 80,
-            "reason": "The change detection that decides whether a reformat runs is tested - it is the part that matters. The rest is a settings panel: repository add/remove/edit, project switching and the dialogs they raise."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.SettingsRepositoryDictionary": {
-            "coverage": 0,
-            "lines": 80,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Components.SettingsUI": {
-            "coverage": 0,
-            "lines": 109,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.AddRepositoryDialog": {
-            "coverage": 0,
-            "lines": 118,
-            "bar": 80,
-            "reason": "A wizard over a native folder picker and a clone/checkout. Neither can be driven from a unit test; the picker is faked in the 7a-6 test host, which is where this gets covered."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.CommitChangesDialog": {
-            "coverage": 10.3,
-            "lines": 77,
-            "bar": 80,
-            "reason": "10%: the commit-message policy is tested - when a commit is allowed and where the issue number goes - and it is the only implementation of that policy in the solution. The rest performs the commit, which needs a working copy."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.CreateBranchDialog": {
-            "coverage": 20.3,
-            "lines": 54,
-            "bar": 80,
-            "reason": "20%: the branch-name rules are tested to 26 cases. The rest creates the branch, which needs a repository."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.CreatePullRequestDialog": {
-            "coverage": 0,
-            "lines": 36,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.GitMergeBranchDialog": {
-            "coverage": 0,
-            "lines": 140,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.GitRebaseDialog": {
-            "coverage": 0,
-            "lines": 159,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.MergeBranchDialog": {
-            "coverage": 0,
-            "lines": 144,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.RevisionDiffDialog": {
-            "coverage": 0,
-            "lines": 50,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.SwitchBranchDialog": {
-            "coverage": 0,
-            "lines": 31,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Dialogs.VCSHistory": {
-            "coverage": 0,
-            "lines": 230,
-            "bar": 80,
-            "reason": "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
-        },
-        "MLQT.Shared::MLQT.Shared.Helpers.VcsStatusHelper": {
-            "coverage": 0,
-            "lines": 30,
-            "bar": 80,
-            "reason": "Nobody has written the tests. It maps a VcsFileStatus onto an icon and a colour - a pure switch, directly testable. Small enough that it has never been anyone's next task."
-        },
-        "MLQT.Shared::MLQT.Shared.Layout.MainLayout": {
-            "coverage": 0,
-            "lines": 1071,
-            "bar": 80,
-            "reason": "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
-        },
-        "MLQT.Shared::MLQT.Shared.Models.AppState": {
-            "coverage": 4.2,
-            "lines": 70,
-            "bar": 80,
-            "reason": "Nobody has written the tests. This is a plain event container with no dependencies - the cross-component events and the methods that raise them - and it is directly testable with no renderer at all. It is here because it was never a priority, not because it is hard, and it is the first thing to fix in this list."
-        },
-        "MLQT.Shared::MLQT.Shared.Models.SyntaxHighlightingSettings": {
-            "coverage": 0,
-            "lines": 64,
-            "bar": 80,
-            "reason": "Nobody has written the tests. Plain settings with the colour presets on them; directly testable, no renderer needed. Untested for the same reason as AppState, not a harder one."
-        },
-        "MLQT.Shared::MLQT.Shared.Pages.CodeReview": {
-            "coverage": 0.6,
-            "lines": 1065,
-            "bar": 80,
-            "reason": "The largest page, and the one 7a-4 has not reached yet. Its finding decisions are tested (FileLineOf, CanSuppressRule, ReportPathOf); the suppression writing, the dictionary and spelling actions and the findings export are still inline and belong in MLQT.Services - that is the remainder of B20 for this file. Until then it is reachable only by rendering."
-        },
-        "MLQT.Shared::MLQT.Shared.Pages.Dependencies": {
-            "coverage": 0,
-            "lines": 112,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Pages.ExternalResources": {
-            "coverage": 9.1,
-            "lines": 339,
-            "bar": 80,
-            "reason": "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
-        },
-        "MLQT.Shared::MLQT.Shared.Pages.MetricsDashboard": {
-            "coverage": 3.6,
-            "lines": 360,
-            "bar": 80,
-            "reason": "Scope matching, sub-package listing and the debt predicate are tested; the snapshot persistence, storage grouping and trend building are still inline and belong beside the other metrics code - the remainder of B20 for this file."
-        },
-        "ModelicaParser::ModelicaParser.ExternalDocs.DymolaHelpReader": {
-            "coverage": 86.9,
-            "lines": 69,
-            "bar": 95,
-            "reason": "Reads a vendor's generated help HTML. Covered against the shapes Dymola 2024x emits; the gap is the malformed-input branches, which need fixtures nobody has captured a real example of."
-        },
-        "ModelicaParser::ModelicaParser.Helpers.ModelicaFileEncoding": {
-            "coverage": 94.2,
-            "lines": 69,
-            "bar": 95,
-            "reason": "1.9 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
-        },
-        "ModelicaParser::ModelicaParser.Helpers.ModelicaParserHelper": {
-            "coverage": 85.7,
-            "lines": 91,
-            "bar": 95,
-            "reason": "Not yet tested to the parser assembly's 95% bar: the uncovered lines are the error-recovery and diagnostic-formatting branches reached only by malformed input. Reachable; nobody has written them."
-        },
-        "ModelicaParser::ModelicaParser.StyleRules.MlqtSuppressionWriter": {
-            "coverage": 94.2,
-            "lines": 121,
-            "bar": 95,
-            "reason": "0.7 points under the bar. The uncovered lines are the splice positions for annotation shapes the writer can encounter but no fixture yet produces. Reachable; not yet written."
-        },
-        "RevisionControl::RevisionControl.SvnCli": {
-            "coverage": 0,
-            "lines": 63,
-            "bar": 80,
-            "reason": "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner."
-        },
-        "RevisionControl::RevisionControl.SvnRevisionControlSystem": {
-            "coverage": 0.9,
-            "lines": 817,
-            "bar": 80,
-            "reason": "Needs a real SVN working copy and a server; the suite that covers it (SvnOperationsTests) is filtered out of the CI run for that reason. Covered locally against C:\\Projects\\ModelicaEditorTest."
-        },
-        "RevisionControl::RevisionControl.SvnToolLocator": {
-            "coverage": 0,
-            "lines": 32,
-            "bar": 80,
-            "reason": "Finds an installed svn. There is none on the runner, so every branch that matters is the not-found one."
-        }
-    },
-    "excluded": {
-        "MLQT.McpServer::Program": {
-            "reason": "Not in the coverage report at all, and correctly so: Program.cs is top-level statements, so the class is compiler-generated, and coverlet.MTP excludes generated code the way this script's header already says it wants. It was measured at 0% under coverlet.collector and carried as debt with the reason 'the stdio host: DI wiring and a blocking server loop, exercised by running the server - MLQT.McpTester and dev/smoke.sh - not by a unit test', which is still true. Listed here rather than dropped, because a class leaving the ledger by ceasing to be measured is exactly what B104 was."
-        }
-    }
+﻿{
+    "_comment":  "Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. \"excluded\" is the separate list of classes the report does not measure at all: a baselined class that vanishes from the report is not a class that was fixed, and without that list it could leave the ledger by ceasing to be measured. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.",
+    "minimumLines":  25,
+    "bars":  {
+                 "RevisionControl":  80,
+                 "mlqt":  80,
+                 "ModelicaGraph":  80,
+                 "MLQT.McpServer":  80,
+                 "MLQT.Shared":  80,
+                 "MLQT.Services":  80,
+                 "ModelicaParser":  95
+             },
+    "classes":  {
+                    "MLQT.McpServer::MLQT.McpServer.Helpers.ClassBodyEditor":  {
+                                                                                   "coverage":  78.9,
+                                                                                   "lines":  57,
+                                                                                   "bar":  80,
+                                                                                   "reason":  "1.1 points under the bar. The gap is the splice paths for class shapes no fixture builds yet. Reachable; not yet written."
+                                                                               },
+                    "MLQT.McpServer::MLQT.McpServer.Helpers.EntityResolver":  {
+                                                                                  "coverage":  79.4,
+                                                                                  "lines":  34,
+                                                                                  "bar":  80,
+                                                                                  "reason":  "0.6 points under the bar. The gap is the ambiguous- and not-found-entity branches. Reachable; not yet written."
+                                                                              },
+                    "MLQT.McpServer::MLQT.McpServer.Services.ToolUsageLogger":  {
+                                                                                    "coverage":  65.5,
+                                                                                    "lines":  61,
+                                                                                    "bar":  80,
+                                                                                    "reason":  "Writes a usage log to disk. The gap is the IO-failure branches, which the logger swallows by design so a logging fault cannot fail a tool call. Reachable with a locked file; not yet written."
+                                                                                },
+                    "MLQT.McpServer::MLQT.McpServer.Tools.SuppressionTools":  {
+                                                                                  "coverage":  73.3,
+                                                                                  "lines":  75,
+                                                                                  "bar":  80,
+                                                                                  "reason":  "Phase 5c\u0027s authoring path. The covered half is the tool contract; the gap is the failure branches (unwritable file, class not found, malformed rule id). Reachable; not yet written."
+                                                                              },
+                    "MLQT.Services::MLQT.Services.DymolaCheckingService":  {
+                                                                               "coverage":  33.6,
+                                                                               "lines":  184,
+                                                                               "bar":  80,
+                                                                               "reason":  "Talks to a running Dymola over HTTP JSON-RPC. No licence and no install on a runner; the parsing and error paths are covered, the conversation is not."
+                                                                           },
+                    "MLQT.Services::MLQT.Services.Helpers.FormattingPipeline":  {
+                                                                                    "coverage":  25,
+                                                                                    "lines":  180,
+                                                                                    "bar":  80,
+                                                                                    "reason":  "25%, and new debt this branch created rather than inherited: 7a-4 moved both formatting paths here out of MainLayout. FormatChangedFilesAsync and FormatModifiedFilesAsync are tested against a temp directory, and the decisions inside the full save are tested separately (IncrementalFormatter, OrphanedFileSelector, ResolveSaveDirectory, EmptyDirectoryCleaner, FileNodeReconciler). What is uncovered is the 250-line sequencing of SaveAllLibrariesWithFormattingAsync itself, which needs a library on disk with a real file layout to restructure - a fixture, not a mock. Worth writing: it is the path Format All Files takes."
+                                                                                },
+                    "MLQT.Services::MLQT.Services.OpenModelicaCheckingService":  {
+                                                                                     "coverage":  33.5,
+                                                                                     "lines":  185,
+                                                                                     "bar":  80,
+                                                                                     "reason":  "Talks to a running OpenModelica over ZeroMQ. Same reason as DymolaCheckingService."
+                                                                                 },
+                    "MLQT.Shared::MLQT.Shared.Components.BranchSelector":  {
+                                                                               "coverage":  0,
+                                                                               "lines":  112,
+                                                                               "bar":  80,
+                                                                               "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                           },
+                    "MLQT.Shared::MLQT.Shared.Components.ChangeReview":  {
+                                                                             "coverage":  29.2,
+                                                                             "lines":  181,
+                                                                             "bar":  80,
+                                                                             "reason":  "29%: the file-tree building is tested. The rest is tree selection state and the folder check-state cascade, which are MudTreeView interactions and need a render tree."
+                                                                         },
+                    "MLQT.Shared::MLQT.Shared.Components.DiffViewer":  {
+                                                                           "coverage":  6.5,
+                                                                           "lines":  322,
+                                                                           "bar":  80,
+                                                                           "reason":  "The diff algorithm itself is tested to sixteen cases including minimality and operation order. The uncovered part is the three renderings built on top of it - unified, side-by-side, and their context-collapsed variants - which produce DiffLine lists for a template to draw and are read by looking at them."
+                                                                       },
+                    "MLQT.Shared::MLQT.Shared.Components.LibraryBrowser":  {
+                                                                               "coverage":  22,
+                                                                               "lines":  439,
+                                                                               "bar":  80,
+                                                                               "reason":  "22%: the tree building and the lazy-load selection regression are covered, the latter by the bUnit tests that exist for it specifically. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
+                                                                           },
+                    "MLQT.Shared::MLQT.Shared.Components.NamingStyleSelect":  {
+                                                                                  "coverage":  35.7,
+                                                                                  "lines":  28,
+                                                                                  "bar":  80,
+                                                                                  "reason":  "36%: the pattern validation is tested, which is the part that can accept something that later throws. The rest is the MudBlazor select and the pattern list\u0027s add/remove."
+                                                                              },
+                    "MLQT.Shared::MLQT.Shared.Components.SettingsExternalTools":  {
+                                                                                      "coverage":  0,
+                                                                                      "lines":  56,
+                                                                                      "bar":  80,
+                                                                                      "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                                  },
+                    "MLQT.Shared::MLQT.Shared.Components.SettingsReferenceLibraries":  {
+                                                                                           "coverage":  0,
+                                                                                           "lines":  43,
+                                                                                           "bar":  80,
+                                                                                           "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                                       },
+                    "MLQT.Shared::MLQT.Shared.Components.SettingsRepositories":  {
+                                                                                     "coverage":  1.6,
+                                                                                     "lines":  241,
+                                                                                     "bar":  80,
+                                                                                     "reason":  "The change detection that decides whether a reformat runs is tested - it is the part that matters. The rest is a settings panel: repository add/remove/edit, project switching and the dialogs they raise."
+                                                                                 },
+                    "MLQT.Shared::MLQT.Shared.Components.SettingsRepositoryDictionary":  {
+                                                                                             "coverage":  0,
+                                                                                             "lines":  80,
+                                                                                             "bar":  80,
+                                                                                             "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                                         },
+                    "MLQT.Shared::MLQT.Shared.Components.SettingsUI":  {
+                                                                           "coverage":  0,
+                                                                           "lines":  82,
+                                                                           "bar":  80,
+                                                                           "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                       },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.AddRepositoryDialog":  {
+                                                                                 "coverage":  44.9,
+                                                                                 "lines":  109,
+                                                                                 "bar":  80,
+                                                                                 "reason":  "A wizard over a native folder picker and a clone/checkout. Neither can be driven from a unit test; the picker is faked in the 7a-6 test host, which is where this gets covered."
+                                                                             },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.CommitChangesDialog":  {
+                                                                                 "coverage":  10.3,
+                                                                                 "lines":  77,
+                                                                                 "bar":  80,
+                                                                                 "reason":  "10%: the commit-message policy is tested - when a commit is allowed and where the issue number goes - and it is the only implementation of that policy in the solution. The rest performs the commit, which needs a working copy."
+                                                                             },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.CreatePullRequestDialog":  {
+                                                                                     "coverage":  0,
+                                                                                     "lines":  36,
+                                                                                     "bar":  80,
+                                                                                     "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                                 },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.GitMergeBranchDialog":  {
+                                                                                  "coverage":  0,
+                                                                                  "lines":  111,
+                                                                                  "bar":  80,
+                                                                                  "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                              },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.GitRebaseDialog":  {
+                                                                             "coverage":  0,
+                                                                             "lines":  127,
+                                                                             "bar":  80,
+                                                                             "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                         },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.MergeBranchDialog":  {
+                                                                               "coverage":  0,
+                                                                               "lines":  114,
+                                                                               "bar":  80,
+                                                                               "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                           },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.RevisionDiffDialog":  {
+                                                                                "coverage":  0,
+                                                                                "lines":  50,
+                                                                                "bar":  80,
+                                                                                "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                            },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.SwitchBranchDialog":  {
+                                                                                "coverage":  0,
+                                                                                "lines":  31,
+                                                                                "bar":  80,
+                                                                                "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                            },
+                    "MLQT.Shared::MLQT.Shared.Dialogs.VCSHistory":  {
+                                                                        "coverage":  0,
+                                                                        "lines":  230,
+                                                                        "bar":  80,
+                                                                        "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                    },
+                    "MLQT.Shared::MLQT.Shared.Layout.MainLayout":  {
+                                                                       "coverage":  0,
+                                                                       "lines":  1071,
+                                                                       "bar":  80,
+                                                                       "reason":  "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
+                                                                   },
+                    "MLQT.Shared::MLQT.Shared.Models.AppState":  {
+                                                                     "coverage":  4.2,
+                                                                     "lines":  70,
+                                                                     "bar":  80,
+                                                                     "reason":  "Nobody has written the tests. This is a plain event container with no dependencies - the cross-component events and the methods that raise them - and it is directly testable with no renderer at all. It is here because it was never a priority, not because it is hard, and it is the first thing to fix in this list."
+                                                                 },
+                    "MLQT.Shared::MLQT.Shared.Pages.CodeReview":  {
+                                                                      "coverage":  0.6,
+                                                                      "lines":  1065,
+                                                                      "bar":  80,
+                                                                      "reason":  "The largest page, and the one 7a-4 has not reached yet. Its finding decisions are tested (FileLineOf, CanSuppressRule, ReportPathOf); the suppression writing, the dictionary and spelling actions and the findings export are still inline and belong in MLQT.Services - that is the remainder of B20 for this file. Until then it is reachable only by rendering."
+                                                                  },
+                    "MLQT.Shared::MLQT.Shared.Pages.Dependencies":  {
+                                                                        "coverage":  0,
+                                                                        "lines":  112,
+                                                                        "bar":  80,
+                                                                        "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                    },
+                    "MLQT.Shared::MLQT.Shared.Pages.ExternalResources":  {
+                                                                             "coverage":  9.1,
+                                                                             "lines":  339,
+                                                                             "bar":  80,
+                                                                             "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
+                                                                         },
+                    "MLQT.Shared::MLQT.Shared.Pages.MetricsDashboard":  {
+                                                                            "coverage":  3.6,
+                                                                            "lines":  360,
+                                                                            "bar":  80,
+                                                                            "reason":  "Scope matching, sub-package listing and the debt predicate are tested; the snapshot persistence, storage grouping and trend building are still inline and belong beside the other metrics code - the remainder of B20 for this file."
+                                                                        },
+                    "MLQT.Shared::MLQT.Shared.Pages.SelfTest":  {
+                                                                    "coverage":  0,
+                                                                    "lines":  191,
+                                                                    "bar":  80,
+                                                                    "reason":  "Every probe is a call into JS interop or a platform service, so the class does nothing measurable without a host. It is covered where it can be: 5 journeys drive the route through a real browser against MLQT.TestHost, and the committed MAUI baseline is its output from the real app. Neither suite is in the coverage merge. Raising this would mean testing the probes against fakes, which would assert that the fakes work and is the opposite of what the route is for."
+                                                                },
+                    "ModelicaParser::ModelicaParser.ExternalDocs.DymolaHelpReader":  {
+                                                                                         "coverage":  86.9,
+                                                                                         "lines":  69,
+                                                                                         "bar":  95,
+                                                                                         "reason":  "Reads a vendor\u0027s generated help HTML. Covered against the shapes Dymola 2024x emits; the gap is the malformed-input branches, which need fixtures nobody has captured a real example of."
+                                                                                     },
+                    "ModelicaParser::ModelicaParser.Helpers.ModelicaFileEncoding":  {
+                                                                                        "coverage":  94.2,
+                                                                                        "lines":  69,
+                                                                                        "bar":  95,
+                                                                                        "reason":  "1.9 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
+                                                                                    },
+                    "ModelicaParser::ModelicaParser.Helpers.ModelicaParserHelper":  {
+                                                                                        "coverage":  85.7,
+                                                                                        "lines":  91,
+                                                                                        "bar":  95,
+                                                                                        "reason":  "Not yet tested to the parser assembly\u0027s 95% bar: the uncovered lines are the error-recovery and diagnostic-formatting branches reached only by malformed input. Reachable; nobody has written them."
+                                                                                    },
+                    "ModelicaParser::ModelicaParser.StyleRules.MlqtSuppressionWriter":  {
+                                                                                            "coverage":  94.2,
+                                                                                            "lines":  121,
+                                                                                            "bar":  95,
+                                                                                            "reason":  "0.7 points under the bar. The uncovered lines are the splice positions for annotation shapes the writer can encounter but no fixture yet produces. Reachable; not yet written."
+                                                                                        },
+                    "RevisionControl::RevisionControl.SvnCli":  {
+                                                                    "coverage":  0,
+                                                                    "lines":  63,
+                                                                    "bar":  80,
+                                                                    "reason":  "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner."
+                                                                },
+                    "RevisionControl::RevisionControl.SvnRevisionControlSystem":  {
+                                                                                      "coverage":  0.9,
+                                                                                      "lines":  817,
+                                                                                      "bar":  80,
+                                                                                      "reason":  "Needs a real SVN working copy and a server; the suite that covers it (SvnOperationsTests) is filtered out of the CI run for that reason. Covered locally against C:\\Projects\\ModelicaEditorTest."
+                                                                                  },
+                    "RevisionControl::RevisionControl.SvnToolLocator":  {
+                                                                            "coverage":  0,
+                                                                            "lines":  32,
+                                                                            "bar":  80,
+                                                                            "reason":  "Finds an installed svn. There is none on the runner, so every branch that matters is the not-found one."
+                                                                        }
+                },
+    "excluded":  {
+                     "MLQT.McpServer::Program":  {
+                                                     "reason":  "Not in the coverage report at all, and correctly so: Program.cs is top-level statements, so the class is compiler-generated, and coverlet.MTP excludes generated code the way this script\u0027s header already says it wants. It was measured at 0% under coverlet.collector and carried as debt with the reason \u0027the stdio host: DI wiring and a blocking server loop, exercised by running the server - MLQT.McpTester and dev/smoke.sh - not by a unit test\u0027, which is still true. Listed here rather than dropped, because a class leaving the ledger by ceasing to be measured is exactly what B104 was."
+                                                 }
+                 }
 }

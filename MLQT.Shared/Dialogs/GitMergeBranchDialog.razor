@@ -51,8 +51,8 @@
                         @foreach (var f in _dirtyFiles)
                         {
                             <MudListItem T="VcsWorkingCopyFile" Dense="true"
-                                         Icon="@StatusIcon(f.Status)"
-                                         IconColor="@StatusColor(f.Status)">
+                                         Icon="@VcsStatusHelper.GetStatusIcon(f.Status)"
+                                         IconColor="@VcsStatusHelper.GetStatusColor(f.Status)">
                                 <MudText Typo="Typo.body2">@f.Path</MudText>
                             </MudListItem>
                         }

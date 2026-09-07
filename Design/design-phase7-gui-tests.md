@@ -1,8 +1,8 @@
 # Design Note — Phase 7a: making the UI testable, then testing it
 
-> **Status: IN PROGRESS (proposed 2026-09-02, restructured 2026-09-07).** **7a-1, 7a-2 and 7a-4
-> through 7a-7 are shipped**, including the MAUI conformance baseline, which was the one piece with a
-> deadline. 7a-3's long tail is outstanding. Each step's own section carries a *Shipped* note recording what
+> **Status: COMPLETE (proposed 2026-09-02, restructured and delivered 2026-09-07).** All seven steps
+> are shipped, including the MAUI conformance baseline — the one piece with a deadline, which could
+> not have been captured after the migration started. §7b, the Photino migration, is unblocked. Each step's own section carries a *Shipped* note recording what
 > actually landed and where it differed from the sketch. Companion to phase 7 of the locked roadmap
 > ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note covers
 > everything built **before the host migration starts**, so the Photino build can be proved
@@ -555,7 +555,56 @@ already in order, because the builder walks its input in path order; and the res
 mutation, which is a legitimate outcome and got the dead call removed. Assume a test does not bite
 until it has been watched failing.
 
-Still to do: `SettingsUI`, and the five other dialogs' results. Neither blocks 7a-4.
+### ✅ Shipped (2026-09-07) — the long tail, and the five defects in it
+
+**317 tests.** The outstanding items were `SettingsUI` and the dialogs' results, and finishing them
+found the same shape five times over.
+
+**The three VCS dialogs were one dialog written three times.** `GitMergeBranchDialog`,
+`MergeBranchDialog` (SVN) and `GitRebaseDialog` each held a **byte-identical** private copy of the
+blocking-status list, the conflict-state map, the relative-path rule and the status glyph table — 127
+lines of duplication, none of it reachable by a test. All three copies were wrong in the same way,
+which is the argument against duplication stated as a defect rather than a principle: the
+blocking-status list named five of `VcsFileStatus`'s six members, and the omitted one, `Renamed`, is
+produced for a staged `git mv`. `GetWorkingCopyChanges` returns only files with real changes, so that
+filter's *entire* effect was letting renames through — a user with a staged rename was told the
+working copy was clean, offered the merge, and had git refuse it. **B106.**
+
+The glyph copies had also drifted from `VcsStatusHelper`, which already held the same table for the
+library browser and the change list and held it *more* completely. The extraction very nearly added a
+fifth copy before that turned up; what stopped it was asking who else maps a status to an icon. An
+untracked file was a green "new" badge in one window and a grey question mark in another.
+
+**Two defects in `AddRepositoryDialog`, both invisible without a renderer.** The spinner went up
+before four validation checks that `return` early, and the only place it came down was the `finally`
+of a `try` that started after them — so a path that does not exist left the dialog spinning for the
+rest of the session (**B109**). And a failed add set an error message and then fell through to
+`Close(DialogResult.Ok(null))`, so the message was discarded with the dialog that would have shown it
+and `MainLayout`, which checks `!result.Canceled`, treated the failure as success (**B110**). Both
+fixes were watched failing against the old code before being kept.
+
+**Two in the theme presets.** Changing the UI theme re-applies the syntax preset, which set
+"is this palette hand-edited?" to `false` unconditionally — so switching light↔dark on a custom syntax
+palette hid the colour pickers while the stored name still said Custom (**B108**, fixed: one function
+answers that question now). And choosing "Light" resets all ten custom colours and persists
+immediately, while "Dark" does not, and an unrecognised name falls back to Light *without* the reset
+(**B107**, pinned by tests and left open — what happens to colours a user typed in is a product
+decision, not a refactor). The ten literals were also a third copy of the `UISettings` defaults; that
+half is fixed, by copying from a default instance.
+
+**Layer 1b now has its dialog-result pattern**, which the note asked for and nothing had. It has to go
+through `IDialogService` inside a rendered `MudDialogProvider`: `MudDialog.Close(DialogResult.Ok(x))`
+reaches a cascaded `IMudDialogInstance` that a directly rendered component does not have, so every
+`Close` and `Cancel` in one is a silent no-op and a test awaiting the result waits for ever.
+`ShowDialogAsync` on `MlqtComponentTestBase` is that, and one more bUnit note joins the others there:
+a MudBlazor field with `Immediate` wires `oninput` and never `onchange`, so `Change()` throws
+`MissingEventHandlerException` — loudly, which is the one thing that made it quick to find.
+
+Still open, deliberately: the merge and rebase dialogs have **no** result test. Their result is
+reached through a multi-phase flow needing the whole `IRepositoryService` surface mocked, and the
+decisions inside that flow — which changes block, how conflicts carry across rounds, when the commit
+button lights — are now tested directly as `VcsConflictRules`. A test that mocked its way to
+`Ok(_mergeResult)` would assert that the mocks were configured correctly.
 
 Writing them turned up **B105** — `CodeReview.ReportPathOf` and the CLI's
 `CheckReport.RelativeFileFor` implementing one rule twice, and `FileLineOf`/`LineFor` doing the same
@@ -1107,7 +1156,7 @@ Each step compiles and leaves the suite green.
 |---|---|---|
 | **7a-1** | ✅ **shipped 2026-09-07** — the code-behind sweep: 31 components, `@inject` → `[Inject]` throughout, plus `GlobalUsings.cs` and the browser-platform removal | **L, shallow** |
 | **7a-2** | ✅ **shipped 2026-09-07** — `MLQT.Shared.Tests`; `SharedUiConventionTests` moved; six convention guards, each verified by breaking the source; `MlqtComponentTestBase` | S |
-| **7a-3** | ✅ **mostly shipped 2026-09-07** — 11 Layer 1 files over the components, dialogs and pages, including the tree's lazy load and `CytoscapeGraph`'s interop. Outstanding: `SettingsUI`, and the remaining dialogs' `DialogResult` round-trips | M |
+| **7a-3** | ✅ **shipped 2026-09-07** — 317 tests over `MLQT.Shared`; the Layer 1b dialog-result pattern; five defects found and four fixed (B106–B110) | M |
 | **7a-4** | ✅ **shipped 2026-09-07** — ten extractions out of `MainLayout` and its neighbours, each with tests verified by mutation; `MainLayout` 2,635 → 1,898 lines of logic | **L — the long pole** |
 | **7a-5** | ✅ **shipped 2026-09-07** — `MLQT.Shared` into the coverage ratchet: `$bars`, `$suites`, baseline with 29 reasons. No file filter: the measurement said it would hide five classes | S |
 | **7a-6** | ✅ **shipped 2026-09-07** — `AddMlqtCore()`, `HostAssetManifest` + drift test, `MLQT.TestHost` + fakes + `LibraryFixture`, **23 journeys**, the Linux CI job and `PortabilityTests` | M |

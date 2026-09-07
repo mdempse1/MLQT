@@ -27,8 +27,6 @@ public partial class MergeBranchDialog
         ConflictResolution
     }
 
-    private enum ConflictFileState { Unresolved, EditingExternally, Resolved }
-
     private BranchSelector? _branchSelector;
     private string? _selectedBranch;
     private string? _currentBranch;
@@ -41,7 +39,7 @@ public partial class MergeBranchDialog
     private string? _statusMessage;
     private bool _isWorking = false;
 
-    private bool AllResolved => _conflictStates.Count > 0 && _conflictStates.Values.All(s => s == ConflictFileState.Resolved);
+    private bool AllResolved => VcsConflictRules.AllResolved(_conflictStates);
 
     private Repository? _repository;
 
@@ -60,10 +58,7 @@ public partial class MergeBranchDialog
 
         var changes = await Task.Run(() => RepositoryService.GetWorkingCopyChanges(RepositoryId));
 
-        _dirtyFiles = changes.Where(f => f.Status is
-            VcsFileStatus.Modified or VcsFileStatus.Added or
-            VcsFileStatus.Deleted or VcsFileStatus.Untracked or
-            VcsFileStatus.Conflicted).ToList();
+        _dirtyFiles = VcsConflictRules.BlockingChanges(changes);
 
         _phase = _dirtyFiles.Count > 0 ? MergePhase.DirtyWorkingCopy : MergePhase.ReadyToMerge;
         StateHasChanged();
@@ -132,10 +127,9 @@ public partial class MergeBranchDialog
             if (_mergeResult.HasConflicts)
             {
                 _treeConflictPaths = [.. _mergeResult.TreeConflictedFiles];
-                _conflictStates = _mergeResult.ConflictedFiles
-                    .Concat(_mergeResult.TreeConflictedFiles)
-                    .Distinct()
-                    .ToDictionary(f => f, _ => ConflictFileState.Unresolved);
+                _conflictStates = VcsConflictRules.CarryForward(
+                    _mergeResult.ConflictedFiles.Concat(_mergeResult.TreeConflictedFiles).Distinct(),
+                    _conflictStates);
                 _phase = MergePhase.ConflictResolution;
                 return;
             }
@@ -218,52 +212,21 @@ public partial class MergeBranchDialog
 
     private string BuildMergeCommitMessage()
     {
-        var branch = _mergeResult?.SourceBranch ?? _selectedBranch ?? "unknown";
-        var target = _currentBranch ?? "working copy";
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        var isSvn = repository?.VcsType == RepositoryVcsType.SVN;
+        // Whether to include a revision range is this dialog's question, not the message builder's:
+        // it is the half that needs the repository.
+        var isSvn = RepositoryService.GetRepository(RepositoryId)?.VcsType == RepositoryVcsType.SVN;
 
-        if (isSvn && _mergeResult != null)
-        {
-            if (_mergeResult.StartRevision.HasValue && _mergeResult.EndRevision.HasValue)
-                return $"Merge r{_mergeResult.StartRevision}:{_mergeResult.EndRevision} from '{branch}' into {target}";
-            if (_mergeResult.EndRevision.HasValue)
-                return $"Merge '{branch}' (up to r{_mergeResult.EndRevision}) into {target}";
-        }
-
-        return $"Merge '{branch}' into {target}";
+        return MergeCommitMessage.Build(
+            _mergeResult?.SourceBranch,
+            _selectedBranch,
+            _currentBranch,
+            isSvn ? _mergeResult?.StartRevision : null,
+            isSvn ? _mergeResult?.EndRevision : null);
     }
 
-    private string GetRelativePath(string filePath)
-    {
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository?.LocalPath != null)
-        {
-            try { return Path.GetRelativePath(repository.LocalPath, filePath); }
-            catch { }
-        }
-        return filePath;
-    }
+    private string GetRelativePath(string filePath) =>
+        VcsConflictRules.RelativeTo(RepositoryService.GetRepository(RepositoryId)?.LocalPath, filePath);
 
-    private static string StatusIcon(VcsFileStatus status) => status switch
-    {
-        VcsFileStatus.Modified   => Icons.Material.Filled.Edit,
-        VcsFileStatus.Added      => Icons.Material.Filled.Add,
-        VcsFileStatus.Deleted    => Icons.Material.Filled.Delete,
-        VcsFileStatus.Untracked  => Icons.Material.Filled.HelpOutline,
-        VcsFileStatus.Conflicted => Icons.Material.Filled.Warning,
-        _                        => Icons.Material.Filled.Circle
-    };
-
-    private static Color StatusColor(VcsFileStatus status) => status switch
-    {
-        VcsFileStatus.Modified   => Color.Warning,
-        VcsFileStatus.Added      => Color.Success,
-        VcsFileStatus.Deleted    => Color.Error,
-        VcsFileStatus.Untracked  => Color.Default,
-        VcsFileStatus.Conflicted => Color.Error,
-        _                        => Color.Default
-    };
 
     private async Task ShowDiff(string filePath)
     {

@@ -34,8 +34,6 @@ public partial class GitRebaseDialog
         public const RebasePhase PushPrompt = RebasePhase.PushPrompt;
     }
 
-    private enum ConflictFileState { Unresolved, EditingExternally, Resolved }
-
     private BranchSelector? _branchSelector;
     private string? _selectedBranch;
     private string? _currentBranch;
@@ -46,7 +44,7 @@ public partial class GitRebaseDialog
     private string? _errorMessage;
     private bool _isWorking = false;
 
-    private bool AllResolved => _conflictStates.Count > 0 && _conflictStates.Values.All(s => s == ConflictFileState.Resolved);
+    private bool AllResolved => VcsConflictRules.AllResolved(_conflictStates);
 
     private Repository? _repository;
 
@@ -65,10 +63,7 @@ public partial class GitRebaseDialog
 
         var changes = await Task.Run(() => RepositoryService.GetWorkingCopyChanges(RepositoryId));
 
-        _dirtyFiles = changes.Where(f => f.Status is
-            VcsFileStatus.Modified or VcsFileStatus.Added or
-            VcsFileStatus.Deleted or VcsFileStatus.Untracked or
-            VcsFileStatus.Conflicted).ToList();
+        _dirtyFiles = VcsConflictRules.BlockingChanges(changes);
 
         _phase = _dirtyFiles.Count > 0 ? RebasePhase.DirtyWorkingCopy : RebasePhase.ReadyToRebase;
         StateHasChanged();
@@ -270,50 +265,10 @@ public partial class GitRebaseDialog
         await DialogService.ShowAsync<ConflictDiffDialog>("Conflict Diff", parameters, options);
     }
 
-    /// <summary>
-    /// Replaces the conflict state dictionary with the new set of conflicted files,
-    /// preserving Resolved state for any files that were already resolved.
-    /// </summary>
-    private void ApplyConflicts(List<string> conflictedFiles)
-    {
-        var updated = new Dictionary<string, ConflictFileState>();
-        foreach (var fp in conflictedFiles)
-        {
-            updated[fp] = _conflictStates.TryGetValue(fp, out var existing)
-                ? existing
-                : ConflictFileState.Unresolved;
-        }
-        _conflictStates = updated;
-    }
+    private void ApplyConflicts(List<string> conflictedFiles) =>
+        _conflictStates = VcsConflictRules.CarryForward(conflictedFiles, _conflictStates);
 
-    private string GetRelativePath(string filePath)
-    {
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository?.LocalPath != null)
-        {
-            try { return Path.GetRelativePath(repository.LocalPath, filePath); }
-            catch { }
-        }
-        return filePath;
-    }
+    private string GetRelativePath(string filePath) =>
+        VcsConflictRules.RelativeTo(RepositoryService.GetRepository(RepositoryId)?.LocalPath, filePath);
 
-    private static string StatusIcon(VcsFileStatus status) => status switch
-    {
-        VcsFileStatus.Modified   => Icons.Material.Filled.Edit,
-        VcsFileStatus.Added      => Icons.Material.Filled.Add,
-        VcsFileStatus.Deleted    => Icons.Material.Filled.Delete,
-        VcsFileStatus.Untracked  => Icons.Material.Filled.HelpOutline,
-        VcsFileStatus.Conflicted => Icons.Material.Filled.Warning,
-        _                        => Icons.Material.Filled.Circle
-    };
-
-    private static Color StatusColor(VcsFileStatus status) => status switch
-    {
-        VcsFileStatus.Modified   => Color.Warning,
-        VcsFileStatus.Added      => Color.Success,
-        VcsFileStatus.Deleted    => Color.Error,
-        VcsFileStatus.Untracked  => Color.Default,
-        VcsFileStatus.Conflicted => Color.Error,
-        _                        => Color.Default
-    };
 }

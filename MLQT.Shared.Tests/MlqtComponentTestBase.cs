@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using MLQT.Shared.Models;
 using MudBlazor;
@@ -53,6 +54,34 @@ public abstract class MlqtComponentTestBase : BunitContext
     /// The <see cref="AppState"/> the component under test will be given.
     /// </summary>
     protected AppState NavState => Services.GetRequiredService<AppState>();
+
+    /// <summary>
+    /// Opens a dialog the way the application does — through <see cref="IDialogService"/>, inside a
+    /// rendered <see cref="MudDialogProvider"/> — and hands back both the provider to query and the
+    /// reference to await.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the only way to reach a dialog's result. <c>MudDialog.Close(DialogResult.Ok(x))</c>
+    /// goes to the cascaded <c>IMudDialogInstance</c>, which exists only when the provider put it
+    /// there; a dialog rendered directly with <c>Render&lt;T&gt;()</c> has none, so every Close and
+    /// Cancel in it is a silent no-op and a test asserting on the result waits for ever.</para>
+    ///
+    /// <para>The show has to go through <c>InvokeAsync</c> for the same reason a callback does: it
+    /// renders a component, and the renderer refuses that off its own dispatcher.</para>
+    /// </remarks>
+    protected async Task<(IRenderedComponent<MudDialogProvider> Provider, IDialogReference Reference)>
+        ShowDialogAsync<TDialog>(DialogParameters? parameters = null)
+        where TDialog : ComponentBase
+    {
+        var provider = Render<MudDialogProvider>();
+        var dialogService = Services.GetRequiredService<IDialogService>();
+
+        IDialogReference? reference = null;
+        await provider.InvokeAsync(async () =>
+            reference = await dialogService.ShowAsync<TDialog>("test", parameters ?? []));
+
+        return (provider, reference!);
+    }
 
     /// <summary>
     /// Renders MudBlazor's provider components. Required before any test that opens a dialog, a
