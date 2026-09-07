@@ -22,6 +22,17 @@
     below it. Debt is tolerated; new debt is not. Run with -UpdateBaseline to re-record, and read the
     diff - it is the point of keeping the file in the repository.
 
+    A fourth way it fails, and the reason the baseline has an "excluded" list: a class in the ledger
+    that is not in the report at all. That is not the same fact as "it meets the bar now" - it is no
+    information - and until B104 the gate said the same sentence for both, so debt could be paid off
+    by ceasing to be measured. The xUnit v3 migration made it happen: MLQT.McpServer::Program is
+    top-level statements, so compiler-generated, and coverlet.MTP excludes generated code where
+    coverlet.collector had measured it at 0%. That exclusion is right - see below - but nothing
+    distinguished it from a class that stopped being measured for a bad reason. Deliberate ones are
+    now listed under "excluded" with a reason each, the same rule the debt entries follow, and the
+    gate also fails if an excluded class starts being measured again, since leaving it listed would
+    hide a later regression in it.
+
     What is deliberately NOT gated:
 
       - Classes below MinimumLines coverable lines. A four-line record whose only uncovered lines are
@@ -152,6 +163,11 @@ $gated = foreach ($assembly in $summary.coverage.assemblies) {
     }
 }
 
+# Every class the merged report actually measured, captured before the small-class filter below
+# takes some of them out of the gate. A baseline entry that is not in here was not measured at
+# all, and that is a different fact from "it now meets its bar" - see the vanished check (B104).
+$measured = [System.Collections.Generic.HashSet[string]]::new([string[]] @($gated.Key))
+
 $small = $gated | Where-Object { $_.Lines -lt $MinimumLines -and $_.Coverage -lt $_.Bar }
 $gated = $gated | Where-Object { $_.Lines -ge $MinimumLines }
 $below = $gated | Where-Object { $_.Coverage -lt $_.Bar } | Sort-Object Coverage
@@ -160,11 +176,28 @@ $below = $gated | Where-Object { $_.Coverage -lt $_.Bar } | Sort-Object Coverage
 # entry has to say why it is accepted - that is what makes accepting debt a decision rather than a
 # keystroke - and the reason is the only part a person writes.
 $reasons = @{}
+
+# Classes the report cannot measure and nobody expects it to. Recorded the same way debt is, with a
+# reason each, because "not measured" is a decision too - and because without this list a class can
+# leave the ledger simply by ceasing to be measured, which is what B104 was.
+$excludedReasons = @{}
+
+# What the ledger accepted last time, needed by -UpdateBaseline to tell a class that was fixed from
+# one that stopped being measured.
+$previouslyAccepted = @()
+
 if (Test-Path $BaselinePath) {
     $existing = Get-Content $BaselinePath -Raw | ConvertFrom-Json
     foreach ($property in $existing.classes.PSObject.Properties) {
+        $previouslyAccepted += $property.Name
         if ($property.Value.PSObject.Properties.Name -contains 'reason') {
             $reasons[$property.Name] = [string] $property.Value.reason
+        }
+    }
+    if ($existing.PSObject.Properties.Name -contains 'excluded' -and $existing.excluded) {
+        foreach ($property in $existing.excluded.PSObject.Properties) {
+            $excludedReasons[$property.Name] =
+                if ($property.Value.PSObject.Properties.Name -contains 'reason') { [string] $property.Value.reason } else { '' }
         }
     }
 }
@@ -179,16 +212,29 @@ if ($UpdateBaseline) {
             reason   = if ($reasons.ContainsKey($item.Key)) { $reasons[$item.Key] } else { $NeedsReason }
         }
     }
+    # A class that was in the ledger and is no longer measured has not been fixed - it has stopped
+    # being measured, and rewriting `classes` from what the report contains would drop it silently.
+    # Carry it into `excluded` with the same placeholder new debt gets, so the gate then refuses the
+    # baseline until someone says why it is not measurable (B104).
+    $exclusions = [ordered] @{}
+    foreach ($key in (@($excludedReasons.Keys) + @($previouslyAccepted | Where-Object { -not $measured.Contains($_) }) | Sort-Object -Unique)) {
+        $exclusions[$key] = [ordered] @{
+            reason = if ($excludedReasons.ContainsKey($key) -and -not [string]::IsNullOrWhiteSpace($excludedReasons[$key])) { $excludedReasons[$key] } else { $NeedsReason }
+        }
+    }
+
     $payload = [ordered] @{
-        '_comment'   = 'Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.'
+        '_comment'   = 'Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. "excluded" is the separate list of classes the report does not measure at all: a baselined class that vanishes from the report is not a class that was fixed, and without that list it could leave the ledger by ceasing to be measured. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.'
         minimumLines = $MinimumLines
         bars         = $bars
         classes      = $entries
+        excluded     = $exclusions
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content $BaselinePath -Encoding utf8
     Write-Host "Recorded $($entries.Count) class(es) in $BaselinePath" -ForegroundColor Green
 
-    $unexplained = @($entries.Keys | Where-Object { $entries[$_].reason -eq $NeedsReason })
+    $unexplained = @($entries.Keys | Where-Object { $entries[$_].reason -eq $NeedsReason }) +
+                   @($exclusions.Keys | Where-Object { $exclusions[$_].reason -eq $NeedsReason })
     if ($unexplained.Count -gt 0) {
         Write-Host ''
         Write-Host "$($unexplained.Count) new entr(y/ies) need a reason before the build will pass:" -ForegroundColor Yellow
@@ -219,7 +265,22 @@ foreach ($item in $below) {
     else { $newDebt += $item }
 }
 
-$recovered = $accepted.Keys | Where-Object { $_ -notin $below.Key }
+# B104. "Recovered" used to mean any baselined class not currently below its bar - which included
+# every class that had left the report entirely, reported in the same words as one that was
+# genuinely fixed. So debt could be paid off by ceasing to be measured, and the run that found this
+# said "MLQT.McpServer::Program now meets the bar" about a class the report no longer contained.
+# Recovered now means measured and meeting its bar; not measured is its own outcome, and is only
+# acceptable when the ledger says so and says why.
+$recovered = $accepted.Keys | Where-Object { $measured.Contains($_) -and $_ -notin $below.Key }
+$vanished  = $accepted.Keys | Where-Object { -not $measured.Contains($_) -and -not $excludedReasons.ContainsKey($_) }
+
+# An exclusion that has started being measured again is stale: it is now under the gate like
+# anything else, and leaving it listed would hide a real regression in it later.
+$staleExclusions = $excludedReasons.Keys | Where-Object { $measured.Contains($_) }
+
+$unexplainedExclusions = $excludedReasons.Keys | Where-Object {
+    [string]::IsNullOrWhiteSpace($excludedReasons[$_]) -or $excludedReasons[$_] -eq $NeedsReason
+}
 
 Write-Host ''
 Write-Host ("Line coverage: {0}%  ({1} classes gated, {2} below their bar)" -f `
@@ -253,6 +314,24 @@ if ($regressed) {
     }
 }
 
+if ($vanished) {
+    Write-Host ''
+    Write-Host 'Accepted debt that is no longer measured at all:' -ForegroundColor Red
+    foreach ($key in ($vanished | Sort-Object)) { Write-Host "  $key" -ForegroundColor Red }
+}
+
+if ($staleExclusions) {
+    Write-Host ''
+    Write-Host 'Listed as not measurable, but the report measured them - drop them from "excluded":' -ForegroundColor Red
+    foreach ($key in ($staleExclusions | Sort-Object)) { Write-Host "  $key" -ForegroundColor Red }
+}
+
+if ($unexplainedExclusions) {
+    Write-Host ''
+    Write-Host 'Excluded from measurement with no reason recorded:' -ForegroundColor Red
+    foreach ($key in ($unexplainedExclusions | Sort-Object)) { Write-Host "  $key" -ForegroundColor Red }
+}
+
 # An entry with no reason is debt nobody decided to take on. Six of them arrived that way when the
 # ledger was first recorded - ordinary in-process classes sitting beside the ones that genuinely
 # cannot be tested on a runner, indistinguishable from them, and none of them ever asked about again.
@@ -270,6 +349,21 @@ if ($unexplained.Count -gt 0) {
 if ($newDebt -or $regressed) {
     Write-Host ''
     Fail 'coverage went backwards. Add tests, or - if the drop is deliberate and understood - re-record with -UpdateBaseline and explain it in the commit message'
+}
+
+if ($vanished) {
+    Write-Host ''
+    Fail "$(@($vanished).Count) baselined class(es) are not in the coverage report at all. That is not the same as meeting the bar - it is no information, and treating it as a pass lets debt leave the ledger by ceasing to be measured. Either find out why the class stopped being measured, or record it under `"excluded`" in $BaselinePath with a reason"
+}
+
+if ($staleExclusions) {
+    Write-Host ''
+    Fail "$(@($staleExclusions).Count) class(es) listed as not measurable are being measured. Remove them from `"excluded`" in $BaselinePath so the gate holds them to their bar like everything else"
+}
+
+if ($unexplainedExclusions) {
+    Write-Host ''
+    Fail "$(@($unexplainedExclusions).Count) exclusion(s) carry no reason. Write one in $BaselinePath saying why the class cannot be measured - the same rule the debt entries follow, for the same reason"
 }
 
 if ($unexplained.Count -gt 0) {

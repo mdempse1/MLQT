@@ -1,5 +1,5 @@
 ﻿{
-    "_comment":  "Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.",
+    "_comment":  "Classes below the coverage bar, accepted as existing debt. Every entry carries a reason, and the build fails on one that does not - accepting debt is a decision, not a keystroke. The build also fails if a class goes further backwards, or if a class arrives below the bar and is not listed here. \"excluded\" is the separate list of classes the report does not measure at all: a baselined class that vanishes from the report is not a class that was fixed, and without that list it could leave the ledger by ceasing to be measured. Regenerate with build/check-coverage.ps1 -UpdateBaseline, then write a reason for anything new and review the diff.",
     "minimumLines":  25,
     "bars":  {
                  "RevisionControl":  80,
@@ -88,5 +88,10 @@
                                                                             "bar":  80,
                                                                             "reason":  "Finds an installed svn. There is none on the runner, so every branch that matters is the not-found one."
                                                                         }
-                }
+                },
+    "excluded":  {
+                     "MLQT.McpServer::Program":  {
+                                                     "reason":  "Not in the coverage report at all, and correctly so: Program.cs is top-level statements, so the class is compiler-generated, and coverlet.MTP excludes generated code the way this script\u0027s header already says it wants. It was measured at 0% under coverlet.collector and carried as debt with the reason \u0027the stdio host: DI wiring and a blocking server loop, exercised by running the server - MLQT.McpTester and dev/smoke.sh - not by a unit test\u0027, which is still true. Listed here rather than dropped, because a class leaving the ledger by ceasing to be measured is exactly what B104 was."
+                                                 }
+                 }
 }
