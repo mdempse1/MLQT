@@ -288,12 +288,11 @@ projects (xUnit + Moq + coverlet), adding bUnit for Layer 1b:
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="bunit" Version="1.40.0" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageReference Include="bunit" Version="2.9.0" />
+    <PackageReference Include="coverlet.MTP" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" />
     <PackageReference Include="Moq" Version="4.20.72" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MLQT.Shared\MLQT.Shared.csproj" />
@@ -303,8 +302,8 @@ projects (xUnit + Moq + coverlet), adding bUnit for Layer 1b:
 ```
 
 Note `Sdk.Razor`, not plain `Sdk` — required so `.razor` test files (bUnit's razor-syntax tests) and
-the MudBlazor RCL assets resolve. Pin the bUnit version at whatever is current when the project is
-created; 1.40 is the last version verified against xUnit v2. Add the project to `MLQT.slnx`.
+the MudBlazor RCL assets resolve. The project is also `OutputType=Exe` with the
+Microsoft.Testing.Platform runner properties, like every other suite here. Add it to `MLQT.slnx`.
 
 ### The four existing sweeps move here
 
@@ -348,9 +347,12 @@ one of them:
   empty ledger states that fact, where eight entries would have read as eight accepted debts.
 
 `MLQT.Shared` gained `[InternalsVisibleTo]` for the test project, and the suite is wired into the
-`build-libraries` CI job. bUnit is pinned at **1.40.0**: 2.x requires xUnit v3 and every other suite
-here is on v2. It pulls AngleSharp 1.2.0, which carries advisory GHSA-pgww-w46g-26qg and would put a
-`NU1902` warning into a build held at zero, so AngleSharp is pinned forward to 1.8.0.
+`build-libraries` CI job.
+
+bUnit was pinned at 1.40.0 for one day, because 2.x requires xUnit v3 and every other suite was on
+v2. **That was undone immediately**: rather than start the project's first UI tests on a superseded
+framework, all nine test projects moved to xUnit v3 — see the note below. bUnit is 2.9.0, which also
+drops the AngleSharp advisory the 1.40 pin existed to work around.
 
 ### Shared bUnit context (Layer 1b only)
 
@@ -399,6 +401,54 @@ public abstract class MlqtComponentTestBase : TestContext
 Every domain service is injected through an interface (`ILibraryDataService`, `IRepositoryService`,
 `IStyleCheckingService`, …), so Moq covers them with no production change — in both layers.
 `AppState` is a concrete class with no dependencies: construct the real one and assert on its events.
+
+---
+
+## Interlude — the whole solution moved to xUnit v3 (2026-09-07)
+
+Not a planned step. 7a-2 pinned bUnit at 1.40 because 2.x needs xUnit v3 and the other eight suites
+were on v2 — which meant starting the project's first UI tests on a superseded framework, and that
+was the wrong trade. Measuring the migration rather than guessing at it showed why:
+
+**The source cost was nearly nothing.** No `IAsyncLifetime` anywhere (the usual breaker); two files
+importing `Xunit.Abstractions`, which is where `ITestOutputHelper` used to live; 14 fixture and
+collection usages, API unchanged; 8,669 `Assert.*` calls, API unchanged.
+
+**The cost is the runner, and it is all-or-nothing.** On the .NET 10 SDK the VSTest target refuses to
+run a Microsoft.Testing.Platform project at all, and `global.json`'s MTP opt-in applies to every
+project in the repository — *"All projects must use that test runner"*. So a mixed repo was never an
+option; nine projects or none. What changed:
+
+| was | now |
+|---|---|
+| `xunit` + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` | `xunit.v3`, projects as `OutputType=Exe` |
+| `--collect:"XPlat Code Coverage"` (coverlet.collector) | `--coverlet --coverlet-output-format cobertura` (coverlet.MTP) |
+| `--logger "trx;LogFileName=x"` | `--report-trx --report-trx-filename x` |
+| `--nologo`, `-v q` | not MTP options — they are errors, and the failure looks like "0 tests ran" |
+| `--filter "FullyQualifiedName!~Svn"` | unchanged; MTP keeps VSTest filter syntax |
+
+**Every suite kept its exact test count** — 1871 / 819 / 795 / 11 / 295 / 291, and 377 with the SVN
+filter — which is what proves nothing was silently dropped.
+
+Four things it turned up that were already there:
+
+- **`ModelicaParser.Tests/TestDebug.cs`** was a committed top-level-statements scratch file with no
+  tests in it, present since the initial commit. As a library it was harmless dead weight, and the
+  `NoWarn CS7022` in that csproj existed to hide the warning it caused. As an `Exe` its statements
+  *become the entry point*, so the whole 1,871-test suite silently ran nothing. Deleted, along with
+  the suppression that had been covering for it.
+- **An unused `using Newtonsoft.Json.Bson`** in `ComplexModelTests.cs`, which only compiled because
+  `Microsoft.NET.Test.Sdk` supplied the package transitively.
+- **230 `xUnit1051` warnings** from a new v3 analyzer — pass `TestContext.Current.CancellationToken`
+  to anything that takes one. Suppressed in the three affected projects beside the `xUnit1031` that
+  was already suppressed there, with the reasoning written in the csproj rather than left implicit.
+- **The coverage ratchet has a hole**, recorded as backlog **B104**. The collector swap moved several
+  classes' *coverable line* counts by one or two and shifted their percentages by under a point, all
+  re-recorded. But `MLQT.McpServer::Program` left the report entirely — it is top-level statements,
+  so compiler-generated, and `coverlet.MTP` excludes generated code where `coverlet.collector`
+  measured it at 0%. That exclusion is *correct*, and matches what the script's own header says it
+  wants. The problem is that the gate reported it identically to a class that had genuinely been
+  fixed: a baselined class absent from the report reads as debt paid.
 
 ---
 

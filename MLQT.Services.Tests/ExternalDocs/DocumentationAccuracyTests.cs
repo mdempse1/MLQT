@@ -3,7 +3,6 @@ using ModelicaGraph.DataTypes;
 using ModelicaParser.ExternalDocs;
 using MLQT.Services;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace MLQT.Services.Tests.ExternalDocs;
 

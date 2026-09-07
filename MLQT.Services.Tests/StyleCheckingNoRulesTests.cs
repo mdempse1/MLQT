@@ -3,7 +3,6 @@ using ModelicaGraph;
 using MLQT.Services;
 using MLQT.Services.Checking;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace MLQT.Services.Tests;
 

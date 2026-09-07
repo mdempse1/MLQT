@@ -29,17 +29,11 @@
                                                                                     "reason":  "Writes a usage log to disk. The gap is the IO-failure branches, which the logger swallows by design so a logging fault cannot fail a tool call. Reachable with a locked file; not yet written."
                                                                                 },
                     "MLQT.McpServer::MLQT.McpServer.Tools.SuppressionTools":  {
-                                                                                  "coverage":  73.6,
-                                                                                  "lines":  76,
+                                                                                  "coverage":  73.3,
+                                                                                  "lines":  75,
                                                                                   "bar":  80,
                                                                                   "reason":  "Phase 5c\u0027s authoring path. The covered half is the tool contract; the gap is the failure branches (unwritable file, class not found, malformed rule id). Reachable; not yet written."
                                                                               },
-                    "MLQT.McpServer::Program":  {
-                                                    "coverage":  0,
-                                                    "lines":  52,
-                                                    "bar":  80,
-                                                    "reason":  "The stdio host: DI wiring and a blocking server loop. Exercised by running the server, which is what MLQT.McpTester and dev/smoke.sh are for, not by a unit test."
-                                                },
                     "MLQT.Services::MLQT.Services.DymolaCheckingService":  {
                                                                                "coverage":  33.6,
                                                                                "lines":  184,
@@ -53,14 +47,14 @@
                                                                                      "reason":  "Talks to a running OpenModelica over ZeroMQ. Same reason as DymolaCheckingService."
                                                                                  },
                     "ModelicaParser::ModelicaParser.ExternalDocs.DymolaHelpReader":  {
-                                                                                         "coverage":  87.8,
-                                                                                         "lines":  74,
+                                                                                         "coverage":  86.9,
+                                                                                         "lines":  69,
                                                                                          "bar":  95,
                                                                                          "reason":  "Reads a vendor\u0027s generated help HTML. Covered against the shapes Dymola 2024x emits; the gap is the malformed-input branches, which need fixtures nobody has captured a real example of."
                                                                                      },
                     "ModelicaParser::ModelicaParser.Helpers.ModelicaFileEncoding":  {
                                                                                         "coverage":  94.2,
-                                                                                        "lines":  70,
+                                                                                        "lines":  69,
                                                                                         "bar":  95,
                                                                                         "reason":  "1.9 points under the bar. The uncovered lines are the rarer BOM and Latin-1 fallback combinations. Reachable from a fixture file; not yet written."
                                                                                     },
@@ -71,20 +65,20 @@
                                                                                         "reason":  "Not yet tested to the parser assembly\u0027s 95% bar: the uncovered lines are the error-recovery and diagnostic-formatting branches reached only by malformed input. Reachable; nobody has written them."
                                                                                     },
                     "ModelicaParser::ModelicaParser.StyleRules.MlqtSuppressionWriter":  {
-                                                                                            "coverage":  94.3,
-                                                                                            "lines":  123,
+                                                                                            "coverage":  94.2,
+                                                                                            "lines":  121,
                                                                                             "bar":  95,
                                                                                             "reason":  "0.7 points under the bar. The uncovered lines are the splice positions for annotation shapes the writer can encounter but no fixture yet produces. Reachable; not yet written."
                                                                                         },
                     "RevisionControl::RevisionControl.SvnCli":  {
                                                                     "coverage":  0,
-                                                                    "lines":  66,
+                                                                    "lines":  63,
                                                                     "bar":  80,
                                                                     "reason":  "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner."
                                                                 },
                     "RevisionControl::RevisionControl.SvnRevisionControlSystem":  {
                                                                                       "coverage":  0.9,
-                                                                                      "lines":  819,
+                                                                                      "lines":  817,
                                                                                       "bar":  80,
                                                                                       "reason":  "Needs a real SVN working copy and a server; the suite that covers it (SvnOperationsTests) is filtered out of the CI run for that reason. Covered locally against C:\\Projects\\ModelicaEditorTest."
                                                                                   },

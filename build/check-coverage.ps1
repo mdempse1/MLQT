@@ -96,9 +96,14 @@ if (-not $SkipTests) {
 
     foreach ($suite in $suites) {
         Write-Host "Collecting coverage: $($suite.Project)" -ForegroundColor Cyan
+        # Microsoft.Testing.Platform, not VSTest: the .NET 10 SDK refuses to run an xUnit v3
+        # project through the VSTest target at all. coverlet.MTP is the same instrumentation the
+        # coverlet.collector data collector used to run, so the per-class numbers stay comparable
+        # with the baseline recorded before the migration. --nologo and -v are VSTest options and
+        # are errors here.
         $arguments = @(
-            'test', $suite.Project, '-c', $Configuration, '--no-build', '--nologo', '-v', 'q',
-            '--collect:XPlat Code Coverage',
+            'test', $suite.Project, '-c', $Configuration, '--no-build',
+            '--coverlet', '--coverlet-output-format', 'cobertura',
             '--results-directory', (Join-Path $ResultsDirectory $suite.Project)
         )
         if ($suite.Filter) { $arguments += @('--filter', $suite.Filter) }
@@ -108,7 +113,7 @@ if (-not $SkipTests) {
     }
 }
 
-$reports = Get-ChildItem -Path $ResultsDirectory -Recurse -Filter 'coverage.cobertura.xml' -ErrorAction SilentlyContinue
+$reports = Get-ChildItem -Path $ResultsDirectory -Recurse -Filter 'coverage.cobertura*.xml' -ErrorAction SilentlyContinue
 if ($reports.Count -lt $suites.Count) {
     # The trap this guards: a suite that produced no report is not 0% coverage, it is no information,
     # and merging it in silently drags every class it owns to zero.
@@ -117,7 +122,7 @@ if ($reports.Count -lt $suites.Count) {
 
 Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 & reportgenerator `
-    "-reports:$ResultsDirectory/**/coverage.cobertura.xml" `
+    "-reports:$ResultsDirectory/**/coverage.cobertura*.xml" `
     "-targetdir:$ReportDirectory" `
     '-reporttypes:JsonSummary;TextSummary;HtmlSummary' `
     '-assemblyfilters:-DymolaInterface;-OpenModelicaInterface;-MLQT.Shared' `

@@ -22,7 +22,9 @@ namespace MLQT.Shared.Tests;
 /// use anywhere in the project. A test that cares what was called asserts it with
 /// <c>JSInterop.VerifyInvoke</c>.</para>
 /// </summary>
-public abstract class MlqtComponentTestBase : TestContext
+// BunitContext, not bUnit 1.x's TestContext: xUnit v3 introduced Xunit.TestContext, and the two
+// collide in any file with both usings. bUnit 2 renamed its own for exactly that reason.
+public abstract class MlqtComponentTestBase : BunitContext
 {
     protected MlqtComponentTestBase()
     {
@@ -53,8 +55,8 @@ public abstract class MlqtComponentTestBase : TestContext
     /// </summary>
     protected void RenderProviders()
     {
-        RenderComponent<MudPopoverProvider>();
-        RenderComponent<MudDialogProvider>();
-        RenderComponent<MudSnackbarProvider>();
+        Render<MudPopoverProvider>();
+        Render<MudDialogProvider>();
+        Render<MudSnackbarProvider>();
     }
 }

@@ -103,25 +103,35 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ## Testing
 
-### xunit (v2.9.3)
+### xunit.v3 (v4.0.0)
 - **Purpose**: Core xUnit testing framework
 - **Used in**: All test projects
 - **License**: [Apache 2.0](https://github.com/xunit/xunit/blob/main/LICENSE)
-- **NuGet**: https://www.nuget.org/packages/xunit
+- **NuGet**: https://www.nuget.org/packages/xunit.v3
+- **Note**: v3 runs on **Microsoft.Testing.Platform**, not VSTest. On the .NET 10 SDK the VSTest
+  target refuses to run such a project at all, so `xunit.runner.visualstudio` and
+  `Microsoft.NET.Test.Sdk` are **not referenced** and `global.json` opts the whole repository into
+  the MTP-based `dotnet test`. That opt-in is all-or-nothing: every test project must be on it.
+  Test projects are `OutputType=Exe` and can also be run directly as executables.
 
-### xunit.runner.visualstudio (v3.1.5)
-- **Purpose**: Visual Studio test runner for xUnit
+### bunit (v2.9.0)
+- **Purpose**: Blazor component rendering for tests
+- **Used in**: MLQT.Shared.Tests
+- **License**: [MIT](https://github.com/bUnit-dev/bUnit/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/bunit
+- **Note**: v2 requires xUnit v3. Its context type is `BunitContext` (v1's `TestContext` collides
+  with xUnit v3's own `Xunit.TestContext`), and `Render<T>()` replaces `RenderComponent<T>()`.
+
+### Microsoft.Testing.Extensions.TrxReport (v2.3.3)
+- **Purpose**: TRX result files under Microsoft.Testing.Platform (`--report-trx`), which CI uploads
 - **Used in**: All test projects
-- **License**: [Apache 2.0](https://github.com/xunit/visualstudio.xunit/blob/main/License.txt)
-- **NuGet**: https://www.nuget.org/packages/xunit.runner.visualstudio
+- **License**: [MIT](https://github.com/microsoft/testfx/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.Testing.Extensions.TrxReport
+- **Note**: Must match the `Microsoft.Testing.Platform` version `xunit.v3` brings in. A mismatched
+  version fails at run time with a `MissingMethodException`, not at restore.
 
-### Microsoft.NET.Test.Sdk (v18.3.0) for running tests
-- **Used in**: All test projects
-- **License**: [MIT](https://github.com/microsoft/vstest/blob/main/LICENSE)
-- **NuGet**: https://www.nuget.org/packages/Microsoft.NET.Test.Sdk
-
-### coverlet.collector (v8.0.0)
-- **Purpose**: Code coverage collector for .NET
+### coverlet.MTP (v10.0.1)
+- **Purpose**: Code coverage under Microsoft.Testing.Platform (`--coverlet`)
 - **Used in**: All test projects
 - **License**: [MIT](https://github.com/coverlet-coverage/coverlet/blob/master/LICENSE)
 - **NuGet**: https://www.nuget.org/packages/coverlet.collector
@@ -158,7 +168,7 @@ MAUI packages use `$(MauiVersion)` variable defined in project files to ensure v
 Test packages are marked as development dependencies and don't ship with the application:
 
 ```xml
-<PackageReference Include="xunit" Version="2.9.2">
+<PackageReference Include="xunit.v3" Version="4.0.0">
     <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     <PrivateAssets>all</PrivateAssets>
 </PackageReference>
@@ -183,4 +193,4 @@ Test packages are marked as development dependencies and don't ship with the app
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
 | MLQT | Microsoft.Maui.*, Microsoft.AspNetCore.Components.WebView.Maui |
-| Test Projects | xunit, Microsoft.NET.Test.Sdk, coverlet.collector (RevisionControl.Tests also: SharpSvn) |
+| Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (MLQT.Shared.Tests also: bunit; RevisionControl.Tests also: SharpSvn) |

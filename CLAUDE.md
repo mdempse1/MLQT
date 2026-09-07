@@ -25,6 +25,12 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 
 ## Build and Run Commands
 
+Test projects run on **xUnit v3 / Microsoft.Testing.Platform**, opted into repository-wide by
+`global.json` — an all-or-nothing switch, so every test project must stay on it. VSTest-only flags
+(`--nologo`, `-v`, `--logger trx`) are errors there; use `--report-trx --report-trx-filename x` and
+`--coverlet` instead. `--filter` keeps its VSTest syntax. Test projects are `OutputType=Exe` and can
+be run directly as executables.
+
 ```bash
 # Build entire solution
 dotnet build MLQT.slnx

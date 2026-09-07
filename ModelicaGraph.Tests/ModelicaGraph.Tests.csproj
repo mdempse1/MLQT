@@ -5,14 +5,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);xUnit1031</NoWarn>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <!-- xUnit1031: blocking task operations in a test method, suppressed since before the v3
+         migration. xUnit1051: pass TestContext.Current.CancellationToken to anything that
+         accepts one, a v3 analyzer that arrived with the migration and fires 230 times here.
+         The point it makes is real - a cancelled test run would not interrupt these calls -
+         but every one of them is fast, local file or in-memory work, so the responsiveness it
+         buys is nil against 230 edits to test bodies. Recorded rather than quietly ignored;
+         if these suites ever grow a slow or networked call, fix that call rather than widening
+         this. -->
+    <NoWarn>$(NoWarn);xUnit1031;xUnit1051</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="coverlet.MTP" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" />
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
   </ItemGroup>
 
   <ItemGroup>

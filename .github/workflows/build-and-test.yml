@@ -62,10 +62,10 @@ jobs:
           dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
 
       - name: Run ModelicaParser tests
-        run: dotnet test ModelicaParser.Tests -c Release --no-build --logger "trx;LogFileName=parser.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test ModelicaParser.Tests -c Release --no-build --report-trx --report-trx-filename parser.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run ModelicaGraph tests
-        run: dotnet test ModelicaGraph.Tests -c Release --no-build --logger "trx;LogFileName=graph.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph.trx --results-directory ${{ github.workspace }}/TestResults
 
       # SVN tests are excluded on CI: the integration tests need a live working copy /
       # server (e.g. C:\Projects\ModelicaEditorTest) that doesn't exist on the runner, and
@@ -75,19 +75,19 @@ jobs:
       # release workflow's "Verify bundled svn client" step. To run SVN tests locally,
       # check out a working copy at that path and run RevisionControl.Tests without the filter.
       - name: Run RevisionControl tests (exclude SVN integration)
-        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --logger "trx;LogFileName=revcontrol.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Services tests
-        run: dotnet test MLQT.Services.Tests -c Release --no-build --logger "trx;LogFileName=services.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.McpServer tests
-        run: dotnet test MLQT.McpServer.Tests -c Release --no-build --logger "trx;LogFileName=mcpserver.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.McpServer.Tests -c Release --no-build --report-trx --report-trx-filename mcpserver.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Cli tests
-        run: dotnet test MLQT.Cli.Tests -c Release --no-build --logger "trx;LogFileName=cli.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Shared tests
-        run: dotnet test MLQT.Shared.Tests -c Release --no-build --logger "trx;LogFileName=shared.trx" --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared.trx --results-directory ${{ github.workspace }}/TestResults
 
       # The CLI tests assert the shape we expect of a SARIF document, which cannot catch one that is
       # well-formed by our lights and rejected by a consumer's. This validates a report generated from
