@@ -907,6 +907,45 @@ Six, chosen because each crosses a service boundary the migration disturbs:
 6. **Open the Dependencies page → the Cytoscape graph reports N nodes → change layout.** Asserted via
    `page.EvaluateAsync` against the Cytoscape instance, not pixels.
 
+### ✅ Shipped (2026-09-07) — the host, the fixtures, and the first journeys
+
+`MLQT.TestHost` runs, `MLQT.Journeys` drives it through Chromium, and **7 journeys pass**.
+
+`AddMlqtCore()` is in `MLQT.Shared`, not `MLQT.Services` as this note said: two of its registrations
+(`AppState`, `BrowserService`) are types in `MLQT.Shared`, which `MLQT.Services` does not reference
+and must not. `MauiProgram` is now 47 lines and adds four things — the three platform services and
+its renderer.
+
+The test host's page is **generated from `HostAssetManifest`**, which is the pattern 7b should copy
+for Photino; the MAUI page stays hand-written and is held to the manifest by a test.
+
+**Three host differences surfaced in the first hour, which is the entire argument for building this
+before the migration rather than during it:**
+
+1. **Prerendering breaks MLQT.** Blazor Server renders statically on the server first; a webview host
+   is interactive from the first frame. MLQT's components issue JS interop during their initial
+   render — legal in a webview, an exception during static render. The very first request was a 500.
+   Prerendering is off and the page says why: leaving it on would fail journeys on a difference the
+   product does not have.
+2. **RCL static assets were not served.** `CreateBuilder` only wires that up in Development. This is
+   **probe 2**, the one this note calls the likeliest Photino failure — and it was the first thing to
+   go wrong here too, which is some evidence the probe list is aimed correctly.
+3. **And then not served again, for a different reason.** With `UseStaticWebAssets()` in place it
+   worked under `dotnet run` and 404'd under the journeys, because the manifest is named after the
+   *application* and the entry assembly in-process is `MLQT.Journeys`. Setting `ApplicationName`
+   explicitly fixes it. A configuration bug that works one way of running and fails the other is the
+   worst shape available, and it is the shape the Photino host will meet.
+
+The journeys are verified by breaking things rather than by being green: dropping
+`UseStaticWebAssets` fails 3, removing Cytoscape from the generated page fails 1, and re-enabling
+prerendering fails 2.
+
+Journey 4 (settings change → formatting reruns → the file changes) is driven through
+`IFormattingPipeline` rather than by clicking, because 7a-4 put both formatting paths behind that
+interface precisely so this could reach them. Its first version passed by doing nothing — the fixture
+file was already canonically formatted — so the fixture now writes a badly laid-out file *and* the
+test asserts the library actually loaded before asserting the formatter changed it.
+
 ### The optional WebKit rehearsal
 
 Playwright ships a WebKit browser. Running the same journeys under `--browser webkit` on Linux is not
