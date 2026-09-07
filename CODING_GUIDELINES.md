@@ -292,58 +292,164 @@ var json = """
 
 ## Blazor Patterns
 
+### Code-Behind Files vs `@code` Blocks
+
+**Put component logic in a code-behind file (`Foo.razor` + `Foo.razor.cs` with
+`public partial class Foo`). Use an inline `@code { }` block only when there is no logic worth
+testing.** This is the default for every component in `MLQT.Shared`.
+
+**Why.** A partial class in a plain `.cs` file is an ordinary C# type: a test can construct it, set
+its `[Inject]` properties and `[Parameter]` values, and call an event handler as a method — no
+renderer, no bUnit, no JS interop stand-in, no MudBlazor provider tree. Logic inside `@code { }` can
+only be reached by rendering the component and driving the UI, which is why `MLQT.Shared` went its
+first years with no tests at all while every other assembly is gated at 80%. It also matters for the
+coverage gate: `build/check-coverage.ps1` measures lines in `.cs` files and ignores lines mapped back
+to `.razor` markup, so logic in a code-behind file is gated and logic in an `@code` block is not.
+
+**Use a code-behind file when the component has any of:**
+
+- Event handlers with branching, validation, or error handling — anything beyond a one-line
+  `EventCallback` invocation or `NavState.ChangeModelID(id)` call.
+- Data transformation: filtering, sorting, grouping, mapping graph nodes to `TreeItemData<T>`,
+  formatting findings for display.
+- Lifecycle work beyond a single `await Service.LoadAsync()` — multi-step loads, cancellation,
+  conditional initialisation, `OnAfterRenderAsync(firstRender)` bootstrapping.
+- Subscriptions to `AppState` or service events (which also means `IDisposable` and an unsubscribe —
+  see [Event Handling](#event-handling-and-statehaschanged); `SharedUiConventionTests` checks the pair).
+- State-machine behaviour, computed properties, or non-trivial reactivity in `OnParametersSet` /
+  `ShouldRender`.
+- Anything you would feel uncomfortable shipping without a test.
+
+**An inline `@code { }` block is acceptable when the component is a thin display surface:**
+
+- Pure markup driven by `[Parameter]` values, with no behaviour — `RuleSeverityRow`,
+  `CurrentModelDisplay`.
+- One or two short handlers that only invoke an `EventCallback` or close a dialog —
+  `ConfirmDeleteProjectDialog`, `ErrorDialog`.
+- Layout shells and cascading-value relays.
+
+A component may keep a small `@code { }` block alongside a code-behind file for genuinely view-local
+helpers (a `RenderFragment`, a display-string expression used once in the markup) — but if it has
+a body with an `if`, an `await`, or a loop, it belongs in the `.razor.cs`.
+
+**Business logic does not belong in either.** Code-behind is the home for *component* logic — view
+state, event wiring, mapping a service result onto what the markup renders. Work that would run the
+same way with no UI attached (the analysis pipeline, formatting, VCS reaction, metrics computation)
+goes into `MLQT.Services` behind an interface, per
+[Adding New Features](CLAUDE.md) — the code-behind then calls it. Moving a 200-line method from
+`@code` into `.razor.cs` and stopping there swaps one wrong home for a slightly better one.
+
+**Code-behind conventions:**
+
+```csharp
+// Components/FindingsList.razor.cs
+using Microsoft.AspNetCore.Components;
+using MLQT.Services.Interfaces;
+using MLQT.Shared.Models;
+
+namespace MLQT.Shared.Components;
+
+public partial class FindingsList : IDisposable
+{
+    // 1. Parameters
+    [Parameter] public string RepositoryId { get; set; } = string.Empty;
+    [Parameter] public EventCallback<LogMessage> OnFindingSelected { get; set; }
+
+    // 2. Injected services — properties, not fields, so a test can set them
+    [Inject] private ICodeReviewService CodeReviewService { get; set; } = null!;
+    [Inject] private AppState NavState { get; set; } = null!;
+
+    // 3. Component state
+    private List<LogMessage> _findings = [];
+    private bool _isLoading;
+
+    // 4. Lifecycle
+    protected override void OnInitialized()
+    {
+        NavState.OnChangeModel += OnModelChanged;
+    }
+
+    // 5. Event handlers and private methods — the testable surface
+    private void OnModelChanged() => _findings = FilterForCurrentModel();
+
+    internal List<LogMessage> FilterForCurrentModel() => /* ... */;
+
+    // 6. Cleanup
+    public void Dispose() => NavState.OnChangeModel -= OnModelChanged;
+}
+```
+
+The `.razor` file then holds the `@page`/`@using` directives and markup, and nothing else.
+
+- **Namespace matches the folder** — `MLQT.Shared.Components`, `MLQT.Shared.Pages`,
+  `MLQT.Shared.Dialogs`, `MLQT.Shared.Layout` — because that is the namespace the Razor compiler
+  generates for the other half of the partial. Get it wrong and the error ("partial declarations must
+  be in the same namespace") is clear, but only at build time.
+- **Inject with `[Inject]` properties, not `@inject` directives.** `@inject` generates the property
+  in the `.razor.g.cs` half, where a test cannot set it. The `null!` initialiser suppresses CS8618;
+  DI populates the property before any user code runs.
+- **Mark the testable surface `internal`, not `private`,** where a test needs to call it directly,
+  and add `[assembly: InternalsVisibleTo("MLQT.Shared.Tests")]`. Reflection works too but reads
+  badly and breaks silently on a rename.
+- **`_camelCase` private fields, as everywhere else** — the naming rules above apply unchanged.
+
+**Migrating an existing component.** Move members across verbatim in one commit — no renames, no
+signature changes, no "while I'm here" fixes — so the diff reads as a move and the reviewer can see
+it is behaviour-neutral. Convert `@inject` to `[Inject]` in the same commit (mechanical). Add the
+tests in a *separate* commit. Any real fix the move uncovers is a third commit with its own reason.
+
 ### Component Structure
 
+A component with logic is two files. The `.razor` is markup:
+
 ```razor
-@* 1. Using directives *@
-@using MLQT.Services.Interfaces
+@* 1. Route and using directives — no @inject; see above *@
 @using MudBlazor
 
-@* 2. Dependency injection *@
-@inject ILibraryDataService LibraryDataService
-@inject ISnackbar Snackbar
-
-@* 3. Interface implementations *@
+@* 2. Interface declarations that the markup needs *@
 @implements IDisposable
 
-@* 4. Markup *@
+@* 3. Markup only *@
 <div class="component-container">
     @if (_isLoading)
     {
-        <MudProgressCircular Indeterminate="true" />
+        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
     }
     else
     {
-        <MudText>@_data</MudText>
+        <MudText Typo="Typo.body1">@_data</MudText>
     }
 </div>
+```
 
-@* 5. Code block *@
-@code {
-    // Parameters first
-    [Parameter]
-    public string ModelId { get; set; } = string.Empty;
+The `.razor.cs` is the code, in a fixed member order:
 
-    [Parameter]
-    public EventCallback<string> OnModelSelected { get; set; }
+```csharp
+using Microsoft.AspNetCore.Components;
+using MLQT.Services.Interfaces;
 
-    // Private fields
+namespace MLQT.Shared.Components;
+
+public partial class ModelSummary : IDisposable
+{
+    // 1. Parameters
+    [Parameter] public string ModelId { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnModelSelected { get; set; }
+
+    // 2. Injected services
+    [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
+
+    // 3. Private fields
     private bool _isLoading;
     private string _data = string.Empty;
 
-    // Lifecycle methods
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadDataAsync();
-    }
+    // 4. Lifecycle methods
+    protected override async Task OnInitializedAsync() => await LoadDataAsync();
 
-    // Event handlers
-    private async Task HandleClick()
-    {
-        await OnModelSelected.InvokeAsync(ModelId);
-    }
+    // 5. Event handlers
+    private async Task HandleClick() => await OnModelSelected.InvokeAsync(ModelId);
 
-    // Private methods
+    // 6. Private methods
     private async Task LoadDataAsync()
     {
         _isLoading = true;
@@ -357,13 +463,16 @@ var json = """
         }
     }
 
-    // IDisposable
+    // 7. Cleanup
     public void Dispose()
     {
-        // Cleanup
+        // Unsubscribe from every event subscribed above
     }
 }
 ```
+
+A component with **no** logic — a display surface driven by its parameters — is one `.razor` file
+with a short `@code { }` block, and needs no code-behind.
 
 ### Event Handling and StateHasChanged
 
@@ -830,6 +939,9 @@ Before committing code, verify:
 - [ ] XML documentation on public APIs
 - [ ] Specific exception types caught (not generic Exception)
 - [ ] Services registered with appropriate lifetimes
+- [ ] Component logic lives in a `.razor.cs` code-behind partial, not an `@code { }` block (see Blazor Patterns § Code-Behind Files vs `@code` Blocks)
+- [ ] Services in a component with a code-behind are injected via `[Inject]` properties, not `@inject`
+- [ ] Logic that would run the same way with no UI attached is in `MLQT.Services`, not in the component at all
 - [ ] Blazor components properly dispose of event subscriptions
 - [ ] StateHasChanged used correctly (with InvokeAsync when needed)
 - [ ] No unnecessary StateHasChanged calls after awaited operations
@@ -842,3 +954,4 @@ Before committing code, verify:
 |------|---------|--------|---------|
 | 2026-02-12 | 1.0 | - | Initial draft |
 | 2026-03-11 | 1.1 | - | Added null-proof return-value capture pattern; InvokeAsync method-group form; zero-warning checklist items |
+| 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |

@@ -1,9 +1,10 @@
-# Design Note — Phase 7a: GUI test harness (pre-migration)
+# Design Note — Phase 7a: making the UI testable, then testing it
 
-> **Status: PROPOSED (2026-09-02).** Companion to phase 7 of the locked roadmap
-> ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note
-> covers the **test harness built before the host migration starts**, so the Photino build can
-> be proved equivalent to the known-good MAUI build rather than eyeballed.
+> **Status: PROPOSED (2026-09-02, restructured 2026-09-07).** Companion to phase 7 of the locked
+> roadmap ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note
+> covers everything built **before the host migration starts**, so the Photino build can be proved
+> equivalent to the known-good MAUI build rather than eyeballed. §7b at the end sketches the
+> migration itself.
 >
 > MLQT has a large test suite across eight projects and **zero tests covering `MLQT.Shared`**.
 > That gap is tolerable while one host exists and a human drives it daily. It stops being
@@ -27,8 +28,61 @@ Build a test harness that
 3. **is worth having afterwards** — this is the project's first UI test suite and its first
    Linux CI job; neither is throwaway scaffolding.
 
-Non-goals: high line-coverage of Razor markup, screenshot/pixel diffing, testing MudBlazor itself,
+Non-goals: high line-coverage of Razor *markup*, screenshot/pixel diffing, testing MudBlazor itself,
 and mobile (roadmap: desktop only).
+
+---
+
+## The decision this note now turns on: code-behind
+
+**Component logic moves out of `@code { }` blocks into `.razor.cs` partial classes, and the project
+adopts that as policy** — recorded in [CODING_GUIDELINES.md](../CODING_GUIDELINES.md) §Blazor
+Patterns, *Code-Behind Files vs `@code` Blocks*, and adapted from the workspace-wide
+`Claytex.Net/Coding_Guidelines.md`, where the same pattern is already established.
+
+This was not in the first draft of this note, which was bUnit-first throughout. It changes the plan
+more than it looks like it should, so the reasoning is worth stating plainly.
+
+`MLQT.Shared` is **16,652 lines of `.razor` across 39 components, of which 11,935 sit inside
+`@code { }` blocks** — 71% of the project's UI source is C# that no test can reach without starting a
+renderer. There are **zero `.razor.cs` files today**. Every one of those 11,935 lines is reachable
+only by rendering the component, wiring MudBlazor's service graph and provider tree, faking JS
+interop, and driving the DOM.
+
+With the logic in a partial class, most of it becomes an ordinary C# type: construct it, set
+`[Inject]` and `[Parameter]` properties, call the handler, assert. No renderer at all. That is the
+difference between a suite that is expensive to write and slow to run, and one that looks like the
+other eight test projects in this solution and runs in the same seconds.
+
+So the layering changes:
+
+| | First draft | This plan |
+|---|---|---|
+| Primary component tests | bUnit render + DOM assertions | **plain xUnit + Moq against `.razor.cs` partials** |
+| bUnit | everything | **only what genuinely needs a render tree** — lazy-load trees, dialog/popover flows, parameter reactivity, two-way binding |
+| Prerequisite | none | **the code-behind sweep (7a-1)**, which every later step depends on |
+
+bUnit does not go away. It earns its place for a specific and small set of behaviours — the
+MudTreeView lazy-load selection regression cannot be reproduced without a render tree, and neither
+can "the dialog closed with the right result". But it stops being the default answer, which is what
+made the original plan's first week look like a slow one.
+
+### The sweep is also worth doing on its own merits
+
+Two of the four borderline components inspected while sizing this work had defects visible the moment
+the code was read as C# rather than as part of a `.razor` file:
+
+- `Dialogs/ProjectSelectionDialog.razor` — `_projects.FirstOrDefault(p => p.Id == settings.ActiveProjectId)!.Id ?? _projects.FirstOrDefault()!.Id`
+  throws `NullReferenceException` when no project matches the active id, and the `??` fallback is
+  dead code because `.Id` is non-nullable. It is also two uses of the null-forgiving operator, which
+  [CODING_GUIDELINES.md](../CODING_GUIDELINES.md) forbids outright and its summary checklist asks
+  about on every commit.
+- `Components/CurrentModelDisplay.razor` — the same eight-line file-name resolution written twice in
+  two adjacent handlers.
+
+Neither is a phase-7 problem. Both are the ordinary consequence of 11,935 lines living somewhere no
+test, no coverage gate and no reviewer's habits reach. **Fix them in their own commits after the
+move, not during it** — see the conversion rule below.
 
 ---
 
@@ -37,7 +91,7 @@ and mobile (roadmap: desktop only).
 `MLQT.Shared` is a plain `net10.0` Razor class library. It references `Microsoft.AspNetCore.Components.Web`,
 MudBlazor, NLog and the four domain projects. **It has no MAUI reference of any kind.** That is the
 single most important fact for this design: the UI is already host-agnostic, so a test that renders
-components without a host is portable for free.
+components without a host is portable for free — and a test that does not render at all is more so.
 
 Everything non-portable lives in the `MLQT` project and is small:
 
@@ -68,14 +122,14 @@ JSInterop mode sufficient, and it makes a Blazor Server test host viable (see La
 depends on webview-only synchronous interop.
 
 `eval` and `open` are the two engine-sensitive ones. `window.open` in particular behaves differently
-under WebKitGTK and may need routing through a native shell-open — a phase-7 work item, and a probe
+under WebKitGTK and may need routing through a native shell-open — a phase-7b work item, and a probe
 in Layer 3.
 
 ---
 
 ## The central problem: portable ≠ proving
 
-The obvious plan — "write bUnit tests over `MLQT.Shared`, then check they still pass on Photino" —
+The obvious plan — "write tests over `MLQT.Shared`, then check they still pass on Photino" —
 produces tests that **pass identically on both hosts by construction, while proving nothing about
 either host**. They never load a webview, never resolve a static asset, never open a file dialog.
 Green on Photino would be green even if the Photino app failed to start.
@@ -86,12 +140,13 @@ fine on Windows today — and **do not port**, because Photino on Linux is WebKi
 WebKit remote inspector protocol, not CDP. Playwright cannot drive it. Tests written that way would
 have to be thrown away at exactly the moment they were needed.
 
-So the harness is three layers with explicitly different jobs, and the honesty about what each one
+So the harness is four layers with explicitly different jobs, and the honesty about what each one
 proves is part of the design:
 
 | Layer | Runs against | Portable across hosts? | Proves |
 |---|---|---|---|
-| 1 — bUnit component tests | no host at all | trivially (never sees a host) | shared UI logic unchanged by the migration's refactoring churn |
+| 1 — direct unit tests on `.razor.cs` partials | no renderer at all | trivially | the bulk of shared UI logic; the cheapest and fastest tests in the suite |
+| 1b — bUnit render tests | no host, but a real render tree | trivially (never sees a host) | the render-dependent minority: lazy-load trees, dialog results, parameter reactivity |
 | 2 — Playwright over a Blazor Server test host | a real browser + a third host | yes (never references MAUI or Photino) | user journeys work end-to-end; runs on Linux CI |
 | 3 — `/selftest` conformance route | the real MAUI app, then the real Photino app | **yes — same route, same assertions, different host** | the host itself: assets, interop, engine, native services |
 
@@ -100,12 +155,92 @@ and 2 are what stop the migration breaking the shared code on the way there.
 
 ---
 
-## Layer 1 — bUnit component tests (`MLQT.Shared.Tests`)
+## 7a-1 — the code-behind sweep
+
+**One behaviour-neutral pass over `MLQT.Shared`, before any test is written.**
+
+### Why first, and not per-component-as-tested
+
+The alternative — convert a component only when its tests are about to be written — was rejected. It
+keeps each diff smaller, but it leaves the policy unenforced for the length of phase 7a, which means
+new components keep arriving in the shape the phase exists to eliminate, and the convention guard
+(7a-2) cannot be switched on until the very end. Enforcement that arrives last enforces nothing.
+
+### Why before the service extraction, not after
+
+The roadmap's B73 declined to touch `MainLayout.razor` on the grounds that doing so "would move the
+same code twice". That reasoning applies to *extracting* it twice, not to this. The sweep is a
+contiguous cut-and-paste that the compiler verifies: the generated type is the same type, the members
+are the same members. What it changes is the ground the extraction then happens on — a 2,606-line C#
+file where "move this method to a service" is a refactoring the IDE can perform and `git diff` can
+show, instead of a Razor file where it is a manual edit nobody can review with confidence. The first
+move is free; the second is the work; doing the free one first makes the expensive one cheaper.
+
+### Inventory
+
+Of 39 components (excluding `_Imports.razor`), **31 convert and 8 stay as they are**:
+
+| Convert | `@code` lines | Convert | `@code` lines |
+|---|---:|---|---:|
+| `Layout/MainLayout.razor` | 2,606 | `Components/SettingsUI.razor` | 186 |
+| `Pages/CodeReview.razor` | 1,988 | `Dialogs/CommitChangesDialog.razor` | 141 |
+| `Components/LibraryBrowser.razor` | 917 | `Components/SettingsRepositoryDictionary.razor` | 140 |
+| `Pages/MetricsDashboard.razor` | 726 | `Components/CodeViewer.razor` | 138 |
+| `Components/DiffViewer.razor` | 666 | `Dialogs/RevisionDiffDialog.razor` | 126 |
+| `Pages/ExternalResources.razor` | 586 | `Components/SettingsExternalTools.razor` | 121 |
+| `Components/SettingsRepositories.razor` | 470 | `Components/CytoscapeGraph.razor` | 114 |
+| `Dialogs/VCSHistory.razor` | 468 | `Dialogs/CreateBranchDialog.razor` | 112 |
+| `Components/ChangeReview.razor` | 357 | `Components/SettingsReferenceLibraries.razor` | 90 |
+| `Dialogs/GitRebaseDialog.razor` | 305 | `Dialogs/CreatePullRequestDialog.razor` | 80 |
+| `Dialogs/MergeBranchDialog.razor` | 269 | `Dialogs/SwitchBranchDialog.razor` | 73 |
+| `Dialogs/GitMergeBranchDialog.razor` | 267 | `Dialogs/RevertFilesDialog.razor` | 58 |
+| `Dialogs/AddRepositoryDialog.razor` | 246 | `Components/NamingStyleSelect.razor` | 54 |
+| `Components/BranchSelector.razor` | 219 | `Components/ColorPicker.razor` | 43 |
+| `Pages/Dependencies.razor` | 208 | `Components/CurrentModelDisplay.razor` | 42 |
+| | | `Dialogs/ProjectSelectionDialog.razor` | 36 |
+
+**Stay as `@code`** — no logic worth a test: `RuleSeverityPicker` (a colour switch and a two-way
+binding relay), `RuleSeverityRow`, `ErrorDialog`, `ConfirmDeleteProjectDialog`, `ConflictDiffDialog`,
+`Pages/Settings`, `Routes`, `Pages/Index`.
+
+The three smallest in the convert column are there on judgement, not line count: `ColorPicker` has
+hex validation and formatting, `CurrentModelDisplay` subscribes to two `AppState` events, and
+`ProjectSelectionDialog` reads settings and builds a placeholder project — and, as noted above, has a
+live `NullReferenceException` in that code.
+
+### The rule for each conversion commit
+
+**One component per commit, and the commit is a move.** No renames, no signature changes, no fixes,
+no reordering beyond the member order the guidelines specify. Specifically:
+
+1. Create `Foo.razor.cs` with `namespace MLQT.Shared.<Folder>;` and `public partial class Foo`,
+   carrying across the interface list (`IDisposable`, `IAsyncDisposable`) from the `.razor` file's
+   `@implements` directives.
+2. Move the whole `@code { }` body across unchanged; delete the block.
+3. Convert every `@inject X Y` directive to `[Inject] private X Y { get; set; } = null!;` — **114
+   directives across the project**, mechanical. This is required, not cosmetic: `@inject` generates
+   the property in the `.razor.g.cs` half, where a test cannot set it.
+4. Add the `using` directives the partial needs — a `.razor.cs` does not see `_Imports.razor`.
+5. Build. The compiler is the check: same type, same members, same generated component.
+
+Anything the move reveals — the two defects above, a dead field, a `!` that should not be there —
+gets its own follow-up commit with its own reason. Mixing them makes the move unreviewable, which is
+the one thing that would make this sweep a bad idea.
+
+`MLQT.Shared` gains `[assembly: InternalsVisibleTo("MLQT.Shared.Tests")]` in 7a-2, so members the
+tests call directly can be `internal` rather than reached by reflection.
+
+**Size: L, but shallow.** 31 mechanical commits, of which three (`MainLayout`, `CodeReview`,
+`LibraryBrowser`) are large enough to want their own review.
+
+---
+
+## 7a-2 — `MLQT.Shared.Tests`, and the convention guards
 
 ### Project
 
 New `MLQT.Shared.Tests/MLQT.Shared.Tests.csproj`, matching the conventions of the existing eight test
-projects (xUnit + Moq + coverlet), adding bUnit:
+projects (xUnit + Moq + coverlet), adding bUnit for Layer 1b:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Razor">
@@ -132,12 +267,36 @@ projects (xUnit + Moq + coverlet), adding bUnit:
 
 Note `Sdk.Razor`, not plain `Sdk` — required so `.razor` test files (bUnit's razor-syntax tests) and
 the MudBlazor RCL assets resolve. Pin the bUnit version at whatever is current when the project is
-created; 1.40 is the last version verified against xUnit v2.
+created; 1.40 is the last version verified against xUnit v2. Add the project to `MLQT.slnx`.
 
-### Shared test context
+### The four existing sweeps move here
+
+[`MLQT.Services.Tests/SharedUiConventionTests.cs`](../MLQT.Services.Tests/SharedUiConventionTests.cs)
+already reads the `MLQT.Shared` source from a service test, and its own doc comment says it belongs in
+`MLQT.Shared.Tests` "the day it exists". Move it, unchanged, as the first file in the new project —
+including its deliberate refusal to skip when it cannot find the source.
+
+### Three new guards, which is what makes the policy hold
+
+The recurring defect shape in this repository is a rule stated in a document that nothing enforces —
+the roadmap's B97 is the entry that named it, and B101–B103 are the most recent instance. The
+code-behind policy is exactly that shape, so it gets tests in the same file:
+
+1. **No `@code` block over 25 lines**, except for components in a committed ledger carrying a
+   `reason` per entry — the same shape as `build/coverage-baseline.json`, and for the same reason:
+   "this one is genuinely a display surface" and "nobody has converted this yet" are different facts
+   and the ledger should say which. The eight thin components above are its initial contents.
+2. **No `@inject` directive in a component that has a `.razor.cs`** — a directive-injected service
+   cannot be set by a test, so this is the guard that stops the sweep quietly unravelling.
+3. **Every `.razor.cs` declares a `partial class` matching its file name, in the namespace matching
+   its folder.** The failure is a build error rather than a silent one, but the test names the rule
+   where someone will read it.
+
+### Shared bUnit context (Layer 1b only)
 
 MudBlazor needs three things bUnit does not give you by default, and getting them wrong produces
-confusing "component not rendering" failures rather than clear errors. Put them in one base class:
+confusing "component not rendering" failures rather than clear errors. Put them in one base class,
+used only by the render tests:
 
 ```csharp
 /// <summary>
@@ -145,6 +304,10 @@ confusing "component not rendering" failures rather than clear errors. Put them 
 /// loose JS interop (all of MLQT's interop is async global functions — none of it is
 /// meaningful in a headless renderer), and the provider components that MudBlazor's
 /// dialogs, popovers and snackbars render into.
+///
+/// Most component tests should not need this: with the logic in a .razor.cs partial,
+/// the handler can be called directly. Use it only where the behaviour under test is
+/// the render tree itself.
 /// </summary>
 public abstract class MlqtComponentTestBase : TestContext
 {
@@ -174,84 +337,145 @@ public abstract class MlqtComponentTestBase : TestContext
 ```
 
 Every domain service is injected through an interface (`ILibraryDataService`, `IRepositoryService`,
-`IStyleCheckingService`, …), so Moq covers them with no production change. `AppState` is a concrete
-class but has no dependencies — register the real one and assert on its events.
+`IStyleCheckingService`, …), so Moq covers them with no production change — in both layers.
+`AppState` is a concrete class with no dependencies: construct the real one and assert on its events.
+
+---
+
+## 7a-3 — Layer 1: direct component tests
 
 ### What to test, in priority order
 
-Prioritised by *logic density per line of markup*, not by component size:
+Prioritised by *logic density*, not component size:
 
-1. **`LibraryBrowser.razor`** (1186 lines) — the highest-value target and the one with a known
-   regression history. `LoadServerData` lazy-loading, `OnNodeChildrenLoaded` write-back, selection in
-   single vs multi mode, VCS status icon mapping, the debounced rebuild that preserves expansion
-   state. The MudTreeView lazy-load selection regression — nested-node selection silently breaking on
-   a MudBlazor 9.4 upgrade — is precisely a bUnit test: render the tree, expand a node via
-   `ServerData`, click a grandchild, assert `AppState.ModelID`. It would have failed on the upgrade
-   commit instead of in manual use.
-2. **Dialogs** (`CommitChangesDialog`, `CreateBranchDialog`, `RevertFilesDialog`,
-   `GitRebaseDialog`, `MergeBranchDialog`, `AddRepositoryDialog`) — self-contained, parameter-in /
-   result-out, heavy on validation rules (e.g. commit-message issue-number enforcement from
-   `CommitRequiresIssueNumber` / `IssueNumberAtEnd`). Cheapest tests in the suite per unit of value.
-3. **`SettingsRepositories.razor`** (885 lines) — change detection driving
+1. **`SettingsRepositories.razor.cs`** — change detection driving
    `RepositorySettingsApplied(repositoryId, formattingChanged, styleSettingsChanged)`. The two
    booleans decide whether a full reformat runs; getting them wrong is expensive and invisible.
-   Assert the exact flags for each kind of edit.
-4. **`ChangeReview.razor`, `CodeViewer.razor`, `DiffViewer.razor`** — findings filtering, baseline
-   status grouping (new / touched / accepted), diff view modes.
-5. **`SettingsUI.razor`, `NamingStyleSelect.razor`, `RuleSeverityPicker.razor`** — presets and
-   two-way binding.
+   Assert the exact flags for each kind of edit. Pure logic over a settings object — no renderer.
+2. **Dialogs** (`CommitChangesDialog`, `CreateBranchDialog`, `RevertFilesDialog`, `GitRebaseDialog`,
+   `MergeBranchDialog`, `AddRepositoryDialog`) — parameter-in / result-out, heavy on validation rules
+   (commit-message issue-number enforcement from `CommitRequiresIssueNumber` / `IssueNumberAtEnd`).
+   The validation predicates test directly; only "the dialog closed with `DialogResult.Ok(x)`" needs
+   Layer 1b.
+3. **`CodeReview.razor.cs`** — after the extraction in 7a-4, what remains is findings filtering
+   (`FilterFunc`, `FilterFunc1`), the file-line mapping through `ClassLocation` (`FileLineOf`), the
+   suppression eligibility rule (`CanSuppressRule`), element-prefix formatting, and view-mode
+   selection. All pure functions over data; all currently unreachable.
+4. **`MetricsDashboard.razor.cs`** — scope matching (`InScope`, `CountFindingsForScope`), sub-package
+   derivation, trend series construction, `IsStyleDebt`. Pure; several are already `static`.
+5. **`LibraryBrowser.razor.cs`** — `ToTreeItems`, `AnnotateVcsStatus`, `IsLibraryInRepository`,
+   `GetParserErrorTooltip`, expansion-state capture and restore. The tree *building* is data; only
+   the lazy-load *selection* needs Layer 1b.
+6. **`ChangeReview`, `CodeViewer`, `DiffViewer`, `ExternalResources`** — findings filtering, baseline
+   status grouping (new / touched / accepted), diff view modes, resource type filters.
+7. **`ColorPicker`, `NamingStyleSelect`, `SettingsUI`** — validation, presets, hex round-tripping.
 
-**Deliberately not tested at the DOM level:** `MainLayout.razor` (3054 lines) and
-`CodeReview.razor` (2104). See the next section — the answer there is extraction, not a bigger test.
+### Layer 1b — the render tests that earn their place
 
-`CytoscapeGraph.razor` is also excluded: it is a thin wrapper whose entire behaviour is the six
-`cytoscapeGraph.*` interop calls. Assert the *call sequence and payload* via
-`JSInterop.VerifyInvoke("cytoscapeGraph.init")`; whether Cytoscape actually draws is a Layer 3
-question, because that is engine-dependent.
+Deliberately short. A test belongs here only if the behaviour cannot exist without a render tree:
 
-### Coverage target
+- **`LibraryBrowser` lazy-load selection.** The known regression: MudBlazor 9.4 broke nested-node
+  selection, fixed by an `ItemsChanged` write-back of `ServerData` children. Render the tree, expand
+  a node via `ServerData`, click a grandchild, assert `AppState.ModelID`. It would have failed on the
+  upgrade commit instead of in manual use. This is the single most valuable bUnit test in the suite,
+  and the reason bUnit is in the plan at all.
+- **Dialog open → interact → `DialogResult`** for the six dialogs, one test each.
+- **Two-way binding** on `ColorPicker`, `NamingStyleSelect`, `RuleSeverityPicker` — `ValueChanged`
+  round-trips through a parent.
+- **`CytoscapeGraph` interop sequence.** It is a thin wrapper whose entire behaviour is the six
+  `cytoscapeGraph.*` calls; assert the call sequence and payload via
+  `JSInterop.VerifyInvoke("cytoscapeGraph.init")`. Whether Cytoscape actually *draws* is a Layer 3
+  question, because that is engine-dependent.
 
-The 80% rule in CLAUDE.md is a poor fit for Razor components — much of a `.razor` file is markup with
-no branches. Set the bar as **behavioural rather than numeric** for `MLQT.Shared`: every event
-handler that mutates `AppState`, calls a service, or gates on a settings flag has at least one test.
-Leave the >80% / >95% numeric targets applying to the existing assemblies as they do today.
+`MainLayout` gets **no DOM-level tests**. After 7a-4 it is event wiring and progress UI; the logic is
+tested where it lands, in `MLQT.Services.Tests`.
 
 ---
 
-## The `MainLayout` extraction (prerequisite, and independently worthwhile)
+## 7a-4 — the extraction out of the three largest components (roadmap B20/B73)
 
-[MainLayout.razor](../MLQT.Shared/Layout/MainLayout.razor) is 3054 lines injecting 13 services and
-holding the entire analysis pipeline: `RunStartUpAsync`, `FormatModifiedFilesAsync`,
+The sweep makes the logic testable. It does not make it *right* that the analysis pipeline lives in a
+layout component, against this repository's own instruction to keep business logic in services, not
+Razor components. B20 is that item, widened by B73 to name `MainLayout.razor` first of the three.
+
+[MainLayout.razor](../MLQT.Shared/Layout/MainLayout.razor) is 3,080 lines, of which 2,606 are C#,
+injecting 13 services and holding the entire analysis pipeline. Three destinations:
+
+**→ `MLQT.Services/AnalysisPipelineService.cs` behind `IAnalysisPipeline`** — the work that would run
+identically with no UI attached: `RunStartUpAsync`'s body, `LoadReferenceLibrariesAsync`,
 `SaveAllLibrariesWithFormattingAsync`, `SaveChangedFilesWithFormattingAsync`,
-`UpdateFileNodesAfterSave`, `TrimPackageModelicaCode`, `CleanupEmptyDirectories`, the four
-`RunDeferred*Async` methods, `OnVcsFilesChanged`, `OnVcsModelsChanged`, `OnRepositorySettingsApplied`,
-`RefreshLibrariesAsync`, `FormatChangedFilesForCommitAsync`.
+`FormatModifiedFilesAsync`, `FormatChangedFilesForCommitAsync`, `GetModifiedFilePathsFromVcs`,
+`UpdateFileNodesAfterSave`, `TrimPackageModelicaCode`, `CleanupEmptyDirectories`, `SkipReferenceOnly`,
+`BuildModelToStyleSettingsMap`, `BuildModelToRepositoryMap`, `AnyEnabledRuleNeedsDependencies`, the
+four `RunDeferred*Async` bodies, and the bodies of `OnVcsFilesChanged`, `OnVcsModelsChanged`,
+`OnRepositorySettingsApplied` and `RefreshLibrariesAsync`. Progress is reported through a callback or
+`IProgress<T>`, not by touching a dialog.
 
-This is the most consequential logic in the application and the least accessible to any test — it can
-only be reached by rendering a layout with 13 mocks and firing events at it. It is also the code most
-likely to be disturbed by the migration, since the migration edits the composition root feeding it.
+**→ `MLQT.Shared/Theming/MlqtTheme.cs`** — `GetDefaultPaletteLight`, `GetDefaultPaletteDark`,
+`BuildCustomPalette`, `BuildTheme`. Four static pure functions over `UISettings`: a static class and
+four tests.
 
-**Extract it into `MLQT.Services/AnalysisPipelineService.cs` behind `IAnalysisPipeline`**, leaving
-`MainLayout` as event wiring, dialog/progress UI, and theme handling. Then:
+**→ `MainLayout.razor.cs`** — event subscriptions, the startup/progress dialog state machine,
+`ResetStartupSteps`, `CloseStartupDialog`, `GetRefreshTooltip`, `ApplyThemeFromSettings`, the
+`SurfaceParserErrors` presentation, `Dispose`.
 
-- the pipeline is testable in `MLQT.Services.Tests` with the existing patterns (temp directories via
-  `Path.Combine(Path.GetTempPath(), "mlqt-…" + Guid.NewGuid().ToString("N"))`, as ~20 test classes
-  already do) — no renderer, no mocks-of-mocks;
-- Layer 2's test host and the real hosts share one implementation, so a journey test exercises the
-  same pipeline the app runs;
-- `MainLayout` shrinks to something a bUnit test can reasonably cover.
+The same split applies, smaller, to the other two:
 
-Scope guard: this is a **move**, not a redesign. The `OnVcsFilesChanged` fallback chain (pending
+- **`CodeReview.razor`** — suppression writing (`ResolveClassSourceTarget`, `ReadTargetFileAsync`,
+  `SaveAnnotatedFileAsync`, `SuppressRuleForFinding`) and the dictionary/spelling actions
+  (`AddToDictionary`, `IgnoreSpellingFinding`, `ApplyCorrectionCore`) write files and belong in
+  `MLQT.Services`; `ExportFindingsAsync`'s report construction belongs beside the other report
+  writers. Filtering and formatting stay in the code-behind and get Layer 1 tests.
+- **`MetricsDashboard.razor`** — snapshot persistence (`SaveSnapshot`, `LoadAllHistory`),
+  `StorageGroups`, `OwningRepository`, `ReportableModels` and `StyleSettingsLookup` are computation
+  over the graph and settings, and belong with the other metrics code in `ModelicaGraph/Analysis/` or
+  a service beside it. Counting, scope matching and trend building stay in the code-behind.
+
+**Scope guard: this is a move, not a redesign.** The `OnVcsFilesChanged` fallback chain (pending
 monitor changes → VCS status → all repo models) and the monitor pause/resume ordering are
-load-bearing and already documented; port them verbatim and characterise them with tests *before*
-touching them.
+load-bearing and already documented in CLAUDE.md; port them verbatim and characterise them with tests
+*before* touching them. B65 was a defect that lived in this code and nowhere else — which is both the
+argument for the extraction and the warning about it.
 
-Sequencing: do this **before** Layer 2, because the test host needs to register the pipeline as a
+Sequencing: this must precede Layer 2, because the test host needs to register the pipeline as a
 service rather than instantiate a layout.
 
+**Size: L — the long pole**, and the only step in 7a whose risk is not shallow.
+
 ---
 
-## Layer 2 — `MLQT.TestHost` + Playwright
+## 7a-5 — the coverage gate
+
+`MLQT.Shared` is excluded from the ratchet today, in two places:
+`-assemblyfilters:-MLQT.Shared` in [check-coverage.ps1](../build/check-coverage.ps1), and no entry in
+`$bars`. Its comment gives the reason honestly: there are no tests. Once 7a-1 through 7a-4 land, that
+reason has expired, and leaving it excluded would let the gap reopen silently — which is the failure
+mode this project has now written three memory notes about.
+
+**Bring `MLQT.Shared` into the gate at the 80% bar, at the end of 7a**, with three specifics:
+
+1. **Add `-filefilters:-*.razor` to the ReportGenerator invocation.** A Razor component's generated
+   `BuildRenderTree` is markup attributed to the component's class; counting it would make the
+   percentage meaningless and unreachable. Filtering by source file measures the `.razor.cs` and
+   ignores the markup — which is exactly the incentive the policy wants: **logic in a code-behind is
+   gated, markup is not.** Verify what the merged report actually attributes to a component class
+   *before* fixing the bar; if the filter behaves differently than expected, that measurement is the
+   input to the decision, not this paragraph.
+2. **Seed `build/coverage-baseline.json` with `-UpdateBaseline`, then write a real `reason` on every
+   entry.** The gate already fails on a `TODO` placeholder, deliberately. "Not yet tested" and
+   "renders only, no logic" are different facts and the ledger must distinguish them, exactly as it
+   does for the SVN classes today.
+3. **Add `MLQT.Shared.Tests` to the `$suites` list**, and to the `build-libraries` job in
+   [build-and-test.yml](../.github/workflows/build-and-test.yml).
+
+The 80% rule remains a poor fit for markup, which is why it is applied to `.cs` files only. Alongside
+it, keep the **behavioural** bar as the rule a reviewer applies: every event handler that mutates
+`AppState`, calls a service, or gates on a settings flag has at least one test. The numeric gate
+catches drift; the behavioural rule catches "technically covered, asserts nothing".
+
+---
+
+## 7a-6 — `MLQT.TestHost` + Playwright (Layer 2)
 
 ### The idea
 
@@ -335,7 +559,7 @@ creates a temp directory containing:
 - a `.mlqt/` directory with settings and dictionary, so per-repository settings paths are exercised.
 
 Deliberately **no SVN fixture**: `RevisionControl.Tests` already documents why SVN integration cannot
-run on CI (needs a live working copy and server), and that reasoning applies unchanged here.
+run on CI (it needs a live working copy and server), and that reasoning applies unchanged here.
 
 ### Determinism
 
@@ -349,7 +573,8 @@ finished" needs an explicit signal. Rather than sleeping:
 - render a `data-mlqt-state="idle|busy"` attribute on the layout root in the test host only, so
   Playwright can `WaitForSelector("[data-mlqt-state=idle]")`.
 
-Both are test-host-only; neither leaks into the shipped hosts.
+Both are test-host-only; neither leaks into the shipped hosts. `IAnalysisPipeline` from 7a-4 is what
+makes the first one implementable without reaching into a component.
 
 ### Running the host
 
@@ -393,14 +618,15 @@ Photino host exists. Recommended as a nightly job rather than a PR gate.
 
 ---
 
-## Layer 3 — the `/selftest` conformance route
+## 7a-7 — the `/selftest` conformance route (Layer 3)
 
 The piece that actually compares hosts. A route in **`MLQT.Shared`**, so it is literally the same code
 running under MAUI, Photino and the test host — no per-host test rewriting.
 
-`MLQT.Shared/Pages/SelfTest.razor` runs a fixed list of probes and renders a pass/fail table plus a
-machine-readable JSON blob in a `<pre id="selftest-result">`. Probes, each chosen because it maps to a
-specific way the migration can break:
+`MLQT.Shared/Pages/SelfTest.razor` (with a `.razor.cs`, per the policy — it is all logic) runs a fixed
+list of probes and renders a pass/fail table plus a machine-readable JSON blob in a
+`<pre id="selftest-result">`. Probes, each chosen because it maps to a specific way the migration can
+break:
 
 | # | Probe | Breaks when |
 |---|---|---|
@@ -443,7 +669,7 @@ afterwards.
 
 Stated plainly, because the temptation to over-claim here is strong:
 
-- ✅ Shared UI logic is unchanged by the migration — Layer 1.
+- ✅ Shared UI logic is unchanged by the migration — Layers 1 and 1b.
 - ✅ The user journeys work, on Linux as well as Windows — Layer 2.
 - ✅ The host resolves assets, runs interop, renders MudBlazor and Cytoscape, and its native services
   work — Layer 3.
@@ -454,6 +680,9 @@ Stated plainly, because the temptation to over-claim here is strong:
   Photino's surface differs from MAUI's here and the difference is intentional; test manually.
 - ❌ **Real file dialogs.** Probe 11 asserts wiring, not that a GTK dialog opens and returns a path.
   Manual, once per platform.
+- ❌ **That the markup is right.** The coverage gate measures `.razor.cs` and ignores `.razor` by
+  design, and Layer 1 never renders. A component whose handler is fully tested can still render the
+  wrong thing; Layer 2 is the only defence, and it covers six journeys, not 39 components.
 
 ---
 
@@ -463,17 +692,18 @@ Each step compiles and leaves the suite green.
 
 | Step | Work | Size |
 |---|---|---|
-| **7a-1** | `MLQT.Shared.Tests` project + `MlqtComponentTestBase` + first `LibraryBrowser` tests (lazy-load, selection) | S |
-| **7a-2** | Dialog tests; `SettingsRepositories` change-detection tests; `ChangeReview`/`CodeViewer`/`DiffViewer` | M |
-| **7a-3** | Extract `IAnalysisPipeline` out of `MainLayout`; characterisation tests in `MLQT.Services.Tests` | **L — the long pole** |
-| **7a-4** | `AddMlqtCore()` extraction; `HostAssetManifest` + the index.html drift test | S |
-| **7a-5** | `SelfTest.razor` + probes; MAUI launcher test; **commit the MAUI baseline JSON** | M |
-| **7a-6** | `MLQT.TestHost` + fakes + `LibraryFixture`; first two journeys | M |
-| **7a-7** | Remaining journeys; CI wiring (Linux job, Playwright install, nightly WebKit run) | M |
+| **7a-1** | The code-behind sweep: 31 components, one behaviour-neutral commit each; `@inject` → `[Inject]` throughout | **L, shallow** |
+| **7a-2** | `MLQT.Shared.Tests` project; move `SharedUiConventionTests`; the three new convention guards; `MlqtComponentTestBase` | S |
+| **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
+| **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
+| **7a-5** | `MLQT.Shared` into the coverage ratchet: `-filefilters:-*.razor`, `$bars`, `$suites`, baseline with real reasons | S |
+| **7a-6** | `AddMlqtCore()`; `HostAssetManifest` + the index.html drift test; `MLQT.TestHost` + fakes + `LibraryFixture`; first two journeys | M |
+| **7a-7** | `SelfTest.razor` + probes; MAUI launcher test; **commit the MAUI baseline JSON**; remaining journeys; Linux CI job; nightly WebKit run | M |
 
-7a-5 is the step with a deadline attached — it must land while the MAUI build is the reference
-implementation. If phase 7 has to start early, 7a-1, 7a-3, 7a-4 and 7a-5 are the non-negotiable
-subset; 7a-2 and the journeys can trail the migration.
+**7a-7 is the step with a deadline attached** — the MAUI baseline must be captured while the MAUI
+build is still the reference implementation. If phase 7 has to start early, **7a-1, 7a-2, 7a-4 and
+7a-7** are the non-negotiable subset; 7a-3's long tail and the journeys can trail the migration, and
+7a-5 can follow whenever the suite is large enough to have a meaningful baseline.
 
 ---
 
@@ -481,7 +711,8 @@ subset; 7a-2 and the journeys can trail the migration.
 
 Add to [build-and-test.yml](../.github/workflows/build-and-test.yml):
 
-- `dotnet test MLQT.Shared.Tests` in the existing `build-libraries` job (Windows; no new deps).
+- `dotnet test MLQT.Shared.Tests` in the existing `build-libraries` job (Windows; no new deps), and
+  the suite in `check-coverage.ps1`'s `$suites`.
 - A new **`ui-journeys`** job on `ubuntu-latest`: restore, build `MLQT.TestHost` + the Playwright
   test project, `playwright.ps1 install --with-deps chromium`, run. Note this job must **not**
   install the MAUI workload — it is also the first proof that the non-MAUI projects build on Linux,
@@ -496,6 +727,11 @@ a headless Linux runner are otherwise near-undebuggable.
 
 ## Key decisions & risks
 
+**The code-behind sweep is the load-bearing decision.** If it is done half-way — some components
+converted, `@inject` left in place, the convention guard deferred — the project ends up with two
+shapes and no enforcement, which is worse than either shape alone. 7a-2's guards exist to make that
+outcome a build failure.
+
 **Blazor Server as the test host is a deliberate approximation.** It is not the webview render mode
 the product ships. It differs in: circuit-based reconnection (irrelevant here), no
 `IJSInProcessRuntime` (MLQT does not use it — verified), and serialization of interop arguments over
@@ -504,7 +740,7 @@ acceptable because Layer 3 covers what it misses. **If a journey ever needs beha
 cannot express, that is a signal to promote the test to Layer 3, not to weaken Layer 3.**
 
 **Photino on .NET 10 is unverified.** `Photino.Blazor` has historically trailed .NET releases. Confirm
-a `net10.0`-compatible build exists *in the WebKitGTK spike that opens phase 7* — before any of the
+a `net10.0`-compatible build exists *in the WebKitGTK spike that opens phase 7b* — before any of the
 host work is scheduled. If it does not, the fallback host in the roadmap becomes the primary and
 `MLQT.TestHost` becomes production code, which is another reason to build it properly now.
 
@@ -517,18 +753,49 @@ specifically for it; expect to spend time here.
 that must be discarded: it cannot be carried to WebKitGTK.
 
 **MudBlazor + bUnit has known friction** — popovers and dialogs need their providers rendered, and
-some interactions need `cut.WaitForAssertion(...)`. Budget for a slow first week on 7a-1; the pattern,
-once established in the base class, generalises.
+some interactions need `cut.WaitForAssertion(...)`. The code-behind policy shrinks the exposure to
+Layer 1b, roughly a dozen tests rather than the whole suite; budget for a slow day there rather than
+a slow week.
 
-**7a-3 is a refactor of the most delicate code in the app.** The mitigation is ordering:
-characterisation tests first, capturing current behaviour including its quirks, and only then the
-move. If it slips, Layers 1 and 3 still deliver independently — Layer 2 is the only thing that hard
-depends on it.
+**7a-4 is a refactor of the most delicate code in the app.** The mitigation is ordering: 7a-1 puts it
+in reviewable C# first, characterisation tests capture current behaviour including its quirks, and
+only then does anything move. If it slips, Layers 1 and 3 still deliver independently — Layer 2 is
+the only thing that hard depends on it.
+
+**The coverage bar for `MLQT.Shared` is a measurement, not an assumption.** 7a-5 says to check what
+the merged report attributes to a component class *before* fixing the bar. If `-filefilters:-*.razor`
+does not behave as expected, the fix is to change the filter, not to lower the bar and stop asking.
+
+---
+
+## 7b — the host migration (sketch)
+
+Detail lands once the spike reports; the sequence is fixed by the roadmap and by what 7a produces.
+
+1. **WebKitGTK / Photino spike (S).** Opens phase 7b. Two questions, both gating: does a
+   `net10.0`-compatible `Photino.Blazor` exist, and do Cytoscape.js, MudBlazor and the syntax
+   highlighting behave under WebKitGTK? Answered against a throwaway host, not the real one. A "no"
+   on the first promotes `MLQT.TestHost` to the shipping host and rewrites the rest of this list.
+2. **`MLQT.Photino` host (M).** `AddMlqtCore()` + three platform services + `PhotinoBlazorApp`. The
+   composition root is already extracted by 7a-6, so this is the three-line file that design promises.
+3. **The three platform services (M).** `IFilePickerService` → GTK/Win32, `ISettingsService` → JSON at
+   an XDG/LocalAppData path, `IPowerManagementService` → `org.freedesktop.ScreenSaver`/`caffeinate`.
+   Probes 8–11 are their acceptance criteria.
+4. **The host page (S).** Generated from `HostAssetManifest`, not copied; the drift test from 7a-6 is
+   what makes that safe. Bundle Roboto here (probe 7).
+5. **`svn` on Linux (S).** The bundled `svn/` payload is Windows-only; probe 13 is the check.
+6. **Validate on Windows first (S).** Photino on Windows against the committed MAUI baseline — same
+   OS, same engine family, one variable changed. Only then Linux.
+7. **Cutover (S).** Retire the `MLQT` MAUI project and the MAUI workload from CI. The `selftest` job
+   per platform becomes the parity gate that replaces the baseline diff.
+
+The one-time manual passes 7a explicitly does not cover — visual fidelity, native window behaviour,
+real file dialogs — are checklist items in step 6, once per platform.
 
 ---
 
 ## Incidental finding
 
 `MLQT.Shared/wwwroot/filePicker.js` is referenced from no C#, Razor or HTML in the solution —
-presumably dead since the picker moved to the native MAUI service. Delete it during 7a-4 rather than
+presumably dead since the picker moved to the native MAUI service. Delete it during 7a-6 rather than
 carrying it into the manifest.
