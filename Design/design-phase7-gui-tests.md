@@ -724,19 +724,47 @@ mode this project has now written three memory notes about.
 
 **Bring `MLQT.Shared` into the gate at the 80% bar, at the end of 7a**, with three specifics:
 
-1. **Add `-filefilters:-*.razor` to the ReportGenerator invocation.** A Razor component's generated
-   `BuildRenderTree` is markup attributed to the component's class; counting it would make the
-   percentage meaningless and unreachable. Filtering by source file measures the `.razor.cs` and
-   ignores the markup — which is exactly the incentive the policy wants: **logic in a code-behind is
-   gated, markup is not.** Verify what the merged report actually attributes to a component class
-   *before* fixing the bar; if the filter behaves differently than expected, that measurement is the
-   input to the decision, not this paragraph.
+1. ~~**Add `-filefilters:-*.razor`**~~ — **the measurement said no, and this is why the step told
+   itself to measure.** The premise was that a component's generated `BuildRenderTree` would be
+   attributed to its class and swamp the percentage. It is not counted at all: `MainLayout` reports
+   **1,071 coverable lines against a 1,898-line code-behind**, which is its C# and nothing else.
+   Adding the filter would have moved the assembly by 0.1 of a point and **removed five classes from
+   the report entirely** — the components that kept an `@code` block, whose code lives in a `.razor`
+   file. A class that is not measured reads as one that is fine, which is exactly B104. Everything is
+   measured instead.
 2. **Seed `build/coverage-baseline.json` with `-UpdateBaseline`, then write a real `reason` on every
    entry.** The gate already fails on a `TODO` placeholder, deliberately. "Not yet tested" and
    "renders only, no logic" are different facts and the ledger must distinguish them, exactly as it
    does for the SVN classes today.
 3. **Add `MLQT.Shared.Tests` to the `$suites` list**, and to the `build-libraries` job in
    [build-and-test.yml](../.github/workflows/build-and-test.yml).
+
+### ✅ Shipped (2026-09-07)
+
+`MLQT.Shared` is in the ratchet at 80% per class, `MLQT.Shared.Tests` is in `$suites`, and the
+assembly filter that excluded it is gone. The assembly sits at **7.5%**, with **29 classes** newly in
+the ledger, each carrying its own reason.
+
+Writing those reasons was the useful part, because the ledger exists to keep three different facts
+apart and all three are present here:
+
+- **Reachable only by rendering** — the pages and settings panels whose decisions 7a-3 tested and
+  whose remaining code is lifecycle, subscriptions and dialog state. The Layer 2 journeys cover these.
+- **Needs a working copy** — the VCS dialogs, whose validation is tested and whose operation needs a
+  real repository. A LibGit2Sharp fixture in 7a-6, not a unit test.
+- **Nobody has written them** — `AppState`, `SyntaxHighlightingSettings` and `VcsStatusHelper` are
+  plain classes with no dependencies, directly testable with no renderer at all. They are in the
+  ledger because they were never anyone's next task, and the entry says so rather than borrowing one
+  of the other two excuses. `AppState` is named as the first thing to fix.
+
+One entry is not `MLQT.Shared` at all: **`FormattingPipeline` at 25%**, which is debt *this branch
+created* in 7a-4 rather than inherited. Its two incremental entry points are tested and every
+decision inside the full save is tested separately; what is uncovered is the 250-line sequencing of
+`SaveAllLibrariesWithFormattingAsync`, which needs a library on disk with a real layout to
+restructure. The entry says that, and says it is worth writing.
+
+Verified in both directions: claiming a `MLQT.Shared` class was better than it is fails the gate, and
+removing one from the ledger fails it as new debt.
 
 The 80% rule remains a poor fit for markup, which is why it is applied to `.cs` files only. Alongside
 it, keep the **behavioural** bar as the rule a reviewer applies: every event handler that mutates
@@ -966,7 +994,7 @@ Each step compiles and leaves the suite green.
 | **7a-2** | ✅ **shipped 2026-09-07** — `MLQT.Shared.Tests`; `SharedUiConventionTests` moved; six convention guards, each verified by breaking the source; `MlqtComponentTestBase` | S |
 | **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
 | **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
-| **7a-5** | `MLQT.Shared` into the coverage ratchet: `-filefilters:-*.razor`, `$bars`, `$suites`, baseline with real reasons | S |
+| **7a-5** | ✅ **shipped 2026-09-07** — `MLQT.Shared` into the coverage ratchet: `$bars`, `$suites`, baseline with 29 reasons. No file filter: the measurement said it would hide five classes | S |
 | **7a-6** | `AddMlqtCore()`; `HostAssetManifest` + the index.html drift test; `MLQT.TestHost` + fakes + `LibraryFixture`; first two journeys | M |
 | **7a-7** | `SelfTest.razor` + probes; MAUI launcher test; **commit the MAUI baseline JSON**; remaining journeys; Linux CI job; nightly WebKit run | M |
 

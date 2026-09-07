@@ -41,8 +41,16 @@
       - Generated code, which nobody wrote and nobody can sensibly test to a bar: ANTLR's output from
         modelica.g4 (modelicaParser and friends - 4,862 coverable lines of it, which on its own moves
         the assembly's average by more than any real class can) and the regex source generator's.
-      - DymolaInterface and OpenModelicaInterface, whose tests drive a live install, and MLQT.Shared,
-        which has no tests at all until phase 7a builds the harness.
+      - DymolaInterface and OpenModelicaInterface, whose tests drive a live install.
+
+    MLQT.Shared joined the gate in phase 7a-5, and deliberately with no file filter. The plan for that
+    step assumed a Razor component's generated BuildRenderTree would be attributed to the component's
+    class and swamp it, and said to measure before choosing. Measured: it is not counted at all -
+    MainLayout reports 1,071 coverable lines against a 1,898-line code-behind, which is its C# and
+    nothing else. Adding -filefilters:-*.razor would have changed the assembly by 0.1 point and
+    removed five classes from the report entirely: the components that kept an @code block, whose
+    code lives in a .razor file. A class that is not measured reads as one that is fine, which is
+    exactly what B104 was about, so everything is measured instead.
 
 .PARAMETER Configuration
     Build configuration to test. Defaults to Release, matching CI - and it has to match: Release
@@ -82,6 +90,7 @@ $bars = @{
     'MLQT.McpServer' = 80.0
     'RevisionControl' = 80.0
     'mlqt'           = 80.0   # the assembly name of MLQT.Cli, from its ToolCommandName
+    'MLQT.Shared'    = 80.0   # joined the gate in phase 7a-5; see the note in the header
 }
 
 # The suites, and the filter each needs. SVN integration tests want a working copy at
@@ -93,6 +102,7 @@ $suites = @(
     @{ Project = 'MLQT.Services.Tests';   Filter = $null }
     @{ Project = 'MLQT.Cli.Tests';        Filter = $null }
     @{ Project = 'MLQT.McpServer.Tests';  Filter = $null }
+    @{ Project = 'MLQT.Shared.Tests';     Filter = $null }
     @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~Svn' }
 )
 
@@ -136,7 +146,7 @@ Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
     "-reports:$ResultsDirectory/**/coverage.cobertura*.xml" `
     "-targetdir:$ReportDirectory" `
     '-reporttypes:JsonSummary;TextSummary;HtmlSummary' `
-    '-assemblyfilters:-DymolaInterface;-OpenModelicaInterface;-MLQT.Shared' `
+    '-assemblyfilters:-DymolaInterface;-OpenModelicaInterface' `
     '-classfilters:-System.Text.RegularExpressions.Generated*;-modelicaParser;-modelicaLexer;-modelicaBaseListener;-modelicaBaseVisitor*' | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'reportgenerator failed' }
 
