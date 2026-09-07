@@ -1,7 +1,8 @@
 # Design Note — Phase 7a: making the UI testable, then testing it
 
-> **Status: IN PROGRESS (proposed 2026-09-02, restructured 2026-09-07).** **7a-1 and 7a-2 are
-> shipped**; 7a-3 onwards are not. Each step's own section carries a *Shipped* note recording what
+> **Status: IN PROGRESS (proposed 2026-09-02, restructured 2026-09-07).** **7a-1, 7a-2 and 7a-4
+> through 7a-7 are shipped**, including the MAUI conformance baseline, which was the one piece with a
+> deadline. 7a-3's long tail is outstanding. Each step's own section carries a *Shipped* note recording what
 > actually landed and where it differed from the sketch. Companion to phase 7 of the locked roadmap
 > ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note covers
 > everything built **before the host migration starts**, so the Photino build can be proved
@@ -618,7 +619,7 @@ service rather than instantiate a layout.
 
 **Size: L — the long pole**, and the only step in 7a whose risk is not shallow.
 
-### Progress (2026-09-07)
+### ✅ Shipped (2026-09-07) — ten extractions, and what deliberately stayed
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
 `MainLayout.razor.cs` is **2,635 → 1,898 lines**, and 907 tests now cover the pieces taken out of it.
@@ -1021,6 +1022,60 @@ a file, and any probe that legitimately differs is a deliberate, reviewed change
 This artefact is the whole point of doing this work before the migration, and it cannot be produced
 afterwards.
 
+### Shipped (2026-09-07) — the route, the baseline, and the comparison
+
+**The MAUI baseline is captured and committed** as
+`MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json`: 14 probes, all passing, `Host: MLQT`,
+runtime 10.0.8, produced by the real MAUI app driving WebView2. This is the artefact with the
+deadline, and it now exists. The step it was blocked on was mundane and worth recording: the running
+desktop app holds a lock on `MLQT.Shared.dll`, so the MAUI project cannot build while MLQT is open.
+
+**14 probes, not the 14 sketched above.** The list changed on contact:
+
+- Probes 2 and 9 of the sketch (a second `ISettingsService` probe for its backing path) collapsed
+  into one round-trip probe; `logging.writes` already asserts a real path on disk.
+- The sketch's probe 6 (MudBlazor dialog, popover and snackbar in the DOM) is **not** in the shipped
+  list. The route runs under `EmptyLayout`, whose whole purpose is that no application is booting
+  underneath it, and MudBlazor's overlays need the providers plus a render cycle the probe would have
+  to drive. Journey coverage already opens dialogs against a real host. It is listed as an open item
+  rather than quietly dropped.
+- `cytoscape.layouts` replaced the sketch's assumption that each layout script defines a global named
+  after it. **`klayjs` does not** — it publishes `klayregister`/`klaycallback`. The probe now asks
+  Cytoscape which layouts it has registered, which is the question that actually matters and is not
+  sensitive to how a given extension chooses to advertise itself.
+
+**Two probes were wrong on their first run**, both in the direction that matters — they failed
+against a host that works, rather than passing against one that does not: the `klay` global above,
+and `diffViewer.initSyncScroll`, which takes elements and not element ids.
+
+**The report says which host produced it, and hosts declare themselves.** The first capture named
+the *process* — so a report captured from the journeys was labelled `MLQT.Journeys`, which is exactly
+the kind of quietly-wrong field that makes a baseline diff untrustworthy. Each host now sets
+`MLQT_SELFTEST_HOST`.
+
+**The comparison is written and exercised now, not at the migration.** `HostConformance.Compare` in
+`MLQT.Journeys` diffs a report against the committed baseline, and reports a probe present on one
+side only as a difference rather than skipping it — the failure it guards against is not a host that
+answers differently, which is loud, but two probe sets that have drifted apart while their
+intersection still matches, so the diff comes back empty and reads as success. Phase 7b points the
+same code at Photino.
+
+**The test host matches the MAUI baseline on all 14 probes, with no allowances.** That was not
+assumed: the journey was written with an empty allowance list so the run would say what actually
+differs, and there was nothing. A Blazor Server host over Kestrel and a WebView2 host answer these
+questions identically, which raises the confidence that a difference under Photino will be a real
+difference.
+
+**Five guards on the artefact itself**, in `MLQT.Shared.Tests/SelfTestBaselineTests.cs`, each watched
+failing against a deliberately corrupted copy: it was captured under MAUI; every probe in it passed;
+its probe ids match the ones the route actually runs, read from the route's own source (the drift
+guard, and the one that matters most); no duplicates; and the four probes the migration is most
+likely to break are named individually, so dropping one is a decision rather than an omission.
+
+Still open: the per-platform CI `selftest` job, the nightly WebKit journey run, and the MudBlazor
+overlay probe.
+
+
 ---
 
 ## What this does and does not prove
@@ -1052,11 +1107,11 @@ Each step compiles and leaves the suite green.
 |---|---|---|
 | **7a-1** | ✅ **shipped 2026-09-07** — the code-behind sweep: 31 components, `@inject` → `[Inject]` throughout, plus `GlobalUsings.cs` and the browser-platform removal | **L, shallow** |
 | **7a-2** | ✅ **shipped 2026-09-07** — `MLQT.Shared.Tests`; `SharedUiConventionTests` moved; six convention guards, each verified by breaking the source; `MlqtComponentTestBase` | S |
-| **7a-3** | Layer 1 tests over the converted partials, in the priority order above; Layer 1b for the tree, the dialogs and `CytoscapeGraph` | M |
-| **7a-4** | Extract `IAnalysisPipeline`, `MlqtTheme` and the `CodeReview`/`MetricsDashboard` service logic; characterisation tests first | **L — the long pole** |
+| **7a-3** | ✅ **mostly shipped 2026-09-07** — 11 Layer 1 files over the components, dialogs and pages, including the tree's lazy load and `CytoscapeGraph`'s interop. Outstanding: `SettingsUI`, and the remaining dialogs' `DialogResult` round-trips | M |
+| **7a-4** | ✅ **shipped 2026-09-07** — ten extractions out of `MainLayout` and its neighbours, each with tests verified by mutation; `MainLayout` 2,635 → 1,898 lines of logic | **L — the long pole** |
 | **7a-5** | ✅ **shipped 2026-09-07** — `MLQT.Shared` into the coverage ratchet: `$bars`, `$suites`, baseline with 29 reasons. No file filter: the measurement said it would hide five classes | S |
 | **7a-6** | ✅ **shipped 2026-09-07** — `AddMlqtCore()`, `HostAssetManifest` + drift test, `MLQT.TestHost` + fakes + `LibraryFixture`, **23 journeys**, the Linux CI job and `PortabilityTests` | M |
-| **7a-7** | `SelfTest.razor` + probes; MAUI launcher test; **commit the MAUI baseline JSON**; remaining journeys; Linux CI job; nightly WebKit run | M |
+| **7a-7** | ✅ **shipped 2026-09-07** — `SelfTest.razor` + 14 probes, the MAUI launcher, **the captured MAUI baseline**, `HostConformance.Compare`, 5 baseline guards and 5 conformance journeys | M |
 
 **7a-7 is the step with a deadline attached** — the MAUI baseline must be captured while the MAUI
 build is still the reference implementation. If phase 7 has to start early, **7a-1, 7a-2, 7a-4 and
