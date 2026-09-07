@@ -1262,7 +1262,7 @@ document.head.appendChild(style);
     /// The line in the file, for a finding that carries a line within its class. Mirrors
     /// <c>CheckReport.LineFor</c>, including its fallback for a class the map does not know.
     /// </summary>
-    private static int FileLineOf(LogMessage m, IReadOnlyDictionary<string, ClassLocation> locations)
+    internal static int FileLineOf(LogMessage m, IReadOnlyDictionary<string, ClassLocation> locations)
         => locations.TryGetValue(m.ModelName, out var location)
             ? location.FileLine(m.LineNumber)
             : Math.Max(1, m.LineNumber);
@@ -1273,7 +1273,7 @@ document.head.appendChild(style);
     /// carries — this used to write the absolute path, so the field the two exports were said to
     /// share was the second one that did not agree.
     /// </summary>
-    private static string? ReportPathOf(
+    internal static string? ReportPathOf(
         LogMessage m,
         IReadOnlyDictionary<string, ClassLocation> locations,
         IReadOnlyDictionary<string, string> libraryRootByModel)
@@ -1385,7 +1385,7 @@ document.head.appendChild(style);
     // offering Suppress on it wrote an annotation into the user's file that nothing reads and then
     // reported success. suppress_rule has refused a diagnostic since B26; this is the surface an
     // author is more likely to be sitting in front of.
-    private static bool CanSuppressRule(LogMessage? finding)
+    internal static bool CanSuppressRule(LogMessage? finding)
         => finding is { Source: LogMessage.StyleCheckingSource } && !string.IsNullOrEmpty(finding.RuleId)
            && !RuleIds.IsDiagnostic(finding.RuleId) && !IsSpellingFinding(finding);
 

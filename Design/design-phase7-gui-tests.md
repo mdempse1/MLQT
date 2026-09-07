@@ -500,6 +500,37 @@ Deliberately short. A test belongs here only if the behaviour cannot exist witho
 `MainLayout` gets **no DOM-level tests**. After 7a-4 it is event wiring and progress UI; the logic is
 tested where it lands, in `MLQT.Services.Tests`.
 
+### Progress (2026-09-07)
+
+Started, not finished. **51 tests** in `MLQT.Shared.Tests`, covering the first three targets:
+
+| Target | What is pinned |
+|---|---|
+| `SettingsRepositories.EffectOfEdit` | The two booleans that decide whether the repository is reformatted and re-checked, including the two rules that are wrong in opposite directions — a formatting rule changed while formatting is off requires nothing, and switching formatting on requires everything |
+| `CommitChangesDialog` | The commit-message policy: when a commit is allowed, and where the issue number goes. The only implementation in the solution |
+| `CodeReview` | `FileLineOf` (class-relative line → file line, through `ClassLocation`), `CanSuppressRule`, `ReportPathOf` |
+| `LibraryBrowser` (Layer 1b) | The MudTreeView lazy-load selection regression, at two depths |
+
+**Every one was verified by mutation, not by going green.** Breaking the rule under test and watching
+the specific test fail is the only thing that distinguishes a test from a formality — this phase has
+already produced two guards that passed over nothing (`SharedUiConventionTests` after 7a-1, and the
+namespace check in 7a-2), so it is the standing bar here rather than an extra.
+
+The pattern that has emerged for Layer 1: **the decision extracts, the wiring stays**. Each of the
+three took a rule out of a method that ends in `StateHasChanged()` — which needs a renderer — and
+left it as an `internal static` function of its inputs, with the handler calling it. That is not a
+test-shaped contortion; in every case the extracted rule is the part worth reading, and two of the
+three shed a null-forgiving operator on the way out.
+
+Still to do: `MetricsDashboard` scope matching, `ChangeReview`/`CodeViewer`/`DiffViewer`/`ExternalResources`
+filtering, `ColorPicker`/`NamingStyleSelect`/`SettingsUI`, and the remaining Layer 1b tests (the five
+other dialogs' results, two-way binding, `CytoscapeGraph`'s interop sequence).
+
+Writing them turned up **B105**: `CodeReview.ReportPathOf` and the CLI's `CheckReport.RelativeFileFor`
+implement the same rule twice, and no test can hold them together because `MLQT.Shared` does not
+reference `MLQT.Cli` and should not. The rule belongs in `MLQT.Services`, which both already
+reference.
+
 ---
 
 ## 7a-4 — the extraction out of the three largest components (roadmap B20/B73)
