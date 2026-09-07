@@ -23,9 +23,25 @@ public partial class CommitChangesDialog
     private string? _statusMessage;
     private string _commitMessage = "";
     private string _commitIssueId = "";
-    private bool CanCommit => _selectedFilesCount > 0 &&
-                              !string.IsNullOrWhiteSpace(_commitMessage) &&
-                              (_repository?.StyleSettings?.CommitRequiresIssueNumber != true || !string.IsNullOrEmpty(_commitIssueId));
+    private bool CanCommit =>
+        CanCommitWith(_selectedFilesCount, _commitMessage, _commitIssueId, _repository?.StyleSettings);
+
+    /// <summary>
+    /// Whether a commit is allowed: something selected, a message, and an issue number when the
+    /// repository requires one.
+    /// </summary>
+    /// <remarks>
+    /// This and <see cref="ComposeCommitMessage"/> are the whole of the commit-message policy, and
+    /// this dialog is the only place that implements it. Pure and separate from the dialog's state so
+    /// both halves of the policy can be held to a test — the rule is a repository setting a user
+    /// turned on expecting it to be enforced, and nothing else in the solution would notice if it
+    /// stopped being.
+    /// </remarks>
+    internal static bool CanCommitWith(
+        int selectedFiles, string? message, string? issueId, StyleCheckingSettings? settings) =>
+        selectedFiles > 0 &&
+        !string.IsNullOrWhiteSpace(message) &&
+        (settings?.CommitRequiresIssueNumber != true || !string.IsNullOrEmpty(issueId));
                               
     private int _selectedFilesCount = 0;
     public List<VcsWorkingCopyFile> _changedFiles = new ();
@@ -123,15 +139,23 @@ public partial class CommitChangesDialog
         }
     }
 
-    private string BuildCommitMessage()
+    private string BuildCommitMessage() =>
+        ComposeCommitMessage(_commitMessage, _commitIssueId, _repository?.StyleSettings);
+
+    /// <summary>
+    /// The message that is actually committed: the issue number goes on its own line, before the
+    /// message or after it as <see cref="StyleCheckingSettings.IssueNumberAtEnd"/> says, and is left
+    /// out entirely when the repository does not require one.
+    /// </summary>
+    internal static string ComposeCommitMessage(
+        string message, string issueId, StyleCheckingSettings? settings)
     {
-        if (_repository!.StyleSettings?.CommitRequiresIssueNumber == true)
-        {
-            return _repository.StyleSettings!.IssueNumberAtEnd
-                ? _commitMessage + "\n" + _commitIssueId
-                : _commitIssueId + "\n" + _commitMessage;
-        }
-        return _commitMessage;
+        if (settings?.CommitRequiresIssueNumber != true)
+            return message;
+
+        return settings.IssueNumberAtEnd
+            ? message + "\n" + issueId
+            : issueId + "\n" + message;
     }
 
     private async Task CommitSkippedFiles()
