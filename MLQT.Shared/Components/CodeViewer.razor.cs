@@ -37,9 +37,23 @@ public partial class CodeViewer
         {
             _lastLines = Lines;
             _lastWords = MisspelledWords;
-            _htmlLines = ConvertLinesToHtml(Lines, BuildMisspellMatcher(MisspelledWords));
+            _htmlLines = ToHtml(Lines, MisspelledWords);
         }
     }
+
+    /// <summary>
+    /// The rendered form of a syntax-highlighted source listing: the markup tags the highlighter
+    /// emits become spans, everything between them is HTML-encoded, and misspelled words inside
+    /// strings and comments are wrapped so they can be right-clicked.
+    /// </summary>
+    /// <remarks>
+    /// The two halves are composed here so there is one entry point to hold to a test. The encoding
+    /// is the part that matters: the input is Modelica source, which contains angle brackets and
+    /// ampersands in ordinary strings and comments, and it is interpolated into markup the browser
+    /// then parses.
+    /// </remarks>
+    internal static List<string> ToHtml(List<string>? lines, IReadOnlyCollection<string>? misspelledWords)
+        => ConvertLinesToHtml(lines, BuildMisspellMatcher(misspelledWords));
 
     /// <summary>
     /// Holds a compiled whole-word matcher for the misspelled-word set plus a map from the
@@ -100,15 +114,11 @@ public partial class CodeViewer
                 continue;
             }
 
+            // The line's own indentation is carried through as ordinary spaces; .code-line is styled
+            // white-space: pre, so the browser keeps them. A block here used to convert leading
+            // spaces to non-breaking ones and never ran: it counted them on this string, which
+            // always starts with the line-number prefix, so the count was always zero.
             var html = $"<LINENUMBER>{lineNumberText}</LINENUMBER>  " + line;
-
-            // Preserve leading spaces by converting them to non-breaking spaces
-            int leadingSpaces = 0;
-            while (leadingSpaces < html.Length && html[leadingSpaces] == ' ')
-                leadingSpaces++;
-
-            if (leadingSpaces > 0)
-                html = new string('\u00A0', leadingSpaces) + html.Substring(leadingSpaces);
 
             // Replace markup tags with HTML spans using compiled regex
             html = _tagRegex.Replace(html, match =>
