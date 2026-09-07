@@ -1,4 +1,5 @@
 using MLQT.Services.DataTypes;
+using RevisionControl;
 
 namespace MLQT.Services.Checking;
 
@@ -118,5 +119,46 @@ public static class VcsChangeResolver
         return affected.Count == 0
             ? new VcsChangeSet(affected, changedFiles, VcsChangeSource.Nothing)
             : new VcsChangeSet(affected, changedFiles, VcsChangeSource.WholeRepository);
+    }
+
+    /// <summary>
+    /// The Modelica files a VCS status report names that the formatter may actually rewrite.
+    /// </summary>
+    /// <remarks>
+    /// <para>Four narrowings, each for its own reason, and each easy to drop without noticing:</para>
+    /// <list type="bullet">
+    /// <item>A deleted file is not there to format.</item>
+    /// <item>VCS paths are relative to the <em>VCS root</em>, which can be a parent of the library —
+    /// one working copy can hold several libraries, and a sibling's files are not this repository's
+    /// to touch.</item>
+    /// <item>Only <c>.mo</c> files. A working copy holds scripts, resources and documentation, and
+    /// the formatter would make nonsense of any of them.</item>
+    /// <item>The file has to exist. A rename reports the old path too, and a moved-away file is
+    /// reported as changed by some clients.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="fileExists">Injected so the rule can be exercised without a working copy.</param>
+    public static HashSet<string> FormattableModelicaFiles(
+        string localPath,
+        string vcsRootPath,
+        IEnumerable<VcsWorkingCopyFile> changes,
+        Func<string, bool> fileExists)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(localPath))
+            return paths;
+
+        foreach (var change in changes.Where(c => c.Status != VcsFileStatus.Deleted))
+        {
+            var fullPath = Path.Combine(vcsRootPath, change.Path);
+            if (fullPath.StartsWith(localPath, StringComparison.OrdinalIgnoreCase)
+                && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
+                && fileExists(fullPath))
+            {
+                paths.Add(fullPath);
+            }
+        }
+
+        return paths;
     }
 }

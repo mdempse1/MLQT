@@ -1081,31 +1081,22 @@ public partial class MainLayout : IDisposable
     /// </summary>
     private HashSet<string> GetModifiedFilePathsFromVcs(Repository repository)
     {
-        var changedFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(repository.LocalPath))
-            return changedFilePaths;
-
         try
         {
-            var changes = RepositoryService.GetWorkingCopyChanges(repository.Id);
-            foreach (var change in changes.Where(c => c.Status != VcsFileStatus.Deleted))
-            {
-                // Paths from VCS are relative to VcsRootPath (which may be a parent of LocalPath)
-                var fullPath = Path.Combine(repository.VcsRootPath, change.Path);
-                if (fullPath.StartsWith(repository.LocalPath, StringComparison.OrdinalIgnoreCase)
-                    && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
-                    && File.Exists(fullPath))
-                {
-                    changedFilePaths.Add(fullPath);
-                }
-            }
+            return VcsChangeResolver.FormattableModelicaFiles(
+                repository.LocalPath,
+                repository.VcsRootPath,
+                RepositoryService.GetWorkingCopyChanges(repository.Id),
+                File.Exists);
         }
         catch (Exception ex)
         {
+            // Reading VCS status can fail for reasons that are not this pipeline's business — a
+            // locked working copy, an svn client that is not there. Losing the targeted list only
+            // costs precision: the caller falls back to re-analysing the whole repository.
             Warn("MainLayout", $"Could not read VCS status for repository {repository.Name}: {ex.Message}");
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
-
-        return changedFilePaths;
     }
 
     /// <summary>

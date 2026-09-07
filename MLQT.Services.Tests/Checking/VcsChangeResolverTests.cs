@@ -1,5 +1,6 @@
 using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
+using RevisionControl;
 using Xunit;
 
 namespace MLQT.Services.Tests.Checking;
@@ -184,5 +185,98 @@ public class VcsChangeResolverTests
             [Change("Lib.mo"), Change("LIB.MO")], NoVcsChanges, NoRepositoryModels, GraphHolding("Lib.mo", "LIB.MO"));
 
         Assert.Single(result.ChangedFilePaths);
+    }
+}
+
+/// <summary>
+/// <see cref="VcsChangeResolver.FormattableModelicaFiles"/> — which files a VCS status report names
+/// that the formatter may actually rewrite.
+///
+/// <para>Four narrowings, each easy to drop without noticing and each with a consequence: the
+/// formatter writes to a user's working copy.</para>
+/// </summary>
+public class FormattableModelicaFilesTests
+{
+    private const string Root = @"C:\wc";
+    private const string Library = @"C:\wc\Lib";
+
+    private static VcsWorkingCopyFile Change(string path, VcsFileStatus status = VcsFileStatus.Modified) =>
+        new() { Path = path, Status = status };
+
+    private static HashSet<string> Resolve(params VcsWorkingCopyFile[] changes) =>
+        VcsChangeResolver.FormattableModelicaFiles(Library, Root, changes, _ => true);
+
+    [Fact]
+    public void AModifiedModelicaFileInTheLibrary_IsFormattable()
+    {
+        Assert.Equal([@"C:\wc\Lib\Thing.mo"], Resolve(Change(@"Lib\Thing.mo")));
+    }
+
+    [Fact]
+    public void PathsAreResolvedAgainstTheVcsRoot_NotTheLibrary()
+    {
+        // The VCS reports paths relative to its own root, which can be a parent of the library.
+        // Combining them with the library path instead gives C:\wc\Lib\Lib\Thing.mo, which exists
+        // nowhere and quietly formats nothing.
+        var paths = Resolve(Change(@"Lib\Thing.mo"));
+
+        Assert.Equal([@"C:\wc\Lib\Thing.mo"], paths);
+    }
+
+    [Fact]
+    public void AFileInASiblingLibrary_IsNotFormattable()
+    {
+        // One working copy can hold several libraries. A sibling's files are real VCS changes and
+        // are not this repository's to rewrite.
+        Assert.Empty(Resolve(Change(@"Other\Thing.mo")));
+    }
+
+    [Fact]
+    public void ADeletedFile_IsNotFormattable()
+    {
+        Assert.Empty(Resolve(Change(@"Lib\Gone.mo", VcsFileStatus.Deleted)));
+    }
+
+    [Theory]
+    [InlineData(@"Lib\script.mos")]
+    [InlineData(@"Lib
+eadme.md")]
+    [InlineData(@"Lib\Resources\data.csv")]
+    public void ANonModelicaFile_IsNotFormattable(string path)
+    {
+        // A working copy holds scripts, resources and documentation; the formatter would make
+        // nonsense of any of them.
+        Assert.Empty(Resolve(Change(path)));
+    }
+
+    [Fact]
+    public void AFileThatIsNoLongerThere_IsNotFormattable()
+    {
+        // A rename reports the old path too, and some clients report a moved-away file as changed.
+        var paths = VcsChangeResolver.FormattableModelicaFiles(
+            Library, Root, [Change(@"Lib\Moved.mo")], _ => false);
+
+        Assert.Empty(paths);
+    }
+
+    [Fact]
+    public void ARepositoryWithNoLocalPath_HasNothingToFormat()
+    {
+        var paths = VcsChangeResolver.FormattableModelicaFiles(
+            "", Root, [Change(@"Lib\Thing.mo")], _ => true);
+
+        Assert.Empty(paths);
+    }
+
+    [Fact]
+    public void TheSameFileReportedTwice_IsFormattedOnce()
+    {
+        Assert.Single(Resolve(Change(@"Lib\Thing.mo"), Change(@"LIB\THING.MO")));
+    }
+
+    [Fact]
+    public void TheExtensionIsMatchedRegardlessOfCase()
+    {
+        Assert.Single(Resolve(Change(@"Lib\Thing.MO")));
     }
 }
