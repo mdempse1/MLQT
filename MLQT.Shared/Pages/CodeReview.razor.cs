@@ -1263,37 +1263,21 @@ document.head.appendChild(style);
     /// <c>CheckReport.LineFor</c>, including its fallback for a class the map does not know.
     /// </summary>
     internal static int FileLineOf(LogMessage m, IReadOnlyDictionary<string, ClassLocation> locations)
-        => locations.TryGetValue(m.ModelName, out var location)
-            ? location.FileLine(m.LineNumber)
-            : Math.Max(1, m.LineNumber);
+        => ReportLocation.LineIn(locations.GetValueOrDefault(m.ModelName), m.LineNumber);
 
     /// <summary>
     /// The file as the report shows it: relative to the library the class belongs to, with forward
-    /// slashes. Mirrors <c>CheckReport.RelativeFileFor</c>, which is what the CLI's `File` field
-    /// carries — this used to write the absolute path, so the field the two exports were said to
-    /// share was the second one that did not agree.
+    /// slashes. The rule is <see cref="ReportLocation.RelativeFile(ClassLocation?,string?)"/>, which
+    /// is also what the CLI's <c>File</c> field carries — this used to have its own copy of it, and
+    /// was for a while the second field the two exports were said to share and did not agree on.
     /// </summary>
     internal static string? ReportPathOf(
         LogMessage m,
         IReadOnlyDictionary<string, ClassLocation> locations,
         IReadOnlyDictionary<string, string> libraryRootByModel)
-    {
-        if (!locations.TryGetValue(m.ModelName, out var location) || string.IsNullOrEmpty(location.FilePath))
-            return null;
-
-        if (!libraryRootByModel.TryGetValue(m.ModelName, out var root))
-            return location.FilePath;
-
-        try
-        {
-            var relative = Path.GetRelativePath(root, location.FilePath);
-            return Path.IsPathRooted(relative) ? location.FilePath : relative.Replace('\\', '/');
-        }
-        catch
-        {
-            return location.FilePath;
-        }
-    }
+        => ReportLocation.RelativeFile(
+            locations.GetValueOrDefault(m.ModelName),
+            libraryRootByModel.GetValueOrDefault(m.ModelName));
 
     private string FindingsHeading
     {

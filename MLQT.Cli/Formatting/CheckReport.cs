@@ -21,36 +21,19 @@ internal sealed record CheckReport(
     public string? FileFor(Finding f) => Locations.TryGetValue(f.ModelId, out var l) ? l.FilePath : null;
 
     /// <summary>
-    /// The file as a report shows it: relative to the library, with forward slashes. Absolute paths
-    /// are an accident of how the command was typed and are noise in a report that already names the
-    /// library it checked — and a path relative to the library is the one a reader can act on.
-    /// Falls back to the absolute path when the file is outside the library (a dependency) or the
-    /// two cannot be related at all (different drives).
+    /// The file as a report shows it: relative to the library, with forward slashes. See
+    /// <see cref="ReportLocation.RelativeFile(string?,string?)"/>, which is the rule — the Code
+    /// Review page's export answers the same question and has to give the same answer.
     /// </summary>
-    public string? RelativeFileFor(Finding f)
-    {
-        if (FileFor(f) is not { } file)
-            return null;
-
-        try
-        {
-            var relative = Path.GetRelativePath(LibraryPath, file);
-            return Path.IsPathRooted(relative) ? file : relative.Replace('\\', '/');
-        }
-        catch
-        {
-            return file;
-        }
-    }
+    public string? RelativeFileFor(Finding f) => ReportLocation.RelativeFile(FileFor(f), LibraryPath);
 
     /// <summary>
     /// The line in the file to report a finding at. Findings carry class-relative lines; a report
     /// that names a file has to name the file's line, or the annotation lands on unrelated code.
-    /// Falls back to the finding's own number when the class is not in the map (a snippet, a class
-    /// whose file is unknown) — the best available answer, and no worse than before.
+    /// See <see cref="ReportLocation.LineIn"/>.
     /// </summary>
     public int LineFor(Finding f) =>
-        Locations.TryGetValue(f.ModelId, out var l) ? l.FileLine(f.LineNumber) : Math.Max(1, f.LineNumber);
+        ReportLocation.LineIn(Locations.GetValueOrDefault(f.ModelId), f.LineNumber);
 
     /// <summary>
     /// The findings this run is actually about: everything except accepted debt.
