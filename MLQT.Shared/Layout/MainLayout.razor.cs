@@ -968,14 +968,12 @@ public partial class MainLayout : IDisposable
             }
         }
 
-        // Delete orphaned files (original files that weren't written in the new save),
-        // but never delete files that are scheduled for VCS addition.
-        var orphanedFiles = originalFiles.Where(f => !allWrittenFiles.Contains(f) && !vcsAddedFiles.Contains(f)).ToList();
-        var orphanedOrderFiles = originalOrderFiles.Where(f => !allWrittenFiles.Contains(f) && !vcsAddedFiles.Contains(f)).ToList();
+        var orphaned = OrphanedFileSelector.SelectOrphans(
+            originalFiles, originalOrderFiles, allWrittenFiles, vcsAddedFiles);
 
-        Debug("MainLayout", $"Deleting {orphanedFiles.Count} orphaned .mo files and {orphanedOrderFiles.Count} orphaned package.order files");
+        Debug("MainLayout", $"Deleting {orphaned.Count} orphaned file(s) left by the save");
 
-        foreach (var orphanedFile in orphanedFiles.Concat(orphanedOrderFiles))
+        foreach (var orphanedFile in orphaned)
         {
             try
             {
