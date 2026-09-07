@@ -621,7 +621,7 @@ service rather than instantiate a layout.
 ### Progress (2026-09-07)
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
-`MainLayout.razor.cs` is **2,635 → 2,469 lines** so far.
+`MainLayout.razor.cs` is **2,635 → 2,434 lines** so far.
 
 | Moved | To | Why it went first |
 |---|---|---|
@@ -629,6 +629,7 @@ Started from the outside in, smallest first, each move landing with its own test
 | `BuildModelToRepositoryMap`, `BuildModelToStyleSettingsMap`, `AnyEnabledRuleNeedsDependencies` | `MLQT.Services/Checking/ModelScope.cs` | The first genuinely pipeline-shaped piece: they decide what every re-analysis pass does, and they only needed the *loaded libraries and repositories*, not the services holding them |
 | The `OnVcsFilesChanged` fallback chain | `MLQT.Services/Checking/VcsChangeScope.cs` | The load-bearing one, and the first to need genuine characterisation rather than tests-after-the-fact |
 | `GetModifiedFilePathsFromVcs` | `VcsChangeResolver.FormattableModelicaFiles` | Four narrowings that decide what the formatter is allowed to rewrite in a user's working copy |
+| `CleanupEmptyDirectories` | `MLQT.Services/Helpers/EmptyDirectoryCleaner.cs` | It deletes things. Now driven against real temp directories rather than reasoned about |
 
 **Taking the collections rather than the services is the pattern the rest of the move should
 follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
@@ -657,6 +658,13 @@ A third is preserved without being endorsed: VCS-reported paths whose classes do
 the formatter's list while the chain falls through to the whole-repository case. That is what
 `MainLayout` has always done; a refactor is the wrong place to find out whether it matters, so the
 test says so in as many words.
+
+The directory cleaner produced the session's second *equivalent* mutation, and a useful one:
+removing its emptiness check changes nothing, because `Directory.Delete` is called without
+`recursive` and therefore refuses a directory with anything in it. The check is a shortcut that
+avoids one thrown exception per non-empty directory — not the safety net it reads as. Both the
+source and a test now say which is which, since the next person to tidy that line needs to know
+what they are removing.
 
 Still in `MainLayout`: the save-and-format paths, the four deferred-analysis orchestrations and the
 startup sequence. Those are the ones with `StateHasChanged`, dialog state and

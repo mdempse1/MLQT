@@ -1107,42 +1107,7 @@ public partial class MainLayout : IDisposable
     private void CleanupEmptyDirectories(IReadOnlyList<LoadedLibrary> libraries)
     {
         foreach (var library in libraries)
-        {
-            if (string.IsNullOrEmpty(library.SourcePath) || !Directory.Exists(library.SourcePath))
-                continue;
-
-            try
-            {
-                // Get all directories in the library, ordered by depth (deepest first)
-                // Filter out hidden directories (e.g., .svn, .git) to avoid corrupting VCS metadata
-                var directories = Directory.GetDirectories(library.SourcePath, "*", SearchOption.AllDirectories)
-                    .Where(d => !FileMonitoringServiceHelpers.IsInHiddenDirectory(d))
-                    .OrderByDescending(d => d.Count(c => c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar))
-                    .ToList();
-
-                foreach (var dir in directories)
-                {
-                    try
-                    {
-                        // Only delete if the directory is empty (no files and no subdirectories)
-                        if (!Directory.EnumerateFileSystemEntries(dir).Any())
-                        {
-                            Directory.Delete(dir);
-                            Debug("MainLayout", $"Deleted empty directory: {dir}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Ignore errors for individual directories
-                        Debug("MainLayout", $"Could not delete directory {dir}: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Warn("MainLayout", $"Error cleaning up empty directories for library {library.Name}: {ex.Message}");
-            }
-        }
+            EmptyDirectoryCleaner.RemoveEmptyDirectories(library.SourcePath);
     }
 
     /// <summary>
