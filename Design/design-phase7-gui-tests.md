@@ -510,6 +510,9 @@ Started, not finished. **51 tests** in `MLQT.Shared.Tests`, covering the first t
 | `CommitChangesDialog` | The commit-message policy: when a commit is allowed, and where the issue number goes. The only implementation in the solution |
 | `CodeReview` | `FileLineOf` (class-relative line → file line, through `ClassLocation`), `CanSuppressRule`, `ReportPathOf` |
 | `LibraryBrowser` (Layer 1b) | The MudTreeView lazy-load selection regression, at two depths |
+| `MetricsDashboard` | Scope matching (the dot that keeps `Modelica.BlocksExtra` out of a `Modelica.Blocks` scope), sub-package listing, what counts as style debt |
+| `ColorPicker` (both layers) | What it accepts as a colour, and that a change round-trips back in a form the next render accepts |
+| `CytoscapeGraph` (Layer 1b) | The six interop calls: init once with its elements, update rather than re-init, nothing on an unchanged re-render, destroy on disposal |
 
 **Every one was verified by mutation, not by going green.** Breaking the rule under test and watching
 the specific test fail is the only thing that distinguishes a test from a formality — this phase has
@@ -522,14 +525,25 @@ left it as an `internal static` function of its inputs, with the handler calling
 test-shaped contortion; in every case the extracted rule is the part worth reading, and two of the
 three shed a null-forgiving operator on the way out.
 
-Still to do: `MetricsDashboard` scope matching, `ChangeReview`/`CodeViewer`/`DiffViewer`/`ExternalResources`
-filtering, `ColorPicker`/`NamingStyleSelect`/`SettingsUI`, and the remaining Layer 1b tests (the five
-other dialogs' results, two-way binding, `CytoscapeGraph`'s interop sequence).
+All three Layer 1b patterns now exist to copy: a lazy-loaded tree (`LibraryBrowser`), a two-way
+binding (`ColorPicker`), and an interop call sequence (`CytoscapeGraph`). The bUnit 2 names that
+differ from every v1 example online are recorded on `MlqtComponentTestBase`, along with the one that
+is not a rename: raising a component's own callback has to go through `cut.InvokeAsync`, and a
+planned `JSInterop.SetupVoid` stays pending until `SetVoidResult`, which stalls the component's own
+`await` — under the loose mode this suite uses, read `JSInterop.Invocations[...]` instead.
 
-Writing them turned up **B105**: `CodeReview.ReportPathOf` and the CLI's `CheckReport.RelativeFileFor`
-implement the same rule twice, and no test can hold them together because `MLQT.Shared` does not
-reference `MLQT.Cli` and should not. The rule belongs in `MLQT.Services`, which both already
-reference.
+Still to do: `ChangeReview`/`CodeViewer`/`DiffViewer`/`ExternalResources` filtering,
+`NamingStyleSelect`/`SettingsUI`, and the five other dialogs' results.
+
+Writing them turned up **B105** — `CodeReview.ReportPathOf` and the CLI's
+`CheckReport.RelativeFileFor` implementing one rule twice, and `FileLineOf`/`LineFor` doing the same
+with the other — **since fixed**: `MLQT.Services/Checking/ReportLocation.cs` is the single answer and
+both surfaces call it, so their agreement is structural rather than promised.
+
+They also caught two things written in this session rather than inherited: `SharedUiConventionTests`
+found a doc comment I had just stranded above a better one on `IsStyleDebt`, which is the first time
+7a-2's guards have fired on new work; and `ReportLocationTests` found that both copies of the
+relative-path rule documented a fallback to absolute paths that neither ever performed.
 
 ---
 

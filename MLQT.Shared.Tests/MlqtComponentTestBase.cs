@@ -17,6 +17,13 @@ namespace MLQT.Shared.Tests;
 /// is the render tree itself: lazy-loaded trees, dialog results, parameter reactivity, two-way
 /// binding, and the interop call sequence of a wrapper component.</para>
 ///
+/// <para><b>bUnit 2 names, for anyone porting a v1 example:</b> the base type is
+/// <c>BunitContext</c> (v1's <c>TestContext</c> collides with xUnit v3's <c>Xunit.TestContext</c>),
+/// <c>Render&lt;T&gt;()</c> replaces <c>RenderComponent&lt;T&gt;()</c>, and re-rendering with new
+/// parameters is <c>cut.Render(p =&gt; ...)</c> rather than <c>SetParametersAndRender</c>. Raising a
+/// component's own callback from a test has to go through <c>cut.InvokeAsync(...)</c>, or the
+/// renderer refuses it as off-dispatcher.</para>
+///
 /// <para>Loose JS interop is safe here because none of MLQT's 17 interop functions is meaningful in
 /// a headless renderer — all are async global functions, and there is no <c>IJSInProcessRuntime</c>
 /// use anywhere in the project. A test that cares what was called asserts it with

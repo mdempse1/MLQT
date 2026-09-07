@@ -35,7 +35,16 @@ public partial class ColorPicker
         await ValueChanged.InvokeAsync(hex);
     }
 
-    private static bool IsValidHexColor(string? value)
+    /// <summary>
+    /// Whether a string is a colour this control can show: exactly <c>#rrggbb</c>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately strict. <see cref="MudColor"/> accepts a good deal more — names, three-digit
+    /// shorthand, rgba — and anything it accepts but this rejects is left alone rather than
+    /// normalised, so a settings file keeps whatever the user put in it. Anything it rejects and
+    /// this accepted would throw inside <see cref="OnParametersSet"/> on every render.
+    /// </remarks>
+    internal static bool IsValidHexColor(string? value)
     {
         if (value == null || value.Length != 7 || value[0] != '#')
             return false;
