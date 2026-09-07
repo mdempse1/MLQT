@@ -621,7 +621,7 @@ service rather than instantiate a layout.
 ### Progress (2026-09-07)
 
 Started from the outside in, smallest first, each move landing with its own tests before the next.
-`MainLayout.razor.cs` is **2,635 → 1,938 lines**, and 897 tests now cover the pieces taken out of it.
+`MainLayout.razor.cs` is **2,635 → 1,898 lines**, and 907 tests now cover the pieces taken out of it.
 
 | Moved | To | Why it went first |
 |---|---|---|
@@ -634,6 +634,7 @@ Started from the outside in, smallest first, each move landing with its own test
 | `SaveChangedFilesWithFormattingAsync` | `MLQT.Services/Helpers/IncrementalFormatter.cs` | The path B65 lived in — the formatter most users meet, run at startup and after every VCS operation |
 | The orphan and save-directory rules | `OrphanedFileSelector`, `ModelicaPackageSaver.ResolveSaveDirectory` | Both decide what happens to files on disk: what gets deleted, and where a library is written |
 | `FormatModifiedFilesAsync`, `SaveAllLibrariesWithFormattingAsync` | `MLQT.Services/Helpers/FormattingPipeline.cs` behind `IFormattingPipeline` | The named deliverable: a service the 7a-6 test host can register, rather than two private methods only the running app could reach |
+| The combined dependency + style-check pass | `MLQT.Services/Checking/CombinedStyleCheckPass.cs` | The one piece of the deferred-analysis code with real substance — and the one whose own comment records that it had drifted from the shared path **twice** |
 
 **Taking the collections rather than the services is the pattern the rest of the move should
 follow.** It is what makes each piece answerable in a test, and it is why these two steps needed no
@@ -686,17 +687,28 @@ tell MLQT's own writes from the user's have **one owner** — they were briefly 
 service and the component during the move, which would have made the monitor start a formatting pass
 on the formatter's own output.
 
-**The analysis half is not, and the note should not pretend otherwise.** `RunStartUpAsync`, the four
-`RunDeferred*Async` methods and `RefreshLibrariesAsync` remain in `MainLayout`. Every *decision*
-inside them has been extracted and tested — which was the goal that mattered for testability — but
-the sequencing has progress-dialog state, `InvokeAsync(StateHasChanged)` and `PowerManagementService`
-interleaved with the work, and moving it needs a progress seam (`IProgress<T>` or a callback) rather
-than more helper-lifting. That is a smaller job than what has been done, and it is the remainder of
-7a-4.
+**The analysis half is substantially done, and what is left is genuinely UI.** The combined
+dependency + style-check pass — the only part of `RunDeferredDependenciesAsync` with real substance,
+and the part whose own comment records two past drifts from the shared path — is now
+`CombinedStyleCheckPass`, tested. What remains in `RunStartUpAsync`, the four `RunDeferred*Async`
+methods and `RefreshLibrariesAsync` is the sequencing: guard on an `AppState` flag, raise the
+progress dialog, call a service, set a step colour, raise a snackbar. That is exactly what this note
+said should stay — "event wiring, dialog/progress UI" — so it is left there rather than moved behind
+a progress seam for its own sake.
+
+Two mutations of the combined pass survived the first set of tests, and both pointed at real gaps
+rather than at equivalent code: nothing asserted that each repository gets **its own** context
+(sharing one would check a class against another team's accepted spellings), and nothing asserted
+that a class in a library with **no rules enabled is still measured for coverage** — coverage reports
+the state of the code, not the result of the rules, so dropping those classes would report a
+percentage against a smaller denominator than the library has. Making the second assertable is why
+`Build` returns its contexts: the `CoverageMeasurer` inside each one accumulates as the pass runs, so
+coverage is a result of the pass in the same way the findings are.
 
 What this means for **7a-6**: the test host can register `IFormattingPipeline` today, so journey 4
 ("change a repository setting → formatting reruns → the file on disk changes") is reachable. Journey
-1, which drives the startup pipeline, still needs the analysis half. Those are the ones with `StateHasChanged`, dialog state and
+1 drives the startup sequence, which is still `MainLayout`'s — the host renders it, so the journey
+reaches it the way a user does. Those are the ones with `StateHasChanged`, dialog state and
 background threads woven through them, and they need the characterisation tests the note calls for
 before they move.
 

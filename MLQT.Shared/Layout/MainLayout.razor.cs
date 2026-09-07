@@ -871,53 +871,13 @@ public partial class MainLayout : IDisposable
                     SurfaceParserErrors(allModelIds);
                 }
 
-                // One StyleCheckContext per repository, built by the same code the background worker
-                // and the CLI use. This pass used to derive the same inputs by hand — known ids,
-                // known names, the inherited-icon callback, the naming config, a spell checker each —
-                // and every one of them was a chance to drift from the paths it is meant to agree
-                // with. It had already drifted twice: spelling, model-reference and inherited-icon
-                // rules were once skipped here entirely, and the naming config was rebuilt per class.
-                var graph = LibraryDataService.CombinedGraph;
-                var defaultSettings = new StyleCheckingSettings();
-
-                var contexts = new Dictionary<string, StyleCheckContext>(StringComparer.Ordinal);
-                foreach (var repo in RepositoryService.Repositories.Where(r => r.StyleSettings is not null))
-                    contexts[repo.Id] = StyleCheckContext.Build(
-                        repo.StyleSettings!, graph, StyleCheckingService.GetSpellCheckerIfNeeded(repo),
-                        collectCoverage: true);
-
-                // For a class in a library that belongs to no repository: the tool's default rules, and
-                // no accepted spellings, because there is no repository to have accepted any.
-                contexts[""] = StyleCheckContext.Build(
-                    defaultSettings, graph, spellChecker: null, collectCoverage: true);
-
-                var repositoryByModel = BuildModelToRepositoryMap();
-
-                postAnalysisAction = model =>
-                {
-                    // Check every class, including non-standalone ones — see StyleCheckingWorker: the
-                    // CanBeStoredStandalone flag is a non-deterministic file-storage property, not a
-                    // style-check gate, so filtering on it made GUI counts unstable and inconsistent with
-                    // the CLI/MCP. All paths now check all classes.
-                    if (!modelToSettings.TryGetValue(model.Id, out var settings))
-                        return;
-
-                    var repositoryId = repositoryByModel.TryGetValue(model.Id, out var id) ? id : "";
-                    if (!contexts.TryGetValue(repositoryId, out var context))
-                        context = contexts[""];
-
-                    if (settings.HasAnyStyleRuleEnabled)
-                    {
-                        foreach (var v in StyleCheckRunner.Run(model, settings, context))
-                            combinedFindings.Add(v);
-                    }
-                    else
-                    {
-                        // A class in a library with no rules enabled still counts towards coverage,
-                        // which reports the state of the code rather than the result of the rules.
-                        context.Coverage?.Measure(model);
-                    }
-                };
+                (postAnalysisAction, _) = CombinedStyleCheckPass.Build(
+                    LibraryDataService.CombinedGraph,
+                    RepositoryService.Repositories,
+                    modelToSettings,
+                    BuildModelToRepositoryMap(),
+                    StyleCheckingService.GetSpellCheckerIfNeeded,
+                    combinedFindings);
             }
 
             // A class that cannot be analysed, or whose style check throws, is reported rather than
