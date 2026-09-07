@@ -24,6 +24,14 @@ jobs:
     name: Build & Publish Release
     runs-on: windows-latest
 
+    # Creating the release and uploading its assets is a write, and this repository's default workflow
+    # token is read-only, so the step failed with a 403 the first time it ever ran - which was the
+    # first tag-triggered release, because the trigger itself had never fired before. Declared here
+    # rather than by making the repository-wide default read/write: only this job writes anything,
+    # and a setting in the web UI is not visible to anyone reading this file.
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v6
 

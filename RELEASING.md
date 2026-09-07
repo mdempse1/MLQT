@@ -87,6 +87,32 @@ being worked around. Fixed for 2026.4.0; both now accept a bare tag, and `v*` st
 
 If you ever find yourself uploading zips by hand again, that is the symptom, not the process.
 
+There was a second bug hiding behind the first, and it could only be reached once the first was
+fixed. The very first tag that did fire built everything and then failed on the last step with
+`403 Resource not accessible by integration`: creating a release is a write, this repository's
+default workflow token is read-only, and no run had ever reached that step to find out. The job now
+declares `permissions: contents: write`. Nothing had been published when it failed, so the fix was to
+move the tag — see below.
+
+## When a release run fails
+
+**The workflow that runs for a tag is the one committed at that tag**, not the one on `main`. So
+fixing `release.yml` on `main` does nothing for an existing tag: re-running the failed run replays the
+old file and fails the same way. The tag has to move to a commit that contains the fix.
+
+Provided nothing was published — check with `gh release list` before assuming — that is:
+
+```bash
+git push origin :refs/tags/2026.4.0        # delete the remote tag
+```
+
+```bash
+git tag -d 2026.4.0 && git tag 2026.4.0 && git push origin 2026.4.0
+```
+
+Re-pointing a tag is only safe while no release exists behind it and nobody has pulled it. Once a
+release is published, the tag is part of the record: fix forward with a new patch version instead.
+
 ## Deliberately not automated
 
 - **Publishing the CLI to nuget.org.** Needs a `NUGET_API_KEY` secret and a decision about public
