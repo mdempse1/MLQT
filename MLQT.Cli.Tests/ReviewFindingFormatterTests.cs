@@ -14,7 +14,12 @@ namespace MLQT.Cli.Tests;
 /// </summary>
 public class ReviewFindingFormatterTests
 {
-    private const string Repo = @"C:\repo";
+    // Absolute on whichever OS is running the test. A Windows-shaped literal is a *relative* path
+    // on Linux, and ClassLocation normalises what it is handed with Path.GetFullPath - so on Linux
+    // the locations under test resolved against the working directory while this fixture's own diff
+    // keys did not, nothing matched, and every "this is commented" assertion failed while passing
+    // on Windows.
+    private static readonly string Repo = OperatingSystem.IsWindows() ? @"C:\repo" : "/repo";
     private static readonly string LibraryFile = Path.Combine(Repo, "Lib", "package.mo");
 
     private static Finding Finding(
@@ -36,7 +41,10 @@ public class ReviewFindingFormatterTests
         new(true, Repo,
             new Dictionary<string, IReadOnlySet<int>>(StringComparer.OrdinalIgnoreCase)
             {
-                [LibraryFile] = new HashSet<int>(lines)
+                // Keyed as GitRevisionControlSystem keys the real thing - GetFullPath over the
+                // repository root joined to the diff's relative path - so the fixture cannot drift
+                // from the normalisation applied to the paths it is compared against.
+                [Path.GetFullPath(LibraryFile)] = new HashSet<int>(lines)
             },
             null);
 
