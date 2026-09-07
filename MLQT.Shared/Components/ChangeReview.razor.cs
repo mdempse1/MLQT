@@ -104,7 +104,15 @@ public partial class ChangeReview
         }
     }
 
-    private static List<TreeItemData<FileTreeNode>> BuildFileTree(List<VcsWorkingCopyFile> changedFiles)
+    /// <summary>
+    /// The changed files as a folder tree, folders before files and alphabetical within each level.
+    /// </summary>
+    /// <remarks>
+    /// The separator normalisation is the part that has to hold: Git reports paths with <c>/</c> and
+    /// SVN on Windows with <c>\</c>, and a tree that treats them differently shows one repository's
+    /// changes as a flat list of long names and the other's as a tree.
+    /// </remarks>
+    internal static List<TreeItemData<FileTreeNode>> BuildFileTree(List<VcsWorkingCopyFile> changedFiles)
     {
         var roots = new List<FileTreeNode>();
         var nodeMap = new Dictionary<string, FileTreeNode>();
@@ -352,7 +360,7 @@ public partial class ChangeReview
         await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
     }
 
-    private class FileTreeNode
+    internal sealed class FileTreeNode
     {
         public string Name { get; set; } = "";
         public string FullPath { get; set; } = "";
