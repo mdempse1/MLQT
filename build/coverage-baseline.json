@@ -47,12 +47,6 @@
                                                                                     "bar":  80,
                                                                                     "reason":  "25%, and new debt this branch created rather than inherited: 7a-4 moved both formatting paths here out of MainLayout. FormatChangedFilesAsync and FormatModifiedFilesAsync are tested against a temp directory, and the decisions inside the full save are tested separately (IncrementalFormatter, OrphanedFileSelector, ResolveSaveDirectory, EmptyDirectoryCleaner, FileNodeReconciler). What is uncovered is the 250-line sequencing of SaveAllLibrariesWithFormattingAsync itself, which needs a library on disk with a real file layout to restructure - a fixture, not a mock. Worth writing: it is the path Format All Files takes."
                                                                                 },
-                    "MLQT.Services::MLQT.Services.JsonSettingsService":  {
-                                                                             "coverage":  56.5,
-                                                                             "lines":  92,
-                                                                             "bar":  80,
-                                                                             "reason":  "Its own suite measures it at 96% (104 of 108 lines), and the four it does not reach are the production constructor - which a test must never call, because it writes to the real user profile - and a logging line in the write-failure path. The number here is lower because three other suites load MLQT.Services without exercising this class and report it as entirely unhit, and the merge degrades rather than unions. That is B123, and it affects FormattingPipeline, DymolaCheckingService and OpenModelicaCheckingService the same way. This entry is here because of the measurement, not because the class is untested."
-                                                                         },
                     "MLQT.Services::MLQT.Services.OpenModelicaCheckingService":  {
                                                                                      "coverage":  33.5,
                                                                                      "lines":  185,

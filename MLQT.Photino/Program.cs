@@ -60,6 +60,8 @@ internal static class Program
         // The picker needs the window to parent its dialogs, and the window only exists after Build.
         app.Services.GetRequiredService<PhotinoWindowAccessor>().Window = app.MainWindow;
 
+        MigrateMauiSettings(app.Services.GetRequiredService<ISettingsService>());
+
         var placement = WindowPlacement.Restore(app.Services.GetRequiredService<ISettingsService>());
         // Photino logs every message it exchanges with the webview to stdout, and a Blazor render
         // batch is one of those messages - base64-encoded, and tens of kilobytes for an ordinary UI
@@ -89,5 +91,34 @@ internal static class Program
             MLQT.Services.LoggingService.Error(nameof(Program), $"Unhandled: {e.ExceptionObject}");
 
         app.Run();
+    }
+
+    /// <summary>
+    /// Brings a MAUI user's settings across on first run.
+    /// </summary>
+    /// <remarks>
+    /// <para>Here rather than in the MAUI app, and that is the whole point: shipping this would
+    /// otherwise require a MAUI release that users had to run <i>before</i> the Photino one, which is
+    /// not a sequence anybody can rely on. The MAUI build is read and never modified, so it is not
+    /// part of the upgrade path at all — a user can go straight from any MLQT release to this one.</para>
+    ///
+    /// <para>Before the window opens, because <c>MainLayout</c> reads the repository list during its
+    /// startup sequence and a migration that landed afterwards would be a migration the user has to
+    /// restart to see.</para>
+    /// </remarks>
+    private static void MigrateMauiSettings(ISettingsService settings)
+    {
+        if (settings is not JsonSettingsService store)
+            return;
+
+        var path = MauiPreferencesFile.Locate();
+        if (path is null)
+            return;
+
+        var copied = store.MigrateFrom(MauiPreferencesFile.Read(path));
+
+        if (copied.Count > 0)
+            LoggingService.Info(nameof(Program),
+                $"Migrated {copied.Count} setting(s) from the MAUI build at {path}: {string.Join(", ", copied)}");
     }
 }

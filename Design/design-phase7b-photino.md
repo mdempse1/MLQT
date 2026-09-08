@@ -519,35 +519,65 @@ JSON file at an XDG/`%LocalAppData%` path.
 
 #### ✅ Shipped (2026-09-08)
 
-**The migration is done, and the Photino host contains none of it.**
+**The migration is done, it lives entirely in the Photino host, and the MAUI app is not changed.**
 
-The problem the sketch and both spikes kept flagging was that an existing user's project list,
-repository settings, themes and external-tool paths live in MAUI `Preferences`, the new host reads a
-JSON file, and nothing connects the two. The obvious approach — have the Photino host read MAUI's
-store — was tried first and abandoned on evidence: **`Preferences` is in none of the places it is
-supposed to be.** Not `HKCU\Software`, not a WinRT settings container, not the application's own data
-folder. Reverse engineering that and depending on the answer would have been a migration resting on a
-guess.
+An existing user's project list, repository settings, themes and external-tool paths live in MAUI
+`Preferences`; the new host reads a JSON file; nothing connected the two. This went through two
+designs, and the first one shipped for about an hour before being taken back out.
 
-So the app that owns the data hands it over. `MLQT`'s `SettingsService` now delegates to
-`JsonSettingsService` — the store both hosts share — and seeds it **once** from `Preferences` on
-startup. By the time anyone runs the Photino host their settings are already there.
+**The design that was wrong.** `Preferences` can only be called from MAUI and cannot be enumerated, so
+the first answer was to have the MAUI app copy its own settings into the shared store on startup —
+`MLQT`'s `SettingsService` delegating to `JsonSettingsService` and seeding it once from a written-down
+list of six keys. It works, and it is unshippable: **it requires a MAUI release that every user
+installs and runs *before* the Photino one.** There is no way to depend on that sequence, and the
+whole point of 7b is that the MAUI build goes away.
 
-- **`Preferences` cannot be enumerated.** It answers for a key you name and offers no way to ask what
-  it holds, so the seed can only move keys that are written down. `MlqtSettingsKeys` is that list
-  (six: `UI`, `SyntaxHighlighting`, `Repositories`, `ReferenceLibraries`, `Dymola`, `OpenModelica`),
-  and a test reads the literals back out of the codebase and fails on any that are missing from it.
-  Verified by removing one and watching the test name it. Without that guard, adding a seventh key is
-  a setting that silently reverts to its default for every existing user on the day they upgrade.
-- **Two guards, guarding different things.** A marker stops the seed running twice, so a setting the
-  user *deleted* in the new host does not come back; a per-key check stops it overwriting anything the
-  new store already has, so a theme chosen in the new host survives opening the old one again. Users
-  will run the two alternately during a migration and the newer store has to win.
-- **Nothing is deleted.** `Preferences` is left exactly as it was, so going back to an earlier release
-  still works. During a migration the rollback has to work.
+**The design that is right, and why it was not obvious.** For an *unpackaged* Windows app, MAUI's
+`Preferences` is a plain JSON file:
 
-**The consequence worth stating plainly: a release carrying this change is the point of no return for
-the settings format, not 7b-8.** From then on the MAUI app is writing to the new store.
+```
+%LocalAppData%\<publisher>\com.mlqtproject.MLQT\Settings\preferences.dat
+{"": {"Repositories": "[...]", "UI": "{...}", ...}}
+```
+
+The earlier spike (B122) concluded `Preferences` was "in none of the places it is supposed to be" —
+`HKCU\Software`, a WinRT settings container, the application data folder — and that conclusion is what
+forced the MAUI-seeds design. It was looking in the packaged-app locations. The unpackaged path was
+one directory level away, under a publisher segment that reads `User Name` because that is the MAUI
+template's placeholder `Publisher="CN=User Name"`, still in `MLQT`'s appxmanifest today.
+
+So `MauiPreferencesFile` finds and reads that file, `JsonSettingsService.MigrateFrom` copies it in, and
+`MLQT.Photino/Program.cs` calls both before the window opens. The MAUI build is read and never written,
+so it is not part of the upgrade path at all: **a user goes from any MLQT release straight to this one.**
+
+- **Copying everything beats copying a list, and the evidence is on this machine.** The abandoned
+  design's six-key catalogue and the real file share *five* names. The file carries a `StyleChecking`
+  key from a version of MLQT that no longer reads it, and has no `ReferenceLibraries`. The list was
+  wrong in both directions on the only install it was ever checked against, and would have been wrong
+  again the next time a key was added. A file can be enumerated; a migration that moves what it finds
+  cannot be wrong about what to look for. `MlqtSettingsKeys` and its guard test are deleted.
+- **The publisher segment is searched for, not hard-coded.** One level of wildcard under
+  `%LocalAppData%`, newest file wins. A build that set a real publisher would file its settings
+  elsewhere and the symptom would be a migration that silently found nothing.
+- **Two guards, guarding different things.** A marker in the store stops the migration running twice,
+  so a setting the user *deleted* in the new host does not come back on the next launch; a per-key
+  check stops it overwriting anything already there, so a theme chosen in the new host survives.
+  Anything in the new store is newer by definition, because the MAUI build cannot write to it. The
+  marker is written even when nothing was found — "there was nothing to bring across" is an answer.
+- **Nothing is deleted and nothing is written back.** Going back to an earlier release still works,
+  which during a migration matters more than tidiness.
+- **Failure is silent and survivable, deliberately.** A missing folder, a different publisher, an
+  unparseable file: each migrates nothing and the host still opens. A user who loses their settings to
+  a corrupt file still has an application, and their old install is untouched.
+
+Twelve tests over `MauiPreferencesFile` and seven over `MigrateFrom`, every one verified by mutation:
+removing newest-wins, hard-coding the publisher, reading only the default container, keeping
+non-string values, dropping either guard, and writing the marker only when something was copied are
+each caught by a named test.
+
+**What this replaces in the paragraph above:** there is no longer a "point of no return" release. The
+MAUI app never writes to the new store, so the two hosts can be run alternately for as long as anyone
+wants, and 7b-8 is the only cutover.
 
 **Linux sleep prevention** holds an inhibit lock through `systemd-inhibit` rather than speaking D-Bus,
 which would need a session-bus connection and a dependency to make one and would fail in the same
@@ -705,7 +735,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
 | **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
 | **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
-| **7b-3** | ✅ **shipped 2026-09-08** — settings migrated by the MAUI host seeding the shared store, guarded by a key catalogue held to the source; Linux sleep prevention via `systemd-inhibit` | M |
+| **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | Bundle Roboto; remove the startup network dependency | S |
 | **7b-5** | Windows conformance against the baseline, plus the manual checklist | M |
 | **7b-6** | Linux: conformance, the nightly WebKit journeys, the per-platform `selftest` job | L |

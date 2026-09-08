@@ -8,9 +8,9 @@ namespace MLQT.Services.Tests;
 /// </summary>
 /// <remarks>
 /// <para>It holds every user's project list, repository settings, themes and external-tool paths, and
-/// since 7b-3 it is what the MAUI app writes to as well. A defect here is not a missing feature, it
-/// is somebody's configuration gone — which is why the awkward paths are tested rather than the happy
-/// one alone.</para>
+/// since 7b-3 it is where a MAUI user's settings land when they first open the Photino host. A defect
+/// here is not a missing feature, it is somebody's configuration gone — which is why the awkward
+/// paths are tested rather than the happy one alone.</para>
 ///
 /// <para>Against a real file in a temporary directory, not a fake: the failure modes worth covering
 /// are a corrupt file, a value whose shape has changed, and surviving a restart, and none of those
@@ -191,31 +191,110 @@ public class JsonSettingsServiceTests : IDisposable
         Assert.Equal("value", await NewStore().GetAsync("key", "default"));
     }
 
-    // ---- the migration seam --------------------------------------------------------------------
+    // ---- the migration (7b-3) ------------------------------------------------------------------
+
+    /// <summary>The shape of one of the real settings, for reading a migrated value back.</summary>
+    private sealed record Ui(string Theme);
+
+    /// <summary>What <see cref="MauiPreferencesFile"/> would hand over for a typical user.</summary>
+    private static Dictionary<string, string> OldSettings() => new()
+    {
+        ["Repositories"] = "[{\"Name\":\"MSL\"}]",
+        ["UI"] = "{\"Theme\":\"Dark\"}",
+    };
 
     [Fact]
-    public void SeedingCopiesFromTheOldStore_AndOnlyOnce()
+    public async Task MigratingBringsTheOldSettingsAcross()
     {
         var settings = NewStore();
 
-        var first = settings.SeedFrom(key => key == MlqtSettingsKeys.Ui ? "\"the-old-theme\"" : null);
-        var second = settings.SeedFrom(_ => "\"something-else\"");
+        var copied = settings.MigrateFrom(OldSettings());
 
-        Assert.Equal([MlqtSettingsKeys.Ui], first);
-        Assert.Empty(second);
+        Assert.Equal(["Repositories", "UI"], copied.Order());
+
+        // Read back the way the application reads it, not as the raw string: what has to be true is
+        // that the migrated value deserialises into the settings object, which is the whole reason a
+        // copy is enough. Comparing the JSON text would pass on a value nothing could load.
+        Assert.Equal("Dark", (await settings.GetAsync<Ui?>("UI", null))?.Theme);
     }
 
     [Fact]
-    public async Task SeedingSurvivesARestart_AndDoesNotRunAgain()
+    public void MigratingCopiesEveryKeyItIsGiven_NotAKnownList()
     {
-        // The marker has to be in the file, not in memory: the seed runs at startup, and an
-        // in-memory marker would re-seed on every launch and undo the user's later changes.
-        NewStore().SeedFrom(key => key == MlqtSettingsKeys.Ui ? "\"old\"" : null);
+        // The reason there is no key catalogue any more. The first design iterated a written-down list
+        // of six names, and the real file turned out to hold a StyleChecking key from an older MLQT
+        // and no ReferenceLibraries - so the list was wrong in both directions on the one machine it
+        // was checked against. A migration that moves what it finds cannot be wrong about what to
+        // look for.
+        var settings = NewStore();
+
+        var copied = settings.MigrateFrom(new Dictionary<string, string>
+        {
+            ["Repositories"] = "1",
+            ["AKeyNobodyWroteDown"] = "2",
+            ["StyleChecking"] = "3",
+        });
+
+        Assert.Equal(3, copied.Count);
+    }
+
+    [Fact]
+    public async Task MigratingNeverOverwritesASettingAlreadyHere()
+    {
+        // Anything in this store is newer by definition - the MAUI build cannot write to it - so a
+        // value the user has already changed in the new host wins.
+        var settings = NewStore();
+        await settings.SetAsync("UI", "the new host's value");
+
+        var copied = settings.MigrateFrom(OldSettings());
+
+        Assert.Equal(["Repositories"], copied);
+        Assert.Equal("the new host's value", await settings.GetAsync<string?>("UI", null));
+    }
+
+    [Fact]
+    public void MigratingRunsOnce()
+    {
+        var settings = NewStore();
+
+        settings.MigrateFrom(OldSettings());
+
+        Assert.Empty(settings.MigrateFrom(new Dictionary<string, string> { ["Something"] = "else" }));
+    }
+
+    [Fact]
+    public void MigratingRunsOnceAcrossRestarts()
+    {
+        // The marker has to be in the file, not in memory: the migration runs at startup, and an
+        // in-memory marker would re-run on every launch and undo the user's later changes - including
+        // bringing back settings they had deleted.
+        NewStore().MigrateFrom(OldSettings());
+
+        Assert.Empty(NewStore().MigrateFrom(OldSettings()));
+    }
+
+    [Fact]
+    public void FindingNothingToMigrate_StillCounts()
+    {
+        // A user with no MAUI install gets the marker too, so the next launch does not go looking for
+        // a file that was not there the first time either.
+        var settings = NewStore();
+
+        Assert.Empty(settings.MigrateFrom(new Dictionary<string, string>()));
+        Assert.Empty(settings.MigrateFrom(OldSettings()));
+    }
+
+    [Fact]
+    public async Task TheMarkerSharesTheFileWithTheSettings()
+    {
+        // The marker is a key in the same dictionary, which is what makes it survive a restart with no
+        // second file to keep in step. This is the shape that has to hold: both readable afterwards.
+        var settings = NewStore();
+        settings.MigrateFrom(OldSettings());
 
         var reopened = NewStore();
-        var again = reopened.SeedFrom(key => key == MlqtSettingsKeys.Ui ? "\"old-again\"" : null);
 
-        Assert.Empty(again);
-        Assert.Equal("old", await reopened.GetAsync<string?>(MlqtSettingsKeys.Ui, null));
+        Assert.True(await reopened.GetAsync(JsonSettingsService.MigratedKey, false));
+        Assert.Equal("Dark", (await reopened.GetAsync<Ui?>("UI", null))?.Theme);
     }
 }

@@ -12,11 +12,11 @@ namespace MLQT.Services;
 /// is <c>%LocalAppData%/MLQT</c> on Windows and <c>~/.local/share/MLQT</c> on Linux — the same folder
 /// the logs and dictionaries already use, which is why no XDG-specific code appears here.</para>
 ///
-/// <para><b>Shared by both hosts</b> since 7b-3, which is what makes the cutover a non-event: the
-/// MAUI app writes here too, having seeded this file once from its own <c>Preferences</c> store (see
-/// <see cref="MauiPreferencesSeed"/>). By the time anyone runs the Photino host their settings are
-/// already in it, and there is no migration step in the new host at all — the best migration being
-/// the one that has already happened.</para>
+/// <para><b>The Photino host's store, and where a MAUI user's settings end up.</b> On first run the
+/// host reads whatever the MAUI build left in its own file and copies it in here — see
+/// <see cref="MigrateFrom"/> and <see cref="MauiPreferencesFile"/> — so switching hosts keeps a
+/// user's projects, repositories, themes and tool paths. The MAUI build is never modified and never
+/// written to.</para>
 ///
 /// <para>Writes are whole-file and synchronous. The store is a few kilobytes and settings change at
 /// human speed, so the simplest thing that cannot half-write is the right one.</para>
@@ -105,31 +105,43 @@ public sealed class JsonSettingsService : ISettingsService
         return Task.CompletedTask;
     }
 
+    /// <summary>Marks the store as migrated, so a user's later edits are never overwritten.</summary>
+    internal const string MigratedKey = "__MauiSettingsMigrated";
+
     /// <summary>
-    /// Copies a user's settings in from MAUI's <c>Preferences</c>, once.
+    /// Copies a user's settings in from the MAUI build, once.
     /// </summary>
-    /// <param name="readOldValue">
-    /// Reads a raw value from the old store, or returns null or empty when it holds nothing. Only the
-    /// MAUI host can supply this, which is why it is a delegate and why the seeding happens there.
-    /// </param>
+    /// <param name="old">Everything <see cref="MauiPreferencesFile"/> found. May be empty.</param>
     /// <returns>The keys copied, for the host to log.</returns>
     /// <remarks>
-    /// One method rather than raw get/set accessors, so the dictionary stays private and the rules
-    /// about what may overwrite what stay in <see cref="MauiPreferencesSeed"/> where they are tested.
+    /// <para>Two guards, and they guard different things. The marker stops this running twice, so a
+    /// setting the user <i>deleted</i> in the new host does not come back on the next launch. The
+    /// per-key check stops it overwriting anything already here, so a setting changed in the new host
+    /// survives — anything in this store is newer by definition, because the MAUI build cannot write
+    /// to it.</para>
+    ///
+    /// <para>The marker is written even when nothing was copied. "There was nothing to bring across"
+    /// is an answer, and re-reading the old file on every launch to reach it again is not free.</para>
     /// </remarks>
-    public IReadOnlyList<string> SeedFrom(Func<string, string?> readOldValue)
+    public IReadOnlyList<string> MigrateFrom(IReadOnlyDictionary<string, string> old)
     {
         lock (_gate)
         {
-            var copied = MauiPreferencesSeed.Seed(
-                readOldValue,
-                key => _values.TryGetValue(key, out var existing) ? existing : null,
-                (key, value) => _values[key] = value,
-                alreadySeeded: _values.ContainsKey(MauiPreferencesSeed.CompletedKey));
+            if (_values.ContainsKey(MigratedKey))
+                return [];
 
-            // The marker is written whether or not anything was copied: "there was nothing to bring
-            // across" is an answer, and asking again every time the app starts is not free.
-            _values[MauiPreferencesSeed.CompletedKey] = "true";
+            var copied = new List<string>();
+
+            foreach (var (key, value) in old)
+            {
+                if (_values.ContainsKey(key) || string.IsNullOrEmpty(value))
+                    continue;
+
+                _values[key] = value;
+                copied.Add(key);
+            }
+
+            _values[MigratedKey] = "true";
             Flush();
 
             return copied;

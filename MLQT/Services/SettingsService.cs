@@ -1,62 +1,116 @@
 using MLQT.Services.Interfaces;
+using System.Text.Json;
 
 namespace MLQT.Services;
 
 /// <summary>
-/// The MAUI host's settings, which are now the same settings the Photino host reads.
+/// MAUI implementation of settings service using platform-specific Preferences API
 /// </summary>
-/// <remarks>
-/// <para>Phase 7b-3. This used to be MAUI's <c>Preferences</c> API directly. It now delegates to
-/// <see cref="JsonSettingsService"/> — the store both hosts share — and <b>seeds that store once from
-/// <c>Preferences</c></b> so that an existing user's project list, repository settings, themes and
-/// external-tool paths are already there the first time they run the new host.</para>
-///
-/// <para><b>Why the migration lives here rather than in the Photino host.</b> <c>Preferences</c> is a
-/// MAUI API, and its store is not somewhere another process can reliably find: on the machine this
-/// was written on it is in neither the registry, nor a WinRT settings container, nor the
-/// application's own data folder. Rather than reverse engineer that and depend on the answer, the app
-/// that owns the data hands it over. The Photino host contains no migration code at all, which is the
-/// best kind: the one that has already happened by the time it is needed.</para>
-///
-/// <para><b>Nothing is deleted.</b> <c>Preferences</c> is left exactly as it was, so a user who goes
-/// back to an earlier MLQT release still has their settings. During a migration the rollback has to
-/// work.</para>
-///
-/// <para>The consequence worth stating plainly: once this ships, <b>the MAUI app is writing to the
-/// new store</b>. That is deliberate — it is what makes the cutover a non-event — but it means a
-/// release carrying this change is the point of no return for the settings format, not 7b-8.</para>
-/// </remarks>
 public class SettingsService : ISettingsService
 {
-    private readonly JsonSettingsService _store = new();
-
-    public SettingsService()
+    public Task<T> GetAsync<T>(string key, T defaultValue)
     {
         try
         {
-            // Preferences answers with the default for a key it does not hold, so absent reads as "".
-            var copied = _store.SeedFrom(key => Preferences.Get(key, string.Empty));
+            // Handle primitive types directly with Preferences API
+            if (typeof(T) == typeof(string))
+                return Task.FromResult((T)(object)Preferences.Get(key, (string)(object)defaultValue!));
+            if (typeof(T) == typeof(int))
+                return Task.FromResult((T)(object)Preferences.Get(key, (int)(object)defaultValue!));
+            if (typeof(T) == typeof(bool))
+                return Task.FromResult((T)(object)Preferences.Get(key, (bool)(object)defaultValue!));
+            if (typeof(T) == typeof(double))
+                return Task.FromResult((T)(object)Preferences.Get(key, (double)(object)defaultValue!));
+            if (typeof(T) == typeof(float))
+                return Task.FromResult((T)(object)Preferences.Get(key, (float)(object)defaultValue!));
+            if (typeof(T) == typeof(long))
+                return Task.FromResult((T)(object)Preferences.Get(key, (long)(object)defaultValue!));
+            if (typeof(T) == typeof(DateTime))
+                return Task.FromResult((T)(object)Preferences.Get(key, (DateTime)(object)defaultValue!));
 
-            if (copied.Count > 0)
-                LoggingService.Info(nameof(SettingsService),
-                    $"Migrated {copied.Count} setting(s) from MAUI Preferences: {string.Join(", ", copied)}");
+            // For complex types, use JSON serialization
+            var json = Preferences.Get(key, string.Empty);
+            if (string.IsNullOrEmpty(json))
+                return Task.FromResult(defaultValue);
+
+            var result = JsonSerializer.Deserialize<T>(json);
+            return Task.FromResult(result ?? defaultValue);
         }
-        catch (Exception ex)
+        catch
         {
-            // A failed migration must not stop the application starting. The user would see defaults,
-            // which is recoverable; a host that will not open is not.
-            LoggingService.Error(nameof(SettingsService), "Could not migrate settings from MAUI Preferences", ex);
+            return Task.FromResult(defaultValue);
         }
     }
 
+    public Task SetAsync<T>(string key, T value)
+    {
+        try
+        {
+            // Handle primitive types directly with Preferences API
+            if (value is string strValue)
+                Preferences.Set(key, strValue);
+            else if (value is int intValue)
+                Preferences.Set(key, intValue);
+            else if (value is bool boolValue)
+                Preferences.Set(key, boolValue);
+            else if (value is double doubleValue)
+                Preferences.Set(key, doubleValue);
+            else if (value is float floatValue)
+                Preferences.Set(key, floatValue);
+            else if (value is long longValue)
+                Preferences.Set(key, longValue);
+            else if (value is DateTime dateValue)
+                Preferences.Set(key, dateValue);
+            else
+            {
+                // Serialize complex objects to JSON
+                var json = JsonSerializer.Serialize(value);
+                Preferences.Set(key, json);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving setting {key}: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(string key)
+    {
+        try
+        {
+            Preferences.Remove(key);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing setting {key}: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task ClearAsync()
+    {
+        try
+        {
+            Preferences.Clear();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error clearing settings: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
     /// <inheritdoc />
-    public string BackingStore => _store.BackingStore;
-
-    public Task<T> GetAsync<T>(string key, T defaultValue) => _store.GetAsync(key, defaultValue);
-
-    public Task SetAsync<T>(string key, T value) => _store.SetAsync(key, value);
-
-    public Task RemoveAsync(string key) => _store.RemoveAsync(key);
-
-    public Task ClearAsync() => _store.ClearAsync();
+    /// <remarks>
+    /// MAUI's <c>Preferences</c> is a platform-native key/value store, not a file MLQT owns — on
+    /// Windows it is the app's local settings, not a path under <c>%LocalAppData%\MLQT</c> where the
+    /// logs and dictionaries go. Saying so is the point: a Photino host will use a JSON file
+    /// instead, and that difference should be visible in the baseline diff rather than discovered
+    /// when a user's settings do not come back.
+    /// </remarks>
+    public string BackingStore => "MAUI Preferences (platform key/value store)";
 }
