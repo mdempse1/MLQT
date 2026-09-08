@@ -1,6 +1,10 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: PROPOSED (2026-09-08). Not started.** Companion to
+> **Status: IN PROGRESS (2026-09-08). 7b-0's Linux leg is done; everything else is unstarted.**
+> The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
+> `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
+> the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
+> [7b-0](#7b-0--the-spike-s--gating). Companion to
 > [design-phase7-gui-tests.md](design-phase7-gui-tests.md), which is complete: 7a built the harness
 > and captured the conformance baseline this phase is measured against. Roadmap §1 and locked
 > sequencing item 7 ([roadmap.md](roadmap.md)).
@@ -158,6 +162,151 @@ the three questions. **Not** a host anyone intends to keep.
 the shipping host (Blazor Server behind a local Kestrel, in a browser or a thin window) and rewrite
 this list. That fallback is *much* more credible than it was in the sketch, because the test host now
 exists, has 33 journeys and matches the MAUI baseline on all 16 probes.
+
+#### What the spike found — Linux leg, 2026-09-08
+
+**Run on Ubuntu 26.04, .NET SDK 10.0.111, WebKitGTK 2.52.6 (`libwebkit2gtk-4.1-0` 2.52.6-0ubuntu0.26.04.1).
+The Windows leg is separate and is not covered here.**
+
+**Verdict: question 1 does not kill the plan, and question 3 is answered in the affirmative.** The
+`MLQT.TestHost`-as-shipping-host fallback is not needed. Nothing found here changes the shape of
+7b-1 through 7b-9; four findings change details inside 7b-2, 7b-4, 7b-7 and open decision 5, and they
+are listed below.
+
+| Question | Answer |
+|---|---|
+| 1. `Photino.Blazor` 4.0.13 on `net10.0` | **Yes.** Restores, builds with no warnings, runs. Runtime reported 10.0.11. |
+| 2. `/selftest` under it, and the 16 probes | **All 16 `Pass`, and `HostConformance.Compare` reports zero differences against the committed MAUI baseline.** |
+| 3. Cytoscape, MudBlazor, syntax highlighting under WebKitGTK | **All three work.** The third turns out not to be a JavaScript question at all — see below. |
+
+**The stale-native-dependency risk did not materialise, and it is worth saying why rather than just
+that.** `Photino.Native` 4.0.22's `linux-x64/Photino.Native.so` links `libwebkit2gtk-4.1.so.0`,
+`libjavascriptcoregtk-4.1.so.0`, `libgtk-3.so.0` and `libnotify.so.4`; all eleven `NEEDED` entries
+resolve on a current Ubuntu with no `not found`. It is the **4.1** ABI — and Ubuntu 26.04 offers no
+`libwebkit2gtk-4.0` package at all, only `-4.1`, so a binary built against 4.0 would have been
+unrunnable here. That is the specific thing that would have broken it, and it did not. That is a
+fact about the shipped binary, checkable with `objdump -p`, and it should be re-checked rather than
+assumed on whatever distribution 7b-7 decides to target.
+
+**Package resolution.** NuGet selects Photino's `net9.0` asset group, which pulls
+`Microsoft.AspNetCore.Components.WebView` **9.0.1**. The spike was run both ways — left at 9.0.1
+against the .NET 10 runtime, and pinned forward to 10.0.9 — and **both produce 16 `Pass`**. So the
+pin is not required. 7b-2 should add it anyway, so the whole graph sits on the 10.0.x line
+`MLQT.Shared` already uses, but that is tidiness rather than a fix.
+
+**The conformance result, in full:**
+
+```
+baseline: MLQT (runtime 10.0.8), 16 probes
+actual:   MLQT.Photino (runtime 10.0.11), 16 probes
+
+NO DIFFERENCES - every probe answered as it did under MAUI.
+```
+
+Produced by the shipped `HostConformance.Compare` rather than by reading two tables side by side —
+which is the whole point of 7a-7, and this is the first time it has been run in anger. The report was
+captured three times and the status vector was identical each time, with exit code 0 (the route's own
+contract: 0 when every probe passed). Six probes differ in **detail** only, and they are exactly the
+ones this note predicts as expected-and-correct: `settings.location` → `~/.local/share/MLQT/…`,
+`logging.writes` → `~/.local/share/MLQT`, `svn.client` → none on PATH, plus window size, the picker's
+type name, and `fonts.roboto`. `Compare` looks at `Status` and never `Detail`, so it stays silent on
+all six — the 7a-7 decision paying off precisely where it was meant to.
+
+**Question 3, in detail.** The probe route covers two thirds of it and a diagnostics page built for
+the spike covered the rest.
+
+- **Cytoscape.** All four layout extensions register against the global (`dagre`, `klay`, `fcose`,
+  `spread`), and a visible six-node, six-edge graph laid out with `dagre-tb` produced real non-origin
+  positions for every node and three canvas elements. The probe's version draws off-screen; this one
+  was on screen and laid out.
+- **MudBlazor.** Dialog, snackbar and popover layer all reach the DOM (probe 7), and the diagnostics
+  page additionally rendered dense buttons, a select with its popover, a text field, a switch, a
+  progress circular and a table without incident. **Where** the overlays land is still a human's
+  judgement, deliberately — comparing pixel geometry across two engines produces a difference on
+  every glyph, and that has not changed.
+- **The syntax highlighting was never a JavaScript question, and that is the finding.**
+  `ModelicaRenderer` emits tagged text (`<KEYWORD>`, `<STRING>`, `<COMMENT>` …) and
+  [`CodeViewer`](../MLQT.Shared/Components/CodeViewer.razor.cs) turns it into spans that CSS colours
+  — there is no highlighting library in the page at all. So the WebKitGTK risk was a CSS risk, which
+  is much smaller than the roadmap's framing implied. Checked anyway, on a real parse of a sample
+  model: all ten `code-*` classes resolved to their expected colours, `white-space: pre` survived, 46
+  spans rendered. **The roadmap has been carrying this as an open engine risk since it was first
+  raised; it can stop.**
+
+The engine surface the application relies on is all present: CSS custom properties, `display: grid`,
+`ResizeObserver`, `IntersectionObserver` and `structuredClone`. The user-agent string is
+`Photino WebView`, which is worth knowing for anything that ever sniffs it.
+
+**Three things 7b-2 assumed, now confirmed by running rather than by reading:**
+
+- Photino **does** bootstrap with `_framework/blazor.webview.js`, so
+  `HostAssetManifest.WebViewBootstrapScript` is the right constant. This note called that a
+  one-minute check; the answer is yes.
+- A host page **generated from `HostAssetManifest`** works unchanged, exactly as `MLQT.TestHost`'s is.
+  Nothing about the MAUI page needed copying.
+- **Blazor routing works under Photino.** The spike was run a second way, rooted on `MLQT.Shared`'s
+  real `Routes` component and navigating to `/selftest`, rather than rendering the page's tree
+  directly. Also 16 `Pass`. This mattered because the direct-render root was chosen for determinism
+  (letting the router resolve `/` would start `MainLayout` and the whole application underneath the
+  probes), and it would have left routing — which the real host depends on — untested.
+
+`PhotinoWindow.ShowOpenFile` and `ShowOpenFolder` also exist and compile against the real API, so
+7b-3's claim that the picker is a thin adapter holds at the API level. No dialog was opened; that
+stays a manual check, as this note says.
+
+#### Findings that change later steps
+
+**1. Photino needs `dotnet publish`, not `dotnet build` — and this is the failure this note predicted.**
+`Photino.Blazor` serves `wwwroot` through a bare `PhysicalFileProvider`: it has no support for the
+static-web-assets manifest, so a plain build leaves `bin/` with no `wwwroot/_content` at all and
+probe 2 (`assets.rcl`) fails. Publishing materialises `_content/…` and `_framework/blazor.webview.js`
+and everything passes. This is the same shape as the test host's `UseStaticWebAssets()` problem in
+7a-6, arriving a second time through a different mechanism, and it is the reason probe 2 exists.
+**7b-2 owns the developer story** (what F5 does, since `dotnet run` alone gives a host with no
+assets) and **7b-7 owns the shipping one.** Neither can be left to be discovered later: the failure
+does not look like a missing file, it looks like an application that loads and renders nothing.
+
+**2. `fonts.roboto` answers differently on the two hosts, benignly, and 7b-4 removes the question.**
+MAUI recorded `available`; Photino/WebKitGTK records `not available (network font)`. Both are `Pass`,
+so the comparison is correctly silent, and it is stable across three runs rather than a race. The
+cause is that the `/selftest` page's own text is `system-ui, sans-serif`, so **nothing on the page
+requests Roboto** and WebKit never loads the declared face — `document.fonts.check` is false for a
+face that is declared but unloaded. A diagnostics page that *does* set `font-family: Roboto` reports
+`check() = true` with the 400/500/700 faces `loaded`, from the same stylesheet, on the same machine.
+So the font arrives; the probe is observing lazy loading. The likely difference is that WebView2
+answers `true` for a declared-but-unloaded face where WebKit answers `false`, but that half was not
+tested here and should not be stated as fact. **Bundling Roboto in 7b-4 makes the whole question
+disappear**, which is a second reason to do it beyond removing the network round-trip.
+
+**3. Startup emits Mesa/EGL noise on a machine with no working GPU driver** —
+`libEGL warning: failed to get driver name`, `MESA: error: ZINK: failed to choose pdev`. WebKit falls
+back to software rendering and nothing is affected: Cytoscape draws on a 2D canvas, and all its
+probes pass. Worth knowing for 7b-7 so it is recognised as noise rather than diagnosed as a fault,
+and worth suppressing in whatever launcher the packaging step produces.
+
+**4. `svn.client` reports none on PATH here**, which is the answer open decision 5 assumes.
+`SvnToolLocator` did the right thing with no code change, as this note predicts — the probe passes
+and records the absence. The decision still needs making; it is now a decision with an observation
+behind it.
+
+#### What the Linux leg did not cover
+
+Unchanged from the list under *What conformance proves*, and stated here so the spike is not read as
+saying more than it does:
+
+- **Visual fidelity.** Not captured. GNOME refuses programmatic screenshots to an unprivileged caller
+  on this machine (`org.gnome.Shell.Screenshot` → `AccessDenied`), and ImageMagick's `import` is built
+  without the X11 delegate. This is a human looking at the window, once, per platform — 7b-6 — and the
+  spike host is runnable for exactly that purpose.
+- **A real file dialog opening**, native window behaviour, DPI, multi-monitor and state restore.
+- **The Windows leg**, which is the other half of this step's exit criteria.
+- **Settings migration**, which no probe can see. The spike's settings service is a plain JSON file
+  and deliberately does *not* migrate — 7b-3 owns that, and it remains the highest silent risk in the
+  phase.
+
+The spike host itself was built outside the repository and is not committed, per this step's own
+instruction that it is not a host anyone intends to keep. What survives it is this section, the
+`HostConformance` result above, and the finding list.
 
 ### 7b-1 — port `MLQT.McpTester` as a rehearsal (S)
 
@@ -330,8 +479,9 @@ would have inherited the same defect**, and nothing but a clean machine was ever
 
 | Risk | Standing | Mitigation |
 |---|---|---|
-| `Photino.Blazor` has no `net10.0` release and is ~20 months stale | **Highest, and gating** | 7b-0 answers it in a day. Fallback (test host as shipping host) is credible and already built. |
-| WebKitGTK breaks Cytoscape or MudBlazor | High | 7b-0 question 3, against the real probe route rather than a toy. |
+| ~~`Photino.Blazor` has no `net10.0` release and is ~20 months stale~~ | **Retired on Linux (2026-09-08)** | 7b-0 ran it: builds and runs on `net10.0`, and `Photino.Native` links the current webkit2gtk-**4.1** ABI rather than the removed 4.0. Still to be confirmed on Windows/WebView2. The test-host fallback is not needed. |
+| ~~WebKitGTK breaks Cytoscape or MudBlazor~~ | **Retired (2026-09-08)** | 7b-0 question 3, answered against the real probe route: both pass, and the syntax highlighting turns out to be CSS over server-rendered spans rather than a JS library, so it was never at risk. |
+| A plain build produces a host with no static assets | New, found by 7b-0 | Photino serves `wwwroot` through a bare `PhysicalFileProvider`, so `dotnet publish` is required. 7b-2 owns the F5 story, 7b-7 the shipping one. |
 | Settings lost on upgrade | **High, and silent** | 7b-3 migration sub-step. The failure mode is a user opening MLQT to an empty project list. |
 | `MLQT.McpTester` blocks retiring the MAUI workload | Certain, low cost | 7b-1 turns it into a rehearsal. |
 | Native window behaviour regresses | Medium | Manual checklist in 7b-5; no automation is proposed and none is honest. |
@@ -360,7 +510,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | Step | Work | Size |
 |---|---|---|
 | **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
-| **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | S — **gating** |
+| **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | S — **gating**; **Linux leg done 2026-09-08, Windows leg outstanding** |
 | **7b-1** | Port `MLQT.McpTester` as a rehearsal, and unblock the workload retirement | S |
 | **7b-2** | `MLQT.Photino` host: composition root, manifest-generated page, window lifecycle, drift + portability guards | S/M |
 | **7b-3** | The three platform services; power is a file copy on Windows, the picker is an adapter, settings is the real work — **including migration** | M |

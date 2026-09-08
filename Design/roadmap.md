@@ -242,7 +242,7 @@ platform services**: `IFilePickerService`, `IPowerManagementService`, `ISettings
 | **MCP server on Linux/macOS** as a tested target | ⭐⭐ | S | Built and shipping on Windows; headless stdio, so likely close to working. Not yet *tested* on Linux/macOS — that claim belongs with the phase-7 work. |
 | **Single cross-platform desktop host (Photino.Blazor)** replacing MAUI | ⭐⭐⭐ | L | In-process webview → keeps direct filesystem + git/svn access, near drop-in reuse of `MLQT.Shared`. Reimplement the 3 platform services once. Retires MAUI. |
 | — *fallback host:* Blazor Server (+ desktop wrapper) | — | L | If in-process webview proves limiting; also opens a future hosted/browser option. |
-| **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | **Opens phase 7.** De-risk the Linux webview engine — it is **not** WebView2 — and gate before committing to the host. Originally to be pulled early; kept in phase 7 (decided 2026-09-02) since nothing in the CI work depends on its answer. |
+| **WebKitGTK interop spike** (Cytoscape.js, MudBlazor, highlighting) | — | S | **✅ answered on Linux (2026-09-08)** — 7b-0's Linux leg. Photino.Blazor 4.0.13 builds and runs on `net10.0`; `/selftest` gives **16 `Pass` and zero differences** against the MAUI baseline under WebKitGTK; Cytoscape and MudBlazor both work, and the highlighting was never at risk — it is CSS over server-rendered spans, not a JS library. The **Windows leg of the spike is still outstanding**. See [design-phase7b-photino.md](design-phase7b-photino.md) §7b-0. |
 | **Platform-service ports** (file dialog, power/sleep, settings paths) | ⭐⭐ | M | Per-OS implementations behind the existing interfaces. Settings is mostly path differences. |
 | **GUI test harness** (phase 7a — code-behind sweep, unit + bUnit tests, Playwright test host, `/selftest` route) | ⭐⭐⭐ | L | `MLQT.Shared` currently has **no tests**, so a host swap has no mechanical parity check. Must run **before** the port: the MAUI conformance baseline cannot be captured once MAUI is retired. Restructured 2026-09-07 around the **code-behind policy** — the 11,700 lines of C# inside `@code { }` blocks move to `.razor.cs` partials first, which makes most of them testable without a renderer at all. See [design-phase7-gui-tests.md](design-phase7-gui-tests.md). |
 
@@ -262,6 +262,14 @@ live in MAUI `Preferences`** and are lost on cutover unless migrated on first ru
 install story** — packaging was never discussed. Against that, 7a made the job smaller than the sketch
 assumed: `MLQT.TestHost` has been running `MLQT.Shared` outside MAUI since 7a-6, so the open question
 is no longer "does the shared code survive a host swap" but only "does Photino work".
+
+**And on Linux, that last question now has an answer: it does.** 7b-0's Linux leg (2026-09-08) ran the
+`/selftest` route under a throwaway Photino host and got zero differences from the MAUI baseline
+through `HostConformance.Compare` — the first time that comparison has been used for the purpose it
+was written for. Two risks the plan rated highest are retired on that platform, and one new item
+arrived: Photino serves `wwwroot` through a bare `PhysicalFileProvider` with no static-web-assets
+support, so **`dotnet publish` is required and a plain build yields a host with no assets at all**.
+That is a 7b-2 and 7b-7 detail rather than a new phase, and it is recorded in the design note.
 
 ---
 
