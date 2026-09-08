@@ -1,6 +1,6 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-08). 7b-0's Linux leg is done; everything else is unstarted.**
+> **Status: IN PROGRESS (2026-09-08). 7b-0 is complete — both legs — and 7b-A is under way.**
 > The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
 > `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
 > the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
@@ -254,6 +254,80 @@ The engine surface the application relies on is all present: CSS custom properti
 7b-3's claim that the picker is a thin adapter holds at the API level. No dialog was opened; that
 stays a manual check, as this note says.
 
+#### What the spike found — Windows leg, 2026-09-08
+
+**Run on Windows 11 26200, .NET SDK 10.0, WebView2 (evergreen), Photino.Blazor 4.0.13 with
+`Microsoft.AspNetCore.Components.WebView` pinned forward to 10.0.9.**
+
+**Verdict: 16 `Pass`, and `HostConformance.Compare` reports zero differences against the committed
+MAUI baseline.** Captured three times; identical each time, exit code 0 each time. With the Linux leg
+this completes 7b-0's exit criteria — two probe reports and an answer to each of the three questions.
+
+```
+baseline: MLQT (runtime 10.0.8), 16 probes
+actual:   MLQT.Photino (runtime 10.0.8), 16 probes
+
+NO DIFFERENCES - every probe answered as it did under MAUI.
+```
+
+Only three probes differ in **detail**, all of them expected: the window size, `settings.location`
+(the spike's JSON file rather than MAUI `Preferences`) and `filepicker.wired` (a stub). `Compare`
+looks at `Status` and never `Detail`, so it is correctly silent on all three.
+
+**Question 1 is now fully retired.** `Photino.Blazor` 4.0.13 restores, builds at zero warnings and
+runs on `net10.0` on Windows as well as Linux. NuGet selects the same `net9.0` asset group and pulls
+`Components.WebView` 9.0.1 — the Linux leg's package-resolution finding, reproduced exactly — and the
+forward pin to 10.0.9 works.
+
+**The Linux leg's publish finding is confirmed and is platform-independent.** A plain
+`dotnet build` leaves `bin/` with **no** `wwwroot/_content` and **no** `_framework/blazor.webview.js`;
+`dotnet publish` materialises both. It is not a Linux packaging quirk, and 7b-2 and 7b-7 own it on
+both platforms.
+
+**`fonts.roboto` differs between the engines, and the Windows leg supplies the half the Linux leg
+declined to assert.** Linux/WebKitGTK recorded `not available (network font)`; Windows/WebView2
+records `available`, from the same generated page and the same stylesheet. The Linux note said the
+likely cause was that WebView2 answers `true` for a declared-but-unloaded face where WebKit answers
+`false`, and explicitly refused to state it as fact without testing that half. **It is now tested:
+that is exactly what happens.** Both are `Pass`, so the comparison stays silent — and 7b-4's bundling
+of the font removes the question entirely.
+
+#### Two things the Windows leg found that 7b-2 must not rediscover
+
+**1. `autostart="false"` must not be carried over from MAUI's page, and the failure is silent.**
+MAUI's `index.html` loads the bootstrap as
+`<script src="_framework/blazor.webview.js" autostart="false">` — because MAUI's `BlazorWebView`
+handler is what calls `Blazor.start()`. **Photino does not.** With the attribute present the window
+opens, `AddMlqtCore` initialises logging, and then *nothing whatsoever happens*: no component is
+created, no error is raised, no exception is logged, and the window sits showing the loading `div`.
+It took instrumenting a root component with a log line to establish that Blazor had never started.
+
+This is worth recording as a mistake rather than a discovery: **the page must be generated from
+`HostAssetManifest`, and this note already says so.** The attribute arrived because the generator was
+written by copying MAUI's hand-written page, which is precisely what the manifest exists to stop. The
+manifest carries the script list and `WebViewBootstrapScript`; it does not carry that attribute, and
+a page generated strictly from it does not have the problem.
+
+**2. The file provider must be rooted at `wwwroot` explicitly.**
+`PhotinoBlazorAppConfiguration.HostPage` is `"index.html"` with no directory part and `AppBaseUri` is
+`http://localhost/`, so the provider is expected to be `wwwroot`-rooted already;
+`PhotinoBlazorAppBuilder.CreateDefault(args)` did not resolve the page, and
+`CreateDefault(IFileProvider, args)` with a `PhysicalFileProvider` over
+`AppContext.BaseDirectory/wwwroot` did. The symptom is the same silent nothing as above, which is why
+both are recorded here together: **on this host a page that fails to load looks identical to a page
+that loads and does not start.**
+
+Incidentally, `Photino.NET` logs `File "/" could not be found` during startup and then loads
+`http://localhost/`. That is normal — the custom scheme handler serves it — and it is noise, not a
+fault. Worth knowing so it is not chased.
+
+**One small limitation of the shipped comparator**, found by using it from outside the repository:
+`HostConformance.MauiBaseline()` locates the baseline by walking up for `MLQT.slnx`, so it only works
+from inside the tree. `Compare` itself takes two reports and does not, so the spike loaded the
+baseline explicitly and still used the shipped comparison. 7b-5 should decide whether the Photino
+host's conformance check runs from inside the repository or needs the baseline passing in.
+
+
 #### Findings that change later steps
 
 **1. Photino needs `dotnet publish`, not `dotnet build` — and this is the failure this note predicted.**
@@ -479,8 +553,9 @@ would have inherited the same defect**, and nothing but a clean machine was ever
 
 | Risk | Standing | Mitigation |
 |---|---|---|
-| ~~`Photino.Blazor` has no `net10.0` release and is ~20 months stale~~ | **Retired on Linux (2026-09-08)** | 7b-0 ran it: builds and runs on `net10.0`, and `Photino.Native` links the current webkit2gtk-**4.1** ABI rather than the removed 4.0. Still to be confirmed on Windows/WebView2. The test-host fallback is not needed. |
+| ~~`Photino.Blazor` has no `net10.0` release and is ~20 months stale~~ | **Retired (2026-09-08), both platforms** | 7b-0 ran it: builds and runs on `net10.0` on Linux and Windows, `Photino.Native` links the current webkit2gtk-**4.1** ABI rather than the removed 4.0, and both hosts produce 16 `Pass` with zero differences. The test-host fallback is not needed. |
 | ~~WebKitGTK breaks Cytoscape or MudBlazor~~ | **Retired (2026-09-08)** | 7b-0 question 3, answered against the real probe route: both pass, and the syntax highlighting turns out to be CSS over server-rendered spans rather than a JS library, so it was never at risk. |
+| A page copied from MAUI's does not start Blazor at all, silently | New, found by 7b-0's Windows leg | `autostart="false"` is a MAUI contract — its `BlazorWebView` calls `Blazor.start()` and Photino does not. The window opens, logging initialises and no component is ever created, with no error anywhere. Generating the page from `HostAssetManifest`, which this note already requires, avoids it. |
 | A plain build produces a host with no static assets | New, found by 7b-0 | Photino serves `wwwroot` through a bare `PhysicalFileProvider`, so `dotnet publish` is required. 7b-2 owns the F5 story, 7b-7 the shipping one. |
 | Settings lost on upgrade | **High, and silent** | 7b-3 migration sub-step. The failure mode is a user opening MLQT to an empty project list. |
 | `MLQT.McpTester` blocks retiring the MAUI workload | Certain, low cost | 7b-1 turns it into a rehearsal. |
@@ -510,7 +585,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | Step | Work | Size |
 |---|---|---|
 | **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
-| **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | S — **gating**; **Linux leg done 2026-09-08, Windows leg outstanding** |
+| **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
 | **7b-1** | Port `MLQT.McpTester` as a rehearsal, and unblock the workload retirement | S |
 | **7b-2** | `MLQT.Photino` host: composition root, manifest-generated page, window lifecycle, drift + portability guards | S/M |
 | **7b-3** | The three platform services; power is a file copy on Windows, the picker is an adapter, settings is the real work — **including migration** | M |

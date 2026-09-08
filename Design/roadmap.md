@@ -162,6 +162,18 @@ opens a dialog through `IDialogService` inside a rendered provider, which is the
 what a dialog closes with — `MudDialog.Close` goes to a cascaded instance that a directly rendered
 component does not have, so every Close and Cancel in one is a silent no-op.
 
+**7b-0 is complete on both platforms (2026-09-08).** Photino.Blazor 4.0.13 builds and runs on
+`net10.0` under WebKitGTK/Linux and WebView2/Windows, and `HostConformance.Compare` reports **zero
+differences** against the committed MAUI baseline on each — 16 `Pass`, captured three times per
+platform. The gating risk is retired and the test-host fallback is not needed. Two engine risks the
+roadmap has carried for months are retired with it: WebKitGTK does not break Cytoscape or MudBlazor,
+and the syntax highlighting was never a JavaScript question at all — it is CSS over server-rendered
+spans. Three findings change later steps rather than the plan: Photino needs `dotnet publish` rather
+than `dotnet build` to have any static assets at all (both platforms), a host page copied from MAUI's
+never starts Blazor because `autostart="false"` is a MAUI contract, and its file provider must be
+rooted at `wwwroot` explicitly. The last two fail **silently** — window opens, nothing renders, no
+error — which is why they are written down.
+
 **Phase 7b opens by widening the journeys (7b-A), not by porting.** `MLQT.Shared` is at 19.4% covered
 with every suite running, and the question of whether to fix that first has a specific answer rather
 than a general one: a host swap does not change `MLQT.Shared`'s C#, so unit tests of component
