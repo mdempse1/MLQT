@@ -9,7 +9,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>MLQT.Photino</AssemblyName>
+    <!-- The icon on the executable itself, which is what Explorer and the Alt-Tab list use. The
+         window's own icon is set at runtime; see Program.ApplicationIcon. -->
+    <ApplicationIcon>..\Branding\mlqt.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Beside the executable, because Photino's SetIconFile takes a path rather than a resource.
+         Both formats ship: Windows needs the multi-size .ico, GTK needs a PNG. -->
+    <None Include="..\Branding\mlqt.ico" Link="mlqt.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Branding\mlqt-256.png" Link="mlqt-256.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />

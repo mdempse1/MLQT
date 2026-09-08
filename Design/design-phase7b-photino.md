@@ -651,9 +651,45 @@ Linux first would confound the two.
 - ~~**The reported slowness (B125)**~~ — **done.** Not the host: a same-day A/B has Photino at 426 s
   against MAUI 2026.4.0's 434 s on a larger graph. Two real defects came out of the investigation
   (B126, B127) and neither was a migration regression. See below.
-- **The manual checklist**, which is the part no automation covers and 7a says so explicitly:
-  visual fidelity, native window behaviour (multi-monitor, DPI, state restore), and a real file dialog
-  opening and returning a path. Once, and written down.
+- ~~**The manual checklist**~~ — **run on Windows (2026-09-08).** Two differences found, both fixed:
+  the window opened smaller than MAUI's, and the taskbar entry had no icon. Nothing else differed.
+  See below.
+
+#### The manual checklist, run on Windows (2026-09-08)
+
+Visual fidelity, native window behaviour, and a real file dialog: **two differences from the MAUI
+build, and nothing else.** Both are fixed.
+
+**1. The window opened smaller.** The host asked Photino for `1400 x 950` against MAUI's `1200 x 900`
+and got a *smaller* window — because **MAUI sizes in device-independent units and Photino in physical
+pixels.** On the reporter's 125% display, 1400 physical pixels is 1120 units and 950 is 760, against
+MAUI's 1200 x 900: a window a fifth shorter, from code that appears to ask for a larger one. The unit
+question was settled by measurement, not documentation — with `SetSize(1400, 950)` the self-test's own
+`interop.dimensions` probe reported a 1106-pixel viewport, which is 1400 ÷ 1.25 less the chrome.
+
+`WindowGeometry.Centred` now takes MAUI's numbers, scales them by the monitor, clamps to the **work
+area** rather than the monitor bounds, and centres — which is what `App.xaml.cs` did. It lives in
+`MLQT.Services` because it is arithmetic and the host has no test project; the host keeps only the
+part that reads the monitor.
+
+**The part that had to be measured to be found:** `PhotinoWindow.MainMonitor` and `ScreenDpi` throw
+*"the Photino window hasn't been initialized yet"* until after `Run()`. Reading them where the
+placement was being decided therefore threw into a `catch` that logs and returns a fallback — so the
+first-run size would have been wrong on every machine, forever, with nothing but a log line to say so.
+The scaled size is applied from a `WindowCreated` handler instead. Verified end to end on a fresh
+profile: `First run: opening 1500x1125 at 1810,127 (work area 5120x1380, scale 1.25)` — which is
+1200 x 900 units, exactly what MAUI asked for.
+
+**2. No taskbar icon.** `ApplicationIcon` in the project file puts the icon on the `.exe`, which
+Explorer and Alt-Tab use — but **Photino creates its own native window, and that window has no icon
+unless one is set on it**, so the taskbar entry stayed generic. `Program.ApplicationIcon` now sets it
+at runtime, per platform: Windows takes the multi-size `.ico`, GTK a PNG, and both ship beside the
+executable because `SetIconFile` takes a path rather than a resource. A missing file logs and is
+skipped — Photino would rather have no icon than no window.
+
+The assets are in `Branding/` with a README covering what each one is for, and what deliberately was
+**not** updated: the MAUI host keeps the template icon (it is retired in 7b-8, and changing it means
+regenerating the MAUI resource set for a build that is about to go) and `MLQT.McpTester` keeps its own.
 
 #### ✅ Conformance on Windows (2026-09-08): committed, not just observed
 

@@ -62,7 +62,7 @@ internal static class Program
 
         MigrateMauiSettings(app.Services.GetRequiredService<ISettingsService>());
 
-        var placement = WindowPlacement.Restore(app.Services.GetRequiredService<ISettingsService>());
+
         // Photino logs every message it exchanges with the webview to stdout, and a Blazor render
         // batch is one of those messages - base64-encoded, and tens of kilobytes for an ordinary UI
         // update. Every console write is synchronous, so the cost lands on the thread producing the
@@ -77,9 +77,9 @@ internal static class Program
 
         app.MainWindow
            .SetTitle("MLQT")
-           .SetSize(placement.Width, placement.Height)
-           .SetLeft(placement.Left)
-           .SetTop(placement.Top);
+           .SetIconFile(ApplicationIcon());
+
+        WindowPlacement.Apply(app.Services.GetRequiredService<ISettingsService>(), app.MainWindow);
 
         app.MainWindow.WindowClosing += (_, _) =>
         {
@@ -91,6 +91,33 @@ internal static class Program
             MLQT.Services.LoggingService.Error(nameof(Program), $"Unhandled: {e.ExceptionObject}");
 
         app.Run();
+    }
+
+    /// <summary>
+    /// The window and taskbar icon, beside the executable.
+    /// </summary>
+    /// <remarks>
+    /// <para>The <c>ApplicationIcon</c> in the project file puts the icon on the <c>.exe</c>, which is
+    /// what Explorer shows and what Windows falls back to — but Photino creates its own native window,
+    /// and without an icon set on it the taskbar entry showed the generic default. That is what was
+    /// reported: the application looked unbranded next to the MAUI build.</para>
+    ///
+    /// <para>Per platform because the formats are not interchangeable: Windows wants the multi-size
+    /// <c>.ico</c>, GTK wants a PNG. Both are copied beside the executable by the project file.</para>
+    ///
+    /// <para>A missing file is not a reason to fail startup — Photino would rather have no icon than
+    /// no window — so the path is checked and an empty string returned, which Photino ignores.</para>
+    /// </remarks>
+    private static string ApplicationIcon()
+    {
+        var file = OperatingSystem.IsWindows() ? "mlqt.ico" : "mlqt-256.png";
+        var path = Path.Combine(AppContext.BaseDirectory, file);
+
+        if (File.Exists(path))
+            return path;
+
+        LoggingService.Warn(nameof(Program), $"The application icon is missing from {path}");
+        return string.Empty;
     }
 
     /// <summary>
