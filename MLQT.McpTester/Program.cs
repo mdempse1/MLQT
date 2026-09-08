@@ -40,6 +40,12 @@ internal static class Program
 
         var app = builder.Build();
 
+        // Photino logs every message it exchanges with the webview, including base64-encoded Blazor
+        // render batches - about a megabyte of synchronous console writes per fifteen seconds of an
+        // ordinary session. Silent by default; MLQT_PHOTINO_LOG raises it for debugging the host.
+        app.MainWindow.LogVerbosity =
+            int.TryParse(Environment.GetEnvironmentVariable("MLQT_PHOTINO_LOG"), out var verbosity) ? verbosity : 0;
+
         app.MainWindow
            .SetTitle("MLQT MCP Tester")
            .SetSize(1400, 900);

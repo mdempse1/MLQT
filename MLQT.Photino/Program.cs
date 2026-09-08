@@ -60,6 +60,18 @@ internal static class Program
         app.Services.GetRequiredService<PhotinoWindowAccessor>().Window = app.MainWindow;
 
         var placement = WindowPlacement.Restore(app.Services.GetRequiredService<ISettingsService>());
+        // Photino logs every message it exchanges with the webview to stdout, and a Blazor render
+        // batch is one of those messages - base64-encoded, and tens of kilobytes for an ordinary UI
+        // update. Every console write is synchronous, so the cost lands on the thread producing the
+        // update, and it scales with how often the UI changes: an idle window is fine and one with
+        // the analysis pipeline running behind it is not. That is the shape of the slowness reported
+        // against the first build of this host.
+        //
+        // 0 = silent. Set MLQT_PHOTINO_LOG to raise it when debugging the host itself; it is not
+        // something an ordinary run should pay for.
+        app.MainWindow.LogVerbosity =
+            int.TryParse(Environment.GetEnvironmentVariable("MLQT_PHOTINO_LOG"), out var verbosity) ? verbosity : 0;
+
         app.MainWindow
            .SetTitle("MLQT")
            .SetSize(placement.Width, placement.Height)
