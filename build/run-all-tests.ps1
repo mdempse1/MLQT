@@ -229,7 +229,13 @@ if ($Coverage) {
         Write-Host ''
         Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 
-        if (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $MlqtOwnedAssemblies) {
+        # Only the assemblies whose suites actually ran. With -CoreOnly the simulation interfaces
+        # are skipped, and listing them anyway showed DymolaInterface at 0% when it is at 91% - a
+        # suite that did not run is no information, not zero coverage, which is the same misreading
+        # that made the headline 19.2% (B117).
+        $measured = if ($CoreOnly) { @($MlqtBars.Keys) } else { $MlqtOwnedAssemblies }
+
+        if (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $measured) {
             $summary = Get-Content (Join-Path $ReportDirectory 'Summary.json') -Raw | ConvertFrom-Json
 
             Write-Host ''
