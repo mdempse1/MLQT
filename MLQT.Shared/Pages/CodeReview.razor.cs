@@ -1953,7 +1953,11 @@ document.head.appendChild(style);
                 FileMonitoringService.StopMonitoring(repoId);
                 monitorPaused = true;
             }
+            var write = System.Diagnostics.Stopwatch.StartNew();
             await ModelicaFileEncoding.WriteAllTextAsync(filePath, correctedCode);
+            if (write.ElapsedMilliseconds > 1000)
+                LoggingService.Info("CodeReview",
+                    $"Writing {Path.GetFileName(filePath)} took {write.ElapsedMilliseconds} ms");
         }
         catch (Exception ex)
         {
@@ -1966,7 +1970,20 @@ document.head.appendChild(style);
         }
 
         // Re-parse the file from disk so all model nodes for it are rebuilt from the saved content.
+        //
+        // Timed, because this is where the time goes and nothing said so. A correction in a generated
+        // file holding 4,478 classes took the better part of a minute, and the only way to find out
+        // which part was to read timestamps of unrelated debug lines either side of it. The removal
+        // half of this is much faster since the graph gained a bulk remove (7b-5); the log line is
+        // what will show whether the rest of it needs the same treatment.
+        var reload = System.Diagnostics.Stopwatch.StartNew();
         var affected = await LibraryDataService.ReloadFileAsync(filePath);
+        reload.Stop();
+
+        if (reload.ElapsedMilliseconds > 1000)
+            LoggingService.Info("CodeReview",
+                $"Reloading {Path.GetFileName(filePath)} after a correction took {reload.ElapsedMilliseconds} ms " +
+                $"for {affected.Count} class(es)");
 
         if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
         {

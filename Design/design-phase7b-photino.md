@@ -658,6 +658,31 @@ Linux first would confound the two.
   visual fidelity, native window behaviour (multi-monitor, DPI, state restore), and a real file dialog
   opening and returning a path. Once, and written down.
 
+#### Partly done (2026-09-08): what the slowness actually was
+
+Three slow things were reported from real use. **The application log had already recorded all three**,
+on the same library, across both hosts, for weeks — and nobody had read it. Two of the three turned
+out not to be about Photino.
+
+| Reported | What the log says |
+|---|---|
+| Startup style checking ~25% slower | Dependency analysis over the same 39,860-model graph: MAUI 88.7–163.8 s across eleven runs, Photino **83.1 s** and 147.6 s. The fastest run on record is a Photino one — **no regression here at all.** The style check: MAUI 324/325 s (7 Sep) against Photino 420 s (8 Sep), which is the reported +30% — but MAUI itself ranged 183–468 s on 2 Sep. One sample cannot separate a host cost from a variance that is already ±50%. **Open (B125), and it needs a same-day A/B, not more reasoning.** |
+| Analysis after adding a repository runs free and makes the UI crawl | Correct, and correctly identified by the reporter as not a regression: that path announced itself with a snackbar and ran in the background while every sibling path uses the modal progress dialog. **Fixed (B127).** |
+| Correcting a spelling takes a minute | The file held **4,478 classes**. Removing them from the graph is a loop over an O(*n*) `RemoveNode`, so it cost ~178 million set operations, and the same shape sat beside it in the library index cleanup. **Fixed (B126)** — 5,746 ms → 22 ms and 210 ms → 3 ms at those sizes. Always quadratic; a file this size is what made it visible. |
+
+**And the finding nobody was looking for.** Putting every run in the log into one series exposed that
+this repository's style check has **tripled since late August, on MAUI**: ~105 s median over 24–27
+August, ~190 s on 1–2 September, 324/325 s on 7 September. That is larger than anything the migration
+could account for, and it predates it. **B128**, and it should be separated before more effort goes
+into the host question — a 3× is where the time actually is.
+
+**The method, worth writing down because it was nearly not used:** the first instinct on all three was
+to reason about what Photino does differently, and the phase note already said not to. Every number
+above came from `%LocalAppData%/MLQT/*.log`, which the application has been writing all along;
+`LogProcessStart`/`LogProcessEnd` pairs are timestamped, so a series is a `grep` away. The one measured
+fact that a hypothesis would have got wrong is the Photino host's idle CPU: **0.4% of one core**, which
+rules out the spinning-message-pump theory that would otherwise have been the obvious place to start.
+
 ### 7b-6 — Linux (L)
 
 The step that delivers the actual value.

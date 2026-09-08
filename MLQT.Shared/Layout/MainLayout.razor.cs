@@ -1858,20 +1858,60 @@ public partial class MainLayout : IDisposable
 
                 if (newModelIds.Count > 0)
                 {
-                    Snackbar.Add("Analyzing dependencies for new repository...", Severity.Normal);
-                    var libraryInfos = GetLibraryInfos();
-                    await Task.Run(async () =>
-                    {
-                        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
-                            LibraryDataService.CombinedGraph, newModelIds, libraryInfos);
-                        // Reconcile edges in case existing models already referenced
-                        // models from the newly added library
-                        LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
-                    });
+                    // Behind the progress dialog, like every other path that runs this analysis.
+                    //
+                    // It used to announce itself with a snackbar and run in the background, which is
+                    // the one arrangement that is worse than either alternative: the work is heavy
+                    // enough to make the UI crawl, and the user is left free to start something else
+                    // in the middle of it. Reported from real use, and not a migration regression -
+                    // this path has behaved this way since it was written. AddRepositoryDialog has
+                    // already started style checking for the new repository by the time it closes, so
+                    // that work is inside the same wait rather than left running behind the dialog.
+                    _startupProcessRunning = true;
+                    _step3running = true;
+                    _step3color = Color.Success;
+                    _step4running = StyleCheckingService.IsRunning;
+                    _step4color = Color.Success;
+                    await InvokeAsync(StateHasChanged);
 
-                    await ExternalResourceService.AnalyzeResourcesForModelsAsync(
-                        newModelIds, LibraryDataService.CombinedGraph);
-                    ExternalResourceService.StartMonitoringResources();
+                    try
+                    {
+                        var libraryInfos = GetLibraryInfos();
+                        await Task.Run(async () =>
+                        {
+                            await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+                                LibraryDataService.CombinedGraph, newModelIds, libraryInfos);
+                            // Reconcile edges in case existing models already referenced
+                            // models from the newly added library
+                            LibraryDataService.CombinedGraph.ReconcileDependencyEdges();
+                        });
+
+                        _step3running = false;
+                        _step5running = true;
+                        _step5color = Color.Success;
+                        await InvokeAsync(StateHasChanged);
+
+                        await ExternalResourceService.AnalyzeResourcesForModelsAsync(
+                            newModelIds, LibraryDataService.CombinedGraph);
+                        ExternalResourceService.StartMonitoringResources();
+                        _step5running = false;
+                        await InvokeAsync(StateHasChanged);
+
+                        // Returns at once when nothing is running. Waited on here rather than left to
+                        // OnStyleCheckingProgressChanged to close the dialog: that handler fires from
+                        // the service's own thread and would race with this method still setting the
+                        // steps up, and the failure it produces is a modal dialog nobody can close.
+                        await StyleCheckingService.WaitForCompletionAsync();
+                    }
+                    finally
+                    {
+                        // Whatever happened, the dialog closes. It is modal.
+                        _step3running = false;
+                        _step4running = false;
+                        _step5running = false;
+                        _startupProcessRunning = false;
+                        await InvokeAsync(StateHasChanged);
+                    }
                 }
             }
         }

@@ -128,6 +128,11 @@ public class DirectedGraph
     /// <summary>
     /// Removes a node from the graph.
     /// </summary>
+    /// <remarks>
+    /// Costs a pass over every node's edge set, because nothing indexes edges by their target and
+    /// leaving a dangling one behind is worse than the pass. <b>Removing many nodes therefore has to
+    /// go through <see cref="RemoveNodes"/></b> rather than a loop over this — see the note there.
+    /// </remarks>
     public bool RemoveNode(string nodeId)
     {
         if (!_nodes.ContainsKey(nodeId))
@@ -145,6 +150,57 @@ public class DirectedGraph
 
             // Remove the node
             return _nodes.Remove(nodeId, out _);
+        }
+    }
+
+    /// <summary>
+    /// Removes a set of nodes in one pass over the graph.
+    /// </summary>
+    /// <returns>How many of them were actually in the graph.</returns>
+    /// <remarks>
+    /// <para><b>The reason this exists is a measured minute of a user's time.</b> Every caller that
+    /// removed a file's classes did it in a loop over <see cref="RemoveNode"/>, and each of those
+    /// walks every node's edge set — so removing <i>m</i> nodes from a graph of <i>n</i> costs
+    /// <i>m × n</i>. On an ordinary file, <i>m</i> is one or two and nobody notices. On a generated
+    /// FMU interface holding <b>4,478 classes</b> inside a 39,860-node graph it is ~178 million set
+    /// operations, and correcting one spelling mistake took <b>54 seconds</b> with the window doing
+    /// nothing (log, 2026-09-08 16:53:30 → 16:54:24). Nothing about that is host-specific; it was
+    /// noticed during the Photino migration and blamed on it.</para>
+    ///
+    /// <para>One pass over the edge sets instead of one per node makes it <i>n + e</i>: the same
+    /// removal is milliseconds. The single-node case keeps the cheap <c>Remove</c> rather than
+    /// <c>RemoveWhere</c>, which would have to enumerate every set in full and would make the common
+    /// case slower to speed the rare one up.</para>
+    /// </remarks>
+    public int RemoveNodes(IEnumerable<string> nodeIds)
+    {
+        var ids = nodeIds as HashSet<string> ?? [.. nodeIds];
+        if (ids.Count == 0)
+            return 0;
+
+        lock (_lock)
+        {
+            if (ids.Count == 1)
+            {
+                var only = ids.First();
+                foreach (var edges in _edges.Values)
+                    edges.Remove(only);
+            }
+            else
+            {
+                foreach (var edges in _edges.Values)
+                    edges.RemoveWhere(ids.Contains);
+            }
+
+            var removed = 0;
+            foreach (var id in ids)
+            {
+                _edges.Remove(id, out _);
+                if (_nodes.Remove(id, out _))
+                    removed++;
+            }
+
+            return removed;
         }
     }
 

@@ -187,8 +187,7 @@ public static class GraphBuilder
             // partially-added models for this file and produce a placeholder so the user
             // still sees the file and knows something went wrong. This guarantees no file
             // ever disappears silently from the library tree.
-            foreach (var id in modelIDs)
-                graph.RemoveNode(id);
+            graph.RemoveNodes(modelIDs);
 
             var fallbackErrors = new List<ParserError>(fileParserErrors)
             {
@@ -1310,11 +1309,8 @@ public static class GraphBuilder
 
             // Collect models in this file before removing
             var modelsInFile = graph.GetModelsInFile(fileId).ToList();
-            foreach (var model in modelsInFile)
-            {
-                affectedModelIds.Add(model.Id);
-                graph.RemoveNode(model.Id);
-            }
+            affectedModelIds.AddRange(modelsInFile.Select(m => m.Id));
+            graph.RemoveNodes(modelsInFile.Select(m => m.Id));
             graph.RemoveNode(fileId);
         }
 
