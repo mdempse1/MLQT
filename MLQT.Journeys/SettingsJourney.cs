@@ -45,11 +45,38 @@ public class SettingsJourney(TestHostFixture host)
         await page.GetByRole(AriaRole.Tab, new() { Name = "UI Settings" })
                   .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
+        await DismissTooltipsAsync(page);
+
         return page;
     }
 
-    private static Task OpenTabAsync(IPage page, string name) =>
-        page.GetByRole(AriaRole.Tab, new() { Name = name }).ClickAsync();
+    private static async Task OpenTabAsync(IPage page, string name)
+    {
+        await DismissTooltipsAsync(page);
+        await page.GetByRole(AriaRole.Tab, new() { Name = name }).ClickAsync();
+    }
+
+    /// <summary>
+    /// Closes any MudBlazor tooltip left open by the previous click.
+    /// </summary>
+    /// <remarks>
+    /// The top-level tabs carry <c>ToolTip=</c>, so clicking one opens a tooltip popover that is
+    /// positioned over the tab strip — and it then intercepts the *next* click, which Playwright
+    /// reports as a 30-second actionability timeout rather than as anything to do with a tooltip.
+    /// It passed locally and failed on both CI runners, because whether the pointer happens to still
+    /// be over the tab when the next click is attempted is a matter of timing.
+    ///
+    /// Moving the pointer away is the fix rather than forcing the click: a forced click would also
+    /// sail through a real overlay covering the control, which is a bug worth failing on.
+    /// </remarks>
+    private static async Task DismissTooltipsAsync(IPage page)
+    {
+        await page.Mouse.MoveAsync(0, 0);
+
+        await page.Locator(".mud-popover-open").First.WaitForAsync(
+            new LocatorWaitForOptions { State = WaitForSelectorState.Hidden, Timeout = 10_000 });
+    }
+
 
     [Fact]
     public async Task TheSettingsTab_ShowsItsFourSections()

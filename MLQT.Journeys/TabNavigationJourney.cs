@@ -54,6 +54,28 @@ public class TabNavigationJourney(TestHostFixture host)
         return page;
     }
 
+
+    /// <summary>
+    /// Closes any MudBlazor tooltip left open by the previous click.
+    /// </summary>
+    /// <remarks>
+    /// The top-level tabs carry <c>ToolTip=</c>, so clicking one opens a tooltip popover that is
+    /// positioned over the tab strip — and it then intercepts the *next* click, which Playwright
+    /// reports as a 30-second actionability timeout rather than as anything to do with a tooltip.
+    /// It passed locally and failed on both CI runners, because whether the pointer happens to still
+    /// be over the tab when the next click is attempted is a matter of timing.
+    ///
+    /// Moving the pointer away is the fix rather than forcing the click: a forced click would also
+    /// sail through a real overlay covering the control, which is a bug worth failing on.
+    /// </remarks>
+    private static async Task DismissTooltipsAsync(IPage page)
+    {
+        await page.Mouse.MoveAsync(0, 0);
+
+        await page.Locator(".mud-popover-open").First.WaitForAsync(
+            new LocatorWaitForOptions { State = WaitForSelectorState.Hidden, Timeout = 10_000 });
+    }
+
     [Fact]
     public async Task TheShellOffersFiveTabs()
     {
@@ -74,6 +96,7 @@ public class TabNavigationJourney(TestHostFixture host)
         var errors = new List<string>();
         page.PageError += (_, e) => errors.Add(e);
 
+        await DismissTooltipsAsync(page);
         await page.Locator(".mud-tab").Nth(index).ClickAsync();
 
         await Assertions.Expect(page.GetByText(landmark).First)
@@ -100,6 +123,7 @@ public class TabNavigationJourney(TestHostFixture host)
         {
             for (var index = 0; index < 5; index++)
             {
+                await DismissTooltipsAsync(page);
                 await page.Locator(".mud-tab").Nth(index).ClickAsync();
                 await page.WaitForTimeoutAsync(200);
             }
