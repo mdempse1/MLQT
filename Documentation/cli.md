@@ -10,15 +10,30 @@ works on Windows, Linux, and macOS and is suited to CI pipelines.
 
 ## Install
 
-Packaged as a .NET tool:
+Two ways, depending on whether the machine has a .NET 10 runtime.
+
+**As a .NET tool** (Windows, Linux and macOS — one package covers all three). It is **not on
+nuget.org**: download `MLQT.Cli.<version>.nupkg` from the
+[latest release](https://github.com/mdempse1/MLQT/releases) and install it from the directory you
+saved it in, which is what `--add-source .` means below.
 
 ```bash
-dotnet tool install --global MLQT.Cli      # provides the `mlqt` command
+dotnet tool install --global --add-source . MLQT.Cli      # provides the `mlqt` command
 # or into an isolated location:
-dotnet tool install --tool-path ./tools MLQT.Cli
+dotnet tool install --tool-path ./tools --add-source . MLQT.Cli
 ```
 
 Requires the .NET 10 runtime.
+
+**As a self-contained Linux binary**, for a build agent or container where you would rather not
+install .NET. Download `mlqt-<version>-linux-x64.tar.gz` from the same release:
+
+```bash
+tar -xzf mlqt-<version>-linux-x64.tar.gz -C /opt/mlqt && /opt/mlqt/mlqt --version
+```
+
+It carries its own runtime, so it needs nothing preinstalled. Put the directory on your `PATH`, or
+call the binary by full path.
 
 ## Usage
 

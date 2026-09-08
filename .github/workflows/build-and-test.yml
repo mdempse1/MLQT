@@ -61,10 +61,16 @@ jobs:
           dotnet build DymolaInterface.Tests/DymolaInterface.Tests.csproj -c Release --no-restore
           dotnet build OpenModelicaInterface.Tests/OpenModelicaInterface.Tests.csproj -c Release --no-restore
 
+      # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
+      # failure means one round trip per broken suite, which is the wrong trade when six of these had
+      # never run on Linux at all - the first run should say everything that is wrong, not the first
+      # thing. Same reasoning as fail-fast: false on the journeys matrix.
       - name: Run ModelicaParser tests
+        if: '!cancelled()'
         run: dotnet test ModelicaParser.Tests -c Release --no-build --report-trx --report-trx-filename parser.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run ModelicaGraph tests
+        if: '!cancelled()'
         run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph.trx --results-directory ${{ github.workspace }}/TestResults
 
       # SVN tests are excluded on CI: the integration tests need a live working copy /
@@ -75,18 +81,23 @@ jobs:
       # release workflow's "Verify bundled svn client" step. To run SVN tests locally,
       # check out a working copy at that path and run RevisionControl.Tests without the filter.
       - name: Run RevisionControl tests (exclude SVN integration)
+        if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Services tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.McpServer tests
+        if: '!cancelled()'
         run: dotnet test MLQT.McpServer.Tests -c Release --no-build --report-trx --report-trx-filename mcpserver.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Cli tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Shared tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared.trx --results-directory ${{ github.workspace }}/TestResults
 
       # The CLI tests assert the shape we expect of a SARIF document, which cannot catch one that is
@@ -138,27 +149,38 @@ jobs:
           dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
           dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release
 
+      # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
+      # failure means one round trip per broken suite, which is the wrong trade when six of these had
+      # never run on Linux at all - the first run should say everything that is wrong, not the first
+      # thing. Same reasoning as fail-fast: false on the journeys matrix.
       - name: Run ModelicaParser tests
+        if: '!cancelled()'
         run: dotnet test ModelicaParser.Tests -c Release --no-build --report-trx --report-trx-filename parser-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run ModelicaGraph tests
+        if: '!cancelled()'
         run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       # Same exclusion as the Windows job: the SVN integration tests need a working copy and a server
       # no runner has. Kept identical so the two platforms measure the same thing.
       - name: Run RevisionControl tests (exclude SVN integration)
+        if: '!cancelled()'
         run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Services tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.McpServer tests
+        if: '!cancelled()'
         run: dotnet test MLQT.McpServer.Tests -c Release --no-build --report-trx --report-trx-filename mcpserver-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Cli tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Shared tests
+        if: '!cancelled()'
         run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       # Produce and run the exact artifact the release ships, against the committed fixture, so a
@@ -316,3 +338,7 @@ jobs:
         with:
           name: coverage-report
           path: CoverageReport/
+
+  # The release ships a self-contained linux-x64 `mlqt`, and the tool package it also ships is
+  # framework-dependent, so both run on Linux. Nothing here ever tested that: every other job is
+  # windows-latest, so "the CLI works on Linux" was a claim held up by one person trying it once.
