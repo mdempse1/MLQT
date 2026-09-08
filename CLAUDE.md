@@ -392,6 +392,21 @@ Comprehensive tests are required for all classes with the goal being >80% covera
 **CI enforces this** — `build/check-coverage.ps1` runs all six suites, merges their reports, and fails
 the build per class. Run it locally the same way:
 
+Two scripts, for two different questions. **"Do all the tests pass?"** is
+`build/run-all-tests.ps1` — it reads the suite list from `MLQT.slnx`, so it cannot fall behind, and it
+is the only thing that runs `DymolaInterface.Tests` and `OpenModelicaInterface.Tests`, which CI
+deliberately skips because they drive a live Dymola or OpenModelica install no runner has. A machine
+without those tools sees their failures reported separately and does not fail the run; `-Strict`
+gates on them, `-CoreOnly` skips them to ask "would CI be green?".
+
+```powershell
+./build/run-all-tests.ps1                  # everything, ~4 minutes
+./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the suites CI runs, against the current build
+./build/run-all-tests.ps1 -Strict          # treat a missing simulation tool as a failure
+```
+
+**"Would the coverage gate pass?"** is `build/check-coverage.ps1`:
+
 ```powershell
 dotnet build MLQT.slnx -c Release
 ./build/check-coverage.ps1                 # gate
