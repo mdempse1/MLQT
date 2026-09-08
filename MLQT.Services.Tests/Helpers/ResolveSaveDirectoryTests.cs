@@ -1,3 +1,4 @@
+using MLQT.TestSupport;
 using MLQT.Services.Helpers;
 using Xunit;
 
@@ -22,10 +23,10 @@ public class ResolveSaveDirectoryTests
     [Fact]
     public void ASingleFileLibrary_IsWrittenBesideItself()
     {
-        var resolved = Resolve(@"C:\libs\Thing.mo",
-            files: [@"C:\libs\Thing.mo"], directories: [@"C:\libs"]);
+        var resolved = Resolve(TestPaths.Rooted("libs", "Thing.mo"),
+            files: [TestPaths.Rooted("libs", "Thing.mo")], directories: [TestPaths.Rooted("libs")]);
 
-        Assert.Equal(@"C:\libs", resolved);
+        Assert.Equal(TestPaths.Rooted("libs"), resolved);
     }
 
     [Fact]
@@ -33,10 +34,10 @@ public class ResolveSaveDirectoryTests
     {
         // The saver creates the library folder itself. Handing it the package directory nests a
         // second copy of the library inside the first.
-        var resolved = Resolve(@"C:\libs\Lib",
-            files: [@"C:\libs\Lib\package.mo"], directories: [@"C:\libs\Lib", @"C:\libs"]);
+        var resolved = Resolve(TestPaths.Rooted("libs", "Lib"),
+            files: [TestPaths.Rooted("libs", "Lib", "package.mo")], directories: [TestPaths.Rooted("libs", "Lib"), TestPaths.Rooted("libs")]);
 
-        Assert.Equal(@"C:\libs", resolved);
+        Assert.Equal(TestPaths.Rooted("libs"), resolved);
     }
 
     [Fact]
@@ -44,17 +45,17 @@ public class ResolveSaveDirectoryTests
     {
         // No package.mo means no library folder to create, so writing to the parent would scatter
         // the classes beside the directory rather than into it.
-        var resolved = Resolve(@"C:\libs\Loose",
-            files: [], directories: [@"C:\libs\Loose", @"C:\libs"]);
+        var resolved = Resolve(TestPaths.Rooted("libs", "Loose"),
+            files: [], directories: [TestPaths.Rooted("libs", "Loose"), TestPaths.Rooted("libs")]);
 
-        Assert.Equal(@"C:\libs\Loose", resolved);
+        Assert.Equal(TestPaths.Rooted("libs", "Loose"), resolved);
     }
 
     [Fact]
     public void ASourcePathThatIsGone_ResolvesToNothing()
     {
         // Rather than guessing at a location to write a user's library to.
-        Assert.Null(Resolve(@"C:\libs\Vanished", files: [], directories: []));
+        Assert.Null(Resolve(TestPaths.Rooted("libs", "Vanished"), files: [], directories: []));
     }
 
     [Theory]
@@ -69,8 +70,8 @@ public class ResolveSaveDirectoryTests
     public void APackageWhoseParentIsGone_ResolvesToNothing()
     {
         // The parent is where it would be written, so if that is not there the answer is no answer.
-        var resolved = Resolve(@"C:\libs\Lib",
-            files: [@"C:\libs\Lib\package.mo"], directories: [@"C:\libs\Lib"]);
+        var resolved = Resolve(TestPaths.Rooted("libs", "Lib"),
+            files: [TestPaths.Rooted("libs", "Lib", "package.mo")], directories: [TestPaths.Rooted("libs", "Lib")]);
 
         Assert.Null(resolved);
     }
@@ -80,9 +81,9 @@ public class ResolveSaveDirectoryTests
     {
         // A path that is both cannot happen on a real file system, but the order states the intent:
         // a single-file library is the more specific reading.
-        var resolved = Resolve(@"C:\libs\Thing.mo",
-            files: [@"C:\libs\Thing.mo"], directories: [@"C:\libs\Thing.mo", @"C:\libs"]);
+        var resolved = Resolve(TestPaths.Rooted("libs", "Thing.mo"),
+            files: [TestPaths.Rooted("libs", "Thing.mo")], directories: [TestPaths.Rooted("libs", "Thing.mo"), TestPaths.Rooted("libs")]);
 
-        Assert.Equal(@"C:\libs", resolved);
+        Assert.Equal(TestPaths.Rooted("libs"), resolved);
     }
 }

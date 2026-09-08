@@ -1,3 +1,5 @@
+using System.IO;
+using MLQT.TestSupport;
 using MLQT.Services.Checking;
 using MLQT.Services.DataTypes;
 using RevisionControl;
@@ -197,8 +199,11 @@ public class VcsChangeResolverTests
 /// </summary>
 public class FormattableModelicaFilesTests
 {
-    private const string Root = @"C:\wc";
-    private const string Library = @"C:\wc\Lib";
+    // Rooted for the running platform. A Windows literal is a relative path on Linux, so the
+    // resolver combined it with the working directory and matched nothing - and the four tests here
+    // that assert Empty passed anyway, for the wrong reason. See TestPaths.
+    private static readonly string Root = TestPaths.Rooted("wc");
+    private static readonly string Library = TestPaths.Rooted("wc", "Lib");
 
     private static VcsWorkingCopyFile Change(string path, VcsFileStatus status = VcsFileStatus.Modified) =>
         new() { Path = path, Status = status };
@@ -209,18 +214,20 @@ public class FormattableModelicaFilesTests
     [Fact]
     public void AModifiedModelicaFileInTheLibrary_IsFormattable()
     {
-        Assert.Equal([@"C:\wc\Lib\Thing.mo"], Resolve(Change(@"Lib\Thing.mo")));
+        Assert.Equal(
+            [TestPaths.Rooted("wc", "Lib", "Thing.mo")],
+            Resolve(Change(TestPaths.Relative("Lib", "Thing.mo"))));
     }
 
     [Fact]
     public void PathsAreResolvedAgainstTheVcsRoot_NotTheLibrary()
     {
         // The VCS reports paths relative to its own root, which can be a parent of the library.
-        // Combining them with the library path instead gives C:\wc\Lib\Lib\Thing.mo, which exists
+        // Combining them with the library path instead gives wc/Lib/Lib/Thing.mo, which exists
         // nowhere and quietly formats nothing.
-        var paths = Resolve(Change(@"Lib\Thing.mo"));
+        var paths = Resolve(Change(TestPaths.Relative("Lib", "Thing.mo")));
 
-        Assert.Equal([@"C:\wc\Lib\Thing.mo"], paths);
+        Assert.Equal([TestPaths.Rooted("wc", "Lib", "Thing.mo")], paths);
     }
 
     [Fact]
@@ -228,25 +235,29 @@ public class FormattableModelicaFilesTests
     {
         // One working copy can hold several libraries. A sibling's files are real VCS changes and
         // are not this repository's to rewrite.
-        Assert.Empty(Resolve(Change(@"Other\Thing.mo")));
+        Assert.Empty(Resolve(Change(TestPaths.Relative("Other", "Thing.mo"))));
     }
 
     [Fact]
     public void ADeletedFile_IsNotFormattable()
     {
-        Assert.Empty(Resolve(Change(@"Lib\Gone.mo", VcsFileStatus.Deleted)));
+        Assert.Empty(Resolve(Change(TestPaths.Relative("Lib", "Gone.mo"), VcsFileStatus.Deleted)));
     }
 
+    // Forward slashes, normalised in the body: an attribute argument has to be a compile-time
+    // constant, so it cannot call TestPaths. The middle case used to read "Lib" + a backslash + "r",
+    // which a heredoc turned into a real newline when this file was written - leaving a verbatim
+    // string spanning two lines. It compiled, and the test asserted Empty on a filename containing a
+    // newline, so it passed while checking nothing at all.
     [Theory]
-    [InlineData(@"Lib\script.mos")]
-    [InlineData(@"Lib
-eadme.md")]
-    [InlineData(@"Lib\Resources\data.csv")]
+    [InlineData("Lib/script.mos")]
+    [InlineData("Lib/readme.md")]
+    [InlineData("Lib/Resources/data.csv")]
     public void ANonModelicaFile_IsNotFormattable(string path)
     {
         // A working copy holds scripts, resources and documentation; the formatter would make
         // nonsense of any of them.
-        Assert.Empty(Resolve(Change(path)));
+        Assert.Empty(Resolve(Change(path.Replace('/', Path.DirectorySeparatorChar))));
     }
 
     [Fact]
@@ -254,7 +265,7 @@ eadme.md")]
     {
         // A rename reports the old path too, and some clients report a moved-away file as changed.
         var paths = VcsChangeResolver.FormattableModelicaFiles(
-            Library, Root, [Change(@"Lib\Moved.mo")], _ => false);
+            Library, Root, [Change(TestPaths.Relative("Lib", "Moved.mo"))], _ => false);
 
         Assert.Empty(paths);
     }
@@ -263,7 +274,7 @@ eadme.md")]
     public void ARepositoryWithNoLocalPath_HasNothingToFormat()
     {
         var paths = VcsChangeResolver.FormattableModelicaFiles(
-            "", Root, [Change(@"Lib\Thing.mo")], _ => true);
+            "", Root, [Change(TestPaths.Relative("Lib", "Thing.mo"))], _ => true);
 
         Assert.Empty(paths);
     }
@@ -271,12 +282,18 @@ eadme.md")]
     [Fact]
     public void TheSameFileReportedTwice_IsFormattedOnce()
     {
-        Assert.Single(Resolve(Change(@"Lib\Thing.mo"), Change(@"LIB\THING.MO")));
+        // Git reports a file staged and modified as two entries; formatting it twice is wasted work
+        // and a second write the file monitor has to ignore.
+        var paths = Resolve(
+            Change(TestPaths.Relative("Lib", "Thing.mo")),
+            Change(TestPaths.Relative("Lib", "Thing.mo"), VcsFileStatus.Added));
+
+        Assert.Single(paths);
     }
 
     [Fact]
     public void TheExtensionIsMatchedRegardlessOfCase()
     {
-        Assert.Single(Resolve(Change(@"Lib\Thing.MO")));
+        Assert.Single(Resolve(Change(TestPaths.Relative("Lib", "Thing.MO"))));
     }
 }

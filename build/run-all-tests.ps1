@@ -27,10 +27,13 @@
 .PARAMETER SkipBuild
     Run the suites as they were last built. Much faster when iterating on one of them.
 
-.PARAMETER Strict
-    Treat a failure in a tool-dependent suite as a build failure. Off by default: without Dymola or
-    an `omc` on the machine those tests fail for a reason that is not a defect, and a script that
-    cries wolf is a script people stop running.
+.NOTES
+    A failure is a failure, whichever suite it is in. An earlier version excused failures in the
+    tool-dependent suites on the grounds that the machine might not have the tool - and then quietly
+    excused a real one: OpenModelica *is* installed here, and
+    GetErrorStringAsync_AfterClear_ReturnsEmpty fails against it. Excusing by category hides the
+    thing you wanted to find. A machine without the tools uses -CoreOnly, which is a decision rather
+    than a shrug.
 
 .EXAMPLE
     ./build/run-all-tests.ps1
@@ -38,15 +41,15 @@
 
 .EXAMPLE
     ./build/run-all-tests.ps1 -CoreOnly -SkipBuild
-    The seven suites CI runs, against the current build.
+    The seven suites CI runs, against the current build. Use -CoreOnly on a machine without Dymola
+    or OpenModelica, rather than reading past their failures.
 #>
 
 [CmdletBinding()]
 param(
     [string] $Configuration = 'Release',
     [switch] $CoreOnly,
-    [switch] $SkipBuild,
-    [switch] $Strict
+    [switch] $SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -156,7 +159,7 @@ $results = foreach ($suite in $suites) {
         Write-Host "  $total passed  ($([int]$elapsed.TotalSeconds)s)" -ForegroundColor Green
     }
     else {
-        $colour = if ($suite.NeedsTooling -and -not $Strict) { 'Yellow' } else { 'Red' }
+        $colour = 'Red'
         $count  = if ($null -ne $failed) { "$failed failed" } else { 'did not run' }
         Write-Host "  $count of $total  ($([int]$elapsed.TotalSeconds)s)" -ForegroundColor $colour
         if ($suite.Why) { Write-Host "      $($suite.Why)" -ForegroundColor DarkGray }
@@ -184,28 +187,20 @@ $totalTests = ($results | Measure-Object -Property Total -Sum).Sum
 $totalTime  = ($results | Measure-Object -Property Seconds -Sum).Sum
 Write-Host "$totalTests test(s) across $($results.Count) suite(s) in $totalTime s" -ForegroundColor Cyan
 
-$coreFailures    = $results | Where-Object { $_.ExitCode -ne 0 -and -not $_.NeedsTooling }
-$toolingFailures = $results | Where-Object { $_.ExitCode -ne 0 -and $_.NeedsTooling }
+$failures = $results | Where-Object { $_.ExitCode -ne 0 }
 
-foreach ($f in $toolingFailures) {
-    Write-Host "  $($f.Name) failed and needs tooling this machine may not have" -ForegroundColor Yellow
+foreach ($f in $failures | Where-Object NeedsTooling) {
+    Write-Host "  $($f.Name) needs an external tool - if this machine has none, use -CoreOnly" -ForegroundColor DarkGray
 }
 
-if ($coreFailures -or ($Strict -and $toolingFailures)) {
-    $names = (@($coreFailures) + @(if ($Strict) { $toolingFailures })) | Where-Object { $_ } | ForEach-Object Name
-    Fail "these suites failed: $($names -join ', ')"
+if ($failures) {
+    Fail "these suites failed: $(($failures | ForEach-Object Name) -join ', ')"
 }
 
 # Not "all suites passed" when one did not. A summary that contradicts the lines above it is how a
 # green run stops meaning anything, which is the failure this repository keeps finding in its own
 # checks rather than in its code.
-if ($toolingFailures) {
-    $n = @($toolingFailures).Count
-    Write-Host "Core suites passed. $n tooling suite(s) failed above - re-run with -Strict to gate on them." -ForegroundColor Yellow
-}
-else {
-    Write-Host 'All suites passed.' -ForegroundColor Green
-}
+Write-Host 'All suites passed.' -ForegroundColor Green
 
 Pop-Location
 exit 0

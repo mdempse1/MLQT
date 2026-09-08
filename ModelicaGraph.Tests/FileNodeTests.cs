@@ -1,3 +1,4 @@
+using MLQT.TestSupport;
 using Xunit;
 using ModelicaGraph.Interfaces;
 using ModelicaGraph.DataTypes;
@@ -10,11 +11,11 @@ public class FileNodeTests
     public void Constructor_SetsProperties()
     {
         // Arrange & Act
-        var node = new FileNode("file1", @"C:\path\to\test.mo");
+        var node = new FileNode("file1", TestPaths.Rooted("path", "to", "test.mo"));
 
         // Assert
         Assert.Equal("file1", node.Id);
-        Assert.Equal(@"C:\path\to\test.mo", node.FilePath);
+        Assert.Equal(TestPaths.Rooted("path", "to", "test.mo"), node.FilePath);
         Assert.Equal("test.mo", node.FileName);
         Assert.Equal(NodeType.File, node.NodeType);
         Assert.Empty(node.ContainedModelIds);
@@ -24,7 +25,7 @@ public class FileNodeTests
     public void FileName_ExtractsFromPath()
     {
         // Arrange & Act
-        var node = new FileNode("file1", @"C:\Projects\Modelica\Blocks\package.mo");
+        var node = new FileNode("file1", TestPaths.Rooted("Projects", "Modelica", "Blocks", "package.mo"));
 
         // Assert
         Assert.Equal("package.mo", node.FileName);

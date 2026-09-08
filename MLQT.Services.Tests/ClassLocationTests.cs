@@ -1,3 +1,4 @@
+using MLQT.TestSupport;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.Services.Checking;
@@ -12,7 +13,7 @@ public class ClassLocationTests
     [Fact]
     public void ALineInsideTheClass_IsOffsetByWhereTheClassStarts()
     {
-        var location = new ClassLocation(@"C:\lib\package.mo", StartLine: 120, LinesMapToFile: true);
+        var location = new ClassLocation(TestPaths.Rooted("lib", "package.mo"), StartLine: 120, LinesMapToFile: true);
 
         Assert.Equal(120, location.FileLine(1));    // the class declaration itself
         Assert.Equal(124, location.FileLine(5));
@@ -21,7 +22,7 @@ public class ClassLocationTests
     [Fact]
     public void AClassAtTheTopOfItsOwnFile_IsUnchanged()
     {
-        var location = new ClassLocation(@"C:\lib\Model.mo", StartLine: 1, LinesMapToFile: true);
+        var location = new ClassLocation(TestPaths.Rooted("lib", "Model.mo"), StartLine: 1, LinesMapToFile: true);
 
         Assert.Equal(7, location.FileLine(7));
     }
@@ -31,7 +32,7 @@ public class ClassLocationTests
     {
         // A package whose children were trimmed out, or a class the formatter re-rendered: adding
         // the offset would point confidently at a line that belongs to something else.
-        var location = new ClassLocation(@"C:\lib\package.mo", StartLine: 120, LinesMapToFile: false);
+        var location = new ClassLocation(TestPaths.Rooted("lib", "package.mo"), StartLine: 120, LinesMapToFile: false);
 
         Assert.Equal(120, location.FileLine(1));
         Assert.Equal(120, location.FileLine(48));
@@ -42,7 +43,7 @@ public class ClassLocationTests
     [InlineData(-3)]
     public void AnUnknownStartLine_IsTreatedAsTheTopOfTheFile(int startLine)
     {
-        var location = new ClassLocation(@"C:\lib\Model.mo", startLine, LinesMapToFile: true);
+        var location = new ClassLocation(TestPaths.Rooted("lib", "Model.mo"), startLine, LinesMapToFile: true);
 
         Assert.Equal(1, location.FileLine(1));
         Assert.Equal(4, location.FileLine(4));
@@ -53,7 +54,7 @@ public class ClassLocationTests
     [InlineData(-1)]
     public void ALineNumberNobodySet_LandsOnTheClassDeclaration(int lineInClass)
     {
-        var location = new ClassLocation(@"C:\lib\package.mo", StartLine: 50, LinesMapToFile: true);
+        var location = new ClassLocation(TestPaths.Rooted("lib", "package.mo"), StartLine: 50, LinesMapToFile: true);
 
         Assert.Equal(50, location.FileLine(lineInClass));
     }
@@ -62,7 +63,7 @@ public class ClassLocationTests
     public void ForGraph_MapsEachClassToItsFileAndStart()
     {
         var graph = new DirectedGraph();
-        var file = new FileNode("f1", @"C:\lib\Fix\package.mo");
+        var file = new FileNode("f1", TestPaths.Rooted("lib", "Fix", "package.mo"));
         graph.AddNode(file);
 
         var package = new ModelNode("Fix", "Fix", "package Fix end Fix;") { StartLine = 2 };
@@ -80,6 +81,6 @@ public class ClassLocationTests
         Assert.Equal(12, locations["Fix.Late"].FileLine(1));
         Assert.Equal(16, locations["Fix.Late"].FileLine(5));
         Assert.Equal(2, locations["Fix"].FileLine(5));           // the fallback
-        Assert.Equal(@"C:\lib\Fix\package.mo", locations["Fix"].FilePath);
+        Assert.Equal(TestPaths.Rooted("lib", "Fix", "package.mo"), locations["Fix"].FilePath);
     }
 }

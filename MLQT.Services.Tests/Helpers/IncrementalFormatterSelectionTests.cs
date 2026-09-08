@@ -1,3 +1,4 @@
+using MLQT.TestSupport;
 using MLQT.Services.Helpers;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
@@ -15,7 +16,7 @@ namespace MLQT.Services.Tests.Helpers;
 /// </summary>
 public class IncrementalFormatterSelectionTests
 {
-    private const string PackagePath = @"C:\lib\package.mo";
+    private static readonly string PackagePath = TestPaths.Rooted("lib", "package.mo");
 
     private static StyleCheckingSettings Formatting(bool on = true) => new() { ApplyFormattingRules = on };
 
@@ -73,7 +74,7 @@ public class IncrementalFormatterSelectionTests
     {
         // .git and .svn hold Modelica-looking files of their own, and rewriting one corrupts the
         // working copy.
-        var hidden = @"C:\lib\.git\package.mo";
+        var hidden = TestPaths.Rooted("lib", ".git", "package.mo");
         var graph = new DirectedGraph();
         var fileId = GraphBuilder.GenerateFileId(hidden);
         graph.AddNode(new FileNode(fileId, hidden));
@@ -88,7 +89,7 @@ public class IncrementalFormatterSelectionTests
     {
         var graph = OnePackageFile(out _, out _);
 
-        Assert.Empty(Select(graph, Formatting(), @"C:\lib\Unknown.mo"));
+        Assert.Empty(Select(graph, Formatting(), TestPaths.Rooted("lib", "Unknown.mo")));
     }
 
     [Fact]
@@ -161,7 +162,7 @@ public class IncrementalFormatterSelectionTests
     public void AClassWhoseParentIsInAnotherFile_IsAnOwner()
     {
         // A standalone class in its own file: its parent package exists, but elsewhere.
-        var standalone = @"C:\lib\A.mo";
+        var standalone = TestPaths.Rooted("lib", "A.mo");
         var graph = new DirectedGraph();
 
         var packageFileId = GraphBuilder.GenerateFileId(PackagePath);
@@ -182,7 +183,7 @@ public class IncrementalFormatterSelectionTests
     [Fact]
     public void SeveralChangedFiles_AreAllSelected()
     {
-        var second = @"C:\lib\B.mo";
+        var second = TestPaths.Rooted("lib", "B.mo");
         var graph = OnePackageFile(out _, out _);
         var fileId = GraphBuilder.GenerateFileId(second);
         graph.AddNode(new FileNode(fileId, second));
