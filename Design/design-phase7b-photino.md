@@ -649,11 +649,9 @@ Linux first would confound the two.
 - Point the Playwright journeys at the Photino host, or accept that `MLQT.TestHost` remains the
   journey host and say so. (The journeys drive a *server* host; whether they can drive Photino at all
   is a spike question.)
-- **The reported slowness (B125)**, which is why this step is bigger than it reads. Every feature
-  works, conformance is clean, and some operations are still noticeably slower than the MAUI build —
-  after B121 silenced Photino's per-message logging, which helped but was not all of it. **Establish
-  which steps before theorising about why**: the last time this was reasoned about from first
-  principles the hypothesis was rendering and the answer was `Console.WriteLine`.
+- ~~**The reported slowness (B125)**~~ — **done.** Not the host: a same-day A/B has Photino at 426 s
+  against MAUI 2026.4.0's 434 s on a larger graph. Two real defects came out of the investigation
+  (B126, B127) and neither was a migration regression. See below.
 - **The manual checklist**, which is the part no automation covers and 7a says so explicitly:
   visual fidelity, native window behaviour (multi-monitor, DPI, state restore), and a real file dialog
   opening and returning a path. Once, and written down.
@@ -666,15 +664,45 @@ out not to be about Photino.
 
 | Reported | What the log says |
 |---|---|
-| Startup style checking ~25% slower | Dependency analysis over the same 39,860-model graph: MAUI 88.7–163.8 s across eleven runs, Photino **83.1 s** and 147.6 s. The fastest run on record is a Photino one — **no regression here at all.** The style check: MAUI 324/325 s (7 Sep) against Photino 420 s (8 Sep), which is the reported +30% — but MAUI itself ranged 183–468 s on 2 Sep. One sample cannot separate a host cost from a variance that is already ±50%. **Open (B125), and it needs a same-day A/B, not more reasoning.** |
+| Startup style checking ~25% slower | **Not a regression — settled by a same-day A/B, below.** The cross-day figures that suggested one (MAUI 324/325 s on 7 Sep against Photino 420 s on 8 Sep) were variance: MAUI itself ranged 183–468 s on 2 Sep over the same graph. |
 | Analysis after adding a repository runs free and makes the UI crawl | Correct, and correctly identified by the reporter as not a regression: that path announced itself with a snackbar and ran in the background while every sibling path uses the modal progress dialog. **Fixed (B127).** |
 | Correcting a spelling takes a minute | The file held **4,478 classes**. Removing them from the graph is a loop over an O(*n*) `RemoveNode`, so it cost ~178 million set operations, and the same shape sat beside it in the library index cleanup. **Fixed (B126)** — 5,746 ms → 22 ms and 210 ms → 3 ms at those sizes. Always quadratic; a file this size is what made it visible. |
 
+#### The A/B that settles it (2026-09-08, 18:21 and 18:30)
+
+Both hosts opened the same project one after the other on the same machine — the Photino build, then
+the `2026.4.0` MAUI release tagged before this branch started. Same repositories, same 39,860-model
+dependency analysis, same `Claytex` check.
+
+| | Photino | MAUI 2026.4.0 |
+|---|---|---|
+| Repositories and libraries loaded | 70 s | 59 s |
+| Encrypted reference libraries loaded | **97** | 53 |
+| Models in the graph | **118,612** | 77,860 |
+| Dependency analysis (39,860 models) | **75 s** | 78 s |
+| Style check (`Claytex`) | **297 s** | 299 s |
+| Graph analyses, coverage, final flush | **54 s** | 57 s |
+| **Deferred pipeline, total** | **426 s** | **434 s** |
+
+**Photino is 2% faster on a graph half again as large**, which is inside the noise on the timings and
+outside it on the workload. The reason the workloads differ is itself worth recording: `ReferenceLibraries`
+was **not in `preferences.dat`**, so the migration had nothing to bring across, and the Photino store has
+an entry only because it was configured there afterwards. MAUI therefore ran with 44 fewer encrypted
+reference libraries and was still the slower of the two — so the conclusion holds a fortiori, and the
+comparison would only improve if it were tightened.
+
+It is also an unplanned check on the invariant from the reference-library work: **nothing may scale
+with graph size instead of with the checked set.** Forty thousand extra reference classes moved the
+style check by two seconds in 300. That is the invariant holding, measured.
+
 **And the finding nobody was looking for.** Putting every run in the log into one series exposed that
-this repository's style check has **tripled since late August, on MAUI**: ~105 s median over 24–27
-August, ~190 s on 1–2 September, 324/325 s on 7 September. That is larger than anything the migration
-could account for, and it predates it. **B128**, and it should be separated before more effort goes
-into the host question — a 3× is where the time actually is.
+this repository's style check has roughly tripled since late August: ~105 s median over 24–27 August,
+~190 s on 1–2 September, ~300 s now. **That is expected growth, not a regression** — the intervening
+weeks added the phase-5 suppression reads and the phase-6 whole-graph analyses and coverage
+measurement, more rules were enabled, and the project now loads far more libraries including the
+encrypted ones. Recorded as **B128** because it is worth knowing what the current figure is made of and
+worth speeding up eventually, and explicitly **out of scope for this branch**: it is not the migration's
+to fix and chasing it here would mean 7b never finishes.
 
 **The method, worth writing down because it was nearly not used:** the first instinct on all three was
 to reason about what Photino does differently, and the phase note already said not to. Every number
