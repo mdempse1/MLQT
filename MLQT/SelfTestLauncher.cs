@@ -19,7 +19,11 @@ namespace MLQT;
 public static class SelfTestLauncher
 {
     /// <summary>Set to 1 to start the app on <c>/selftest</c> instead of the application shell.</summary>
-    public const string EnabledVariable = "MLQT_SELFTEST";
+    /// <remarks>
+    /// The page owns this now, like the other two variables, so the MAUI and Photino hosts cannot
+    /// disagree about its name. Kept here as a forwarding constant because MainPage.xaml.cs reads it.
+    /// </remarks>
+    public const string EnabledVariable = SelfTest.EnabledVariable;
 
     /// <summary>
     /// Where to write the report. The page owns this name, because every host writes its baseline
@@ -28,8 +32,7 @@ public static class SelfTestLauncher
     public const string OutputVariable = SelfTest.OutputPathVariable;
 
     /// <summary>Whether this process was started to run the self-test.</summary>
-    public static bool IsEnabled =>
-        Environment.GetEnvironmentVariable(EnabledVariable) is "1" or "true";
+    public static bool IsEnabled => SelfTest.IsEnabled;
 
     /// <summary>The file to write, or null when none was named.</summary>
     public static string? OutputPath => Environment.GetEnvironmentVariable(OutputVariable);

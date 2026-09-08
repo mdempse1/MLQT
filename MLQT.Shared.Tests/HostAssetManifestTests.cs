@@ -31,7 +31,7 @@ public class HostAssetManifestTests
     public static TheoryData<string, string> HostPages()
     {
         var data = new TheoryData<string, string>();
-        foreach (var host in new[] { "MLQT" })
+        foreach (var host in new[] { "MLQT", "MLQT.Photino" })
             data.Add(host, Path.Combine(RepositoryRoot(), host, "wwwroot", "index.html"));
         return data;
     }

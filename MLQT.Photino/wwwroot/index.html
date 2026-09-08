@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MLQT</title>
+    <base href="/" />
+
+    <!--
+        Generated from MLQT.Shared/HostAssetManifest.cs and held to it by
+        MLQT.Shared.Tests/HostAssetManifestTests, which checks every host page loads exactly the
+        manifest's scripts in exactly the manifest's order. Order is load-bearing: every cytoscape-*
+        extension registers against the global cytoscape.min.js defines, and MLQT's own interop comes
+        last because it calls into all of them.
+
+        Do not copy this file from MLQT/wwwroot/index.html. That page carries autostart="false" on the
+        bootstrap script, which is a MAUI contract - MAUI's BlazorWebView is what calls Blazor.start().
+        Photino does not, so with the attribute present the window opens and no component is ever
+        created, with no error anywhere. Found by 7b-0's Windows leg.
+    -->
+    <link rel="stylesheet" href="_content/MLQT.Shared/app.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="MLQT.Photino.styles.css" />
+    <link rel="icon" href="data:," />
+</head>
+
+<body>
+    <div id="app">Loading...</div>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">&#128473;</span>
+    </div>
+
+    <script src="_framework/blazor.webview.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/dagre.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-dagre.js"></script>
+    <script src="_content/MLQT.Shared/lib/klayjs.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-klay.js"></script>
+    <script src="_content/MLQT.Shared/lib/weaver.min.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-spread.js"></script>
+    <script src="_content/MLQT.Shared/lib/layout-base.js"></script>
+    <script src="_content/MLQT.Shared/lib/cose-base.js"></script>
+    <script src="_content/MLQT.Shared/lib/cytoscape-fcose.js"></script>
+    <script src="_content/MLQT.Shared/cytoscapeGraph.js"></script>
+    <script src="_content/MLQT.Shared/diffViewer.js"></script>
+    <script src="_content/MLQT.Shared/spellCheck.js"></script>
+
+    <script>
+        // The inline helper MLQT.Shared's BrowserService calls. Every host page defines it.
+        window.getDimensions = function () {
+            return { width: window.innerWidth, height: window.innerHeight };
+        };
+    </script>
+</body>
+
+</html>

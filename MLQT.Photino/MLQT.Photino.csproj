@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <!-- No -windows in the target framework: this is the host that gives MLQT a Linux UI, which is
+         phase 7's whole deliverable. Phase 7b-2. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>MLQT.Photino</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>MLQT.Photino</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+    <!-- Pinned forward so the graph sits on the 10.0.x line MLQT.Shared uses rather than the 9.0.1
+         Photino's net9.0 asset group brings in. 7b-0 confirmed both work; this is tidiness. -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../MLQT.Shared/MLQT.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

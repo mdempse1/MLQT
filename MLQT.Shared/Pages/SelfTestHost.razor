@@ -1,0 +1,23 @@
+@*
+    The /selftest route with the providers it needs, as a component a host can root on directly.
+
+    Some hosts can navigate to a route at startup and some cannot: MAUI sets BlazorWebView.StartPath,
+    while Photino's PhotinoBlazorApp loads "/" itself and ignores PhotinoWindow.StartUrl. Rather than
+    each host inventing its own way of getting to the probes, a host that cannot navigate roots on
+    this instead.
+
+    It is EmptyLayout's four providers and SelfTest, and it exists for the same reason EmptyLayout
+    does: MainLayout would start the whole application - loading the last project, formatting modified
+    files, kicking off analysis - underneath the probes, and a host comparison has to compare the host
+    rather than whatever a library happened to be doing at the time.
+
+    Routing is not left untested by this. The host resolves "/" through the router in its ordinary
+    mode, which is how it starts at all.
+*@
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<SelfTest />

@@ -69,6 +69,23 @@ public partial class SelfTest
     /// <summary>Set to a path to have the report written there, after which the process exits.</summary>
     public const string OutputPathVariable = "MLQT_SELFTEST_OUT";
 
+    /// <summary>Set to 1 to start the application on this route instead of its own shell.</summary>
+    /// <remarks>
+    /// Here rather than in a host, beside the other two variables, because every host needs it and
+    /// the three belong together. It lived in <c>MLQT/SelfTestLauncher.cs</c> while MAUI was the only
+    /// host that could capture a baseline; the Photino host needs the same answer, and two hosts
+    /// reading the same environment variable from two different constants is how they come to
+    /// disagree about its name.
+    /// </remarks>
+    public const string EnabledVariable = "MLQT_SELFTEST";
+
+    /// <summary>Whether this process was started to run the self-test.</summary>
+    public static bool IsEnabled =>
+        Environment.GetEnvironmentVariable(EnabledVariable) is "1" or "true";
+
+    /// <summary>The route a host navigates to when <see cref="IsEnabled"/>.</summary>
+    public const string Route = "/selftest";
+
     /// <summary>
     /// Writes the report and stops the process, when a host was started to capture a baseline.
     /// </summary>

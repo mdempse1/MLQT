@@ -97,6 +97,58 @@ public class PortabilityTests
             + "supposed to be portable: " + string.Join(", ", offenders));
     }
 
+    /// <summary>The hosts that must never depend on MAUI, whatever else they depend on.</summary>
+    /// <remarks>
+    /// These are not in the portable closure — nothing references an executable — so the test above
+    /// cannot see them, and both were MAUI applications until phase 7b. Naming them explicitly is the
+    /// point: the migration is only finished when nothing but <c>MLQT</c> itself needs the workload,
+    /// and a regression here would be somebody adding a MAUI package back to solve a problem that has
+    /// a Photino answer.
+    /// </remarks>
+    public static TheoryData<string> MauiFreeHosts() => new() { "MLQT.Photino", "MLQT.McpTester" };
+
+    [Theory]
+    [MemberData(nameof(MauiFreeHosts))]
+    public void TheNonMauiHostsStayNonMaui(string project)
+    {
+        var path = Path.Combine(RepositoryRoot(), project, project + ".csproj");
+        Assert.True(File.Exists(path), $"{project} has no project file at {path}");
+
+        var text = File.ReadAllText(path);
+
+        Assert.False(Regex.IsMatch(text, @"<UseMaui\w*>\s*true", RegexOptions.IgnoreCase),
+            $"{project} declares UseMaui");
+        Assert.False(text.Contains("Microsoft.Maui", StringComparison.OrdinalIgnoreCase),
+            $"{project} references a Microsoft.Maui package");
+        // The declared target framework, not the file's text: McpTester's own csproj comment says what
+        // it used to target, and matching that would fail the project for explaining itself.
+        var frameworks = Regex.Matches(text, @"<TargetFrameworks?>([^<]+)</TargetFrameworks?>")
+                              .SelectMany(m => m.Groups[1].Value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                              .Select(f => f.Trim())
+                              .ToList();
+
+        Assert.NotEmpty(frameworks);
+        Assert.All(frameworks, f =>
+            Assert.False(Regex.IsMatch(f, @"-(android|ios|maccatalyst|windows)"),
+                $"{project} targets {f}, which pulls the workload back in"));
+    }
+
+    [Fact]
+    public void OnlyTheMauiAppStillUsesTheWorkload()
+    {
+        // The number that says how far the migration has got, asserted so that it can only go down
+        // deliberately. Two projects needed the workload before 7b-1; one does now; 7b-8 makes it none.
+        var users = Directory.EnumerateFiles(RepositoryRoot(), "*.csproj", SearchOption.AllDirectories)
+                             .Where(p => !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                             .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+                             .Where(p => Regex.IsMatch(File.ReadAllText(p), @"<UseMaui\w*>\s*true", RegexOptions.IgnoreCase))
+                             .Select(Path.GetFileNameWithoutExtension)
+                             .Order()
+                             .ToList();
+
+        Assert.Equal(["MLQT"], users);
+    }
+
     [Fact]
     public void NoPortableProjectReferencesTheMauiApp()
     {

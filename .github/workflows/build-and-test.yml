@@ -57,6 +57,7 @@ jobs:
           # The MCP tester stopped being a MAUI app in 7b-1 and is a plain net10.0 Photino one, so
           # it builds here rather than in the MAUI job - and on Linux too, which it could not before.
           dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release --no-restore
+          dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release --no-restore
           # Built but not run, for the same reason as the SVN integration tests below: these drive a
           # live Dymola / OpenModelica install that no runner has, and they assert on what it answers
           # rather than self-skipping. Building them still catches the thing CI can catch - a change
@@ -152,6 +153,7 @@ jobs:
           dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
           dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release
           dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release
+          dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release
 
       # Each suite runs even if an earlier one failed, and the job still fails. Stopping at the first
       # failure means one round trip per broken suite, which is the wrong trade when six of these had

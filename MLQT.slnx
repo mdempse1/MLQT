@@ -6,6 +6,7 @@
     <Project Path="MLQT.TestHost/MLQT.TestHost.csproj" />
     <Project Path="MLQT.Journeys/MLQT.Journeys.csproj" />
     <Project Path="MLQT/MLQT.csproj" />
+    <Project Path="MLQT.Photino/MLQT.Photino.csproj" />
     <Project Path="ModelicaParser.Tests/ModelicaParser.Tests.csproj" />
     <Project Path="ModelicaParser/ModelicaParser.csproj" />
     <Project Path="ModelicaGraph.Tests/ModelicaGraph.Tests.csproj" />

@@ -1,6 +1,7 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-08). 7b-0 is complete (both legs), 7b-1 is shipped, and 7b-A is under way.**
+> **Status: IN PROGRESS (2026-09-08). 7b-0, 7b-1 and 7b-2 are done — `MLQT.Photino` runs MLQT
+> and matches the MAUI baseline — and 7b-A is under way.**
 > The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
 > `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
 > the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
@@ -438,6 +439,52 @@ The project 7a-6 was designed to make small.
 - A guard that the Photino host does not reference MAUI, in the spirit of `PortabilityTests`.
 - Window lifecycle: title, icon, initial size, and restoring size/position across runs.
 
+#### ✅ Shipped (2026-09-08)
+
+**`MLQT.Photino` exists, runs MLQT, and matches the MAUI baseline on all 16 probes.**
+
+```
+baseline: MLQT (runtime 10.0.8), 16 probes
+actual:   MLQT.Photino (runtime 10.0.8), 16 probes
+
+NO DIFFERENCES - every probe answered as it did under MAUI.
+```
+
+`Program.cs` is 60 lines and does what `MauiProgram` does: `AddMlqtCore()`, three platform services,
+a renderer. That is 7a-6 paying off exactly as designed — the composition root was already shared, so
+a host is the renderer plus the three implementations that reach the operating system.
+
+**The application itself starts.** Before the probes were wired up the host was run in its ordinary
+mode, and the log shows `MainLayout | Application starting`, the startup sequence, and repository
+settings loading. Routing works: the router resolved `/` to the shell.
+
+- **The page is generated from `HostAssetManifest`** and `"MLQT.Photino"` is in
+  `HostAssetManifestTests.HostPages()`, so it is held to the same 14 scripts in the same order as
+  MAUI's, forever. It also carries `app.css`, which MAUI has and `MLQT.TestHost` does not (B120).
+- **`PortabilityTests` gained two guards.** One names the hosts that must never depend on MAUI
+  (`MLQT.Photino`, `MLQT.McpTester`); the other asserts that **exactly one project still uses the
+  workload**, so the number can only go down deliberately. It was two before 7b-1 and is one now;
+  7b-8 makes it none.
+- **Window placement is restored across runs**, which MAUI did for us. A saved placement is checked
+  for sanity rather than trusted: a window restored onto a monitor that is no longer attached is
+  invisible and unrecoverable without editing the settings file.
+
+**A host difference worth recording: Photino has no equivalent of `BlazorWebView.StartPath`.**
+`PhotinoBlazorApp.Run()` loads `/` itself and ignores `PhotinoWindow.StartUrl`, so a host cannot be
+told to start on a route. Self-test mode therefore roots directly on the probes rather than
+navigating to them. Rather than each host inventing its own way of doing that,
+`MLQT.Shared/Pages/SelfTestHost.razor` is `EmptyLayout`'s providers plus `SelfTest`, and the Photino
+host roots on it when `SelfTest.IsEnabled`. `SelfTest` also now owns the `MLQT_SELFTEST` constant and
+the route, beside the two variables it already owned — it was in `MLQT/SelfTestLauncher.cs` while MAUI
+was the only host that could capture a baseline, and two hosts reading one environment variable
+through two constants is how they come to disagree about its name.
+
+**What is provisional, and named so it is not read as finished.** The settings service is a JSON file
+and **does not migrate anything**; the power management service is the MAUI implementation's Win32
+call, unchanged, and **does nothing on Linux**. Both are 7b-3's. The second is worth stating twice:
+probe 10 asserts only that the two calls return, so it passes on Linux today while the machine can
+still sleep in the middle of a long check. That is a limit of what a probe can see, not a pass.
+
 ### 7b-3 — the three platform services (M — the long pole, but shorter than the sketch says)
 
 The sketch treats this as three ports to two platforms. Two of the three are much smaller than that.
@@ -614,7 +661,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
 | **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
-| **7b-2** | `MLQT.Photino` host: composition root, manifest-generated page, window lifecycle, drift + portability guards | S/M |
+| **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
 | **7b-3** | The three platform services; power is a file copy on Windows, the picker is an adapter, settings is the real work — **including migration** | M |
 | **7b-4** | Bundle Roboto; remove the startup network dependency | S |
 | **7b-5** | Windows conformance against the baseline, plus the manual checklist | M |
