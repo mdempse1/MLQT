@@ -41,6 +41,9 @@ dotnet test MLQT.Services.Tests
 dotnet test ModelicaParser.Tests
 dotnet test ModelicaGraph.Tests
 
+# Run every suite, including the two no CI job runs - see Test Cases below
+pwsh ./build/run-all-tests.ps1
+
 # Run MAUI application (Windows)
 dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
 ```
@@ -389,23 +392,46 @@ a consumer can resolve. Run on every push by `build-and-test.yml`; run it locall
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.
 
-**CI enforces this** — `build/check-coverage.ps1` runs all six suites, merges their reports, and fails
-the build per class. Run it locally the same way:
+Two scripts answer two different questions. Run the first before pushing; run the second when you
+have added a class or moved code between them.
 
-Two scripts, for two different questions. **"Do all the tests pass?"** is
-`build/run-all-tests.ps1` — it reads the suite list from `MLQT.slnx`, so it cannot fall behind, and it
-is the only thing that runs `DymolaInterface.Tests` and `OpenModelicaInterface.Tests`, which CI
-deliberately skips because they drive a live Dymola or OpenModelica install no runner has. A machine
-without those tools sees their failures reported separately and does not fail the run; `-Strict`
-gates on them, `-CoreOnly` skips them to ask "would CI be green?".
+### "Do all the tests pass?" — `build/run-all-tests.ps1`
 
 ```powershell
-./build/run-all-tests.ps1                  # everything, ~4 minutes
-./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the suites CI runs, against the current build
-./build/run-all-tests.ps1 -Strict          # treat a missing simulation tool as a failure
+./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes
+./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the 7 CI runs, against the current build
+./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
 ```
 
-**"Would the coverage gate pass?"** is `build/check-coverage.ps1`:
+It runs **every** suite, which is more than CI does and more than the coverage gate does:
+
+| | Suites |
+|---|---|
+| `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
+| CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform; `ui-journeys` runs the journeys on both |
+| `check-coverage.ps1` | the same 7 — the other three contribute no coverage |
+
+**The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
+the solution is picked up without anyone remembering a list. This repository has been bitten by the
+same rule having two implementations often enough that a list would be a defect waiting to happen.
+
+**Three suites need something the machine may not have** and are the reason this script exists at all:
+`DymolaInterface.Tests` (a live Dymola) and `OpenModelicaInterface.Tests` (a live `omc`) run in **no**
+CI job — the workflow says why — so this is the only thing that runs them; `MLQT.Journeys` needs
+`pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once. On a machine without
+Dymola or OpenModelica, use `-CoreOnly`.
+
+**A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
+suites by category on the grounds that the machine might not have the tool, and immediately excused a
+real one — OpenModelica *is* installed on the main development machine, and
+`GetErrorStringAsync_AfterClear_ReturnsEmpty` fails against omc 1.26 (backlog B116). Excusing by
+category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
+not.
+
+### "Would the coverage gate pass?" — `build/check-coverage.ps1`
+
+**CI enforces the per-class bar** — this script runs the seven measured suites, merges their reports,
+and fails the build per class. Run it locally the same way:
 
 ```powershell
 dotnet build MLQT.slnx -c Release
