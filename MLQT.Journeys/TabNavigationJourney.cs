@@ -42,6 +42,12 @@ public class TabNavigationJourney(TestHostFixture host)
 
     private async Task<IPage> OpenAsync()
     {
+        // The host is shared by the whole collection, so an earlier journey may have left a library
+        // loaded and the analysis pipeline still running - which delays this page's own startup and
+        // was enough to blow a 30-second wait on a CI runner while passing locally every time.
+        // Waiting for idle first is what the other journeys do and what this one should have.
+        await host.WaitForIdleAsync();
+
         var page = await host.NewPageAsync();
         await page.GotoAsync(host.BaseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await page.Locator(".mud-tab").Nth(4).WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
