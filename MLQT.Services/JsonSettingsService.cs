@@ -1,7 +1,7 @@
 using System.Text.Json;
 using MLQT.Services.Interfaces;
 
-namespace MLQT.Photino.Services;
+namespace MLQT.Services;
 
 /// <summary>
 /// Settings in a JSON file beside the logs.
@@ -12,16 +12,16 @@ namespace MLQT.Photino.Services;
 /// is <c>%LocalAppData%/MLQT</c> on Windows and <c>~/.local/share/MLQT</c> on Linux — the same folder
 /// the logs and dictionaries already use, which is why no XDG-specific code appears here.</para>
 ///
-/// <para><b>This does not migrate anything, and that is 7b-3's job and the phase's highest silent
-/// risk.</b> An existing user's project list, repository settings, theme and window state are in MAUI
-/// <c>Preferences</c>, and this service starts empty. Cutting over without a migration resets every
-/// one of them, and no probe can see it. Said here as well as in the plan because this is the file
-/// somebody will be looking at when they write it.</para>
+/// <para><b>Shared by both hosts</b> since 7b-3, which is what makes the cutover a non-event: the
+/// MAUI app writes here too, having seeded this file once from its own <c>Preferences</c> store (see
+/// <see cref="MauiPreferencesSeed"/>). By the time anyone runs the Photino host their settings are
+/// already in it, and there is no migration step in the new host at all — the best migration being
+/// the one that has already happened.</para>
 ///
 /// <para>Writes are whole-file and synchronous. The store is a few kilobytes and settings change at
 /// human speed, so the simplest thing that cannot half-write is the right one.</para>
 /// </remarks>
-internal sealed class JsonSettingsService : ISettingsService
+public sealed class JsonSettingsService : ISettingsService
 {
     private readonly string _path;
     private readonly Lock _gate = new();
@@ -93,6 +93,37 @@ internal sealed class JsonSettingsService : ISettingsService
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Copies a user's settings in from MAUI's <c>Preferences</c>, once.
+    /// </summary>
+    /// <param name="readOldValue">
+    /// Reads a raw value from the old store, or returns null or empty when it holds nothing. Only the
+    /// MAUI host can supply this, which is why it is a delegate and why the seeding happens there.
+    /// </param>
+    /// <returns>The keys copied, for the host to log.</returns>
+    /// <remarks>
+    /// One method rather than raw get/set accessors, so the dictionary stays private and the rules
+    /// about what may overwrite what stay in <see cref="MauiPreferencesSeed"/> where they are tested.
+    /// </remarks>
+    public IReadOnlyList<string> SeedFrom(Func<string, string?> readOldValue)
+    {
+        lock (_gate)
+        {
+            var copied = MauiPreferencesSeed.Seed(
+                readOldValue,
+                key => _values.TryGetValue(key, out var existing) ? existing : null,
+                (key, value) => _values[key] = value,
+                alreadySeeded: _values.ContainsKey(MauiPreferencesSeed.CompletedKey));
+
+            // The marker is written whether or not anything was copied: "there was nothing to bring
+            // across" is an answer, and asking again every time the app starts is not free.
+            _values[MauiPreferencesSeed.CompletedKey] = "true";
+            Flush();
+
+            return copied;
+        }
+    }
+
     private static Dictionary<string, string> Load(string path)
     {
         try
@@ -105,7 +136,7 @@ internal sealed class JsonSettingsService : ISettingsService
         {
             // A corrupt settings file must not stop the application opening. Starting from defaults
             // is recoverable; refusing to start is not.
-            MLQT.Services.LoggingService.Error(nameof(JsonSettingsService), $"Could not read {path}", ex);
+            LoggingService.Error(nameof(JsonSettingsService), $"Could not read {path}", ex);
             return [];
         }
     }
@@ -118,7 +149,7 @@ internal sealed class JsonSettingsService : ISettingsService
         }
         catch (Exception ex)
         {
-            MLQT.Services.LoggingService.Error(nameof(JsonSettingsService), $"Could not write {_path}", ex);
+            LoggingService.Error(nameof(JsonSettingsService), $"Could not write {_path}", ex);
         }
     }
 }

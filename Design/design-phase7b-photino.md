@@ -1,7 +1,7 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-08). 7b-0, 7b-1 and 7b-2 are done — `MLQT.Photino` runs MLQT
-> and matches the MAUI baseline — and 7b-A is under way.**
+> **Status: IN PROGRESS (2026-09-08). 7b-0 through 7b-3 are done — `MLQT.Photino` runs MLQT, matches
+> the MAUI baseline, and existing users' settings migrate themselves — and 7b-A is under way.**
 > The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
 > `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
 > the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
@@ -517,6 +517,49 @@ JSON file at an XDG/`%LocalAppData%` path.
   Windows that store is reachable without the MAUI workload. Decide explicitly whether to migrate or
   to accept the loss and *tell* people; do not decide it by omission.
 
+#### ✅ Shipped (2026-09-08)
+
+**The migration is done, and the Photino host contains none of it.**
+
+The problem the sketch and both spikes kept flagging was that an existing user's project list,
+repository settings, themes and external-tool paths live in MAUI `Preferences`, the new host reads a
+JSON file, and nothing connects the two. The obvious approach — have the Photino host read MAUI's
+store — was tried first and abandoned on evidence: **`Preferences` is in none of the places it is
+supposed to be.** Not `HKCU\Software`, not a WinRT settings container, not the application's own data
+folder. Reverse engineering that and depending on the answer would have been a migration resting on a
+guess.
+
+So the app that owns the data hands it over. `MLQT`'s `SettingsService` now delegates to
+`JsonSettingsService` — the store both hosts share — and seeds it **once** from `Preferences` on
+startup. By the time anyone runs the Photino host their settings are already there.
+
+- **`Preferences` cannot be enumerated.** It answers for a key you name and offers no way to ask what
+  it holds, so the seed can only move keys that are written down. `MlqtSettingsKeys` is that list
+  (six: `UI`, `SyntaxHighlighting`, `Repositories`, `ReferenceLibraries`, `Dymola`, `OpenModelica`),
+  and a test reads the literals back out of the codebase and fails on any that are missing from it.
+  Verified by removing one and watching the test name it. Without that guard, adding a seventh key is
+  a setting that silently reverts to its default for every existing user on the day they upgrade.
+- **Two guards, guarding different things.** A marker stops the seed running twice, so a setting the
+  user *deleted* in the new host does not come back; a per-key check stops it overwriting anything the
+  new store already has, so a theme chosen in the new host survives opening the old one again. Users
+  will run the two alternately during a migration and the newer store has to win.
+- **Nothing is deleted.** `Preferences` is left exactly as it was, so going back to an earlier release
+  still works. During a migration the rollback has to work.
+
+**The consequence worth stating plainly: a release carrying this change is the point of no return for
+the settings format, not 7b-8.** From then on the MAUI app is writing to the new store.
+
+**Linux sleep prevention** holds an inhibit lock through `systemd-inhibit` rather than speaking D-Bus,
+which would need a session-bus connection and a dependency to make one and would fail in the same
+environments this has to degrade in anyway. Where there is nothing to hold a lock with it does nothing
+and logs once. **Probe 10 cannot tell a real inhibit from a no-op** — it asserts only that the calls
+return — so the log line matters more than the probe here.
+
+**The file picker** was written in 7b-2 over `PhotinoWindow.ShowOpenFile`/`ShowOpenFolder`. That a
+dialog opens and returns a path is still a manual check, once per platform.
+
+Conformance is unchanged: 16 probes, zero differences.
+
 ### 7b-4 — remove the network dependency from startup (S)
 
 `index.html` pulls Roboto from `fonts.googleapis.com`. That is a network round-trip on every launch of
@@ -662,7 +705,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
 | **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
 | **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
-| **7b-3** | The three platform services; power is a file copy on Windows, the picker is an adapter, settings is the real work — **including migration** | M |
+| **7b-3** | ✅ **shipped 2026-09-08** — settings migrated by the MAUI host seeding the shared store, guarded by a key catalogue held to the source; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | Bundle Roboto; remove the startup network dependency | S |
 | **7b-5** | Windows conformance against the baseline, plus the manual checklist | M |
 | **7b-6** | Linux: conformance, the nightly WebKit journeys, the per-platform `selftest` job | L |
