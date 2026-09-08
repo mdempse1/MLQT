@@ -397,4 +397,8 @@ MLQT/svn-tools/win-x64/
 # file that IS committed - it is a reviewable record of accepted debt, like .mlqt/baseline.json.
 CoverageResults/
 CoverageReport/
+
+# The same, from build/run-all-tests.ps1 -Coverage, which measures more suites than the gate does.
+AllTestResults/
+AllTestCoverage/
 !build/coverage-baseline.json

@@ -399,9 +399,16 @@ have added a class or moved code between them.
 
 ```powershell
 ./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes
+./build/run-all-tests.ps1 -Coverage              # ...with a per-assembly coverage summary
 ./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the 7 CI runs, against the current build
 ./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
 ```
+
+`-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
+only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites drive a live
+simulation tool so no CI job runs them, and the ~8 points the browser journeys add to `MLQT.Shared`
+by exercising the real UI. Both scripts take their assembly lists from
+`build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
 
 It runs **every** suite, which is more than CI does and more than the coverage gate does:
 

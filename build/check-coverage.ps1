@@ -83,15 +83,10 @@ Push-Location $repoRoot
 
 # The bar per assembly. ModelicaParser is higher because CLAUDE.md calls it critical to the project:
 # everything downstream is built on what it parses, so a gap there is a gap in every other number.
-$bars = @{
-    'ModelicaParser' = 95.0
-    'ModelicaGraph'  = 80.0
-    'MLQT.Services'  = 80.0
-    'MLQT.McpServer' = 80.0
-    'RevisionControl' = 80.0
-    'mlqt'           = 80.0   # the assembly name of MLQT.Cli, from its ToolCommandName
-    'MLQT.Shared'    = 80.0   # joined the gate in phase 7a-5; see the note in the header
-}
+# The bars and the owned-assembly list live in one place, shared with run-all-tests.ps1, so the two
+# scripts cannot disagree about what "our code" means - see B117 and the file's own header.
+. (Join-Path $PSScriptRoot 'CoverageAssemblies.ps1')
+$bars = $MlqtBars
 
 # The suites, and the filter each needs. SVN integration tests want a working copy at
 # C:\Projects\ModelicaEditorTest plus a server; the build workflow excludes them the same way, so
@@ -141,28 +136,10 @@ if ($reports.Count -lt $suites.Count) {
     Fail "expected $($suites.Count) coverage reports, found $($reports.Count). A suite produced nothing, and a missing report reads as 0%"
 }
 
-# An allow list, built from $bars, rather than a deny list of the packages noticed so far.
-#
-# It used to deny DymolaInterface and OpenModelicaInterface and admit everything else, which meant
-# every NuGet dependency the tests happened to execute was counted: SharpCompress alone contributed
-# 69,876 uncovered lines, and with LibGit2Sharp, Moq, FluentValidation and bunit that was **79% of
-# the denominator**. The headline read 19.2% while the code we own was at 69%. A number that low is
-# not merely wrong, it is unusable - nobody can tell a real regression from the arrival of another
-# transitive dependency.
-#
-# Deriving it from $bars means the assemblies measured and the assemblies gated are one list.
-# DymolaInterface and OpenModelicaInterface are absent because they have no bar: no CI job runs their
-# suites, so measuring them would report 0% for code that is tested, just not here.
-$assemblyFilters = '-assemblyfilters:' + (($bars.Keys | Sort-Object | ForEach-Object { "+$_" }) -join ';')
-
 Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
-& reportgenerator `
-    "-reports:$ResultsDirectory/**/coverage.cobertura*.xml" `
-    "-targetdir:$ReportDirectory" `
-    '-reporttypes:JsonSummary;TextSummary;HtmlSummary' `
-    $assemblyFilters `
-    '-classfilters:-System.Text.RegularExpressions.Generated*;-modelicaParser;-modelicaLexer;-modelicaBaseListener;-modelicaBaseVisitor*' | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail 'reportgenerator failed' }
+if (-not (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $bars.Keys)) {
+    Fail 'reportgenerator failed'
+}
 
 # What -UpdateBaseline writes for a new entry, and what the gate refuses to accept.
 $NeedsReason = 'TODO: why is this accepted?'

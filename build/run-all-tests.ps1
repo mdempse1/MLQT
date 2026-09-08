@@ -35,9 +35,21 @@
     thing you wanted to find. A machine without the tools uses -CoreOnly, which is a decision rather
     than a shrug.
 
+.PARAMETER Coverage
+    Also collect coverage and print a per-assembly summary. This is the only way to see coverage for
+    DymolaInterface and OpenModelicaInterface: their suites drive a live simulation tool, so no CI job
+    runs them and build/check-coverage.ps1 does not measure them.
+
+    It reports; it does not gate. The ratchet lives in check-coverage.ps1 and is deliberately fed by
+    the suites CI can actually run, so that a number it enforces is one CI can defend.
+
 .EXAMPLE
     ./build/run-all-tests.ps1
     Everything, including the simulation interfaces.
+
+.EXAMPLE
+    ./build/run-all-tests.ps1 -Coverage
+    Everything, with a coverage summary over every assembly we own.
 
 .EXAMPLE
     ./build/run-all-tests.ps1 -CoreOnly -SkipBuild
@@ -49,7 +61,10 @@
 param(
     [string] $Configuration = 'Release',
     [switch] $CoreOnly,
-    [switch] $SkipBuild
+    [switch] $SkipBuild,
+    [switch] $Coverage,
+    [string] $ResultsDirectory = 'AllTestResults',
+    [string] $ReportDirectory  = 'AllTestCoverage'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,6 +99,8 @@ $suiteNotes = @{
         NeedsTooling = $true
     }
 }
+
+. (Join-Path $PSScriptRoot 'CoverageAssemblies.ps1')
 
 function Fail([string] $message) {
     Write-Host "FAIL: $message" -ForegroundColor Red
@@ -138,10 +155,19 @@ if (-not $SkipBuild) {
 
 # --- run --------------------------------------------------------------------------------------
 
+if ($Coverage -and (Test-Path $ResultsDirectory)) {
+    # Stale cobertura files from an earlier run would be merged in as though they were this one's.
+    Remove-Item $ResultsDirectory -Recurse -Force
+}
+
 $results = foreach ($suite in $suites) {
     Write-Host "  $($suite.Name)" -NoNewline
 
     $arguments = @('test', $suite.Project, '-c', $Configuration, '--no-build')
+    if ($Coverage) {
+        $arguments += @('--coverlet', '--coverlet-output-format', 'cobertura',
+                        '--results-directory', (Join-Path $ResultsDirectory $suite.Name))
+    }
     if ($suite.Filter) { $arguments += @('--filter', $suite.Filter) }
 
     $started = Get-Date
@@ -186,6 +212,48 @@ Write-Host ''
 $totalTests = ($results | Measure-Object -Property Total -Sum).Sum
 $totalTime  = ($results | Measure-Object -Property Seconds -Sum).Sum
 Write-Host "$totalTests test(s) across $($results.Count) suite(s) in $totalTime s" -ForegroundColor Cyan
+
+# --- coverage ----------------------------------------------------------------------------------
+
+if ($Coverage) {
+    $reports = Get-ChildItem -Path $ResultsDirectory -Recurse -Filter 'coverage.cobertura*.xml' -ErrorAction SilentlyContinue
+
+    # A suite that produced no report is not 0% coverage, it is no information - and merging nothing
+    # in its place would drag every class it owns to zero. Say so rather than print a lower number.
+    if ($reports.Count -lt $suites.Count) {
+        Write-Host ("  {0} of {1} suites produced a coverage report; the summary below is incomplete" -f `
+            $reports.Count, $suites.Count) -ForegroundColor Yellow
+    }
+
+    if ($reports.Count -gt 0) {
+        Write-Host ''
+        Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
+
+        if (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $MlqtOwnedAssemblies) {
+            $summary = Get-Content (Join-Path $ReportDirectory 'Summary.json') -Raw | ConvertFrom-Json
+
+            Write-Host ''
+            Write-Host ("Line coverage: {0}%   ({1} of {2} lines)" -f `
+                $summary.summary.linecoverage, $summary.summary.coveredlines, $summary.summary.coverablelines) -ForegroundColor Cyan
+
+            foreach ($assembly in $summary.coverage.assemblies | Sort-Object name) {
+                # Named where the gate has an opinion, so the two numbers are never confused: this
+                # report covers more suites than the gate does and is not the thing CI enforces.
+                $bar = if ($MlqtBars.ContainsKey($assembly.name)) { "bar {0}% per class" -f $MlqtBars[$assembly.name] }
+                       else { 'not gated - no CI job runs its suite' }
+
+                Write-Host ("  {0,-22} {1,6}%   ({2})" -f $assembly.name, $assembly.coverage, $bar)
+            }
+
+            Write-Host ''
+            Write-Host "Full report: $ReportDirectory/index.html" -ForegroundColor DarkGray
+            Write-Host 'This reports, it does not gate. The ratchet is build/check-coverage.ps1.' -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host '  reportgenerator failed; no coverage summary' -ForegroundColor Yellow
+        }
+    }
+}
 
 $failures = $results | Where-Object { $_.ExitCode -ne 0 }
 
