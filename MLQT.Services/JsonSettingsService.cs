@@ -27,11 +27,23 @@ public sealed class JsonSettingsService : ISettingsService
     private readonly Lock _gate = new();
     private Dictionary<string, string> _values;
 
+    /// <summary>The real store, under the platform's local application data.</summary>
     public JsonSettingsService()
+        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MLQT"))
     {
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MLQT");
+    }
 
+    /// <summary>A store in a named directory.</summary>
+    /// <remarks>
+    /// <para>Exists so a test can point at a temporary directory. That is a seam worth having rather
+    /// than a concession: without it the only way to test this is against the developer's own
+    /// settings file, and <c>Environment.GetFolderPath</c> reads the shell's known folder rather than
+    /// the <c>LOCALAPPDATA</c> variable, so redirecting the environment does <b>not</b> redirect it.
+    /// A test suite written that way passes, and quietly overwrites the real file - which is exactly
+    /// what happened when these tests were first written.</para>
+    /// </remarks>
+    public JsonSettingsService(string directory)
+    {
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "settings.json");
         _values = Load(_path);
