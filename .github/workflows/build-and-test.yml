@@ -103,40 +103,137 @@ jobs:
           name: test-results
           path: ${{ github.workspace }}/TestResults/*.trx
 
-  ui-journeys:
-    # The project's first Linux job, and it earns its place twice over: it runs the browser journeys
-    # against MLQT.TestHost, and it is the only proof that everything except the MAUI app builds on
-    # Linux at all - which is a phase-7 deliverable in its own right and is otherwise not discovered
-    # until the Photino port is underway.
+  linux-tests:
+    # The Windows suites, run again on Linux. Everything in build-libraries runs on windows-latest and
+    # nothing but the journeys ran anywhere else, which is an odd place to be for a phase whose whole
+    # deliverable is a Linux UI - and the code most likely to differ is exactly what was untested
+    # there: RevisionControl spawns git and svn processes, MLQT.Services does the encoding and path
+    # work ModelicaFileEncoding exists for, and ModelicaParser carries a 95% bar because it is
+    # critical. The precedent is on the record: the first Linux job this repository ever had found six
+    # MLQT.Cli tests built around a literal Windows drive path within a day of being added.
     #
-    # Deliberately does NOT install the MAUI workload. If this job ever needs it, something
-    # non-portable has reached a project that is supposed to be portable, and that is the finding.
-    name: UI Journeys (Linux)
+    # Project by project rather than the solution: MLQT.slnx contains the MAUI app, whose workload
+    # does not exist on Linux. Deliberately does NOT install the MAUI workload - if this job ever
+    # needs it, something non-portable has reached a project that is supposed to be portable, and
+    # that is the finding rather than a reason to install it.
+    name: Build & Test Libraries (Linux)
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Build the test projects and everything beneath them
+        run: |
+          dotnet build ModelicaParser.Tests/ModelicaParser.Tests.csproj -c Release
+          dotnet build ModelicaGraph.Tests/ModelicaGraph.Tests.csproj -c Release
+          dotnet build RevisionControl.Tests/RevisionControl.Tests.csproj -c Release
+          dotnet build MLQT.Services.Tests/MLQT.Services.Tests.csproj -c Release
+          dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release
+          dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release
+          dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release
+
+      - name: Run ModelicaParser tests
+        run: dotnet test ModelicaParser.Tests -c Release --no-build --report-trx --report-trx-filename parser-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run ModelicaGraph tests
+        run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # Same exclusion as the Windows job: the SVN integration tests need a working copy and a server
+      # no runner has. Kept identical so the two platforms measure the same thing.
+      - name: Run RevisionControl tests (exclude SVN integration)
+        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Services tests
+        run: dotnet test MLQT.Services.Tests -c Release --no-build --report-trx --report-trx-filename services-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.McpServer tests
+        run: dotnet test MLQT.McpServer.Tests -c Release --no-build --report-trx --report-trx-filename mcpserver-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Cli tests
+        run: dotnet test MLQT.Cli.Tests -c Release --no-build --report-trx --report-trx-filename cli-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Run MLQT.Shared tests
+        run: dotnet test MLQT.Shared.Tests -c Release --no-build --report-trx --report-trx-filename shared-linux.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # Produce and run the exact artifact the release ships, against the committed fixture, so a
+      # release cannot be the first time that binary is built or executed on Linux. The check's exit
+      # code depends on the fixture's severities and is not what this asserts - that a report came
+      # out is.
+      - name: Publish and smoke-test the self-contained linux-x64 CLI
+        run: |
+          dotnet publish MLQT.Cli/MLQT.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -o publish/mlqt-linux-x64
+          chmod +x publish/mlqt-linux-x64/mlqt
+          ./publish/mlqt-linux-x64/mlqt --version
+          ./publish/mlqt-linux-x64/mlqt check TestFixtures/SarifSmoke/Libraries/Smoke --format json --out smoke.json || true
+          test -s smoke.json
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: test-results-linux
+          path: ${{ github.workspace }}/TestResults/*.trx
+
+  ui-journeys:
+    # The browser journeys, on both platforms. They were Linux-only, which left the only end-to-end
+    # coverage of the shared UI never running on the platform the product currently ships on - and
+    # the journeys are what catch a component that renders the wrong thing, which no unit test does.
+    #
+    # A matrix rather than two jobs: one definition, so a step added for one platform cannot be
+    # forgotten for the other. fail-fast is off because "it broke on Linux only" and "it broke on
+    # both" are different findings and the second leg is the one that says which.
+    #
+    # Deliberately does NOT install the MAUI workload on either leg. If this job ever needs it,
+    # something non-portable has reached a project that is supposed to be portable, and that is the
+    # finding.
+    name: UI Journeys (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+          - os: windows-latest
+            label: Windows
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
 
       - name: Build the test host and journeys
         run: dotnet build MLQT.Journeys/MLQT.Journeys.csproj -c Release
 
-      - name: Install Chromium
-        # --with-deps pulls the shared libraries a headless browser needs, which a bare runner does
-        # not have. Without it the launch fails with a missing .so rather than a test failure.
+      # --with-deps pulls the shared libraries a headless browser needs, which a bare Linux runner
+      # does not have; without it the launch fails with a missing .so rather than a test failure. It
+      # is an apt-get under the covers and has nothing to do on Windows, where the browser download
+      # is the whole job.
+      - name: Install Chromium (Linux)
+        if: runner.os == 'Linux'
         run: pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
 
+      - name: Install Chromium (Windows)
+        if: runner.os == 'Windows'
+        run: pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium
+
       - name: Run the journeys
-        run: dotnet test MLQT.Journeys -c Release --no-build --report-trx --report-trx-filename journeys.trx --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test MLQT.Journeys -c Release --no-build --report-trx --report-trx-filename journeys-${{ matrix.label }}.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Upload journey results
         uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: journey-results
+          name: journey-results-${{ matrix.label }}
           path: ${{ github.workspace }}/TestResults/*.trx
 
   build-maui:
