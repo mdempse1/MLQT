@@ -249,7 +249,7 @@ public partial class MainLayout : IDisposable
             // Compact the LOH after loading — ExtractModels creates a full ANTLR parse tree
             // per file (all files in parallel) which fragments the LOH significantly.
             // Also trim package ModelicaCode to remove duplicated standalone children source.
-            var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
+            var totalModelCount = LibraryDataService.TotalModelCount;
             if (totalModelCount > 0)
             {
                 LogProcessStart("MainLayout", "Trimming package source");
@@ -472,7 +472,7 @@ public partial class MainLayout : IDisposable
             _currentProjectName = project?.Name;
 
             // Compact the LOH + trim packages after loading
-            var totalModelCount = LibraryDataService.Libraries.Sum(l => l.ModelIds.Count);
+            var totalModelCount = LibraryDataService.TotalModelCount;
             if (totalModelCount > 0)
             {
                 LogProcessStart("MainLayout", "Trimming package source");

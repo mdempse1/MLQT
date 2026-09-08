@@ -827,6 +827,32 @@ public class LibraryDataService : ILibraryDataService
         node.IsExternalStub == (library.SourceType == LibrarySourceType.EncryptedDirectory);
 
     /// <inheritdoc/>
+    public int TotalModelCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                // Distinct ids that are actually in the graph. Both halves earn their place: the set
+                // is what stops a class listed by two libraries being counted twice, and the graph
+                // lookup is what stops an id a library still lists after its node has gone being
+                // counted at all.
+                //
+                // Deliberately *not* filtered by Owns. Which library owns the node cannot change how
+                // many distinct classes there are, and a check that cannot change the answer is a
+                // check that will be believed to do something.
+                var counted = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var library in _libraries)
+                    foreach (var modelId in library.ModelIds)
+                        if (_combinedGraph.GetNode<ModelNode>(modelId) is not null)
+                            counted.Add(modelId);
+
+                return counted.Count;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
         // Keyed by model id, because two libraries claiming the same top-level class are claiming

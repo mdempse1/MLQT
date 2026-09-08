@@ -644,17 +644,84 @@ is a manual diagnostic tool rather than something shipped to users. Recorded as 
 MAUI's `BlazorWebView` uses, so a difference here is *Photino versus MAUI* and nothing else. Doing
 Linux first would confound the two.
 
-- Run `/selftest` under Photino/Windows and diff against the committed baseline with
-  `HostConformance.Compare`. Target: **no differences.**
-- Point the Playwright journeys at the Photino host, or accept that `MLQT.TestHost` remains the
-  journey host and say so. (The journeys drive a *server* host; whether they can drive Photino at all
-  is a spike question.)
+- ~~Run `/selftest` under Photino/Windows and diff against the committed baseline~~ — **done, and
+  committed.** 16 probes, **zero differences**. See below.
+- ~~Point the Playwright journeys at the Photino host, or accept that `MLQT.TestHost` remains the
+  journey host and say so.~~ — **decided: `MLQT.TestHost` remains the journey host.** See below.
 - ~~**The reported slowness (B125)**~~ — **done.** Not the host: a same-day A/B has Photino at 426 s
   against MAUI 2026.4.0's 434 s on a larger graph. Two real defects came out of the investigation
   (B126, B127) and neither was a migration regression. See below.
 - **The manual checklist**, which is the part no automation covers and 7a says so explicitly:
   visual fidelity, native window behaviour (multi-monitor, DPI, state restore), and a real file dialog
   opening and returning a path. Once, and written down.
+
+#### ✅ Conformance on Windows (2026-09-08): committed, not just observed
+
+`/selftest` under the published Photino/Windows build against the committed MAUI baseline:
+**16 probes, zero differences.** `fonts.roboto` now reads `available` from the bundled font (7b-4);
+`settings.location` reads `%LocalAppData%\MLQT\settings.json` against MAUI's
+`MAUI Preferences (platform key/value store)`, which the comparison ignores by design — it compares
+`Status`, never `Detail`, because two hosts answering the same question differently is the point.
+
+**The result is now a file rather than a terminal window.** `MLQT.Shared.Tests/TestFiles/selftest-photino-windows.json`
+holds the capture and `DesktopHostConformanceTests` compares it, because until this step the only
+evidence Photino had ever matched was a scrollback that had since been closed. It is honestly a
+**record, not a live check** — it says what the host answered on the day, and re-capturing is manual
+(the class header carries the command). What it does catch is the failure that is actually likely: a
+probe added to `SelfTest`, or one host's report re-captured and not the other's, so the two sets drift
+apart. Two tests guard the record itself — that the file really came from Photino and not a copy of the
+baseline, and that it holds every probe — because `Compare` ignores the `Host` field, so a capture
+accidentally overwritten with the baseline would compare clean and prove nothing.
+
+7b-6 captures `selftest-photino-linux.json` the same way.
+
+#### The counts were never going to match (B130)
+
+With B129 fixed, the same project reported **76,129** models where MAUI had reported **77,860**, and
+the expectation was that they would now agree exactly. They could not, and neither figure was right.
+
+`Libraries.Sum(l => l.ModelIds.Count)` counts a class once per library that lists it, and the same
+library is routinely loaded twice — a tool's folder ships the encrypted build of a library the user
+also has checked out. `ExternalStubBuilder` records a documented class **only when its source is not
+already in the graph**, so which library ends up listing the id depends on which parallel load
+finished first. The encrypted `Claytex` contributed **2,343, 2,290 and 1,637** classes on three
+consecutive runs of the same project, across both hosts:
+
+| | Photino 18:21 | MAUI 18:31 | Photino 19:23 |
+|---|---|---|---|
+| `Claytex` | 2,343 | 2,290 | 1,637 |
+| `ClaytexFluid` | 310 | 444 | 0 |
+| `FluidPower` | 679 | 679 | 179 |
+| `VeSyMA` | 976 | 1,339 | 1,459 |
+
+That `LoadedLibrary` entries share ids was already known and handled where it showed — `Owns`, and the
+tree keying by model id. The raw sum was the place left, and it is what the deferred-analysis
+threshold is compared against. `TotalModelCount` now counts distinct ids that are in the graph.
+
+**Worth noting how it was found:** by someone expecting two numbers to be equal and saying so when
+they were not. The number had been wrong for as long as it had existed, and being wrong by a varying
+amount is exactly what makes a figure like that survive — every reading is a bit different, so no
+reading looks anomalous.
+
+#### Decision: the journeys stay on `MLQT.TestHost`
+
+Photino is a native window. Playwright needs something to attach to, and the only way in is to push
+`--remote-debugging-port` into WebView2 through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` — which is
+**Windows-only, has no WebKitGTK equivalent**, and would mean the Linux leg of 7b-6 either goes
+uncovered or gets a second mechanism. A test harness that works on one of the two platforms the phase
+exists to support is not worth its cost.
+
+So the division of labour 7a designed stands, and is now stated rather than assumed:
+
+| | Runs on | Answers |
+|---|---|---|
+| The Playwright journeys | `MLQT.TestHost` (server-rendered, over HTTP) | **Does the application behave correctly?** Real components, real interop, real MudBlazor, on both Windows and Linux runners. |
+| `/selftest` + `HostConformance` | Every real host, including the desktop ones | **Does this host answer the same as the last one?** Sixteen probes over the things a host owns. |
+
+The gap this leaves is honest and worth naming: **nothing automated drives Photino's own UI.** A
+component that renders under a server host and not under WebView2 or WebKitGTK would be caught only by
+a probe that happens to cover it, or by a person. That is what the manual checklist is for, and it is
+why the probe set is the thing to extend when a host-specific failure is found — not the journeys.
 
 #### Partly done (2026-09-08): what the slowness actually was
 
