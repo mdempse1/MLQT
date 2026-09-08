@@ -691,6 +691,16 @@ an entry only because it was configured there afterwards. MAUI therefore ran wit
 reference libraries and was still the slower of the two — so the conclusion holds a fortiori, and the
 comparison would only improve if it were tightened.
 
+**And the mismatch turned out to be a defect, not a configuration.** Both runs loaded the *same 97
+distinct libraries*; the Photino one issued **159 loads** to do it. Every one of its three reference
+paths was already registered as a reference-only repository, and nothing checked whether the two
+mechanisms named the same folder — so sixty-two libraries, the standard library among them, were
+discovered, parsed and indexed twice. The graph absorbed it silently, because `AddNode` keys on the
+class id; what did not absorb it is everything counted per library, including the `118,612` model
+total against a true `77,860` that the deferred-analysis threshold is compared against. **B129, fixed**
+in `ReferenceLibraryRules` — and found only because the two hosts were made to disagree about their
+settings, which is the sort of thing a migration is good for.
+
 It is also an unplanned check on the invariant from the reference-library work: **nothing may scale
 with graph size instead of with the checked set.** Forty thousand extra reference classes moved the
 style check by two seconds in 300. That is the invariant holding, measured.

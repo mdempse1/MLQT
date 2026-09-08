@@ -659,6 +659,7 @@ public partial class MainLayout : IDisposable
         LogProcessStart("MainLayout", "Loading reference libraries");
         var loaded = 0;
         var classes = 0;
+        var skipped = 0;
 
         foreach (var configuredPath in settings.Paths)
         {
@@ -674,26 +675,24 @@ public partial class MainLayout : IDisposable
             {
                 try
                 {
-                    // Whether to load an encrypted library at all is a policy question the user
-                    // answers in settings; how to load one is not this loop's business.
-                    if (!settings.UseEncryptedLibraryDocumentation &&
-                        EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath))
-                        continue;
+                    // Every reason not to load this one, in one place - see ReferenceLibraryRules.
+                    // The check that used to be here covered only an encrypted library whose name
+                    // matched one loaded from source, and missed the case that actually happens: the
+                    // same directory reached twice, because a reference-only repository and a
+                    // reference-library path can name the same folder and a real configuration did
+                    // that three times over.
+                    var isEncrypted = EncryptedLibraryDetector.IsEncryptedLibraryRoot(libraryPath);
+                    var skip = ReferenceLibraryRules.ReasonToSkip(
+                        libraryPath,
+                        isEncrypted,
+                        isEncrypted ? EncryptedLibraryDetector.Detect(libraryPath)?.Name : Path.GetFileName(libraryPath),
+                        LibraryDataService.Libraries,
+                        settings.UseEncryptedLibraryDocumentation);
 
-                    // A tool's library folder ships the encrypted build of libraries a user may also
-                    // have checked out as source. The source copy is strictly better — it is the code
-                    // being worked on — so the encrypted one is not loaded at all rather than loaded
-                    // and then overridden class by class. Skipping it also avoids thousands of stub
-                    // nodes that would be discarded anyway.
-                    var encryptedName = EncryptedLibraryDetector.Detect(libraryPath)?.Name;
-                    if (encryptedName is not null &&
-                        LibraryDataService.Libraries.Any(l =>
-                            l.SourceType != LibrarySourceType.EncryptedDirectory &&
-                            string.Equals(l.Name, encryptedName, StringComparison.Ordinal)))
+                    if (skip is not null)
                     {
-                        Info("MainLayout",
-                            $"Skipping encrypted reference library '{encryptedName}' at {libraryPath}: " +
-                            "already loaded from source");
+                        Info("MainLayout", $"Skipping reference library at {libraryPath}: {skip}");
+                        skipped++;
                         continue;
                     }
 
@@ -724,7 +723,9 @@ public partial class MainLayout : IDisposable
             }
         }
 
-        Info("MainLayout", $"Loaded {loaded} reference libraries ({classes} classes) for reference resolution");
+        Info("MainLayout",
+            $"Loaded {loaded} reference libraries ({classes} classes) for reference resolution" +
+            (skipped > 0 ? $"; skipped {skipped} already loaded" : ""));
         LogProcessEnd("MainLayout", "Loading reference libraries");
     }
 
