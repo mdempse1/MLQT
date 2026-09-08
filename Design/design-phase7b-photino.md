@@ -113,6 +113,26 @@ journeys can still be *added* after the port, they just stop being evidence abou
 Not a blocker on the spike (7b-0), which answers a question nothing else can and should be run as soon
 as somebody has a Linux box. Do them in parallel if two people are on this.
 
+**Progress (2026-09-08).** Two journeys written, 11 tests, `MLQT.Shared` from 19.4% to **27%**:
+
+| Component | Before | After |
+|---|---|---|
+| `Dependencies` | 0% | 52.7% |
+| `SettingsUI` | 0% | 36.6% |
+| `MetricsDashboard` | 4% | 35.3% |
+| `ExternalResources` | 9% | 19.5% |
+| `MainLayout` | 6% | 15.9% |
+| `CodeReview` | 14% | 16.6% |
+
+`MainLayout` moving without being touched is the point of journeys rather than unit tests: it is the
+startup sequence running, which is what 7b changes and what no unit test can reach.
+
+Both journeys needed a throwaway diagnostic to learn their selectors rather than a guess — the five
+top-level tabs carry an icon and a tooltip and **no text**, so they can only be addressed
+positionally, and two landmarks taken from the markup by eye were wrong. That is recorded on the
+classes. It also turned up **B120**: the test host 404s on `app.css` every page load, which the
+existing journey's 404 check does not see because it only inspects `_content/` URLs.
+
 ### 7b-0 — the spike (S) — **gating**
 
 Throwaway host, not the real one. It exists to answer questions whose answers change the rest of this
