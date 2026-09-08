@@ -1,6 +1,6 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-08). 7b-0 is complete — both legs — and 7b-A is under way.**
+> **Status: IN PROGRESS (2026-09-08). 7b-0 is complete (both legs), 7b-1 is shipped, and 7b-A is under way.**
 > The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
 > `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
 > the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
@@ -395,6 +395,33 @@ Photino port:
 
 Doing it here converts a cutover blocker into a rehearsal. See **Open decisions** for the alternative.
 
+#### ✅ Shipped (2026-09-08)
+
+`MLQT.McpTester` is a Photino app. `MauiProgram.cs`, `App.xaml`, `App.xaml.cs`, `MainPage.xaml`,
+`MainPage.xaml.cs`, `Platforms/` and `Resources/` are gone, replaced by a single `Program.cs`; the
+target framework drops `-windows`, so it builds on Linux for the first time. It builds at zero
+warnings, and it **runs**: Photino's log shows `AttachToDocument #app` followed by `RenderBatch`,
+which is Blazor attaching and rendering rather than a window merely opening.
+
+**Both of 7b-0's silent traps were hit in advance rather than discovered again**, which is the whole
+value of having run the spike first — the explicit `wwwroot` file provider and the removal of
+`autostart="false"` were written into `Program.cs` and `index.html` from the start, with the reason
+on each. Neither cost any time here. That is the rehearsal working.
+
+**It confirms the publish constraint applies to any Photino app, not just one referencing
+`MLQT.Shared`.** This project has no project references at all and its build output still has no
+`wwwroot/_content` and no `_framework/blazor.webview.js`; publishing materialises both. The README's
+run instructions now say so, because `dotnet run` produces an empty window and no error — the
+symptom looks like a broken app rather than a missing build step. **7b-2 owns making that less
+awkward for the main application.**
+
+**CI: the MAUI workload is now needed by one project rather than two.** `build-maui` no longer builds
+the tester; both library jobs do, on Windows and Linux. The workload cannot be retired until 7b-8
+retires `MLQT` itself, but this removes the reason it would have had to stay afterwards.
+
+Not attempted here, deliberately: window state restore, an icon, and any packaging. This is a
+developer tool and the point was the host model, not the polish.
+
 ### 7b-2 — the `MLQT.Photino` host (S/M)
 
 The project 7a-6 was designed to make small.
@@ -586,7 +613,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 |---|---|---|
 | **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
-| **7b-1** | Port `MLQT.McpTester` as a rehearsal, and unblock the workload retirement | S |
+| **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
 | **7b-2** | `MLQT.Photino` host: composition root, manifest-generated page, window lifecycle, drift + portability guards | S/M |
 | **7b-3** | The three platform services; power is a file copy on Windows, the picker is an adapter, settings is the real work — **including migration** | M |
 | **7b-4** | Bundle Roboto; remove the startup network dependency | S |

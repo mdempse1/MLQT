@@ -1,17 +1,35 @@
 # MLQT.McpTester
 
-A small MAUI Blazor (Windows) desktop app for manually testing **any** stdio MCP server — not just
-MLQT's. It launches a server, lists its tools, generates input fields from each tool's JSON Schema,
-calls the tool, and shows the result.
+A small Photino Blazor desktop app for manually testing **any** stdio MCP server — not just MLQT's.
+It launches a server, lists its tools, generates input fields from each tool's JSON Schema, calls the
+tool, and shows the result.
 
-Built as a MAUI Blazor Hybrid app (MudBlazor UI) to stay consistent with MLQT itself, and uses the
-official `ModelContextProtocol` client SDK.
+MudBlazor UI, the official `ModelContextProtocol` client SDK, and a Photino window — consistent with
+where MLQT itself is going.
+
+**It was a MAUI app until phase 7b-1** (2026-09-08), and was ported first on purpose. It is
+self-contained, has no project references and no users to disappoint, so it is the rehearsal for
+MLQT's own port: the same host, the same bootstrap, the same MudBlazor under the same engine. It also
+had to move regardless — while it was a MAUI app the MAUI workload had to stay installed in CI for
+its sake alone. Porting it runs on Linux as well now, which is useful for a tool whose whole job is
+launching MCP servers.
 
 ## Run
 
+**`dotnet run` does not work, and fails silently.** Photino serves `wwwroot` through a bare
+`PhysicalFileProvider` with no support for the static-web-assets manifest, so a plain build leaves no
+`wwwroot/_content` and no `_framework/blazor.webview.js` in the output. The window opens, the host
+starts, and nothing renders — no error, no blank-page exception, just an empty window. Publish
+instead:
+
 ```bash
-dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
+dotnet publish MLQT.McpTester/MLQT.McpTester.csproj -c Release -o publish
+./publish/MLQT.McpTester        # or publish\MLQT.McpTester.exe on Windows
 ```
+
+This is the same constraint the main application will have once it moves to Photino, and phase 7b-2
+owns making it less awkward. Recorded here because the symptom looks like a broken app rather than a
+missing build step.
 
 (or open the solution and set `MLQT.McpTester` as the startup project.)
 

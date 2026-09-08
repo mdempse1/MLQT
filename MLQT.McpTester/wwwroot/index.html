@@ -24,7 +24,10 @@
         <span class="dismiss">🗙</span>
     </div>
 
-    <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <!-- No autostart="false": that attribute is a MAUI contract - its BlazorWebView is what calls
+         Blazor.start(). Under Photino nothing does, so the window opens, the host starts and no
+         component is ever created, with no error anywhere. Found by 7b-0's Windows leg. -->
+    <script src="_framework/blazor.webview.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 
 </body>
