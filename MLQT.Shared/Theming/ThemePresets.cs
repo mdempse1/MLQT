@@ -21,62 +21,31 @@ public static class ThemePresets
     /// belongs on screen.
     /// </summary>
     /// <remarks>
-    /// <para><b>Choosing "Light" resets the custom palette</b>, and choosing "Dark" does not. That is
-    /// the behaviour as found, pinned by a test rather than tidied: it decides what happens to
-    /// colours a user typed in, and changing that is a product decision, not a refactor. Its visible
-    /// consequence is that Custom → Light → Custom comes back to the defaults while
-    /// Custom → Dark → Custom comes back to the user's colours. Recorded as B107.</para>
+    /// <para><b>No preset touches the custom palette</b> (B107). Choosing "Light" used to reset all ten
+    /// custom colours, and <c>SettingsUI</c> persists immediately afterwards, so a user who had built
+    /// a palette, switched to Light to compare, and switched back found the defaults - while the same
+    /// round trip through Dark kept their colours. Two buttons side by side, one destructive, with
+    /// nothing on screen to say so.</para>
     ///
-    /// <para>An unrecognised name falls back to Light <i>without</i> the reset, so it is not the same
-    /// as passing "Light" — also pinned, also B107.</para>
+    /// <para>The switch is written so that cannot come back: Light, Dark and an unrecognised name
+    /// differ only in which <see cref="Theme"/> they select, and there is no arm left for one of them
+    /// to do something extra in. The custom colours are the user's, and a preset only decides which
+    /// palette is *shown*.</para>
     /// </remarks>
     /// <returns><c>true</c> when the theme is <see cref="Theme.Custom"/> and the palette editor shows.</returns>
     public static bool ApplyUiPreset(string? themeName, UISettings ui)
     {
-        switch (themeName)
+        ui.Theme = themeName switch
         {
-            case "Light":
-                ui.Theme = Theme.Light;
-                ResetCustomPaletteToDefaults(ui);
-                return false;
+            "Dark" => Theme.Dark,
+            CustomThemeName => Theme.Custom,
 
-            case "Dark":
-                ui.Theme = Theme.Dark;
-                return false;
+            // "Light" and anything unrecognised. They were separate arms while one of them reset the
+            // palette and the other did not, which is half of what made B107 hard to see.
+            _ => Theme.Light,
+        };
 
-            case CustomThemeName:
-                ui.Theme = Theme.Custom;
-                return true;
-
-            default:
-                ui.Theme = Theme.Light;
-                return false;
-        }
-    }
-
-    /// <summary>
-    /// Puts the ten custom palette colours back to the values a fresh <see cref="UISettings"/> has.
-    /// </summary>
-    /// <remarks>
-    /// Copied from a default instance rather than written out again. The settings page held its own
-    /// literal copy of all ten, identical to the property initialisers and held to them by nothing —
-    /// so changing a default would have changed what a new user sees and not what the Light preset
-    /// restores, which is the more confusing half of that pair.
-    /// </remarks>
-    public static void ResetCustomPaletteToDefaults(UISettings ui)
-    {
-        var defaults = new UISettings();
-
-        ui.CustomBlack = defaults.CustomBlack;
-        ui.CustomWhite = defaults.CustomWhite;
-        ui.CustomPrimary = defaults.CustomPrimary;
-        ui.CustomPrimaryContrastText = defaults.CustomPrimaryContrastText;
-        ui.CustomSecondary = defaults.CustomSecondary;
-        ui.CustomSecondaryContrastText = defaults.CustomSecondaryContrastText;
-        ui.CustomTertiary = defaults.CustomTertiary;
-        ui.CustomTertiaryContrastText = defaults.CustomTertiaryContrastText;
-        ui.CustomInfo = defaults.CustomInfo;
-        ui.CustomInfoContrastText = defaults.CustomInfoContrastText;
+        return ui.Theme == Theme.Custom;
     }
 
     /// <summary>
