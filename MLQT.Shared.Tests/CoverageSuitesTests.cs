@@ -13,9 +13,11 @@ namespace MLQT.Shared.Tests;
 /// named more times than any other.</para>
 ///
 /// <para>It cost a build. 7a-5 added <c>MLQT.Shared.Tests</c> to the gate and not to the workflow, so
-/// the job would have failed with "expected 7 coverage reports, found 6" — and it did not say so for
-/// three commits, because the jobs it depends on kept failing first and it never ran at all. A gate
-/// that cannot run is not a gate.</para>
+/// <c>dotnet test --no-build</c> had no assembly to run and the job failed with "MLQT.Shared.Tests did
+/// not pass; coverage from a failed run means nothing" — the script's per-suite exit-code check, not
+/// the missing-report count, which is the guard that would have caught it one step later. It did not
+/// say so for three commits, because the jobs it depends on kept failing first and it never ran at
+/// all. A gate that cannot run is not a gate.</para>
 ///
 /// <para>Deliberately asserts in both directions. A suite built by CI but not measured is wasted
 /// build time and a misleading job name; a suite measured but not built fails the run.</para>
