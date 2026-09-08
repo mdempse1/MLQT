@@ -188,6 +188,7 @@ jobs:
       # code depends on the fixture's severities and is not what this asserts - that a report came
       # out is.
       - name: Publish and smoke-test the self-contained linux-x64 CLI
+        if: '!cancelled()'
         run: |
           dotnet publish MLQT.Cli/MLQT.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=false -o publish/mlqt-linux-x64
           chmod +x publish/mlqt-linux-x64/mlqt

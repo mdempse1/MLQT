@@ -69,19 +69,25 @@ public class ResourceTreeHelperTests
             TestPaths.Rooted("Other", "LibB", "Resources")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        // Should return "C:\" not just "C:" (which would be a relative path on Windows)
+
+        // The drive root on Windows ("C:" alone would be a relative path there) and "/" on Linux,
+        // where two absolute paths can share nothing else. Returning "" for the second case made the
+        // external resources tree render empty.
         Assert.Equal(TestPaths.Root, result);
     }
 
     [Fact]
     public void FindCommonDirectoryRoot_NothingInCommon_ReturnsEmpty()
     {
-        // The one case TestPaths cannot express, because the two platforms reach it differently:
-        // on Windows nothing-in-common means two volumes, and on Linux any two absolute paths share
-        // the root, so it means two paths whose first segment differs. Both must return "".
+        // The one case TestPaths cannot express, because the two platforms reach it differently.
+        // On Windows, nothing in common means two volumes. On Linux there is no such thing for two
+        // absolute paths - they always share "/", which is what the previous test asserts - so it
+        // has to be two *relative* paths whose first segment differs. An earlier version of this
+        // test used two absolute Linux paths and so asserted the exact opposite of that test; both
+        // passed only because the code returned "" for the shared root, which was the bug.
         var dirs = OperatingSystem.IsWindows()
             ? new List<string> { TestPaths.Rooted("Projects", "LibA"), "D:" + Path.DirectorySeparatorChar + "Other" }
-            : new List<string> { TestPaths.Rooted("Projects", "LibA"), TestPaths.Rooted("Other", "LibB") };
+            : new List<string> { TestPaths.Relative("Projects", "LibA"), TestPaths.Relative("Other", "LibB") };
 
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
 

@@ -141,12 +141,26 @@ if ($reports.Count -lt $suites.Count) {
     Fail "expected $($suites.Count) coverage reports, found $($reports.Count). A suite produced nothing, and a missing report reads as 0%"
 }
 
+# An allow list, built from $bars, rather than a deny list of the packages noticed so far.
+#
+# It used to deny DymolaInterface and OpenModelicaInterface and admit everything else, which meant
+# every NuGet dependency the tests happened to execute was counted: SharpCompress alone contributed
+# 69,876 uncovered lines, and with LibGit2Sharp, Moq, FluentValidation and bunit that was **79% of
+# the denominator**. The headline read 19.2% while the code we own was at 69%. A number that low is
+# not merely wrong, it is unusable - nobody can tell a real regression from the arrival of another
+# transitive dependency.
+#
+# Deriving it from $bars means the assemblies measured and the assemblies gated are one list.
+# DymolaInterface and OpenModelicaInterface are absent because they have no bar: no CI job runs their
+# suites, so measuring them would report 0% for code that is tested, just not here.
+$assemblyFilters = '-assemblyfilters:' + (($bars.Keys | Sort-Object | ForEach-Object { "+$_" }) -join ';')
+
 Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 & reportgenerator `
     "-reports:$ResultsDirectory/**/coverage.cobertura*.xml" `
     "-targetdir:$ReportDirectory" `
     '-reporttypes:JsonSummary;TextSummary;HtmlSummary' `
-    '-assemblyfilters:-DymolaInterface;-OpenModelicaInterface' `
+    $assemblyFilters `
     '-classfilters:-System.Text.RegularExpressions.Generated*;-modelicaParser;-modelicaLexer;-modelicaBaseListener;-modelicaBaseVisitor*' | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'reportgenerator failed' }
 
