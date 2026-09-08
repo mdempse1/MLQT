@@ -58,6 +58,14 @@ public class DymolaInterface : IDisposable
         _isOffline = !IsDymolaRunning();
     }
 
+    /// <summary>
+    /// Extra environment variables applied to the Dymola process launched by
+    /// <see cref="StartDymolaProcessAsync"/>, on top of the environment inherited from
+    /// this process. Entries override inherited values. Has no effect on a Dymola that
+    /// is already running when this interface connects to it.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? SpawnEnvironmentVariables { get; set; }
+
     #region Process management
 
     public async Task StartDymolaProcessAsync()
@@ -71,15 +79,7 @@ public class DymolaInterface : IDisposable
         await _commandLock.WaitAsync();
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = _dymolaPath,
-                Arguments = $"-serverport {_portNumber}",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            _dymolaProcess = Process.Start(startInfo);
+            _dymolaProcess = Process.Start(CreateStartInfo());
 
             for (int i = 0; i < 30; i++)
             {
@@ -97,6 +97,23 @@ public class DymolaInterface : IDisposable
         {
             _commandLock.Release();
         }
+    }
+
+    private ProcessStartInfo CreateStartInfo()
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = _dymolaPath,
+            Arguments = $"-serverport {_portNumber}",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        if (SpawnEnvironmentVariables != null)
+            foreach (var pair in SpawnEnvironmentVariables)
+                startInfo.Environment[pair.Key] = pair.Value;
+
+        return startInfo;
     }
 
     public async Task StopDymolaProcessAsync()
