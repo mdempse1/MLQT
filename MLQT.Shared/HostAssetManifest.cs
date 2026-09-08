@@ -23,11 +23,19 @@ public static class HostAssetManifest
     /// The stylesheets, in order. <c>MLQT.styles.css</c> is the host's own scoped-CSS bundle and is
     /// named after the host assembly, so it is not here — each host adds its own.
     /// </summary>
+    /// <remarks>
+    /// <b>Every entry is a local path, and that is an invariant rather than a coincidence</b> —
+    /// <see cref="MLQT.Shared.Tests"/>'s manifest tests fail on an <c>http</c> anywhere in either
+    /// list. Roboto was linked from <c>fonts.googleapis.com</c> until 7b-4, which put a network
+    /// round-trip on the startup path of a desktop application: slow on a good connection, and on an
+    /// offline or locked-down machine a silent failure that shows up as the whole UI in the wrong
+    /// typeface. The font is now in <c>MLQT.Shared/wwwroot/fonts</c>.
+    /// </remarks>
     public static IReadOnlyList<string> Stylesheets { get; } =
     [
         "_content/MLQT.Shared/app.css",
         "app.css",
-        "https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap",
+        "_content/MLQT.Shared/fonts/roboto.css",
         "_content/MudBlazor/MudBlazor.min.css",
     ];
 

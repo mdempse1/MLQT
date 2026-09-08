@@ -135,6 +135,61 @@ public class HostAssetManifestTests
     }
 
     [Fact]
+    public void NoAssetIsFetchedFromTheNetwork()
+    {
+        // Phase 7b-4, and the reason the font is bundled. Roboto came from fonts.googleapis.com, so
+        // starting a *desktop* application made a network round-trip - slow on a good connection,
+        // and on an offline or locked-down machine a failure with no error: the UI simply renders in
+        // whatever the fallback font is, which looks like a styling bug rather than a missing asset.
+        // Stated over both lists because the next one to arrive is as likely to be a script.
+        foreach (var asset in HostAssetManifest.Scripts.Concat(HostAssetManifest.Stylesheets))
+            Assert.False(asset.Contains("//", StringComparison.Ordinal),
+                $"{asset} is fetched over the network; a desktop host must start without one");
+    }
+
+    [Fact]
+    public void EveryFontFileTheBundledStylesheetNamesExists()
+    {
+        // The manifest names roboto.css and EveryLocalAssetTheManifestNamesExists checks that file is
+        // there - but the nine .woff2 files are named inside it, one level below anything the manifest
+        // can see. A missing one fails the way the network link did: silently, in a fallback typeface.
+        var fonts = Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts");
+        var css = File.ReadAllText(Path.Combine(fonts, "roboto.css"));
+
+        // The urls are unquoted because the file is generated from the Google Fonts CSS, which writes
+        // them that way; a hand-edited quote would fail File.Exists and say so.
+        var urls = Regex.Matches(css, @"url\(([^)]+)\)").Select(m => m.Groups[1].Value.Trim()).ToList();
+
+        Assert.Equal(9, urls.Count);   // one variable face per subset; four static weights each would be 36
+        foreach (var url in urls)
+            Assert.True(File.Exists(Path.Combine(fonts, url)), $"{url} is in roboto.css but not in wwwroot/fonts");
+    }
+
+    [Fact]
+    public void TheBundledFontCoversEveryWeightMudBlazorAsks()
+    {
+        // The link it replaced requested 300, 400, 500 and 700. A variable face declaring 100 900
+        // covers all four and anything MudBlazor adds later; a bundle of static weights would not,
+        // and the symptom - one component in a slightly wrong weight - is not one anybody reports.
+        var css = File.ReadAllText(Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts", "roboto.css"));
+
+        Assert.Equal(9, Regex.Matches(css, @"font-weight:\s*100 900").Count);
+        Assert.Contains("font-family: 'Roboto'", css);
+    }
+
+    [Fact]
+    public void TheBundledFontCarriesItsLicence()
+    {
+        // Redistributing a font means shipping its licence. Roboto moved from Apache 2.0 to the SIL
+        // Open Font License with Roboto 3, which is the version Google Fonts serves - so this is the
+        // licence that has to be here, not the one Roboto is remembered as having.
+        var licence = Path.Combine(RepositoryRoot(), "MLQT.Shared", "wwwroot", "fonts", "OFL.txt");
+
+        Assert.True(File.Exists(licence), "the bundled font has no licence file");
+        Assert.Contains("SIL Open Font License", File.ReadAllText(licence));
+    }
+
+    [Fact]
     public void EveryLocalAssetTheManifestNamesExists()
     {
         // A path that resolves to nothing fails silently in a browser: the script does not load and

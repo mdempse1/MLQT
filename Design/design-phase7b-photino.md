@@ -601,6 +601,43 @@ Bundle the font, add it to `HostAssetManifest.Stylesheets`, and the drift test p
 every host page including MAUI's, which is still shipping at this point. Probe 7 should then read
 `available` on a machine with no network at all — which is worth testing deliberately, once.
 
+#### ✅ Shipped (2026-09-08)
+
+Roboto is in `MLQT.Shared/wwwroot/fonts`, the manifest names `_content/MLQT.Shared/fonts/roboto.css`
+instead of the Google URL, and the drift test propagated it to MAUI's page, Photino's and the test
+host's generated one. **No host page loads anything over the network any more, and a test says so** —
+`NoAssetIsFetchedFromTheNetwork` fails on a `//` anywhere in either manifest list, because the next
+one to arrive is as likely to be a script as a font.
+
+**One variable face per subset, all nine subsets, 231 KB.** The link it replaced asked for four static
+weights (300/400/500/700); the variable font covers 100–900 in one file per subset, so MudBlazor can
+ask for any weight and there is no written-down list of weights to be wrong about — the same argument
+that removed the settings key catalogue in 7b-3, met twice in two days. Bundling every subset rather
+than latin + latin-ext costs 130 KB and removes the judgement call about which scripts a Modelica
+engineer will never type; `unicode-range` means the engine still only loads what a page uses.
+
+**Licence: SIL Open Font License 1.1**, copied to `OFL.txt` beside the files. Worth stating because
+Roboto is widely remembered as Apache 2.0 — it was, up to Roboto 2. The variable Roboto 3 that Google
+Fonts serves today is OFL, which the font metadata API confirms and memory does not.
+
+**Probe 7 is now a real assertion, and it fixes a second thing.** While the font came over the network,
+absence was legitimate — an offline machine had no Roboto through no fault of the build — so the probe
+recorded the answer and always passed. Bundled, absence means a missing file or a wrong path, so it
+fails. It also now calls `document.fonts.load(...)` before checking rather than `check()` alone: the
+Linux leg found `not available` on WebKitGTK because **nothing on the `/selftest` page requests
+Roboto**, so the declared face was never loaded and `check()` correctly said so. That is a question
+about lazy loading, not about the font, and asking a face to load before asking whether it loaded
+removes it. The engine difference recorded in 7b-0 and 7b-1 should therefore be gone on both.
+
+Verified by running the published Photino host with `MLQT_SELFTEST=1`: **16 probes, all `Pass`,
+`fonts.roboto` = `available`** — and again with `wwwroot/_content/MLQT.Shared/fonts` renamed away,
+where it reads `Fail  not available (bundled font did not load)`. A probe that cannot fail is not a
+probe, and this one had never been watched failing.
+
+**Not done, deliberately:** `MLQT.McpTester` still links `fonts.googleapis.com`. It has no reference
+to `MLQT.Shared`, so using the bundle would mean a second copy of 231 KB in its own `wwwroot`, and it
+is a manual diagnostic tool rather than something shipped to users. Recorded as B124.
+
 ### 7b-5 — conformance on Windows (M)
 
 **Same OS, same engine family, one variable changed.** Photino on Windows uses WebView2, which is what
@@ -612,6 +649,11 @@ Linux first would confound the two.
 - Point the Playwright journeys at the Photino host, or accept that `MLQT.TestHost` remains the
   journey host and say so. (The journeys drive a *server* host; whether they can drive Photino at all
   is a spike question.)
+- **The reported slowness (B125)**, which is why this step is bigger than it reads. Every feature
+  works, conformance is clean, and some operations are still noticeably slower than the MAUI build —
+  after B121 silenced Photino's per-message logging, which helped but was not all of it. **Establish
+  which steps before theorising about why**: the last time this was reasoned about from first
+  principles the hypothesis was rendering and the answer was `Console.WriteLine`.
 - **The manual checklist**, which is the part no automation covers and 7a says so explicitly:
   visual fidelity, native window behaviour (multi-monitor, DPI, state restore), and a real file dialog
   opening and returning a path. Once, and written down.
@@ -736,7 +778,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
 | **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
 | **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
-| **7b-4** | Bundle Roboto; remove the startup network dependency | S |
+| **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | Windows conformance against the baseline, plus the manual checklist | M |
 | **7b-6** | Linux: conformance, the nightly WebKit journeys, the per-platform `selftest` job | L |
 | **7b-7** | Packaging and distribution | M |

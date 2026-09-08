@@ -284,12 +284,22 @@ public partial class SelfTest
 
         await Probe("fonts.roboto", "Roboto is available to the page", async () =>
         {
+            // A real assertion since 7b-4, where the font stopped coming from fonts.googleapis.com and
+            // started coming from MLQT.Shared/wwwroot/fonts. While it was a network font, absence was
+            // legitimate - an offline or locked-down machine had no Roboto through no fault of the
+            // build - so this recorded the answer and always passed. Bundled, absence means the file
+            // is missing or the path is wrong, which is a defect, and one whose only symptom is the
+            // whole UI in a fallback typeface.
+            //
+            // load() before check(): check() answers for faces that are *already loaded*, and a face
+            // is loaded when something has rendered in it. Asking cold is a question about timing.
             var available = await JS.InvokeAsync<bool>("eval",
-                "(document.fonts && document.fonts.check) ? document.fonts.check('12px Roboto') : false");
-            // Not a failure when absent: the font comes from fonts.googleapis.com, so an offline
-            // machine or a locked-down network legitimately has no Roboto. Recorded either way so
-            // the baseline diff shows a host where it stopped arriving.
-            return (true, available ? "available" : "not available (network font)");
+                """
+                (document.fonts && document.fonts.load)
+                    ? document.fonts.load('400 12px Roboto').then(f => f.length > 0)
+                    : false
+                """);
+            return (available, available ? "available" : "not available (bundled font did not load)");
         });
 
         // ---- platform services -----------------------------------------------------------------
