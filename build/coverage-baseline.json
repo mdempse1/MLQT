@@ -169,16 +169,10 @@
                                                                     },
                     "MLQT.Shared::MLQT.Shared.Layout.MainLayout":  {
                                                                        "coverage":  0,
-                                                                       "lines":  1071,
+                                                                       "lines":  1070,
                                                                        "bar":  80,
                                                                        "reason":  "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
                                                                    },
-                    "MLQT.Shared::MLQT.Shared.Models.AppState":  {
-                                                                     "coverage":  4.2,
-                                                                     "lines":  70,
-                                                                     "bar":  80,
-                                                                     "reason":  "Nobody has written the tests. This is a plain event container with no dependencies - the cross-component events and the methods that raise them - and it is directly testable with no renderer at all. It is here because it was never a priority, not because it is hard, and it is the first thing to fix in this list."
-                                                                 },
                     "MLQT.Shared::MLQT.Shared.Pages.CodeReview":  {
                                                                       "coverage":  0.6,
                                                                       "lines":  1065,
@@ -205,7 +199,7 @@
                                                                         },
                     "MLQT.Shared::MLQT.Shared.Pages.SelfTest":  {
                                                                     "coverage":  0,
-                                                                    "lines":  191,
+                                                                    "lines":  268,
                                                                     "bar":  80,
                                                                     "reason":  "Every probe is a call into JS interop or a platform service, so the class does nothing measurable without a host. It is covered where it can be: 5 journeys drive the route through a real browser against MLQT.TestHost, and the committed MAUI baseline is its output from the real app. Neither suite is in the coverage merge. Raising this would mean testing the probes against fakes, which would assert that the fakes work and is the opposite of what the route is for."
                                                                 },

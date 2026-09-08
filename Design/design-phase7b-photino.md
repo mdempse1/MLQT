@@ -76,6 +76,43 @@ Everything below is work 7a did not touch and nothing currently tests.
 
 Sizes are relative, in the same currency as 7a's table.
 
+### 7b-A — widen the journeys first (M)
+
+**The first step, before the spike**, and the one that pays for itself twice.
+
+`MLQT.Shared` sits at 19.4% covered when every suite runs, and the review that asked whether to fix
+that before starting reached a specific answer: **more unit tests would not reduce migration risk, and
+more journeys would.** A host swap does not change `MLQT.Shared`'s C# — the same assembly runs under
+Photino — so what breaks is asset loading, interop, platform services and window behaviour. Unit tests
+of component orchestration address none of that.
+
+The journeys do, and the measurement says so: the six that exist took `MLQT.Shared` from **11.5% to
+19.4%**, which is the largest single movement anything has made on that number. They are also the
+only tests that run on both platforms and would run against the Photino host too.
+
+What is at 0% and is journey-reachable:
+
+| Component | Coverable lines |
+|---|---|
+| `VCSHistory` | 230 |
+| `BranchSelector` | 112 |
+| `Dependencies` | 112 |
+| `SettingsUI` | 82 |
+| `SettingsRepositoryDictionary` | 80 |
+| `SettingsExternalTools` | 56 |
+| `SettingsReferenceLibraries` | 43 |
+
+Roughly 700 lines that no test of any kind reaches today, in components a user touches constantly.
+
+**Why this is step A rather than step 8.** Every journey written here is a journey that runs against
+Photino in 7b-5 and 7b-6 for free. Written afterwards, they prove nothing about the migration, because
+by then there is no MAUI build left to have proved they passed on. It is the same argument the
+`/selftest` baseline turns on, applied to the other half of the harness — and unlike the baseline,
+journeys can still be *added* after the port, they just stop being evidence about it.
+
+Not a blocker on the spike (7b-0), which answers a question nothing else can and should be run as soon
+as somebody has a Linux box. Do them in parallel if two people are on this.
+
 ### 7b-0 — the spike (S) — **gating**
 
 Throwaway host, not the real one. It exists to answer questions whose answers change the rest of this
@@ -302,6 +339,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 
 | Step | Work | Size |
 |---|---|---|
+| **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | S — **gating** |
 | **7b-1** | Port `MLQT.McpTester` as a rehearsal, and unblock the workload retirement | S |
 | **7b-2** | `MLQT.Photino` host: composition root, manifest-generated page, window lifecycle, drift + portability guards | S/M |
@@ -313,5 +351,16 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
 
-The first four steps are all small or medium and each leaves the solution building and green. The
-phase does not become irreversible until 7b-8.
+7b-A comes first and 7b-0 can run alongside it: the spike answers a question nothing else can, and it
+needs a Linux box rather than a keyboard. Everything up to 7b-4 is small or medium and each step leaves
+the solution building and green. The phase does not become irreversible until 7b-8.
+
+**What was decided not to do first.** `MLQT.Shared` is at 19.4% covered and `MainLayout` and
+`CodeReview` account for nearly 2,000 uncovered lines between them. Chasing those with unit tests was
+considered and rejected: what is left in them after 7a-4 is orchestration that ends in
+`StateHasChanged`, tests over it would mostly assert that mocks were configured, and 7b **changes**
+that startup path anyway — testing its current shape means pinning something about to move, which is
+the argument B73 made against extracting twice. The remainder of that extraction is recorded as
+**B119** and is ordinary debt, not a prerequisite. `AppState` was the exception and was done: 70 lines,
+no dependencies, no renderer needed, and its ledger entry read "Nobody has written the tests", which is
+an admission rather than a constraint.
