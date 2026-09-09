@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-MLQT is a cross-platform Blazor application built with .NET 10 targeting native platforms via .NET MAUI (Android, iOS, macOS Catalyst, Windows). UI components in the Shared project are hosted within MAUI using BlazorWebView.  Only the Windows build is currently included in the project.
+MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview. **The host is being replaced: `MLQT.Photino` is the new one and runs on Windows and Linux, verified against the MAUI host on all 16 `/selftest` probes on both (phase 7b-6). `MLQT` (MAUI, Windows only) is retired at the cutover, phase 7b-8, and until then both exist and share everything below `MLQT.Shared`.** See `Design/design-phase7b-photino.md`.
 
 The MLQT UI is intended to be a users primary way to manage Modelica libraries in revision control systems and supports SVN and Git. The intention is for users to work with MLQT to review and commit changes, pull updates, create new branches and push changes to the revision control system. It also provides static analysis of Modelica code to understand the impact of changes, apply formatting rules and check code against style guidelines.
 
@@ -13,7 +13,8 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 ## Solution Structure
 
 - **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards, the bUnit harness and the MAUI conformance baseline
-- **MLQT** - .NET MAUI application
+- **MLQT** - .NET MAUI application (Windows only). **Superseded by `MLQT.Photino`; retired at phase 7b-8**
+- **MLQT.Photino** - The desktop host, on Photino.Blazor (Windows and Linux). `Program.cs` is the whole of it: `AddMlqtCore()` plus the three platform services and the window. Compare it with `MLQT/MauiProgram.cs` — the two are deliberately the same shape
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
 - **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
 - **MLQT.McpTester** - Photino Blazor desktop app (Windows and Linux) for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
@@ -44,7 +45,10 @@ dotnet test ModelicaGraph.Tests
 # Run every suite, including the two no CI job runs - see Test Cases below
 pwsh ./build/run-all-tests.ps1
 
-# Run MAUI application (Windows)
+# Run the Photino host (Windows and Linux) - the one that ships after 7b-8
+dotnet run --project MLQT.Photino/MLQT.Photino.csproj
+
+# Run MAUI application (Windows only, retired at 7b-8)
 dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
 ```
 

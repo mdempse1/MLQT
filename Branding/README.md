@@ -101,3 +101,48 @@ showed the icon correctly throughout — none of them had a shortcut pointing at
 The explicit `AppUserModelID` added during the hunt has been **removed**: it did nothing here, and an
 id that matches no shortcut is a documented way to confuse the resolver. 7b-7 should set it on the
 application and on the shortcut it creates, together, or not at all.
+
+## The GNOME dock, and why it is the same shape of problem
+
+Checked on Ubuntu 26.04.1 / GNOME Shell 50.1 on Wayland (phase 7b-6, 2026-09-09). **The title bar and Alt-Tab
+show the MLQT icon; the dash and dock showed a generic one** — which is the Windows taskbar finding
+again, on a different mechanism, and with the same answer: the fix is outside the process.
+
+`SetIconFile(mlqt-256.png)` is what puts the icon on the GTK window, and it works. The dock does not
+read it. GNOME Shell matches a window to a **desktop entry** and takes the dock icon from that, keyed
+on the Wayland `app_id` — so with no matching entry installed there is nothing for it to read.
+
+**The `app_id` was observed rather than inferred**, which is the lesson B132 paid for:
+
+```bash
+WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep -E 'set_app_id|set_title'
+#  -> xdg_toplevel#43.set_title("MLQT")
+#  -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+```
+
+So the window is a native Wayland toplevel (not XWayland), and `app_id` is `MLQT.Photino` — GTK's
+`g_get_prgname()`, which is the executable's file name. The entry must therefore be named
+`MLQT.Photino.desktop`, and `StartupWMClass=MLQT.Photino` covers the X11 case where the same value
+arrives as `WM_CLASS`.
+
+**Demonstrated, not assumed.** Installing this at `~/.local/share/applications/MLQT.Photino.desktop`
+and restarting the app made the dock icon appear:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=MLQT
+Comment=Modelica Library Quality Tool
+Exec=/opt/mlqt/MLQT.Photino
+Icon=/opt/mlqt/mlqt-256.png
+Terminal=false
+Categories=Development;
+StartupWMClass=MLQT.Photino
+```
+
+The file used for the test pointed at a temporary publish and has been removed. **7b-7 owns installing
+a real one**, at the installed location, with `Icon=` naming an icon in the theme (`hicolor`
+`apps/mlqt.png` under the standard sizes) rather than an absolute path — the absolute path is right
+for a tarball and wrong for a `.deb`. That is the direct counterpart of the Start Menu shortcut
+Windows needs, and both exist for the same reason: **a desktop shell identifies an application by an
+installed entry, not by the window.**

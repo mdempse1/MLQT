@@ -118,7 +118,34 @@ public class WorkflowPlatformParityTests
         // Stated as a test because it is the point of those jobs, not a detail of them: if one ever
         // needs the workload, something non-portable has reached a project that is supposed to be
         // portable, and that is the finding rather than a reason to install it.
-        foreach (var job in new[] { "linux-tests", "ui-journeys" })
+        foreach (var job in new[] { "linux-tests", "ui-journeys", "desktop-selftest" })
             Assert.DoesNotContain("workload install", Job(job));
+    }
+
+    [Fact]
+    public void TheDesktopSelfTestRunsOnBothPlatforms()
+    {
+        // Phase 7b-6. The desktop host is the thing the migration replaces, and a parity gate that
+        // ran on one platform would say nothing about the one the phase exists to deliver.
+        var selfTest = Job("desktop-selftest");
+
+        Assert.Contains("ubuntu-latest", selfTest);
+        Assert.Contains("windows-latest", selfTest);
+    }
+
+    [Fact]
+    public void BothDesktopSelfTestLegsCaptureAndCompare()
+    {
+        // Unlike the journeys, this job's capture step is NOT one definition: the two platforms need
+        // different shells (xvfb-run against a bare .exe), so there is a step per OS and a leg can
+        // lose its capture while the job stays green - the comparison would then run against the
+        // committed record and pass, proving nothing about this runner. The two `if:` guards are what
+        // makes that possible, so they are what is asserted.
+        var selfTest = Job("desktop-selftest");
+
+        Assert.Contains("Capture the self-test report (Linux)", selfTest);
+        Assert.Contains("Capture the self-test report (Windows)", selfTest);
+        Assert.Contains("MLQT_SELFTEST", selfTest);
+        Assert.Contains("DesktopHostConformanceTests", selfTest);
     }
 }

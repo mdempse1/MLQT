@@ -17,11 +17,36 @@ namespace MLQT.Journeys;
 ///
 /// <para>One host and one browser per collection. Starting either is measured in seconds, and a
 /// journey suite that pays that per test is one nobody runs.</para>
+///
+/// <para><b>Which browser is a choice, not a constant</b> — see <see cref="BrowserName"/>. Chromium
+/// by default, because that is what WebView2 is and what the desktop host runs on Windows; WebKit on
+/// demand, because that is the nearest thing to WebKitGTK that can be driven from a test.</para>
 /// </remarks>
 public sealed class TestHostFixture : IAsyncLifetime
 {
     private WebApplication? _app;
     private IPlaywright? _playwright;
+
+    /// <summary>Which Playwright browser the journeys drive.</summary>
+    /// <remarks>
+    /// <para>Phase 7b-6, and the 7a note's "optional WebKit rehearsal" made real. Playwright's
+    /// <c>webkit</c> is <b>not</b> WebKitGTK — it is the same WebKit core behind a different
+    /// embedding — but it is far closer to the engine the Linux desktop host runs than Chromium is,
+    /// and it surfaces the CSS and JS-feature differences that would otherwise only be found by a
+    /// person opening the Photino window.</para>
+    ///
+    /// <para>An environment variable rather than a parameter, because the whole suite has to move
+    /// together: one host and one browser per collection, and the journeys say nothing about which.
+    /// Chromium stays the default so the PR gate is unchanged; the nightly job sets this.</para>
+    ///
+    /// <para>An unrecognised value fails loudly. Falling back to Chromium would mean a typo in the
+    /// nightly job produces a green run that tested nothing, which is the failure this job exists to
+    /// avoid rather than one it can afford.</para>
+    /// </remarks>
+    public static string BrowserName =>
+        Environment.GetEnvironmentVariable("MLQT_JOURNEY_BROWSER") is { Length: > 0 } name
+            ? name.ToLowerInvariant()
+            : "chromium";
 
     public string BaseUrl { get; private set; } = "";
     public IBrowser Browser { get; private set; } = null!;
@@ -39,7 +64,17 @@ public sealed class TestHostFixture : IAsyncLifetime
             .Features.Get<IServerAddressesFeature>()!.Addresses.First();
 
         _playwright = await Playwright.CreateAsync();
-        Browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+
+        var type = BrowserName switch
+        {
+            "chromium" => _playwright.Chromium,
+            "webkit" => _playwright.Webkit,
+            "firefox" => _playwright.Firefox,
+            var other => throw new InvalidOperationException(
+                $"MLQT_JOURNEY_BROWSER={other} is not a browser Playwright ships; use chromium, webkit or firefox"),
+        };
+
+        Browser = await type.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
     }
 
     /// <summary>A page with the console wired to the test output, and a sane default timeout.</summary>

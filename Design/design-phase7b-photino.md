@@ -1,11 +1,13 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-08). 7b-0 through 7b-3 are done — `MLQT.Photino` runs MLQT, matches
-> the MAUI baseline, and existing users' settings migrate themselves — and 7b-A is under way.**
-> The gating spike answered its three questions on Linux — Photino.Blazor 4.0.13 runs on `net10.0`,
-> `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero differences** against
-> the MAUI baseline under WebKitGTK. The Windows leg of that spike is outstanding. See
-> [7b-0](#7b-0--the-spike-s--gating). Companion to
+> **Status: IN PROGRESS (2026-09-09). 7b-0 through 7b-6 are done — `MLQT.Photino` runs MLQT and
+> matches the MAUI baseline on both Windows and Linux, existing users' settings migrate themselves,
+> and the manual checklist has been run on each platform.** What is left is 7b-7 (packaging and
+> distribution, which now also owns the Windows Start Menu shortcut and the Linux desktop entry),
+> 7b-8 (the irreversible cutover) and 7b-9. The gating spike answered its three questions on both
+> platforms — Photino.Blazor 4.0.13 runs on `net10.0`, `/selftest` produces 16 `Pass`, and
+> `HostConformance.Compare` reports **zero differences** against the MAUI baseline under both WebView2
+> and WebKitGTK. See [7b-0](#7b-0--the-spike-s--gating). Companion to
 > [design-phase7-gui-tests.md](design-phase7-gui-tests.md), which is complete: 7a built the harness
 > and captured the conformance baseline this phase is measured against. Roadmap §1 and locked
 > sequencing item 7 ([roadmap.md](roadmap.md)).
@@ -842,10 +844,17 @@ rules out the spinning-message-pump theory that would otherwise have been the ob
 
 The step that delivers the actual value.
 
-- `/selftest` under Photino/WebKitGTK, diffed against the baseline.
-- The nightly WebKit journey run — **an outstanding 7a item that lands here**, because until now there
-  has been no Linux host to run it against.
-- The per-platform CI `selftest` job — **the other outstanding 7a item**, same reason.
+- ~~`/selftest` under Photino/WebKitGTK, diffed against the baseline~~ — **done, and committed.** 16
+  probes, **zero differences**. See below.
+- ~~The nightly WebKit journey run — **an outstanding 7a item that lands here**~~ — **shipped**, as
+  `.github/workflows/nightly-webkit.yml`. It cannot run on the development machine, and that is a
+  finding rather than a shortcut. See below.
+- ~~The per-platform CI `selftest` job — **the other outstanding 7a item**~~ — **shipped**, as the
+  `desktop-selftest` matrix in `build-and-test.yml`. It turns the committed captures from a record
+  into a live check. See below.
+- ~~**The manual checklist**~~ — **run on Linux (2026-09-09).** One difference from the MAUI build:
+  the GNOME dock showed a generic icon. Visual fidelity, window behaviour and a real GTK file dialog
+  were all correct. See below.
 
 **Differences that are expected and correct**, and which the comparison is already built to tolerate:
 
@@ -858,6 +867,129 @@ The step that delivers the actual value.
 `HostConformance.Compare` compares **`Status`, never `Detail`** — a decision made in 7a-7 that pays off
 exactly here: all three of the above stay `Pass` with different detail, so they do not need an
 allowance list, and a genuine regression still shows.
+
+#### ✅ Conformance on Linux (2026-09-09): committed, not just observed
+
+`/selftest` under the published Photino/WebKitGTK build against the committed MAUI baseline:
+**16 probes, zero differences.** Ubuntu 26.04.1, .NET SDK 10.0 (runtime 10.0.12), WebKitGTK 2.52.6,
+GNOME Shell 50.1 on Wayland. Captured three times; **byte-identical each time**, not merely the same
+status vector, and exit code 0 each time.
+
+```
+baseline: MLQT (runtime 10.0.8), 16 probes
+actual:   MLQT.Photino (runtime 10.0.12), 16 probes
+
+NO DIFFERENCES - every probe answered as it did under MAUI.
+```
+
+`MLQT.Shared.Tests/TestFiles/selftest-photino-linux.json` holds the capture, beside the Windows one,
+and `DesktopHostConformanceTests` is now a theory over both — so a third host (macOS, in the roadmap's
+sequence) is one line and inherits all three assertions. A fourth test was added that the per-capture
+ones cannot express: **the two captures must not be copies of each other**, checked on the paths they
+report, because `Compare` ignores `Detail` and a capture taken on the wrong platform would otherwise
+pass everything.
+
+**Five probes differ in detail, and all five are the ones this note predicted:**
+
+| Probe | MAUI | Photino/Linux |
+|---|---|---|
+| `settings.location` | MAUI Preferences | `~/.local/share/MLQT/settings.json` |
+| `logging.writes` | `%LocalAppData%\MLQT` | `~/.local/share/MLQT` |
+| `svn.client` | `svn.exe` | none on PATH and none bundled |
+| `filepicker.wired` | `FilePickerService` | `PhotinoFilePickerService` |
+| `interop.dimensions` | 1186x862 | 1115x741 (the saved window) |
+
+**`fonts.roboto` is the one that changed since the spike, and 7b-4 is why.** The 7b-0 Linux leg
+recorded `not available (network font)` — WebKit answering `false` for a declared-but-unloaded face.
+With Roboto bundled it reads `available`, the same as MAUI and the same as Photino/Windows. The
+question the spike left open is gone rather than tolerated.
+
+**The native dependencies were re-checked rather than assumed**, as 7b-0 said they should be on
+whatever distribution is targeted: `objdump -p` on the shipped `linux-x64/Photino.Native.so` lists
+eleven `NEEDED` entries — `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`, `libgtk-3.so.0`,
+`libnotify.so.4` among them — and `ldd` resolves all eleven on Ubuntu 26.04 with no `not found`. It is
+still the **4.1** ABI, which is the only one 26.04 packages.
+
+#### The manual checklist, run on Linux (2026-09-09)
+
+**One difference from the MAUI build, and it is the exact counterpart of the Windows one.**
+
+**1. Visual fidelity, window behaviour and the file dialog: all correct.** The UI renders as it does
+under WebView2 — tabs, tree, MudBlazor controls, fonts and syntax colouring. Sizing, moving,
+minimise/maximise and reopening where it was left all work. And **a real GTK folder dialog opens and
+returns a usable path**, which is the thing probe 11 explicitly cannot say: it asserts the picker is
+wired, not that a native dialog appears. That was the last item on 7a's "does not prove" list for this
+platform.
+
+Screenshots are still not part of this. GNOME refuses `org.gnome.Shell.Screenshot` to an unprivileged
+caller (`AccessDenied`), exactly as in the spike, and ImageMagick's `import` is built without the X11
+delegate. A person looking at the window remains the mechanism, and it remains sufficient.
+
+**Two measured facts about the geometry**, since 7b-5 settled the Windows half by measurement and the
+Linux half would otherwise be assumed. **GTK sizes the *client* area where Windows sizes the outer
+window**: a saved placement of 1000x700 produces a viewport of exactly 1000x700, where the same
+request on WebView2 loses ~14px to chrome. And GTK reports the **work area as the full screen** — GDK
+under Wayland cannot read the shell's struts — so `WindowGeometry.Centred`'s clamp is a no-op here and
+a first run on this 1600x900 display asks for 1200x900, gets a window as tall as the screen, and GNOME
+maximises it. That is what MAUI's own arithmetic asks for (`min(1200, screen) x min(900, screen)`), so
+it is the shared rule behaving consistently rather than a Photino difference, and the outcome — a
+maximised window on a display too short for the preferred one — is the right one.
+
+**2. The GNOME dock showed a generic icon (B134).** Title bar and Alt-Tab were correct; the dash and
+dock were not. `SetIconFile` works and is not the problem — **GNOME Shell takes a dock icon from the
+matching desktop entry, not from the window**, keyed on the Wayland `app_id`, and no entry was
+installed.
+
+The `app_id` was **observed, not inferred** — the one thing B132 cost a day to learn:
+
+```
+WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep set_app_id
+  -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+```
+
+A native Wayland toplevel, `app_id` = the executable's file name. Installing
+`~/.local/share/applications/MLQT.Photino.desktop` with a matching `Icon=` and restarting made the
+dock icon appear, which converts the hypothesis into a demonstrated fix. The test file has been
+removed — its `Exec` pointed at a temporary publish — and **7b-7 owns installing a real one**. The
+recipe is in `Branding/README.md` beside the Windows one, because they are the same problem: a desktop
+shell identifies an application by an installed entry, and neither Windows nor GNOME will take the
+icon off the window instead.
+
+#### The two 7a leftovers, and what running them cost
+
+**The per-platform `selftest` job (`desktop-selftest`).** A matrix over `windows-latest` and
+`ubuntu-latest` that publishes `MLQT.Photino`, runs it with `MLQT_SELFTEST=1`, **overwrites its own
+platform's committed capture**, and runs `DesktopHostConformanceTests` against the same MAUI baseline.
+That last step is the point: the committed captures are records that go stale silently, and this makes
+the record a live check on every push without needing a second code path for CI to read from. The
+Linux leg installs `libwebkit2gtk-4.1-0` and `xvfb`; Windows needs neither, since WebView2's evergreen
+runtime is preinstalled on the runner. 7b-8 makes this the standing parity gate that replaces the
+baseline diff.
+
+**The nightly WebKit journey run.** `TestHostFixture` now picks its browser from
+`MLQT_JOURNEY_BROWSER` (chromium by default, so the PR gate is unchanged), and
+`nightly-webkit.yml` runs the whole journey suite under Playwright's WebKit at 02:00 UTC. An
+unrecognised value throws rather than falling back, because a typo that silently reverts to Chromium
+produces a green run that tested nothing — which is the failure this job exists to avoid.
+
+**It does not run on the development machine, and the reason is worth recording** rather than being
+rediscovered: **Playwright 1.56 ships no browser build for Ubuntu 26.04 at all.** `install` refuses
+with *"Playwright does not support chromium on ubuntu26.04-x64"*; the newest platform it knows is
+`ubuntu24.04-x64`. With `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` the fallback builds
+download, Chromium runs and **all 51 journeys pass** — but WebKit will not launch, because its build
+links `libicu74` and `libvpx9`, and 26.04 ships `libicu78` and no `libvpx9`. So the rehearsal is a CI
+job by necessity as well as by 7a's recommendation, and `ubuntu-latest` (24.04) is where it works.
+Recorded as **B135**, because the same override is what any developer on 26.04 needs to run the
+journeys at all — including through `run-all-tests.ps1`.
+
+#### What Linux still does not cover
+
+- **Multi-monitor and DPI.** The development machine has one 1600x900 display at scale 1, so the
+  scaling arithmetic `WindowGeometry.Centred` exists for was exercised on Windows and not here.
+- **A second desktop environment.** Everything above is GNOME on Wayland. KDE, XFCE and X11 sessions
+  are untested, and the dock-icon finding is the sort of thing that differs between them.
+- **Packaging**, which is 7b-7 and is where the desktop entry, the icon theme and the WebKitGTK
+  dependency all land.
 
 ### 7b-7 — packaging and distribution (M)
 
@@ -959,9 +1091,9 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
 | **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
-| **7b-5** | Windows conformance against the baseline, plus the manual checklist | M |
-| **7b-6** | Linux: conformance, the nightly WebKit journeys, the per-platform `selftest` job | L |
-| **7b-7** | Packaging and distribution | M |
+| **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
+| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found only the GNOME dock icon (B134) | L |
+| **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134) | M — **next** |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
 

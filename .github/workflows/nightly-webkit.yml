@@ -1,0 +1,62 @@
+name: Nightly WebKit Journeys
+
+# The journeys again, under WebKit instead of Chromium - the 7a note's "optional WebKit rehearsal",
+# landed in phase 7b-6 because until there was a Linux desktop host there was nothing it informed.
+#
+# Playwright's webkit is NOT WebKitGTK: same core, different embedding, and it is driven over the
+# WebKit remote inspector protocol rather than being the engine Photino loads. What it is, is the
+# only automated thing that runs MLQT's real UI on a WebKit core at all - Photino is a native window
+# with no endpoint to attach to, so the desktop host's own UI is driven by nobody. A component that
+# renders under Chromium and not under WebKit is caught here or by a person.
+#
+# A separate workflow rather than a job in build-and-test.yml, because `on: schedule` there would run
+# every job in that file nightly to get at this one.
+#
+# Nightly rather than on push, as 7a recommended: this is a second full journey run, it is the more
+# fragile engine, and a WebKit-only failure is worth a morning's attention rather than a red PR.
+
+on:
+  schedule:
+    # 02:00 UTC. Nothing depends on the time; it is out of the way of the working day.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  webkit-journeys:
+    name: UI Journeys (WebKit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Build the test host and journeys
+        run: dotnet build MLQT.Journeys/MLQT.Journeys.csproj -c Release
+
+      # --with-deps is not optional for WebKit: its build needs libicu, libvpx, libevent, libflite,
+      # libmanette and gstreamer1.0-libav, none of which a bare runner has. This is also the reason
+      # the rehearsal cannot be run on every machine - see the phase 7b note, where Ubuntu 26.04 ships
+      # libicu78 against the libicu74 the ubuntu24.04 WebKit build links, so it runs here and not
+      # there.
+      - name: Install WebKit
+        run: pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install --with-deps webkit
+
+      - name: Run the journeys under WebKit
+        env:
+          MLQT_JOURNEY_BROWSER: webkit
+        run: dotnet test MLQT.Journeys -c Release --no-build --report-trx --report-trx-filename journeys-webkit.trx --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Upload journey results
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: journey-results-webkit
+          path: ${{ github.workspace }}/TestResults/*.trx

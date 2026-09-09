@@ -265,6 +265,94 @@ jobs:
           name: journey-results-${{ matrix.label }}
           path: ${{ github.workspace }}/TestResults/*.trx
 
+  desktop-selftest:
+    # The per-platform `/selftest` job - an outstanding 7a item that could not exist until there was a
+    # desktop host that runs on more than one platform (phase 7b-6).
+    #
+    # What it does that DesktopHostConformanceTests cannot: the committed captures under
+    # MLQT.Shared.Tests/TestFiles are a *record* - what Photino answered on the day somebody ran it -
+    # and they go stale silently. This job runs the real published host on a real runner, overwrites
+    # the capture for its own platform, and runs the same comparison against the same committed MAUI
+    # baseline. The record becomes a live check, on every push, on both platforms.
+    #
+    # Overwriting a committed file is deliberate: the runner's working tree is disposable, and the
+    # alternative - a second path the comparison can read from - is a knob that exists only for CI and
+    # would be the thing that rots. The committed capture is never written back.
+    #
+    # 7b-8 makes this the standing parity gate that replaces the baseline diff, once MAUI is gone.
+    name: Desktop Self-Test (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            capture: selftest-photino-linux.json
+          - os: windows-latest
+            label: Windows
+            capture: selftest-photino-windows.json
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      # Photino links libwebkit2gtk-4.1 (not 4.0 - checked with objdump against the shipped
+      # Photino.Native.so, and re-checked in 7b-6), and there is no display on a runner. Windows needs
+      # neither: WebView2's evergreen runtime is preinstalled.
+      - name: Install WebKitGTK and a virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+
+      # publish, not build: Photino serves wwwroot through a bare PhysicalFileProvider and a plain
+      # build leaves no _content at all. The host now falls back to the static web assets manifest so
+      # F5 works (B133), but what ships is the published layout, so that is what this measures.
+      - name: Publish the Photino host
+        run: dotnet publish MLQT.Photino/MLQT.Photino.csproj -c Release -o publish/photino
+
+      # The host renders the probe route, writes the report and exits. A window that never gets that
+      # far would otherwise hold the job open for six hours, hence the timeout.
+      - name: Capture the self-test report (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        env:
+          MLQT_SELFTEST: '1'
+          MLQT_SELFTEST_HOST: MLQT.Photino
+          MLQT_SELFTEST_OUT: ${{ github.workspace }}/MLQT.Shared.Tests/TestFiles/${{ matrix.capture }}
+        run: xvfb-run -a ./publish/photino/MLQT.Photino
+
+      - name: Capture the self-test report (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        env:
+          MLQT_SELFTEST: '1'
+          MLQT_SELFTEST_HOST: MLQT.Photino
+          MLQT_SELFTEST_OUT: ${{ github.workspace }}\MLQT.Shared.Tests\TestFiles\${{ matrix.capture }}
+        run: .\publish\photino\MLQT.Photino.exe
+
+      # The shipped comparator, against the committed MAUI baseline - the same three assertions the
+      # committed records are held to, now applied to a report captured minutes ago. These tests read
+      # files and take no fixture, so no browser install is needed.
+      - name: Compare with the MAUI baseline
+        run: dotnet test --project MLQT.Journeys/MLQT.Journeys.csproj -c Release --filter "FullyQualifiedName~DesktopHostConformanceTests" --report-trx --report-trx-filename selftest-${{ matrix.label }}.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # The report itself, whatever the comparison said. A status difference names the probe; what it
+      # answered instead is in the file, and on a red build that is the thing you want.
+      - name: Upload the captured report
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: selftest-${{ matrix.label }}
+          path: |
+            ${{ github.workspace }}/MLQT.Shared.Tests/TestFiles/${{ matrix.capture }}
+            ${{ github.workspace }}/TestResults/*.trx
+
   build-maui:
     name: Build MAUI App (Windows)
     runs-on: windows-latest
