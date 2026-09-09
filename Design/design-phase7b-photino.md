@@ -1115,10 +1115,84 @@ believed.
 ### 7b-7 — packaging and distribution (M)
 
 Never previously discussed, and it is not optional: a Linux UI nobody can install is not a Linux UI.
-Decide the format (AppImage / `.deb` / tarball / `dotnet tool`-style), how `Photino.Native`'s shared
-libraries and the WebKitGTK dependency are satisfied, and what the Windows installer becomes now that
-it is not a MAUI unpackaged app. Include the Roboto bundle from 7b-4 and, if the SVN decision goes
-that way, a Linux svn payload.
+
+#### Decided (2026-09-09)
+
+**One installer per platform, carrying all three tools** — the GUI, the `mlqt` CLI and the MCP server.
+Not three packages each: the alternative was rejected because it makes every user think about which
+piece they want, and because the components already share almost everything below `MLQT.Shared`.
+
+| | Format | Runtime | Prerequisites |
+|---|---|---|---|
+| **Linux** | `.deb` | **bundled** (self-contained) | `libwebkit2gtk-4.1-0`, `libgtk-3-0` declared; `subversion` and `git` declared rather than bundled |
+| **Windows** | **Inno Setup** | downloaded if absent | .NET 10 and the WebView2 runtime fetched on demand; svn bundled as today |
+
+**The nupkg goes, not the tarball — and then both go.** The `dotnet tool` package was the first
+casualty: `dotnet tool install` is an **SDK** command, so shipping the CLI that way obliges every
+build agent to install the SDK to run a linter. With the CLI inside the platform installers instead,
+the tarball and the Windows zips have no audience left either. **Every artefact this repository
+publishes today is replaced**: `MLQT-<v>-win-x64.zip`, `MLQT.McpServer-<v>-win-x64.zip`,
+`MLQT.Cli.<v>.nupkg` and `mlqt-<v>-linux-x64.tar.gz` all become two installers.
+
+**Why the runtime is bundled on Linux and downloaded on Windows.** `dotnet-runtime-10.0` is in
+neither Ubuntu's nor Debian's archive — Ubuntu 24.04 stops at .NET 8 — so a dependency on it would
+mean asking every user to add Microsoft's apt feed before `apt install` would work at all. Bundling
+costs ~80 MB and removes that step entirely. Windows has no such problem: the .NET installer is a
+download away and the WebView2 Evergreen bootstrapper is the documented way to satisfy the webview.
+
+**Windows installs "Just for me" by default**, with a per-machine option. **Note the interaction**:
+the .NET runtime installer is machine-wide and will raise a UAC prompt even inside a per-user install,
+so "Just for me" is only elevation-free on a machine that already has .NET 10. Publishing the Windows
+build **self-contained**, as `release.yml` already does today, would remove that prompt, remove the
+runtime detection logic, and make the two platforms consistent — at the cost of an installer around
+90 MB instead of 15 MB. Worth deciding deliberately rather than inheriting.
+
+**Verified while deciding**, so the control file does not have to guess:
+
+- Both `MLQT.Photino` and `MLQT.McpServer` reference **only `Microsoft.NETCore.App`**, so the
+  dependency is the base runtime — not `aspnetcore-runtime`.
+- `Photino.Native` 4.0.22 links `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0` and
+  `libgtk-3.so.0`. **webkit2gtk 4.1 and GTK3**, which puts the floor at Ubuntu 22.04 / Debian 12.
+  Ubuntu 20.04 ships 4.0 and cannot run this.
+
+#### Fixed on the way in: the Photino host shipped no svn client
+
+`MLQT.csproj` copies the SlikSVN payload into its output as `svn/`; **`MLQT.Photino.csproj` did not.**
+The host was ported through the whole of 7b without it, and nothing noticed: `SvnToolLocator` falls
+back to `PATH`, every developer machine has svn installed, and the self-test's `svn.client` probe
+answered `svn.exe` on all of them. The shipped article would have had **no SVN at all**, while
+`getting-started.md` promised the opposite.
+
+Now bundled by both hosts, Windows-only, from a payload moved to `svn-tools/` at the repository root
+so that deleting the MAUI project at 7b-8 does not take the svn client with it.
+`MLQT.Shared.Tests/BundledSvnClientTests` holds every shipping host to it by reading the project files
+— a build-output check could not, because the payload is not committed and the folder is empty on a
+developer machine.
+
+#### Still open
+
+- **Code signing** — supplier to be decided. MLQT is MIT-licensed and public, which makes it eligible
+  for SignPath Foundation's free OSS certificates; Certum's OSS certificate is the cheap paid
+  alternative. Since 2023 the private key must live on FIPS hardware, so a cloud signing service is
+  the practical route rather than a file in a CI secret. **An unsigned installer and an unsigned zip
+  are flagged identically**, so this is not an argument for or against having an installer.
+- **A single version number.** `MLQT.Cli.csproj` hard-codes `0.1.0`; three tools in one installer need
+  one number, stamped from the tag.
+- **`release.yml` becomes two jobs** — Windows for the installer, Ubuntu for the `.deb` (`dpkg-deb`
+  does not exist on a Windows runner) — feeding one release. Its existing "verify bundled svn client"
+  step must follow the payload to `MLQT.Photino`.
+- **Inno specifics**: a stable `AppId` so upgrades replace rather than accumulate; a **deliberate**
+  Start Menu shortcut carrying the icon (B132 was a shortcut Windows invented, aimed at a build with
+  no icon); WebView2 detected via the `EdgeUpdate\Clients\{F3017226-…}` key, per-machine *and*
+  per-user; and whether it removes an existing MAUI install.
+- **Debian specifics**: a `.desktop` file and hicolor icons; the app under `/opt/mlqt` with symlinks in
+  `/usr/bin`; a **stable path for the MCP server**, which agents register by path; `git`/`subversion`
+  as `Recommends` rather than `Depends` if a Git-only user should not be made to install Subversion.
+- **arm64?** `Photino.Native` ships `linux-arm64` and `win-arm64`. x64-only is a fine answer, but it
+  should be an answer.
+- **Documentation**: a new installation page walking through both platforms, plus the pages that go
+  stale — `getting-started.md` (the bundled-runtime claim), `cli.md` (the tool and tarball sections)
+  and `mcp-server.md` (the registration path).
 
 ### 7b-8 — cutover (M)
 

@@ -10,7 +10,7 @@
     command-line build into the app under a `svn/` folder next to the executable.
 
     This script obtains the SlikSVN binaries and copies them into
-    MLQT/MLQT/svn-tools/win-x64/, which MLQT.csproj then copies into the build output
+    svn-tools/win-x64/ at the repository root, which every shipping host copies into its
     under `svn/`. Run it once locally before publishing, and in CI before `dotnet publish`.
 
     The binaries are NOT committed to source control (see .gitignore); this script is the
@@ -28,7 +28,7 @@
       3. -ZipUrl <url>      : download a SlikSVN .zip, then extract it.
 
 .PARAMETER OutDir
-    Destination for the staged binaries. Defaults to MLQT/MLQT/svn-tools/win-x64
+    Destination for the staged binaries. Defaults to svn-tools/win-x64 at the repository root
     relative to this script.
 
 .PARAMETER ZipUrl
@@ -64,7 +64,7 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $OutDir) {
-    $OutDir = Join-Path $scriptDir '..\MLQT\svn-tools\win-x64'
+    $OutDir = Join-Path $scriptDir '..\svn-tools\win-x64'
 }
 $OutDir = [System.IO.Path]::GetFullPath($OutDir)
 

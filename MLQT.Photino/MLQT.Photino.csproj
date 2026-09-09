@@ -32,4 +32,22 @@
     <ProjectReference Include="../MLQT.Shared/MLQT.Shared.csproj" />
   </ItemGroup>
 
+  <!--
+    Bundle the SlikSVN command-line client into the app output under "svn/", so SVN works on a
+    machine that has no svn of its own (see RevisionControl/SvnToolLocator.cs, which prefers this
+    copy and falls back to PATH). The binaries are populated by build/fetch-svn-tools.ps1 and are
+    not committed, so an empty folder matches nothing and the app falls back — which is exactly how
+    this went missing: the host was ported without the payload, every developer had svn on PATH, and
+    the self-test's svn probe passed on all of them (7b-7).
+
+    Windows only. On Linux the .deb declares `subversion` as a dependency and the locator finds it
+    on PATH, which is what a Linux user expects and avoids shipping someone else's binaries.
+  -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT' or $([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="..\svn-tools\win-x64\**\*"
+          Link="svn\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
 </Project>
