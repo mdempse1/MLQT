@@ -29,6 +29,8 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        ClaimTaskbarIdentity();
+
         // (1) The file provider must be rooted at wwwroot explicitly. PhotinoBlazorAppConfiguration's
         // HostPage is "index.html" with no directory part, so the provider is expected to be
         // wwwroot-rooted already, and the parameterless CreateDefault does not do that.
@@ -92,6 +94,43 @@ internal static class Program
 
         app.Run();
     }
+
+    /// <summary>
+    /// The identity the Windows taskbar groups this application under.
+    /// </summary>
+    /// <remarks>
+    /// <para>A taskbar button is keyed on an <b>Application User Model ID</b>, and an application
+    /// that does not declare one is given whatever the shell derives from the <i>process</i> — which
+    /// for a .NET application started through <c>dotnet run</c> is <c>dotnet.exe</c>, and for a path
+    /// the shell has cached against is whatever it cached. Either way the button stops following the
+    /// window, which is why the icon could be right in the title bar and in Explorer and wrong on the
+    /// taskbar: those three come from three different places.</para>
+    ///
+    /// <para>Declaring one is the documented fix and it is also what makes pinning survive a move or
+    /// an upgrade — the pin follows the id, not the folder the executable happened to be in. It has to
+    /// be the first thing the process does: the id is read when the first window is created.</para>
+    ///
+    /// <para>Windows only, and a failure is ignored: the taskbar grouping is not worth refusing to
+    /// start over, and every other platform groups by process.</para>
+    /// </remarks>
+    private static void ClaimTaskbarIdentity()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        try
+        {
+            // "Company.Product" — the shape Windows expects, and stable across versions and paths.
+            SetCurrentProcessExplicitAppUserModelID("MLQTProject.MLQT");
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn(nameof(Program), $"Could not set the taskbar application id: {ex.Message}");
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, PreserveSig = false)]
+    private static extern void SetCurrentProcessExplicitAppUserModelID(string appId);
 
     /// <summary>
     /// The window and taskbar icon, beside the executable.

@@ -11,6 +11,24 @@ and rebuild, rather than editing a copy inside a project.
 | `mlqt-mark.svg`, `mlqt-mark-on-dark.svg`, `mlqt-mark-mono.svg` | The mark alone, for light, dark and single-colour contexts. |
 | `mlqt-lockup*.svg`, `mlqt-lockup*-2x.png` | Mark plus wordmark. `-full` includes the strapline. |
 
+## Why the icon is set three times
+
+Three places show it and each reads from somewhere different, which is why one of them can be wrong
+while the other two are right:
+
+| Where | Comes from |
+|-------|-----------|
+| Explorer, and the Alt-Tab list | The icon resource compiled into the `.exe` by `ApplicationIcon`. |
+| The window's title bar | `WM_SETICON` `ICON_SMALL` — what Photino's `SetIconFile` attaches (16x16). |
+| The taskbar button | `WM_SETICON` `ICON_BIG` (32x32), **under the process's Application User Model ID.** |
+
+The taskbar being the odd one out is the interesting case: a button is grouped by AUMID, and an
+application that declares none is given whatever the shell derives from the process — `dotnet.exe` for
+anything started with `dotnet run`, or a stale entry for a path it has cached against. The button then
+stops following the window. `Program.ClaimTaskbarIdentity` declares `MLQTProject.MLQT` before the first
+window is created, which is the documented fix and is also what lets a pinned shortcut survive the
+executable moving.
+
 ## Why the icon is set twice
 
 The executable's embedded icon is what Windows shows in Explorer and falls back to elsewhere, but
