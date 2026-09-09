@@ -159,6 +159,14 @@ internal static class Program
     /// <para>Per platform because the formats are not interchangeable: Windows wants the multi-size
     /// <c>.ico</c>, GTK wants a PNG. Both are copied beside the executable by the project file.</para>
     ///
+    /// <para><b>On a Wayland session the GTK half does nothing, and that is not a defect here.</b>
+    /// Photino calls <c>gtk_window_set_icon_from_file</c>, an X11-era call; Wayland has no protocol
+    /// for a client to give its own window an icon, and a full <c>WAYLAND_DEBUG=1</c> trace shows the
+    /// toplevel receiving no icon request of any kind. GNOME takes the icon from the desktop entry it
+    /// matches by <c>app_id</c> instead — for the dock, Alt-Tab and the window list alike — so
+    /// <b>the Linux icon is installed by packaging (7b-7, B134), not set here</b>. This call is kept
+    /// because an X11 session does honour it.</para>
+    ///
     /// <para>A missing file is not a reason to fail startup — Photino would rather have no icon than
     /// no window — so the path is checked and an empty string returned, which Photino ignores.</para>
     /// </remarks>

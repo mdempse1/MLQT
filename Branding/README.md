@@ -104,24 +104,45 @@ application and on the shortcut it creates, together, or not at all.
 
 ## The GNOME dock, and why it is the same shape of problem
 
-Checked on Ubuntu 26.04.1 / GNOME Shell 50.1 on Wayland (phase 7b-6, 2026-09-09). **The title bar and Alt-Tab
-show the MLQT icon; the dash and dock showed a generic one** — which is the Windows taskbar finding
-again, on a different mechanism, and with the same answer: the fix is outside the process.
+Checked on Ubuntu 26.04.1 / GNOME Shell 50.1 on Wayland (phase 7b-6, 2026-09-09). **On a Wayland
+session MLQT has no icon anywhere — dock, Alt-Tab and window list alike — unless a desktop entry is
+installed.** It is the Windows taskbar finding again, on a different mechanism and with the same
+answer: the fix is outside the process.
 
-`SetIconFile(mlqt-256.png)` is what puts the icon on the GTK window, and it works. The dock does not
-read it. GNOME Shell matches a window to a **desktop entry** and takes the dock icon from that, keyed
-on the Wayland `app_id` — so with no matching entry installed there is nothing for it to read.
+> **This section was first written saying the window icon worked and only the dock was wrong. That was
+> wrong**, and it was recorded because the checklist question ran the three places together and the
+> answer was taken at face value instead of being traced. Alt-Tab was generic too. What follows is what
+> the wire says.
 
-**The `app_id` was observed rather than inferred**, which is the lesson B132 paid for:
+**`SetIconFile` does nothing at all on a Wayland session, and cannot.** Photino's Linux library imports
+`gtk_window_set_icon_from_file` — `nm -D --undefined-only Photino.Native.so | grep icon` — which is an
+X11-era GTK call: Wayland has no protocol for a client to attach an icon to its own window, other than
+the recent `xdg-toplevel-icon-v1`, which this compositor does not advertise. The trace agrees, and it
+is the whole of the evidence:
 
-```bash
-WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep -E 'set_app_id|set_title'
-#  -> xdg_toplevel#43.set_title("MLQT")
-#  -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+```
+$ WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep -E '  -> xdg_toplevel#43\.'
+  -> xdg_toplevel#43.set_title("MLQT")
+  -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+  -> xdg_toplevel#43.set_parent(nil)
+  -> xdg_toplevel#43.set_min_size(180, 37)
+  -> xdg_toplevel#43.set_max_size(2147483595, 2147483595)
 ```
 
-So the window is a native Wayland toplevel (not XWayland), and `app_id` is `MLQT.Photino` — GTK's
-`g_get_prgname()`, which is the executable's file name. The entry must therefore be named
+Five requests, and **not one of them is an icon**. So GNOME has exactly one thing to go on: it matches
+the window to a **desktop entry** by `app_id` and takes the icon from there — for the dock, for
+Alt-Tab, and for the window list. With no entry installed there is nothing to read, and no amount of
+work inside the process will change that.
+
+`Program.ApplicationIcon` is still right to set it: an X11 session **does** honour
+`gtk_window_set_icon_from_file`, and that path is untested here rather than disproved. But it must not
+be read as the Linux icon mechanism, because on the default Ubuntu session it is dead code.
+
+**The `app_id` in that trace was observed rather than inferred**, which is the lesson B132 paid for.
+The window is a native Wayland toplevel (not XWayland), and its `app_id` is `MLQT.Photino` — GTK's
+`g_get_prgname()`, which is the executable's file name, and which is **unchanged by `dotnet run`**
+(checked, because the shell resolving to `dotnet` would have broken the match). The entry must
+therefore be named
 `MLQT.Photino.desktop`, and `StartupWMClass=MLQT.Photino` covers the X11 case where the same value
 arrives as `WM_CLASS`.
 
@@ -140,8 +161,9 @@ Categories=Development;
 StartupWMClass=MLQT.Photino
 ```
 
-The file used for the test pointed at a temporary publish and has been removed. **7b-7 owns installing
-a real one**, at the installed location, with `Icon=` naming an icon in the theme (`hicolor`
+The file used for the test pointed at a temporary publish and has been removed, which put the icon
+straight back to generic — worth knowing before anyone concludes a build regressed. **7b-7 owns
+installing a real one**, at the installed location, with `Icon=` naming an icon in the theme (`hicolor`
 `apps/mlqt.png` under the standard sizes) rather than an absolute path — the absolute path is right
 for a tarball and wrong for a `.deb`. That is the direct counterpart of the Start Menu shortcut
 Windows needs, and both exist for the same reason: **a desktop shell identifies an application by an

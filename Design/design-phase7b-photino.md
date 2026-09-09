@@ -935,25 +935,47 @@ maximises it. That is what MAUI's own arithmetic asks for (`min(1200, screen) x 
 it is the shared rule behaving consistently rather than a Photino difference, and the outcome — a
 maximised window on a display too short for the preferred one — is the right one.
 
-**2. The GNOME dock showed a generic icon (B134).** Title bar and Alt-Tab were correct; the dash and
-dock were not. `SetIconFile` works and is not the problem — **GNOME Shell takes a dock icon from the
-matching desktop entry, not from the window**, keyed on the Wayland `app_id`, and no entry was
-installed.
+**2. On Wayland, MLQT has no icon anywhere without a desktop entry (B134).**
 
-The `app_id` was **observed, not inferred** — the one thing B132 cost a day to learn:
+**Recorded first as "the dock showed a generic icon, and the title bar and Alt-Tab were right". That
+was wrong**, and the correction is worth more than the finding. The checklist question named the three
+places in one breath, the answer was taken at face value, and nobody traced it — so a claim about a
+mechanism went into this note, `Branding/README.md` and the backlog on the strength of a glance. The
+owner found it the next time they started the app: Alt-Tab was generic too.
+
+**What the wire says.** Photino's Linux library imports `gtk_window_set_icon_from_file`
+(`nm -D --undefined-only Photino.Native.so | grep icon`), an X11-era GTK call. Wayland has no protocol
+for a client to give its own window an icon, save the recent `xdg-toplevel-icon-v1`, which this
+compositor does not advertise. And the toplevel receives exactly five requests in a full trace:
 
 ```
-WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep set_app_id
+WAYLAND_DEBUG=1 ./MLQT.Photino 2>&1 | grep -E '  -> xdg_toplevel#43\.'
+  -> xdg_toplevel#43.set_title("MLQT")
   -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+  -> xdg_toplevel#43.set_parent(nil)
+  -> xdg_toplevel#43.set_min_size(180, 37)
+  -> xdg_toplevel#43.set_max_size(2147483595, 2147483595)
 ```
 
-A native Wayland toplevel, `app_id` = the executable's file name. Installing
-`~/.local/share/applications/MLQT.Photino.desktop` with a matching `Icon=` and restarting made the
-dock icon appear, which converts the hypothesis into a demonstrated fix. The test file has been
-removed — its `Exec` pointed at a temporary publish — and **7b-7 owns installing a real one**. The
-recipe is in `Branding/README.md` beside the Windows one, because they are the same problem: a desktop
-shell identifies an application by an installed entry, and neither Windows nor GNOME will take the
-icon off the window instead.
+Not one of them is an icon. **`SetIconFile` is a no-op on a Wayland session** — it is not that the dock
+ignores a window icon, it is that there is no window icon to ignore. GNOME has one thing to go on: it
+matches `app_id` to an installed **desktop entry** and takes the icon from there, for the dock, for
+Alt-Tab and for the window list alike.
+
+The `app_id` itself was observed rather than inferred, which is what B132 cost a day to learn, and it
+is **unchanged by `dotnet run`** — checked, because a launcher resolving to `dotnet` would have broken
+the match and would have been the obvious thing to blame.
+
+Installing `~/.local/share/applications/MLQT.Photino.desktop` with a matching `Icon=` and restarting
+made the icon appear; removing it again put it straight back to generic. So the fix is demonstrated in
+both directions. **7b-7 owns installing a real one, and this makes that item bigger than it looked**:
+until packaging ships, MLQT on a Wayland desktop is unbranded everywhere, not merely in the dock.
+`Program.ApplicationIcon`'s GTK branch stays — an X11 session does honour that call — but it must not
+be read as the Linux icon mechanism, because on the default Ubuntu session it is dead code.
+
+The recipe is in `Branding/README.md` beside the Windows one, because they are the same problem: a
+desktop shell identifies an application by an installed entry, and neither Windows nor GNOME will take
+the icon off the window instead.
 
 #### The two 7a leftovers, and what running them cost
 
@@ -1092,8 +1114,8 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
-| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found only the GNOME dock icon (B134) | L |
-| **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134) | M — **next** |
+| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found only the Wayland icon question (B134, which packaging owns) | L |
+| **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134 — the only thing that gives MLQT an icon on Wayland at all) | M — **next** |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
 
