@@ -127,6 +127,21 @@ public class DymolaInterface : IDisposable
     public bool OwnsProcess => _dymolaProcess != null && !_dymolaProcess.HasExited;
 
     /// <summary>
+    /// OS process id of the Dymola this interface started, or null when it attached to a
+    /// Dymola some other process started, after <see cref="Detach"/>, or once the process
+    /// has exited. Lets a caller record which instances it is responsible for, so that a
+    /// later process can re-attach to them or reap them instead of leaking them.
+    /// </summary>
+    public int? ProcessId
+    {
+        get
+        {
+            var process = _dymolaProcess;
+            return process != null && !process.HasExited ? process.Id : null;
+        }
+    }
+
+    /// <summary>
     /// Relinquish ownership of the underlying Dymola process without terminating it.
     /// After Detach, <see cref="Dispose"/> / <see cref="StopDymolaProcessAsync"/> no
     /// longer kill the process, so the running Dymola survives this interface being
