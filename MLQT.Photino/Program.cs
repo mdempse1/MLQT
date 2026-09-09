@@ -32,7 +32,9 @@ internal static class Program
         // Before anything that might have something to say. AddMlqtCore initialises logging too and
         // the call is idempotent, but the file provider is chosen before that line runs — and the one
         // message that matters there is "there are no web assets", which is the difference between a
-        // blank window that explains itself and one that does not.
+        // blank window that explains itself and one that does not. Note that it explains itself *in
+        // the log file*: logging is file-only unless MLQT_LOG_CONSOLE is set, so a blank window says
+        // nothing in the terminal it was started from.
         LoggingService.Initialize();
 
         // (1) The file provider must be rooted at wwwroot explicitly. PhotinoBlazorAppConfiguration's

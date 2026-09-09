@@ -50,23 +50,73 @@ public static class LoggingService
             KeepFileOpen = false
         };
 
-        // Console target for debugging
-        var consoleTarget = new ConsoleTarget("console")
-        {
-            Layout = "${longdate} | ${level:uppercase=true:padding=-5} | ${message}"
-        };
-
-        // Add targets and rules
         config.AddTarget(fileTarget);
-        config.AddTarget(consoleTarget);
-
         config.AddRule(LogLevel.Debug, LogLevel.Fatal, fileTarget);
-        config.AddRule(LogLevel.Info, LogLevel.Fatal, consoleTarget);
+
+        // The console target is OFF unless asked for. It used to be on at Info, and nobody saw it for
+        // as long as MLQT was a Windows-only WinExe with no console attached - so a desktop
+        // application started from a Linux terminal printed its entire startup sequence and every
+        // step of the analysis pipeline into the terminal it was launched from.
+        //
+        // Two reasons it is off rather than quieter. It is the B121 shape: every console write is
+        // synchronous and lands on the thread producing it, and MLQT logs heavily throughout the
+        // pipeline, which is exactly the cost we removed from Photino's own message logging. And it
+        // leaves **one place to look when something is wrong** - the log file - rather than an answer
+        // that depends on how the application happened to be started.
+        var consoleLevel = ConsoleLevel(Environment.GetEnvironmentVariable(ConsoleLevelVariable));
+
+        if (consoleLevel is not null)
+        {
+            var consoleTarget = new ConsoleTarget("console")
+            {
+                Layout = "${longdate} | ${level:uppercase=true:padding=-5} | ${message}"
+            };
+
+            config.AddTarget(consoleTarget);
+            config.AddRule(consoleLevel, LogLevel.Fatal, consoleTarget);
+        }
 
         LogManager.Configuration = config;
         _isInitialized = true;
 
         Info("LoggingService", "Logging initialized. Log file location: " + logFolder);
+    }
+
+    /// <summary>
+    /// Set to a level name — or to anything at all — to have log lines written to the console as well
+    /// as the file. Unset, nothing is written to the console.
+    /// </summary>
+    /// <remarks>
+    /// The same shape as <c>MLQT_PHOTINO_LOG</c>: a diagnostic an ordinary run does not pay for.
+    /// </remarks>
+    public const string ConsoleLevelVariable = "MLQT_LOG_CONSOLE";
+
+    /// <summary>
+    /// The level to log to the console at, or <c>null</c> for no console logging at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>Separated from <see cref="Initialize"/> because that method configures NLog globally and
+    /// runs once per process, so the decision inside it cannot be tested. This can.</para>
+    ///
+    /// <para><b>An unrecognised value means Info, not off.</b> <c>1</c> and <c>true</c> are what a
+    /// person actually types, and someone who sets this variable is trying to leave silence — a typo
+    /// that silently returned them to it would be the least helpful reading available. <c>Off</c> is
+    /// a real NLog level and is honoured, so it is the way to say so deliberately.</para>
+    /// </remarks>
+    internal static LogLevel? ConsoleLevel(string? setting)
+    {
+        if (string.IsNullOrWhiteSpace(setting))
+            return null;
+
+        try
+        {
+            var level = LogLevel.FromString(setting.Trim());
+            return level == LogLevel.Off ? null : level;
+        }
+        catch (ArgumentException)
+        {
+            return LogLevel.Info;
+        }
     }
 
     /// <summary>

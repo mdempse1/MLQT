@@ -100,6 +100,29 @@
 - **Hidden directory**: Files inside `.git`, `.svn`, or other hidden directories are ignored.
 - **Monitor paused**: During VCS operations, the file monitor is temporarily paused. It should resume automatically. If it doesn't, try switching away from the repository and back.
 
+## The log file
+
+**When something isn't right, the log file is the one place to look.** MLQT records its whole startup
+sequence, every stage of the analysis pipeline with timings, and every warning and error there — and
+it does so whether or not anything went visibly wrong, so the record of a problem is usually already
+written by the time you notice it.
+
+| Platform | Where |
+|----------|-------|
+| Windows | `%LocalAppData%\MLQT\mlqt-<date>.log` |
+| Linux | `~/.local/share/MLQT/mlqt-<date>.log` |
+
+One file per day, kept for 30 days. Long-running steps are bracketed by `>>> STARTING` and
+`<<< COMPLETED` lines with timestamps, so "why did that take so long?" is usually answered by reading
+the pair rather than by reproducing it.
+
+**Nothing is written to the terminal**, even when MLQT is started from one. That is deliberate: it
+keeps the answer in one place regardless of how the application was launched, and console output is
+written synchronously on the thread producing it, which costs real time during a large analysis. If
+you are diagnosing something and want the lines as they happen, set `MLQT_LOG_CONSOLE=1` before
+starting MLQT and they will go to the console as well as the file. Set it to a level name
+(`MLQT_LOG_CONSOLE=Debug`) to choose how much.
+
 ## Frequently Asked Questions
 
 ### Can I edit Modelica code in MLQT?

@@ -89,7 +89,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
 | **DymolaCheckingService** | Model checking via Dymola HTTP JSON-RPC |
 | **OpenModelicaCheckingService** | Model checking via OpenModelica ZeroMQ |
-| **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`) |
+| **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`, `~/.local/share/MLQT/` on Linux). **File only** — the console target is off unless `MLQT_LOG_CONSOLE` is set, so the log file is the single place to look |
 
 ### The shared check pipeline (`MLQT.Services/Checking/`)
 
