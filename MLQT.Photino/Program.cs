@@ -31,12 +31,16 @@ internal static class Program
     {
         ClaimTaskbarIdentity();
 
+        // Before anything that might have something to say. AddMlqtCore initialises logging too and
+        // the call is idempotent, but the file provider is chosen before that line runs — and the one
+        // message that matters there is "there are no web assets", which is the difference between a
+        // blank window that explains itself and one that does not.
+        LoggingService.Initialize();
+
         // (1) The file provider must be rooted at wwwroot explicitly. PhotinoBlazorAppConfiguration's
         // HostPage is "index.html" with no directory part, so the provider is expected to be
         // wwwroot-rooted already, and the parameterless CreateDefault does not do that.
-        var wwwroot = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "wwwroot"));
-
-        var builder = PhotinoBlazorAppBuilder.CreateDefault(wwwroot, args);
+        var builder = PhotinoBlazorAppBuilder.CreateDefault(WebAssets(), args);
 
         // Everything that is not this host's own business: the services, MudBlazor, the invariant
         // culture and logging. Identical to the line in MauiProgram.
@@ -93,6 +97,45 @@ internal static class Program
             MLQT.Services.LoggingService.Error(nameof(Program), $"Unhandled: {e.ExceptionObject}");
 
         app.Run();
+    }
+
+    /// <summary>
+    /// Where the web assets are, whether this build was published or just built.
+    /// </summary>
+    /// <remarks>
+    /// <para><c>dotnet publish</c> writes a real <c>wwwroot</c>; <c>dotnet build</c> writes a manifest
+    /// pointing at the originals. Only the first was handled, so <b>the host ran only from a publish</b>
+    /// — F5 and <c>dotnet run</c> opened a window that loaded nothing, with no error, because a webview
+    /// showing nothing is indistinguishable from one that is still starting.</para>
+    ///
+    /// <para>The published folder is preferred when it exists: it is what ships, and a shipped
+    /// application should not depend on a manifest full of absolute paths to this machine's NuGet
+    /// cache.</para>
+    /// </remarks>
+    private static IFileProvider WebAssets()
+    {
+        var published = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        if (Directory.Exists(published))
+            return new PhysicalFileProvider(published);
+
+        var manifest = StaticWebAssetManifest.Load(
+            StaticWebAssetManifest.PathFor(AppContext.BaseDirectory, nameof(MLQT) + ".Photino"));
+
+        if (manifest is not null)
+        {
+            LoggingService.Info(nameof(Program),
+                "No published wwwroot; serving web assets through the static web assets manifest");
+            return new StaticWebAssetsFileProvider(manifest);
+        }
+
+        // Neither. Say so loudly rather than opening an empty window, which is what this looked like
+        // for the whole of 7b until someone tried to run a Debug build.
+        LoggingService.Error(nameof(Program),
+            $"No web assets: neither {published} nor a static web assets manifest is beside the " +
+            "executable, so the window will be blank. Run dotnet publish, or build the project so the " +
+            "manifest is written.", new FileNotFoundException(published));
+
+        return new PhysicalFileProvider(AppContext.BaseDirectory);
     }
 
     /// <summary>
