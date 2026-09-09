@@ -57,29 +57,34 @@ h1:focus {
 
 /* Scrollbars.
 
-   Nothing styled these, so each engine drew its own default - and the two do not resemble each
-   other. WebView2 draws Chromium's slim overlay bar; WebKitGTK draws a wider GTK-style one that
-   takes layout width and sits hard against the content, which on the library browser left the
-   "more actions" and revert buttons crowded against it and awkward to click. Reported by comparing
-   the Linux build with the Windows one (phase 7b-6, B140).
+   Nothing styled these, so each engine drew its own default and the two do not resemble each other.
+   The difference that matters is not width, it is that **WebKitGTK uses overlay scrollbars**: they
+   take no layout width and float on top of the content, so in the library browser the bar sat over
+   the "more actions" and revert buttons and swallowed clicks meant for them. WebView2's are classic
+   and occupy layout, so content is never underneath one. Reported against the Linux build with a
+   screenshot (phase 7b-6, B140).
 
-   Both mechanisms are declared on purpose. `scrollbar-width` / `scrollbar-color` are the standard
-   properties; `::-webkit-scrollbar` is the older WebKit one that Chromium also implements. Which of
-   the two a given engine honours is not something to guess at from here, and declaring both costs
-   nothing: whichever it reads, it gets the same slim, neutral bar.
+   Styling ::-webkit-scrollbar is what fixes it, and not because of the width it sets: giving the
+   pseudo-element any rule at all makes WebKit render a classic, layout-occupying scrollbar instead
+   of an overlay one, and the content is then laid out beside it rather than under it.
 
-   The thumb's transparent border with `background-clip: content-box` is what keeps it off the
-   content. That is the part that answers the complaint - a thumb inset from the track edge leaves
-   the last few pixels of the container clickable. */
+   DO NOT ALSO SET scrollbar-width OR scrollbar-color. That was the first attempt at this - declared
+   alongside these rules as a hedge, on the reasoning that whichever mechanism the engine honours it
+   would get the same result - and the hedge is what broke it. **Setting either standard property
+   makes WebKit ignore the -webkit- pseudo-elements entirely**, and WebKitGTK's own implementation of
+   them is the overlay bar we are trying to get away from. Measured in WebKitGTK 2.52 directly, on a
+   scrollable div, as the reserved gutter width:
 
-* {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
-}
+       ::-webkit-scrollbar { width: 14px }                          ->  14
+       ...the same, plus scrollbar-width: thin                      ->   0
+       ...the same, plus scrollbar-color                            ->   0
+       nothing at all                                               ->   0
+
+   Chromium applies the same precedence rule, so one mechanism covers both hosts. */
 
 ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -89,8 +94,8 @@ h1:focus {
 ::-webkit-scrollbar-thumb {
     background-color: rgba(128, 128, 128, 0.45);
     background-clip: content-box;
-    border: 2px solid transparent;
-    border-radius: 5px;
+    border: 3px solid transparent;
+    border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

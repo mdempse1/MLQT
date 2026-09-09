@@ -1032,12 +1032,39 @@ Two are engine differences that the shared code had simply never had an opinion 
   `syncing = true; …; syncing = false` around the assignment, which suppresses nothing, because scroll
   events are dispatched asynchronously. Harmless on WebView2; on WebKitGTK, where the wheel scrolls
   smoothly over several frames, every echoed write **cancelled the animation** the user had just
-  started. Settled by simulation rather than argument: **6 writes to the scrolling pane per wheel
-  tick before, 1 after**.
-- **B140 — nothing styled the scrollbars**, so each engine drew its own, and WebKitGTK's sits hard
-  against the content and crowds the controls beside it. Both the standard properties and the
-  `-webkit-` pseudo-elements are now declared, because which one an engine honours is not something
-  to guess at from here.
+  started.
+- **B140 — WebKitGTK's scrollbars are overlays**: they take no layout width and float above the
+  content, so the bar sat on top of the library browser's buttons and swallowed clicks meant for
+  them. WebView2's are classic and occupy layout, so nothing is ever underneath one.
+
+**Both of those were fixed twice, and the second attempt is the interesting one in each case.** The
+first fix for each was reasoned out, looked right, and did nothing — and in both cases what made it
+useless was the same move: *hedging instead of measuring*.
+
+- The scroll fix released its guard on the next animation frame. Within a frame the scroll steps run
+  **before** animation-frame callbacks, so the echo arrives after the release — and by then the
+  animating pane has moved, so the echo carries a **stale** position, is written, and cancels the
+  animation exactly as before. It was shipped on a simulation that modelled the panes jumping
+  instantly, which cannot tell a working implementation from a broken one. Fixed by **ownership**:
+  the pane the user is scrolling owns the pair for 150 ms and only the owner drives. Against a model
+  that advances an animation frame by frame, five wheel ticks asking for 265px travelled **93px with
+  five cancellations before, and the full distance with none after**. That model is committed as
+  `build/diff-scroll-simulation.js`, because the lesson generalises: **a simulation that cannot
+  reproduce the defect will certify a fix that does nothing**, and this one did.
+- The scrollbar fix declared the standard `scrollbar-width`/`scrollbar-color` *and* the `-webkit-`
+  pseudo-elements, "because which one an engine honours is not something to guess at from here". That
+  hedge is what disabled it: **setting either standard property makes WebKit ignore the `-webkit-`
+  pseudo-elements**, and WebKitGTK's implementation of the standard ones is the overlay bar. Measured
+  in `libwebkit2gtk-4.1` directly, through the GObject bindings, as the gutter a scrollable div
+  reserves — `::-webkit-scrollbar { width: 14px }` gives **14**, the same plus `scrollbar-width: thin`
+  gives **0**. Fixed by styling only the pseudo-elements; verified at **12px reserved** against the
+  real `app.css` in the real engine.
+
+**The engine can be measured from this repository, and that is the tooling lesson.** `libwebkit2gtk-4.1`
+is the same library Photino loads and its GObject bindings are installed, so an offscreen `WebKit2.WebView`
+answers questions about scrollbars, CSS support and layout cost in seconds — without a Photino host,
+without a display, and without the screenshots GNOME refuses. Every wrong answer above came from
+reading a screenshot or reasoning about an engine; every right one came from asking it.
 
 **What this says about the checklist.** It found one thing on its own and four more when a reference
 build was open beside it, and the four are the ones a user would have hit first. A conformance run
@@ -1045,6 +1072,26 @@ answers "does this host answer as the last one did"; the probes it asks are the 
 of in 7a. None of these four is probeable now — the set froze with the baseline — so **the reference
 build is the instrument**, and 7b-8 retires it. Anything of this kind still to be found is worth
 finding before the cutover rather than after.
+
+#### The machine renders in software, which bounds every speed claim here (B141)
+
+`systemd-detect-virt` reports **microsoft**: this is a Hyper-V guest, and while `/dev/dri/card1`
+exists, Mesa cannot pick a device — `libEGL warning: failed to get driver name for fd -1` and
+`MESA: error: ZINK: failed to choose pdev`, on every start. WebKit falls back to **software
+rendering**.
+
+7b-0 saw the same warnings and called them harmless, which was right about *correctness* — Cytoscape
+draws on a 2D canvas and every probe passes — and is not right about *smoothness*. The distinction was
+not drawn until a scrolling complaint needed explaining.
+
+It is not the DOM: measured in the engine, 120 forced scroll-and-reflow steps over a 42,000-node diff
+take **6 ms**, so the diff view's lack of virtualisation is not what makes it feel slow. What is left
+is paint and composite, which is precisely what software rendering makes expensive.
+
+**So "slower than Windows" measured from here is an upper bound on the problem, not a measurement of
+it.** Everything else in 7b-6 is a correctness result and unaffected; this bounds only the performance
+judgements, and anything still looking slow after B139 wants a bare-metal Linux machine before it is
+believed.
 
 #### What Linux still does not cover
 
