@@ -1212,9 +1212,16 @@ developer machine.
   Start Menu shortcut carrying the icon (B132 was a shortcut Windows invented, aimed at a build with
   no icon); WebView2 detected via the `EdgeUpdate\Clients\{F3017226-…}` key, per-machine *and*
   per-user; and whether it removes an existing MAUI install.
-- **Debian specifics**: a `.desktop` file and hicolor icons; the app under `/opt/mlqt` with symlinks in
-  `/usr/bin`; a **stable path for the MCP server**, which agents register by path; `git`/`subversion`
-  as `Recommends` rather than `Depends` if a Git-only user should not be made to install Subversion.
+- **Debian specifics**: the app under `/opt/mlqt` with symlinks in `/usr/bin`; a **stable path for the
+  MCP server**, which agents register by path; `git`/`subversion` as `Recommends` rather than
+  `Depends` if a Git-only user should not be made to install Subversion.
+- **The `.desktop` file and hicolor icons are not polish — they are the only way MLQT has an icon on
+  Wayland at all (B134).** 7b-6 found that `SetIconFile` is a no-op there: Wayland has no protocol for
+  a client to hand the compositor a window icon, so the shell matches the application to an installed
+  desktop entry by its app id or shows nothing. The entry's `Icon=` key and an icon in
+  `/usr/share/icons/hicolor/*/apps/` are the mechanism, and the app id the window reports has to match
+  the entry's file name. That makes this the one packaging task with a *functional* consequence rather
+  than a cosmetic one.
 - **arm64?** `Photino.Native` ships `linux-arm64` and `win-arm64`. x64-only is a fine answer, but it
   should be an answer.
 - **Documentation**: a new installation page walking through both platforms, plus the pages that go
