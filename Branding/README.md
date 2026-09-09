@@ -44,3 +44,28 @@ rather have no icon than no window.
 `MLQT/` (the MAUI host) still carries the .NET template's icon, deliberately — it is retired in 7b-8
 and changing it means regenerating the MAUI resource set for a build that is about to go. `MLQT.McpTester`
 likewise keeps its own default; it is a manual diagnostic tool, not something shipped to users.
+
+## The taskbar button is still wrong, and what has been ruled out
+
+`MLQT.Photino.exe` shows the **generic application icon** on the taskbar while Explorer, Alt-Tab and
+the title bar are all correct. This is B132 and it is unresolved. Everything measurable is right — the
+window's `ICON_SMALL`/`ICON_BIG` are the DPI-scaled 20x20 and 40x40, and the executable embeds exactly
+one `RT_GROUP_ICON` at `#32512`, byte-identical to a probe that shows the icon correctly.
+
+Ruled out by experiment, each confirmed with a screenshot of the taskbar taken while the application
+ran — **do not spend time on these again**:
+
+| Suspected | Result |
+|-----------|--------|
+| The shell icon cache | A reboot changed nothing |
+| An explicit `AppUserModelID` | A probe shows the icon **with** the same id and without it |
+| Setting the icon after the window exists | No change |
+| `WS_EX_APPWINDOW` on the window | No change |
+| Recreating the taskbar button (`WS_EX_TOOLWINDOW` toggle) | No change |
+| An application manifest (`supportedOS`, per-monitor DPI) | No change |
+| A saturated UI thread not answering `WM_GETICON` | No change |
+
+What **does** work: a WinForms window with the same icon file, and a bare `PhotinoWindow` whose
+executable embeds the icon. So the difference is in the `MLQT.Photino` process rather than in the
+icon, the window style or the identity. The next experiment is a probe built on `PhotinoBlazorApp`
+instead of a bare `PhotinoWindow`.
