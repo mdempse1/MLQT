@@ -996,8 +996,10 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 var totalFiles = files.Count;
                 for (int i = 0; i < totalFiles; i++)
                 {
-                    // Normalize path separators for cross-platform compatibility
-                    var normalizedPath = files[i].Replace('\\', '/');
+                    // Git only accepts '/', and a caller may have handed us either. One rule, in
+                    // VcsRelativePath, because the same conversion is made in four places here and
+                    // the one that was written out by hand somewhere else is B137.
+                    var normalizedPath = VcsRelativePath.Canonical(files[i]);
                     Commands.Stage(repo, normalizedPath);
 
                     if (i % 100 == 0 || i == totalFiles - 1)
@@ -1232,8 +1234,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return null;
             }
 
-            // Normalize the file path (use forward slashes for git)
-            var normalizedPath = filePath.Replace('\\', '/');
+            var normalizedPath = VcsRelativePath.Canonical(filePath);
 
             // Find the file in the commit tree
             var treeEntry = commit[normalizedPath];
@@ -1338,7 +1339,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             using var repo = new Repository(repositoryPath);
-            var relPath = Path.GetRelativePath(repositoryPath, filePath).Replace('\\', '/');
+            var relPath = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, filePath));
 
             switch (choice)
             {
@@ -1380,7 +1381,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return (null, null);
 
             using var repo = new Repository(repositoryPath);
-            var relPath = Path.GetRelativePath(repositoryPath, filePath).Replace('\\', '/');
+            var relPath = VcsRelativePath.Canonical(Path.GetRelativePath(repositoryPath, filePath));
             var conflict = repo.Index.Conflicts[relPath];
             if (conflict == null)
                 return (null, null);

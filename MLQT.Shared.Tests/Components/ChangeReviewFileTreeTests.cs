@@ -144,7 +144,39 @@ public class ChangeReviewFileTreeTests
         var tree = Tree(File("Lib/Sub/Thing.mo"));
 
         var leaf = Node(tree[0]).Children.Single().Children.Single();
-        Assert.Equal(@"Lib\Sub\Thing.mo", leaf.FullPath);
+        Assert.Equal("Lib/Sub/Thing.mo", leaf.FullPath);
+    }
+
+    [Theory]
+    [InlineData("Lib/Sub/Thing.mo")]
+    [InlineData(@"Lib\Sub\Thing.mo")]
+    public void AFullPathCanReachTheFileOnDisk(string reportedByTheVcs)
+    {
+        // B137, and the assertion that was missing rather than wrong. EachFilesFullPathIsKept pinned
+        // the *shape* of FullPath without asking whether that shape is usable, and the shape it
+        // pinned was backslash-separated - which is a relative path on Windows and a single file name
+        // containing backslashes on Linux. ChangeReview.SelectFile hands FullPath to Path.Combine and
+        // File.Exists to read the working copy, so on Linux the commit dialog's diff showed the HEAD
+        // side and nothing at all for the modified file.
+        //
+        // Written against a real file rather than against a string, because a string assertion is
+        // what let this through: the only thing that settles it is whether the path opens.
+        var root = Directory.CreateTempSubdirectory(nameof(AFullPathCanReachTheFileOnDisk));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root.FullName, "Lib", "Sub"));
+            System.IO.File.WriteAllText(Path.Combine(root.FullName, "Lib", "Sub", "Thing.mo"), "model M end M;");
+
+            var tree = Tree(File(reportedByTheVcs));
+            var leaf = Node(tree[0]).Children.Single().Children.Single();
+
+            Assert.True(System.IO.File.Exists(Path.Combine(root.FullName, leaf.FullPath)),
+                $"FullPath '{leaf.FullPath}' does not reach the file it names");
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]

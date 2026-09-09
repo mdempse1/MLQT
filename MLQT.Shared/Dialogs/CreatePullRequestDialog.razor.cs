@@ -64,9 +64,11 @@ public partial class CreatePullRequestDialog
                 return;
             }
 
-            // Open in the default browser
-            System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            if (!MLQT.Services.ExternalBrowser.Open(url))
+            {
+                _errorMessage = $"Could not open a browser. The pull request page is at {url}";
+                return;
+            }
 
             Snackbar.Add("Pull request page opened in browser.", Severity.Success);
             MudDialog?.Close(DialogResult.Ok(true));

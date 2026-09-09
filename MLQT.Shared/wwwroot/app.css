@@ -54,3 +54,49 @@ h1:focus {
 .impact-row-selected td {
     background-color: rgba(25, 118, 210, 0.15) !important;
 }
+
+/* Scrollbars.
+
+   Nothing styled these, so each engine drew its own default - and the two do not resemble each
+   other. WebView2 draws Chromium's slim overlay bar; WebKitGTK draws a wider GTK-style one that
+   takes layout width and sits hard against the content, which on the library browser left the
+   "more actions" and revert buttons crowded against it and awkward to click. Reported by comparing
+   the Linux build with the Windows one (phase 7b-6, B140).
+
+   Both mechanisms are declared on purpose. `scrollbar-width` / `scrollbar-color` are the standard
+   properties; `::-webkit-scrollbar` is the older WebKit one that Chromium also implements. Which of
+   the two a given engine honours is not something to guess at from here, and declaring both costs
+   nothing: whichever it reads, it gets the same slim, neutral bar.
+
+   The thumb's transparent border with `background-clip: content-box` is what keeps it off the
+   content. That is the part that answers the complaint - a thumb inset from the track edge leaves
+   the last few pixels of the container clickable. */
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(128, 128, 128, 0.45);
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(128, 128, 128, 0.7);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}

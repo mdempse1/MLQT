@@ -73,9 +73,8 @@ public partial class ChangeReview
             await Task.Run(() =>
             {
                 loadedFiles = RepositoryService.GetWorkingCopyChanges(RepositoryId);
-                // Normalize to backslash so paths match the tree node FullPath values,
-                // regardless of whether the VCS returned forward-slash (git) or backslash (SVN) paths.
-                selectedFiles = new HashSet<string>(loadedFiles.Select(f => f.Path.Replace('/', '\\')));
+                // Same canonical form as the tree node FullPath values - see VcsRelativePath.
+                selectedFiles = new HashSet<string>(loadedFiles.Select(f => VcsRelativePath.Canonical(f.Path)));
                 treeItems = BuildFileTree(loadedFiles);
             });
 
@@ -108,9 +107,17 @@ public partial class ChangeReview
     /// The changed files as a folder tree, folders before files and alphabetical within each level.
     /// </summary>
     /// <remarks>
-    /// The separator normalisation is the part that has to hold: Git reports paths with <c>/</c> and
-    /// SVN on Windows with <c>\</c>, and a tree that treats them differently shows one repository's
-    /// changes as a flat list of long names and the other's as a tree.
+    /// <para>The separator normalisation is the part that has to hold: Git reports paths with
+    /// <c>/</c> and SVN on Windows with <c>\</c>, and a tree that treats them differently shows one
+    /// repository's changes as a flat list of long names and the other's as a tree.</para>
+    ///
+    /// <para><b>It canonicalises on <c>/</c>, and which way round that goes is not cosmetic.</b> It
+    /// used to canonicalise on <c>\</c>, and <see cref="FileTreeNode.FullPath"/> is not only a tree
+    /// key — it is handed to <c>Path.Combine</c> to read the working copy. On Linux
+    /// <c>Lib\Thing.mo</c> is one file name containing backslashes, not a relative path, so
+    /// <c>File.Exists</c> answered false and the commit dialog showed **no modified content at all**
+    /// while the HEAD side still worked, because the git layer normalises for itself. See
+    /// <see cref="VcsRelativePath"/>.</para>
     /// </remarks>
     internal static List<TreeItemData<FileTreeNode>> BuildFileTree(List<VcsWorkingCopyFile> changedFiles)
     {
@@ -119,9 +126,8 @@ public partial class ChangeReview
 
         foreach (var file in changedFiles.OrderBy(f => f.Path))
         {
-            // Normalize separators: Git uses '/', SVN on Windows uses '\'.
-            var normalizedPath = file.Path.Replace('/', '\\');
-            var parts = normalizedPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            var normalizedPath = VcsRelativePath.Canonical(file.Path);
+            var parts = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
             var currentPath = "";
             FileTreeNode? parent = null;
 
@@ -129,7 +135,7 @@ public partial class ChangeReview
             {
                 var part = parts[i];
                 var isFile = i == parts.Length - 1;
-                currentPath = string.IsNullOrEmpty(currentPath) ? part : $"{currentPath}\\{part}";
+                currentPath = string.IsNullOrEmpty(currentPath) ? part : $"{currentPath}/{part}";
 
                 if (!nodeMap.TryGetValue(currentPath, out var node))
                 {
@@ -348,7 +354,7 @@ public partial class ChangeReview
 
     private async Task SelectAllFiles()
     {
-        _selectedFiles = new HashSet<string>(ChangedFiles.Select(f => f.Path.Replace('/', '\\')));
+        _selectedFiles = new HashSet<string>(ChangedFiles.Select(f => VcsRelativePath.Canonical(f.Path)));
         SelectedFilesCount = _selectedFiles.Count;
         await SelectedFilesCountChanged.InvokeAsync(SelectedFilesCount);
     }

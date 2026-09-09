@@ -78,15 +78,14 @@ public partial class MainLayout : IDisposable
         return "dev";
     }
 
-    private async Task OpenGitHub()
-    {
-        await JSRuntime.InvokeVoidAsync("open", "https://github.com/mdempse1/MLQT", "_blank");
-    }
+    // Not window.open through JS interop, which is what these did: WebView2 turns that into a
+    // browser launch and WebKitGTK does nothing with it whatsoever, so both buttons were dead on
+    // Linux and said nothing about it. See ExternalBrowser (B138).
+    private void OpenGitHub() =>
+        ExternalBrowser.Open("https://github.com/mdempse1/MLQT");
 
-    private async Task OpenDocumentation()
-    {
-        await JSRuntime.InvokeVoidAsync("open", "https://github.com/mdempse1/MLQT/blob/main/Documentation/getting-started.md", "_blank");
-    }
+    private void OpenDocumentation() =>
+        ExternalBrowser.Open("https://github.com/mdempse1/MLQT/blob/main/Documentation/getting-started.md");
 
     protected override async Task OnInitializedAsync()
     {

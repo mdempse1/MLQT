@@ -1004,6 +1004,48 @@ job by necessity as well as by 7a's recommendation, and `ubuntu-latest` (24.04) 
 Recorded as **B135**, because the same override is what any developer on 26.04 needs to run the
 journeys at all — including through `run-all-tests.ps1`.
 
+#### What a second pass with a Windows build beside it found
+
+The checklist above was run against the Linux build on its own. **Running it again with the Windows
+Photino build open beside it found four more things**, none of which the first pass could have seen,
+and that is the finding about method: *"does this look right?"* and *"does this match that?"* are
+different questions, and only the second one has an answer.
+
+Two are product defects on Linux rather than host differences — the same build is correct on Windows:
+
+- **B137 — the commit dialog's diff showed no modified file at all.** `ChangeReview` canonicalised VCS
+  paths on `\` and then used the result as a filesystem path, which on Linux is one file name
+  containing backslashes. Only the working-copy half failed; the HEAD half still worked because the
+  git layer normalises for itself, so it read as "the file is missing" rather than "the diff is
+  broken". `VcsRelativePath` is now the one rule, on `/`, and the git layer's four hand-written copies
+  of it call it. **The test that existed pinned the defect** — it asserted the *shape* of the path and
+  never whether that shape opens the file it names.
+- **B138 — the About dialog's links did nothing.** `window.open` through JS interop: a browser launch
+  on WebView2, silently nothing on WebKitGTK. **7a predicted this exact failure and asked for a probe
+  to catch it**, and the probe half is no longer available, because the probe set froze when the MAUI
+  baseline was captured. `ExternalBrowser` is now the single shell-open, used by the About dialog and
+  the pull-request dialog, which had had the working mechanism to itself all along.
+
+Two are engine differences that the shared code had simply never had an opinion about:
+
+- **B139 — the side-by-side diff scrolled at a crawl.** The pane-sync guard was written as
+  `syncing = true; …; syncing = false` around the assignment, which suppresses nothing, because scroll
+  events are dispatched asynchronously. Harmless on WebView2; on WebKitGTK, where the wheel scrolls
+  smoothly over several frames, every echoed write **cancelled the animation** the user had just
+  started. Settled by simulation rather than argument: **6 writes to the scrolling pane per wheel
+  tick before, 1 after**.
+- **B140 — nothing styled the scrollbars**, so each engine drew its own, and WebKitGTK's sits hard
+  against the content and crowds the controls beside it. Both the standard properties and the
+  `-webkit-` pseudo-elements are now declared, because which one an engine honours is not something
+  to guess at from here.
+
+**What this says about the checklist.** It found one thing on its own and four more when a reference
+build was open beside it, and the four are the ones a user would have hit first. A conformance run
+answers "does this host answer as the last one did"; the probes it asks are the ones somebody thought
+of in 7a. None of these four is probeable now — the set froze with the baseline — so **the reference
+build is the instrument**, and 7b-8 retires it. Anything of this kind still to be found is worth
+finding before the cutover rather than after.
+
 #### What Linux still does not cover
 
 - **Multi-monitor and DPI.** The development machine has one 1600x900 display at scale 1, so the
@@ -1114,7 +1156,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
-| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found only the Wayland icon question (B134, which packaging owns) | L |
+| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
 | **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134 — the only thing that gives MLQT an icon on Wayland at all) | M — **next** |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
