@@ -984,15 +984,42 @@ the icon off the window instead.
 platform's committed capture**, and runs `DesktopHostConformanceTests` against the same MAUI baseline.
 That last step is the point: the committed captures are records that go stale silently, and this makes
 the record a live check on every push without needing a second code path for CI to read from. The
-Linux leg installs `libwebkit2gtk-4.1-0` and `xvfb`; Windows needs neither, since WebView2's evergreen
-runtime is preinstalled on the runner. 7b-8 makes this the standing parity gate that replaces the
-baseline diff.
+Linux leg installs `libwebkit2gtk-4.1-0`, `libnotify4` and `xvfb`; Windows needs none of it, since
+WebView2's evergreen runtime is preinstalled. 7b-8 makes this the standing parity gate that replaces
+the baseline diff.
+
+**✅ Green on both platforms (2026-09-09), and it took three runs to get there — every one of which
+found something.** Neither leg could be rehearsed before it ran, and both were wrong:
+
+- **Linux failed outright**: `libnotify.so.4: cannot open shared object file`, then
+  `Aborted (core dumped)`, exit 134. `Photino.Native.so` lists it among its `NEEDED` entries and
+  **`libwebkit2gtk-4.1-0` does not depend on it**, so a runner with webkit still cannot load Photino.
+  Every other library it needs arrives as a webkit dependency, which is why this was the only one
+  missed. The install list is now taken from `objdump -p` rather than from what seemed necessary.
+- **Windows was passing, and should not have been.** The step invoked the host directly, and
+  `MLQT.Photino` is a `WinExe` — so the shell does not block on it. The step returned while the host
+  was still starting; the log shows WebView2 shutting down five seconds after it had finished. It
+  passed because the comparison step that follows takes long enough to build that the report had
+  appeared by the time it was read. **Green by timing** — and had it ever been quicker, the comparison
+  would have run against the committed record from another machine on another day and passed, which is
+  exactly what this job exists to prevent.
+
+The second of those was found only because the step had been changed to delete the capture first and
+fail if nothing replaced it — a guard added on the argument that a clean exit writing no output would
+pass silently. It was not hypothetical; it was what Windows had been doing. **B142.**
 
 **The nightly WebKit journey run.** `TestHostFixture` now picks its browser from
 `MLQT_JOURNEY_BROWSER` (chromium by default, so the PR gate is unchanged), and
 `nightly-webkit.yml` runs the whole journey suite under Playwright's WebKit at 02:00 UTC. An
 unrecognised value throws rather than falling back, because a typo that silently reverts to Chromium
 produces a green run that tested nothing — which is the failure this job exists to avoid.
+
+**⚠️ It has never run, and cannot until this branch merges.** `workflow_dispatch` resolves the
+workflow on the **default branch**, so `gh workflow run nightly-webkit.yml` answers
+*"not found on the default branch"* and the Actions UI offers no Run button either. There is no way to
+exercise it from here — not from the CLI, not from the browser, and not on the development machine
+(see below). **It is the one 7b-6 deliverable that ships unproven**, and the first thing to check after
+the merge rather than at 02:00 the following morning.
 
 **It does not run on the development machine, and the reason is worth recording** rather than being
 rediscovered: **Playwright 1.56 ships no browser build for Ubuntu 26.04 at all.** `install` refuses
@@ -1287,7 +1314,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-3** | ✅ **shipped 2026-09-08** — the Photino host reads MAUI's `preferences.dat` directly and copies every key it finds, so no MAUI release is needed; Linux sleep prevention via `systemd-inhibit` | M |
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
-| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI; the nightly WebKit journeys ship as their own workflow; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
+| **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI and is **green on both**, after three runs that found a missing shared library on Linux and a Windows leg that had been passing on timing; the nightly WebKit journeys ship as their own workflow, unproven until the merge; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
 | **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134 — the only thing that gives MLQT an icon on Wayland at all) | M — **next** |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
