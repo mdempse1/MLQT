@@ -95,8 +95,8 @@ body * {
 }
 
 ::-webkit-scrollbar {
-    width: 12px !important;
-    height: 12px !important;
+    width: 4px !important;
+    height: 4px !important;
 }
 
 ::-webkit-scrollbar-track {
