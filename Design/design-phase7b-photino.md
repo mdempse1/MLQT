@@ -1051,20 +1051,30 @@ useless was the same move: *hedging instead of measuring*.
   five cancellations before, and the full distance with none after**. That model is committed as
   `build/diff-scroll-simulation.js`, because the lesson generalises: **a simulation that cannot
   reproduce the defect will certify a fix that does nothing**, and this one did.
-- The scrollbar fix declared the standard `scrollbar-width`/`scrollbar-color` *and* the `-webkit-`
-  pseudo-elements, "because which one an engine honours is not something to guess at from here". That
-  hedge is what disabled it: **setting either standard property makes WebKit ignore the `-webkit-`
-  pseudo-elements**, and WebKitGTK's implementation of the standard ones is the overlay bar. Measured
-  in `libwebkit2gtk-4.1` directly, through the GObject bindings, as the gutter a scrollable div
-  reserves — `::-webkit-scrollbar { width: 14px }` gives **14**, the same plus `scrollbar-width: thin`
-  gives **0**. Fixed by styling only the pseudo-elements; verified at **12px reserved** against the
-  real `app.css` in the real engine.
+- The scrollbar fix took **three** attempts, and the third is where the lesson is. The first got the
+  diagnosis wrong — it is not that WebKitGTK's bars are wider, it is that they are *overlays* that take
+  no layout width. The second declared the standard `scrollbar-width`/`scrollbar-color` *and* the
+  `-webkit-` pseudo-elements "because which one an engine honours is not something to guess at", and
+  that hedge disabled it: **setting either standard property makes WebKit ignore the `-webkit-`
+  pseudo-elements**. Measured as the gutter a scrollable div reserves — `::-webkit-scrollbar
+  { width: 14px }` gives **14**, the same plus `scrollbar-width: thin` gives **0**.
+
+  The third attempt started from the right place: **the running application, not a test page.** The
+  corrected CSS reserved 12px in an isolated document and **0** in MLQT. Enumerating
+  `document.styleSheets` in the live page found why — something in the MudBlazor stack **injects a
+  `<style>` at runtime** carrying `html, body * { scrollbar-color: …; scrollbar-width: thin; }`, the
+  identical hedge, applied to every element, after our stylesheet. It is built in code from theme
+  values, so it is in no shipped asset and grepping the packages finds nothing. Overridden with
+  `!important`; verified in the running application at **12px reserved where it had been 0**.
 
 **The engine can be measured from this repository, and that is the tooling lesson.** `libwebkit2gtk-4.1`
-is the same library Photino loads and its GObject bindings are installed, so an offscreen `WebKit2.WebView`
-answers questions about scrollbars, CSS support and layout cost in seconds — without a Photino host,
-without a display, and without the screenshots GNOME refuses. Every wrong answer above came from
-reading a screenshot or reasoning about an engine; every right one came from asking it.
+is the same library Photino loads and its GObject bindings are installed, so an offscreen
+`WebKit2.WebView` answers questions about scrollbars, CSS support and layout cost in seconds — without
+a Photino host, without a display, and without the screenshots GNOME refuses. **And it can be pointed
+at `MLQT.TestHost`**, which serves the real application over HTTP, so the question can be asked of the
+real page rather than a reduction of it. That last step is what finally settled the scrollbars, after
+two fixes that were correct about the engine and wrong about MLQT: an isolated repro answers a
+question you have already decided is the right one.
 
 **What this says about the checklist.** It found one thing on its own and four more when a reference
 build was open beside it, and the four are the ones a user would have hit first. A conformance run

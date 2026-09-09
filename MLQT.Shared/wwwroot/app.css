@@ -57,34 +57,46 @@ h1:focus {
 
 /* Scrollbars.
 
-   Nothing styled these, so each engine drew its own default and the two do not resemble each other.
-   The difference that matters is not width, it is that **WebKitGTK uses overlay scrollbars**: they
-   take no layout width and float on top of the content, so in the library browser the bar sat over
-   the "more actions" and revert buttons and swallowed clicks meant for them. WebView2's are classic
-   and occupy layout, so content is never underneath one. Reported against the Linux build with a
-   screenshot (phase 7b-6, B140).
+   Nothing of ours styled these, so each engine drew its own - and the difference that matters is not
+   width, it is that **WebKitGTK uses overlay scrollbars**: they take no layout width and float on top
+   of the content, so in the library browser the bar sat over the "more actions" and revert buttons and
+   swallowed clicks meant for them. WebView2's are classic and occupy layout, so nothing is ever
+   underneath one. Reported against the Linux build with a screenshot (phase 7b-6, B140).
 
-   Styling ::-webkit-scrollbar is what fixes it, and not because of the width it sets: giving the
-   pseudo-element any rule at all makes WebKit render a classic, layout-occupying scrollbar instead
-   of an overlay one, and the content is then laid out beside it rather than under it.
+   Giving ::-webkit-scrollbar any rule at all is what fixes that: WebKit then renders a classic,
+   layout-occupying scrollbar and lays the content out beside it. The width below is almost beside the
+   point.
 
-   DO NOT ALSO SET scrollbar-width OR scrollbar-color. That was the first attempt at this - declared
-   alongside these rules as a hedge, on the reasoning that whichever mechanism the engine honours it
-   would get the same result - and the hedge is what broke it. **Setting either standard property
-   makes WebKit ignore the -webkit- pseudo-elements entirely**, and WebKitGTK's own implementation of
-   them is the overlay bar we are trying to get away from. Measured in WebKitGTK 2.52 directly, on a
-   scrollable div, as the reserved gutter width:
+   THE !important IS LOAD-BEARING, and this is the part that took two failed attempts to find.
+   Something in the MudBlazor stack injects a <style> at runtime containing:
 
-       ::-webkit-scrollbar { width: 14px }                          ->  14
-       ...the same, plus scrollbar-width: thin                      ->   0
-       ...the same, plus scrollbar-color                            ->   0
-       nothing at all                                               ->   0
+       html, body * { scrollbar-color: rgb(196,196,196) transparent; scrollbar-width: thin; }
 
-   Chromium applies the same precedence rule, so one mechanism covers both hosts. */
+   and **setting either standard property makes WebKit ignore every -webkit- scrollbar rule in the
+   document**, falling back to the overlay bar. That injected sheet comes after this file, so without
+   !important it wins and nothing here has any effect. It is assembled in code from theme values - the
+   literal appears in no shipped static asset - so grepping the packages for it finds nothing.
+
+   The same precedence is why this file must NOT declare scrollbar-width or scrollbar-color itself.
+   The first attempt at this declared both "as a hedge, whichever the engine honours", which disabled
+   its own -webkit- rules. Measured in WebKitGTK 2.52 as the gutter a scrollable div reserves:
+
+       ::-webkit-scrollbar { width: 14px }                     ->  14
+       ...plus scrollbar-width: thin, anywhere above it        ->   0
+       ...plus scrollbar-color, anywhere above it              ->   0
+       nothing at all                                          ->   0
+
+   Chromium applies the same precedence, so one mechanism covers both hosts. */
+
+html,
+body * {
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+}
 
 ::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 12px !important;
+    height: 12px !important;
 }
 
 ::-webkit-scrollbar-track {
