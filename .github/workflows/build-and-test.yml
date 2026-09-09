@@ -363,7 +363,19 @@ jobs:
           MLQT_SELFTEST_OUT: ${{ github.workspace }}\MLQT.Shared.Tests\TestFiles\${{ matrix.capture }}
         run: |
           Remove-Item -Force -ErrorAction SilentlyContinue $env:MLQT_SELFTEST_OUT
-          .\publish\photino\MLQT.Photino.exe
+
+          # Start-Process -PassThru and wait, rather than invoking it directly. MLQT.Photino is a
+          # WinExe, so the shell does NOT block on it: invoked directly, the step returned while the
+          # host was still starting. That is how this leg used to pass - the comparison step that
+          # follows took long enough to build that the report had appeared by the time it read it.
+          # Green by timing, against a file nothing had checked was current.
+          $p = Start-Process -FilePath .\publish\photino\MLQT.Photino.exe -PassThru
+          if (-not $p.WaitForExit(300000)) {
+            $p.Kill()
+            Write-Host "::error::the host did not exit within five minutes"
+            Get-Content $env:LocalAppData\MLQT\*.log -ErrorAction SilentlyContinue
+            exit 1
+          }
           if (-not (Test-Path $env:MLQT_SELFTEST_OUT)) {
             Write-Host "::error::the host exited but wrote no report to $env:MLQT_SELFTEST_OUT"
             Get-Content $env:LocalAppData\MLQT\*.log -ErrorAction SilentlyContinue
