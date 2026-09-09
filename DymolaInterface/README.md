@@ -55,6 +55,15 @@ var dymola = new DymolaInterface(
     portNumber: 8082,
     hostname: "127.0.0.1"
 );
+
+// Optional: extra environment variables for the spawned Dymola process. Entries are
+// applied on top of the inherited environment and override it; they have no effect
+// when connecting to a Dymola that is already running.
+dymola.SpawnEnvironmentVariables = new Dictionary<string, string>
+{
+    ["SALT_LICENSE_SERVER"] = "27000@licenses.example.com"
+};
+
 await dymola.StartDymolaProcessAsync();
 
 try
