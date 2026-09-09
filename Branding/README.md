@@ -19,15 +19,17 @@ while the other two are right:
 | Where | Comes from |
 |-------|-----------|
 | Explorer, and the Alt-Tab list | The icon resource compiled into the `.exe` by `ApplicationIcon`. |
-| The window's title bar | `WM_SETICON` `ICON_SMALL` — what Photino's `SetIconFile` attaches (16x16). |
-| The taskbar button | `WM_SETICON` `ICON_BIG` (32x32), **under the process's Application User Model ID.** |
+| The window's title bar | `WM_SETICON` `ICON_SMALL`. |
+| The taskbar button | `WM_SETICON` `ICON_BIG`, **under the process's Application User Model ID**, taken when the button appears. |
 
 The taskbar being the odd one out is the interesting case: a button is grouped by AUMID, and an
 application that declares none is given whatever the shell derives from the process — `dotnet.exe` for
 anything started with `dotnet run`, or a stale entry for a path it has cached against. The button then
 stops following the window. `Program.ClaimTaskbarIdentity` declares `MLQTProject.MLQT` before the first
 window is created, which is the documented fix and is also what lets a pinned shortcut survive the
-executable moving.
+executable moving. `WindowIcon.Apply` then re-attaches the icon once the window exists — a button
+keeps whatever it had when it appeared — at the size the display wants rather than the size at 100%:
+at 125% the taskbar wants 40x40, and Photino attaches 32x32 for it to stretch.
 
 ## Why the icon is set twice
 

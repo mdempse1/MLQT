@@ -81,9 +81,20 @@ internal static class Program
         app.MainWindow.LogVerbosity =
             int.TryParse(Environment.GetEnvironmentVariable("MLQT_PHOTINO_LOG"), out var verbosity) ? verbosity : 0;
 
+        var icon = ApplicationIcon();
+
         app.MainWindow
            .SetTitle("MLQT")
-           .SetIconFile(ApplicationIcon());
+           .SetIconFile(icon);
+
+        // Again, once the window exists. Photino attaches the icon during creation, which leaves the
+        // taskbar button showing whatever it had when it appeared, and attaches the 100% size, which
+        // a scaled display then stretches. See WindowIcon.
+        app.MainWindow.RegisterWindowCreatedHandler((_, _) =>
+        {
+            if (OperatingSystem.IsWindows())
+                WindowIcon.Apply(icon);
+        });
 
         WindowPlacement.Apply(app.Services.GetRequiredService<ISettingsService>(), app.MainWindow);
 

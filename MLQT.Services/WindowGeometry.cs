@@ -28,6 +28,22 @@ public static class WindowGeometry
     public const int PreferredWidth = 1200;
     public const int PreferredHeight = 900;
 
+    /// <summary>The size an icon should be loaded at for a display of this DPI.</summary>
+    /// <param name="dpi">Dots per inch: 96 at 100%, 120 at 125%, 144 at 150%.</param>
+    /// <param name="baseSize">The size at 100% — 32 for a taskbar icon, 16 for a title bar one.</param>
+    /// <remarks>
+    /// <para>An icon handed to a window is a fixed number of pixels, and Windows scales it to
+    /// whatever the taskbar wants. Handing it the 100% size on a scaled display means it is stretched:
+    /// at 125% the taskbar wants 40 and gets 32, which is the difference between a crisp icon and a
+    /// soft one. A multi-size <c>.ico</c> has a 48 to scale <i>down</i> from instead, which is the
+    /// direction that looks right.</para>
+    ///
+    /// <para>Integer arithmetic on purpose: the standard scalings all divide exactly (120 → 40,
+    /// 144 → 48, 192 → 64), so there is no rounding to argue about.</para>
+    /// </remarks>
+    public static int IconSize(int dpi, int baseSize) =>
+        dpi <= 0 ? baseSize : baseSize * dpi / 96;
+
     /// <summary>
     /// The preferred window, scaled to the display and centred in the space available to it.
     /// </summary>

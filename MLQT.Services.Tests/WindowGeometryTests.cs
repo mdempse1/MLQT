@@ -118,6 +118,29 @@ public class WindowGeometryTests
         Assert.Equal(0, bounds.Top);
     }
 
+    // ---- icon sizes ----------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(96, 32, 32)]     // 100%
+    [InlineData(120, 32, 40)]    // 125% - the taskbar wants 40, and was being handed 32 to stretch
+    [InlineData(144, 32, 48)]    // 150%
+    [InlineData(192, 32, 64)]    // 200%
+    [InlineData(120, 16, 20)]    // the title bar's icon scales the same way
+    public void AnIconIsLoadedAtTheSizeTheDisplayWants(int dpi, int baseSize, int expected)
+    {
+        Assert.Equal(expected, WindowGeometry.IconSize(dpi, baseSize));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-96)]
+    public void AnUnreadableDpiFallsBackToTheUnscaledSize(int dpi)
+    {
+        // Zero is what an uninitialised window reports. Multiplying by it asks for a zero-pixel icon,
+        // which loads nothing at all and leaves the window with no icon - worse than an unscaled one.
+        Assert.Equal(32, WindowGeometry.IconSize(dpi, 32));
+    }
+
     // ---- a display that reports nonsense -------------------------------------------------------
 
     [Theory]
