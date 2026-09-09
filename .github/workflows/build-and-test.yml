@@ -301,14 +301,20 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      # Photino links libwebkit2gtk-4.1 (not 4.0 - checked with objdump against the shipped
-      # Photino.Native.so, and re-checked in 7b-6), and there is no display on a runner. Windows needs
-      # neither: WebView2's evergreen runtime is preinstalled.
+      # Every shared library Photino.Native.so lists as NEEDED that a runner does not already have,
+      # plus a virtual display. Taken from `objdump -p` on the shipped binary rather than guessed.
+      #
+      # libnotify4 is the one that is easy to miss and is why this job failed on its first run: it
+      # provides libnotify.so.4, which Photino.Native links, and **libwebkit2gtk-4.1-0 does not depend
+      # on it** - so a machine that has webkit still cannot load Photino. Everything else it needs
+      # (gtk-3, glib, javascriptcoregtk) arrives as a dependency of webkit.
+      #
+      # Windows needs none of this: WebView2's evergreen runtime is preinstalled on the runner.
       - name: Install WebKitGTK and a virtual display (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 xvfb
 
       # publish, not build: Photino serves wwwroot through a bare PhysicalFileProvider and a plain
       # build leaves no _content at all. The host now falls back to the static web assets manifest so
@@ -318,6 +324,15 @@ jobs:
 
       # The host renders the probe route, writes the report and exits. A window that never gets that
       # far would otherwise hold the job open for six hours, hence the timeout.
+      #
+      # The committed capture is DELETED first, and the step fails if nothing replaced it. Without
+      # that, a host that exits cleanly having written nothing leaves the committed file in place and
+      # the comparison below passes against a record from another day - green, and proving nothing
+      # about this runner, which is the one failure this job exists to prevent.
+      #
+      # On failure it says why rather than leaving an exit code: the loader error and the application
+      # log are the two things that identify a missing shared library or a host that started and never
+      # rendered, and neither is visible in "process exited 134".
       - name: Capture the self-test report (Linux)
         if: runner.os == 'Linux'
         timeout-minutes: 5
@@ -325,7 +340,19 @@ jobs:
           MLQT_SELFTEST: '1'
           MLQT_SELFTEST_HOST: MLQT.Photino
           MLQT_SELFTEST_OUT: ${{ github.workspace }}/MLQT.Shared.Tests/TestFiles/${{ matrix.capture }}
-        run: xvfb-run -a ./publish/photino/MLQT.Photino
+        run: |
+          rm -f "$MLQT_SELFTEST_OUT"
+          if ! xvfb-run -a ./publish/photino/MLQT.Photino; then
+            echo "::error::the Photino host exited non-zero; diagnostics follow"
+            ldd publish/photino/runtimes/linux-x64/native/Photino.Native.so || true
+            cat ~/.local/share/MLQT/*.log 2>/dev/null || echo "(no application log was written)"
+            exit 1
+          fi
+          if [ ! -s "$MLQT_SELFTEST_OUT" ]; then
+            echo "::error::the host exited cleanly but wrote no report to $MLQT_SELFTEST_OUT"
+            cat ~/.local/share/MLQT/*.log 2>/dev/null || echo "(no application log was written)"
+            exit 1
+          fi
 
       - name: Capture the self-test report (Windows)
         if: runner.os == 'Windows'
@@ -334,7 +361,15 @@ jobs:
           MLQT_SELFTEST: '1'
           MLQT_SELFTEST_HOST: MLQT.Photino
           MLQT_SELFTEST_OUT: ${{ github.workspace }}\MLQT.Shared.Tests\TestFiles\${{ matrix.capture }}
-        run: .\publish\photino\MLQT.Photino.exe
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue $env:MLQT_SELFTEST_OUT
+          .\publish\photino\MLQT.Photino.exe
+          if (-not (Test-Path $env:MLQT_SELFTEST_OUT)) {
+            Write-Host "::error::the host exited but wrote no report to $env:MLQT_SELFTEST_OUT"
+            Get-Content $env:LocalAppData\MLQT\*.log -ErrorAction SilentlyContinue
+            exit 1
+          }
+        shell: pwsh
 
       # The shipped comparator, against the committed MAUI baseline - the same three assertions the
       # committed records are held to, now applied to a report captured minutes ago. These tests read
