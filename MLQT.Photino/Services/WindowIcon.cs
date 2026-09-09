@@ -9,27 +9,20 @@ namespace MLQT.Photino.Services;
 /// Puts the application icon on the window itself, after Windows has made the taskbar button.
 /// </summary>
 /// <remarks>
-/// <para><b>Three places show an application's icon and each reads from somewhere different</b>, which
-/// is how two of them can be right while the third is not. Explorer and Alt-Tab read the resource
-/// compiled into the executable; the title bar reads the window's <c>ICON_SMALL</c>; the taskbar reads
-/// <c>ICON_BIG</c>, under the identity the shell has for the process.</para>
+/// <para>Photino attaches the icon from the <c>.ico</c> while the window is being created, and it
+/// attaches the <b>100% size</b>: 32x32 for <c>ICON_BIG</c> and 16x16 for <c>ICON_SMALL</c>. On a
+/// scaled display Windows then stretches them — at 125% the shell wants 40 and 20 — so this re-attaches
+/// them at the size the display actually asks for, which the multi-size <c>.ico</c> can come <i>down</i>
+/// to from its 48 rather than up from its 32.</para>
 ///
-/// <para>Photino's <c>SetIconFile</c> attaches both from the <c>.ico</c> — measured at 16x16 and
-/// 32x32, both correct — and the taskbar still showed the generic executable icon. Two things about
-/// that are worth fixing whatever the cause, and this does both:</para>
-///
-/// <list type="number">
-/// <item><b>Timing.</b> Photino attaches the icon while the window is being created. A taskbar button
-/// takes its icon when it appears, and a button that appeared first keeps what it had. Setting the
-/// icon again once the window exists is the ordinary way to make the shell pick it up.</item>
-/// <item><b>Size.</b> The 32x32 is the icon at 100%. At 125% the taskbar wants 40 and stretches it;
-/// the <c>.ico</c> has a 48 to come down from instead, which is the direction that looks right.
-/// <see cref="WindowGeometry.IconSize"/> works out which to ask for.</item>
-/// </list>
+/// <para><b>This is not what fixed the taskbar button</b>, and the file says so because it was written
+/// while trying to. That turned out to be a stale Start Menu shortcut pointing at a build from before
+/// the icon existed — see B132 and <c>Branding/README.md</c>. This stays because a crisp icon at high
+/// DPI is worth having on its own, not because it fixes anything.</para>
 ///
 /// <para>Windows only — GTK takes a PNG through <c>SetIconFile</c> and needs none of this — and every
 /// failure is logged and stepped over. An application that will not start because it could not decorate
-/// its taskbar button would be a much worse defect than the one this fixes.</para>
+/// its own title bar would be a much worse defect than a soft icon.</para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
 internal static class WindowIcon

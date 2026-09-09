@@ -680,12 +680,26 @@ The scaled size is applied from a `WindowCreated` handler instead. Verified end 
 profile: `First run: opening 1500x1125 at 1810,127 (work area 5120x1380, scale 1.25)` — which is
 1200 x 900 units, exactly what MAUI asked for.
 
-**2. No taskbar icon.** `ApplicationIcon` in the project file puts the icon on the `.exe`, which
-Explorer and Alt-Tab use — but **Photino creates its own native window, and that window has no icon
-unless one is set on it**, so the taskbar entry stayed generic. `Program.ApplicationIcon` now sets it
-at runtime, per platform: Windows takes the multi-size `.ico`, GTK a PNG, and both ship beside the
-executable because `SetIconFile` takes a path rather than a resource. A missing file logs and is
-skipped — Photino would rather have no icon than no window.
+**2. No taskbar icon — and the fix was not in the code.** `ApplicationIcon` puts the icon on the
+`.exe`; `Program.ApplicationIcon` also sets it on the window at runtime, per platform, because Photino
+creates its own native window (Windows takes the multi-size `.ico`, GTK a PNG, both shipped beside the
+executable because `SetIconFile` takes a path rather than a resource). Explorer, Alt-Tab and the title
+bar were then correct — **and the taskbar was still generic, for every copy of the executable from
+every folder.**
+
+Six code-level hypotheses were tried and disproved. The answer was outside the process: a stale
+`MLQT.lnk` in the Start Menu, pointing at a publish holding a build from *before* the icon existed.
+Windows 11 resolves a running window to its matching Start Menu shortcut and takes the button's icon
+from **that**; the shortcut said "use the target's icon" and the target had none. Moving the shortcut
+aside and running the same build unchanged made the icon appear.
+
+**What actually broke the deadlock was looking rather than reasoning.** Every hypothesis until then
+was argued from what the window "should" do; the first screenshot of the running taskbar killed three
+of them in a minute, and UI Automation — which names the button, so its exact rectangle can be
+cropped — made the comparison reliable on a desktop with other windows on it. That technique and the
+full list of eliminated causes are in `Branding/README.md`, so the next person starts where this
+finished. **7b-7 owns creating the shortcut deliberately**, at the installed location: Windows
+recreates it aimed at whatever it last saw run, which for a developer is a temporary folder.
 
 The assets are in `Branding/` with a README covering what each one is for, and what deliberately was
 **not** updated: the MAUI host keeps the template icon (it is retired in 7b-8, and changing it means

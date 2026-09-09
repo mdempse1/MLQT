@@ -45,27 +45,59 @@ rather have no icon than no window.
 and changing it means regenerating the MAUI resource set for a build that is about to go. `MLQT.McpTester`
 likewise keeps its own default; it is a manual diagnostic tool, not something shipped to users.
 
-## The taskbar button is still wrong, and what has been ruled out
+## The taskbar button, and why it was not a code defect
 
-`MLQT.Photino.exe` shows the **generic application icon** on the taskbar while Explorer, Alt-Tab and
-the title bar are all correct. This is B132 and it is unresolved. Everything measurable is right — the
-window's `ICON_SMALL`/`ICON_BIG` are the DPI-scaled 20x20 and 40x40, and the executable embeds exactly
-one `RT_GROUP_ICON` at `#32512`, byte-identical to a probe that shows the icon correctly.
+`MLQT.Photino.exe` showed the **generic application icon** on the taskbar while Explorer, Alt-Tab and
+the title bar were all correct. Nothing in MLQT was wrong. **A stale Start Menu shortcut was.**
 
-Ruled out by experiment, each confirmed with a screenshot of the taskbar taken while the application
-ran — **do not spend time on these again**:
+`%AppData%\Microsoft\Windows\Start Menu\Programs\MLQT.lnk` pointed at a publish folder holding a
+build from **before the icon existed** — an executable with no icon resources at all. Windows 11
+resolves a running window to its matching Start Menu shortcut and takes the taskbar button's icon from
+**that**, and the shortcut said "use the target's icon". The target had none, so the button fell back
+to the placeholder — for every copy of `MLQT.Photino.exe`, from any folder.
 
-| Suspected | Result |
-|-----------|--------|
-| The shell icon cache | A reboot changed nothing |
-| An explicit `AppUserModelID` | A probe shows the icon **with** the same id and without it |
-| Setting the icon after the window exists | No change |
-| `WS_EX_APPWINDOW` on the window | No change |
-| Recreating the taskbar button (`WS_EX_TOOLWINDOW` toggle) | No change |
-| An application manifest (`supportedOS`, per-monitor DPI) | No change |
-| A saturated UI thread not answering `WM_GETICON` | No change |
+Confirmed by moving the shortcut aside and running the same build: the icon appeared. Fixed by
+publishing a current build over the folder the shortcut points at.
 
-What **does** work: a WinForms window with the same icon file, and a bare `PhotinoWindow` whose
-executable embeds the icon. So the difference is in the `MLQT.Photino` process rather than in the
-icon, the window style or the identity. The next experiment is a probe built on `PhotinoBlazorApp`
-instead of a bare `PhotinoWindow`.
+**If it happens again**, check the shortcut before touching any code:
+
+```powershell
+$sh = New-Object -ComObject WScript.Shell
+$sh.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\MLQT.lnk").TargetPath
+```
+
+Note that Windows **recreates** that shortcut, pointing at whatever it last saw run — so a build run
+once from a temporary folder leaves a shortcut aimed at a folder that will be deleted. 7b-7 should
+create it deliberately, at the installed location.
+
+### How to look at a taskbar button
+
+Eyeballing a screenshot of the whole taskbar is unreliable on a busy desktop. UI Automation names the
+button, so the exact rectangle can be cropped:
+
+```powershell
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$cond = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::Button)
+$root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond) |
+  Where-Object { $_.Current.Name -eq "MLQT - 1 running window" } |
+  ForEach-Object { $_.Current.BoundingRectangle }
+```
+
+That is what finally made the question answerable — every earlier conclusion came from squinting at a
+strip of pixels.
+
+### Ruled out along the way
+
+Each of these was tested against a live taskbar and changed nothing. **Do not spend time on them
+again**: the shell icon cache (a reboot), an explicit `AppUserModelID`, setting the icon after the
+window exists, `WS_EX_APPWINDOW`, recreating the button by toggling `WS_EX_TOOLWINDOW`, an application
+manifest with `supportedOS` and per-monitor DPI, a UI thread too busy to answer `WM_GETICON`, and
+renaming the executable. A WinForms window, a bare `PhotinoWindow` and a `PhotinoBlazorApp` probe all
+showed the icon correctly throughout — none of them had a shortcut pointing at an iconless build.
+
+The explicit `AppUserModelID` added during the hunt has been **removed**: it did nothing here, and an
+id that matches no shortcut is a documented way to confuse the resolver. 7b-7 should set it on the
+application and on the shortcut it creates, together, or not at all.
