@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=MLQT
+GenericName=Modelica Library Quality Tool
+Comment=Review, check and commit Modelica libraries under Git and SVN
+# The real binary, not the /usr/bin/mlqt-gui wrapper beside it. See below: the file name of this
+# entry, the Exec line and StartupWMClass are one mechanism, and changing any of them alone breaks it.
+Exec=/opt/mlqt/MLQT.Photino
+# A theme name, not a path. The package installs mlqt.png into /usr/share/icons/hicolor/<size>/apps,
+# which is what lets the shell pick the size it wants; an absolute path is right for a tarball and
+# wrong for a .deb.
+Icon=mlqt
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=Modelica;Dymola;OpenModelica;SVN;Git;
+StartupNotify=true
+# X11 only, where the same value arrives as WM_CLASS. On Wayland the match is made on app_id and the
+# file name of this entry, which is why it is MLQT.Photino.desktop and not mlqt.desktop.
+StartupWMClass=MLQT.Photino

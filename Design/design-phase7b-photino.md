@@ -1230,6 +1230,72 @@ decisions a compile cannot check — the stable `AppId`, the per-user default wi
 option, the shortcut naming its icon (B132), the version coming from the command line, the base runtime
 rather than the desktop one, and the two guards above — each verified by mutation.
 
+#### ✅ The Linux installer (2026-09-10)
+
+`build/package-deb.sh` plus its inputs in `build/packaging/linux/`: 155 MB of self-contained publish
+output into a **40 MB** `.deb`. Built and its contents run on Ubuntu 26.04 before being committed.
+
+**Shell, not PowerShell**, which is the one place this deviates from the repository's convention.
+`dpkg-deb` exists only on a Debian machine and pwsh is not installed on a plain Ubuntu desktop —
+including this project's Linux development box — so a `.ps1` here would be a packaging script that
+cannot be run on the machine that makes the package. The Windows counterpart is an Inno Setup script
+for the same reason. `publish-tools.ps1` still stages the tree; both installers only package it.
+
+| Decided | |
+|---|---|
+| `/opt/mlqt/` | The tree, whole — three applications sharing every assembly below `MLQT.Shared` |
+| `/usr/bin/mlqt`, `/usr/bin/mlqt-mcp-server` | Symlinks. The MCP one is the "stable path agents register by" the plan asked for |
+| `/usr/bin/mlqt-gui` | **A wrapper script, not a symlink.** See below |
+| `Depends` | `libwebkit2gtk-4.1-0, libjavascriptcoregtk-4.1-0, libgtk-3-0, libglib2.0-0, libnotify4, libstdc++6, libgcc-s1, libc6` — the direct `DT_NEEDED` set of `Photino.Native.so`, read off the binary |
+| `Recommends` | `git, subversion` — a Git-only user is not made to install Subversion, and neither client is bundled on Linux |
+| Runtime | Bundled, as planned. Nothing in `Depends` mentions .NET |
+
+**Three things the work found that reading would not have.**
+
+*`/usr/bin/mlqt-gui` cannot be a symlink, and that is a functional finding rather than a stylistic
+one.* `app_id` is GTK's `g_get_prgname()`, the base name of `argv[0]` — so a symlink called
+`mlqt-gui` makes the window report `app_id "mlqt-gui"`, which matches no installed entry, and MLQT
+is unbranded again in exactly the way B134 describes. Measured both ways with `WAYLAND_DEBUG=1`:
+
+```
+through a symlink named mlqt-gui:   -> xdg_toplevel#43.set_app_id("mlqt-gui")
+through `exec -a MLQT.Photino`:     -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+```
+
+So the launcher is a two-line wrapper that overrides `argv[0]`, which is safe because .NET's apphost
+resolves its base directory from `/proc/self/exe` — all 16 probes pass when launched that way. And
+`exec -a` is a **bashism**: `/bin/sh` on Debian and Ubuntu is dash, which answers `exec: -a: not
+found`, so the shebang is load-bearing too.
+
+*The dependency nothing else pulls in is `libnotify4`.* `libwebkit2gtk-4.1-0` does not depend on it,
+`Photino.Native` links it directly, and every desktop has it for unrelated reasons — the same trap
+that failed `desktop-selftest` on its first Linux run. Declared, and the test that says so parses
+the `depends=` line rather than searching the file: the first version of it passed with `libnotify4`
+deleted, because the paragraph explaining why libnotify4 matters still contained the word. Precisely
+the failure `WindowsInstallerTests` had already been caught by once.
+
+*A symlink in an extracted package is not a symlink you can run.* The smoke test launched the MCP
+server through `/usr/bin/mlqt-mcp-server`, which is absolute, so in an extracted tree it points at a
+`/opt/mlqt` that does not exist yet — "No such file or directory", indistinguishable from a broken
+binary. It runs through an equivalent symlink instead, which still proves the thing that mattered:
+that .NET resolves its assemblies from the real path. (And the MCP handshake needs its stdin held
+open — a pipe that closes with the request ends the session before the answer, and the server exits
+0 having written nothing, which reads exactly like a server that cannot start.)
+
+**What the package is checked against.** `dpkg-deb --info` parses it; every symlink resolves inside
+it; the desktop entry passes `desktop-file-validate` and its `Exec` names the binary whose `app_id`
+it has to match; the icon it names exists at all six sizes; then the CLI reports the packaged
+version, the MCP server completes an `initialize` handshake, and **the GUI runs the 16 `/selftest`
+probes from the packaged tree — 16/16**. `release.yml` gains an `ubuntu-latest` job that does all of
+that under `xvfb-run`, then `apt install`s the result, runs the probes again through the *installed*
+`mlqt-gui`, and removes it.
+
+**Not verified here, and it is the one thing that cannot be:** that GNOME actually draws the icon.
+The desktop stack was checked as far as it goes without root — `Gio.DesktopAppInfo.new
+("MLQT.Photino.desktop")` resolves and its `Icon=mlqt` looks up to a real file at every size — but
+the compositor's own match needs the package installed and a human looking. B134 demonstrated that
+half in both directions already, by hand.
+
 #### Still open
 
 - **Code signing** — supplier to be decided. MLQT is MIT-licensed and public, which makes it eligible
@@ -1240,17 +1306,25 @@ rather than the desktop one, and the two guards above — each verified by mutat
 - **A single version number.** `MLQT.Cli.csproj` hard-codes `0.1.0`; three tools in one installer need
   one number, stamped from the tag.
 - **`release.yml` becomes two jobs** — Windows for the installer, Ubuntu for the `.deb` (`dpkg-deb`
-  does not exist on a Windows runner) — feeding one release. Its existing "verify bundled svn client"
-  step must follow the payload to `MLQT.Photino`.
+  does not exist on a Windows runner) — feeding one release. **The Ubuntu job is done**; the Windows
+  job is still the pre-installer one, publishing the MAUI app and the zips, and its existing "verify
+  bundled svn client" step must follow the payload to `MLQT.Photino`. Until it is converted, both
+  jobs derive the version separately, which is marked in the file rather than tidied.
 - **Inno specifics**: a stable `AppId` so upgrades replace rather than accumulate; a **deliberate**
   Start Menu shortcut carrying the icon (B132 was a shortcut Windows invented, aimed at a build with
   no icon); WebView2 detected via the `EdgeUpdate\Clients\{F3017226-…}` key, per-machine *and*
   per-user; and whether it removes an existing MAUI install.
-- **Debian specifics**: the app under `/opt/mlqt` with symlinks in `/usr/bin`; a **stable path for the
-  MCP server**, which agents register by path; `git`/`subversion` as `Recommends` rather than
-  `Depends` if a Git-only user should not be made to install Subversion.
-- **The `.desktop` file and hicolor icons are not polish — they are the only way MLQT has an icon on
-  Wayland at all (B134).** 7b-6 found that `SetIconFile` is a no-op there: Wayland has no protocol for
+- ~~**Debian specifics**: the app under `/opt/mlqt` with symlinks in `/usr/bin`; a **stable path for
+  the MCP server**, which agents register by path; `git`/`subversion` as `Recommends` rather than
+  `Depends` if a Git-only user should not be made to install Subversion.~~ **Done**, all three as
+  proposed — see above.
+- ~~**The `.desktop` file and hicolor icons are not polish — they are the only way MLQT has an icon on
+  Wayland at all (B134).**~~ **Done.** The entry is `MLQT.Photino.desktop`, named after the `app_id`;
+  `Icon=mlqt` resolves through `hicolor` at six sizes; `StartupWMClass` covers X11. The note below
+  is kept because it is the reasoning, and because it now has a third instance — the `/usr/bin`
+  launcher, which had to become a wrapper for the same reason.
+
+  **The original statement of it:** 7b-6 found that `SetIconFile` is a no-op there: Wayland has no protocol for
   a client to hand the compositor a window icon, so the shell matches the application to an installed
   desktop entry by its app id or shows nothing. The entry's `Icon=` key and an icon in
   `/usr/share/icons/hicolor/*/apps/` are the mechanism, and the app id the window reports has to match
@@ -1258,9 +1332,12 @@ rather than the desktop one, and the two guards above — each verified by mutat
   than a cosmetic one.
 - **arm64?** `Photino.Native` ships `linux-arm64` and `win-arm64`. x64-only is a fine answer, but it
   should be an answer.
-- **Documentation**: a new installation page walking through both platforms, plus the pages that go
-  stale — `getting-started.md` (the bundled-runtime claim), `cli.md` (the tool and tarball sections)
-  and `mcp-server.md` (the registration path).
+- **Documentation**: `Documentation/installation.md` is written and covers both platforms;
+  `getting-started.md` (prerequisites and the SVN claim, which was Windows-only and said so nowhere),
+  `cli.md` (install) and `mcp-server.md` (the `/usr/bin/mlqt-mcp-server` registration path) have
+  their Linux halves. What is left is the pass that follows the Windows job's conversion: `cli.md`
+  still documents the nupkg and the tarball, which are still published and are meant to go with
+  them.
 
 ### 7b-8 — cutover (M)
 
@@ -1356,7 +1433,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
 | **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI and is **green on both**, after three runs that found a missing shared library on Linux and a Windows leg that had been passing on timing; the nightly WebKit journeys ship as their own workflow, unproven until the merge; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
-| **7b-7** | Packaging and distribution — **and it now owns two named items**: the Windows Start Menu shortcut (B132) and the Linux desktop entry (B134 — the only thing that gives MLQT an icon on Wayland at all) | M — **next** |
+| **7b-7** | Packaging and distribution. **Both installers are built and both have been run**: the Windows one 2026-09-10, the Linux `.deb` 2026-09-10, each carrying all three tools and each proved by running what it installs. Both named items are done — the Start Menu shortcut (B132) and the desktop entry (B134). What is left is the Windows half of `release.yml`, code signing, arm64 and retiring the artefacts the installers replace | M — **in progress** |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
 

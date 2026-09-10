@@ -200,3 +200,123 @@ jobs:
             mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
           generate_release_notes: true
           draft: true
+
+  # ---------------------------------------------------------------------------------------------
+  # The Linux installer (phase 7b-7).
+  #
+  # A second job rather than more steps in the first, because dpkg-deb does not exist on a Windows
+  # runner. Both jobs feed the same release: the one above attaches the Windows artefacts, this one
+  # attaches the .deb, and `softprops/action-gh-release` adds files to the existing draft rather
+  # than replacing it.
+  #
+  # **The Windows job is still the pre-installer one.** It publishes the MAUI app and the zips, and
+  # 7b-7's other half turns it into the job that builds build/installer/mlqt.iss. When that happens
+  # the two jobs should take their version from one place instead of each deriving it - the
+  # duplication below is temporary and marked rather than tidy.
+  # ---------------------------------------------------------------------------------------------
+  linux-deb:
+    name: Build & Publish .deb
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      # A semver pre-release becomes a Debian one: 1.2.3-rc1 -> 1.2.3~rc1, which sorts *before*
+      # 1.2.3 exactly as the semver does. package-deb.sh applies the same rule to name its output,
+      # so this is the file name that will exist.
+      - name: The Debian version
+        id: deb
+        run: echo "version=$(echo '${{ steps.version.outputs.version }}' | sed 's/+.*//; s/-/~/')" >> $GITHUB_OUTPUT
+
+      # What the *smoke tests* need, not what the build needs. The GUI's 16 /selftest probes are the
+      # strongest check this repository has and they run a real WebKitGTK window, so the runner needs
+      # webkit and a virtual display. libnotify4 is the one nothing else pulls in - libwebkit2gtk-4.1-0
+      # does not depend on it and Photino.Native links it - which is exactly why the .deb declares it.
+      - name: Install WebKitGTK and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 xvfb
+
+      # Self-contained: neither Ubuntu nor Debian carries .NET 10, so a dependency on it would mean
+      # asking every user to add Microsoft's apt feed before `apt install` would work at all. The
+      # ~80 MB is the price of the package installing with one command.
+      #
+      # -AllowMissingSvn because there is no bundled svn client on Linux by design: the .deb
+      # recommends `subversion` and SvnToolLocator finds it on PATH.
+      - name: Publish the three tools into one tree
+        shell: pwsh
+        run: >
+          pwsh build/publish-tools.ps1
+          -Runtime linux-x64
+          -SelfContained
+          -AllowMissingSvn
+          -Version ${{ steps.version.outputs.version }}
+          -Output publish/linux-x64
+          -SkipSmokeTests
+
+      # Under xvfb-run, so the packaged GUI's self-test probes actually run. The script skips them
+      # when there is no display, and a skipped check on the release path is the one that matters.
+      - name: Build the .deb, and prove the packaged tools run
+        run: >
+          xvfb-run -a bash build/package-deb.sh
+          --version ${{ steps.version.outputs.version }}
+          --stage publish/linux-x64
+          --output artifacts
+
+      # apt's own opinion of the package, which is a different question from "does it contain the
+      # right files": a malformed field or an unsatisfiable dependency only shows up here.
+      - name: Install it, and run what it installed
+        run: |
+          sudo apt-get install -y ./artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+          mlqt --version
+          test -x /usr/bin/mlqt-gui
+          test -f /usr/share/applications/MLQT.Photino.desktop
+          desktop-file-validate /usr/share/applications/MLQT.Photino.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/mlqt.png
+          # The installed GUI, launched the way a user would from a terminal - which is the wrapper
+          # that overrides argv[0] so the window keeps the app_id the desktop entry is named after.
+          # A timeout because a host that never renders would otherwise hold the job for six hours.
+          MLQT_SELFTEST=1 MLQT_SELFTEST_HOST=MLQT.Photino \
+            MLQT_SELFTEST_OUT="$PWD/installed-selftest.json" \
+            timeout 300 xvfb-run -a mlqt-gui
+          python3 -c "
+          import json,sys
+          probes = json.load(open('installed-selftest.json'))['Probes']
+          bad = [p for p in probes if p['Status'] != 'Pass']
+          for p in bad: print('::error::' + p['Id'] + ': ' + str(p.get('Detail')))
+          print(f'{len(probes)-len(bad)}/{len(probes)} probes passed from the installed package')
+          sys.exit(1 if bad else 0)"
+          sudo apt-get remove -y mlqt
+          test ! -e /opt/mlqt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: MLQT-${{ steps.version.outputs.version }}-linux-x64-deb
+          path: artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+
+      - name: Add the .deb to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+          generate_release_notes: true
+          draft: true

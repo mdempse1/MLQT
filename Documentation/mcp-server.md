@@ -37,6 +37,22 @@ The server speaks MCP over **stdio**. Register it with your client by pointing a
 }
 ```
 
+**If you installed MLQT from the Linux `.deb`** ([installation.md](installation.md)), the server is
+at a fixed path and needs no version in it:
+
+```json
+{
+  "mcpServers": {
+    "mlqt": {
+      "command": "/usr/bin/mlqt-mcp-server"
+    }
+  }
+}
+```
+
+That path is a symlink into `/opt/mlqt` and is stable across upgrades, which is the point of it —
+an agent registers the server by path, and `/opt/mlqt` is on nobody's `PATH`.
+
 If you are using the Release zip file from Github, then the path to configure the McpServer is different due to the structure of the zip file. `path_to_mlqt_mcp_server_release` is the path to where you have extracted the zip file on your machine.
 
 ```json

@@ -51,6 +51,10 @@ dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 # Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
 ./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
 
+# Build the Linux installer from that tree, and prove the packaged tools run (phase 7b-7)
+./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn -Version 1.2.3 -Output publish/linux-x64
+./build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
+
 # Run MAUI application (Windows only, retired at 7b-8)
 dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
 ```
@@ -321,6 +325,7 @@ User-facing documentation is in `Documentation/`:
 
 | Document | Covers |
 |----------|--------|
+| `installation.md` | Both installers: the Linux `.deb` and the Windows setup, what each puts where, and removing them |
 | `getting-started.md` | Prerequisites, project/repo setup, first steps |
 | `library-browser.md` | Tree navigation, VCS status indicators, view modes |
 | `code-review.md` | Code viewer, diff, findings, external tool checks, formatting exclusion toggle |
@@ -467,6 +472,21 @@ remembering a flag — which is exactly how B144 happened.
 
 The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree. It refuses to
 compile if any of the three tools is missing.
+
+The Linux installer is `build/package-deb.sh`, which takes the same tree and writes a `.deb`.
+**Shell rather than PowerShell**, unlike everything else in `build/`: `dpkg-deb` exists only on a
+Debian machine, and pwsh is not on a plain Ubuntu desktop, so a `.ps1` would be a packaging script
+you cannot run on the machine that makes the package. It applies the same "prove it before shipping
+it" rule one layer further out — `publish-tools.ps1` proves the three tools run, this proves the
+package puts them somewhere they still run from, by extracting it and asking each of them again,
+self-test probes included. Run it under `xvfb-run -a` on a machine with no display, or that last and
+strongest check is skipped.
+
+Its inputs are in `build/packaging/linux/`. **The desktop entry there is not cosmetic**: on a Wayland
+session it is the only thing that gives MLQT an icon anywhere — dock, Alt-Tab and window list — and
+it works by being named after the window's `app_id`, which is the GUI executable's file name. Rename
+either without the other and the icon silently disappears. `MLQT.Shared.Tests/DebianPackageTests`
+holds that chain together, as `WindowsInstallerTests` does for the Inno script.
 
 ### "Would the coverage gate pass?" — `build/check-coverage.ps1`
 

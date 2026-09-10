@@ -10,7 +10,18 @@ works on Windows, Linux, and macOS and is suited to CI pipelines.
 
 ## Install
 
-Two ways, depending on whether the machine has a .NET 10 runtime.
+**With MLQT itself.** The platform installers carry the CLI alongside the desktop application and
+the MCP server — see [installation.md](installation.md). On Linux the `.deb` puts it at
+`/usr/bin/mlqt` and bundles the .NET runtime, so a build agent needs nothing else:
+
+```bash
+sudo apt install ./mlqt_<version>_amd64.deb && mlqt --version
+```
+
+On Windows the installer offers to put `mlqt` on your `PATH`.
+
+The two options below predate the installers and remain for now. They are the way to get the CLI
+onto a machine you do not want a desktop application on.
 
 **As a .NET tool** (Windows, Linux and macOS — one package covers all three). It is **not on
 nuget.org**: download `MLQT.Cli.<version>.nupkg` from the

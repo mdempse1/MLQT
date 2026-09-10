@@ -7,7 +7,7 @@ and rebuild, rather than editing a copy inside a project.
 |------|-----|
 | `mlqt.ico` | The Windows application icon. `MLQT.Photino.csproj` sets it as `ApplicationIcon` (the icon on the `.exe`, which Explorer and Alt-Tab use) **and** copies it beside the executable, because Photino's `SetIconFile` takes a path rather than a resource. |
 | `mlqt-256.png` | The same icon for GTK, which does not read `.ico`. Copied beside the executable and used by the Linux host. |
-| `mlqt-16/24/32/48/512.png` | The other raster sizes, as supplied. Nothing uses them yet; they are here so the next thing that needs one does not go back to the designer. |
+| `mlqt-16/24/32/48/512.png` | The other raster sizes. Installed by the Linux `.deb` into `/usr/share/icons/hicolor/<size>/apps/mlqt.png`, which is where the shell picks the size it wants (7b-7). |
 | `mlqt-mark.svg`, `mlqt-mark-on-dark.svg`, `mlqt-mark-mono.svg` | The mark alone, for light, dark and single-colour contexts. |
 | `mlqt-lockup*.svg`, `mlqt-lockup*-2x.png` | Mark plus wordmark. `-full` includes the strapline. |
 
@@ -162,9 +162,32 @@ StartupWMClass=MLQT.Photino
 ```
 
 The file used for the test pointed at a temporary publish and has been removed, which put the icon
-straight back to generic — worth knowing before anyone concludes a build regressed. **7b-7 owns
-installing a real one**, at the installed location, with `Icon=` naming an icon in the theme (`hicolor`
-`apps/mlqt.png` under the standard sizes) rather than an absolute path — the absolute path is right
-for a tarball and wrong for a `.deb`. That is the direct counterpart of the Start Menu shortcut
-Windows needs, and both exist for the same reason: **a desktop shell identifies an application by an
-installed entry, not by the window.**
+straight back to generic — worth knowing before anyone concludes a build regressed.
+
+### What ships (phase 7b-7, 2026-09-10)
+
+The `.deb` installs the real one: `build/packaging/linux/MLQT.Photino.desktop` to
+`/usr/share/applications/`, with `Icon=mlqt` naming an icon in the theme rather than an absolute
+path — the absolute path is right for a tarball and wrong for a package, because it stops the shell
+choosing the size it wants. `mlqt-16/24/32/48/256/512.png` go to
+`/usr/share/icons/hicolor/<size>/apps/mlqt.png`, which is what finally gives those "nothing uses
+them yet" sizes in the table above a use.
+
+**Packaging turned up a third instance of the same lesson.** `/usr/bin/mlqt-gui` cannot be a
+symlink: `app_id` is `g_get_prgname()`, the base name of `argv[0]`, so a symlink of that name makes
+the window report `app_id "mlqt-gui"` and match no entry at all — the icon disappears again, from a
+change that looks like packaging tidiness. Measured, both ways:
+
+```
+$ WAYLAND_DEBUG=1 ./mlqt-gui   2>&1 | grep set_app_id      # a symlink
+  -> xdg_toplevel#43.set_app_id("mlqt-gui")
+$ WAYLAND_DEBUG=1 bash -c 'exec -a MLQT.Photino ./mlqt-gui' 2>&1 | grep set_app_id
+  -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+```
+
+So the launcher is a wrapper that overrides `argv[0]`. `MLQT.Shared.Tests/DebianPackageTests` holds
+the whole chain — executable name, entry file name, `Exec`, `StartupWMClass`, `Icon=` and the
+installed sizes — because every link in it is silent when broken.
+
+**Three statements of one rule now, from two operating systems: a desktop shell identifies an
+application by an installed entry, not by the window.**

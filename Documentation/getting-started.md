@@ -19,16 +19,26 @@ MLQT is a desktop application for managing Modelica libraries under revision con
 
 | Requirement | Details |
 |-------------|---------|
-| **.NET 10 Runtime** | MLQT is built on .NET 10. The runtime is bundled with the installer on Windows. |
-| **Windows 10/11** | MLQT currently targets Windows via .NET MAUI. macOS and Linux support is planned. |
+| **Windows 10/11**, or **Ubuntu 22.04 / Debian 12** or newer | x86-64 in both cases. The Linux build needs WebKitGTK 4.1, which is why Ubuntu 20.04 is below the floor. |
+| **.NET 10 Runtime** | Nothing to install. The Windows installer fetches it if it is absent; the Linux `.deb` bundles it. |
+
+See [installation.md](installation.md) for both installers, what they put where, and how to remove them.
 
 ### Required for Git Repositories
 
 | Requirement | Details |
 |-------------|---------|
-| **Git** | MLQT uses LibGit2Sharp for local operations (commit, branch, history) but shells out to `git.exe` for remote operations (fetch, push, rebase) to leverage your configured credential helpers (Git Credential Manager, SSH keys, etc.). Install Git from [git-scm.com](https://git-scm.com/) and ensure it is on your PATH. |
+| **Git** | MLQT uses LibGit2Sharp for local operations (commit, branch, history) but shells out to the `git` command for remote operations (fetch, push, rebase) to leverage your configured credential helpers (Git Credential Manager, SSH keys, etc.). On Windows, install Git from [git-scm.com](https://git-scm.com/) and ensure it is on your PATH; on Linux the `.deb` recommends it, so apt installs it with MLQT. |
 
-SVN repositories do **not** require you to install any external tools. MLQT performs all SVN operations through the `svn` command-line client and ships its own bundled copy, so everything needed is included in the MLQT download.
+### Required for SVN Repositories
+
+MLQT performs all SVN operations through the `svn` command-line client, and where it comes from
+differs by platform:
+
+| | |
+|---|---|
+| **Windows** | **Bundled.** Nothing to install — everything needed is in the MLQT download. |
+| **Linux** | From your `PATH`. The `.deb` recommends `subversion`, so apt installs it with MLQT unless you decline; `sudo apt install subversion` if you did. |
 
 ### Optional External Tools
 
