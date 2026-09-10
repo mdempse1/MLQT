@@ -48,6 +48,9 @@ pwsh ./build/run-all-tests.ps1
 # Run the Photino host (Windows and Linux) - the one that ships after 7b-8
 dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 
+# Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
+./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
+
 # Run MAUI application (Windows only, retired at 7b-8)
 dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
 ```
@@ -438,6 +441,32 @@ real one — OpenModelica *is* installed on the main development machine, and
 `GetErrorStringAsync_AfterClear_ReturnsEmpty` fails against omc 1.26 (backlog B116). Excusing by
 category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
 not.
+
+### "Would the installer work?" — `build/publish-tools.ps1`
+
+One installer per platform carries the GUI, the `mlqt` CLI and the MCP server, so all three are
+published into a **single tree** — they share every assembly below `MLQT.Shared`, and each carries its
+own `.deps.json`, so together they cost one copy rather than three.
+
+```powershell
+./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
+./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -Version 1.2.3 -Output publish/linux-x64
+```
+
+**The smoke tests are the point of it.** Building an installer around a tree nobody has run is how this
+phase produced a host that resolved no web assets (B133) and one that shipped no svn client (B144) —
+both of which built, published and installed perfectly. So each tool is asked something only a working
+build can answer: the CLI prints its version, the MCP server completes an `initialize` handshake over
+stdio, and the GUI runs the **16 `/selftest` probes against the published tree**. That last is the
+strongest check available anywhere in this repository — it resolves the RCL assets, runs interop,
+renders MudBlazor and exercises settings, logging and the svn locator, in the layout that ships.
+
+`-AllowMissingSvn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1` and
+is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
+remembering a flag — which is exactly how B144 happened.
+
+The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree. It refuses to
+compile if any of the three tools is missing.
 
 ### "Would the coverage gate pass?" — `build/check-coverage.ps1`
 

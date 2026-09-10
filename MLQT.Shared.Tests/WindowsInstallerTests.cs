@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace MLQT.Shared.Tests;
@@ -17,6 +18,18 @@ namespace MLQT.Shared.Tests;
 /// </remarks>
 public class WindowsInstallerTests
 {
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "MLQT.slnx")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException("repository root not found");
+    }
+
     private static string Script()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -102,6 +115,60 @@ public class WindowsInstallerTests
         Assert.Contains("procedure RemoveFromPath", script);
         Assert.Contains("procedure CurUninstallStepChanged", script);
         Assert.Contains("RemoveFromPath(ExpandConstant('{app}'))", script);
+    }
+
+    [Fact]
+    public void TheInstallerAndTheStagingScriptAgreeOnTheExecutableNames()
+    {
+        // Two ends of one contract in two languages with no compiler between them:
+        // build/publish-tools.ps1 produces the tree, build/installer/mlqt.iss packages it. A rename on
+        // either side is silent - the installer's compile-time guard catches a missing file, but only
+        // if it is looking for the right name to begin with.
+        //
+        // The names are parsed out of the two declarations rather than searched for in the text. The
+        // first version of this asserted that each name appeared somewhere in each file, and passed
+        // against a staging script whose tools table had been renamed - because the smoke-test section
+        // further down still mentioned the old name.
+        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+
+        var staged = Regex.Matches(staging, @"File\s*=\s*""(?<name>[^""$]+)[$]exe""")
+            .Select(m => m.Groups["name"].Value)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        var packaged = Regex.Matches(Script(), @"#define\s+(?:GuiExe|CliExe|McpExe)\s+""(?<name>[^""]+)\.exe""")
+            .Select(m => m.Groups["name"].Value)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(3, staged.Count);
+        Assert.Equal(staged, packaged);
+    }
+
+    [Fact]
+    public void TheStagingScriptProvesEachToolRunsBeforeAnythingIsPackaged()
+    {
+        // The reason that script exists rather than three dotnet publish lines in a workflow. Building
+        // an installer around a tree nobody has run is how this phase produced a host that resolved no
+        // web assets (B133) and one that shipped no svn client (B144) - both of which built, published
+        // and installed perfectly.
+        //
+        // Each marker below occurs exactly once in the script, so removing the check it belongs to
+        // removes the marker. Asserting on a token that appears several times - MLQT_SELFTEST, say,
+        // which is also in MLQT_SELFTEST_HOST and the cleanup - passes with the check deleted.
+        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+
+        var checks = new (string What, string Marker)[]
+        {
+            ("the CLI is asked for its version", "& $cli --version"),
+            ("the MCP server completes a handshake", @"""method"":""initialize"""),
+            ("the GUI runs its self-test probes", "$env:MLQT_SELFTEST_OUT = $report"),
+            ("the probe results are judged", "$_.Status -ne 'Pass'"),
+        };
+
+        foreach (var (what, marker) in checks)
+            Assert.True(staging.Contains(marker, StringComparison.Ordinal),
+                $"publish-tools.ps1 no longer checks that {what}");
     }
 
     [Fact]
