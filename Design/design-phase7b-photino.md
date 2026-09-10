@@ -1196,6 +1196,40 @@ so that deleting the MAUI project at 7b-8 does not take the svn client with it.
 — a build-output check could not, because the payload is not committed and the folder is empty on a
 developer machine.
 
+#### ✅ The Windows installer (2026-09-10)
+
+`build/installer/mlqt.iss`, Inno Setup 6, carrying all three tools from one staging tree — 78 MB of
+publish output compressing to a **16 MB** installer. Built and run end to end on Windows before being
+committed, not just compiled:
+
+| Checked by installing it | Result |
+|---|---|
+| All three executables land, with `wwwroot` and the bundled fonts | ✅ |
+| Start Menu shortcut, created deliberately, naming its icon | ✅ |
+| `mlqt` on `PATH` | ✅ |
+| `mlqt --version` and the GUI assembly | both **1.2.3**, from `/DAppVersion` |
+| Prerequisites already present | nothing downloaded |
+| Uninstall | files, shortcut and Apps & Features entry gone; **PATH restored byte-for-byte** |
+
+**Two things the run found that reading would not have.**
+
+*The obvious .NET detection is wrong.* `InstalledVersionsd\sharedfx\Microsoft.NETCore.App` — the
+key every example uses — **does not exist** on a machine with .NET 10 installed. Only `sharedhost` is
+there. An installer trusting it would download and run the runtime installer on every machine, raising
+a UAC prompt for nothing. It reads the versioned directories under `shared\Microsoft.NETCore.App`
+instead, which is what the host itself resolves against.
+
+*Inno appends to `PATH` but does not un-append.* The first uninstall left the fragment behind, pointing
+at a folder it had just deleted. `RemoveFromPath` in `CurUninstallStepChanged` reverses it, and the
+second cycle restored `PATH` exactly.
+
+**The script refuses to compile an installer missing a tool** — `[Files]` copies the staging tree
+wholesale, so a publish that quietly stopped producing one would otherwise ship without it. Verified by
+hiding `MLQT.McpServer.exe` and watching the compile fail. `WindowsInstallerTests` covers the seven
+decisions a compile cannot check — the stable `AppId`, the per-user default with the per-machine
+option, the shortcut naming its icon (B132), the version coming from the command line, the base runtime
+rather than the desktop one, and the two guards above — each verified by mutation.
+
 #### Still open
 
 - **Code signing** — supplier to be decided. MLQT is MIT-licensed and public, which makes it eligible
