@@ -99,4 +99,31 @@ public class DymolaInterfaceTests
         // Assert
         Assert.False(isOffline);
     }
+
+    [Fact]
+    public void ProcessId_WhenNoProcessStarted_IsNull()
+    {
+        using var dymola = new DymolaInterface("", 9999, "127.0.0.1");
+
+        Assert.False(dymola.OwnsProcess);
+        Assert.Null(dymola.ProcessId);
+    }
+
+    [Fact]
+    public void ProcessId_AfterDetach_IsNull()
+    {
+        using var dymola = new DymolaInterface("", 9999, "127.0.0.1");
+
+        dymola.Detach();
+
+        Assert.Null(dymola.ProcessId);
+    }
+
+    [Fact]
+    public async Task ProcessId_HasValueExactlyWhenTheInterfaceOwnsTheProcess()
+    {
+        await _fixture.EnsureDymolaStartedAsync();
+
+        Assert.Equal(_fixture.Dymola.OwnsProcess, _fixture.Dymola.ProcessId.HasValue);
+    }
 }
