@@ -36,7 +36,7 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ### SlikSVN command-line client (bundled, not a NuGet package)
 - **Purpose**: `svn.exe` used for **all** SVN operations (much faster than the previously-used SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
-- **Used in**: bundled into the MLQT app output under `svn/`; staged by `build/fetch-svn-tools.ps1` into `MLQT/svn-tools/win-x64` (not committed to source control).
+- **Used in**: bundled into the MLQT app output under `svn/` on Windows; staged by `build/fetch-svn-tools.ps1` into `svn-tools/win-x64` at the repository root (not committed to source control). On Linux the `.deb` declares `subversion` rather than bundling it.
 - **License**: Apache 2.0 (SlikSVN is a distribution of [Apache Subversion](https://subversion.apache.org/)). Redistribution requires retaining the Apache license/NOTICE; keep these with the bundled binaries.
 
 ## UI Framework
@@ -54,19 +54,27 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **License**: [MIT](https://github.com/fgilde/MudBlazor.Extensions)
 - **NuGet**: https://www.nuget.org/packages/MudBlazor.Extensions
 
-## .NET MAUI
+## The desktop host
 
-### Microsoft.Maui.Controls
-- **Purpose**: Core controls for .NET MAUI cross-platform applications
-- **Used in**: MLQT (MAUI project)
-- **License**: [MIT](https://github.com/dotnet/maui/blob/main/LICENSE)
-- **Version**: `$(MauiVersion)` variable for synchronization
+MLQT was a .NET MAUI application until phase 7b-8. The `Microsoft.Maui.*` packages went with it;
+these two are what replaced them, and they are the whole of the host's dependency list.
 
-### Microsoft.AspNetCore.Components.WebView.Maui
-- **Purpose**: Enables hosting Blazor components in MAUI applications
-- **Used in**: MLQT (MAUI project)
-- **License**: [MIT](https://github.com/dotnet/maui/blob/main/LICENSE)
-- **Version**: `$(MauiVersion)` variable for synchronization
+### Photino.Blazor (v4.0.13)
+- **Purpose**: Hosts Blazor components in a native webview — WebView2 on Windows, WebKitGTK on Linux
+- **Used in**: MLQT.Photino, MLQT.McpTester
+- **License**: [Apache 2.0](https://github.com/tryphotino/photino.Blazor/blob/master/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/Photino.Blazor
+- **Note**: brings `Photino.Native`, which carries the per-platform native library. On Linux that
+  links `libwebkit2gtk-4.1`, `libgtk-3` and `libnotify`, none of which arrive with .NET — the `.deb`
+  declares them and `Documentation/installation.md` says so
+
+### Microsoft.AspNetCore.Components.WebView (v10.0.9)
+- **Purpose**: The webview-hosted Blazor renderer Photino.Blazor builds on
+- **Used in**: MLQT.Photino, MLQT.McpTester
+- **License**: [MIT](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.AspNetCore.Components.WebView
+- **Note**: referenced explicitly to pin the graph forward onto the 10.0.x line `MLQT.Shared` uses,
+  rather than the 9.0.1 that Photino's `net9.0` asset group would bring
 
 ## ASP.NET Core
 
@@ -144,24 +152,13 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ## Logging and Diagnostics
 
-### Microsoft.Extensions.Logging.Debug (v10.0.3)
+### Microsoft.Extensions.Logging.Debug (v10.0.0)
 - **Purpose**: Debug output provider for Microsoft.Extensions.Logging
-- **Used in**: MLQT (MAUI project)
+- **Used in**: MLQT.McpTester
 - **License**: [MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT)
 - **NuGet**: https://www.nuget.org/packages/Microsoft.Extensions.Logging.Debug
 
 ## Version Management
-
-### MAUI Version Synchronization
-
-MAUI packages use `$(MauiVersion)` variable defined in project files to ensure version consistency:
-
-```xml
-<ItemGroup>
-    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
-</ItemGroup>
-```
 
 ### Development Dependencies
 
@@ -192,5 +189,6 @@ Test packages are marked as development dependencies and don't ship with the app
 | OpenModelicaInterface | NetMQ |
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
-| MLQT | Microsoft.Maui.*, Microsoft.AspNetCore.Components.WebView.Maui |
+| MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
+| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol |
 | Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (MLQT.Shared.Tests also: bunit; RevisionControl.Tests also: SharpSvn) |

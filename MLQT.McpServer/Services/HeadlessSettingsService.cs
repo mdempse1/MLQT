@@ -5,11 +5,13 @@ using MLQT.Services.Interfaces;
 namespace MLQT.McpServer.Services;
 
 /// <summary>
-/// Headless (non-MAUI) implementation of <see cref="ISettingsService"/> that persists settings
+/// Headless implementation of <see cref="ISettingsService"/> that persists settings
 /// as a single JSON file under <c>%LocalAppData%/MLQT/mcp-settings.json</c>.
 ///
-/// The MAUI application uses the platform <c>Preferences</c> API; the MCP server has no MAUI
-/// runtime, so this provides equivalent key/value persistence. Every value is stored as a
+/// Predates <c>JsonSettingsService</c>, which the desktop host uses for the same job since it
+/// stopped being a MAUI application and lost the platform <c>Preferences</c> API. They remain
+/// separate files - <c>mcp-settings.json</c> here, <c>settings.json</c> there - so a server driven
+/// by an agent does not inherit whichever project a person last had open. Every value is stored as a
 /// JSON-serialized string, matching the complex-type behaviour the services rely on
 /// (e.g. <c>RepositoryService</c> persisting repository/project settings objects).
 /// </summary>

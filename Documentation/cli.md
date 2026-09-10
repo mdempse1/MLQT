@@ -1,7 +1,7 @@
 # MLQT CLI (`mlqt`)
 
 A headless, cross-platform command-line tool that style-checks a Modelica library and reports
-findings. It runs the same checks as the MLQT desktop app, with no UI and no MAUI dependency, so it
+findings. It runs the same checks as the MLQT desktop app, with no UI and no desktop dependency, so it
 works on Windows, Linux, and macOS and is suited to CI pipelines.
 
 > For a step-by-step guide to setting up the CI quality gate on a real library (enable rules,

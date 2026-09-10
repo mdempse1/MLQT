@@ -1,6 +1,6 @@
 # MLQT.Shared
 
-Shared Blazor components, pages, layouts, and models for the MLQT application. This project contains all UI code that is hosted within the MAUI application via BlazorWebView.
+Shared Blazor components, pages, layouts, and models for the MLQT application. This project contains all UI code, and every host renders it: the desktop application (`MLQT.Photino`, a native webview on Windows and Linux) and the Playwright test host (`MLQT.TestHost`, server-rendered).
 
 ## Overview
 

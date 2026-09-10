@@ -72,10 +72,10 @@ public partial class SelfTest
     /// <summary>Set to 1 to start the application on this route instead of its own shell.</summary>
     /// <remarks>
     /// Here rather than in a host, beside the other two variables, because every host needs it and
-    /// the three belong together. It lived in <c>MLQT/SelfTestLauncher.cs</c> while MAUI was the only
-    /// host that could capture a baseline; the Photino host needs the same answer, and two hosts
-    /// reading the same environment variable from two different constants is how they come to
-    /// disagree about its name.
+    /// the three belong together. It lived in the MAUI application's <c>SelfTestLauncher</c> while
+    /// that was the only host that could capture a baseline, and moving it here is what let the
+    /// Photino host answer the same question the same way — two hosts reading one environment
+    /// variable through two constants is how they come to disagree about its name.
     /// </remarks>
     public const string EnabledVariable = "MLQT_SELFTEST";
 

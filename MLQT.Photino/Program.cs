@@ -14,10 +14,12 @@ namespace MLQT.Photino;
 /// MLQT's desktop host, on Photino.
 /// </summary>
 /// <remarks>
-/// <para>Phase 7b-2. Compare it with <c>MLQT/MauiProgram.cs</c>: both call <see
+/// <para>Phase 7b-2, and the only host since the cutover in 7b-8. It was written to be the same
+/// shape as the MAUI <c>MauiProgram</c> it replaced — both call <see
 /// cref="MlqtServiceCollectionExtensions.AddMlqtCore"/>, add the same three platform services and a
-/// renderer, and do nothing else. That is what 7a-6 was for — the composition root is shared, so a
-/// host is the renderer plus the three implementations that reach the operating system.</para>
+/// renderer, and do nothing else — and that shape is what made a swap of hosts a small change.
+/// That is what 7a-6 was for: the composition root is shared, so a host is the renderer plus the
+/// three implementations that reach the operating system.</para>
 ///
 /// <para><b>Two things here are load-bearing and both fail silently</b>, which is why they carry
 /// comments rather than being left to read as boilerplate. 7b-0 found each of them by running into
@@ -43,7 +45,7 @@ internal static class Program
         var builder = PhotinoBlazorAppBuilder.CreateDefault(WebAssets(), args);
 
         // Everything that is not this host's own business: the services, MudBlazor, the invariant
-        // culture and logging. Identical to the line in MauiProgram.
+        // culture and logging. The MAUI host called the same line, which is what made it replaceable.
         builder.Services.AddMlqtCore();
 
         // The three that reach the operating system, and the whole of what a host contributes.

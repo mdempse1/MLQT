@@ -42,10 +42,11 @@ public class BundledSvnClientTests
 
     /// <summary>The desktop hosts a user installs. The CLI and MCP server ship inside them.</summary>
     /// <remarks>
-    /// <c>MLQT</c> is the retiring MAUI host and <c>MLQT.Photino</c> the one that replaces it. Both
-    /// are listed while both exist; 7b-8 removes the first from this list along with the project.
+    /// One host since 7b-8, when the MAUI application was deleted. Left as a list rather than folded
+    /// into one test: what is being asserted is a property of *anything that ships*, and macOS (7b-9)
+    /// would add a second entry rather than a second test.
     /// </remarks>
-    public static TheoryData<string> ShippingHosts() => new() { "MLQT", "MLQT.Photino" };
+    public static TheoryData<string> ShippingHosts() => new() { "MLQT.Photino" };
 
     [Theory]
     [MemberData(nameof(ShippingHosts))]

@@ -15,14 +15,15 @@ namespace MLQT.Shared;
 /// The service registrations every host of MLQT's UI needs, whatever that host is.
 /// </summary>
 /// <remarks>
-/// <para>Phase 7a-6. <c>MauiProgram</c> registered twenty services inline, which meant the Photino
-/// host and the test host would each have had their own copy of that list — and a service quietly
-/// missing from one of them is a whole class of migration bug that is invisible until the feature
-/// that needs it is used.</para>
+/// <para>Phase 7a-6. The MAUI <c>MauiProgram</c> registered twenty services inline, which meant the
+/// Photino host and the test host would each have had their own copy of that list — and a service
+/// quietly missing from one of them is a whole class of migration bug that is invisible until the
+/// feature that needs it is used. Extracting it first is what let 7b-8 delete a host without
+/// touching a registration.</para>
 ///
-/// <para><b>One list, three hosts.</b> Each host adds only what is genuinely its own: the three
-/// platform services, and its renderer. The MAUI app adds MAUI's; the Photino host will add GTK and
-/// Win32 equivalents; the test host adds fakes.</para>
+/// <para><b>One list, two hosts.</b> Each adds only what is genuinely its own: the three platform
+/// services, and its renderer. <c>MLQT.Photino</c> adds the shipping implementations; the test host
+/// adds fakes.</para>
 ///
 /// <para>The plan for this step put the extension in <c>MLQT.Services</c>. It is here instead
 /// because two of the registrations — <see cref="AppState"/> and <see cref="BrowserService"/> — are

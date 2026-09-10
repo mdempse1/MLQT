@@ -44,15 +44,16 @@ This repository contains the open-source components of MLQT:
 
 | Project | Description |
 |---------|-------------|
-| [MLQT](MLQT/) | .NET MAUI application host — bootstraps the UI, DI, and platform services |
+| [MLQT.Photino](MLQT.Photino/) | The desktop application host, on Photino — Windows and Linux. Bootstraps the UI, DI, the window and the three platform services |
 | [MLQT.Shared](MLQT.Shared/) | All Blazor UI: pages, components, layout, application state |
+| [MLQT.Cli](MLQT.Cli/) | The headless cross-platform `mlqt` CLI: style checks a library and gates a CI build on the result |
 | [MLQT.Services](MLQT.Services/) | Business logic services: library management, repository integration, file monitoring, style checking, impact analysis |
 | [ModelicaParser](ModelicaParser/) | ANTLR 4 parser for Modelica — parsing, formatting, icon extraction, style rules, resource extraction |
 | [ModelicaGraph](ModelicaGraph/) | Directed graph of file/model/resource relationships and dependencies |
 | [RevisionControl](RevisionControl/) | Unified Git and SVN interface with workspace management |
 | [DymolaInterface](DymolaInterface/) | .NET client for Dymola's HTTP JSON-RPC API |
 | [OpenModelicaInterface](OpenModelicaInterface/) | .NET client for OpenModelica Compiler (OMC) via ZeroMQ |
-| [MLQT.McpServer](MLQT.McpServer/) | Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools for AI agents; reuses the service layer without MAUI |
+| [MLQT.McpServer](MLQT.McpServer/) | Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools for AI agents; reuses the service layer with no UI at all |
 | [MLQT.McpTester](MLQT.McpTester/) | Desktop app for manually testing any stdio MCP server — connect, list tools, auto-generate parameter forms, call, and view results |
 
 Each project has a README with detailed API documentation and user documentation is available in [Documentation](Documentation/) folder with a [Getting Started Guide](Documentation/getting-started.md)
@@ -60,7 +61,8 @@ Each project has a README with detailed API documentation and user documentation
 ## Requirements
 
 - **.NET 10 SDK** — [Download](https://dotnet.microsoft.com/download/dotnet/10.0)
-- **Windows 10/11** — The MAUI desktop application currently builds for Windows only
+- **Windows 10/11, or Linux** — the desktop application runs on both. Linux needs WebKitGTK
+  (`libwebkit2gtk-4.1-0`) and `libnotify4`, which puts the floor at Ubuntu 22.04 / Debian 12
 - **Git or SVN** — At least one VCS installed for repository operations
 - **Dymola** (optional) — Dymola 2025x Refresh 1 or later for model checking
 - **OpenModelica** (optional) — OpenModelica 1.24.0 or later for model checking
@@ -76,7 +78,7 @@ cd <repository-directory>
 dotnet build
 
 # Run the application
-dotnet run --project MLQT/MLQT.csproj
+dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 ```
 
 ### Bundling the SVN client
@@ -96,7 +98,7 @@ client:
 pwsh build/fetch-svn-tools.ps1 -ZipUrl <SlikSVN-x64-zip-url>
 ```
 
-See [MLQT/svn-tools/README.md](MLQT/svn-tools/README.md) for the other ways to populate the
+See [svn-tools/README.md](svn-tools/README.md) for the other ways to populate the
 folder (local zip, existing install) and how the binaries are copied into the app output.
 
 ## Running Tests
@@ -119,11 +121,16 @@ GitHub Actions workflows run automatically on a push to **any** branch and on pu
 `main` — deliberately every branch, so a long-lived working branch does not reach its first CI run
 at the moment it is being merged:
 
-- **Build & Test** — Builds all library and test projects, runs all test suites, uploads test results as artifacts
-- **Build MAUI App** — Verifies the Windows desktop application builds successfully
-- **Code Coverage** — Runs tests with coverage collection and generates a summary report
-- **CLI on Linux** — Builds and tests the `mlqt` CLI on Ubuntu, then produces and runs the
-  self-contained `linux-x64` binary the release ships
+- **Build & Test Libraries** — Builds every project and runs the suites on Windows
+- **Build & Test Libraries (Linux)** — the same suites on Ubuntu, which is what keeps the code
+  portable rather than portable-looking
+- **UI Journeys** — the Playwright journeys against the test host, on both platforms
+- **Desktop Self-Test** — publishes the real Photino host on each platform, runs its 16 `/selftest`
+  probes and diffs them against the committed baseline. The parity gate
+- **Code Coverage** — Runs tests with coverage collection and gates on the per-class ratchet
+
+No job installs a .NET workload. The desktop host is a plain `net10.0` application, and if a job
+ever needs a workload then something non-portable has reached a project that should be portable.
 
 ### What isn't tested in CI
 
@@ -146,17 +153,20 @@ RevisionControl coverage will appear low in CI reports because the SVN integrati
 
 ## Releasing
 
-Tag `main` and the Release workflow builds the desktop app, the MCP server, the `mlqt` CLI tool
-package and a self-contained Linux CLI binary, then opens a draft release with all four attached. See
-[RELEASING.md](RELEASING.md) for the version scheme, the dry-run route, and what to check before
-tagging.
+Tag `main` and the Release workflow builds one installer per platform — a Windows setup and a Linux
+`.deb`, each carrying the desktop app, the `mlqt` CLI and the MCP server — installs what it just
+built, runs all three from where they landed, and opens a draft release. See
+[RELEASING.md](RELEASING.md) for the version scheme and what to check before tagging, and
+[Documentation/installation.md](Documentation/installation.md) for what a user gets.
 
 ## Architecture Overview
 
-MLQT is built as a **Blazor application hosted inside .NET MAUI** using `BlazorWebView`. This gives a native desktop application with a web-based UI:
+MLQT is built as a **Blazor application hosted inside a native webview** — [Photino](https://www.tryphotino.io/),
+which is WebView2 on Windows and WebKitGTK on Linux. This gives a native desktop application with a
+web-based UI, and direct filesystem, Git and SVN access from the same process:
 
 ```
-MLQT (MAUI host)
+MLQT.Photino (desktop host)
 └── MLQT.Shared (Blazor UI — pages, components, layout)
     └── MLQT.Services (business logic, injectable services)
         ├── ModelicaGraph (dependency graph)

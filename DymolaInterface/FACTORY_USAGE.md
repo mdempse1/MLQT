@@ -11,7 +11,7 @@ Instead of directly instantiating `DymolaInterface` with constructor parameters,
 
 ## Service Registration
 
-The factory is registered in both `MauiProgram.cs` and `Program.cs`:
+The factory is registered by `AddMlqtCore()` for the desktop host, and in `Program.cs` for the MCP server:
 
 ```csharp
 builder.Services.AddSingleton<IDymolaInterfaceFactory, DymolaInterfaceFactory>();
@@ -68,9 +68,8 @@ public class DymolaSettings
 }
 ```
 
-These settings are persisted using:
-- **MAUI**: Platform-specific Preferences API
-- **Web**: Browser localStorage
+These settings are persisted through `ISettingsService` — a JSON file under `%LocalAppData%/MLQT`
+(`~/.local/share/MLQT` on Linux) for the desktop host, and `mcp-settings.json` for the MCP server.
 
 ## Factory Methods
 

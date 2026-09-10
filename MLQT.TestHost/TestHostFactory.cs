@@ -48,7 +48,7 @@ public static class TestHostFactory
         // host: a journey that passes here exercised the implementation the app runs, not a copy.
         builder.Services.AddMlqtCore();
 
-        // This host's three platform services - the same three MAUI supplies, and Photino will.
+        // This host's three platform services - the same three the Photino host supplies for real.
         // Registered concretely as well as behind the interface, so a journey can prime the picker
         // and read the sleep counts without casting.
         builder.Services.AddSingleton<ScriptedFilePickerService>();

@@ -12,10 +12,10 @@
 @{ var interactive = new InteractiveServerRenderMode(prerender: false); }
 
 @*
-    The test host's page. Deliberately *generated* from HostAssetManifest rather than hand-written:
-    it is the pattern the Photino host should follow, and it makes drift from the MAUI page
-    impossible for this host by construction. The MAUI page stays hand-written and is held to the
-    manifest by HostAssetManifestTests instead.
+    The test host's page. Deliberately *generated* from HostAssetManifest rather than hand-written,
+    which makes drift impossible for this host by construction. The Photino host's page is
+    hand-written - it is a static file the webview loads, with no Razor underneath it - and is held
+    to the same manifest by HostAssetManifestTests instead.
 *@
 
 <!DOCTYPE html>
@@ -46,7 +46,7 @@
     }
 
     @*
-        The inline helper the MAUI page also carries. Probe 1 of the /selftest route in 7a-7 exists
+        The inline helper every host page carries. Probe 1 of the /selftest route in 7a-7 exists
         because losing it breaks every measurement the UI makes of its own window.
     *@
     <script>

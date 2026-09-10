@@ -1,16 +1,23 @@
 # Design Note — Phase 7b: replacing MAUI with Photino
 
-> **Status: IN PROGRESS (2026-09-09). 7b-0 through 7b-6 are done — `MLQT.Photino` runs MLQT and
-> matches the MAUI baseline on both Windows and Linux, existing users' settings migrate themselves,
-> and the manual checklist has been run on each platform.** What is left is 7b-7 (packaging and
-> distribution, which now also owns the Windows Start Menu shortcut and the Linux desktop entry),
-> 7b-8 (the irreversible cutover) and 7b-9. The gating spike answered its three questions on both
-> platforms — Photino.Blazor 4.0.13 runs on `net10.0`, `/selftest` produces 16 `Pass`, and
-> `HostConformance.Compare` reports **zero differences** against the MAUI baseline under both WebView2
-> and WebKitGTK. See [7b-0](#7b-0--the-spike-s--gating). Companion to
-> [design-phase7-gui-tests.md](design-phase7-gui-tests.md), which is complete: 7a built the harness
-> and captured the conformance baseline this phase is measured against. Roadmap §1 and locked
-> sequencing item 7 ([roadmap.md](roadmap.md)).
+> **Status: COMPLETE (proposed 2026-09-07, cutover 2026-09-10). A historical record.** 7b-0 through
+> 7b-8 are shipped: `MLQT.Photino` runs MLQT on Windows and Linux, existing users' settings migrate
+> themselves, one installer per platform carries the GUI, the CLI and the MCP server, and the MAUI
+> project has been deleted. Only 7b-9 (macOS) remains, deferred and unsized.
+>
+> **Read this as a record of a migration that happened, not as a plan.** It is written in the tense
+> it was written in — "the Photino host will", "MAUI is the reference" — and that has deliberately
+> been left alone rather than rewritten into a story where Photino was always the plan. The
+> *Shipped* notes under each step say what actually landed and where it differed from the sketch;
+> where the note and the code now disagree, the code is right and the note is history.
+>
+> The gating spike answered its three questions on both platforms — Photino.Blazor 4.0.13 runs on
+> `net10.0`, `/selftest` produces 16 `Pass`, and `HostConformance.Compare` reports **zero
+> differences** against the MAUI baseline under both WebView2 and WebKitGTK. See
+> [7b-0](#7b-0--the-spike-s--gating). Companion to
+> [design-phase7-gui-tests.md](design-phase7-gui-tests.md): 7a built the harness and captured the
+> conformance baseline this phase was measured against. Roadmap §1 and locked sequencing item 7
+> ([roadmap.md](roadmap.md)).
 >
 > The one-line statement of the job: **MLQT stops being a MAUI application and becomes a Photino
 > application, on Windows and Linux, without anybody being able to tell from the inside.**
@@ -1365,6 +1372,64 @@ Irreversible, so it goes last and only after 7b-5 and 7b-6 are both green.
   The 7a note and this one become historical records and should say so rather than be edited into
   claiming Photino was always the plan.
 
+#### ✅ Shipped (2026-09-10)
+
+All five, as written. The `MLQT` project is deleted — 29 files, the whole MAUI application — and
+nothing in the repository depends on MAUI or installs a workload.
+
+**What the deletion touched, and what it did not.** The host was 47 lines of `MauiProgram` plus three
+platform services and a `SelfTestLauncher`, and every one of those had already been replaced or moved
+out by an earlier step: `AddMlqtCore()` in 7a-6, the three services in 7b-3, the self-test constants
+into `MLQT.Shared/Pages/SelfTest.razor.cs` in 7a-7. **So the cutover changed no behaviour at all** —
+the solution builds and all 5,409 tests across the ten suites pass with the project simply
+removed. That is the measure of whether the preparation was right, and it is why this step is an M
+rather than an L.
+
+**The three CI jobs that mentioned the workload lost the step, and `build-maui` went entirely.** The
+Linux job's comment explaining why it enumerates projects rather than building the solution has been
+rewritten rather than deleted: the reason it gave (the solution contains a project that cannot build
+here) is no longer true, and a comment that quietly stops being true is worse than one that says what
+changed.
+
+**`PortabilityTests` became the tombstone** rather than being deleted. The question it used to ask —
+"has MAUI reached a project that has to build on Linux?" — collapsed into one that can be asked of
+the whole repository, and it now asserts that **no project declares the workload, references a
+`Microsoft.Maui` package, or targets a platform-specific framework**, plus that `MLQT/MLQT.csproj`
+has not come back. The reason for keeping it is not sentiment: the regression it guards against is a
+*reasonable-looking decision*, not a mistake. Somebody wanting a native dialog or a tray icon finds
+that MAUI has one, adds the package, and it builds on Windows; the Linux jobs then fail on a missing
+workload, and the obvious fix is to install the workload in CI — which buries the cause. A named test
+is what says so before a red runner has to.
+
+**The baseline is now frozen, and that is a feature.** `selftest-baseline-maui.json` records what
+MLQT did under MAUI on 2026-09-07. The host that produced it no longer exists, so it cannot be
+re-taken — and a baseline that *could* be re-taken from the current host would only ever confirm that
+the host agrees with itself. The `desktop-selftest` job publishes the real Photino host on each
+platform, captures a fresh report and diffs it against that frozen file on every push. The parity
+gate this phase promised is a live check against a dead reference, which is exactly the right shape.
+
+**The documentation pass covered more than the plan listed.** CLAUDE.md, `README.md`, four project
+READMEs, `settings-reference.md`, `mcp-server.md`, `cli.md`, `skill-nuget-packages.md` (which
+documented two MAUI packages that no longer exist anywhere) and `skill-cytoscape.md`. `RELEASING.md`
+turned out to be the worst of them and was rewritten: it still described the four assets and the
+`dotnet publish MLQT/MLQT.csproj` command from *before* 7b-7, so the maintainer-facing document
+describing how to cut a release described a release process that had already been replaced. It was
+not on the plan's list because nobody had looked at it.
+
+Both design notes now open by saying they are historical records, and neither has been edited into a
+story where Photino was always the plan.
+
+**One guard broke on the way through, and it was worth the interruption.** Rewriting files with a
+script wrote them back with LF endings into a working tree that is CRLF, and
+`ReleaseVersionTests` failed with "found 0 publish-tools.ps1 invocations in release.yml" - which
+reads as a workflow that had stopped calling the staging script. Its regexes carried a literal
+newline copied from the test's own source, so they matched only while the file being read and the
+test file agreed about line endings. Both now normalise and spell the newline as an escape. This is
+B115's lesson one layer out: a tool that rewrites source is a tool that can change something nobody
+is looking at, and the failure surfaced somewhere that named the wrong cause.
+
+**Phase 7b is complete apart from 7b-9 (macOS), which is deferred.**
+
 ### 7b-9 — macOS (deferred, sized when reached)
 
 The roadmap sequence says Windows → Linux → macOS. Photino supports macOS and the current MAUI
@@ -1444,7 +1509,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
 | **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI and is **green on both**, after three runs that found a missing shared library on Linux and a Windows leg that had been passing on timing; the nightly WebKit journeys ship as their own workflow, unproven until the merge; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
 | **7b-7** | ✅ **shipped 2026-09-10** — one installer per platform carrying all three tools, each built from a staging tree whose contents are proven to run first, and each installed and exercised by its own release job. A tag produces two files. Unsigned, deliberately | M |
-| **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
+| **7b-8** | ✅ **shipped 2026-09-10** — the `MLQT` project deleted, the workload and `build-maui` job out of CI, `PortabilityTests` turned into the tombstone, and the documentation pass done. No behaviour changed: the solution built and every suite passed with the project simply removed | M |
 | **7b-9** | macOS | deferred |
 
 7b-A comes first and 7b-0 can run alongside it: the spike answers a question nothing else can, and it

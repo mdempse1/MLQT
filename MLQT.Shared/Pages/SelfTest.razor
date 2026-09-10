@@ -3,11 +3,13 @@
 
 @*
     The conformance route. Deliberately in MLQT.Shared so it is literally the same code running under
-    MAUI, Photino and the test host - the comparison is worthless if each host runs its own version.
+    every host - the comparison is worthless if each host runs its own version. It ran under MAUI,
+    Photino and the test host; since the cutover in 7b-8 it runs under the last two.
 
-    Rendered as a table for a person and as JSON for a diff. The JSON is the artefact: the MAUI
-    baseline is captured while MAUI is still the reference implementation, and Photino conformance is
-    then a diff against a committed file rather than a judgement call.
+    Rendered as a table for a person and as JSON for a diff. The JSON is the artefact: the baseline
+    was captured from MAUI while MAUI was still the reference implementation, and conformance is a
+    diff against that committed file rather than a judgement call. It cannot be recaptured - the host
+    that produced it is gone - and that is what makes it a baseline rather than a mirror.
 *@
 
 <div style="padding: 12px; font-family: system-ui, sans-serif;">

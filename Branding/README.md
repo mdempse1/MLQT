@@ -41,9 +41,9 @@ rather have no icon than no window.
 
 ## Not updated
 
-`MLQT/` (the MAUI host) still carries the .NET template's icon, deliberately — it is retired in 7b-8
-and changing it means regenerating the MAUI resource set for a build that is about to go. `MLQT.McpTester`
-likewise keeps its own default; it is a manual diagnostic tool, not something shipped to users.
+`MLQT.McpTester` keeps the .NET template's default icon: it is a manual diagnostic tool for testing
+MCP servers, not something shipped to users. (The retired MAUI host also kept the default; it was
+deleted in 7b-8 rather than rebranded, which is why nothing here mentions its resource set.)
 
 ## The taskbar button, and why it was not a code defect
 

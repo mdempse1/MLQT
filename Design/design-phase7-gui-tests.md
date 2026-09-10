@@ -1,9 +1,14 @@
 # Design Note — Phase 7a: making the UI testable, then testing it
 
-> **Status: COMPLETE (proposed 2026-09-02, restructured and delivered 2026-09-07).** All seven steps
-> are shipped, including the MAUI conformance baseline — the one piece with a deadline, which could
-> not have been captured after the migration started. §7b, the Photino migration, is unblocked. Each step's own section carries a *Shipped* note recording what
-> actually landed and where it differed from the sketch. Companion to phase 7 of the locked roadmap
+> **Status: COMPLETE (proposed 2026-09-02, restructured and delivered 2026-09-07). A historical
+> record — read it as one.** All seven steps are shipped, including the MAUI conformance baseline —
+> the one piece with a deadline, which could not have been captured after the migration started, and
+> which is now the only surviving artefact of the MAUI host:
+> `MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json`, frozen, because the host that produced it
+> was deleted in 7b-8. Nothing should ever regenerate it. §7b, the Photino migration it unblocked, is
+> complete too ([design-phase7b-photino.md](design-phase7b-photino.md)). Each step's own section
+> carries a *Shipped* note recording what actually landed and where it differed from the sketch.
+> Companion to phase 7 of the locked roadmap
 > ([roadmap.md](roadmap.md) §1, "Desktop host migration (Photino, retire MAUI)"). This note covers
 > everything built **before the host migration starts**, so the Photino build can be proved
 > equivalent to the known-good MAUI build rather than eyeballed. §7b at the end sketches the

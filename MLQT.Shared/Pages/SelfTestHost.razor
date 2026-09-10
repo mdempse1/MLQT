@@ -1,7 +1,7 @@
 @*
     The /selftest route with the providers it needs, as a component a host can root on directly.
 
-    Some hosts can navigate to a route at startup and some cannot: MAUI sets BlazorWebView.StartPath,
+    Some hosts can navigate to a route at startup and some cannot: MAUI set BlazorWebView.StartPath,
     while Photino's PhotinoBlazorApp loads "/" itself and ignores PhotinoWindow.StartUrl. Rather than
     each host inventing its own way of getting to the probes, a host that cannot navigate roots on
     this instead.

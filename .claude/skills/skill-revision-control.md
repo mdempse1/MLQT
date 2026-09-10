@@ -108,7 +108,9 @@ concurrently to avoid pipe deadlock. `SvnToolLocator` picks the executable: `MLQ
 env var, then the bundled SlikSVN client at `{AppContext.BaseDirectory}/svn/svn.exe`, then
 `svn` on PATH. There is no managed fallback — an `svn` executable must be resolvable or
 `SvnCli` raises an error. The bundled binaries are staged by `build/fetch-svn-tools.ps1`
-into `MLQT/MLQT/svn-tools/win-x64` and copied to the app output by `MLQT.csproj`.
+into `svn-tools/win-x64` at the repository root and copied to the app output by
+`MLQT.Photino.csproj`, under a Windows-only condition (on Linux the `.deb` declares
+`subversion` instead). `BundledSvnClientTests` holds that chain together.
 
 SharpSvn remains only as a **test-only** dependency of `RevisionControl.Tests` (used to set
 up and validate repository state in the integration tests), not of the shipped product.
@@ -319,7 +321,7 @@ public class HgRevisionControlSystem : IRevisionControlSystem
 - `RevisionControl/SvnRevisionControlSystem.cs` - SVN implementation
 - `RevisionControl/SvnToolLocator.cs` - Resolves the bundled/PATH svn.exe for CLI operations
 - `build/fetch-svn-tools.ps1` - Stages the SlikSVN client for bundling
-- `MLQT/svn-tools/README.md` - How the bundled client is populated and shipped
+- `svn-tools/README.md` - How the bundled client is populated and shipped
 - `RevisionControl.Tests/` - Comprehensive test coverage
 
 ## Testing

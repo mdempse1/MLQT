@@ -23,6 +23,12 @@ namespace MLQT.Journeys;
 /// which is the drift this exists to catch, and it would not be caught by a test that only ran where
 /// its own host does.</para>
 ///
+/// <para><b>The baseline itself is frozen.</b> The MAUI host was deleted at the cutover (7b-8), so
+/// <c>selftest-baseline-maui.json</c> cannot be re-captured — and it should not be. A baseline that
+/// could be re-taken from the current host would only ever confirm that the host agrees with itself.
+/// The Photino captures below are re-capturable, and the <c>desktop-selftest</c> CI job re-captures
+/// them on a real runner on every push, which is what turns these records into a live check.</para>
+///
 /// <para>No fixture: these read two files. They cost nothing and run wherever this suite does.</para>
 ///
 /// <para>To re-capture, from a published Photino host — Windows:

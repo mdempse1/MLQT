@@ -44,13 +44,17 @@ public class ReleaseVersionTests
         // build/publish-tools.ps1, and this test found that out by failing when the workflow was
         // converted - which is the correct outcome for a guard whose subject moved, and better than
         // one that kept passing over an empty search.
+        //
+        // Read with newlines normalised, and the patterns below written with \n rather than
+        // a literal line break. They used to carry the line ending of *this* file, so they only
+        // matched while both files agreed about it - and a tree where they did not failed with
+        // "found 0 invocations", which reads as a workflow that has stopped calling the script
+        // rather than as what it is.
         var staging = File.ReadAllText(
-            Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+            Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1")).Replace("\r\n", "\n");
 
-        var publishes = Regex.Matches(staging, @"dotnet publish(?<args>(.|
-)*?)(?=
-\s*if|
-\s*\})");
+        var publishes = Regex.Matches(staging,
+            @"dotnet publish(?<args>(.|\n)*?)(?=\n\s*if|\n\s*\})");
 
         Assert.True(publishes.Count >= 1,
             "no dotnet publish found in publish-tools.ps1; the format may have changed");
@@ -67,17 +71,14 @@ public class ReleaseVersionTests
         // itself a development build - and every check in the script would pass, because they compare
         // what the tools report against what was asked for, and both would be 0.0.0-dev.
         var workflow = File.ReadAllText(
-            Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
+            Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"))
+            .Replace("\r\n", "\n");
 
         // Anchored on "pwsh build/publish-tools.ps1", the actual invocation. A looser pattern matched
         // a *comment* that mentions the script by name, and reported it as a job that had forgotten
         // the version.
         var invocations = Regex.Matches(workflow,
-            @"pwsh build/publish-tools\.ps1(?<args>(.|
-)*?)(?=
-\s*
-|
-\s*-\s+name:)");
+            @"pwsh build/publish-tools\.ps1(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)");
 
         Assert.True(invocations.Count >= 2,
             $"found {invocations.Count} publish-tools.ps1 invocations in release.yml; expected one per platform");

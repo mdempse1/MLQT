@@ -14,8 +14,9 @@ svn-tools/
   win-x64/        <- SlikSVN bin contents (svn.exe + its DLLs). NOT committed.
 ```
 
-At build time `MLQT.csproj` copies `svn-tools/win-x64/**` into the app output under a
-`svn/` folder, so the running app finds it at `{AppContext.BaseDirectory}/svn/svn.exe`.
+At build time `MLQT.Photino.csproj` copies `svn-tools/win-x64/**` into the app output under a
+`svn/` folder, so the running app finds it at `{AppContext.BaseDirectory}/svn/svn.exe`. The item is
+Windows-only: on Linux the `.deb` declares `subversion` as a recommend rather than bundling a client.
 
 ## Populating the binaries
 
@@ -24,13 +25,13 @@ separately — SlikSVN is an Apache-2.0 build of Apache Subversion). Populate th
 
 ```pwsh
 # Download + extract a SlikSVN .zip (verify the current URL at https://sliksvn.com/download/)
-pwsh ../../build/fetch-svn-tools.ps1 -ZipUrl <SlikSVN-x64-zip-url>
+pwsh ../build/fetch-svn-tools.ps1 -ZipUrl <SlikSVN-x64-zip-url>
 
 # ...or extract a .zip you already downloaded
-pwsh ../../build/fetch-svn-tools.ps1 -ZipPath .\Slik-Subversion-1.14.x-x64.zip
+pwsh ../build/fetch-svn-tools.ps1 -ZipPath .\Slik-Subversion-1.14.x-x64.zip
 
 # ...or copy from an already-installed/extracted SlikSVN bin folder
-pwsh ../../build/fetch-svn-tools.ps1 -SourceBin "C:\Program Files\SlikSvn\bin"
+pwsh ../build/fetch-svn-tools.ps1 -SourceBin "C:\Program Files\SlikSvn\bin"
 ```
 
 The SlikSVN .zip currently wraps an `.msi` rather than a loose `bin` folder; the script

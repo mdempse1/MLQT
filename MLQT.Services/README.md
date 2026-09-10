@@ -4,7 +4,7 @@ Business logic services for the MLQT application. Provides library management, r
 
 ## Overview
 
-MLQT.Services contains the core application logic as injectable services, each with an interface in `Interfaces/`. Services are registered as singletons in `MauiProgram.cs` and communicate via events for cross-component updates.
+MLQT.Services contains the core application logic as injectable services, each with an interface in `Interfaces/`. Services are registered as singletons by `AddMlqtCore()` in `MLQT.Shared/MlqtServiceCollectionExtensions.cs` — one list, called by every host — and communicate via events for cross-component updates.
 
 ## Key Concepts
 
@@ -13,7 +13,7 @@ MLQT.Services contains the core application logic as injectable services, each w
 All services follow the pattern:
 1. Interface defined in `Interfaces/` (e.g., `ILibraryDataService`)
 2. Implementation in the project root (e.g., `LibraryDataService`)
-3. Registered as singleton in `MauiProgram.cs`
+3. Registered as singleton in `AddMlqtCore()`
 4. Events for notifying UI components of state changes
 
 ### Core Services
@@ -70,7 +70,9 @@ library would make every reference into it a fabricated broken-reference finding
 
 ### Platform Services
 
-These interfaces are implemented by the MAUI host project:
+These interfaces are what a desktop host has to supply; `MLQT.Photino` implements the first two in
+`MLQT.Photino/Services/`, and the third is `JsonSettingsService` in this project because it stopped
+needing a host at all when MAUI went (phase 7b).
 
 | Interface | Purpose |
 |-----------|---------|

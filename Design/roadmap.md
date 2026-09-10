@@ -13,14 +13,16 @@ with those tools, and it stays optional.
 > **Boundary**: ⚠ marks items that approach (but should stay inside) the
 > no-translation/no-simulation line and need care. **✅ shipped** marks delivered work.
 
-## Where we are (2026-09-07)
+## Where we are (2026-09-10)
 
 **Phases 1–6 of the locked sequencing are shipped**: the findings foundation, the headless CLI,
 baseline/ratchet, the CI report formats, `__MLQT` suppression, and the Wave-1 analyses with the
 metrics dashboard and coverage trend. Each has an implementation note recording what landed.
-**Phase 7a is now complete** apart from 7a-3's long tail, and the MAUI conformance baseline — the one
-artefact that had a deadline attached — is captured and committed. Phase 7b, the Photino migration, is
-unblocked.
+**Phase 7a is complete** apart from 7a-3's long tail, and the MAUI conformance baseline — the one
+artefact that had a deadline attached — is captured and committed. **Phase 7b is complete too, apart
+from 7b-9 (macOS), which is deferred**: MLQT is a Photino application on Windows and Linux, it
+installs from one package per platform, and the MAUI project was deleted at the cutover on
+2026-09-10.
 
 **The CI/CD toolchain is finished.** The gaps left inside phases 1–6 were collected in
 [Backlog — finishing phases 1–6](#backlog--finishing-phases-16-current-focus) below. B1–B12 closed
@@ -196,9 +198,20 @@ self-contained publish into 40 MB — is extracted and asked the same three ques
 script asks, self-test probes included (16/16 from the packaged tree). Both named items are done:
 the Start Menu shortcut (**B132**) and the desktop entry that is the only thing giving MLQT an icon
 on Wayland (**B134**), which packaging turned into a third instance of the same lesson — `/usr/bin/
-mlqt-gui` cannot be a symlink either. What remains before cutover is the Windows half of
-`release.yml` (the Ubuntu job is written), code signing, arm64, and retiring the nupkg, tarball and
-zips the installers replace.
+mlqt-gui` cannot be a symlink either. `release.yml` is now three jobs — one that works out the
+version, one installer per platform — and **a tag produces exactly two files**; the nupkg, the
+tarball and the two zips are gone. Left deliberately undone: **code signing** (supplier undecided,
+so both installers are unsigned) and **arm64** (nobody has a machine to test on).
+
+**7b-8, the cutover, is done (2026-09-10) — and it changed no behaviour at all.** The `MLQT` MAUI
+project is deleted, the workload steps and the `build-maui` job are out of CI, and nothing in the
+repository references MAUI: `PortabilityTests` became the tombstone that says so, over every project
+rather than a portable subset. The solution built and all 5,409 tests passed with the project simply
+removed, which is the measure of whether 7a-6 and 7b-3 did their job. The `/selftest` baseline is now
+**frozen** — the host that produced it no longer exists, so it cannot be re-taken, and
+`desktop-selftest` diffing a live capture against a dead reference on every push is the parity gate
+this phase promised. The documentation pass found `RELEASING.md` still describing the four assets
+7b-7 had already replaced.
 
 **Phase 7b opens by widening the journeys (7b-A), not by porting.** `MLQT.Shared` is at 19.4% covered
 with every suite running, and the question of whether to fix that first has a specific answer rather

@@ -67,7 +67,7 @@ public static class HostAssetManifest
     ];
 
     /// <summary>
-    /// The Blazor bootstrap script for a webview host (MAUI today, Photino next). The test host uses
+    /// The Blazor bootstrap script for a webview host — <c>MLQT.Photino</c>. The test host uses
     /// <c>_framework/blazor.server.js</c> instead, which is the only difference between the pages.
     /// </summary>
     public const string WebViewBootstrapScript = "_framework/blazor.webview.js";

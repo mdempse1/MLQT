@@ -2,7 +2,7 @@
 
 A standalone, headless [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
 MLQT's Modelica capabilities as tools for AI agents (Claude, etc.). It reuses the MLQT service layer
-(`MLQT.Services`, `ModelicaGraph`, `ModelicaParser`, `RevisionControl`) without the MAUI UI.
+(`MLQT.Services`, `ModelicaGraph`, `ModelicaParser`, `RevisionControl`) with no UI at all.
 
 Dymola / OpenModelica model checking is intentionally **not** exposed (those have their own servers).
 
@@ -84,12 +84,12 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 
 ## Project layout
 
-- `Program.cs` — host, DI wiring (mirrors `MauiProgram` minus MAUI), stdio MCP server.
+- `Program.cs` — host, DI wiring (the desktop host's list, minus what needs a window), stdio MCP server.
 - `Tools/` — one `[McpServerToolType]` class per group.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
 - `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`).
   The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
-- `Services/HeadlessSettingsService.cs` — JSON settings store (replaces MAUI `Preferences`).
+- `Services/HeadlessSettingsService.cs` — JSON settings store, separate from the desktop application's.
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
 - `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).
 

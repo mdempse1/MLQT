@@ -30,7 +30,12 @@ namespace MLQT.Services;
 public static class MauiPreferencesFile
 {
     /// <summary>The application id, which is the folder MAUI files its settings under.</summary>
-    /// <remarks>From <c>ApplicationId</c> in <c>MLQT.csproj</c>; MAUI derives the path from it.</remarks>
+    /// <remarks>
+    /// It was the <c>ApplicationId</c> in the MAUI application's <c>MLQT.csproj</c>, from which MAUI
+    /// derived the settings path. That project was deleted at the cutover (7b-8), so this literal is
+    /// now the only surviving record of it — and it has to stay exactly as it is, because it names a
+    /// folder on machines that still hold settings nobody has migrated yet.
+    /// </remarks>
     public const string ApplicationId = "com.mlqtproject.MLQT";
 
     /// <summary>

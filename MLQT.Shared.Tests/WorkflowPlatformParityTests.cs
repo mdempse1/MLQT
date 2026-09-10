@@ -113,12 +113,23 @@ public class WorkflowPlatformParityTests
     }
 
     [Fact]
-    public void NeitherPortableJobInstallsTheMauiWorkload()
+    public void NoJobInstallsAWorkload()
     {
-        // Stated as a test because it is the point of those jobs, not a detail of them: if one ever
-        // needs the workload, something non-portable has reached a project that is supposed to be
-        // portable, and that is the finding rather than a reason to install it.
-        foreach (var job in new[] { "linux-tests", "ui-journeys", "desktop-selftest" })
+        // It used to be three jobs - the portable ones - because the Windows jobs restored a solution
+        // containing the MAUI application and needed the workload to do it. 7b-8 deleted that project,
+        // so the statement widened to every job in the file: if one ever needs a workload, something
+        // non-portable has reached a project that is supposed to be portable, and that is the finding
+        // rather than a reason to install it.
+        //
+        // Every job, found rather than listed, so a new job is covered without anybody remembering.
+        var jobs = Regex.Matches(Workflow(), @"^  (?<name>[a-z][\w-]*):$", RegexOptions.Multiline)
+                        .Select(m => m.Groups["name"].Value)
+                        .Where(n => n != "push" && n != "pull_request")
+                        .ToList();
+
+        Assert.True(jobs.Count >= 5, $"only found {jobs.Count} jobs: {string.Join(", ", jobs)}");
+
+        foreach (var job in jobs)
             Assert.DoesNotContain("workload install", Job(job));
     }
 

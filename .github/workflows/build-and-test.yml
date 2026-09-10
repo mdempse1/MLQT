@@ -27,9 +27,6 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      - name: Install MAUI workload
-        run: dotnet workload install maui-windows
-
       - name: Restore dependencies
         run: dotnet restore MLQT.slnx
 
@@ -54,8 +51,8 @@ jobs:
           dotnet build MLQT.McpServer.Tests/MLQT.McpServer.Tests.csproj -c Release --no-restore
           dotnet build MLQT.Cli.Tests/MLQT.Cli.Tests.csproj -c Release --no-restore
           dotnet build MLQT.Shared.Tests/MLQT.Shared.Tests.csproj -c Release --no-restore
-          # The MCP tester stopped being a MAUI app in 7b-1 and is a plain net10.0 Photino one, so
-          # it builds here rather than in the MAUI job - and on Linux too, which it could not before.
+          # Both desktop hosts, plain net10.0 Photino applications since 7b-1 and 7b-2. They build
+          # here, on Linux too, and no job in this workflow installs a workload any more (7b-8).
           dotnet build MLQT.McpTester/MLQT.McpTester.csproj -c Release --no-restore
           dotnet build MLQT.Photino/MLQT.Photino.csproj -c Release --no-restore
           # Built but not run, for the same reason as the SVN integration tests below: these drive a
@@ -127,10 +124,14 @@ jobs:
     # critical. The precedent is on the record: the first Linux job this repository ever had found six
     # MLQT.Cli tests built around a literal Windows drive path within a day of being added.
     #
-    # Project by project rather than the solution: MLQT.slnx contains the MAUI app, whose workload
-    # does not exist on Linux. Deliberately does NOT install the MAUI workload - if this job ever
-    # needs it, something non-portable has reached a project that is supposed to be portable, and
-    # that is the finding rather than a reason to install it.
+    # Project by project rather than the solution. The original reason was that MLQT.slnx contained
+    # the MAUI app, whose workload does not exist on Linux; 7b-8 deleted that project, so the solution
+    # would now build here. The list stays because it says which projects this job is answerable for,
+    # and because a new project should have to be added to it deliberately.
+    #
+    # No job in this workflow installs a workload. If one ever needs to, something non-portable has
+    # reached a project that is supposed to be portable, and that is the finding rather than a reason
+    # to install it - PortabilityTests is the test that says so without waiting for a red runner.
     name: Build & Test Libraries (Linux)
     runs-on: ubuntu-latest
 
@@ -218,7 +219,7 @@ jobs:
     # forgotten for the other. fail-fast is off because "it broke on Linux only" and "it broke on
     # both" are different findings and the second leg is the one that says which.
     #
-    # Deliberately does NOT install the MAUI workload on either leg. If this job ever needs it,
+    # Installs no workload on either leg, as no job here does since 7b-8. If one ever needs to,
     # something non-portable has reached a project that is supposed to be portable, and that is the
     # finding.
     name: UI Journeys (${{ matrix.label }})
@@ -272,14 +273,18 @@ jobs:
     # What it does that DesktopHostConformanceTests cannot: the committed captures under
     # MLQT.Shared.Tests/TestFiles are a *record* - what Photino answered on the day somebody ran it -
     # and they go stale silently. This job runs the real published host on a real runner, overwrites
-    # the capture for its own platform, and runs the same comparison against the same committed MAUI
+    # the capture for its own platform, and runs the same comparison against the committed MAUI
     # baseline. The record becomes a live check, on every push, on both platforms.
     #
     # Overwriting a committed file is deliberate: the runner's working tree is disposable, and the
     # alternative - a second path the comparison can read from - is a knob that exists only for CI and
     # would be the thing that rots. The committed capture is never written back.
     #
-    # 7b-8 makes this the standing parity gate that replaces the baseline diff, once MAUI is gone.
+    # Since 7b-8 this **is** the parity gate. The MAUI host is deleted, so the baseline can never be
+    # recaptured: MLQT.Shared.Tests/TestFiles/selftest-baseline-maui.json is the record of what the
+    # application did before the migration, and it is frozen. That is the point of it - a baseline
+    # that could be re-taken from the current host would only ever confirm that the host agrees with
+    # itself. Nothing in this repository should ever regenerate that file.
     name: Desktop Self-Test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -400,29 +405,6 @@ jobs:
             ${{ github.workspace }}/MLQT.Shared.Tests/TestFiles/${{ matrix.capture }}
             ${{ github.workspace }}/TestResults/*.trx
 
-  build-maui:
-    name: Build MAUI App (Windows)
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Install MAUI workload
-        run: dotnet workload install maui-windows
-
-      - name: Restore dependencies
-        run: dotnet restore MLQT/MLQT.csproj -r win-x64
-
-      - name: Build MAUI app
-        run: dotnet build MLQT/MLQT.csproj -c Release -r win-x64 --no-restore
-
-
   code-coverage:
     name: Code Coverage
     runs-on: windows-latest
@@ -436,9 +418,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
-
-      - name: Install MAUI workload
-        run: dotnet workload install maui-windows
 
       # Every suite that contributes coverage, not the three this job used to build. MLQT.Cli,
       # RevisionControl and MLQT.McpServer were measured nowhere, so the per-class bar CLAUDE.md sets

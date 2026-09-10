@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview. **The host is being replaced: `MLQT.Photino` is the new one and runs on Windows and Linux, verified against the MAUI host on all 16 `/selftest` probes on both (phase 7b-6). `MLQT` (MAUI, Windows only) is retired at the cutover, phase 7b-8, and until then both exist and share everything below `MLQT.Shared`.** See `Design/design-phase7b-photino.md`.
+MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and `Design/design-phase7b-photino.md` is the record of how it was done.
 
 The MLQT UI is intended to be a users primary way to manage Modelica libraries in revision control systems and supports SVN and Git. The intention is for users to work with MLQT to review and commit changes, pull updates, create new branches and push changes to the revision control system. It also provides static analysis of Modelica code to understand the impact of changes, apply formatting rules and check code against style guidelines.
 
@@ -12,13 +12,12 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 
 ## Solution Structure
 
-- **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards, the bUnit harness and the MAUI conformance baseline
-- **MLQT** - .NET MAUI application (Windows only). **Superseded by `MLQT.Photino`; retired at phase 7b-8**
-- **MLQT.Photino** - The desktop host, on Photino.Blazor (Windows and Linux). `Program.cs` is the whole of it: `AddMlqtCore()` plus the three platform services and the window. Compare it with `MLQT/MauiProgram.cs` — the two are deliberately the same shape
+- **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards, the bUnit harness and the frozen MAUI conformance baseline
+- **MLQT.Photino** - **The desktop host**, on Photino.Blazor (Windows and Linux). `Program.cs` is the whole of it: `AddMlqtCore()` plus the three platform services, the window, its icon and placement, and the one-time settings migration from the retired MAUI host
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
-- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
+- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer with no UI at all. See `MLQT.McpServer/README.md`
 - **MLQT.McpTester** - Photino Blazor desktop app (Windows and Linux) for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
-- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI (packaged as a `dotnet tool`). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
+- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI, shipped inside each platform's installer rather than as a `dotnet tool` (7b-7: `dotnet tool install` is an SDK command, so packaging it that way obliged a build agent to install the SDK to run a linter). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
@@ -45,7 +44,7 @@ dotnet test ModelicaGraph.Tests
 # Run every suite, including the two no CI job runs - see Test Cases below
 pwsh ./build/run-all-tests.ps1
 
-# Run the Photino host (Windows and Linux) - the one that ships after 7b-8
+# Run the desktop application (Windows and Linux)
 dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 
 # Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
@@ -54,9 +53,6 @@ dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 # Build the Linux installer from that tree, and prove the packaged tools run (phase 7b-7)
 ./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn -Version 1.2.3 -Output publish/linux-x64
 ./build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
-
-# Run MAUI application (Windows only, retired at 7b-8)
-dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
 ```
 
 ## Architecture Patterns
@@ -67,14 +63,16 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 **Pattern for platform-specific services:**
 1. Define interface in `MLQT.Services/Interfaces/`
-2. Implement in `MLQT/Services/` using MAUI APIs
-3. Register in `MLQT/MauiProgram.cs`
+2. Implement in `MLQT.Photino/Services/`, per platform where the platforms differ
+3. Register in `MLQT.Photino/Program.cs`
 
 **Pattern for reusable .NET services:**
 1. Define interface in `MLQT.Services/Interfaces/` — **always there**, even when the implementation
    lives in a subfolder such as `Checking/`. One folder answers "what services are there?"
 2. Implement in `MLQT.Services/`
-3. Register as singleton in `MauiProgram.cs`
+3. Register as singleton in `MLQT.Shared/MlqtServiceCollectionExtensions.cs` (`AddMlqtCore`) — **not**
+   in a host. Every host calls it, so a service registered in one host and not another is a class of
+   bug that stops existing
 
 ### Core Services
 
@@ -114,13 +112,14 @@ the **same findings with the same line numbers**. Change the primitive, never on
 | **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
 | **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation |
 
-**Platform-specific services** (in `MLQT/Services/`, use MAUI APIs):
+**Platform-specific services** — the whole of what a host contributes, registered in
+`MLQT.Photino/Program.cs`:
 
-| Service | Purpose |
-|---------|---------|
-| **IFilePickerService** | Native file/folder picker dialogs |
-| **IPowerManagementService** | Prevents system sleep during long operations |
-| **ISettingsService** | Application settings persistence (JSON, per-project) |
+| Service | Implementation | Purpose |
+|---------|----------------|---------|
+| **IFilePickerService** | `MLQT.Photino/Services/PhotinoFilePickerService.cs` | Native file/folder picker dialogs, through the window |
+| **IPowerManagementService** | `MLQT.Photino/Services/PowerManagementService.cs` | Prevents system sleep during long operations — `SetThreadExecutionState` on Windows, an inhibit lock held through `systemd-inhibit` on Linux |
+| **ISettingsService** | `MLQT.Services/JsonSettingsService.cs` | Settings persistence, as JSON under `%LocalAppData%/MLQT` (`~/.local/share/MLQT`). Not host-specific at all any more, which is why it is in `MLQT.Services`; `MauiPreferencesFile` is read once on first run to bring a pre-7b user's settings across |
 
 ### Application State (AppState)
 
@@ -172,7 +171,8 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | File | Purpose |
 |------|---------|
 | `MLQT.slnx` | Solution file |
-| `MLQT/MauiProgram.cs` | DI setup, service registration |
+| `MLQT.Shared/MlqtServiceCollectionExtensions.cs` | `AddMlqtCore()` — the service registrations every host needs |
+| `MLQT.Photino/Program.cs` | The desktop host: the window, the three platform services, settings migration |
 | `MLQT.Shared/Layout/MainLayout.razor` | Main layout, analysis pipeline orchestration |
 | `MLQT.Shared/Models/AppState.cs` | Application state and cross-component events |
 | `MLQT.Shared/Components/LibraryBrowser.razor` | Model tree navigation, VCS operation UI |
@@ -300,7 +300,7 @@ External resources (data files, C libraries, images) are tracked as graph nodes:
 
 1. Define interface in appropriate `Interfaces/` folder
 2. Implement in `MLQT.Services/` or `MLQT.Shared/Services/`
-3. Register as singleton in `MauiProgram.cs`
+3. Register as singleton in `AddMlqtCore()` (`MLQT.Shared/MlqtServiceCollectionExtensions.cs`)
 4. Use events for cross-component communication
 5. Keep business logic in services, not Razor components
 
@@ -366,7 +366,7 @@ backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
 | `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
 | `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
 | `Design/design-phase7-gui-tests.md` | Phase 7a — the code-behind sweep, the test harness it enables, and the `/selftest` conformance baseline captured before the desktop-host migration |
-| `Design/design-phase7b-photino.md` | Phase 7b — replacing MAUI with Photino: the gating spike, the host, the three platform services, Windows-then-Linux conformance, and the cutover |
+| `Design/design-phase7b-photino.md` | Phase 7b — replacing MAUI with Photino: the gating spike, the host, the three platform services, Windows-then-Linux conformance, packaging, and the cutover. **A historical record — the migration is done** |
 | `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
 
 Each phase note records what actually landed, including where the implementation deviated from the

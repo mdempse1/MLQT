@@ -448,7 +448,14 @@ MLQT uses a two-tier storage approach for settings:
 
 ### Application-Level Settings
 
-Application settings (UI theme, syntax highlighting, external tool paths and reference-library paths) are stored in the platform's application preferences storage. On Windows, this uses the standard MAUI Preferences API.
+Application settings (UI theme, syntax highlighting, external tool paths and reference-library paths) are stored in a `settings.json` file of MLQT's own:
+
+| Platform | Location |
+|----------|----------|
+| Windows | `%LocalAppData%\MLQT\settings.json` |
+| Linux | `~/.local/share/MLQT/settings.json` |
+
+If you used an MLQT release from before Linux was supported, your settings were held in the Windows application preferences store instead. They are copied into the file above automatically the first time the newer version runs; the old ones are read and never modified, so going back to an older release loses nothing.
 
 These settings are:
 - **Personal** — Each user has their own copy

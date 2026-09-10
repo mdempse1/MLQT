@@ -5,13 +5,18 @@ using Xunit;
 namespace MLQT.Shared.Tests;
 
 /// <summary>
-/// Every host page loads the same assets in the same order, checked by reading the pages.
+/// Every host page loads the assets the manifest names, in the order it names them, checked by
+/// reading the pages.
 ///
-/// <para>The reason this is a test and not a convention: the pages differ only in the Blazor
-/// bootstrap script, they are maintained by hand, and drift between them does not look like a
-/// missing script. It looks like the Dependencies page rendering an empty box on one host and not
-/// the other — at which point the question is whether Cytoscape is broken under that engine, which
-/// is the phase 7b question this manifest exists to keep separate from a typo.</para>
+/// <para>The reason this is a test and not a convention: a host page is maintained by hand, and a
+/// script missing from it does not look like a missing script. It looks like the Dependencies page
+/// rendering an empty box — at which point the question is whether Cytoscape is broken under that
+/// engine, which is the phase 7b question this manifest exists to keep separate from a typo.</para>
+///
+/// <para>It was written for two hosts, to catch drift between them; 7b-8 left one. The manifest is
+/// still the thing the page is held to, which is the half that mattered — an asset added to
+/// <c>HostAssetManifest</c> and not to the page is the same defect with one host as with two, and
+/// macOS or a second window host would rejoin the list rather than need a new test.</para>
 /// </summary>
 public class HostAssetManifestTests
 {
@@ -31,7 +36,7 @@ public class HostAssetManifestTests
     public static TheoryData<string, string> HostPages()
     {
         var data = new TheoryData<string, string>();
-        foreach (var host in new[] { "MLQT", "MLQT.Photino" })
+        foreach (var host in new[] { "MLQT.Photino" })
             data.Add(host, Path.Combine(RepositoryRoot(), host, "wwwroot", "index.html"));
         return data;
     }
