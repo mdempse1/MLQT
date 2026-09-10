@@ -93,6 +93,7 @@ jobs:
           -r win-x64
           --self-contained true
           -p:PublishSingleFile=false
+          -p:Version=${{ steps.version.outputs.version }}
           -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
           -o publish/MLQT
 
@@ -119,6 +120,7 @@ jobs:
           -r win-x64
           --self-contained true
           -p:PublishSingleFile=false
+          -p:Version=${{ steps.version.outputs.version }}
           -o publish/MLQT.McpServer
 
       # The CLI is a `dotnet tool` (PackageId MLQT.Cli, command `mlqt`), which is how
