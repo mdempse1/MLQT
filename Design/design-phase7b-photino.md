@@ -1303,17 +1303,19 @@ half in both directions already, by hand.
   alternative. Since 2023 the private key must live on FIPS hardware, so a cloud signing service is
   the practical route rather than a file in a CI secret. **An unsigned installer and an unsigned zip
   are flagged identically**, so this is not an argument for or against having an installer.
-- **A single version number.** `MLQT.Cli.csproj` hard-codes `0.1.0`; three tools in one installer need
-  one number, stamped from the tag.
+- ~~**A single version number.**~~ **Done (B145).** `Directory.Build.props` holds it and CI overrides it
+  from the tag. Finding it found a defect: `release.yml` passed `-p:Version` to the two CLI commands
+  and nothing else, so **every release ever tagged shipped a GUI and an MCP server saying 1.0.0**.
 - **`release.yml` becomes two jobs** — Windows for the installer, Ubuntu for the `.deb` (`dpkg-deb`
   does not exist on a Windows runner) — feeding one release. **The Ubuntu job is done**; the Windows
   job is still the pre-installer one, publishing the MAUI app and the zips, and its existing "verify
   bundled svn client" step must follow the payload to `MLQT.Photino`. Until it is converted, both
   jobs derive the version separately, which is marked in the file rather than tidied.
-- **Inno specifics**: a stable `AppId` so upgrades replace rather than accumulate; a **deliberate**
-  Start Menu shortcut carrying the icon (B132 was a shortcut Windows invented, aimed at a build with
-  no icon); WebView2 detected via the `EdgeUpdate\Clients\{F3017226-…}` key, per-machine *and*
-  per-user; and whether it removes an existing MAUI install.
+- ~~**Inno specifics**~~ **Done**, all of them — stable `AppId`, a deliberate Start Menu shortcut
+  naming its icon, WebView2 detected per-machine *and* per-user. See the section above; the two things
+  running it found were that the obvious .NET detection key does not exist on a machine with .NET 10
+  installed, and that Inno appends to `PATH` without un-appending. **Still to answer**: whether the
+  installer should remove an existing MAUI install, which only matters until 7b-8 deletes it anyway.
 - ~~**Debian specifics**: the app under `/opt/mlqt` with symlinks in `/usr/bin`; a **stable path for
   the MCP server**, which agents register by path; `git`/`subversion` as `Recommends` rather than
   `Depends` if a Git-only user should not be made to install Subversion.~~ **Done**, all three as
