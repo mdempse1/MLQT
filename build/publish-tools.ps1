@@ -115,6 +115,13 @@ if ($isWindowsTarget) {
             $problems += 'the bundled svn client is missing; run build/fetch-svn-tools.ps1 first, or pass -AllowMissingSvn'
         }
     }
+    else {
+        # Present is not the same as working: the payload is a third-party zip staged by a script, and
+        # a truncated download leaves a file of the right name. The release workflow used to run this
+        # as a step of its own; it belongs here, with the check that the file exists at all.
+        & $svn --version --quiet | Out-Null
+        if ($LASTEXITCODE -ne 0) { $problems += "the bundled svn client will not run (exit $LASTEXITCODE)" }
+    }
 }
 
 if ($problems) {

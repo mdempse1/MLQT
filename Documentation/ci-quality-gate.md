@@ -40,12 +40,15 @@ dotnet tool install --global --add-source ./nupkg MLQT.Cli    # then: mlqt ...
 # update later:  dotnet tool update --global --add-source ./nupkg MLQT.Cli
 ```
 
-**For a CI agent** (isolated, no global state):
+**For a CI agent** (nothing preinstalled, no source tree):
 
 ```bash
-dotnet tool install --tool-path ./tools --add-source ./nupkg MLQT.Cli
-./tools/mlqt check /path/to/MyLibrary
+sudo apt install ./mlqt_<version>_amd64.deb    # from the latest release
+mlqt check /path/to/MyLibrary
 ```
+
+The `.deb` carries its own .NET runtime, so the agent needs neither the SDK nor the runtime. See
+[installation.md](installation.md).
 
 ### Which one should I use?
 
@@ -53,16 +56,13 @@ All three run **identical code** — the difference is only distribution and erg
 
 - `dotnet run` builds and runs from the source tree in place. It needs the repository present and
   rebuilds each time. Best for a **quick local trial while you're in the repo**.
-- `dotnet pack` wraps the build output into a single versioned NuGet package (`.nupkg`);
-  `dotnet tool install` extracts it into a per-user tool store and puts an **`mlqt` command on your
-  PATH**, decoupled from the repo. Best when you want to **run against many libraries** or on a
-  **machine/CI agent that doesn't have the source**. The `--tool-path ./tools` variant keeps the
-  install in a throwaway folder with no global state — the CI sweet spot.
-
-Note that `dotnet tool` is **framework-dependent** either way: it is not a self-contained or
-single-file binary, so the .NET 10 runtime must be installed. (Standalone per-OS binaries are a
-separate, later packaging concern.) For local testing on your own machine you can skip packing
-entirely and just use `dotnet run`.
+- `dotnet pack` + `dotnet tool install` builds the tool from the source you have and puts an **`mlqt`
+  command on your PATH**, decoupled from the repo. It needs the **.NET SDK**, since `dotnet tool` is
+  an SDK command — which is exactly why the released `.nupkg` was dropped: obliging a build agent to
+  install the SDK to run a linter is the wrong trade.
+- **The platform installer** is the one for a machine without the source. The Linux `.deb` bundles
+  its own runtime, so an agent or container needs nothing preinstalled; the Windows installer offers
+  to put `mlqt` on your `PATH`. Best for **CI agents** and for **running against many libraries**.
 
 ### Point it at your repository root
 

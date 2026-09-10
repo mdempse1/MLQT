@@ -20,31 +20,19 @@ sudo apt install ./mlqt_<version>_amd64.deb && mlqt --version
 
 On Windows the installer offers to put `mlqt` on your `PATH`.
 
-The two options below predate the installers and remain for now. They are the way to get the CLI
-onto a machine you do not want a desktop application on.
+### On a machine you do not want a desktop application on
 
-**As a .NET tool** (Windows, Linux and macOS — one package covers all three). It is **not on
-nuget.org**: download `MLQT.Cli.<version>.nupkg` from the
-[latest release](https://github.com/mdempse1/MLQT/releases) and install it from the directory you
-saved it in, which is what `--add-source .` means below.
+There is one artefact per platform and the CLI is inside it, so this is the same download either
+way — the Linux `.deb` is the whole answer for a build agent, and it carries its own .NET runtime.
 
-```bash
-dotnet tool install --global --add-source . MLQT.Cli      # provides the `mlqt` command
-# or into an isolated location:
-dotnet tool install --tool-path ./tools --add-source . MLQT.Cli
-```
+A `dotnet tool` package and a standalone Linux tarball used to be published as well. **Both are
+gone.** `dotnet tool install` is an *SDK* command, so shipping the CLI that way obliged every build
+agent to install the .NET SDK in order to run a linter — which is the opposite of what a headless
+tool is for. The installers were the better answer, and keeping three routes to one binary meant
+three things to keep in step.
 
-Requires the .NET 10 runtime.
-
-**As a self-contained Linux binary**, for a build agent or container where you would rather not
-install .NET. Download `mlqt-<version>-linux-x64.tar.gz` from the same release:
-
-```bash
-tar -xzf mlqt-<version>-linux-x64.tar.gz -C /opt/mlqt && /opt/mlqt/mlqt --version
-```
-
-It carries its own runtime, so it needs nothing preinstalled. Put the directory on your `PATH`, or
-call the binary by full path.
+If you have a `.nupkg` or a `.tar.gz` from an earlier release they keep working; nothing has changed
+about the CLI itself.
 
 ## Usage
 

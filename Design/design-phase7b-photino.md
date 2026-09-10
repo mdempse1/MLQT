@@ -1306,11 +1306,14 @@ half in both directions already, by hand.
 - ~~**A single version number.**~~ **Done (B145).** `Directory.Build.props` holds it and CI overrides it
   from the tag. Finding it found a defect: `release.yml` passed `-p:Version` to the two CLI commands
   and nothing else, so **every release ever tagged shipped a GUI and an MCP server saying 1.0.0**.
-- **`release.yml` becomes two jobs** — Windows for the installer, Ubuntu for the `.deb` (`dpkg-deb`
-  does not exist on a Windows runner) — feeding one release. **The Ubuntu job is done**; the Windows
-  job is still the pre-installer one, publishing the MAUI app and the zips, and its existing "verify
-  bundled svn client" step must follow the payload to `MLQT.Photino`. Until it is converted, both
-  jobs derive the version separately, which is marked in the file rather than tidied.
+- ~~**`release.yml` becomes two jobs**~~ **Done.** Three, in fact: a `version` job both build jobs
+  take their number from, so a tag can only mean one thing. **A tag now produces exactly two files** —
+  the Inno setup and the `.deb`. The nupkg, the Linux tarball and the two Windows zips are gone.
+  Each job installs what it built and runs it: the Windows job installs per-user and silently, checks
+  the tree, runs `mlqt --version` and the installed GUI's 16 probes, then uninstalls and fails if the
+  directory survives; the Linux job does the same through `apt`. The old "verify bundled svn client"
+  step is gone as a step and better as a rule — `publish-tools.ps1` fails on a missing *or
+  unrunnable* client unless `-AllowMissingSvn` is passed, and neither release job passes it.
 - ~~**Inno specifics**~~ **Done**, all of them — stable `AppId`, a deliberate Start Menu shortcut
   naming its icon, WebView2 detected per-machine *and* per-user. See the section above; the two things
   running it found were that the obvious .NET detection key does not exist on a machine with .NET 10
@@ -1332,14 +1335,19 @@ half in both directions already, by hand.
   `/usr/share/icons/hicolor/*/apps/` are the mechanism, and the app id the window reports has to match
   the entry's file name. That makes this the one packaging task with a *functional* consequence rather
   than a cosmetic one.
-- **arm64?** `Photino.Native` ships `linux-arm64` and `win-arm64`. x64-only is a fine answer, but it
-  should be an answer.
-- **Documentation**: `Documentation/installation.md` is written and covers both platforms;
-  `getting-started.md` (prerequisites and the SVN claim, which was Windows-only and said so nowhere),
-  `cli.md` (install) and `mcp-server.md` (the `/usr/bin/mlqt-mcp-server` registration path) have
-  their Linux halves. What is left is the pass that follows the Windows job's conversion: `cli.md`
-  still documents the nupkg and the tarball, which are still published and are meant to go with
-  them.
+- ~~**arm64?**~~ **Answered: x64 only.** `Photino.Native` ships arm64 for both platforms and
+  `publish-tools.ps1` accepts the RIDs, so the door is open — but nobody has an arm64 machine to test
+  on, and an untested artefact is worse than an absent one.
+- ~~**Documentation**~~ **Done.** `installation.md` covers both platforms; `getting-started.md`,
+  `cli.md` and `mcp-server.md` have their Linux halves. `cli.md` and `ci-quality-gate.md` no longer
+  offer the `.nupkg` or the tarball, and say why: `dotnet tool install` is an SDK command, so shipping
+  the CLI that way obliged a build agent to install the SDK to run a linter. The `.deb` is now the CI
+  answer, and it carries its own runtime.
+
+**7b-7 is complete**, with one thing deliberately not done: **the installers are unsigned**, so
+Windows SmartScreen warns on first run. A certificate is a decision that has not been taken, MLQT is
+eligible for SignPath Foundation's free OSS programme, and an unsigned zip would have been flagged
+identically — so it is not a cost of having chosen an installer.
 
 ### 7b-8 — cutover (M)
 
@@ -1435,7 +1443,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 | **7b-4** | ✅ **shipped 2026-09-08** — Roboto bundled (variable, all nine subsets, OFL), no host page fetches anything over the network, and probe 7 is a real assertion that loads the face before checking it | S |
 | **7b-5** | ✅ **shipped 2026-09-08/09** — Photino/Windows matches the MAUI baseline on all 16 probes, committed as a capture; the manual checklist found the window size (B131) and the taskbar icon (B132) and both are fixed; the reported slowness was settled by an A/B (B125) | M |
 | **7b-6** | ✅ **shipped 2026-09-09** — Photino/WebKitGTK matches the MAUI baseline on all 16 probes, committed as a capture; `desktop-selftest` runs it per platform in CI and is **green on both**, after three runs that found a missing shared library on Linux and a Windows leg that had been passing on timing; the nightly WebKit journeys ship as their own workflow, unproven until the merge; the manual checklist found the Wayland icon question (B134, packaging's), and a second pass against a Windows build beside it found four more — B137-B140, all fixed | L |
-| **7b-7** | Packaging and distribution. **Both installers are built and both have been run**: the Windows one 2026-09-10, the Linux `.deb` 2026-09-10, each carrying all three tools and each proved by running what it installs. Both named items are done — the Start Menu shortcut (B132) and the desktop entry (B134). What is left is the Windows half of `release.yml`, code signing, arm64 and retiring the artefacts the installers replace | M — **in progress** |
+| **7b-7** | ✅ **shipped 2026-09-10** — one installer per platform carrying all three tools, each built from a staging tree whose contents are proven to run first, and each installed and exercised by its own release job. A tag produces two files. Unsigned, deliberately | M |
 | **7b-8** | Cutover: retire MAUI, the workload, the `build-maui` job, and the documentation that says MAUI | M |
 | **7b-9** | macOS | deferred |
 

@@ -20,9 +20,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # The version, worked out once. Both build jobs derived it separately while the Windows half was
+  # still the pre-installer one, which was marked as temporary rather than tidied; now that both
+  # halves build an installer they take it from here, so a tag can only mean one thing.
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      deb: ${{ steps.v.outputs.deb }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v='${{ github.event.inputs.version }}'
+          else
+            v='${{ github.ref_name }}'
+            v="${v#v}"
+          fi
+          echo "version=$v" >> $GITHUB_OUTPUT
+          # A semver pre-release becomes a Debian one: 1.2.3-rc1 -> 1.2.3~rc1, which sorts *before*
+          # 1.2.3 exactly as the semver does. package-deb.sh names its output by the same rule.
+          echo "deb=$(echo "$v" | sed 's/+.*//; s/-/~/')" >> $GITHUB_OUTPUT
+
   build-and-release:
-    name: Build & Publish Release
+    name: Build & Publish the Windows installer
     runs-on: windows-latest
+    needs: version
 
     # Creating the release and uploading its assets is a write, and this repository's default workflow
     # token is read-only, so the step failed with a 403 the first time it ever ran - which was the
@@ -41,25 +65,13 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
+      # Still needed to *restore* the solution below, which still contains the MAUI project even
+      # though this job no longer publishes it. Phase 7b-8 deletes that project and this step with it.
       - name: Install MAUI workload
         run: dotnet workload install maui-windows
 
-      - name: Determine version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            # Strip 'v' prefix from tag
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Restore dependencies
-        run: |
-          dotnet restore MLQT.slnx
-          dotnet restore MLQT/MLQT.csproj -r win-x64
-          dotnet restore MLQT.McpServer/MLQT.McpServer.csproj -r win-x64
+        run: dotnet restore MLQT.slnx
 
       - name: Run tests
         run: |
@@ -68,136 +80,117 @@ jobs:
           dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
           dotnet test MLQT.Services.Tests -c Release --no-restore
           dotnet test MLQT.McpServer.Tests -c Release --no-restore
-          # The CLI is a shipped artifact of this workflow, so it is tested by it. It was absent
-          # while it was only built here; now that the release packs and publishes the tool, a
-          # release could otherwise ship an `mlqt` that no step in this workflow ever ran.
           dotnet test MLQT.Cli.Tests -c Release --no-restore
-          # Added for the same reason, one release later: MLQT.Shared holds the entire desktop UI and
-          # this workflow publishes it. Its suite arrived in phase 7a and was not added here, so a
-          # release could ship the UI with none of its 327 tests having run in this workflow.
           dotnet test MLQT.Shared.Tests -c Release --no-restore
 
-      # Stage the SlikSVN command-line client into MLQT/svn-tools/win-x64 so the publish
-      # step (via MLQT.csproj) copies it into the app output under svn/. The zip URL is
-      # configured as a repository variable (Settings > Secrets and variables > Actions >
-      # Variables): SLIKSVN_ZIP_URL must point at a SlikSVN >= 1.14 x64 .zip.
+      # Stage the SlikSVN command-line client so the publish copies it into the tree under svn/. The
+      # zip URL is a repository variable (Settings > Secrets and variables > Actions > Variables):
+      # SLIKSVN_ZIP_URL must point at a SlikSVN >= 1.14 x64 .zip.
+      #
+      # There is no separate "verify it arrived" step any more: publish-tools.ps1 fails on a missing
+      # client unless -AllowMissingSvn is passed, and this job does not pass it. One mechanism, and
+      # the one that also runs on a developer's machine.
       - name: Bundle SlikSVN command-line client
         shell: pwsh
         run: pwsh build/fetch-svn-tools.ps1 -ZipUrl "${{ vars.SLIKSVN_ZIP_URL }}"
 
-      - name: Publish MLQT (self-contained)
-        run: >
-          dotnet publish MLQT/MLQT.csproj
-          -c Release
-          -f net10.0-windows10.0.19041.0
-          -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=false
-          -p:Version=${{ steps.version.outputs.version }}
-          -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
-          -o publish/MLQT
-
-      # Fail the release loudly if the svn client did not make it into the output, rather
-      # than silently shipping a zip that falls back to PATH/SharpSvn on the user's machine.
-      - name: Verify bundled svn client
+      # Inno Setup ships on the windows runner image, but "ships on the image" is a fact about today's
+      # image. Finding it here means a change to that becomes one sentence rather than a compiler that
+      # is not on PATH and an error nobody can read.
+      - name: Locate the Inno Setup compiler
+        id: iscc
         shell: pwsh
         run: |
-          $svn = "publish/MLQT/svn/svn.exe"
-          if (-not (Test-Path $svn)) {
-            throw "Bundled svn.exe missing from publish output ($svn). Check the 'Bundle SlikSVN' step and the SLIKSVN_ZIP_URL variable."
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            throw "Inno Setup 6 is not on this runner. Install it (choco install innosetup) or pin an image that has it."
           }
-          & $svn --version --quiet
-          Write-Host "Bundled svn client OK."
+          "path=$iscc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Using $iscc"
 
-      # The MCP server is a separate, headless console executable (not part of the MAUI app).
-      # Publish it self-contained so it runs without a preinstalled .NET runtime, and ship it as
-      # its own release asset so the main app download stays lean.
-      - name: Publish MLQT.McpServer (self-contained)
-        run: >
-          dotnet publish MLQT.McpServer/MLQT.McpServer.csproj
-          -c Release
-          -f net10.0
-          -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=false
-          -p:Version=${{ steps.version.outputs.version }}
-          -o publish/MLQT.McpServer
-
-      # The CLI is a `dotnet tool` (PackageId MLQT.Cli, command `mlqt`), which is how
-      # Documentation/cli.md tells people to install it - so a release that did not carry the package
-      # left those instructions with nothing to install from. Packed at the release's version rather
-      # than the 0.1.0 in the csproj, so the tool and the app a user downloads say the same thing.
+      # Framework-dependent on Windows: the installer downloads .NET 10 and WebView2 when they are
+      # absent, which keeps the download around 16 MB rather than 90 MB.
       #
-      # This package is framework-dependent and carries no runtime identifier, so it is already the
-      # Linux and macOS build as well as the Windows one: MLQT.Cli targets plain net10.0 and nothing
-      # in its dependency chain is Windows-only. The linux-x64 archive below is not a second package
-      # for a platform this one misses - it is for machines with no .NET 10 runtime to install into.
-      - name: Pack the mlqt CLI tool
+      # The smoke tests run - the CLI answers, the MCP server completes a handshake, and the GUI's 16
+      # /selftest probes run against the published tree. That last needs WebView2, which the runner
+      # image has, and it is the same check the desktop-selftest job makes on every push.
+      - name: Publish the three tools into one tree
+        shell: pwsh
         run: >
-          dotnet pack MLQT.Cli/MLQT.Cli.csproj
-          -c Release
-          -p:Version=${{ steps.version.outputs.version }}
-          -o publish/nupkg
+          pwsh build/publish-tools.ps1
+          -Runtime win-x64
+          -Version ${{ needs.version.outputs.version }}
+          -Output publish/win-x64
 
-      # Same reasoning as the bundled svn client: fail here rather than publish a release whose
-      # documented install command has no package behind it.
-      - name: Verify the CLI package
+      - name: Build the installer
         shell: pwsh
         run: |
-          $nupkg = "publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg"
-          if (-not (Test-Path $nupkg)) {
-            throw "Expected $nupkg. Check the pack step and MLQT.Cli's PackageId/Version."
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & "${{ steps.iscc.outputs.path }}" /Qp `
+            "/DAppVersion=${{ needs.version.outputs.version }}" `
+            "/DStageDir=$PWD\publish\win-x64" `
+            "/DOutputDir=$PWD\artifacts" `
+            build/installer/mlqt.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC exited $LASTEXITCODE" }
+
+      # The same question the Linux job asks of its .deb: not "does the installer contain the right
+      # files" but "does what it installed run". Installed per-user and silently, exercised, removed.
+      - name: Install it, and run what it installed
+        shell: pwsh
+        run: |
+          $setup = "artifacts/MLQT-${{ needs.version.outputs.version }}-win-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "no installer at $setup" }
+
+          $dir = Join-Path $env:RUNNER_TEMP 'mlqt-installed'
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES',"/DIR=$dir",'/TASKS=addtopath' -Wait
+
+          foreach ($f in 'MLQT.Photino.exe','mlqt.exe','MLQT.McpServer.exe','mlqt.ico','wwwroot\index.html','svn\svn.exe') {
+            if (-not (Test-Path (Join-Path $dir $f))) { throw "the installed tree has no $f" }
           }
-          Write-Host "CLI package OK: $nupkg"
 
-      # A self-contained linux-x64 `mlqt` for machines with no .NET 10 runtime - a CI agent or a
-      # container where installing one is not wanted. Cross-published from this Windows runner, which
-      # needs no Linux toolchain: the output is managed code plus the runtime's own native libraries.
-      - name: Publish the mlqt CLI (self-contained linux-x64)
-        run: >
-          dotnet publish MLQT.Cli/MLQT.Cli.csproj
-          -c Release
-          -r linux-x64
-          --self-contained true
-          -p:PublishSingleFile=false
-          -p:Version=${{ steps.version.outputs.version }}
-          -o publish/mlqt-linux-x64
+          & (Join-Path $dir 'mlqt.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed mlqt exited $LASTEXITCODE" }
 
-      # tar, not zip: it preserves the executable bit on `mlqt`, which a zip does not, so the file a
-      # user extracts is one they can run without being told to chmod it first.
-      - name: Archive the Linux CLI
-        shell: bash
-        run: |
-          test -f publish/mlqt-linux-x64/mlqt || { echo "no mlqt binary in the linux-x64 publish"; exit 1; }
-          chmod +x publish/mlqt-linux-x64/mlqt
-          tar -czf "mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz" -C publish/mlqt-linux-x64 .
+          # The installed GUI, from where a user would run it.
+          $report = Join-Path $env:RUNNER_TEMP 'installed-selftest.json'
+          $env:MLQT_SELFTEST = '1'
+          $env:MLQT_SELFTEST_HOST = 'MLQT.Photino'
+          $env:MLQT_SELFTEST_OUT = $report
+          Start-Process (Join-Path $dir 'MLQT.Photino.exe') -Wait -NoNewWindow
+          Remove-Item Env:MLQT_SELFTEST, Env:MLQT_SELFTEST_HOST, Env:MLQT_SELFTEST_OUT
 
-      - name: Create zip archives
-        shell: pwsh
-        run: |
-          Compress-Archive -Path publish/MLQT/* -DestinationPath "MLQT-${{ steps.version.outputs.version }}-win-x64.zip"
-          Compress-Archive -Path publish/MLQT.McpServer/* -DestinationPath "MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip"
+          if (-not (Test-Path $report)) { throw 'the installed GUI wrote no self-test report' }
+          $probes = (Get-Content $report -Raw | ConvertFrom-Json).Probes
+          $bad = @($probes | Where-Object { $_.Status -ne 'Pass' })
+          $bad | ForEach-Object { Write-Host "::error::$($_.Id): $($_.Detail)" }
+          Write-Host "$($probes.Count - $bad.Count)/$($probes.Count) probes passed from the installed package"
+          if ($bad.Count) { throw 'the installed GUI failed its self-test' }
+
+          Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          Start-Sleep -Seconds 5
+          if (Test-Path $dir) { throw 'uninstalling left the install directory behind' }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: MLQT-${{ steps.version.outputs.version }}-win-x64
-          path: |
-            MLQT-${{ steps.version.outputs.version }}-win-x64.zip
-            MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
-            publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
-            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
+          name: MLQT-${{ needs.version.outputs.version }}-win-x64-setup
+          path: artifacts/MLQT-${{ needs.version.outputs.version }}-win-x64-setup.exe
 
       # Any tag, not only 'v'-prefixed ones - see the trigger above for why that mattered.
+      #
+      # The installer is **unsigned**, so Windows SmartScreen warns on first run. Deliberate for now:
+      # a certificate is a decision that has not been taken, and an unsigned zip would have been
+      # flagged identically - so it is not a cost of having an installer.
+      # Documentation/installation.md tells users what they will see.
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            MLQT-${{ steps.version.outputs.version }}-win-x64.zip
-            MLQT.McpServer-${{ steps.version.outputs.version }}-win-x64.zip
-            publish/nupkg/MLQT.Cli.${{ steps.version.outputs.version }}.nupkg
-            mlqt-${{ steps.version.outputs.version }}-linux-x64.tar.gz
+          files: artifacts/MLQT-${{ needs.version.outputs.version }}-win-x64-setup.exe
           generate_release_notes: true
           draft: true
 
@@ -209,14 +202,15 @@ jobs:
   # attaches the .deb, and `softprops/action-gh-release` adds files to the existing draft rather
   # than replacing it.
   #
-  # **The Windows job is still the pre-installer one.** It publishes the MAUI app and the zips, and
-  # 7b-7's other half turns it into the job that builds build/installer/mlqt.iss. When that happens
-  # the two jobs should take their version from one place instead of each deriving it - the
-  # duplication below is temporary and marked rather than tidy.
+  # Both halves now build an installer and nothing else. What a tag produces is exactly two files:
+  # the Inno setup and this .deb. The nupkg, the linux tarball and the two Windows zips are gone -
+  # `dotnet tool install` is an SDK command, and obliging a build agent to install the SDK to run a
+  # linter was the wrong trade, so the CLI ships inside both installers instead.
   # ---------------------------------------------------------------------------------------------
   linux-deb:
     name: Build & Publish .deb
     runs-on: ubuntu-latest
+    needs: version
 
     permissions:
       contents: write
@@ -229,22 +223,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
-
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-          fi
-
-      # A semver pre-release becomes a Debian one: 1.2.3-rc1 -> 1.2.3~rc1, which sorts *before*
-      # 1.2.3 exactly as the semver does. package-deb.sh applies the same rule to name its output,
-      # so this is the file name that will exist.
-      - name: The Debian version
-        id: deb
-        run: echo "version=$(echo '${{ steps.version.outputs.version }}' | sed 's/+.*//; s/-/~/')" >> $GITHUB_OUTPUT
 
       # What the *smoke tests* need, not what the build needs. The GUI's 16 /selftest probes are the
       # strongest check this repository has and they run a real WebKitGTK window, so the runner needs
@@ -268,7 +246,7 @@ jobs:
           -Runtime linux-x64
           -SelfContained
           -AllowMissingSvn
-          -Version ${{ steps.version.outputs.version }}
+          -Version ${{ needs.version.outputs.version }}
           -Output publish/linux-x64
           -SkipSmokeTests
 
@@ -277,7 +255,7 @@ jobs:
       - name: Build the .deb, and prove the packaged tools run
         run: >
           xvfb-run -a bash build/package-deb.sh
-          --version ${{ steps.version.outputs.version }}
+          --version ${{ needs.version.outputs.version }}
           --stage publish/linux-x64
           --output artifacts
 
@@ -285,7 +263,7 @@ jobs:
       # right files": a malformed field or an unsatisfiable dependency only shows up here.
       - name: Install it, and run what it installed
         run: |
-          sudo apt-get install -y ./artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+          sudo apt-get install -y ./artifacts/mlqt_${{ needs.version.outputs.deb }}_amd64.deb
           mlqt --version
           test -x /usr/bin/mlqt-gui
           test -f /usr/share/applications/MLQT.Photino.desktop
@@ -310,13 +288,13 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: MLQT-${{ steps.version.outputs.version }}-linux-x64-deb
-          path: artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+          name: MLQT-${{ needs.version.outputs.version }}-linux-x64-deb
+          path: artifacts/mlqt_${{ needs.version.outputs.deb }}_amd64.deb
 
       - name: Add the .deb to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/mlqt_${{ steps.deb.outputs.version }}_amd64.deb
+          files: artifacts/mlqt_${{ needs.version.outputs.deb }}_amd64.deb
           generate_release_notes: true
           draft: true

@@ -35,32 +35,55 @@ public class ReleaseVersionTests
     }
 
     [Fact]
-    public void EveryPublishAndPackInTheReleaseWorkflowCarriesTheVersion()
+    public void EveryPublishInTheStagingScriptCarriesTheVersion()
     {
-        // The failure exactly as it happened: a publish step that nobody remembered to pass the
-        // version to, producing an artefact that is confidently wrong. Written to read whatever
-        // commands the workflow has rather than a list of the ones it has today, so splitting it into
-        // a Windows job and a Linux job for 7b-7 cannot quietly drop one.
+        // The failure this was written for: a publish step nobody remembered to pass the version to,
+        // producing an artefact that is confidently wrong.
+        //
+        // It used to read release.yml, because that is where the publishes were. They have moved into
+        // build/publish-tools.ps1, and this test found that out by failing when the workflow was
+        // converted - which is the correct outcome for a guard whose subject moved, and better than
+        // one that kept passing over an empty search.
+        var staging = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+
+        var publishes = Regex.Matches(staging, @"dotnet publish(?<args>(.|
+)*?)(?=
+\s*if|
+\s*\})");
+
+        Assert.True(publishes.Count >= 1,
+            "no dotnet publish found in publish-tools.ps1; the format may have changed");
+
+        Assert.All(publishes, m =>
+            Assert.Contains("-p:Version=", m.Groups["args"].Value, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EveryReleaseJobPassesTheVersionToTheStagingScript()
+    {
+        // The other end of the same chain. The script defaults to 0.0.0-dev when nothing passes a
+        // version, so a job that forgot would publish, package and upload a release artefact calling
+        // itself a development build - and every check in the script would pass, because they compare
+        // what the tools report against what was asked for, and both would be 0.0.0-dev.
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
 
-        // A publish or pack command and everything up to the blank line or the next step that ends it.
-        var commands = Regex.Matches(
-            workflow,
-            @"dotnet\s+(publish|pack)\b(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)",
-            RegexOptions.None);
+        // Anchored on "pwsh build/publish-tools.ps1", the actual invocation. A looser pattern matched
+        // a *comment* that mentions the script by name, and reported it as a job that had forgotten
+        // the version.
+        var invocations = Regex.Matches(workflow,
+            @"pwsh build/publish-tools\.ps1(?<args>(.|
+)*?)(?=
+\s*
+|
+\s*-\s+name:)");
 
-        Assert.True(commands.Count >= 3,
-            $"found only {commands.Count} publish/pack commands in release.yml; the format may have changed");
+        Assert.True(invocations.Count >= 2,
+            $"found {invocations.Count} publish-tools.ps1 invocations in release.yml; expected one per platform");
 
-        var missing = commands
-            .Where(c => !c.Groups["args"].Value.Contains("-p:Version="))
-            .Select(c => c.Value.Split('\n')[0].Trim())
-            .ToList();
-
-        Assert.True(missing.Count == 0,
-            "release.yml publishes without a version, so the artefact ships whatever the SDK defaults to:"
-            + string.Concat(missing.Select(m => Environment.NewLine + "  " + m)));
+        Assert.All(invocations, m =>
+            Assert.Contains("-Version", m.Groups["args"].Value, StringComparison.Ordinal));
     }
 
     [Fact]
