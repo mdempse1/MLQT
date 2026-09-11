@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Xunit;
 
@@ -27,15 +28,22 @@ public class TabNavigationJourney(TestHostFixture host)
 {
     /// <summary>The five tabs MainLayout declares, in order, with something each one must show.</summary>
     /// <remarks>
-    /// They carry an icon and a tooltip and no text, so they can only be addressed positionally.
-    /// The landmarks are the empty states, because the host starts with no library open — which is
-    /// itself the state a user meets on first launch and the one least often looked at.
+    /// <para>They carry an icon and a tooltip and no text, so they can only be addressed
+    /// positionally.</para>
+    ///
+    /// <para><b>The landmark is a regular expression because a page can have more than one right
+    /// answer.</b> The journeys share one host, so whether a library is loaded by the time this runs
+    /// depends on what ran before it — and the External Resources page says "none detected" with an
+    /// empty library and draws its filter bar with a full one. Pinning the empty state made this a
+    /// test of journey ordering: enriching the fixture library so it *has* resources (B152) turned it
+    /// red without anything on that page changing. Either state is the page rendering its own
+    /// content, which is all this journey claims.</para>
     /// </remarks>
     public static TheoryData<int, string, string> Tabs() => new()
     {
         { 0, "Code Review",        "Findings" },
         { 1, "Dependencies",       "Dependency Network" },
-        { 2, "External Resources", "No external resources detected" },
+        { 2, "External Resources", "No external resources detected|Filter by type:" },
         { 3, "Metrics",            "Scope" },
         { 4, "Settings",           "UI Theme" },
     };
@@ -55,26 +63,6 @@ public class TabNavigationJourney(TestHostFixture host)
     }
 
 
-    /// <summary>
-    /// Closes any MudBlazor tooltip left open by the previous click.
-    /// </summary>
-    /// <remarks>
-    /// The top-level tabs carry <c>ToolTip=</c>, so clicking one opens a tooltip popover that is
-    /// positioned over the tab strip — and it then intercepts the *next* click, which Playwright
-    /// reports as a 30-second actionability timeout rather than as anything to do with a tooltip.
-    /// It passed locally and failed on both CI runners, because whether the pointer happens to still
-    /// be over the tab when the next click is attempted is a matter of timing.
-    ///
-    /// Moving the pointer away is the fix rather than forcing the click: a forced click would also
-    /// sail through a real overlay covering the control, which is a bug worth failing on.
-    /// </remarks>
-    private static async Task DismissTooltipsAsync(IPage page)
-    {
-        await page.Mouse.MoveAsync(0, 0);
-
-        await page.Locator(".mud-popover-open").First.WaitForAsync(
-            new LocatorWaitForOptions { State = WaitForSelectorState.Hidden, Timeout = 10_000 });
-    }
 
     [Fact]
     public async Task TheShellOffersFiveTabs()
@@ -96,10 +84,10 @@ public class TabNavigationJourney(TestHostFixture host)
         var errors = new List<string>();
         page.PageError += (_, e) => errors.Add(e);
 
-        await DismissTooltipsAsync(page);
+        await ShellReadiness.WaitUntilClickableAsync(page);
         await page.Locator(".mud-tab").Nth(index).ClickAsync();
 
-        await Assertions.Expect(page.GetByText(landmark).First)
+        await Assertions.Expect(page.GetByText(new Regex(landmark)).First)
                         .ToBeVisibleAsync(new() { Timeout = 20_000 });
 
         Assert.True(errors.Count == 0, $"the {name} tab raised: " + string.Join("; ", errors));
@@ -123,7 +111,10 @@ public class TabNavigationJourney(TestHostFixture host)
         {
             for (var index = 0; index < 5; index++)
             {
-                await DismissTooltipsAsync(page);
+                // Before every click, not only the first: opening Metrics starts a deferred style
+                // check over whatever is loaded, and its modal progress dialog then covers the tab
+                // strip - so it was the *next* click, on Settings, that timed out (B154).
+                await ShellReadiness.WaitUntilClickableAsync(page);
                 await page.Locator(".mud-tab").Nth(index).ClickAsync();
                 await page.WaitForTimeoutAsync(200);
             }

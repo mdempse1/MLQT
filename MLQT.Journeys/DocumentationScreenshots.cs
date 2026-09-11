@@ -90,6 +90,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
                      (4, "settings"),
                  })
         {
+            await ShellReadiness.WaitUntilClickableAsync(page);
             await page.Locator(".mud-tab").Nth(index).ClickAsync();
             await SettleAsync(page);
             await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(OutputDirectory, $"tab-{name}.png") });
@@ -130,6 +131,17 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         var graph = libraries.CombinedGraph;
         await host.Services.GetRequiredService<IStyleCheckingService>()
                   .CheckModelsAsync(graph.ModelNodes.Select(m => m.Id).ToList(), graph);
+
+        // The dependency edges the Dependencies tab draws. Idempotent, and the one supported way to
+        // ask for them.
+        await libraries.EnsureDependenciesAnalyzedAsync();
+
+        // And then the resources - in that order, and not the other way round. The resource *edges*
+        // are built by the dependency pass, while the parse trees are still in hand; this service
+        // indexes what that pass left in the graph. Run first it indexes an empty graph, and the
+        // External Resources page is then correct and empty, which is a picture of nothing.
+        await host.Services.GetRequiredService<IExternalResourceService>()
+                  .AnalyzeResourcesAsync(graph);
 
         await host.WaitForIdleAsync();
         await SettleAsync(page);
@@ -173,22 +185,41 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// the code viewer, the findings list and the dependency graph show anything - and doing it the
     /// way a user does is what keeps the picture honest about the number of clicks involved.
     /// </remarks>
-    private static async Task SelectAClassAsync(IPage page)
+    private static async Task SelectAClassAsync(IPage page, string className = "Modified")
     {
-        // The library node, by name. It is the only node in the tree at this point.
-        var library = page.Locator(".mud-treeview-item-content", new PageLocatorOptions { HasTextString = "Lib" }).First;
-        await library.ClickAsync();
-        await page.WaitForTimeoutAsync(1000);
+        // Expanding and selecting are different gestures, and the tree is lazy: clicking the node's
+        // label selects it and leaves it closed, so the children a later step wants are not in the
+        // DOM at all. The arrow is what loads them.
+        await ExpandAsync(page, "Lib");
 
-        // A class inside it. "Modified" is the one the fixture leaves uncommitted, so the picture
-        // also shows what a class with pending changes looks like.
-        var target = page.Locator(".mud-treeview-item-content", new PageLocatorOptions { HasTextString = "Modified" }).First;
+        var target = page.Locator(".mud-treeview-item-content",
+                                  new PageLocatorOptions { HasTextString = className }).First;
 
-        if (await target.CountAsync() > 0)
-        {
-            await target.ClickAsync();
-            await page.WaitForTimeoutAsync(1500);
-        }
+        Assert.True(await target.CountAsync() > 0, $"{className} is not in the tree");
+        await target.ClickAsync();
+        await page.WaitForTimeoutAsync(1500);
+    }
+
+    /// <summary>Opens one tree node by its arrow, and waits for its children to arrive.</summary>
+    private static async Task ExpandAsync(IPage page, string nodeText)
+    {
+        var node = page.Locator(".mud-treeview-item-content",
+                                new PageLocatorOptions { HasTextString = nodeText }).First;
+
+        await node.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+
+        var arrow = node.Locator("xpath=preceding-sibling::*[contains(@class,'mud-treeview-item-arrow')]")
+                        .Or(node.Locator(".mud-treeview-item-arrow button"))
+                        .Or(node.Locator("button").First)
+                        .First;
+
+        if (await arrow.CountAsync() > 0)
+            await arrow.ClickAsync();
+        else
+            await node.DblClickAsync();
+
+        // Server-side children: the node's own click returns before they are fetched.
+        await page.WaitForTimeoutAsync(1500);
     }
 
     /// <summary>
@@ -225,9 +256,12 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
                 {
                     await close.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
                 }
-                catch (PlaywrightException)
+                catch (Exception e) when (e is PlaywrightException or TimeoutException)
                 {
-                    // It closed itself between being found and being clicked, which is ordinary.
+                    // It closed itself between being found and being clicked, which is ordinary -
+                    // and which of the two exceptions that surfaces as depends on whether it went
+                    // before or during the click. Catching only one made the generator fail about
+                    // one run in three, on a snackbar that was already gone.
                 }
             }
 
