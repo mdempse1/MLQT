@@ -177,7 +177,7 @@
                                                                       "coverage":  0.6,
                                                                       "lines":  1065,
                                                                       "bar":  80,
-                                                                      "reason":  "The largest page, and the one 7a-4 has not reached yet. Its finding decisions are tested (FileLineOf, CanSuppressRule, ReportPathOf); the suppression writing, the dictionary and spelling actions and the findings export are still inline and belong in MLQT.Services - that is the remainder of B20 for this file. Until then it is reachable only by rendering."
+                                                                      "reason":  "The largest page, and its decisions are now extracted and tested elsewhere: the finding decisions (FileLineOf, CanSuppressRule, ReportPathOf) in 7a-3, and in B119 the findings export (FindingExport), how far a rule waiver reaches (SuppressionScope) and what an accepted spelling covers (SpellingAcceptance). What is left here is orchestration that needs a render tree - the file picker, the snackbar, the re-render and the scroll restoration around each action - which the Layer 2 journeys cover and which a unit test could only assert mocks for."
                                                                   },
                     "MLQT.Shared::MLQT.Shared.Pages.Dependencies":  {
                                                                         "coverage":  0,
@@ -195,7 +195,7 @@
                                                                             "coverage":  3.6,
                                                                             "lines":  360,
                                                                             "bar":  80,
-                                                                            "reason":  "Scope matching, sub-package listing and the debt predicate are tested; the snapshot persistence, storage grouping and trend building are still inline and belong beside the other metrics code - the remainder of B20 for this file."
+                                                                            "reason":  "Scope matching, sub-package listing and the debt predicate are tested; so, since B119, are where a snapshot is stored, which repository owns a scope and which history files the trend reads (MetricsStorage), and aggregating same-timestamp points (MetricsSnapshot). What is left is the chart and table assembly around them, which needs a render tree."
                                                                         },
                     "MLQT.Shared::MLQT.Shared.Pages.SelfTest":  {
                                                                     "coverage":  0,

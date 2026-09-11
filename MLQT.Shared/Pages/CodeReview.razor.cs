@@ -1180,68 +1180,19 @@ document.head.appendChild(style);
             if (string.IsNullOrEmpty(folder))
                 return;
 
-            // Where each class sits on disk, through the same ClassLocation the CLI's report uses, so
-            // "line 42 of that file" means the same thing in both exports. Findings carry
-            // class-relative lines; a report that names a file has to name the file's line.
-            var graph = LibraryDataService.CombinedGraph;
-            var locations = ClassLocation.ForGraph(graph);
+            // Where each class sits on disk, and which library it belongs to: the export writes a
+            // finding's line and path the way the CLI's report does, so the two can be diffed.
+            var locations = ClassLocation.ForGraph(LibraryDataService.CombinedGraph);
+            var libraryRootByModel = FindingExport.LibraryRootsByModel(LibraryDataService.Libraries);
 
-            // And the library each class belongs to, so the path can be written relative to it — the
-            // CLI writes `File` relative to the library it was pointed at (CheckReport.RelativeFileFor).
-            var libraryRootByModel = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var library in LibraryDataService.Libraries)
-            {
-                var root = library.SourceType == LibrarySourceType.File
-                    ? Path.GetDirectoryName(library.SourcePath) ?? library.SourcePath
-                    : library.SourcePath;
-                if (string.IsNullOrEmpty(root))
-                    continue;
-                foreach (var id in library.ModelIds)
-                    libraryRootByModel[id] = root;
-            }
+            var exportedAt = DateTime.Now;
+            var json = FindingExport.ToJson(
+                messages, locations, libraryRootByModel,
+                RepositoryService.GetActiveProject()?.Name,
+                exportedAt,
+                statusOf: m => BaselineStatus.HasBaseline ? BaselineStatus.StatusOf(m)?.ToString() : null);
 
-            var payload = new
-            {
-                tool = "mlqt-gui",
-                exported = DateTime.Now.ToString("o"),
-                project = RepositoryService.GetActiveProject()?.Name,
-                findingCount = messages.Count,
-                findings = messages
-                    .OrderBy(m => m.ModelName, StringComparer.Ordinal)
-                    .ThenBy(m => m.LineNumber)
-                    .ThenBy(m => m.RuleId ?? string.Empty, StringComparer.Ordinal)
-                    // Field names AND meanings match the CLI's --format json findings array, so the
-                    // two exports can be diffed without translating between them first. The names
-                    // matched on their own for a while and the meanings did not: B1 gave every report
-                    // the line in the FILE and left this export on the class-relative line the code
-                    // viewer wants, so build/Compare-Findings.ps1 — which pairs the two up on
-                    // model + rule + line — reported nearly every finding as exclusive to both sides.
-                    // Both numbers are here now, named as the CLI names them.
-                    .Select(m => new
-                    {
-                        RuleId = m.RuleId,
-                        Severity = m.Severity,
-                        Status = BaselineStatus.HasBaseline ? BaselineStatus.StatusOf(m)?.ToString() : null,
-                        Model = m.ModelName,
-                        Element = m.ElementPath,
-                        Line = FileLineOf(m, locations),
-                        ModelLine = m.LineNumber,
-                        Message = m.Summary,
-                        Fingerprint = m.Fingerprint,
-                        File = ReportPathOf(m, locations, libraryRootByModel),
-                        Source = m.Source,
-                        Details = string.IsNullOrEmpty(m.Details) ? null : m.Details
-                    })
-                    .ToList()
-            };
-
-            var name = $"mlqt-findings-{DateTime.Now:yyyyMMdd-HHmmss}.json";
-            var target = Path.Combine(folder, name);
-            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            });
+            var target = Path.Combine(folder, FindingExport.FileNameFor(exportedAt));
 
             await File.WriteAllTextAsync(target, json);
             Snackbar.Add($"Exported {messages.Count} findings to {target}", MudBlazor.Severity.Success);
@@ -1519,8 +1470,7 @@ document.head.appendChild(style);
         if (target is null)
             return;
 
-        // Scope to the component when the finding names a simple one; otherwise waive it for the class.
-        var component = finding.ElementPath is { Length: > 0 } ep && !ep.Contains('.') ? ep : null;
+        var component = SuppressionScope.ComponentFor(finding.ElementPath);
 
         _suppressing = true;
         try
@@ -1545,18 +1495,14 @@ document.head.appendChild(style);
             if (!await SaveAnnotatedFileAsync(target, newContent))
                 return;
 
-            // Drop the now-waived finding(s) for this rule on this model — a re-check would not report
-            // them. Scoped to the target model (a class-level waiver doesn't affect sibling classes) and,
-            // for a component waiver, to that component.
-            CodeReviewService.RemoveLogMessagesByPredicate(m =>
-                m.ModelName == finding.ModelName && m.RuleId == finding.RuleId
-                && (component is null || m.ElementPath == component));
+            // Drop the now-waived finding(s) — a re-check would not report them. What "waived"
+            // reaches is SuppressionScope's to say, and it is tested there.
+            CodeReviewService.RemoveLogMessagesByPredicate(
+                SuppressionScope.WaivedBy(finding.ModelName, finding.RuleId!, component));
 
             _findingDetailsVisible = false;
             OnModelSelected();   // re-render with the annotated content and refresh VCS status
-            Snackbar.Add(
-                $"Suppressed rule '{finding.RuleId}'{(component is null ? "" : $" on '{component}'")}.",
-                MudBlazor.Severity.Success);
+            Snackbar.Add(SuppressionScope.Describe(finding.RuleId!, component), MudBlazor.Severity.Success);
         }
         finally
         {
@@ -1626,17 +1572,13 @@ document.head.appendChild(style);
         _misspelledWords = words.Count > 0 ? words : null;
     }
 
+    // Both of these, and the rule for what an accepted word covers, are SpellingAcceptance's - see
+    // there for why the word is read from the message rather than the finding's discriminator.
     private static bool IsSpellingFinding(LogMessage? finding) =>
-        SpellingMessage.Is(finding?.Summary);
+        SpellingAcceptance.IsSpellingFinding(finding);
 
-    /// <summary>
-    /// The word the rule flagged. Read through the shared format rather than from the finding's
-    /// Discriminator: that field exists to make the fingerprint unique, and for a documentation
-    /// finding it carries the section as well as the word ("documentation info:tyre"), which
-    /// underlined nothing because no such text appears in the source.
-    /// </summary>
     private static string? ExtractMisspelledWord(LogMessage? finding) =>
-        SpellingMessage.WordFrom(finding?.Summary);
+        SpellingAcceptance.WordOf(finding);
 
     /// <summary>
     /// The style settings of the repository a class belongs to, or null when it belongs to none —
@@ -1683,22 +1625,18 @@ document.head.appendChild(style);
             return;
         }
 
-        // Record the word itself, not a possessive of it: the checker already accepts "Stodola's"
-        // once "Stodola" is accepted, and the list is a file the team reads and reviews.
-        var accepted = ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(word) ?? word;
+        var accepted = SpellingAcceptance.WordToRecord(word);
         await CustomDictionaryService.AddWordAsync(repositoryRoot, accepted);
 
-        // Clear the findings this now covers — both the word and its possessive — and only within
-        // the repository that accepted it. It stays a finding elsewhere, which is the point of the
-        // list being per repository: another team's library has not agreed to the word.
+        // Clear the findings this now covers, and only within the repository that accepted it: it
+        // stays a finding elsewhere, which is the point of the list being per repository.
         var repositoryModelIds = LibraryDataService.Libraries
             .Where(l => DictionaryScope.RootForLibrary(RepositoryService, l) == repositoryRoot)
             .SelectMany(l => l.ModelIds)
             .ToHashSet(StringComparer.Ordinal);
 
-        CodeReviewService.RemoveLogMessagesByPredicate(m =>
-            repositoryModelIds.Contains(m.ModelName) && IsSpellingFinding(m) &&
-            IsNowAccepted(accepted, ExtractMisspelledWord(m)));
+        CodeReviewService.RemoveLogMessagesByPredicate(
+            SpellingAcceptance.ClearedBy(accepted, repositoryModelIds));
 
         _contextMenuOpen = false;
         _suggestions = null;
@@ -1706,17 +1644,6 @@ document.head.appendChild(style);
         RecomputeMisspelledWords();
         StateHasChanged();
     }
-
-    /// <summary>
-    /// Whether a flagged word is covered by <paramref name="acceptedWord"/> — the word itself, or a
-    /// possessive of it. Case is ignored because the word list is: a word accepted in one casing is
-    /// accepted in any.
-    /// </summary>
-    private static bool IsNowAccepted(string acceptedWord, string? flagged) =>
-        flagged is not null &&
-        string.Equals(
-            ModelicaParser.SpellChecking.SpellChecker.PossessiveBaseOf(flagged) ?? flagged,
-            acceptedWord, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Accept the right-clicked word as spelled correctly <em>in this class</em>, by writing
@@ -1783,9 +1710,8 @@ document.head.appendChild(style);
             // Clear what the annotation now covers: this word, and its possessive, in this class.
             // Other classes still report it — the waiver is this class's, which is the whole point of
             // recording it here rather than in the repository's word list.
-            CodeReviewService.RemoveLogMessagesByPredicate(m =>
-                m.ModelName == modelId && IsSpellingFinding(m) &&
-                IsNowAccepted(accepted, ExtractMisspelledWord(m)));
+            CodeReviewService.RemoveLogMessagesByPredicate(
+                SpellingAcceptance.ClearedInClass(accepted, modelId));
 
             CloseSpellingMenu();
             _findingDetailsVisible = false;

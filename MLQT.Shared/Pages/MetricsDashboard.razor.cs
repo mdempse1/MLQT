@@ -364,78 +364,55 @@ public partial class MetricsDashboard : IDisposable
     // or the per-user file for non-repo libraries), with that group's model nodes for per-group metrics.
     private List<(string Path, bool Shared, List<ModelNode> Models, Repository? Repo)> StorageGroups()
     {
+        // Which file each library's snapshot belongs in, and which libraries are measured at all, is
+        // MetricsStorage's - it is the half with consequences, and it is tested there.
         var graph = LibraryDataService.CombinedGraph;
-        var byPath = new Dictionary<string, List<ModelNode>>(System.StringComparer.OrdinalIgnoreCase);
-        var sharedPaths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        // The repository each history file belongs to, so its snapshots can name the revision they
-        // describe — the same stamp `mlqt check --metrics` writes, so points from the desktop app and
-        // from CI are comparable in the one shared file.
-        var repoByPath = new Dictionary<string, Repository?>(System.StringComparer.OrdinalIgnoreCase);
 
-        foreach (var lib in LibraryDataService.Libraries)
-        {
-            var repo = string.IsNullOrEmpty(lib.RepositoryId)
-                ? null
-                : RepositoryService.Repositories.FirstOrDefault(r => r.Id == lib.RepositoryId);
-
-            // Nothing is measured for a reference-only library, and nothing is written to its
-            // repository — a snapshot there would dirty a checkout the user marked hands-off with
-            // numbers about code that is not theirs to improve. Asked of the library rather than of
-            // its repository, because one loaded from Settings > Reference Libraries has none: those
-            // were landing in the per-user history, which for a machine with a tool's library folder
-            // configured meant a trend describing a vendor's library.
-            if (ReferenceOnlyScope.IsReference(lib, RepositoryService))
-                continue;
-
-            string path;
-            if (repo is not null && !string.IsNullOrEmpty(repo.LocalPath))
-            {
-                path = MetricsHistoryStore.RepoPath(repo.LocalPath);
-                sharedPaths.Add(path);
-            }
-            else
-            {
-                path = MetricsHistoryStore.DefaultPath;
-            }
-            repoByPath[path] = repo;
-
-            if (!byPath.TryGetValue(path, out var list))
-                byPath[path] = list = new List<ModelNode>();
-            foreach (var id in lib.ModelIds)
-            {
-                var node = graph.GetNode<ModelNode>(id);
-                if (node is not null)
-                    list.Add(node);
-            }
-        }
-
-        return byPath
-            .Select(kv => (kv.Key, sharedPaths.Contains(kv.Key), kv.Value, repoByPath.GetValueOrDefault(kv.Key)))
+        return MetricsStorage
+            .GroupByDestination(
+                LibraryDataService.Libraries,
+                lib => RepositoryFor(lib)?.LocalPath,
+                lib => ReferenceOnlyScope.IsReference(lib, RepositoryService))
+            .Select(group => (
+                group.Destination.Path,
+                group.Destination.Shared,
+                // The classes themselves, which only the graph can supply.
+                group.Libraries
+                    .SelectMany(lib => lib.ModelIds)
+                    .Select(graph.GetNode<ModelNode>)
+                    .Where(node => node is not null)
+                    .Select(node => node!)
+                    .ToList(),
+                // The repository a shared file belongs to, so its snapshots can name the revision
+                // they describe - the same stamp `mlqt check --metrics` writes, so points from the
+                // desktop app and from CI are comparable in the one file.
+                //
+                // Null for the per-user file, which belongs to no repository. Every library in a
+                // shared group is in the repository whose path produced it; the per-user group is the
+                // leftovers, and this used to take whichever of them was seen last - so a library
+                // whose repository had no local path could stamp that repository's revision onto a
+                // snapshot describing several unrelated libraries.
+                group.Destination.Shared ? RepositoryFor(group.Libraries[0]) : null))
             .ToList();
     }
 
-    // The local path of the repository whose library owns this scope, or null when there is none:
-    // a non-empty scope resolves via the library that contains it; an empty scope resolves only when a
-    // single repository is loaded (otherwise it spans several).
+    /// <summary>The repository a library belongs to, or null when it belongs to none.</summary>
+    private Repository? RepositoryFor(LoadedLibrary library) =>
+        string.IsNullOrEmpty(library.RepositoryId)
+            ? null
+            : RepositoryService.Repositories.FirstOrDefault(r => r.Id == library.RepositoryId);
+
+    /// <summary>
+    /// The repository whose library owns this scope, or null when no single one does - see
+    /// MetricsStorage.OwningRepositoryId for what "no single one" means at the "all libraries" scope.
+    /// </summary>
     private Repository? OwningRepository(string scope)
     {
-        string? repoId;
-        if (!string.IsNullOrEmpty(scope))
-        {
-            repoId = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(scope))?.RepositoryId;
-        }
-        else
-        {
-            var repoIds = LibraryDataService.Libraries
-                .Select(l => l.RepositoryId)
-                .Where(id => !string.IsNullOrEmpty(id))
-                .Distinct(System.StringComparer.Ordinal)
-                .ToList();
-            repoId = repoIds.Count == 1 ? repoIds[0] : null;
-        }
-        if (string.IsNullOrEmpty(repoId))
-            return null;
-        return RepositoryService.Repositories.FirstOrDefault(r => r.Id == repoId);
+        var repositoryId = MetricsStorage.OwningRepositoryId(scope, LibraryDataService.Libraries);
+
+        return repositoryId is null
+            ? null
+            : RepositoryService.Repositories.FirstOrDefault(r => r.Id == repositoryId);
     }
 
     // Merge every loaded repository's shared history with the per-user file (which covers file/directory
@@ -443,21 +420,12 @@ public partial class MetricsDashboard : IDisposable
     // per-scope filter still applies; ordered by time so the chart/table read chronologically.
     private List<MetricsSnapshot> LoadAllHistory()
     {
-        var all = new List<MetricsSnapshot>();
-        var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        foreach (var repo in RepositoryService.Repositories)
-        {
-            // A reference-only repository may carry its owner's own history file. Its points describe
-            // classes this report does not measure, so merging them would move the trend — and, at the
-            // "all libraries" scope, be aggregated into our own points by timestamp.
-            if (string.IsNullOrEmpty(repo.LocalPath) || repo.IsReferenceOnly)
-                continue;
-            var p = MetricsHistoryStore.RepoPath(repo.LocalPath);
-            if (seen.Add(p))
-                all.AddRange(MetricsHistoryStore.Load(p));
-        }
-        all.AddRange(MetricsHistoryStore.Load(MetricsHistoryStore.DefaultPath));
-        return all.OrderBy(s => s.TimestampUtc).ToList();
+        // Which files, and why a reference-only repository's is not among them, is MetricsStorage's.
+        return MetricsStorage
+            .HistoryFilesToRead(RepositoryService.Repositories)
+            .SelectMany(MetricsHistoryStore.Load)
+            .OrderBy(s => s.TimestampUtc)
+            .ToList();
     }
 
     // The trend for the current scope: its snapshots, and the union of their coverage dimensions. For
