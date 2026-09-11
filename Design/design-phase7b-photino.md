@@ -141,6 +141,13 @@ as somebody has a Linux box. Do them in parallel if two people are on this.
 `MainLayout` moving without being touched is the point of journeys rather than unit tests: it is the
 startup sequence running, which is what 7b changes and what no unit test can reach.
 
+**✅ Shipped.** The table above is where this step started, not where it finished: the suite ran 23
+journeys when the phase opened and runs **51** now, on both platforms, and they carried the weight
+this step was taken for — every defect 7b-6's Linux pass found in the UI was found by a person or a
+journey, not by a unit test. Their contribution to `MLQT.Shared`'s coverage is visible only in
+`run-all-tests.ps1 -Coverage`, because the gate measures the seven CI suites and the journeys are not
+one of them.
+
 Both journeys needed a throwaway diagnostic to learn their selectors rather than a guess — the five
 top-level tabs carry an icon and a tooltip and **no text**, so they can only be addressed
 positionally, and two landmarks taken from the markup by eye were wrong. That is recorded on the
@@ -1500,7 +1507,7 @@ These need an answer from the project, not from whoever picks up the work. None 
 
 | Step | Work | Size |
 |---|---|---|
-| **7b-A** | Widen the journeys over the ~700 lines of UI no test reaches, **before** the port, so they are evidence about it | M — **first** |
+| **7b-A** | ✅ **shipped 2026-09-08 onwards** — widened before the port, so they are evidence about it rather than tests written after: 23 journeys at the start of the phase, **51 now**, on Windows and Linux both | M — **first** |
 | **7b-0** | The spike: `net10.0` compatibility, `/selftest` under Photino on Windows *and* Linux, WebKitGTK verdict | ✅ **done 2026-09-08, both legs** |
 | **7b-1** | ✅ **shipped 2026-09-08** — `MLQT.McpTester` is a Photino app, builds and runs on Windows, builds on Linux, and is out of the MAUI job | S |
 | **7b-2** | ✅ **shipped 2026-09-08** — `MLQT.Photino` runs MLQT and matches the MAUI baseline on all 16 probes; page held to the manifest, two portability guards, window placement restored | S/M |
