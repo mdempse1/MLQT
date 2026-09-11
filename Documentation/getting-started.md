@@ -100,7 +100,7 @@ Each project is shown as an expansion panel. The active project has a green **Ac
 1. Click the **play** button beside the project name you want to activate
 2. MLQT will save the current project state and load all repositories from the selected project
 
-![Screenshot: The Manage Repositories panel showing multiple projects — one marked "Active" with a green chip, and others with the play button to load them.](Images/getting-started-3.png)
+![Screenshot: The Manage Repositories panel, showing each project with its repositories and the "Active" chip on the one that is loaded.](Images/getting-started-3.png)
 
 ### Renaming and Deleting Projects
 
@@ -122,7 +122,7 @@ Use this when you already have a repository checked out on your machine.
 3. MLQT automatically detects whether the directory is a Git repository, SVN working copy, or a plain local directory
 4. Click **Add Repository**
 
-![Screenshot: The Add Repository dialog with the "Select Local Directory" tab active. Show a path entered in the text field with the Git repository detected alert below it showing "Git repository detected" with the GitHub icon.](Images/getting-started-5.png)
+![Screenshot: The Add Repository dialog with the "Select Local Directory" tab active, a path typed into the field, and the "Reference only" toggle beneath it.](Images/getting-started-5.png)
 
 ### Option B: Download a Remote Repository
 
@@ -134,7 +134,7 @@ Use this to clone a Git repository or check out an SVN repository from a remote 
 4. MLQT detects the VCS type from the URL
 5. Click **Add Repository**
 
-![Screenshot: The Add Repository dialog with the "Download Remote Repository" tab active. Shows a Git URL in the remote address field, a local checkout path selected, and the "Git repository detected" alert.](Images/getting-started-6.png)
+![Screenshot: The Add Repository dialog with the "Download Remote Repository" tab active, showing a Git URL in the remote address field and the directory it will be checked out into.](Images/getting-started-6.png)
 
 ### What Happens When You Add a Repository
 
@@ -195,7 +195,7 @@ Use the toggle button in the left panel toolbar to switch between:
 - **Repository view** — Libraries grouped under their parent repository, with VCS operations available on each repository
 - **Library view** — All libraries from all repositories shown as a single flat list, focused on the Modelica package structure
 
-![Screenshot: Side-by-side comparison showing the left panel in Repository view (libraries grouped under repository headers) and Library view (flat list of all packages).](Images/getting-started-9.png)
+![Screenshot: The application in Library view - the packages as a flat tree, with the repository header that Repository view puts above them absent.](Images/getting-started-9.png)
 
 ## Documentation Guide
 

@@ -57,9 +57,24 @@ public sealed class LibraryFixture : IDisposable
         "AQIECBAgQIAAAQIECBAgQIAAAQL0ClD8AAECBAgQIECAAAH6A8hhAUCAAAECBAgQIECAAAECBAgQoP+A5DMLIEDBLQqjRGeS" +
         "h5lNAAAAAElFTkSuQmCC");
 
-    public LibraryFixture()
+    /// <param name="repositoryPath">
+    /// Where to put the working copy, or null for a fresh directory under the temp path.
+    /// </param>
+    /// <remarks>
+    /// The path is a parameter because MLQT shows it: the External Resources page, the repository
+    /// list and the Edit Repository dialog all print the full path of what they are describing. A
+    /// temp directory named after a GUID under a developer's profile is fine for a test and wrong in
+    /// a manual, so the screenshot generator asks for somewhere a reader can recognise. A named path
+    /// is emptied first, because it is reused between runs.
+    /// </remarks>
+    public LibraryFixture(string? repositoryPath = null)
     {
-        RepositoryPath = Path.Combine(Path.GetTempPath(), "mlqt-journey-" + Guid.NewGuid().ToString("N"));
+        RepositoryPath = repositoryPath
+            ?? Path.Combine(Path.GetTempPath(), "mlqt-journey-" + Guid.NewGuid().ToString("N"));
+
+        if (repositoryPath is not null && Directory.Exists(RepositoryPath))
+            Delete(RepositoryPath);
+
         Directory.CreateDirectory(LibraryPath);
 
         WriteLibrary();
@@ -316,19 +331,44 @@ public sealed class LibraryFixture : IDisposable
         using var repo = new Repository(RepositoryPath);
         Commands.Stage(repo, "*");
         var who = new Signature("MLQT journeys", "journeys@mlqt.invalid", DateTimeOffset.Now);
-        repo.Commit("The library as it stands before the journey edits it", who, who);
+        var first = repo.Commit("The library as it stands before the journey edits it", who, who);
+
+        // A second commit, so the history is a history rather than a single row - and so one file in
+        // it is *modified* rather than added, which is what gives the changed-files popover a diff to
+        // offer. A repository with one commit cannot show either.
+        Write("Documented.mo", """
+            within Lib;
+            model Documented "A model with everything a rule could ask for"
+              Real x "The state";
+              Real dx "Its rate of change";
+            equation
+              der(x) = -x;
+              dx = der(x);
+              annotation(Documentation(info="<html><p>Nothing to report here.</p></html>"));
+            end Documented;
+            """);
+
+        Commands.Stage(repo, "*");
+        repo.Commit("Report the rate of change as well as the state", who, who);
+
+        // A second branch, not checked out. A repository with one branch makes the switch-branch and
+        // merge dialogs pictures of an empty list, and those dialogs are most of what git-operations.md
+        // is about.
+        repo.Branches.Add("feature/pump-curves", first);
     }
 
-    public void Dispose()
+    public void Dispose() => Delete(RepositoryPath);
+
+    private static void Delete(string path)
     {
-        if (!Directory.Exists(RepositoryPath))
+        if (!Directory.Exists(path))
             return;
 
         // A git working copy has read-only files under .git that a plain recursive delete refuses.
-        foreach (var file in Directory.EnumerateFiles(RepositoryPath, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             File.SetAttributes(file, FileAttributes.Normal);
 
-        try { Directory.Delete(RepositoryPath, recursive: true); }
+        try { Directory.Delete(path, recursive: true); }
         catch (IOException) { /* a watcher still has a handle; the temp directory will be swept */ }
     }
 }

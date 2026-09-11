@@ -381,7 +381,7 @@ The **Accepted spellings** expandable panel in this repository's settings lets y
 
 A word applies only to the repository holding it; the same term in another repository has to be accepted there too. Earlier versions kept one machine-wide list at `%LocalAppData%/MLQT/custom_dictionary.txt`; it is no longer used for checking, and an **Import machine list** button appears while it exists so its words can be copied into a repository.
 
-![Screenshot: The Spell checking section of the Settings dialog showing the two spell-check severity rows, the language dictionary dropdown, and the Import Language button.](Images/settings-reference-6.png)
+![Screenshot: The Spell checking section of the Edit Repository Details dialog, showing the two spell-check severity rows and the Off/Info/Warning/Error choice on each.](Images/settings-reference-6.png)
 
 ---
 

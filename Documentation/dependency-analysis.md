@@ -16,7 +16,7 @@ When you switch to the Dependencies tab, MLQT automatically enables **multi-sele
 
 When you leave the Dependencies tab, multi-selection mode is automatically disabled and the tree returns to single-selection behavior.
 
-![Screenshot: The left panel library tree with checkboxes visible next to each model. Four models are checked. The Dependencies tab should be the active tab on the right.](Images/dependency-analysis-2.png)
+![Screenshot: The left panel library tree with the impact-analysis checkboxes beside every node, and a connector checked - which ticks the package holding it as well. The Dependencies tab is the active tab on the right.](Images/dependency-analysis-2.png)
 
 ## Understanding the Network Graph
 

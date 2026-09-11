@@ -66,7 +66,7 @@ Pulls the latest changes from the remote repository into your local working copy
 
 Opens the **Commit Changes** dialog where you can review modified files, select which ones to include, and write a commit message.
 
-![Screenshot: The Commit Changes dialog showing the commit message text field at top, the optional finding ID field, and below that the ChangeReview component listing modified files with checkboxes. The "Commit (4 files)" button should be visible at the bottom.](Images/git-operations-1.png)
+![Screenshot: The Commit Changes dialog - the changed files as a tree with a checkbox each and their status chips, the diff panel beside it, the commit message field below, and the "Commit (2 files)" button at the bottom.](Images/git-operations-1.png)
 
 ### Dialog Fields
 
@@ -105,7 +105,7 @@ A Git commit is a purely local operation — it records your staged changes in t
 
 Opens the **Revert Files** dialog to discard uncommitted changes and restore files to their last committed state.
 
-![Screenshot: The Revert Files dialog showing the warning alert "Selected files will be reverted to their last committed state. This cannot be undone." and the file list with checkboxes below. The "Revert (3 files)" button should be in red.](Images/git-operations-2.png)
+![Screenshot: The Revert Changes dialog showing the warning that this cannot be undone, the changed files with checkboxes below it, and the red "Revert (2 files)" button.](Images/git-operations-2.png)
 
 ### Important Warning
 
@@ -351,7 +351,7 @@ Click on any commit row to see a popover showing:
 - The list of **changed files** in that commit, each with an icon indicating the change type (Added, Modified, Deleted, Renamed, Copied)
 - A **Diff** button next to each file to open a side-by-side diff comparing the file at that revision with the current working copy
 
-![Screenshot: The VCS History dialog with a commit row clicked, showing the changed files popover. The popover should lists 1 file with status icons (orange pencil for modified) and Diff buttons.](Images/git-operations-9.png)
+![Screenshot: The VCS History dialog with a commit row clicked, showing the changed-files popover beside it. Each file carries a status icon - a green plus for added, an orange pencil for modified - and clicking one opens the diff.](Images/git-operations-9.png)
 
 ### Checking Out a Revision
 
@@ -372,4 +372,4 @@ Clicking on any changed file opens the **Revision Diff** dialog, which shows a s
 - For **added** files: left side is empty
 - For **deleted** files: right side is empty
 
-![Screenshot: The Revision Diff dialog showing a side-by-side comparison of a Modelica file. The title should show "Diff: ElectroMagneticConverter.mo @@ d3f3bc8". Added lines should be highlighted green, removed lines red.](Images/git-operations-10.png)
+![Screenshot: The Revision Diff dialog, titled with the file and the short revision id it is comparing against. Unified, side-by-side and full-file views are offered, the line count of the change is shown, and added and removed lines are marked.](Images/git-operations-10.png)

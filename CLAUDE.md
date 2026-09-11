@@ -348,6 +348,23 @@ User-facing documentation is in `Documentation/`:
 | `cli.md` | Headless `mlqt` CLI: install, `check` options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown/review), baseline/ratchet, `compare` for missing classes, `hook` for the git pre-commit gate, `review` for pull-request comments, exit codes |
 | `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
 | `troubleshooting.md` | Common findings, FAQ |
+**The screenshots are generated, not taken.** `MLQT.Journeys/DocumentationScreenshots` drives the
+real components in a real browser through `MLQT.TestHost`, against the fixture library, and writes
+each image as the file the markdown already links to:
+
+```powershell
+$env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
+MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
+```
+
+Run it **on its own, by that filter**: the journeys share one host, so a full-suite run reaches it
+with libraries and settings another journey left behind. With the variable unset it does nothing, so
+an ordinary run never writes to the repository.
+
+**The caption in the markdown is the specification for the shot.** Where the two disagree, one of
+them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
+A handful cannot be produced this way at all (Dymola, SVN, the window frame); `Design/roadmap.md`
+B152 lists which and says why.
 
 ## Planning and Design Notes
 

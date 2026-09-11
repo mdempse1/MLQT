@@ -12,7 +12,7 @@ In repository view, libraries are grouped under their parent repository. Each re
 
 This is the default view and is the one you'll use most often, as it provides access to all version control operations.
 
-![Screenshot: The left panel in repository view showing 3 repositories. The first two are collapsed with a Git icon and their name.  The third is expanded and shows the SVN icon, name, branch name, commit number, and VCS operation buttons. Below the header, the Modelica package tree is visible.](Images/code-review-1.png)
+![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, and the Modelica package tree below that.](Images/code-review-1.png)
 
 ### Library View
 
@@ -20,7 +20,7 @@ In library view, all libraries from all repositories are shown in a single flat 
 
 This view is useful when you want to focus on the library structure without the repository context, especially when working with multiple repositories whose libraries reference each other.
 
-![Screenshot: The left panel in library view showing a flat tree of Modelica packages from multiple libraries, with no repository grouping.](Images/library-browser-1.png)
+![Screenshot: The left panel in library view - the packages as a flat tree, with no repository header above them.](Images/library-browser-1.png)
 
 ## The Package Tree
 
@@ -61,7 +61,7 @@ Models whose files have uncommitted changes display a small colored chip next to
 | **N** | Green | **Untracked** — A new file not yet added to version control |
 | **!** | Red | **Conflicted** — A file with merge conflicts that need resolution |
 
-![Screenshot: The tree showing several models with VCS status chips. One model should show "M" in orange (modified), another "A" in green (added), and a parent package should show the orange dot indicator.](Images/library-browser-2.png)
+![Screenshot: The tree with VCS status on it - an orange "M" chip beside the modified class, and the orange dot on the package above it that says a change is somewhere inside.](Images/library-browser-2.png)
 
 ### Descendant Change Indicator
 
@@ -107,7 +107,7 @@ For Git repositories, clicking the **More actions** (three dots) button reveals 
 - **Commit** button — Opens the commit dialog (disabled if no uncommitted changes)
 - **Revert** button — Opens the revert dialog (disabled if no uncommitted changes)
 
-![Screenshot: Close-up of the second row showing "Commit: 2c0d22b" with the info tooltip visible showing the commit message, and the Update, Commit, and Revert buttons. The Commit and Revert buttons are enabled (indicating uncommitted changes exist).](Images/library-browser-5.png)
+![Screenshot: Close-up of the second row, showing the short commit id, the info icon that carries the commit message as a tooltip, and the Update, Commit and Revert buttons. Commit and Revert are enabled, which is what says there are uncommitted changes.](Images/library-browser-5.png)
 
 ## Toolbar Buttons
 
