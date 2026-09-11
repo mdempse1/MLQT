@@ -123,6 +123,12 @@ you are diagnosing something and want the lines as they happen, set `MLQT_LOG_CO
 starting MLQT and they will go to the console as well as the file. Set it to a level name
 (`MLQT_LOG_CONSOLE=Debug`) to choose how much.
 
+**If the window itself misbehaves** — it opens blank, or in the wrong place, or not at all — the
+desktop host has a second switch of its own. `MLQT_PHOTINO_LOG=1` makes it print every message it
+exchanges with the webview. It is silent by default for a reason: a page update is one of those
+messages, base64-encoded and tens of kilobytes, and printing them all makes the application
+noticeably slower to use. Turn it on to diagnose the window, not to watch the application work.
+
 ## Frequently Asked Questions
 
 ### Can I edit Modelica code in MLQT?

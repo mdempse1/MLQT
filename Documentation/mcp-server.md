@@ -93,7 +93,7 @@ under `line`, because they answer a question about a class rather than about a f
 
 ## What the tools cover
 
-The server exposes 60+ tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 82 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
