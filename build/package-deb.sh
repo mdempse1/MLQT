@@ -283,10 +283,13 @@ echo "  MCP server initialize answered through a symlink, carrying $version"
 #    is every CI runner unless one is arranged.
 if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
     report="$work/selftest.json"
+    # Bounded, like the MCP handshake above and for the same reason: a host that starts and never
+    # renders does not crash, it waits, and an unbounded wait hands the job its whole timeout with
+    # nothing to say why (B146). `timeout` kills it, the missing report is then the failure.
     MLQT_SELFTEST=1 MLQT_SELFTEST_HOST=MLQT.Photino MLQT_SELFTEST_OUT="$report" \
-        "$extract/opt/mlqt/MLQT.Photino" >/dev/null 2>&1 || true
+        timeout "${MLQT_SELFTEST_TIMEOUT:-300}" "$extract/opt/mlqt/MLQT.Photino" >/dev/null 2>&1 || true
 
-    [ -f "$report" ] || fail "the GUI wrote no self-test report; it did not start"
+    [ -f "$report" ] || fail "the GUI wrote no self-test report within ${MLQT_SELFTEST_TIMEOUT:-300}s; it did not start, or never finished"
 
     python3 - "$report" <<'PY' || exit 1
 import json, sys

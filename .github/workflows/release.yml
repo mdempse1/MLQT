@@ -48,6 +48,11 @@ jobs:
     runs-on: windows-latest
     needs: version
 
+    # A release does a great deal that can hang rather than fail - a webview that never renders, an
+    # installer waiting on a dialog nobody can answer. Without this the default is six hours of
+    # runner reporting nothing (B146). Generous against the ~20 minutes it takes.
+    timeout-minutes: 60
+
     # Creating the release and uploading its assets is a write, and this repository's default workflow
     # token is read-only, so the step failed with a 403 the first time it ever ran - which was the
     # first tag-triggered release, because the trigger itself had never fired before. Declared here
@@ -155,7 +160,14 @@ jobs:
           $env:MLQT_SELFTEST = '1'
           $env:MLQT_SELFTEST_HOST = 'MLQT.Photino'
           $env:MLQT_SELFTEST_OUT = $report
-          Start-Process (Join-Path $dir 'MLQT.Photino.exe') -Wait -NoNewWindow
+          # Bounded, as the Linux job's `timeout 300` is: a host that starts and never renders does
+          # not crash, it waits (B146).
+          $gui = Start-Process (Join-Path $dir 'MLQT.Photino.exe') -PassThru -NoNewWindow
+          if (-not $gui.WaitForExit(300000)) {
+            try { $gui.Kill($true) } catch { }
+            Remove-Item Env:MLQT_SELFTEST, Env:MLQT_SELFTEST_HOST, Env:MLQT_SELFTEST_OUT
+            throw "the installed GUI did not finish its self-test within five minutes"
+          }
           Remove-Item Env:MLQT_SELFTEST, Env:MLQT_SELFTEST_HOST, Env:MLQT_SELFTEST_OUT
 
           if (-not (Test-Path $report)) { throw 'the installed GUI wrote no self-test report' }
@@ -165,6 +177,41 @@ jobs:
           Write-Host "$($probes.Count - $bad.Count)/$($probes.Count) probes passed from the installed package"
           if ($bad.Count) { throw 'the installed GUI failed its self-test' }
 
+      # The path every user takes from the second release onwards, and the one nothing tested
+      # (B150). The AppId is what is supposed to make this replace the install rather than sit beside
+      # it - a claim the script's own comment makes and nothing checked. Installing the same artefact
+      # twice is not the same as a real version-to-version upgrade, but it exercises what actually
+      # goes wrong: files in use, a duplicated uninstall entry, a half-written tree.
+      - name: Install it again, over the first
+        shell: pwsh
+        run: |
+          $setup = "artifacts/MLQT-${{ needs.version.outputs.version }}-win-x64-setup.exe"
+          $dir = Join-Path $env:RUNNER_TEMP 'mlqt-installed'
+
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES',"/DIR=$dir",'/TASKS=addtopath' -Wait
+
+          # One entry in Apps & Features, not two. A changed AppId is invisible until a user has two
+          # MLQTs listed and only one of them can be removed.
+          $registered = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+          ) | ForEach-Object { Get-ItemProperty $_ -ErrorAction SilentlyContinue } |
+              Where-Object { $_.DisplayName -like 'MLQT*' }
+
+          Write-Host "Registered: $($registered.DisplayName -join ', ')"
+          if ($registered.Count -ne 1) {
+            throw "expected exactly one MLQT in Apps & Features after the upgrade, found $($registered.Count)"
+          }
+
+          # And it still runs, which is the point of upgrading rather than the point of installing.
+          & (Join-Path $dir 'mlqt.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "the upgraded mlqt exited $LASTEXITCODE" }
+
+      - name: Uninstall it
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'mlqt-installed'
           Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
           Start-Sleep -Seconds 5
           if (Test-Path $dir) { throw 'uninstalling left the install directory behind' }
@@ -206,6 +253,7 @@ jobs:
     name: Build & Publish .deb
     runs-on: ubuntu-latest
     needs: version
+    timeout-minutes: 60
 
     permissions:
       contents: write
@@ -277,6 +325,15 @@ jobs:
           for p in bad: print('::error::' + p['Id'] + ': ' + str(p.get('Detail')))
           print(f'{len(probes)-len(bad)}/{len(probes)} probes passed from the installed package')
           sys.exit(1 if bad else 0)"
+          # Installed over itself, which is what every user does from the second release onwards
+          # (B150). apt is stricter than a file copy: a conffile it cannot merge, a maintainer script
+          # that assumes nothing is there yet, or a file moving between packages all fail here.
+          sudo apt-get install -y --reinstall ./artifacts/mlqt_${{ needs.version.outputs.deb }}_amd64.deb
+          mlqt --version
+          test -x /usr/bin/mlqt-gui
+          test "$(dpkg-query -W -f='${Status}' mlqt)" = "install ok installed"
+          test "$(dpkg-query -f '${binary:Package}\n' -W | grep -c '^mlqt$')" -eq 1
+
           sudo apt-get remove -y mlqt
           test ! -e /opt/mlqt
 

@@ -109,6 +109,26 @@ public sealed class JsonSettingsService : ISettingsService
     internal const string MigratedKey = "__MauiSettingsMigrated";
 
     /// <summary>
+    /// Whether the one-time migration has already run, so a caller can skip looking for the old file.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MigrateFrom"/> answers the same question and is safe to call twice, but its argument
+    /// is the contents of the old file - which means finding and reading that file happens before the
+    /// guard is reached. Asking here first means a machine that has migrated, or has nothing to
+    /// migrate, stops paying for a directory search and a file read on every launch, for ever.
+    /// </remarks>
+    public bool HasMigrated
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _values.ContainsKey(MigratedKey);
+            }
+        }
+    }
+
+    /// <summary>
     /// Copies a user's settings in from the MAUI build, once.
     /// </summary>
     /// <param name="old">Everything <see cref="MauiPreferencesFile"/> found. May be empty.</param>

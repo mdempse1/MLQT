@@ -48,6 +48,57 @@ public class TestRunnerScriptTests
         File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "run-all-tests.ps1"))
             .Replace("\r\n", "\n");
 
+    private static string FileAt(params string[] parts) =>
+        File.ReadAllText(Path.Combine([RepositoryRoot(), .. parts])).Replace("\r\n", "\n");
+
+    [Fact]
+    public void EveryWaitOnTheGuiSelfTestIsBounded()
+    {
+        // Backlog B146. Four places start the GUI to run its 16 probes and wait for it to exit, and
+        // the failure they are all exposed to is the same: a host that starts and never renders does
+        // not crash, it waits. Two of them were bounded and two were not, so a release could hold a
+        // runner for its full six hours and report nothing about why.
+        //
+        // Asserted per file rather than as one search, so a failure names the script that lost it.
+        var staging = FileAt("build", "publish-tools.ps1");
+        Assert.Contains("$SelfTestTimeoutSeconds", staging);
+        Assert.Contains("WaitForExit($SelfTestTimeoutSeconds * 1000)", staging);
+        Assert.DoesNotContain("MLQT.Photino$exe\") -Wait", staging);
+
+        var deb = FileAt("build", "package-deb.sh");
+        Assert.Contains("timeout \"${MLQT_SELFTEST_TIMEOUT:-300}\"", deb);
+
+        var release = FileAt(".github", "workflows", "release.yml");
+        Assert.Contains("$gui.WaitForExit(300000)", release);      // the installed GUI, on Windows
+        Assert.Contains("timeout 300 xvfb-run -a mlqt-gui", release);   // and on Linux
+    }
+
+    [Fact]
+    public void EveryReleaseJobIsBounded()
+    {
+        // The same lesson one level up: a step can hang somewhere nobody predicted - an installer
+        // waiting on a dialog, a download that never completes - and GitHub's default is six hours.
+        // The build-and-test workflow's desktop-selftest job has carried a timeout since it was
+        // written, with a comment saying why; the release jobs had none at all.
+        var release = FileAt(".github", "workflows", "release.yml");
+
+        var jobs = Regex.Matches(release, @"^  (?<name>[a-z][\w-]*):$", RegexOptions.Multiline)
+                        .Select(m => m.Groups["name"].Value)
+                        .Where(n => n is not ("push" or "pull_request" or "workflow_dispatch"))
+                        .ToList();
+
+        Assert.True(jobs.Count >= 3, $"only found {jobs.Count} jobs in release.yml: {string.Join(", ", jobs)}");
+
+        // The version job does nothing but echo a string; the two that build are the ones that can hang.
+        foreach (var job in jobs.Where(j => j != "version"))
+        {
+            var body = Regex.Match(release, $@"^  {Regex.Escape(job)}:\n(?<body>(?:.*\n)*?)(?=^  \S|\z)",
+                                   RegexOptions.Multiline).Groups["body"].Value;
+
+            Assert.Contains("timeout-minutes:", body);
+        }
+    }
+
     [Fact]
     public void TheJourneySuiteGetsPlaywrightsPlatformOverrideOnAnUbuntuItDoesNotSupport()
     {

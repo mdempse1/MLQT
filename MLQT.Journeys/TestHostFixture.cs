@@ -51,6 +51,26 @@ public sealed class TestHostFixture : IAsyncLifetime
     public string BaseUrl { get; private set; } = "";
     public IBrowser Browser { get; private set; } = null!;
 
+    /// <summary>
+    /// Where a journey's Playwright trace is written, or null when nobody asked for one.
+    /// </summary>
+    /// <remarks>
+    /// <para>Backlog B148, and 7a asked for it in as many words: "journey failures on a headless
+    /// Linux runner are otherwise near-undebuggable". A trx gives an assertion message and a stack;
+    /// a trace gives the DOM at each step, screenshots, the console and the network log, which is
+    /// what actually answers "why did that selector not match".</para>
+    ///
+    /// <para>Recorded when this is set rather than always, because tracing costs time and disk on
+    /// every journey - and <b>kept</b> by the workflow only when the job failed. Deciding in the
+    /// upload rather than in the code means nothing here has to know how the test ended, which xUnit
+    /// does not offer a fixture cleanly anyway.</para>
+    /// </remarks>
+    public static string? TraceDirectory =>
+        Environment.GetEnvironmentVariable("MLQT_JOURNEY_TRACE") is { Length: > 0 } dir ? dir : null;
+
+    private readonly List<(IBrowserContext Context, string Name)> _traced = [];
+    private int _traceCounter;
+
     /// <summary>The host's service provider, for a journey that drives a service directly.</summary>
     public IServiceProvider Services => _app!.Services;
 
@@ -81,6 +101,23 @@ public sealed class TestHostFixture : IAsyncLifetime
     public async Task<IPage> NewPageAsync()
     {
         var context = await Browser.NewContextAsync();
+
+        if (TraceDirectory is not null)
+        {
+            await context.Tracing.StartAsync(new TracingStartOptions
+            {
+                Screenshots = true,
+                Snapshots = true,
+                Sources = true,
+                Title = TestContext.Current.Test?.TestDisplayName,
+            });
+
+            // Named after the test where xUnit offers it, so a directory of traces can be read
+            // without opening them. The counter keeps two pages in one test apart.
+            var name = TestContext.Current.Test?.TestDisplayName ?? "journey";
+            _traced.Add((context, $"{Sanitise(name)}-{Interlocked.Increment(ref _traceCounter)}"));
+        }
+
         var page = await context.NewPageAsync();
 
         // The failure mode this catches: an interop call that throws leaves the UI looking merely
@@ -103,8 +140,37 @@ public sealed class TestHostFixture : IAsyncLifetime
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>A test display name that a file system will accept.</summary>
+    private static string Sanitise(string name)
+    {
+        var clean = new string([.. name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)]);
+        return clean.Length <= 120 ? clean : clean[..120];
+    }
+
     public async ValueTask DisposeAsync()
     {
+        // Written before the browser closes, which takes the contexts with it. One file per journey:
+        // Playwright's viewer opens them individually, and a single merged trace would be unreadable.
+        if (_traced.Count > 0)
+            Directory.CreateDirectory(TraceDirectory!);
+
+        foreach (var (context, name) in _traced)
+        {
+            try
+            {
+                await context.Tracing.StopAsync(new TracingStopOptions
+                {
+                    Path = Path.Combine(TraceDirectory!, $"{name}.zip"),
+                });
+            }
+            catch (Exception ex)
+            {
+                // A trace that cannot be written must not fail a run that otherwise passed - it is
+                // evidence about a failure, not a result in itself.
+                Console.WriteLine($"[trace] could not write {name}: {ex.Message}");
+            }
+        }
+
         if (Browser is not null)
             await Browser.CloseAsync();
         _playwright?.Dispose();

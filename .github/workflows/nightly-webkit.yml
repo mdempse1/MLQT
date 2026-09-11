@@ -52,7 +52,22 @@ jobs:
       - name: Run the journeys under WebKit
         env:
           MLQT_JOURNEY_BROWSER: webkit
+          # Where the fixture writes a trace per journey. Recorded always, kept only on failure
+          # by the upload step below - 7a asked for this and said why: "journey failures on a
+          # headless Linux runner are otherwise near-undebuggable" (B148).
+          MLQT_JOURNEY_TRACE: ${{ github.workspace }}/TestResults/traces
         run: dotnet test MLQT.Journeys -c Release --no-build --report-trx --report-trx-filename journeys-webkit.trx --results-directory ${{ github.workspace }}/TestResults
+
+      # Only on failure, which is the only time anybody opens one. A trace carries the DOM at each
+      # step, screenshots, the console and the network log; a trx carries an assertion and a stack.
+      # Open one with `npx playwright show-trace <file>`.
+      - name: Upload Playwright traces
+        uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: journey-traces-webkit
+          path: ${{ github.workspace }}/TestResults/traces
+          if-no-files-found: ignore
 
       - name: Upload journey results
         uses: actions/upload-artifact@v6

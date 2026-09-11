@@ -551,8 +551,14 @@ public static class GraphBuilder
             {
                 foreach (var referencedModelId in dependencies)
                 {
-                    try { graph.AddModelUsesModel(sourceId, referencedModelId); }
-                    catch { /* Edge target may not exist */ }
+                    // Asked, not thrown and caught. AddModelUsesModel throws when either end is
+                    // missing, and a reference to a class outside the loaded set is the ordinary case
+                    // - MSL is referenced far more often than it is loaded. Catching that meant every
+                    // *other* failure was swallowed with it (B151).
+                    if (graph.GetNode<ModelNode>(referencedModelId) is null)
+                        continue;
+
+                    graph.AddModelUsesModel(sourceId, referencedModelId);
                 }
 
                 if (resources.Count > 0)
@@ -600,9 +606,14 @@ public static class GraphBuilder
                         if (modAnalyzer.Resources.Count > 0)
                             pass2Results.Add((model.Id, modAnalyzer.Resources));
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // If analysis fails, skip this model
+                        // Reported rather than skipped. One class that cannot be analysed must not
+                        // stop the pass - and must not vanish from it either, which is the bargain
+                        // the per-class check and the graph analyses already make with the same
+                        // failure. Silent, a class simply had no resources, and nothing anywhere
+                        // distinguished that from a class whose analysis threw (B151).
+                        onModelFailed?.Invoke(model, ex);
                     }
                 });
 
@@ -762,8 +773,12 @@ public static class GraphBuilder
         {
             foreach (var referencedModelId in dependencies)
             {
-                try { graph.AddModelUsesModel(sourceId, referencedModelId); }
-                catch { }
+                // See the same loop in AnalyzeDependenciesAsync: a reference to a class outside the
+                // loaded set is ordinary, so it is asked about rather than thrown over (B151).
+                if (graph.GetNode<ModelNode>(referencedModelId) is null)
+                    continue;
+
+                graph.AddModelUsesModel(sourceId, referencedModelId);
             }
 
             if (resources.Count > 0)
@@ -796,7 +811,11 @@ public static class GraphBuilder
                     if (modAnalyzer.Resources.Count > 0)
                         pass2Results.Add((model.Id, modAnalyzer.Resources));
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // See the same pass in AnalyzeDependenciesAsync (B151).
+                    onModelFailed?.Invoke(model, ex);
+                }
             });
 
             foreach (var (modelId, resources) in pass2Results)

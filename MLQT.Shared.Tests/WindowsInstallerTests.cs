@@ -172,6 +172,26 @@ public class WindowsInstallerTests
     }
 
     [Fact]
+    public void TheReleaseInstallsOverAnExistingInstallBeforeUninstalling()
+    {
+        // Backlog B150. Both release jobs proved a great deal about a *first* install - install,
+        // check the tree, run all three tools, run the GUI's probes, remove it - and neither ever
+        // installed over an existing install, which is what every user does from the second release
+        // onwards. It is also where the failures live: files held open, a duplicated uninstall entry,
+        // an apt maintainer script that assumed nothing was there.
+        //
+        // The AppId assertion above pins the *value*; this pins that anything checks what it is for.
+        var release = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml")).Replace("\r\n", "\n");
+
+        Assert.Contains("Install it again, over the first", release);
+        Assert.Contains("expected exactly one MLQT in Apps & Features after the upgrade", release);
+
+        // And the same question asked of apt, which is stricter than a file copy.
+        Assert.Contains("--reinstall", release);
+    }
+
+    [Fact]
     public void ItRefusesToBuildAnInstallerMissingATool()
     {
         var script = Script();

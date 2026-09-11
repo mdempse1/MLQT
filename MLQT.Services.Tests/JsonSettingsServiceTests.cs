@@ -263,6 +263,41 @@ public class JsonSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void HasMigratedAnswersBeforeAnybodyGoesLookingForTheOldFile()
+    {
+        // The host asks this first. MigrateFrom answers the same question and is safe to call twice,
+        // but its argument is the contents of the old file - so finding and reading that file happens
+        // before the guard inside it is reached, on every launch, for ever. On Linux there is never
+        // anything to find, which makes it a search that can only ever fail.
+        var settings = NewStore();
+        Assert.False(settings.HasMigrated);
+
+        settings.MigrateFrom(OldSettings());
+
+        Assert.True(settings.HasMigrated);
+    }
+
+    [Fact]
+    public void HasMigratedIsTrueEvenWhenThereWasNothingToBringAcross()
+    {
+        // "There was nothing" is an answer, and re-deriving it every launch is the cost this avoids.
+        var settings = NewStore();
+
+        Assert.Empty(settings.MigrateFrom(new Dictionary<string, string>()));
+        Assert.True(settings.HasMigrated);
+    }
+
+    [Fact]
+    public void HasMigratedSurvivesARestart()
+    {
+        // The marker is in the file, not in memory - the same property MigratingRunsOnceAcrossRestarts
+        // asserts of the migration itself, asked of the short-circuit that now stands in front of it.
+        NewStore().MigrateFrom(OldSettings());
+
+        Assert.True(NewStore().HasMigrated);
+    }
+
+    [Fact]
     public void MigratingRunsOnceAcrossRestarts()
     {
         // The marker has to be in the file, not in memory: the migration runs at startup, and an

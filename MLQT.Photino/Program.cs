@@ -211,6 +211,13 @@ internal static class Program
         if (settings is not JsonSettingsService store)
             return;
 
+        // Asked before the old file is looked for. The migration writes its marker even when it
+        // copied nothing, so "there is nothing to bring across" is an answer that is reached once
+        // rather than re-derived from a directory search and a file read on every launch - on Linux,
+        // for ever, since MAUI never ran there.
+        if (store.HasMigrated)
+            return;
+
         var path = MauiPreferencesFile.Locate();
         if (path is null)
             return;

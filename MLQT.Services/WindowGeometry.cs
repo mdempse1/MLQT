@@ -75,4 +75,64 @@ public static class WindowGeometry
             Width: width,
             Height: height);
     }
+
+    /// <summary>
+    /// The smallest piece of a window that has to be on a screen for the user to reach it.
+    /// </summary>
+    /// <remarks>
+    /// Enough title bar to grab with a mouse. Wide enough to be an obvious target rather than a
+    /// sliver, and tall enough to be the bar itself rather than a window border.
+    /// </remarks>
+    public const int MinimumVisibleWidth = 120;
+    public const int MinimumVisibleHeight = 30;
+
+    /// <summary>
+    /// Whether enough of <paramref name="window"/> lands on one of <paramref name="workAreas"/> for
+    /// the user to move it.
+    /// </summary>
+    /// <remarks>
+    /// <para>Backlog B149. The monitor layout changes while the application is closed, and the case
+    /// that matters is the ordinary one: dock a laptop, open MLQT on the second screen, close it,
+    /// undock. The remembered position is then off the side of the only display there is, and a
+    /// window nobody can see is also a window nobody can move back.</para>
+    ///
+    /// <para>Asked of the whole layout rather than of one monitor, because the second screen may be
+    /// left, right, above or below the first, and a position that is negative or huge is perfectly
+    /// valid while that screen is attached.</para>
+    /// </remarks>
+    public static bool IsOnScreen(WindowBounds window, IReadOnlyList<WindowBounds> workAreas)
+    {
+        foreach (var work in workAreas)
+        {
+            var overlapWidth = Math.Min(window.Left + window.Width, work.Left + work.Width)
+                             - Math.Max(window.Left, work.Left);
+            var overlapHeight = Math.Min(window.Top + window.Height, work.Top + work.Height)
+                              - Math.Max(window.Top, work.Top);
+
+            if (overlapWidth >= MinimumVisibleWidth && overlapHeight >= MinimumVisibleHeight)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Puts a window back on <paramref name="work"/>, keeping the size the user chose.
+    /// </summary>
+    /// <remarks>
+    /// The size is kept and only shrunk to fit, because it is the half of the placement the user
+    /// actually chose - falling back to the default window would take a deliberately large window
+    /// away from somebody whose only mistake was undocking a laptop.
+    /// </remarks>
+    public static WindowBounds MovedOnto(WindowBounds window, WindowBounds work)
+    {
+        var width = Math.Min(window.Width, work.Width);
+        var height = Math.Min(window.Height, work.Height);
+
+        return new WindowBounds(
+            Left: work.Left + (work.Width - width) / 2,
+            Top: work.Top + (work.Height - height) / 2,
+            Width: width,
+            Height: height);
+    }
 }

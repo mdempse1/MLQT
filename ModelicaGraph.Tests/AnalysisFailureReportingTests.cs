@@ -31,6 +31,58 @@ public class AnalysisFailureReportingTests
     }
 
     [Fact]
+    public async Task AReferenceToAClassThatIsNotLoaded_IsNotAFailure()
+    {
+        // Backlog B151. The edge add used to be wrapped in `try { } catch { }` because
+        // AddModelUsesModel throws when either end is missing - and a reference to a class outside
+        // the loaded set is the ordinary case, not an error: MSL is referenced far more often than it
+        // is loaded. The catch was swallowing normal operation, and everything else with it.
+        var graph = TwoClasses();
+        graph.GetNode<ModelNode>("P.A")!.Definition.ModelicaCode =
+            "model A\n  Modelica.Blocks.Sources.Sine notLoaded;\nend A;";
+
+        var failures = new List<(string Model, string Error)>();
+
+        await GraphBuilder.AnalyzeDependenciesAsync(
+            graph, onModelFailed: (model, ex) => failures.Add((model.Id, ex.Message)));
+
+        Assert.Empty(failures);
+        Assert.Empty(graph.GetUsedModels("P.A"));    // nothing to point at, so no edge
+    }
+
+    [Fact]
+    public async Task AReferenceThatIsLoadedStillGetsItsEdge()
+    {
+        // The other half: skipping the missing target must not skip the present one. Without this the
+        // fix above would pass by never adding an edge at all.
+        var graph = TwoClasses();
+        graph.GetNode<ModelNode>("P.A")!.Definition.ModelicaCode =
+            "model A\n  B b;\n  Modelica.Blocks.Sources.Sine notLoaded;\nend A;";
+
+        await GraphBuilder.AnalyzeDependenciesAsync(graph, onModelFailed: (_, _) => { });
+
+        Assert.Contains("P.B", graph.GetUsedModels("P.A").Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task TheSameIsTrueOfTheScopedPass()
+    {
+        // AnalyzeDependenciesForModelsAsync is the path the app takes after a VCS operation, and it
+        // carried its own copy of the same catch.
+        var graph = TwoClasses();
+        graph.GetNode<ModelNode>("P.A")!.Definition.ModelicaCode =
+            "model A\n  B b;\n  Modelica.Blocks.Sources.Sine notLoaded;\nend A;";
+
+        var failures = new List<string>();
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            graph, new HashSet<string> { "P.A" }, onModelFailed: (model, _) => failures.Add(model.Id));
+
+        Assert.Empty(failures);
+        Assert.Contains("P.B", graph.GetUsedModels("P.A").Select(m => m.Id));
+    }
+
+    [Fact]
     public async Task AFailingCallback_IsReported()
     {
         var graph = TwoClasses();

@@ -51,10 +51,59 @@ public static class ClassElementResolver
     /// </remarks>
     public sealed class InterfaceCache
     {
-        private readonly ConcurrentDictionary<string, ClassInterface?> _interfaces = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Lazy<ClassInterface?>> _interfaces = new(StringComparer.Ordinal);
 
-        internal ClassInterface? Of(ModelNode node) =>
-            _interfaces.GetOrAdd(node.Id, static (_, n) => Extract(n), node);
+        /// <summary>
+        /// This class's interface, remembering it only when it is the kind that gets read again.
+        /// </summary>
+        /// <param name="remember">
+        /// True for a class reached through an <c>extends</c> clause. <b>Only those are worth
+        /// keeping</b>: a base class near the root of a library is on the chain of hundreds of
+        /// others, while the class a caller asked about is walked exactly once per query, so its
+        /// interface is stored and never read. Since callers ask about every class in a library and
+        /// only some of them are base classes, remembering both was most of the memory for none of
+        /// the saving (B147).
+        ///
+        /// <para>An already-remembered interface is returned either way: a base class asked about
+        /// directly should not be re-derived just because this query entered through it.</para>
+        /// </param>
+        internal ClassInterface? Of(ModelNode node, bool remember)
+        {
+            // Already known - as a base class of something walked earlier - so this is free, whichever
+            // way it was reached.
+            if (_interfaces.TryGetValue(node.Id, out var known))
+                return known.Value;
+
+            // Lazy, and one per class: extracting is not safe to do twice at once on the same class.
+            // ModelDefinition.Borrow parses the tree if it is absent and releases it again afterwards,
+            // so two threads on one class race - the first to finish clears the tree while the second
+            // is still reading it, and the loser gets an empty interface. That was invisible while
+            // every walked class was cached, because the second thread read the first one's answer.
+            var entry = _interfaces.GetOrAdd(
+                node.Id,
+                static (_, n) => new Lazy<ClassInterface?>(() => Extract(n), LazyThreadSafetyMode.ExecutionAndPublication),
+                node);
+
+            var iface = entry.Value;
+
+            // Dropped again unless it is worth keeping, and only if this is still the entry we made:
+            // another thread may have cached the same class as a base class in the meantime, and
+            // removing that would throw away the one copy worth having.
+            if (!remember)
+                _interfaces.TryRemove(new KeyValuePair<string, Lazy<ClassInterface?>>(node.Id, entry));
+
+            return iface;
+        }
+
+        /// <summary>
+        /// How many interfaces are being held.
+        /// </summary>
+        /// <remarks>
+        /// Public because what this cache costs is a property worth being able to ask about — it is
+        /// the half of the trade that went unmeasured when it was first written (B147), and a caller
+        /// resolving a very large library may want to know.
+        /// </remarks>
+        public int Count => _interfaces.Count;
 
         internal static ClassInterface? Extract(ModelNode node) =>
             node.Definition.Borrow<ClassInterface?>(ClassInterfaceExtractor.Extract);
@@ -85,7 +134,9 @@ public static class ClassElementResolver
         // while every base class up the chain is one this walk parsed and should hand back. See
         // ModelDefinition.Borrow. A ClassInterface is names and defaults - no parse tree - so keeping
         // one costs a fraction of what re-deriving it does.
-        var iface = interfaces is null ? InterfaceCache.Extract(node) : interfaces.Of(node);
+        var iface = interfaces is null
+            ? InterfaceCache.Extract(node)
+            : interfaces.Of(node, remember: origin is not null);
         if (iface is null)
             return;
 

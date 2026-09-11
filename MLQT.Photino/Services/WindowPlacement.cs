@@ -59,6 +59,12 @@ internal sealed record WindowPlacement(int Left, int Top, int Width, int Height)
         if (saved is not null && saved.IsUsable())
         {
             Set(window, saved);
+
+            // ...and checked again once there is a window to ask about the monitors, because the
+            // layout changes while the application is closed. IsUsable only rejects the shapes that
+            // are wrong on any machine; whether *this* machine still has the screen the window was
+            // left on cannot be known until now (B149).
+            window.RegisterWindowCreatedHandler((sender, _) => KeepOnScreen((PhotinoWindow)sender!, saved));
             return;
         }
 
@@ -72,6 +78,54 @@ internal sealed record WindowPlacement(int Left, int Top, int Width, int Height)
         // opened at the wrong size on every first run with nothing but a line in a log to say so.
         Set(window, Fallback);
         window.RegisterWindowCreatedHandler((sender, _) => Set((PhotinoWindow)sender!, FirstRun((PhotinoWindow)sender!)));
+    }
+
+    /// <summary>
+    /// Moves a remembered window back onto a screen when the one it was left on has gone.
+    /// </summary>
+    /// <remarks>
+    /// <para>Backlog B149, and the case is the ordinary one: dock a laptop, open MLQT on the second
+    /// screen, close it, undock. The remembered position is then off the side of the only display
+    /// there is — and a window nobody can see is also a window nobody can drag back.</para>
+    ///
+    /// <para>The user's size is kept and only shrunk to fit. Losing a deliberately large window is a
+    /// poor answer to a problem whose cause was unplugging a cable.</para>
+    ///
+    /// <para>Says so in the log. A window that quietly appears somewhere other than where it was left
+    /// is the kind of thing people doubt their own memory about.</para>
+    /// </remarks>
+    private static void KeepOnScreen(PhotinoWindow window, WindowPlacement saved)
+    {
+        try
+        {
+            var workAreas = window.Monitors
+                .Select(m => new WindowBounds(
+                    m.WorkArea.Left, m.WorkArea.Top, m.WorkArea.Width, m.WorkArea.Height))
+                .ToList();
+
+            if (workAreas.Count == 0)
+                return;
+
+            var remembered = new WindowBounds(saved.Left, saved.Top, saved.Width, saved.Height);
+            if (WindowGeometry.IsOnScreen(remembered, workAreas))
+                return;
+
+            var moved = WindowGeometry.MovedOnto(remembered, workAreas[0]);
+
+            MLQT.Services.LoggingService.Info(nameof(WindowPlacement),
+                $"The remembered window at {saved.Left},{saved.Top} is not on any current display " +
+                $"({workAreas.Count} found); moving it to {moved.Left},{moved.Top}");
+
+            Set(window, new WindowPlacement(moved.Left, moved.Top, moved.Width, moved.Height));
+        }
+        catch (Exception ex)
+        {
+            // Reading the monitor layout needs the native layer and a display. Leaving the window
+            // where it was remembered is a worse answer than moving it, and a better one than not
+            // opening at all.
+            MLQT.Services.LoggingService.Error(nameof(WindowPlacement),
+                "Could not check the remembered window against the monitor layout", ex);
+        }
     }
 
     private static void Set(PhotinoWindow window, WindowPlacement placement) =>

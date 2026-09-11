@@ -56,6 +56,13 @@ param(
     [switch] $AllowMissingSvn,
     [switch] $SkipSmokeTests,
 
+    # How long the GUI gets to run its probes and exit. Bounded because the failure it guards is a
+    # host that starts and never renders: it does not crash, it waits, and an unbounded wait hands a
+    # CI job its whole timeout - six hours of runner, reporting nothing about why (backlog B146).
+    # Generous, because a cold first run on a slow runner does real work: WebView2 or WebKitGTK
+    # starts, the RCL assets resolve and sixteen probes run.
+    [int] $SelfTestTimeoutSeconds = 300,
+
     [string] $Configuration = 'Release'
 )
 
@@ -203,7 +210,15 @@ try {
     # stderr from a native command into a terminating error when ErrorActionPreference is Stop - so
     # calling it directly fails the build on a message that means nothing. The report on disk is the
     # result here; the process output is not.
-    Start-Process -FilePath (Join-Path $Output "MLQT.Photino$exe") -Wait -NoNewWindow | Out-Null
+    #
+    # -PassThru and a bounded wait rather than -Wait: see $SelfTestTimeoutSeconds. Killed rather than
+    # left running, so the tree can be deleted afterwards and the next step is not racing a webview.
+    $gui = Start-Process -FilePath (Join-Path $Output "MLQT.Photino$exe") -PassThru -NoNewWindow
+
+    if (-not $gui.WaitForExit($SelfTestTimeoutSeconds * 1000)) {
+        try { $gui.Kill($true) } catch { }
+        Fail "the GUI did not finish its self-test within $SelfTestTimeoutSeconds seconds; it started and never got as far as writing a report"
+    }
 }
 finally {
     Remove-Item Env:MLQT_SELFTEST, Env:MLQT_SELFTEST_HOST, Env:MLQT_SELFTEST_OUT -ErrorAction SilentlyContinue

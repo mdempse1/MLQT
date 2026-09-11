@@ -104,4 +104,50 @@ public class ClassElementResolverCacheTests
 
         Assert.Contains("fromRoot", NamesOf(graph, "LeafA", null));
     }
+
+    [Fact]
+    public void OnlyTheClassesThatGetReadAgainAreKept()
+    {
+        // Backlog B147. The saving comes from base classes, which are on the chain of every class
+        // that inherits them; a class a caller asks *about* is walked once per query, so keeping its
+        // interface buys nothing and costs the memory - and a library has far more of those than it
+        // has base classes. Measured over MSL, keeping both put peak working set up by 119 MB.
+        var graph = Hierarchy();
+        var cache = new ClassElementResolver.InterfaceCache();
+
+        NamesOf(graph, "LeafA", cache);
+        NamesOf(graph, "LeafB", cache);
+
+        // Root and Middle were reached through extends clauses; the two leaves were the queries.
+        Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
+    public void AskingAboutABaseClassDirectlyDoesNotThrowItAway()
+    {
+        // A class can be both: the query target now, and something else's base class later. Evicting
+        // the entry when it is asked about directly would throw away the one copy worth having.
+        var graph = Hierarchy();
+        var cache = new ClassElementResolver.InterfaceCache();
+
+        NamesOf(graph, "LeafA", cache);          // caches Root and Middle
+        Assert.Equal(2, cache.Count);
+
+        NamesOf(graph, "Middle", cache);         // now the query target, and already cached
+        Assert.Equal(2, cache.Count);
+
+        Assert.Contains("fromRoot", NamesOf(graph, "LeafB", cache));
+    }
+
+    [Fact]
+    public void AQueryTargetWithNoBaseClassesCachesNothing()
+    {
+        var graph = Hierarchy();
+        var cache = new ClassElementResolver.InterfaceCache();
+
+        NamesOf(graph, "Root", cache);
+
+        Assert.Equal(0, cache.Count);
+    }
+
 }

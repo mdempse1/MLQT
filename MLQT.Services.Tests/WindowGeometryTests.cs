@@ -157,4 +157,91 @@ public class WindowGeometryTests
         Assert.Equal(1200, bounds.Width);
         Assert.Equal(900, bounds.Height);
     }
+
+    // ---- B149: is the remembered window still on a screen? --------------------------------------
+
+    /// <summary>The second screen the laptop was docked to, arranged to the right of it.</summary>
+    private static readonly WindowBounds SecondScreen = new(1920, 0, 2560, 1400);
+
+    [Fact]
+    public void AWindowOnTheOnlyDisplayIsOnScreen()
+    {
+        Assert.True(WindowGeometry.IsOnScreen(new WindowBounds(100, 100, 1200, 900), [Laptop]));
+    }
+
+    [Fact]
+    public void AWindowLeftOnASecondScreenThatHasGoneIsNot()
+    {
+        // The case this exists for. Dock, open MLQT on the second screen, close it, undock: the
+        // window reopens at x=2200 on a 1920-wide display, invisible and impossible to drag back.
+        var remembered = new WindowBounds(2200, 300, 1400, 1000);
+
+        Assert.True(WindowGeometry.IsOnScreen(remembered, [Laptop, SecondScreen]));   // while docked
+        Assert.False(WindowGeometry.IsOnScreen(remembered, [Laptop]));                // after undocking
+    }
+
+    [Fact]
+    public void AScreenAboveOrLeftOfThePrimaryIsStillAScreen()
+    {
+        // A monitor arranged left of or above the primary has negative coordinates, and a window on
+        // it is perfectly valid. A rule that simply rejected negatives would move it for no reason.
+        var toTheLeft = new WindowBounds(-1920, 0, 1920, 1040);
+        var window = new WindowBounds(-1800, 100, 1200, 900);
+
+        Assert.True(WindowGeometry.IsOnScreen(window, [Laptop, toTheLeft]));
+        Assert.False(WindowGeometry.IsOnScreen(window, [Laptop]));
+    }
+
+    [Theory]
+    // Just enough title bar to grab counts...
+    [InlineData(1920 - WindowGeometry.MinimumVisibleWidth, 1040 - WindowGeometry.MinimumVisibleHeight, true)]
+    // ...and one pixel less of it, in either direction, does not.
+    [InlineData(1920 - WindowGeometry.MinimumVisibleWidth + 1, 1040 - WindowGeometry.MinimumVisibleHeight, false)]
+    [InlineData(1920 - WindowGeometry.MinimumVisibleWidth, 1040 - WindowGeometry.MinimumVisibleHeight + 1, false)]
+    public void ASliverOffTheEdgeIsNotEnoughToGrab(int left, int top, bool onScreen)
+    {
+        Assert.Equal(onScreen, WindowGeometry.IsOnScreen(new WindowBounds(left, top, 1200, 900), [Laptop]));
+    }
+
+    [Fact]
+    public void NoMonitorsMeansNothingToJudgeAgainst()
+    {
+        // A headless machine, or a display not ready yet, reports none. Answering "not on screen"
+        // would move every window on every launch, which is worse than leaving it where it was.
+        Assert.False(WindowGeometry.IsOnScreen(new WindowBounds(0, 0, 1200, 900), []));
+    }
+
+    [Fact]
+    public void MovingAWindowBackKeepsTheSizeTheUserChose()
+    {
+        // Their size is the half of the placement they actually chose. Falling back to the default
+        // window would take a deliberately large one away over an unplugged cable.
+        var moved = WindowGeometry.MovedOnto(new WindowBounds(2200, 300, 1400, 1000), Laptop);
+
+        Assert.Equal(1400, moved.Width);
+        Assert.Equal(1000, moved.Height);
+        Assert.True(WindowGeometry.IsOnScreen(moved, [Laptop]));
+    }
+
+    [Fact]
+    public void AWindowTooBigForTheScreenItMovesToIsShrunkToFit()
+    {
+        // The 2560x1400 second screen is gone and the window had nearly filled it.
+        var moved = WindowGeometry.MovedOnto(new WindowBounds(2000, 0, 2400, 1300), Laptop);
+
+        Assert.Equal(1920, moved.Width);
+        Assert.Equal(1040, moved.Height);
+        Assert.Equal(0, moved.Left);
+        Assert.Equal(0, moved.Top);
+    }
+
+    [Fact]
+    public void AMovedWindowIsCentredOnTheScreenItLandsOn()
+    {
+        var moved = WindowGeometry.MovedOnto(new WindowBounds(5000, 5000, 800, 600), Laptop);
+
+        Assert.Equal((1920 - 800) / 2, moved.Left);
+        Assert.Equal((1040 - 600) / 2, moved.Top);
+    }
+
 }
