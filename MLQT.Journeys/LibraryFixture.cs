@@ -114,7 +114,7 @@ public sealed class LibraryFixture : IDisposable
             end Lib;
             """);
 
-        Write("package.order", "Interfaces\nComponents\nExamples\nExternals\nDocumented\nModified\nBadlyNamed\n");
+        Write("package.order", "Interfaces\nComponents\nExamples\nExternals\nDocumented\nModified\nBadlyNamed\nUntidy\n");
 
         Write("Documented.mo", """
             within Lib;
@@ -145,6 +145,30 @@ public sealed class LibraryFixture : IDisposable
             equation
               der(z) = -z;
             end badly_named;
+            """);
+
+        // Laid out the way the layout rules would rather it was not: an import after a declaration,
+        // and three public sections where one would do. Nothing here is a *naming* or *documentation*
+        // problem, so it only reports when those rules are switched on - which is the distinction the
+        // settings documentation is trying to draw when it shows this class.
+        Write("Untidy.mo", """
+            within Lib;
+            model Untidy "A class the layout rules have something to say about"
+              Real a "The first state";
+              import Lib.Interfaces.Pin;
+            public
+              Real b "The second state";
+            protected
+              Real c "One nobody outside can see";
+            public
+              Real d "A third state, in a second public section";
+            equation
+              der(a) = -a;
+              der(b) = -b;
+              der(c) = -c;
+              der(d) = -d;
+              annotation(Documentation(info="<html><p>Untidy on purpose.</p></html>"));
+            end Untidy;
             """);
 
         WriteInterfaces();
@@ -356,6 +380,15 @@ public sealed class LibraryFixture : IDisposable
         // is about.
         repo.Branches.Add("feature/pump-curves", first);
     }
+
+    /// <summary>Touches a file under the library, the way a user editing it outside MLQT would.</summary>
+    /// <remarks>
+    /// A trailing comment: it changes the file's bytes and its timestamp, which is what the monitor
+    /// watches, and leaves the Modelica in it valid, which is what everything downstream needs.
+    /// </remarks>
+    public void TouchOutsideMlqt(string relativePath) =>
+        File.AppendAllText(Path.Combine(LibraryPath, relativePath),
+                           "\n// Edited outside MLQT.\n");
 
     public void Dispose() => Delete(RepositoryPath);
 

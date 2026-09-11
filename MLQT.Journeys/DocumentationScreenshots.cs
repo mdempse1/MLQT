@@ -60,6 +60,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// </remarks>
     private LibraryFixture? _library;
 
+    /// <summary>The repository MLQT knows the fixture by, for the scenes that drive services.</summary>
+    private string? _repositoryId;
+
     public void Dispose() => _library?.Dispose();
 
     /// <summary>Where to write them, or null when nobody asked.</summary>
@@ -127,6 +130,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await RepositorySettingsAsync(page);
         await GitOperationsAsync(page);
         await AddingARepositoryAsync(page);
+
+        // Last, because it leaves changes waiting that nothing else wants to see.
+        await PendingChangesAsync(page);
     }
 
     // ---------------------------------------------------------------- the scenes
@@ -168,6 +174,12 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         // The formatting-exclusion toggle, in the second group beside the annotations button.
         await ShotAroundAsync(page, Right(page).Locator(".mud-button-group-root").Nth(1), "settings-reference-5");
+
+        // The layout rules reporting, which is a different picture from the one above: a class whose
+        // names and documentation are fine and whose sections are not.
+        await SelectAClassAsync(page, "Untidy");
+        await ShotAsync(page, "settings-reference-7");
+        await SelectAClassAsync(page);
 
         // code-review-5, the Finding Details dialog, is not taken here and cannot be: it opens only
         // for a finding that carries Details, and a style rule does not produce one - the dialog's
@@ -329,6 +341,33 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     }
 
     /// <summary>
+    /// The refresh button with changes waiting behind it.
+    /// </summary>
+    /// <remarks>
+    /// The badge is the file monitor's count, so the files have to be changed the way the monitor
+    /// hears about it - written on disk by something that is not MLQT - and the monitor has to be
+    /// running, which the screenshot run turns off when it adds the repository so that nothing moves
+    /// under the earlier pictures.
+    /// </remarks>
+    private async Task PendingChangesAsync(IPage page)
+    {
+        var monitor = host.Services.GetRequiredService<IFileMonitoringService>();
+        monitor.StartMonitoring(_repositoryId!, _library!.RepositoryPath);
+
+        foreach (var file in new[] { "Documented.mo", "Interfaces/Pin.mo", "Components/Load.mo" })
+            _library.TouchOutsideMlqt(file);
+
+        // The monitor debounces, and the badge is drawn when it reports - so this waits for the
+        // number to appear rather than for a length of time.
+        await page.Locator(".mud-badge").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await page.WaitForTimeoutAsync(1500);
+
+        await ShotAroundAsync(page, LeftToolbar(page), "file-monitoring-1");
+
+        monitor.StopMonitoring(_repositoryId!);
+    }
+
+    /// <summary>
     /// The Add Repository dialog, in both of its two ways of naming a repository.
     /// </summary>
     /// <remarks>
@@ -342,7 +381,8 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await OpenTabAsync(page, CodeTab);
 
         await ShellReadiness.WaitUntilClickableAsync(page);
-        await LeftToolbar(page).Locator("button").First.ClickAsync();
+        var addRepository = LeftToolbar(page).Locator("button").First;
+        await addRepository.ClickAsync();
         await page.WaitForTimeoutAsync(1500);
 
         var dialog = page.Locator(".mud-dialog").Last;
@@ -364,6 +404,10 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await ShotOfAsync(dialog, "getting-started-6");
 
         await CloseTheDialogAsync(page);
+
+        // The mouseleave the dialog swallowed, as everywhere else a dialog opens under the pointer.
+        await addRepository.HoverAsync();
+        await page.Mouse.MoveAsync(0, 0, new MouseMoveOptions { Steps = 8 });
     }
 
     /// <summary>
@@ -379,9 +423,12 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// position, and why a changed row order shows up as a picture of the wrong dialog rather than as
     /// an error. Each shot asserts the dialog opened, so that failure is loud.</para>
     ///
-    /// <para><b>git-operations-6 and -10 are not here</b>: the ready-to-merge phase of the merge
-    /// dialog needs a clean working copy, which would cost the uncommitted change every other picture
-    /// uses, and the revision diff needs two revisions of a file the fixture only has one of.</para>
+    /// <para><b>git-operations-6 is not here.</b> The merge dialog's ready-to-merge phase needs a
+    /// clean working copy, and committing the fixture's change - through git, at the end, after
+    /// everything that wanted it - is not enough: MLQT holds the working-copy status it last read,
+    /// and nothing short of a VCS operation *in the application* makes it read again, which is
+    /// reasonable behaviour and leaves no way to reach the picture from here. It stays a
+    /// photograph.</para>
     /// </remarks>
     private async Task GitOperationsAsync(IPage page)
     {
@@ -660,6 +707,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         var added = await repositories.AddRepositoryAsync(_library!.RepositoryPath, name: "MyLibrary", startMonitoring: false);
         Assert.True(added.Success, added.ErrorMessage);
+        _repositoryId = added.Repository!.Id;
 
         // Adding a repository *discovers* its libraries; loading them is a second step, because the
         // Add Repository dialog lets the user choose which of them to open. Null means all of them,
@@ -702,8 +750,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// <para>Written as <c>.mlqt/settings.json</c> before the repository is added, which is where
     /// <c>RepositoryService</c> reads it from. The findings in the picture are then the application's
     /// own, produced by its own pipeline from its own configuration - not a list this class handed
-    /// it. Three rules, chosen because the fixture library breaks all three and because they are the
-    /// ones a new user turns on first.</para>
+    /// it. Five rules, chosen because the fixture library breaks all five: three about names and
+    /// descriptions, which are the ones a new user turns on first, and two about layout, which are
+    /// what settings-reference.md shows being reported.</para>
     /// </remarks>
     private void EnableSomeRules()
     {
@@ -715,7 +764,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
               "RuleSeverities": {
                 "MLQT.Doc.ClassDescription": "Warning",
                 "MLQT.Doc.ParameterDescription": "Error",
-                "MLQT.Naming.Convention": "Warning"
+                "MLQT.Naming.Convention": "Warning",
+                "MLQT.Style.ImportStatementsFirst": "Warning",
+                "MLQT.Style.OneOfEachSection": "Warning"
               }
             }
             """);
