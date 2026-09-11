@@ -22,8 +22,9 @@ public static class WindowGeometry
 {
     /// <summary>The window MLQT opens at, in device-independent units.</summary>
     /// <remarks>
-    /// The numbers <c>MLQT/App.xaml.cs</c> has always used, so both hosts open the same size on the
-    /// same machine. Big enough for the tree, the code and the findings list side by side.
+    /// The numbers the retired MAUI host opened at, kept so the application did not change size
+    /// under the user when the host was replaced. Big enough for the tree, the code and the findings
+    /// list side by side.
     /// </remarks>
     public const int PreferredWidth = 1200;
     public const int PreferredHeight = 900;

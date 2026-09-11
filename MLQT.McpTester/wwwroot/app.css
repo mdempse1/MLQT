@@ -1,5 +1,8 @@
+/* The same platform UI font McpTesterTheme gives MudBlazor, so the markup outside a Mud
+   component matches it. Neither is downloaded - see McpTesterTheme (B124). */
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+                 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
 }
 
 a, .btn-link {

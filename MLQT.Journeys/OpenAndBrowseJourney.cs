@@ -34,22 +34,27 @@ public class OpenAndBrowseJourney(TestHostFixture host)
     }
 
     [Fact]
-    public async Task EveryScriptTheHostPageAsksFor_Loads()
+    public async Task EveryAssetTheHostPageAsksFor_Loads()
     {
         // A 404 on a library script is silent in a browser. It surfaces much later as a feature that
         // renders an empty box, at which point the question looks like "is Cytoscape broken under
         // this engine" rather than "did the file arrive".
+        //
+        // **Every same-origin request, not just _content/ ones.** The narrow filter is what hid B120:
+        // the page asks for the host's own app.css, this host had none, and every page load 404ed on
+        // it unseen for a phase - in the one place a real missing asset would have shown up. Anything
+        // the page fetches from this server is something it expected to get.
         var failures = new List<string>();
         var page = await host.NewPageAsync();
         page.Response += (_, response) =>
         {
-            if (!response.Ok && response.Url.Contains("_content/"))
+            if (!response.Ok && response.Url.StartsWith(host.BaseUrl, StringComparison.OrdinalIgnoreCase))
                 failures.Add($"{response.Status} {response.Url}");
         };
 
         await page.GotoAsync(host.BaseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        Assert.Empty(failures);
+        Assert.True(failures.Count == 0, "the page asked for these and did not get them: " + string.Join(", ", failures));
     }
 
     [Fact]

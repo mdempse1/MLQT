@@ -136,6 +136,54 @@ if ($reports.Count -lt $suites.Count) {
     Fail "expected $($suites.Count) coverage reports, found $($reports.Count). A suite produced nothing, and a missing report reads as 0%"
 }
 
+# --- and the same trap from the other side (backlog B123) --------------------------------------
+#
+# Too *many* reports is as wrong as too few, and it does not look wrong. coverlet names its output
+# coverage.cobertura.<timestamp>.xml, so a directory that is not cleared accumulates one file per
+# run; the glob feeds reportgenerator all of them, and **reportgenerator unions line numbers**. Merge
+# a report taken before a file changed with one taken after, and the class acquires coverable lines
+# that no longer exist and that nothing ever hit - a real class at 96% reads as 56%, with a coverable
+# count matching no version of the file.
+#
+# That is what B123 was. It was recorded as "the merge degrades rather than unions" and the merge was
+# innocent: checked afterwards over the whole report, 360 of 361 gated classes match a hand-computed
+# union exactly. What was not innocent was this script, which cleared the directory only when it ran
+# the suites itself - so -SkipTests, and any earlier run left behind, merged straight into the answer.
+#
+# Both halves are now refused, because the debt ledger was absorbing the difference as though it were
+# real debt, and an entry blaming the code for a measurement artefact is worse than no entry.
+
+$perSuite = Get-DuplicateMlqtCoverageReports -ResultsDirectory $ResultsDirectory
+if ($perSuite) {
+    $names = ($perSuite | ForEach-Object { "$($_.Name) ($($_.Count))" }) -join ', '
+    Fail ("more than one coverage report for: $names. Each is from a different run, and merging them " +
+          "unions their line numbers - delete $ResultsDirectory and collect again")
+}
+
+# Reports older than the assembly they measure describe a build that no longer exists. Only reachable
+# with -SkipTests, which is the switch that says "judge what has already been collected"; it is worth
+# saying plainly rather than quietly judging the wrong thing.
+if ($SkipTests) {
+    $stale = foreach ($report in $reports) {
+        $assembly = Get-ChildItem -Path (Join-Path $repoRoot $report.Directory.Name) -Recurse `
+                                  -Filter "$($report.Directory.Name).dll" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -match "\\bin\\$Configuration\\" } |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+        if ($assembly -and $report.LastWriteTime -lt $assembly.LastWriteTime) {
+            # Date as well as time: the reports that found this were from the previous evening, and
+            # "report 18:01, assembly 08:13" reads as the wrong way round until you see the day.
+            "$($report.Directory.Name) (report $($report.LastWriteTime.ToString('yyyy-MM-dd HH:mm')), " +
+            "assembly $($assembly.LastWriteTime.ToString('yyyy-MM-dd HH:mm')))"
+        }
+    }
+
+    if ($stale) {
+        Fail ("these coverage reports predate the assembly they measure: $($stale -join ', '). " +
+              "Re-run without -SkipTests")
+    }
+}
+
 Write-Host "Merging $($reports.Count) coverage reports" -ForegroundColor Cyan
 if (-not (New-MlqtCoverageReport -ResultsDirectory $ResultsDirectory -ReportDirectory $ReportDirectory -Assemblies $bars.Keys)) {
     Fail 'reportgenerator failed'

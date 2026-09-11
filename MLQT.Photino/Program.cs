@@ -39,6 +39,13 @@ internal static class Program
         // nothing in the terminal it was started from.
         LoggingService.Initialize();
 
+        // On Linux only, and one line: whether this machine can draw with a GPU. It changes nothing
+        // here and it is the first thing worth knowing when somebody reports that the window feels
+        // slow - the development machine of phase 7b had no usable render node, so WebKit painted
+        // every frame on the CPU, and working that out from scratch took a morning (B141).
+        if (GraphicsEnvironment.Probe() is { } graphics)
+            LoggingService.Info(nameof(Program), graphics);
+
         // (1) The file provider must be rooted at wwwroot explicitly. PhotinoBlazorAppConfiguration's
         // HostPage is "index.html" with no directory part, so the provider is expected to be
         // wwwroot-rooted already, and the parameterless CreateDefault does not do that.

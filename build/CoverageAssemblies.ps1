@@ -45,6 +45,32 @@ $MlqtOwnedAssemblies = @($MlqtBars.Keys) + @('DymolaInterface', 'OpenModelicaInt
 .PARAMETER Assemblies
     The allow list. Anything not named is excluded, which is the whole point - see B117.
 #>
+<#
+.SYNOPSIS
+    The suites whose results directory holds more than one coverage report.
+.DESCRIPTION
+    Backlog B123. coverlet names its output coverage.cobertura.<timestamp>.xml, so a results
+    directory that is not cleared accumulates a file per run rather than overwriting - and
+    reportgenerator unions line *numbers*, so merging a report taken before a file changed with one
+    taken after invents coverable lines that no longer exist and that nothing ever hit. A class at
+    96% then reads as 56%, with a coverable count matching no version of the file, and it looks like
+    a defect in the code rather than in the measurement. It was believed as debt for three days.
+
+    Called by check-coverage.ps1, which is the script that can meet this: it has -SkipTests, which
+    reuses whatever is on disk. run-all-tests.ps1 deletes the directory whenever it collects, so the
+    situation cannot arise there, and a guard that cannot fire is worse than none - it reads as
+    protection. It lives here rather than in the gate because it is a fact about merging cobertura
+    files, which is what this file is for, and because the day run-all-tests.ps1 stops clearing is
+    the day it needs this too.
+#>
+function Get-DuplicateMlqtCoverageReports {
+    param([Parameter(Mandatory)] [string] $ResultsDirectory)
+
+    Get-ChildItem -Path $ResultsDirectory -Recurse -Filter 'coverage.cobertura*.xml' -ErrorAction SilentlyContinue |
+        Group-Object { $_.Directory.Name } |
+        Where-Object { $_.Count -gt 1 }
+}
+
 function New-MlqtCoverageReport {
     param(
         [Parameter(Mandatory)] [string]   $ResultsDirectory,

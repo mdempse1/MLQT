@@ -153,6 +153,58 @@ public class HostAssetManifestTests
     }
 
     [Fact]
+    public void NoHostPageInTheRepositoryFetchesAnythingFromTheNetwork()
+    {
+        // The same promise as above, asked of the *pages* rather than the manifest - because the
+        // manifest only governs the hosts built from it, and B124 was the one that is not:
+        // MLQT.McpTester keeps a hand-written page and has no reference to MLQT.Shared, so it went on
+        // linking fonts.googleapis.com for a phase after 7b-4 removed that everywhere else. A
+        // diagnostic tool for launching local MCP servers is exactly the thing somebody runs on a
+        // machine with no network.
+        //
+        // Every wwwroot/index.html in the repository, found rather than listed, so the next host
+        // inherits the rule instead of needing to be remembered.
+        var pages = Directory
+            .EnumerateFiles(RepositoryRoot(), "index.html", SearchOption.AllDirectories)
+            .Where(p => p.Contains(Path.DirectorySeparatorChar + "wwwroot" + Path.DirectorySeparatorChar))
+            .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+            .Where(p => !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+            .ToList();
+
+        Assert.True(pages.Count >= 2,
+            $"found {pages.Count} host pages; expected at least MLQT.Photino and MLQT.McpTester");
+
+        // link/script/img only: an <a href> is something the user clicks, not something the page
+        // fetches while loading, and the About dialog's external links are deliberate.
+        var assets = pages
+            .SelectMany(page => Regex
+                .Matches(File.ReadAllText(page),
+                         @"<(?:link|script|img)[^>]*?(?:href|src)=""(?<url>[^""]+)""",
+                         RegexOptions.IgnoreCase)
+                .Select(m => (Host: Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(page))!),
+                              Url: m.Groups["url"].Value)))
+            .ToList();
+
+        // **The scan found something.** Without this the assertion below passes over an empty list,
+        // which is the failure shape this repository keeps finding - and it found it here: the first
+        // version of this test carried an invisible control character in its pattern, matched nothing,
+        // and passed against a page that did link fonts.googleapis.com.
+        Assert.True(assets.Count >= 10,
+            $"only found {assets.Count} assets across {pages.Count} host pages; the scan is not reading them");
+
+        var offenders = assets
+            .Where(a => a.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                        || a.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                        || a.Url.StartsWith("//", StringComparison.Ordinal))
+            .Select(a => $"{a.Host}: {a.Url}")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "These are fetched over the network, so the application renders differently offline with "
+            + "no error anywhere: " + string.Join(", ", offenders));
+    }
+
+    [Fact]
     public void EveryFontFileTheBundledStylesheetNamesExists()
     {
         // The manifest names roboto.css and EveryLocalAssetTheManifestNamesExists checks that file is

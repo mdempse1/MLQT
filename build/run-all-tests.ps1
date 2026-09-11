@@ -95,7 +95,7 @@ $suiteNotes = @{
     }
     'MLQT.Journeys' = @{
         Filter       = $null
-        Why          = 'drives a real browser; needs playwright.ps1 install chromium'
+        Why          = 'drives a real browser; needs playwright.ps1 install chromium (see B135 on newer Ubuntu)'
         NeedsTooling = $true
     }
 }
@@ -140,6 +140,67 @@ if ($CoreOnly) {
     foreach ($s in $skipped) { Write-Host "Skipping $($s.Name) - $($s.Why)" -ForegroundColor DarkGray }
 }
 
+# --- Playwright's platform gap (backlog B135) -------------------------------------------------
+#
+# `playwright install chromium` refuses outright on an Ubuntu it has no build for - "Playwright does
+# not support chromium on ubuntu26.04-x64" - and the journey suite then fails in a way that reads as
+# a broken suite rather than as a missing browser. The ubuntu24.04 builds run there perfectly: all 51
+# journeys pass under Chromium with this override set, so the gap is Playwright's packaging and
+# nothing about MLQT.
+#
+# Announced rather than done silently, because it *is* a lie about the host platform, and the next
+# person to see an odd browser failure should know it is being told.
+#
+# WebKit is the half this does not rescue: its ubuntu24.04 build links libicu74 and libvpx9, and
+# 26.04 ships neither, so it will not launch whatever the override says. That is why the WebKit
+# rehearsal is a CI job on ubuntu-latest (nightly-webkit.yml) rather than something run here.
+#
+# Bump $NewestPlaywrightUbuntu when Playwright adds a platform, and this stops applying by itself.
+
+# A string, not a [version]: it is half of a platform *name* as well as a number to compare, and
+# "[version]'24.04'" renders as "24.4" - which would have produced ubuntu24.4-x64, a platform
+# Playwright has never heard of, and the whole workaround would have quietly done nothing. Found by
+# running the function below against a fake os-release rather than by reading it.
+$NewestPlaywrightUbuntu = '24.04'
+
+<#
+.SYNOPSIS
+    The platform Playwright should be told it is on, or $null to tell it nothing.
+.DESCRIPTION
+    Takes the contents of /etc/os-release rather than reading it, so the decision can be exercised
+    for a distribution this machine is not. Returns $null for anything that is not an Ubuntu newer
+    than Playwright ships for - including an empty string, which is what a non-Linux machine gives.
+
+    No $IsLinux check: that variable is PowerShell Core only and is $null under Windows PowerShell
+    5.1, and this repository has already been bitten by reading one of those as a platform answer
+    (build/publish-tools.ps1 says so at length). The absence of /etc/os-release is the same answer by
+    a route that cannot be wrong about the edition it is running under.
+#>
+function Get-PlaywrightPlatformOverride {
+    param(
+        [string] $OsRelease,
+        [string] $NewestSupported
+    )
+
+    if ($OsRelease -notmatch '(?m)^ID=ubuntu$') { return $null }
+    if ($OsRelease -notmatch '(?m)^VERSION_ID="?([0-9]+\.[0-9]+)"?') { return $null }
+
+    if ([version]$Matches[1] -le [version]$NewestSupported) { return $null }
+
+    return "ubuntu$NewestSupported-x64"
+}
+
+if ($suites.Name -contains 'MLQT.Journeys' -and -not $env:PLAYWRIGHT_HOST_PLATFORM_OVERRIDE) {
+    $osRelease = if (Test-Path '/etc/os-release') { Get-Content '/etc/os-release' -Raw } else { '' }
+    $override = Get-PlaywrightPlatformOverride -OsRelease $osRelease -NewestSupported $NewestPlaywrightUbuntu
+
+    if ($override) {
+        $env:PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = $override
+        Write-Host "This Ubuntu is newer than any platform Playwright ships a browser for; using $override (B135)." -ForegroundColor Yellow
+        Write-Host '  Chromium runs. WebKit will not - it needs libicu74 and libvpx9, which this release does not have.' -ForegroundColor DarkGray
+    }
+}
+
 Write-Host "Running $($suites.Count) suite(s) in $Configuration" -ForegroundColor Cyan
 Write-Host ''
 
@@ -149,7 +210,7 @@ if (-not $SkipBuild) {
     Write-Host 'Building the solution...' -ForegroundColor Cyan
     dotnet build $solution -c $Configuration --nologo -v q | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Fail 'the solution did not build. Note the MAUI projects cannot build while MLQT.exe is running.'
+        Fail 'the solution did not build.'
     }
 }
 

@@ -1,5 +1,6 @@
 /*
-    The host's own stylesheet. HostAssetManifest names "app.css" for every host - MLQT has one and
-    MLQT.TestHost does not, which is B120. Present here so the manifest is satisfied rather than
-    404ing on every page load.
+    The host's own stylesheet, deliberately empty: a slot for styling that belongs to the host rather
+    than to MLQT.Shared. HostAssetManifest names "app.css" for every host and this page is held to
+    that list, so the file has to exist or every page load 404s on it. MLQT.TestHost carries the same
+    placeholder (B120).
 */
