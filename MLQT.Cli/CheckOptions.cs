@@ -64,6 +64,16 @@ internal sealed record CheckOptions
     public bool NoSuppress { get; init; }
 
     /// <summary>
+    /// Print where the run's time went, to stderr, after the findings (backlog B128).
+    /// </summary>
+    /// <remarks>
+    /// stderr rather than stdout because stdout carries the report a CI job parses, and a breakdown
+    /// is for a person. The collection itself is always on and costs two timestamp reads per phase;
+    /// this switch only decides whether anybody is shown the result.
+    /// </remarks>
+    public bool Timings { get; init; }
+
+    /// <summary>
     /// Extra library paths loaded so references resolve — the Modelica Standard Library and anything
     /// else the library under check depends on. They are never reported on: rules like "class has an
     /// icon" need to see <c>Modelica.Icons.*</c> to know the icon is inherited, but MSL's own findings
@@ -123,6 +133,7 @@ internal sealed record CheckOptions
         var touchedDebt = TouchedDebtPolicy.Warn;
         var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is not null;
         var noSuppress = false;
+        var showTimings = false;
         string? metricsPath = null;
         var recordMetrics = false;
         var metricsForce = false;
@@ -174,6 +185,9 @@ internal sealed record CheckOptions
                     break;
                 case "--no-suppress":
                     noSuppress = true;
+                    break;
+                case "--timings":
+                    showTimings = true;
                     break;
                 case "--dependency":
                     if (!Next(args, ref i, out var dependency, out error)) return false;
@@ -258,6 +272,7 @@ internal sealed record CheckOptions
             TouchedDebt = touchedDebt,
             ChangedFrom = changedFrom,
             NoSuppress = noSuppress,
+            Timings = showTimings,
             RecordMetrics = recordMetrics,
             MetricsPath = metricsPath,
             MetricsForce = metricsForce,

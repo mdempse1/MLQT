@@ -21,6 +21,11 @@ public sealed class ShadowingAnalyzer : IGraphAnalyzer
     {
         var findings = new List<Finding>();
 
+        // Every class here reaches for its base classes, and those overlap heavily - the same base is
+        // on the chain of hundreds of others. Shared for the length of this analysis so it is
+        // extracted once rather than once per class that inherits it (B128).
+        var interfaces = new ClassElementResolver.InterfaceCache();
+
         foreach (var node in context.Models)
         {
             if (node.IsParseFailurePlaceholder)
@@ -50,7 +55,8 @@ public sealed class ShadowingAnalyzer : IGraphAnalyzer
                     var baseNode = TypeResolver.Resolve(context.Graph, node.Id, ext.Type, imports);
                     if (baseNode is null)
                         continue;
-                    foreach (var m in ClassElementResolver.Collect(context.Graph, baseNode, includeProtected: true, includeInherited: true))
+                    foreach (var m in ClassElementResolver.Collect(
+                             context.Graph, baseNode, includeProtected: true, includeInherited: true, interfaces))
                         if (m.Element.Kind is ClassElementKind.Component or ClassElementKind.Class)
                             inherited.Add(m.Element.Name);
                 }

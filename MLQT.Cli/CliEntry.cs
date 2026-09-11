@@ -110,6 +110,8 @@ internal static class CliEntry
           --coverage-ratchet            Fail when any dimension is below the last recorded snapshot
           --no-color                    Disable coloured console output
           --no-suppress                 Ignore __MLQT suppression annotations (audit)
+          --timings                     Print where the run's time went (parsing, rules, coverage,
+                                        each graph analysis) to stderr when it finishes
           --changed-from <ref>          VCS ref to diff against, for touched-debt escalation
           --dependency <path>           Load another library so references resolve (repeatable).
                                         Never reported on — use for MSL and other dependencies

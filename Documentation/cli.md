@@ -69,6 +69,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
+| `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
 | `-h`, `--help` | Show help | |
 | `--version` | Print the tool's version and exit. Used on its own, not with `check` | |
 
