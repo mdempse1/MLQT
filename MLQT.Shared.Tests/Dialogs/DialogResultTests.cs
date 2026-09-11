@@ -248,15 +248,21 @@ public class DialogResultTests : MlqtComponentTestBase
         // a background thread and renders a progress indicator until it returns, so the form is not
         // in the DOM yet. Find() passed on a fast developer machine and failed on a CI runner - the
         // usual shape, and the reason this helper waits rather than assumes.
-        var input = provider.WaitForElement("input");
-        await provider.InvokeAsync(() => input.Input(name));
+        // The element is found *inside* InvokeAsync, not before it. An element found on the test
+        // thread carries the event-handler ids of the render it was taken from, and this dialog
+        // re-renders on its own when the background branch load returns - so a find outside the
+        // dispatcher can be acted on after the handler it names has gone, which bUnit reports as
+        // UnknownEventHandlerIdException. Holding the dispatcher across the find and the act is the
+        // only way to know the two agree; it failed exactly once, on the Linux runner (B156).
+        provider.WaitForElement("input");
+        await provider.InvokeAsync(() => provider.Find("input").Input(name));
     }
 
     private static async Task TypeInto(IRenderedComponent<MudDialogProvider> provider, int index, string text)
     {
+        // Found inside the dispatcher - see TypeBranchName for why.
         provider.WaitForElement("input");
-        var input = provider.FindAll("input")[index];
-        await provider.InvokeAsync(() => input.Input(text));
+        await provider.InvokeAsync(() => provider.FindAll("input")[index].Input(text));
     }
 
     private static IEnumerable<string> DisabledButtonLabels(IRenderedComponent<MudDialogProvider> provider) =>
@@ -272,9 +278,9 @@ public class DialogResultTests : MlqtComponentTestBase
             provider.FindAll("button"),
             b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase)));
 
-        var button = provider.FindAll("button")
-                             .First(b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase));
-
-        await provider.InvokeAsync(() => button.Click());
+        // Found inside the dispatcher - see TypeBranchName for why.
+        await provider.InvokeAsync(() => provider.FindAll("button")
+            .First(b => b.TextContent.Contains(label, StringComparison.OrdinalIgnoreCase))
+            .Click());
     }
 }

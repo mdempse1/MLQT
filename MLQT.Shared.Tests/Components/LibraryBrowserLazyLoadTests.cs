@@ -79,12 +79,12 @@ public class LibraryBrowserLazyLoadTests : MlqtComponentTestBase
     }
 
     [Fact]
-    public void ExpandingANode_LoadsItsChildrenThroughServerData()
+    public async Task ExpandingANode_LoadsItsChildrenThroughServerData()
     {
         var library = ArrangeThreeLevelLibrary();
         var browser = RenderBrowser();
 
-        ExpandFirstCollapsedNode(browser);
+        await ExpandFirstCollapsedNodeAsync(browser);
 
         browser.WaitForAssertion(() => Assert.Contains("Sub", browser.Markup));
         library.Verify(l => l.GetChildModelsAsync(It.Is<ModelNode>(n => n != null && n.Id == _root.Id)),
@@ -92,55 +92,67 @@ public class LibraryBrowserLazyLoadTests : MlqtComponentTestBase
     }
 
     [Fact]
-    public void SelectingALazilyLoadedChild_ChangesTheSelectedModel()
+    public async Task SelectingALazilyLoadedChild_ChangesTheSelectedModel()
     {
         // The regression, stated as an assertion: a node that arrived through ServerData must be
         // selectable. Before the ItemsChanged write-back this silently did nothing.
         ArrangeThreeLevelLibrary();
         var browser = RenderBrowser();
 
-        ExpandFirstCollapsedNode(browser);
+        await ExpandFirstCollapsedNodeAsync(browser);
         browser.WaitForAssertion(() => Assert.Contains("Sub", browser.Markup));
 
-        ClickNodeContaining(browser, "Sub");
+        await ClickNodeContainingAsync(browser, "Sub");
 
         browser.WaitForAssertion(() => Assert.Equal(_child.Id, NavState.ModelID));
     }
 
     [Fact]
-    public void SelectingAGrandchild_ChangesTheSelectedModel()
+    public async Task SelectingAGrandchild_ChangesTheSelectedModel()
     {
         // One level deeper than the reported regression, because the write-back has to hold for
         // every level and not merely the first that anyone happened to try.
         ArrangeThreeLevelLibrary();
         var browser = RenderBrowser();
 
-        ExpandFirstCollapsedNode(browser);
+        await ExpandFirstCollapsedNodeAsync(browser);
         browser.WaitForAssertion(() => Assert.Contains("Sub", browser.Markup));
 
-        ExpandFirstCollapsedNode(browser);
+        await ExpandFirstCollapsedNodeAsync(browser);
         browser.WaitForAssertion(() => Assert.Contains("Leaf", browser.Markup));
 
-        ClickNodeContaining(browser, "Leaf");
+        await ClickNodeContainingAsync(browser, "Leaf");
 
         browser.WaitForAssertion(() => Assert.Equal(_grandchild.Id, NavState.ModelID));
     }
 
-    /// <summary>Clicks the expand arrow of the first node that is collapsed and expandable.</summary>
-    private static void ExpandFirstCollapsedNode(IRenderedComponent<LibraryBrowser> browser)
-    {
-        var arrow = browser.FindAll(".mud-treeview-item-arrow-expand")
-                           .FirstOrDefault(e => !e.ClassList.Contains("mud-transform"));
-        Assert.NotNull(arrow);
-        arrow!.Click();
-    }
+    /// <summary>
+    /// Clicks the expand arrow of the first node that is collapsed and expandable.
+    /// </summary>
+    /// <remarks>
+    /// The element is found <b>inside</b> <c>InvokeAsync</c>, and so is every other find-then-click
+    /// in this project. An element found on the test thread carries the event-handler ids of the
+    /// render it was taken from; a lazily loaded tree re-renders on its own when the server data
+    /// arrives, so a find outside the dispatcher can be clicked after the handler it names has gone.
+    /// bUnit reports that as <c>UnknownEventHandlerIdException</c>, and it reported it exactly once,
+    /// on the Linux runner, against a different test of the same shape (B156).
+    /// </remarks>
+    private static Task ExpandFirstCollapsedNodeAsync(IRenderedComponent<LibraryBrowser> browser) =>
+        browser.InvokeAsync(() =>
+        {
+            var arrow = browser.FindAll(".mud-treeview-item-arrow-expand")
+                               .FirstOrDefault(e => !e.ClassList.Contains("mud-transform"));
+            Assert.NotNull(arrow);
+            arrow!.Click();
+        });
 
     /// <summary>Clicks the content of the tree item whose text contains <paramref name="text"/>.</summary>
-    private static void ClickNodeContaining(IRenderedComponent<LibraryBrowser> browser, string text)
-    {
-        var node = browser.FindAll(".mud-treeview-item-content")
-                          .FirstOrDefault(e => e.TextContent.Contains(text));
-        Assert.NotNull(node);
-        node!.Click();
-    }
+    private static Task ClickNodeContainingAsync(IRenderedComponent<LibraryBrowser> browser, string text) =>
+        browser.InvokeAsync(() =>
+        {
+            var node = browser.FindAll(".mud-treeview-item-content")
+                              .FirstOrDefault(e => e.TextContent.Contains(text));
+            Assert.NotNull(node);
+            node!.Click();
+        });
 }
