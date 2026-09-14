@@ -165,16 +165,13 @@ there is an `Icon` annotation, while the generator asks whether the class *rende
 includes placed sub-components. That direction can only ever suppress a finding on a class whose
 source MLQT cannot read, so it is the safe way round.
 
-Across all 53 encrypted libraries installed with Dymola 2026x Refresh 1, MLQT recovers **37,686
-classes**, and every one of them produces a declaration that parses.
-
 ---
 
 ## Which tools are supported
 
 **Dymola** — fully supported. Every commercial library that ships documentation ships it in
 Dymola's format, whichever tool the library is ultimately used with. The format has been verified
-stable across thirteen Dymola releases (2021 through 2026x Refresh 1): the same section headings,
+stable across Dymola releases (2021 and later): the same section headings,
 the same markup, byte-identical output between a release and its Refresh.
 
 **OpenModelica** — not applicable. OpenModelica ships no per-class documentation for any library

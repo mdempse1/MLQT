@@ -12,33 +12,37 @@ The MCP server tells the AI agent:
 
 | Requirement | Details |
 |-------------|---------|
-| **.NET 10 SDK** | The server is a .NET 10 console application. |
-| **An MCP client** | Any MCP-capable client that launches servers over stdio — e.g. Claude Desktop, or the bundled [MLQT.McpTester](#testing-a-server-manually-mcptester). |
+| **MLQT, installed** | The platform installer carries the server; see [Install](#install) below. Nothing else to install — the Windows installer fetches the .NET runtime if it is absent, and the Linux `.deb` bundles it |
+| **An MCP client** | Any MCP-capable client that launches servers over stdio — e.g. Claude Desktop, or the bundled [MLQT.McpTester](#testing-a-server-manually-mcptester) |
 
 The server has no dependency on a desktop, Dymola or OpenModelica; model checking with external tools is intentionally not exposed (use the desktop app for that).  Use a separate MCP server for your chosen Modelica tool to fully close the loop and simulate what this MCP builds.
 
-## Building and registering the server
+## Install
 
-Build it once so the executable exists:
+**With MLQT itself.** There is one installer per platform and it carries the MCP server alongside the desktop application and the `mlqt` CLI — one download, all three. See [installation.md](installation.md).
 
-```bash
-dotnet build MLQT.McpServer/MLQT.McpServer.csproj
+On **Linux**, the `.deb` puts the server at a fixed path:
+
+```
+/usr/bin/mlqt-mcp-server
 ```
 
-The server speaks MCP over **stdio**. Register it with your client by pointing at the built executable. For Claude Desktop, add it to the `mcpServers` section of the client configuration.  `path_to_mlqt_project_source` is the path to where you have checked out the Git repository on your machine.
+That is a symlink into `/opt/mlqt`, and its stability is the point of it: an agent registers the server by path, and `/opt/mlqt` is on nobody's `PATH`.
 
-```json
-{
-  "mcpServers": {
-    "mlqt": {
-      "command": "C:/path_to_mlqt_project_source/MLQT.McpServer/bin/Debug/net10.0/MLQT.McpServer.exe"
-    }
-  }
-}
-```
+On **Windows**, it sits beside the other two tools in the install directory:
 
-**If you installed MLQT from the Linux `.deb`** ([installation.md](installation.md)), the server is
-at a fixed path and needs no version in it:
+| Install mode | Path |
+|---|---|
+| Just for me *(the default)* | `%LocalAppData%\Programs\MLQT\MLQT.McpServer.exe` |
+| For all users | `C:\Program Files\MLQT\MLQT.McpServer.exe` |
+
+Unlike the CLI, the server is **not** added to your `PATH`. An MCP client launches it by full path, so there would be nothing for a `PATH` entry to do.
+
+**From source**, if you are working on MLQT itself: build it as [BUILDING.md](../BUILDING.md) describes, then register the executable it produces under `MLQT.McpServer/bin/`.
+
+## Registering the server with a client
+
+The server speaks MCP over **stdio**. Register it by pointing your client at the executable — for Claude Desktop, in the `mcpServers` section of the client configuration:
 
 ```json
 {
@@ -50,22 +54,19 @@ at a fixed path and needs no version in it:
 }
 ```
 
-That path is a symlink into `/opt/mlqt` and is stable across upgrades, which is the point of it —
-an agent registers the server by path, and `/opt/mlqt` is on nobody's `PATH`.
-
-If you are using the Release zip file from Github, then the path to configure the McpServer is different due to the structure of the zip file. `path_to_mlqt_mcp_server_release` is the path to where you have extracted the zip file on your machine.
+and on Windows, with the path from the table above:
 
 ```json
 {
   "mcpServers": {
     "mlqt": {
-      "command": "C:/path_to_mlqt_mcp_server_release/MLQT.McpServer.exe"
+      "command": "C:/Users/<username>/AppData/Local/Programs/MLQT/MLQT.McpServer.exe"
     }
   }
 }
 ```
 
-After changing the configuration, fully restart the client so it launches the new server process. (A rebuild alone does not affect an already-running server — the client keeps it alive.)
+After changing the configuration, fully restart the client so it launches the new server process. (Reinstalling or rebuilding alone does not affect an already-running server — the client keeps it alive.)
 
 Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write anything else to stdout. Session settings persist to `%LocalAppData%/MLQT/mcp-settings.json`.
 
@@ -123,7 +124,7 @@ When you position components on the diagram with `set_component_placement`, the 
 dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
 ```
 
-The **Use MLQT server** button fills in the built `MLQT.McpServer.exe` path (build `MLQT.McpServer` first). Note that optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `create_class`'s `standalone`) is omitted rather than sent as `false`.
+The **Use MLQT server** button pre-fills a path to a locally built `MLQT.McpServer.exe`; edit it to wherever your server actually is — the installed paths are under [Install](#install) above. Note that optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `create_class`'s `standalone`) is omitted rather than sent as `false`.
 
 ## Reviewing how an agent worked (tool-usage log)
 

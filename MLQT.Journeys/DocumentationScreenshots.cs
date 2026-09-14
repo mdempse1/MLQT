@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using MLQT.Services.Interfaces;
+using MLQT.Shared.Models;
 using Xunit;
 
 namespace MLQT.Journeys;
@@ -104,6 +105,53 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         return Path.Combine(root, "MLQT", "MyLibrary");
     }
 
+    /// <summary>
+    /// A folder of libraries for the Reference Libraries tab to be photographed with, and its path.
+    /// </summary>
+    /// <remarks>
+    /// <para>Beside the fixture repository rather than under the temp path, for the reason
+    /// <see cref="RepositoryPathForPictures"/> gives: the tab prints each folder's full path, so a
+    /// GUID under a developer's profile would go straight into the manual.</para>
+    ///
+    /// <para><b>Two libraries, not one</b>, because the column beside the path counts them and the
+    /// point the documentation makes there is that one folder may hold many - which is what a tool's
+    /// installed library folder is. They are the smallest thing <c>LibraryDiscovery</c> recognises, a
+    /// <c>package.mo</c> each, since nothing here loads or checks them: a reference library is
+    /// scanned for the count and read for its classes, never written to.</para>
+    ///
+    /// <para>Not a vendor's real name or path. A picture claiming to show Dymola's library folder on
+    /// a machine that has no Dymola is a lie the reader cannot check, and the tab's own text already
+    /// names that as the usual case.</para>
+    /// </remarks>
+    private static string WriteReferenceLibraries()
+    {
+        var folder = Path.Combine(
+            Path.GetDirectoryName(RepositoryPathForPictures())!, "ReferenceLibraries");
+
+        if (Directory.Exists(folder))
+            Directory.Delete(folder, recursive: true);
+
+        var libraries = new[]
+        {
+            ("ThermoBase", "Thermodynamic base classes the fluids group maintains"),
+            ("ControlsBase", "Shared controller interfaces the controls group maintains"),
+        };
+
+        foreach (var (name, description) in libraries)
+        {
+            Directory.CreateDirectory(Path.Combine(folder, name));
+            File.WriteAllText(
+                Path.Combine(folder, name, "package.mo"),
+                $"""
+                package {name} "{description}"
+                  annotation(Documentation(info="<html><p>{description}.</p></html>"));
+                end {name};
+                """.ReplaceLineEndings("\n"));
+        }
+
+        return folder;
+    }
+
     [Fact]
     public async Task TheDocumentationImages()
     {
@@ -181,10 +229,55 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await ShotAsync(page, "settings-reference-7");
         await SelectAClassAsync(page);
 
+        // Spell checking: the wavy underline, and the menu that right-clicking it opens. Both of the
+        // sections in spell-checking.md that describe this had no picture at all.
+        await SpellCheckMenuAsync(page);
+        await SelectAClassAsync(page);
+
         // code-review-5, the Finding Details dialog, is not taken here and cannot be: it opens only
         // for a finding that carries Details, and a style rule does not produce one - the dialog's
         // subject is the check log from Dymola or OpenModelica. It stays a photograph, with
         // code-review-4 and the SVN set.
+    }
+
+    /// <summary>
+    /// The spelling correction menu, open over the word that raised it.
+    /// </summary>
+    /// <remarks>
+    /// <para>Both halves of what <c>spell-checking.md</c> describes have to be in one frame: the wavy
+    /// red underline under the misspelling, and the menu that right-clicking it opens. The menu is
+    /// positioned just below the word precisely so that it never covers it, which is what makes a
+    /// single picture possible.</para>
+    ///
+    /// <para>Right-clicked rather than opened by calling the handler. The spans are rendered as raw
+    /// HTML inside the code viewer, so Blazor cannot bind <c>@oncontextmenu</c> to them and
+    /// <c>spellCheck.js</c> listens on the document instead, dispatching to .NET when the event lands
+    /// on a <c>.code-misspell</c>. Driving it any other way would photograph a menu that the gesture
+    /// the text describes had not actually produced.</para>
+    /// </remarks>
+    private async Task SpellCheckMenuAsync(IPage page)
+    {
+        await SelectAClassAsync(page, "Compressor");
+
+        var misspelled = page.Locator(".code-misspell").First;
+        Assert.True(await misspelled.CountAsync() > 0,
+            "no misspelled word is underlined in the code view; is the spelling rule enabled?");
+
+        await misspelled.ClickAsync(new LocatorClickOptions { Button = MouseButton.Right });
+
+        // The menu renders at the word's bottom-left, then re-measures itself and clamps to the
+        // viewport once its real size is known - so it moves after its first frame. Waiting for it to
+        // exist is not enough; the shot has to come after the second position.
+        var menu = page.Locator(".spell-context-menu");
+        await menu.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        await page.WaitForTimeoutAsync(1200);
+
+        await page.ScreenshotAsync(new PageScreenshotOptions { Path = PathFor("spell-checking-1") });
+
+        // Closed through its own backdrop, which is what a user's click elsewhere does. Escape does
+        // not reach it, and leaving it open would put it over the next picture.
+        await page.Mouse.ClickAsync(Width - 40, Height - 40);
+        await page.WaitForTimeoutAsync(600);
     }
 
     /// <summary>The left panel: the tree, its status chips, and the repository header.</summary>
@@ -238,8 +331,18 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await LeftToolbar(page).Locator("button").Nth(1).ClickAsync();
         await SettleAsync(page);
 
-        await ShotOfAsync(page.Locator(".mud-treeview").First, "library-browser-1");
-        await ShotAsync(page, "getting-started-9");
+        // Open the root again. Switching view rebuilds the tree *closed*, and the contrast the text
+        // draws is between two trees - one under a repository header with its VCS row, one not - so a
+        // picture of a single collapsed node makes the comparison impossible to see.
+        await ExpandAsync(page, "Lib");
+        await SettleAsync(page);
+
+        // The whole window, not the tree on its own. As an element shot this was a 289x22 strip
+        // holding that one collapsed root, which is what the documentation review called unclear; it
+        // also could not be read against the repository-view shot above it in library-browser.md,
+        // which is a full window. Written once and used by both pages that show library view: this
+        // was two files, taken from the same state one line apart, differing only in their names.
+        await ShotAsync(page, "library-browser-1");
 
         // Back to repository view, which is what every later picture assumes. The tree is rebuilt
         // closed by the switch, so it has to be opened again.
@@ -335,6 +438,19 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         await OpenSettingsPanelAsync(page, "External Tools");
         await ShotAsync(page, "external-tools-1");
+
+        // Reference Libraries, with somewhere to point at. With no folder configured the tab renders
+        // an alert saying so instead of the table, and an alert reading "none configured" is a
+        // picture of the feature switched off. Written through ISettingsService because that is
+        // where the component reads it, in OnInitializedAsync - so it is picked up when the tab is
+        // opened, and nothing already loaded moves. The libraries themselves are only *scanned* for
+        // the "Libraries found" column; the tab loads nothing.
+        await host.Services.GetRequiredService<ISettingsService>().SetAsync(
+            "ReferenceLibraries",
+            new ReferenceLibrarySettings { Paths = [WriteReferenceLibraries()] });
+
+        await OpenSettingsPanelAsync(page, "Reference Libraries");
+        await ShotAsync(page, "getting-started-10");
 
         await OpenSettingsPanelAsync(page, "Manage Repositories");
         await ShotAsync(page, "getting-started-3");
@@ -640,6 +756,13 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await ShotOfAsync(dialog, "getting-started-8");
 
         await SectionShotAsync(page, "Commit requirements", "settings-reference-3", height: 220);
+
+        // The formatting switches on their own. code-formatting.md's table describes exactly these,
+        // and described four of them under invented short names, so a reader could not match what
+        // they were reading to what was on screen. Tall enough for the master switch and all five
+        // rules: the last two labels are a full line each.
+        await SectionShotAsync(page, "Formatting rules", "code-formatting-1", height: 178);
+
         await SectionShotAsync(page, "Spell checking", "settings-reference-6", height: 320);
 
         // The naming panel proper - the preset and the per-element styles - rather than the severity
@@ -713,6 +836,21 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         if (repositories.GetActiveProject() is null)
             repositories.CreateProject("Documentation");
 
+        // Two more projects, empty, so that Manage Repositories shows what getting-started.md says it
+        // shows. With a single project the panel renders none of what the "Switching Between Projects"
+        // section describes: the play button is drawn only for a project that is not active, and the
+        // delete icon only when `_projects.Count > 1 && !isActive`, so half that section had no
+        // picture. Three also makes the Active chip mean something, because there is now something for
+        // it to distinguish this project from.
+        //
+        // Through the service and not the New Project button, and that is the point rather than a
+        // shortcut: a project created through the UI *becomes the active one*, which would unload
+        // MyLibrary and take the repository out of every screenshot after this. CreateProject only
+        // adds it. They are left empty because the section is about projects, not their contents, and
+        // an inactive project's panel is collapsed anyway.
+        foreach (var name in new[] { "Product Development", "Research" })
+            repositories.CreateProject(name);
+
         var added = await repositories.AddRepositoryAsync(_library!.RepositoryPath, name: "MyLibrary", startMonitoring: false);
         Assert.True(added.Success, added.ErrorMessage);
         _repositoryId = added.Repository!.Id;
@@ -774,7 +912,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
                 "MLQT.Doc.ParameterDescription": "Error",
                 "MLQT.Naming.Convention": "Warning",
                 "MLQT.Style.ImportStatementsFirst": "Warning",
-                "MLQT.Style.OneOfEachSection": "Warning"
+                "MLQT.Style.OneOfEachSection": "Warning",
+                "MLQT.Spelling.Description": "Warning",
+                "MLQT.Spelling.Documentation": "Warning"
               }
             }
             """);

@@ -1,6 +1,6 @@
 # MLQT — Modelica Library Quality Toolkit
 
-MLQT is an open-source toolkit for teams who develop and maintain Modelica libraries under version control. It is a Modelica-aware Git and SVN client, a quality gate you can run on your build server, and an MCP server that lets an AI agent work inside your libraries — all built on one Modelica parser.
+MLQT is an open-source toolkit for teams who develop and maintain Modelica libraries under version control. It is a Modelica-aware Git and SVN client, a quality check you can run on your build server, and an MCP server that lets an AI agent work inside your libraries — all built on one Modelica parser.
 
 **New here?** Start with the [Overview](Documentation/overview.md) for what MLQT does and whether it fits your team, or go straight to the [Getting Started guide](Documentation/getting-started.md).
 
@@ -31,9 +31,9 @@ MLQT replaces your generic Git or SVN client with a Modelica-aware one. You keep
 
 **Checking quality**
 
-- **Style Checking** — Configurable rules covering description strings, section ordering, naming conventions, units, `modelica://` reference validation, and Hunspell-based spell checking of descriptions and documentation
+- **Style Checking** — Configurable rules covering description strings, section ordering, naming conventions, units, `modelica://` reference validation, and spell checking of descriptions and documentation
 - **Static Analysis** — Unused elements, classes and imports; duplicate and shadowing declarations; `uses` annotation hygiene; `package.order` consistency; missing units. All self-contained, so they cannot produce false positives from libraries they cannot see
-- **Quality Gate & CI** — The [`mlqt` CLI](Documentation/cli.md) runs the same rules headless. Baseline your existing findings as accepted debt and gate only on new ones, so the library can never get worse whatever state it starts in. Reports in console, JSON, JUnit, SARIF, TeamCity, markdown and GitHub review formats, plus a Git pre-commit hook. See the [CI quality gate guide](Documentation/ci-quality-gate.md)
+- **Quality Gate & CI** — The [`mlqt` CLI](Documentation/cli.md) runs the same rules headless. Baseline your existing findings as accepted debt and only report on new ones, so the library can never get worse whatever state it starts in. Reports in console, JSON, JUnit, SARIF, TeamCity, markdown and GitHub review formats, plus a Git pre-commit hook. See the [CI quality gate guide](Documentation/ci-quality-gate.md)
 - **Metrics & Coverage** — Coverage per quality dimension with compliant/eligible counts, and a trend that accumulates one point per commit that moves the numbers. See [metrics-dashboard.md](Documentation/metrics-dashboard.md)
 
 **Everything else models depend on**
@@ -54,11 +54,11 @@ the `mlqt` CLI and the MCP server. See [installation.md](Documentation/installat
 
 | | |
 |---|---|
-| **Operating system** | Windows 10/11, or Ubuntu 22.04 / Debian 12 or newer. x86-64 on both; the Linux build needs WebKitGTK 4.1, which is why Ubuntu 20.04 is below the floor |
-| **.NET runtime** | Nothing to install. The Windows installer fetches .NET 10 if it is absent; the Linux `.deb` bundles it |
+| **Operating system** | Windows 10/11, or Ubuntu 22.04 / Debian 12 or newer. x86-64 on both; the Linux build needs WebKitGTK 4.1 |
+| **.NET runtime** | The Windows installer fetches .NET 10 if it is absent; the Linux `.deb` bundles it |
 | **Version control** | Git, or SVN. The Windows installer bundles an SVN client; the `.deb` recommends `subversion` |
 | **Building from source** | .NET 10 SDK — [download](https://dotnet.microsoft.com/download/dotnet/10.0) |
-| **Dymola** *(optional)* | 2025x Refresh 1 or later, for model checking |
+| **Dymola** *(optional)* | 2021 or later, for model checking |
 | **OpenModelica** *(optional)* | 1.24.0 or later, for model checking |
 | **MCP client** *(optional)* | Any client that launches MCP servers over stdio |
 
@@ -80,16 +80,16 @@ This repository contains the open-source components of MLQT:
 
 | Project | Description |
 |---------|-------------|
-| [MLQT.Photino](MLQT.Photino/) | The desktop application host, on Photino — Windows and Linux. Bootstraps the UI, DI, the window and the three platform services |
+| [MLQT.Photino](MLQT.Photino/) | The desktop application host, on Photino — Windows and Linux. Bootstraps the UI, DI, the window and the platform services |
+| [MLQT.Cli](MLQT.Cli/) | The headless, cross-platform `mlqt` command — check, baseline, compare, hook — for CI and the command line |
+| [MLQT.McpServer](MLQT.McpServer/) | Headless MCP server exposing MLQT's capabilities to AI agents; reuses the service layer with no UI at all |
 | [MLQT.Shared](MLQT.Shared/) | All Blazor UI: pages, components, layout, application state |
 | [MLQT.Services](MLQT.Services/) | Business logic: library management, repository integration, file monitoring, style checking, impact analysis |
-| [MLQT.Cli](MLQT.Cli/) | The headless, cross-platform `mlqt` command — check, baseline, compare, hook — for CI and the command line |
 | [ModelicaParser](ModelicaParser/) | ANTLR 4 parser for Modelica — parsing, formatting, icon extraction, style rules, resource extraction |
 | [ModelicaGraph](ModelicaGraph/) | Directed graph of file/model/resource relationships and dependencies |
 | [RevisionControl](RevisionControl/) | Unified Git and SVN interface with workspace management |
 | [DymolaInterface](DymolaInterface/) | .NET client for Dymola's HTTP JSON-RPC API |
 | [OpenModelicaInterface](OpenModelicaInterface/) | .NET client for OpenModelica Compiler (OMC) via ZeroMQ |
-| [MLQT.McpServer](MLQT.McpServer/) | Headless MCP server exposing MLQT's capabilities to AI agents; reuses the service layer with no UI at all |
 | [MLQT.McpTester](MLQT.McpTester/) | Desktop app (Windows and Linux) for manually testing any stdio MCP server — connect, list tools, auto-generate parameter forms, call, and view results |
 
 Each project has a README with detailed API documentation.
@@ -109,7 +109,7 @@ MLQT.Photino (desktop host)      MLQT.Cli          MLQT.McpServer
 
 ## Using the libraries independently
 
-ModelicaParser, ModelicaGraph and RevisionControl are designed to be usable without the rest of MLQT:
+Everything below MLQT.Services is designed to be usable without the rest of MLQT:
 
 ```csharp
 // Parse and analyze Modelica code

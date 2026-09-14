@@ -50,15 +50,15 @@ copy of a library has that another does not, and `mlqt hook`
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above the library, else built-in defaults |
+| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
-| `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
+| `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models ([what a `<ref>` may be](#what-a-ref-may-be)) | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit\|sarif\|teamcity\|markdown\|review` | Output format ([details](#output-formats)) | `console` |
 | `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
 | `--sarif-include-accepted` | Keep accepted debt in SARIF output. Off by default — see [SARIF and GitHub](#sarif-and-github) | off |
 | `--out <file>` | Write the primary output to a file instead of stdout | stdout |
-| `--report <fmt>:<file>` | Also write this format to this file. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
+| `--report <fmt>:<file>` | Also write this format to this file. <fmt> accepts the same values as `--format`. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--min-coverage <spec>` | Fail when coverage is below a percentage — see [Gating on coverage](#gating-on-coverage). Repeatable | none |
 | `--coverage-ratchet` | Fail when any dimension is below the last recorded snapshot | off |
@@ -322,6 +322,18 @@ mlqt baseline prune  <library-path>     # drop entries whose findings are now fi
 mlqt baseline update <library-path>     # regenerate: drop fixed entries AND accept new ones as debt
 ```
 
+All three take the same options. They are a subset of `check`'s, and mean the same things there:
+writing a baseline runs the same check, so it has to load the library the same way, or it would
+record findings that a check with the right dependencies never raises.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--baseline <path>` | Where to write (or re-read) the baseline | `<library-path>/.mlqt/baseline.json` |
+| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--dependency <path>` | Load another library so references resolve; never recorded as debt. Repeatable — see [Resolving references into other libraries](#resolving-references-into-other-libraries) | none |
+| `--allow-version-mismatch` | Continue despite a dependency version mismatch | off |
+| `--force` | Required by `update` to widen a baseline, and by `create` to overwrite one — see [`prune` vs `update`](#prune-vs-update) | off |
+
 ### Entries vs findings
 
 **A baseline holds entries, and a check reports findings. The two counts are not the same number**,
@@ -395,8 +407,7 @@ dropped 1 entry now fixed
 entries behaves like `prune` and runs without it. **Never run `update --force` from CI** — that turns
 the gate off one commit at a time.
 
-`create`/`update`/`prune` accept `--baseline <path>` (default `<library-path>/.mlqt/baseline.json`)
-and `--config <path>`; `create` refuses to overwrite an existing file unless `--force` is given.
+`create` refuses to overwrite an existing baseline unless `--force` is given.
 
 The file records **when it was generated** and the **revision and branch** it describes, so a reviewer
 can tell how old the accepted debt is and diff from there:
@@ -461,6 +472,36 @@ Diagnostics are never captured in a baseline and are always classified **new** �
 [Diagnostics](#diagnostics).
 
 ### Changed-model escalation (the "boy-scout rule")
+
+#### What a `<ref>` may be
+
+It is resolved by the version control system holding the library, so what it accepts differs:
+
+| VCS | Accepted | Examples |
+|-----|----------|----------|
+| **Git** | A branch, tag or commit — anything `git` itself resolves | `main`, `origin/main`, `HEAD~1`, `v2.1.0`, a commit SHA |
+| **SVN** | A **revision**, not a branch name | `4567`, or the keywords `BASE`, `HEAD`, `PREV`, `COMMITTED` |
+
+Run it from inside the working copy, whichever it is.
+
+**SVN branch names are rejected**, with `could not resolve revision`. An SVN branch is a directory
+rather than a revision, so there is nothing for a revision diff to compare against; comparing two SVN
+branches is not supported. For a pre-commit gate use `--changed-from BASE`, which is your
+*uncommitted* local changes; to compare against the revision a release was branched at, pass that
+revision number.
+
+**An unresolvable ref is an error, not an empty diff.** A checkout with `master` and no local `main`
+fails rather than quietly deciding nothing changed — which would let a gate pass because it compared
+against nothing. The exit code is **2**, a setup error.
+
+MLQT prints what the diff found, so you can check it detected what you expected:
+
+```
+note: 3 changed .mo file(s), 5 model(s) changed since main
+```
+
+If that says `0 model(s) changed`, the ref probably already contains your change. Diff against one
+that is *behind* it — `HEAD~1`, `origin/main`.
 
 With `--changed-from <ref>`, existing debt in a model the change touched becomes **touched debt**.
 Works with Git and SVN.

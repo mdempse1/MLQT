@@ -142,8 +142,8 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 |---------|---------|---------|-------------|
 | **Apply formatting rules** | — | Off | **Master switch for automatic code formatting.** See [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules) below for a detailed explanation. |
 | **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | Off | Requires that a class has at most one `public` section, one `protected` section, and one `equation` or `algorithm` section. When formatting is applied, multiple sections of the same kind are merged into one. |
-| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. This is mutually exclusive with "Components before classes". |
-| **Composition must have components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. This is mutually exclusive with "Imports first". |
+| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` (and `MLQT.Style.ExtendsAtTop`, see below) | Off | Requires that `import` statements appear first in each section, followed by `extends` clauses, before any other declarations. "Components before classes" refines this ordering and has no effect unless this switch is on. |
+| **Composition must have components before classes** | — (formatting only) | Off | Requires that component declarations (variables, parameters) appear before nested class definitions within each section. It **refines** "Composition must be imports first" rather than competing with it: the formatter only consults this switch when that one is on, so on its own it changes nothing. |
 | **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear before the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm last". |
 | **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | Off | If the class has an `initial equation` or `initial algorithm` section, it should appear after the main `equation`/`algorithm` section. Mutually exclusive with "Initial equation/algorithm first". The formatter writes them in whichever position is selected. |
 
@@ -210,12 +210,10 @@ value itself is not read.
 > what it used to do, so a repository that wrote `"MLQT.Style.ExtendsAtTop": "Off"` went on being
 > reported at for years.
 
-#### Mutually Exclusive Settings
+#### How these switches interact
 
-Some formatting settings are mutually exclusive — enabling one automatically disables the other:
-
-- **Imports first** and **Components before classes** — These represent different ordering philosophies. You can have imports first (then extends, then everything else), or components before classes, but not both.
-- **Initial equation/algorithm first** and **Initial equation/algorithm last** — The initial section can appear either before or after the main section, but not both. If neither is set, MLQT does not enforce any particular order.
+- **Initial equation/algorithm first** and **Initial equation/algorithm last** are mutually exclusive — enabling one automatically disables the other. The initial section can appear either before or after the main section, but not both. If neither is set, MLQT does not enforce any particular order.
+- **Components before classes** and **Imports first** are *not* exclusive, though they were long described that way. Components-before-classes **refines** imports-first: the formatter reads it only when imports-first is on, so on its own it changes nothing, and turning one on does not switch the other off.
 
 ### Formatting Exclusion
 

@@ -221,8 +221,18 @@
                 ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.ImportStatementsFirst, v))"
                 Disabled="!SelectedSettings.OneOfEachSection"
                 Label="Composition must be imports first; then extends at the top of the public/protected sections" />
+            @* Gated on imports-first as well as on one-of-each-section, because it refines that
+               ordering rather than competing with it: ModelicaRenderer reads ComponentsBeforeClasses
+               only inside the branch ImportsFirst selects, so with imports-first off the switch does
+               nothing whatever it says. It was offered as a free choice, and documented in three
+               places as *mutually exclusive* with imports-first, which is the opposite of the truth.
+
+               IsRuleSwitchedOn rather than the ImportStatementsFirst facade, for the reason the other
+               three switches here give: a facade reports its rule off while OneOfEachSection is off,
+               so a gate drawn from it would disable this switch for a second, invisible reason. *@
             <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
-                Disabled="!SelectedSettings.OneOfEachSection"
+                Disabled="!SelectedSettings.OneOfEachSection
+                          || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 Label="Composition must have components before classes" />
             <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Color="Color.Primary" Size="Size.Small"
                 Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"

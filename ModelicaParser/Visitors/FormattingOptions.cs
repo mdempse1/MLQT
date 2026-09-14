@@ -22,8 +22,16 @@ namespace ModelicaParser.Visitors;
 /// </param>
 /// <param name="ImportsFirst">Put <c>import</c> statements first in each section, then <c>extends</c>.</param>
 /// <param name="ComponentsBeforeClasses">
-/// Put component declarations before nested class definitions. Mutually exclusive with
-/// <see cref="ImportsFirst"/> in the settings UI, and a formatter-only choice — no rule checks it.
+/// Put component declarations before nested class definitions. A formatter-only choice — no rule
+/// checks it, so it never produces a finding and CI cannot see it.
+///
+/// <para><b>It refines <see cref="ImportsFirst"/> rather than competing with it.</b> The renderer
+/// reads this option only inside the branch <see cref="ImportsFirst"/> selects, so with imports-first
+/// off it changes nothing at all. This was documented here, and in two places in
+/// <c>settings-reference.md</c>, as "mutually exclusive with ImportsFirst in the settings UI" —
+/// wrong twice over: the dialog enforces no exclusion between the two (unlike the initial-section
+/// pair, which really does turn its opposite off), and nesting is a dependency, not an exclusion.
+/// Every renderer test passes the two together for that reason.</para>
 /// </param>
 /// <param name="InitialSectionsLast">
 /// Write <c>initial equation</c>/<c>initial algorithm</c> after the ordinary equation and algorithm

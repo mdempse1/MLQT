@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ModelicaParser.StyleRules;
 using Xunit;
 
@@ -125,6 +126,48 @@ public class RuleSettingsLayoutTests
         Assert.True(missing.Count == 0,
             "RuleSettingsLayout says the dialog has a hand-written control for these, and it does " +
             "not: " + string.Join("; ", missing));
+    }
+
+    /// <summary>
+    /// "Components before classes" is only offered while "imports first" is on.
+    /// </summary>
+    /// <remarks>
+    /// <para>It <b>refines</b> that ordering rather than competing with it: <c>ModelicaRenderer</c>
+    /// reads <c>ComponentsBeforeClasses</c> only inside the branch <c>ImportsFirst</c> selects, so
+    /// with imports-first off the switch changes nothing whatever it is set to. Offering it anyway
+    /// let a repository record a preference that could never take effect.</para>
+    ///
+    /// <para>Checked against the markup rather than by rendering, like the two tests above, because
+    /// the switch is hand-written: the layout table cannot express a gate. The dependency was
+    /// documented as the <i>opposite</i> - "mutually exclusive with imports first" - in
+    /// <c>FormattingOptions</c> and in two sections of <c>settings-reference.md</c>, so the thing
+    /// this guards is a claim that was wrong everywhere it was written down.</para>
+    /// </remarks>
+    [Fact]
+    public void ComponentsBeforeClassesIsOfferedOnlyWhileImportsFirstIsOn()
+    {
+        if (SettingsMarkup() is not { } markup)
+            return;
+
+        var switchMarkup = Regex.Match(
+            markup,
+            @"<MudSwitch[^>]*?SelectedSettings\.ComponentsBeforeClasses.*?/>",
+            RegexOptions.Singleline);
+
+        Assert.True(switchMarkup.Success, "the components-before-classes switch is no longer in the dialog");
+
+        Assert.Contains("IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)", switchMarkup.Value, StringComparison.Ordinal);
+        Assert.Contains("SelectedSettings.OneOfEachSection", switchMarkup.Value, StringComparison.Ordinal);
+
+        // And the state that expression reads. IsRuleSwitchedOn is the raw switch rather than the
+        // effective rule, which is what makes it the right question here: the facade would answer
+        // "off" merely because OneOfEachSection is off, disabling this switch for a second and
+        // invisible reason.
+        var settings = new StyleCheckingSettings { OneOfEachSection = true };
+        Assert.False(settings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst));   // gate closed
+
+        settings.SetRuleEnabled(RuleIds.ImportStatementsFirst, true);
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst));    // gate open
     }
 
     /// <summary>

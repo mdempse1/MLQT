@@ -11,14 +11,11 @@ The same work is a visible step on a burndown.
 
 To open this view, click the **Metrics** tab (the bar-chart icon) in the right panel.
 
+![Screenshot: MLQT Metrics tab, showing the report from the Modelica Standard Library"](Images/metrics-1.png)
+
 ## Coverage
 
-Each dimension is a percentage of the classes (or declarations) that are eligible for it:
-
-```
-Class description     ████████████████████░░░░   82.4%  (7412/8996)
-```
-
+Each dimension is a percentage of the classes (or declarations) that are eligible for it. 
 The bar shows the percentage; the numbers beside it are **compliant / eligible**, which is usually
 the more useful pair — it tells you how much work the remaining percent actually is.
 

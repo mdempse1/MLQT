@@ -1,6 +1,6 @@
 # Setting up the MLQT CI quality gate
 
-A hands-on guide to running MLQT's style/analysis checks in CI and gating on **new** findings, so you
+A hands-on guide to running MLQT's style/analysis checks in CI and failing on **new** findings, so you
 can trial it on a real Modelica library. For the full option reference see [cli.md](cli.md).
 
 ## What it does — the ratchet
@@ -9,7 +9,7 @@ can trial it on a real Modelica library. For the full option reference see [cli.
 library will have many findings; nobody fixes them all at once. So you:
 
 1. **Baseline** the current findings — they become *accepted debt* and never fail the build.
-2. **Gate** on findings that are *not* in the baseline — only genuinely new findings fail CI.
+2. **Fail** on findings that are *not* in the baseline — only genuinely new findings fail CI.
 3. Optionally **escalate** pre-existing findings in models a change touched (the "boy-scout rule").
 
 Parse errors are reported separately from all of this and always fail — see
@@ -90,7 +90,8 @@ you will see it on this very first run, and the command will exit `1`. That is d
 
 ## 3. Choose your rules — `.mlqt/settings.json`
 
-Create `<library-root>/.mlqt/settings.json` and turn on the rules you want. **Commit this file** —
+Create `<library-root>/.mlqt/settings.json` and turn on the rules you want. The easiest way is to use 
+the MLQT GUI but it is just a json file so can be created/edited manually. **Commit this file** —
 it is the shared configuration for everyone and for CI.
 
 ```jsonc
@@ -151,7 +152,7 @@ Add these with care:
 - **`ValidateModelReferences`** and **`ClassHasIcon`** — both need the libraries you depend on to be
   loaded. Pass `--dependency /path/to/ModelicaStandardLibrary` (repeatable) so `modelica://` links and
   icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
-  earn — on ExternData, 96 of them. Dependencies are loaded for resolution only and are never reported
+  earn. Dependencies are loaded for resolution only and are never reported
   on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
   resolves; the check warns when they differ. If the copy you point at is **not** the version the
   library's `uses(...)` declares, the run **stops with exit 2** rather than report findings that are
@@ -308,8 +309,7 @@ You get:
 
 ### GitHub
 
-Confirmed end to end on 2026-09-03: a report of 34 findings uploaded to a public repository was
-accepted (`processing_status: complete`, no errors) and rendered as alerts carrying each rule's
+Reports can be uploaded to a public repository and rendered as alerts carrying each rule's
 description, help body and category. Two things to get right, both of which fail quietly:
 
 - **The repository must be public**, or have a GitHub Code Security licence. A private repository

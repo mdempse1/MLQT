@@ -114,7 +114,7 @@ public sealed class LibraryFixture : IDisposable
             end Lib;
             """);
 
-        Write("package.order", "Interfaces\nComponents\nExamples\nExternals\nDocumented\nModified\nBadlyNamed\nUntidy\n");
+        Write("package.order", "Interfaces\nComponents\nExamples\nExternals\nDocumented\nModified\nBadlyNamed\nUntidy\nCompressor\n");
 
         Write("Documented.mo", """
             within Lib;
@@ -169,6 +169,28 @@ public sealed class LibraryFixture : IDisposable
               der(d) = -d;
               annotation(Documentation(info="<html><p>Untidy on purpose.</p></html>"));
             end Untidy;
+            """);
+
+        // A typo in a description string and another in the documentation prose beside it, because
+        // spell-checking is the one rule whose documentation has to show a *word* rather than a
+        // finding: spell-checking.md describes right-clicking the wavy underline and picking a
+        // suggestion, and neither the underline nor the menu exists unless some word is actually
+        // wrong. Misspellings a dictionary can correct, rather than invented strings - the menu's
+        // subject is the list of suggestions, and a word Hunspell cannot place offers none.
+        //
+        // Its own class, so that the classes the other pictures are built on stay what they are:
+        // Documented is the one with nothing to report, and Untidy's whole point is that its names
+        // and documentation are fine while its layout is not.
+        Write("Compressor.mo", """
+            within Lib;
+            model Compressor "Compresses the working fluid at a fixed isentropic efficiancy"
+              Real p "The pressure ratio";
+            equation
+              der(p) = -p;
+              annotation(Documentation(info="<html><p>The efficiancy is assumed constant across the
+                operating range, which is adequate for a steady-state balance and not for a transient
+                one.</p></html>"));
+            end Compressor;
             """);
 
         WriteInterfaces();

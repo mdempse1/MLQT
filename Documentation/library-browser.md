@@ -20,7 +20,7 @@ In library view, all libraries from all repositories are shown in a single flat 
 
 This view is useful when you want to focus on the library structure without the repository context, especially when working with multiple repositories whose libraries reference each other.
 
-![Screenshot: The left panel in library view - the packages as a flat tree, with no repository header above them.](Images/library-browser-1.png)
+![Screenshot: The application in library view. The left panel lists the packages as a flat tree with no repository header and no VCS buttons above them — the row of branch and commit controls that repository view shows is simply absent.](Images/library-browser-1.png)
 
 ## The Package Tree
 

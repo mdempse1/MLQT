@@ -33,7 +33,7 @@ when something breaks. The same blind spot slows onboarding: new engineers — a
 MLQT replaces your generic Git or SVN client with one that understands Modelica. You keep
 whichever editor and Modelica tool you already use; MLQT sits between them and the repository.
 
-Underneath everything is a single ANTLR parser that builds a real model of your code — classes,
+Underneath everything is a single Modelica parser that builds a real model of your code — classes,
 components, connections, equations, annotations — rather than matching text. That parser is
 reached three ways:
 
@@ -98,7 +98,7 @@ wrote them.
 **Conventions.** Description strings on classes, parameters and constants; `Documentation`
 info and revisions; icons; naming patterns for classes and elements; imports first and extends
 at the top; one of each section; initial sections in a consistent place; equations and
-algorithms kept apart; spelling of descriptions and documentation against a dictionary you
+algorithms in separate classes; spelling of descriptions and documentation against a dictionary you
 extend with your own terminology; and `modelica://` references that resolve.
 
 **Defects.** Unused parameters, constants, components, protected variables and imports.
@@ -127,12 +127,12 @@ MLQT's answer is a ratchet:
    today. Commit it. Those findings become accepted debt and never fail a build.
 2. **Gate.** CI runs the check against that baseline. Only findings that are *not* in it fail
    — so the library cannot get worse, whatever state it starts in.
-3. **Escalate, when you're ready.** Optionally fail on pre-existing findings in models a
-   change has already touched: the boy-scout rule, applied only where someone is working
+3. **Escalate, when you're ready.** Optionally fail a build on pre-existing findings in models 
+   that a commit has already touched: the boy-scout rule, applied only where someone is working
    anyway.
 
 Two details matter for trusting it. A finding is identified by a fingerprint that survives
-reformatting, so reformatting a model never converts its accepted debt into new findings. And
+other changes in the model, so a model never converts its accepted debt into new findings. And
 widening the baseline requires an explicit `--force` and shows up as a diff in code review —
 CI only ever reads it.
 
@@ -142,8 +142,8 @@ The baseline shrinking over time is your debt burndown. Full detail in
 ## Where the checks run
 
 **In the desktop application.** Findings appear beside the code in the Code Review tab, and
-can be filtered to the models your current change touched. You can send a model to Dymola or
-OpenModelica for a compile check before committing.
+can be filtered to the current model or those not in the baseline. You can send a model to Dymola or
+OpenModelica for checking before committing.
 
 **On your build server.** `mlqt check` gates the build on its exit code. The report format
 decides where findings surface: JUnit for the native test UI of Jenkins, GitLab or Azure
@@ -256,7 +256,7 @@ One installer per platform carries the desktop application, the CLI and the MCP 
 | **Operating system** | Windows 10/11, or Ubuntu 22.04 / Debian 12 or newer — x86-64 on both |
 | **.NET runtime** | Nothing to install: the Windows installer fetches it if absent, the Linux `.deb` bundles it |
 | **Version control** | Git, or SVN — the SVN client is bundled on Windows, and recommended by the `.deb` on Linux |
-| **Model checking** *(optional)* | Dymola 2025x Refresh 1 or later, or OpenModelica 1.24.0 or later |
+| **Model checking** *(optional)* | Dymola 2021 or later, or OpenModelica 1.24.0 or later |
 | **AI agent** *(optional)* | Any MCP client that launches servers over stdio |
 | **Licence** | MIT, open source in full |
 
