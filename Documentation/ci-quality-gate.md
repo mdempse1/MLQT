@@ -23,46 +23,40 @@ never turns its accepted debt into new findings.
 
 ## 1. Get the `mlqt` command
 
-The CLI is a .NET tool (`MLQT.Cli`, command `mlqt`); it is not yet published to a public feed, so
-build it from this repository.
+`mlqt` comes from the **MLQT installer for your platform**: there is one per platform, and it
+carries the CLI, the desktop application and the MCP server together. Nothing is published to a
+package feed.
 
-**Quick local testing** (no install):
-
-```bash
-dotnet run --project MLQT.Cli -- check /path/to/MyLibrary
-```
-
-**Install as a tool** (gives you a real `mlqt` command):
-
-```bash
-dotnet pack MLQT.Cli/MLQT.Cli.csproj -c Release -o ./nupkg
-dotnet tool install --global --add-source ./nupkg MLQT.Cli    # then: mlqt ...
-# update later:  dotnet tool update --global --add-source ./nupkg MLQT.Cli
-```
-
-**For a CI agent** (nothing preinstalled, no source tree):
+**For a CI agent** (nothing preinstalled, no source tree) — the normal case:
 
 ```bash
 sudo apt install ./mlqt_<version>_amd64.deb    # from the latest release
 mlqt check /path/to/MyLibrary
 ```
 
-The `.deb` carries its own .NET runtime, so the agent needs neither the SDK nor the runtime. See
+The `.deb` carries its own .NET runtime, so a Linux agent needs neither the SDK nor the runtime. On a
+Windows agent, run the setup `.exe` and let it put `mlqt` on the `PATH`. See
 [installation.md](installation.md).
+
+**Quick local testing from a clone** (no install):
+
+```bash
+dotnet run --project MLQT.Cli -- check /path/to/MyLibrary
+```
 
 ### Which one should I use?
 
-All three run **identical code** — the difference is only distribution and ergonomics:
+Both run **identical code** — the difference is only distribution and ergonomics:
 
-- `dotnet run` builds and runs from the source tree in place. It needs the repository present and
-  rebuilds each time. Best for a **quick local trial while you're in the repo**.
-- `dotnet pack` + `dotnet tool install` builds the tool from the source you have and puts an **`mlqt`
-  command on your PATH**, decoupled from the repo. It needs the **.NET SDK**, since `dotnet tool` is
-  an SDK command — which is exactly why the released `.nupkg` was dropped: obliging a build agent to
-  install the SDK to run a linter is the wrong trade.
-- **The platform installer** is the one for a machine without the source. The Linux `.deb` bundles
-  its own runtime, so an agent or container needs nothing preinstalled; the Windows installer offers
-  to put `mlqt` on your `PATH`. Best for **CI agents** and for **running against many libraries**.
+- **The platform installer** is the answer for a machine without the source, and the one to use for
+  **CI agents** and for **running against many libraries**. It needs no .NET SDK.
+- `dotnet run` builds and runs from the source tree in place. It needs the repository and the .NET
+  SDK present, and rebuilds each time. Best for a **quick local trial while you're in the repo**.
+
+A `dotnet tool` package (`.nupkg`) used to be published as well; it is gone. `dotnet tool install` is
+an *SDK* command, so shipping the CLI that way obliged every build agent to install the .NET SDK in
+order to run a linter — the opposite of what a headless tool is for. See
+[cli.md](cli.md).
 
 ### Point it at your repository root
 

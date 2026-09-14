@@ -1,8 +1,8 @@
 # MLQT CLI (`mlqt`)
 
 A headless, cross-platform command-line tool that style-checks a Modelica library and reports
-findings. It runs the same checks as the MLQT desktop app, with no UI and no desktop dependency, so it
-works on Windows, Linux, and macOS and is suited to CI pipelines.
+findings. It runs the same checks as the MLQT desktop app, with no UI and no desktop dependency. It
+ships for Windows and Linux, and is suited to CI pipelines.
 
 > For a step-by-step guide to setting up the CI quality gate on a real library (enable rules,
 > baseline existing debt, gate on new findings, wire into TeamCity/GitHub), see
@@ -308,8 +308,8 @@ remaining languages, so the spelling findings will not match a machine that has 
 ```
 
 en_US and en_GB ship with the tool. Other languages need their Hunspell `.aff`/`.dic` pair installed
-on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (or the equivalent user profile path on Linux
-and macOS).
+on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (`~/.local/share/MLQT/Dictionaries/` on
+Linux).
 
 ## Baseline / ratchet
 

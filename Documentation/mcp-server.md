@@ -117,7 +117,7 @@ When you position components on the diagram with `set_component_placement`, the 
 
 ## Testing a server manually (McpTester)
 
-[MLQT.McpTester](../MLQT.McpTester/README.md) is a small Windows desktop app for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client.
+[MLQT.McpTester](../MLQT.McpTester/README.md) is a small desktop app, on Windows and Linux, for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client.
 
 ```bash
 dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
