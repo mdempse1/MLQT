@@ -85,10 +85,13 @@ Delete that directory by hand if you want MLQT to forget everything.
 ### Building the package yourself
 
 ```bash
-pwsh build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn \
-     -Version 1.2.3 -Output publish/linux-x64
+build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn \
+    --version 1.2.3 --output publish/linux-x64
 build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
 ```
+
+Both are ordinary shell scripts, so a Debian or Ubuntu machine needs nothing beyond the .NET 10
+SDK, `dpkg-deb` and `fakeroot` to build the package.
 
 The second command builds the `.deb` **and then proves it works**: it extracts it, runs `mlqt`,
 completes an MCP `initialize` handshake, and runs the desktop application's 16 `/selftest` probes

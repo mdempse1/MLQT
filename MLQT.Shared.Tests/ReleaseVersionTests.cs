@@ -41,7 +41,7 @@ public class ReleaseVersionTests
         // producing an artefact that is confidently wrong.
         //
         // It used to read release.yml, because that is where the publishes were. They have moved into
-        // build/publish-tools.ps1, and this test found that out by failing when the workflow was
+        // build/publish-tools.sh, and this test found that out by failing when the workflow was
         // converted - which is the correct outcome for a guard whose subject moved, and better than
         // one that kept passing over an empty search.
         //
@@ -51,13 +51,15 @@ public class ReleaseVersionTests
         // "found 0 invocations", which reads as a workflow that has stopped calling the script
         // rather than as what it is.
         var staging = File.ReadAllText(
-            Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1")).Replace("\r\n", "\n");
+            Path.Combine(RepositoryRoot(), "build", "publish-tools.sh")).Replace("\r\n", "\n");
 
+        // The arguments run to the `||` that reports a failed publish, which is where the shell
+        // script ends the command rather than at an `if` or a brace as the PowerShell one did.
         var publishes = Regex.Matches(staging,
-            @"dotnet publish(?<args>(.|\n)*?)(?=\n\s*if|\n\s*\})");
+            @"dotnet publish(?<args>(.|\n)*?)(?=\n\s*\|\|)");
 
         Assert.True(publishes.Count >= 1,
-            "no dotnet publish found in publish-tools.ps1; the format may have changed");
+            "no dotnet publish found in publish-tools.sh; the format may have changed");
 
         Assert.All(publishes, m =>
             Assert.Contains("-p:Version=", m.Groups["args"].Value, StringComparison.Ordinal));
@@ -74,17 +76,18 @@ public class ReleaseVersionTests
             Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"))
             .Replace("\r\n", "\n");
 
-        // Anchored on "pwsh build/publish-tools.ps1", the actual invocation. A looser pattern matched
-        // a *comment* that mentions the script by name, and reported it as a job that had forgotten
-        // the version.
+        // Anchored on the `run:` block, not merely on the script's name. A looser pattern matched a
+        // *comment* that mentions the script, and reported it as a job that had forgotten the version
+        // - and with the script no longer invoked through `pwsh`, its bare name is not enough on its
+        // own to tell an invocation from a mention.
         var invocations = Regex.Matches(workflow,
-            @"pwsh build/publish-tools\.ps1(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)");
+            @"run: >\n\s*build/publish-tools\.sh(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)");
 
         Assert.True(invocations.Count >= 2,
-            $"found {invocations.Count} publish-tools.ps1 invocations in release.yml; expected one per platform");
+            $"found {invocations.Count} publish-tools.sh invocations in release.yml; expected one per platform");
 
         Assert.All(invocations, m =>
-            Assert.Contains("-Version", m.Groups["args"].Value, StringComparison.Ordinal));
+            Assert.Contains("--version", m.Groups["args"].Value, StringComparison.Ordinal));
     }
 
     [Fact]

@@ -9,8 +9,8 @@ Two assets, one per platform, both stamped with the release version:
 
 | Asset | What it is | Built by |
 |-------|------------|----------|
-| `MLQT-<version>-win-x64-setup.exe` | Windows installer (Inno Setup 6). Carries the desktop app, the `mlqt` CLI and the MCP server, plus the SlikSVN command-line client under `svn/` | `build/publish-tools.ps1` → `build/installer/mlqt.iss` |
-| `mlqt_<version>_amd64.deb` | Debian/Ubuntu package. The same three tools, self-contained (its own .NET runtime), with `subversion` and `git` as recommends | `build/publish-tools.ps1` → `build/package-deb.sh` |
+| `MLQT-<version>-win-x64-setup.exe` | Windows installer (Inno Setup 6). Carries the desktop app, the `mlqt` CLI and the MCP server, plus the SlikSVN command-line client under `svn/` | `build/publish-tools.sh` → `build/installer/mlqt.iss` |
+| `mlqt_<version>_amd64.deb` | Debian/Ubuntu package. The same three tools, self-contained (its own .NET runtime), with `subversion` and `git` as recommends | `build/publish-tools.sh` → `build/package-deb.sh` |
 
 **One installer per platform, carrying all three tools** (phase 7b-7). They are published into a
 single tree and share every assembly below `MLQT.Shared`, so together they cost one copy rather than
@@ -32,7 +32,7 @@ identically, so it is not a cost of having an installer.
 Tags are bare `YYYY.N.P` — `2026.1.0`, `2026.3.0`, `2026.3.1`, `2026.4.0`. **No `v` prefix**, though
 `v*` is still accepted.
 
-**The tag is the version, everywhere.** It is passed as `-Version` to `publish-tools.ps1`, which
+**The tag is the version, everywhere.** It is passed as `--version` to `publish-tools.sh`, which
 hands it to `dotnet publish` as `-p:Version=`, so it reaches `AssemblyInformationalVersion` in all
 three tools; the installer takes it as `/DAppVersion`, and the `.deb` as `--version`.
 `Directory.Build.props` supplies `0.0.0-dev` for a local build and nothing else sets a version, so
@@ -78,7 +78,7 @@ release will build without committing to one.
 ## Before you tag
 
 - The `SLIKSVN_ZIP_URL` repository variable (Settings → Secrets and variables → Actions → Variables)
-  must point at a SlikSVN 1.14+ x64 `.zip`. `publish-tools.ps1` fails on a missing or non-running svn
+  must point at a SlikSVN 1.14+ x64 `.zip`. `publish-tools.sh` fails on a missing or non-running svn
   client unless `-AllowMissingSvn` is passed, and the release job does not pass it.
 - If what the release ships changes, [Documentation/installation.md](Documentation/installation.md),
   [cli.md](Documentation/cli.md) and [mcp-server.md](Documentation/mcp-server.md) change with it —
@@ -90,13 +90,13 @@ release will build without committing to one.
 Both halves run on a developer machine, which is how to debug a packaging failure without pushing a
 tag:
 
-```powershell
-./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
+```bash
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
 ```
 
 ```bash
-./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn -Version 1.2.3 -Output publish/linux-x64
-./build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
+build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn --version 1.2.3 --output publish/linux-x64
+build/package-deb.sh   --version 1.2.3 --stage publish/linux-x64 --output artifacts
 ```
 
 Run the `.deb` build under `xvfb-run -a` on a machine with no display, or its strongest check — the

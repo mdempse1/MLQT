@@ -172,9 +172,10 @@ $NewestPlaywrightUbuntu = '24.04'
     than Playwright ships for - including an empty string, which is what a non-Linux machine gives.
 
     No $IsLinux check: that variable is PowerShell Core only and is $null under Windows PowerShell
-    5.1, and this repository has already been bitten by reading one of those as a platform answer
-    (build/publish-tools.ps1 says so at length). The absence of /etc/os-release is the same answer by
-    a route that cannot be wrong about the edition it is running under.
+    5.1, and this repository has already been bitten by reading one of those as a platform answer -
+    a $null reads as $false, so every platform silently looks like the other one. The absence of
+    /etc/os-release is the same answer by a route that cannot be wrong about the edition it is
+    running under.
 #>
 function Get-PlaywrightPlatformOverride {
     param(

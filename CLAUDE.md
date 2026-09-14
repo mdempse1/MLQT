@@ -48,11 +48,11 @@ pwsh ./build/run-all-tests.ps1
 dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 
 # Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
-./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
 
 # Build the Linux installer from that tree, and prove the packaged tools run (phase 7b-7)
-./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn -Version 1.2.3 -Output publish/linux-x64
-./build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
+build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn --version 1.2.3 --output publish/linux-x64
+build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
 ```
 
 ## Architecture Patterns
@@ -465,15 +465,15 @@ real one — OpenModelica *is* installed on the main development machine, and
 category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
 not.
 
-### "Would the installer work?" — `build/publish-tools.ps1`
+### "Would the installer work?" — `build/publish-tools.sh`
 
 One installer per platform carries the GUI, the `mlqt` CLI and the MCP server, so all three are
 published into a **single tree** — they share every assembly below `MLQT.Shared`, and each carries its
 own `.deps.json`, so together they cost one copy rather than three.
 
-```powershell
-./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
-./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -Version 1.2.3 -Output publish/linux-x64
+```bash
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
+build/publish-tools.sh --runtime linux-x64 --self-contained --version 1.2.3 --output publish/linux-x64
 ```
 
 **The smoke tests are the point of it.** Building an installer around a tree nobody has run is how this
@@ -484,18 +484,25 @@ stdio, and the GUI runs the **16 `/selftest` probes against the published tree**
 strongest check available anywhere in this repository — it resolves the RCL assets, runs interop,
 renders MudBlazor and exercises settings, logging and the svn locator, in the layout that ships.
 
-`-AllowMissingSvn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1` and
-is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
+`--allow-missing-svn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1`
+and is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
 remembering a flag — which is exactly how B144 happened.
+
+**Shell, not PowerShell**, and it is `build/package-deb.sh`'s reason applied to its own input: pwsh is
+not installed on a plain Ubuntu desktop, so a PowerShell publish step made the Linux half of the build
+unrunnable on an ordinary Linux box even though the packaging script beside it was shell. On Windows it
+runs under Git Bash. One consequence worth knowing: `mkfifo` under Git Bash makes an MSYS-emulated fifo
+that a native `.exe` cannot read from, so the MCP handshake here holds stdin open with an ordinary
+pipeline rather than the fifo `package-deb.sh` uses.
 
 The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree. It refuses to
 compile if any of the three tools is missing.
 
 The Linux installer is `build/package-deb.sh`, which takes the same tree and writes a `.deb`.
-**Shell rather than PowerShell**, unlike everything else in `build/`: `dpkg-deb` exists only on a
-Debian machine, and pwsh is not on a plain Ubuntu desktop, so a `.ps1` would be a packaging script
-you cannot run on the machine that makes the package. It applies the same "prove it before shipping
-it" rule one layer further out — `publish-tools.ps1` proves the three tools run, this proves the
+**Shell rather than PowerShell**: `dpkg-deb` exists only on a Debian machine, and pwsh is not on a
+plain Ubuntu desktop, so a `.ps1` would be a packaging script you cannot run on the machine that makes
+the package. It applies the same "prove it before shipping
+it" rule one layer further out — `publish-tools.sh` proves the three tools run, this proves the
 package puts them somewhere they still run from, by extracting it and asking each of them again,
 self-test probes included. Run it under `xvfb-run -a` on a machine with no display, or that last and
 strongest check is skipped.

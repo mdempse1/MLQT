@@ -87,8 +87,8 @@ jobs:
       # zip URL is a repository variable (Settings > Secrets and variables > Actions > Variables):
       # SLIKSVN_ZIP_URL must point at a SlikSVN >= 1.14 x64 .zip.
       #
-      # There is no separate "verify it arrived" step any more: publish-tools.ps1 fails on a missing
-      # client unless -AllowMissingSvn is passed, and this job does not pass it. One mechanism, and
+      # There is no separate "verify it arrived" step any more: the publish script fails on a missing
+      # client unless --allow-missing-svn is passed, and this job does not pass it. One mechanism, and
       # the one that also runs on a developer's machine.
       - name: Bundle SlikSVN command-line client
         shell: pwsh
@@ -119,12 +119,12 @@ jobs:
       # /selftest probes run against the published tree. That last needs WebView2, which the runner
       # image has, and it is the same check the desktop-selftest job makes on every push.
       - name: Publish the three tools into one tree
-        shell: pwsh
+        shell: bash
         run: >
-          pwsh build/publish-tools.ps1
-          -Runtime win-x64
-          -Version ${{ needs.version.outputs.version }}
-          -Output publish/win-x64
+          build/publish-tools.sh
+          --runtime win-x64
+          --version ${{ needs.version.outputs.version }}
+          --output publish/win-x64
 
       - name: Build the installer
         shell: pwsh
@@ -280,18 +280,18 @@ jobs:
       # asking every user to add Microsoft's apt feed before `apt install` would work at all. The
       # ~80 MB is the price of the package installing with one command.
       #
-      # -AllowMissingSvn because there is no bundled svn client on Linux by design: the .deb
+      # --allow-missing-svn because there is no bundled svn client on Linux by design: the .deb
       # recommends `subversion` and SvnToolLocator finds it on PATH.
       - name: Publish the three tools into one tree
-        shell: pwsh
+        shell: bash
         run: >
-          pwsh build/publish-tools.ps1
-          -Runtime linux-x64
-          -SelfContained
-          -AllowMissingSvn
-          -Version ${{ needs.version.outputs.version }}
-          -Output publish/linux-x64
-          -SkipSmokeTests
+          build/publish-tools.sh
+          --runtime linux-x64
+          --self-contained
+          --allow-missing-svn
+          --version ${{ needs.version.outputs.version }}
+          --output publish/linux-x64
+          --skip-smoke-tests
 
       # Under xvfb-run, so the packaged GUI's self-test probes actually run. The script skips them
       # when there is no display, and a skipped check on the release path is the one that matters.

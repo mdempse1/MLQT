@@ -92,11 +92,16 @@ One installer per platform carries all three tools — the desktop application, 
 MCP server. They are published into a **single tree**, because they share every assembly below
 `MLQT.Shared` and so cost one copy rather than three.
 
-```powershell
-./build/publish-tools.ps1 -Version 1.2.3 -Output publish/win-x64 -AllowMissingSvn
-./build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -AllowMissingSvn -Version 1.2.3 -Output publish/linux-x64
-./build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
+```bash
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
+build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn --version 1.2.3 --output publish/linux-x64
+build/package-deb.sh   --version 1.2.3 --stage publish/linux-x64 --output artifacts
 ```
+
+Both are shell rather than PowerShell, and deliberately: `dpkg-deb` exists only on a Debian machine
+and pwsh is not installed on a plain Ubuntu desktop, so a packaging step you cannot run on the
+machine that makes the package is the wrong trade. On Windows they run under Git Bash, which every
+Git install provides.
 
 **The smoke tests are the point of the script.** Each tool is asked something only a working build can
 answer: the CLI prints its version, the MCP server completes an `initialize` handshake over stdio, and
@@ -109,9 +114,7 @@ strongest check is silently skipped.
 defaults to **failing**, so a release cannot ship without the client by nobody remembering a flag.
 
 The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree; it refuses
-to compile if any of the three tools is missing. The Linux installer is `build/package-deb.sh` —
-shell rather than PowerShell, because `dpkg-deb` exists only on a Debian machine and pwsh is not on a
-plain Ubuntu desktop.
+to compile if any of the three tools is missing. The Linux installer is `build/package-deb.sh`.
 
 ## Continuous integration
 

@@ -4,19 +4,21 @@
 #
 # Phase 7b-7. One installer per platform carrying all three tools: the Photino GUI, the `mlqt` CLI
 # and the MCP server. This is the Linux half; build/installer/mlqt.iss is the Windows one, and both
-# package the same staging tree that build/publish-tools.ps1 produces and smoke-tests.
+# package the same staging tree that build/publish-tools.sh produces and smoke-tests.
 #
-#   pwsh build/publish-tools.ps1 -Runtime linux-x64 -SelfContained -Version 1.2.3 -Output publish/linux-x64
+#   build/publish-tools.sh --runtime linux-x64 --self-contained --version 1.2.3 --output publish/linux-x64
 #   build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
 #
 # On a machine with no display - a CI runner - run the whole script under `xvfb-run -a` so that the
 # last smoke test, which starts the GUI, runs rather than being skipped. It is the strongest check
 # here and skipping it is how a package ships a window that opens on nothing.
 #
-# Shell rather than PowerShell, unlike everything else in build/. dpkg-deb exists only on a Debian
-# machine, and a packaging script you cannot run on the machine that makes the package is the wrong
-# trade — pwsh is not installed on a plain Ubuntu desktop, and this repository's Linux development
-# box does not have it. The Windows counterpart is an Inno Setup script for the same reason.
+# Shell rather than PowerShell. dpkg-deb exists only on a Debian machine, and a packaging script you
+# cannot run on the machine that makes the package is the wrong trade — pwsh is not installed on a
+# plain Ubuntu desktop, and this repository's Linux development box does not have it. The Windows
+# counterpart is an Inno Setup script for the same reason. build/publish-tools.sh, which produces the
+# tree this packages, is shell for the same reason: it was PowerShell until that argument was noticed
+# to apply to it too, which left the whole Linux build unrunnable without pwsh after all.
 #
 # Layout, and why:
 #
@@ -92,7 +94,7 @@ done
 
 if [ ${#problems[@]} -gt 0 ]; then
     printf '  x %s\n' "${problems[@]}" >&2
-    echo "the staging tree is incomplete; run build/publish-tools.ps1 first" >&2
+    echo "the staging tree is incomplete; run build/publish-tools.sh first" >&2
     exit 1
 fi
 
@@ -192,7 +194,7 @@ fi
 
 # ---- the package answers questions only a built package can ----------------------------------------
 #
-# publish-tools.ps1 proves the three tools run; this proves the package puts them somewhere they can
+# publish-tools.sh proves the three tools run; this proves the package puts them somewhere they can
 # still run from, with the desktop entry and the icons a Wayland session needs. Extracting rather
 # than installing, so it needs no root and runs on a CI runner.
 

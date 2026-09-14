@@ -121,7 +121,7 @@ public class WindowsInstallerTests
     public void TheInstallerAndTheStagingScriptAgreeOnTheExecutableNames()
     {
         // Two ends of one contract in two languages with no compiler between them:
-        // build/publish-tools.ps1 produces the tree, build/installer/mlqt.iss packages it. A rename on
+        // build/publish-tools.sh produces the tree, build/installer/mlqt.iss packages it. A rename on
         // either side is silent - the installer's compile-time guard catches a missing file, but only
         // if it is looking for the right name to begin with.
         //
@@ -129,9 +129,11 @@ public class WindowsInstallerTests
         // first version of this asserted that each name appeared somewhere in each file, and passed
         // against a staging script whose tools table had been renamed - because the smoke-test section
         // further down still mentioned the old name.
-        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.sh"));
 
-        var staged = Regex.Matches(staging, @"File\s*=\s*""(?<name>[^""$]+)[$]exe""")
+        // The tools_file array, whose entries are the only "<name>$exe" literals in the script: every
+        // other use spells a path, so it begins with $output and cannot match.
+        var staged = Regex.Matches(staging, @"""(?<name>[^""$]+)[$]exe""")
             .Select(m => m.Groups["name"].Value)
             .Order(StringComparer.Ordinal)
             .ToList();
@@ -156,19 +158,19 @@ public class WindowsInstallerTests
         // Each marker below occurs exactly once in the script, so removing the check it belongs to
         // removes the marker. Asserting on a token that appears several times - MLQT_SELFTEST, say,
         // which is also in MLQT_SELFTEST_HOST and the cleanup - passes with the check deleted.
-        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.ps1"));
+        var staging = File.ReadAllText(Path.Combine(RepositoryRoot(), "build", "publish-tools.sh"));
 
         var checks = new (string What, string Marker)[]
         {
-            ("the CLI is asked for its version", "& $cli --version"),
+            ("the CLI is asked for its version", @"""$output/mlqt$exe"" --version"),
             ("the MCP server completes a handshake", @"""method"":""initialize"""),
-            ("the GUI runs its self-test probes", "$env:MLQT_SELFTEST_OUT = $report"),
-            ("the probe results are judged", "$_.Status -ne 'Pass'"),
+            ("the GUI runs its self-test probes", @"MLQT_SELFTEST_OUT=""$report"""),
+            ("the probe results are judged", "failed=$(grep -c"),
         };
 
         foreach (var (what, marker) in checks)
             Assert.True(staging.Contains(marker, StringComparison.Ordinal),
-                $"publish-tools.ps1 no longer checks that {what}");
+                $"publish-tools.sh no longer checks that {what}");
     }
 
     [Fact]

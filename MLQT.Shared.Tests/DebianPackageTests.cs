@@ -227,7 +227,7 @@ public class DebianPackageTests
     [Fact]
     public void ItProvesEachToolRunsFromThePackagedLayoutBeforeCallingItBuilt()
     {
-        // The same argument as publish-tools.ps1's smoke tests, one layer further out: that script
+        // The same argument as publish-tools.sh's smoke tests, one layer further out: that script
         // proves the three tools run, this one proves the package puts them somewhere they still
         // run from. Each marker occurs once, so removing the check removes the marker.
         var script = Script();
@@ -253,12 +253,14 @@ public class DebianPackageTests
     public void TheTwoInstallersAgreeOnWhatTheyArePackaging()
     {
         // Three ends of one contract in three languages with no compiler between them:
-        // build/publish-tools.ps1 produces the tree, build/installer/mlqt.iss packages it on Windows
+        // build/publish-tools.sh produces the tree, build/installer/mlqt.iss packages it on Windows
         // and build/package-deb.sh on Linux. A rename anywhere is silent, and each script's own
         // guard only helps if it is looking for the right name to begin with.
-        var staging = Read("build", "publish-tools.ps1");
+        var staging = Read("build", "publish-tools.sh");
 
-        var staged = Regex.Matches(staging, @"File\s*=\s*""(?<name>[^""$]+)[$]exe""")
+        // The tools_file array, whose entries are the only "<name>$exe" literals in the script: every
+        // other use spells a path, so it begins with $output and cannot match.
+        var staged = Regex.Matches(staging, @"""(?<name>[^""$]+)[$]exe""")
             .Select(m => m.Groups["name"].Value)
             .Order(StringComparer.Ordinal)
             .ToList();

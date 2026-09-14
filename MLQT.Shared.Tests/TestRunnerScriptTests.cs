@@ -60,10 +60,11 @@ public class TestRunnerScriptTests
         // runner for its full six hours and report nothing about why.
         //
         // Asserted per file rather than as one search, so a failure names the script that lost it.
-        var staging = FileAt("build", "publish-tools.ps1");
-        Assert.Contains("$SelfTestTimeoutSeconds", staging);
-        Assert.Contains("WaitForExit($SelfTestTimeoutSeconds * 1000)", staging);
-        Assert.DoesNotContain("MLQT.Photino$exe\") -Wait", staging);
+        var staging = FileAt("build", "publish-tools.sh");
+        Assert.Contains("--self-test-timeout", staging);
+        // The one place it starts the GUI, and it starts it under `timeout`. Dropping that is what
+        // this guards, and it fails here rather than six hours into a release job.
+        Assert.Contains("timeout \"$self_test_timeout\" \"$output/MLQT.Photino$exe\"", staging);
 
         var deb = FileAt("build", "package-deb.sh");
         Assert.Contains("timeout \"${MLQT_SELFTEST_TIMEOUT:-300}\"", deb);
