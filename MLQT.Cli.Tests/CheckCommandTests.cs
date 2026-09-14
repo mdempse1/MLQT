@@ -394,6 +394,50 @@ public class CheckCommandTests
     }
 
     [Fact]
+    public void ChangedFrom_AcceptsARevisionExpression()
+    {
+        // cli.md offers `HEAD~1` as a ref, and recommends it as the fix when a diff reports
+        // "0 model(s) changed" because the ref already contains the change. Every other test here
+        // passes a branch name or a SHA, which resolve by different routes - a name lookup and a
+        // direct id - so neither shows that an expression git has to evaluate is accepted at all.
+        using var lib = DefaultFixture();
+
+        LibGit2Sharp.Repository.Init(lib.Path);
+        using var repo = new LibGit2Sharp.Repository(lib.Path);
+        var sig = new LibGit2Sharp.Signature("t", "t@e.com", DateTimeOffset.Now);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        repo.Commit("first", sig, sig, new LibGit2Sharp.CommitOptions());
+
+        lib.WithModel("TestModel.mo", """
+            model TestModel
+              parameter Real x = 1.0;
+              // second commit
+            end TestModel;
+            """);
+        LibGit2Sharp.Commands.Stage(repo, "*");
+        repo.Commit("second", sig, sig, new LibGit2Sharp.CommitOptions());
+
+        var (code, _, stderr) = Cli.Run("check", lib.Path, "--changed-from", "HEAD~1", "--no-color");
+
+        Assert.NotEqual(2, code);                                   // resolved, so not a setup error
+        Assert.Contains("model(s) changed since HEAD~1", stderr);   // and it found the change
+    }
+
+    [Fact]
+    public void Timings_AreWrittenToStderr()
+    {
+        // `--timings` was documented and run by nothing. It is the answer to "why did that take so
+        // long", so the failure it guards against is the option silently printing nothing at all.
+        using var lib = DefaultFixture();
+
+        var (code, stdout, stderr) = Cli.Run("check", lib.Path, "--timings", "--no-color");
+
+        Assert.NotEqual(2, code);
+        Assert.Contains("Check timings", stderr);
+        Assert.DoesNotContain("Check timings", stdout);   // stderr, so a piped report stays clean
+    }
+
+    [Fact]
     public void ChangedFrom_UnresolvableRef_ErrorsExitTwo()
     {
         using var lib = DefaultFixture();
