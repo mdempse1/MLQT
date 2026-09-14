@@ -85,6 +85,30 @@ public class HostAssetManifestTests
 
     [Theory]
     [MemberData(nameof(HostPages))]
+    public void ItLoadsItsOwnScopedCssBundle(string host, string path)
+    {
+        // The one stylesheet the manifest cannot name, because it is named after the host - so the
+        // list above deliberately filters it out, and for a while nothing checked it at all. The
+        // test host had no such link, which is not a failure anyone sees: the page renders, MudBlazor
+        // is styled, and the code viewer's syntax colours are right because CodeReview injects those
+        // at runtime. What vanishes is every .razor.css - DiffViewer's panes lose `display: flex`
+        // and stack, which is how the documentation screenshots came to show one below the other.
+        var links = Regex.Matches(File.ReadAllText(path), @"<link[^>]*\bhref=""([^""]+)""")
+                         .Select(m => m.Groups[1].Value)
+                         .ToList();
+
+        Assert.Contains(HostAssetManifest.ScopedCssBundleFor(host), links);
+    }
+
+    [Fact]
+    public void TheScopedCssBundleIsNamedAfterTheHost()
+    {
+        Assert.Equal("MLQT.Photino.styles.css", HostAssetManifest.ScopedCssBundleFor("MLQT.Photino"));
+        Assert.Equal("MLQT.TestHost.styles.css", HostAssetManifest.ScopedCssBundleFor("MLQT.TestHost"));
+    }
+
+    [Theory]
+    [MemberData(nameof(HostPages))]
     public void ItLoadsOneBlazorBootstrapScript(string host, string path)
     {
         // Exactly one, and one of the two the manifest names. A page with neither does not start; a

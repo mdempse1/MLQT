@@ -67,6 +67,23 @@ public static class HostAssetManifest
     ];
 
     /// <summary>
+    /// The scoped-CSS bundle a host must load, named after the host assembly.
+    /// </summary>
+    /// <remarks>
+    /// <para>Not in <see cref="Stylesheets"/> because the name differs per host, which is exactly
+    /// why it went missing from one of them. A host page without it still renders: MudBlazor is
+    /// styled, and the code viewer's syntax colours are right because <c>CodeReview</c> injects those
+    /// as a runtime <c>&lt;style&gt;</c> block. What disappears is every rule in a
+    /// <c>.razor.css</c> — so <c>DiffViewer</c>'s <c>.diff-side-by-side</c> loses
+    /// <c>display: flex</c> and the two panes stack, one of them below the fold. The test host was
+    /// missing it, and the documentation screenshots were generated through the test host.</para>
+    /// <para>The bundle itself is only an <c>@import</c> list pointing at each referenced library's
+    /// bundle, so a host that does not link it loads none of them.</para>
+    /// </remarks>
+    public static string ScopedCssBundleFor(string hostAssemblyName) =>
+        $"{hostAssemblyName}.styles.css";
+
+    /// <summary>
     /// The Blazor bootstrap script for a webview host — <c>MLQT.Photino</c>. The test host uses
     /// <c>_framework/blazor.server.js</c> instead, which is the only difference between the pages.
     /// </summary>

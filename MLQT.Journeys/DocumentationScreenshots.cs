@@ -614,6 +614,14 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         if (await nameField.CountAsync() > 0)
         {
             await nameField.FillAsync("Building Simulation");
+
+            // Let the floating label finish moving. MudBlazor animates it out of the empty field and
+            // up to the top border over 200ms (.mud-input-label-animated), and ShotAroundAsync —
+            // unlike ShotAsync — does not settle, so the shot landed mid-transform and the picture
+            // showed the label struck through the text the user had just typed. It looked like a
+            // rendering defect in MLQT, and it is only a screenshot taken too early.
+            await page.WaitForTimeoutAsync(500);
+
             await ShotAroundAsync(page, RowContaining(page, "New Project"), "getting-started-4", margin: 16);
         }
 

@@ -30,6 +30,16 @@
     {
         <link rel="stylesheet" href="@stylesheet" />
     }
+
+    @*
+        The scoped-CSS bundle, which is named after the host assembly and so cannot live in the
+        manifest - each host adds its own. Omitting it does not look like a missing stylesheet: the
+        page renders, MudBlazor is styled, and syntax colours are right (CodeReview injects those at
+        runtime), but every rule in a .razor.css is absent - so the side-by-side diff loses
+        `display: flex` and stacks its panes, which is what reached the documentation images.
+    *@
+    <link rel="stylesheet" href="@HostAssetManifest.ScopedCssBundleFor("MLQT.TestHost")" />
+
     <link rel="icon" href="data:," />
 
     <HeadOutlet @rendermode="interactive" />
