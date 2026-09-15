@@ -1255,6 +1255,12 @@ including this project's Linux development box — so a `.ps1` here would be a p
 cannot be run on the machine that makes the package. The Windows counterpart is an Inno Setup script
 for the same reason. `publish-tools.ps1` still stages the tree; both installers only package it.
 
+> **Later (2026-09-15, B158).** That last sentence is what dated: the same argument applies to
+> the script that *produces* the tree this packages, and it had not been applied. A Linux
+> machine could not run the Linux build at all without installing pwsh first. It is
+> `build/publish-tools.sh` now. Left as written above because this note records what 7b-7
+> shipped; the change and what it cost are in B158.
+
 | Decided | |
 |---|---|
 | `/opt/mlqt/` | The tree, whole — three applications sharing every assembly below `MLQT.Shared` |
