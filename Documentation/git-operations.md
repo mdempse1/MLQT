@@ -369,7 +369,7 @@ After checkout:
 Clicking on any changed file opens the **Revision Diff** dialog, which shows a side-by-side comparison:
 - **Left side**: The file content at the selected revision
 - **Right side**: The current working copy content
-- For **added** files: left side is empty
-- For **deleted** files: right side is empty
+- For **added** files: the left side is the file as that revision added it. An added file has content at the revision that added it, so there is still a comparison to make — if it has changed since, the difference is what you see
+- For **deleted** files: the right side is empty, because the file is no longer in the working copy
 
 ![Screenshot: The Revision Diff dialog, titled with the file and the short revision id it is comparing against. Unified, side-by-side and full-file views are offered, the line count of the change is shown, and added and removed lines are marked.](Images/git-operations-10.png)

@@ -30,6 +30,33 @@ public partial class RevisionDiffDialog
     private string? _errorMessage;
     private bool _isLoading = true;
 
+    /// <summary>
+    /// Which content goes on which side: the revision on the left, the working copy on the right.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The change type does not enter into it</b>, and that is the fix for B155. This dialog
+    /// compares one revision against the working copy - its title says <c>@ &lt;revision&gt;</c>, its
+    /// panes are labelled "Revision N" and "Working Copy", and its own empty-diff message says "File
+    /// is identical between revision N and the working copy". Three statements of the same contract.
+    /// </para>
+    ///
+    /// <para>The code disagreed with all three for an <b>added</b> file: it put <c>string.Empty</c>
+    /// on the left and the <i>revision's</i> content on the right, so the pane labelled "Working
+    /// Copy" showed the revision and the pane labelled "Revision N" showed nothing. Against the first
+    /// commit of a file that was changed again later, it reported that revision's lines as additions
+    /// and never mentioned the lines the working copy actually has - which is what B155 saw, and why
+    /// it read as "comparing against nothing". That is the diff of the commit itself, a reasonable
+    /// thing to want and not what this dialog offers.</para>
+    ///
+    /// <para>The <c>Deleted</c> case it also carried was dead: a file deleted at that revision is
+    /// absent from the working copy, so the right-hand side is empty by way of
+    /// <c>workingCopyContent</c> being null, without a branch to say so. Where it was not dead it was
+    /// wrong - a file deleted then re-added would have had its current content hidden.</para>
+    /// </remarks>
+    internal static (string Original, string Modified) SidesFor(
+        string? revisionContent, string? workingCopyContent)
+        => (revisionContent ?? string.Empty, workingCopyContent ?? string.Empty);
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -70,21 +97,7 @@ public partial class RevisionDiffDialog
                 workingCopyContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(fullPath);
             }
 
-            switch (ChangeType)
-            {
-                case VcsChangeType.Added:
-                    _originalContent = string.Empty;
-                    _modifiedContent = revisionContent ?? string.Empty;
-                    break;
-                case VcsChangeType.Deleted:
-                    _originalContent = revisionContent ?? string.Empty;
-                    _modifiedContent = string.Empty;
-                    break;
-                default:
-                    _originalContent = revisionContent ?? string.Empty;
-                    _modifiedContent = workingCopyContent ?? string.Empty;
-                    break;
-            }
+            (_originalContent, _modifiedContent) = SidesFor(revisionContent, workingCopyContent);
 
             if (revisionContent == null && workingCopyContent == null)
             {
