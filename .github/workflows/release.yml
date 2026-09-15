@@ -271,10 +271,16 @@ jobs:
       # strongest check this repository has and they run a real WebKitGTK window, so the runner needs
       # webkit and a virtual display. libnotify4 is the one nothing else pulls in - libwebkit2gtk-4.1-0
       # does not depend on it and Photino.Native links it - which is exactly why the .deb declares it.
+      #
+      # desktop-file-utils supplies desktop-file-validate, which two different checks want and neither
+      # had: the step below calls it unguarded and failed the job with "command not found" (exit 127),
+      # and package-deb.sh guards its own call with `command -v` - so on a runner without the tool that
+      # validation silently did nothing, and had never once run in CI. The desktop entry is what gives
+      # MLQT an icon at all on Wayland (B134), so it is worth actually validating.
       - name: Install WebKitGTK and a virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 xvfb
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 xvfb desktop-file-utils
 
       # Self-contained: neither Ubuntu nor Debian carries .NET 10, so a dependency on it would mean
       # asking every user to add Microsoft's apt feed before `apt install` would work at all. The
