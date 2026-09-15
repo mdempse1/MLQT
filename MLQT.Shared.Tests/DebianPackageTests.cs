@@ -275,6 +275,74 @@ public class DebianPackageTests
         Assert.Equal(staged, packaged);
     }
 
+    /// <summary>
+    /// Every shell script the release workflow runs is executable <b>in git</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>A Linux runner executes what the index says, and a script committed <c>100644</c> fails
+    /// with <c>Permission denied</c> and exit 126 before a line of it runs. The mode is not visible
+    /// on Windows, where <c>core.fileMode</c> is false and NTFS has no execute bit - so the author of
+    /// a new script cannot see the problem, the Windows job passes because Windows ignores the bit,
+    /// and only the Linux job fails. That is exactly how <c>build/publish-tools.sh</c> shipped
+    /// non-executable and broke the first release run on the branch that introduced it.</para>
+    ///
+    /// <para>It asks git rather than the file system, because the file system is the thing that
+    /// cannot answer here. Skipped where git cannot be run at all, which is not a state CI is in.</para>
+    /// </remarks>
+    [Fact]
+    public void EveryShellScriptTheReleaseWorkflowRunsIsExecutable()
+    {
+        var workflow = Read(".github", "workflows", "release.yml");
+
+        var scripts = Regex.Matches(workflow, @"build/[A-Za-z0-9._-]+\.sh")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.NotEmpty(scripts);
+
+        foreach (var script in scripts)
+        {
+            var mode = GitIndexMode(script);
+            if (mode is null)
+                return;     // no git to ask
+
+            Assert.True(mode == "100755",
+                $"{script} is committed as {mode}. A Linux runner cannot execute it: the release job " +
+                "fails with 'Permission denied' (exit 126). Fix with: git update-index --chmod=+x " + script);
+        }
+    }
+
+    /// <summary>The mode git has recorded for a path, or null when git cannot be asked.</summary>
+    private static string? GitIndexMode(string path)
+    {
+        try
+        {
+            using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"ls-files -s -- {path}",
+                WorkingDirectory = RepositoryRoot(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+            if (git is null)
+                return null;
+
+            var line = git.StandardOutput.ReadToEnd();
+            git.WaitForExit();
+
+            // "<mode> <object> <stage>	<path>"
+            return git.ExitCode == 0 && line.Length > 6 ? line[..6] : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     [Fact]
     public void TheReleaseWorkflowBuildsBothInstallersAndShipsThem()
     {
