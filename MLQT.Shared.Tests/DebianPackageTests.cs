@@ -279,12 +279,17 @@ public class DebianPackageTests
     /// Every shell script the release workflow runs is executable <b>in git</b>.
     /// </summary>
     /// <remarks>
-    /// <para>A Linux runner executes what the index says, and a script committed <c>100644</c> fails
-    /// with <c>Permission denied</c> and exit 126 before a line of it runs. The mode is not visible
-    /// on Windows, where <c>core.fileMode</c> is false and NTFS has no execute bit - so the author of
-    /// a new script cannot see the problem, the Windows job passes because Windows ignores the bit,
-    /// and only the Linux job fails. That is exactly how <c>build/publish-tools.sh</c> shipped
-    /// non-executable and broke the first release run on the branch that introduced it.</para>
+    /// <para>A script committed <c>100644</c> cannot be run as <c>./build/x.sh</c> at all: the shell
+    /// refuses with <c>Permission denied</c> and exit 126 before a line of it runs. The mode is
+    /// invisible on Windows, where <c>core.fileMode</c> is false and NTFS has no execute bit - so the
+    /// author of a new script cannot see the problem and only Linux is affected. That is exactly how
+    /// <c>build/publish-tools.sh</c> shipped non-executable and broke the first release run on the
+    /// branch that introduced it, while the Windows job of the same run passed.</para>
+    ///
+    /// <para>The release workflow now invokes all three scripts through <c>bash</c>, which ignores
+    /// the bit, so this is no longer the single thing standing between a commit and a broken release.
+    /// It is still the correct mode, still what <c>package-deb.sh</c> has, and still what anyone
+    /// running the script from a terminal needs - and it is the only place the mistake is visible.</para>
     ///
     /// <para>It asks git rather than the file system, because the file system is the thing that
     /// cannot answer here. Skipped where git cannot be run at all, which is not a state CI is in.</para>
@@ -309,8 +314,10 @@ public class DebianPackageTests
                 return;     // no git to ask
 
             Assert.True(mode == "100755",
-                $"{script} is committed as {mode}. A Linux runner cannot execute it: the release job " +
-                "fails with 'Permission denied' (exit 126). Fix with: git update-index --chmod=+x " + script);
+                $"{script} is committed as {mode}, so running it as ./{script} fails with " +
+                "'Permission denied' (exit 126). The bit is invisible on Windows, so set it in git: " +
+                "git update-index --chmod=+x " + script + "  -- and check it survived the commit, " +
+                "because staging it is not enough.");
         }
     }
 

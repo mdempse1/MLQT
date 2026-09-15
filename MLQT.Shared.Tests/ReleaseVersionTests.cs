@@ -80,8 +80,13 @@ public class ReleaseVersionTests
         // *comment* that mentions the script, and reported it as a job that had forgotten the version
         // - and with the script no longer invoked through `pwsh`, its bare name is not enough on its
         // own to tell an invocation from a mention.
+        //
+        // `bash` is optional in the pattern because the workflow invokes the script through it, the
+        // way it already did for package-deb.sh, so that a missing execute bit cannot decide whether
+        // a release builds. Matching either spelling keeps this guard about the *version*, which is
+        // its subject, rather than about how the script happens to be launched.
         var invocations = Regex.Matches(workflow,
-            @"run: >\n\s*build/publish-tools\.sh(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)");
+            @"run: >\n\s*(?:bash )?build/publish-tools\.sh(?<args>(.|\n)*?)(?=\n\s*\n|\n\s*-\s+name:)");
 
         Assert.True(invocations.Count >= 2,
             $"found {invocations.Count} publish-tools.sh invocations in release.yml; expected one per platform");
