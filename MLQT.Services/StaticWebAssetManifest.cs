@@ -50,10 +50,17 @@ public sealed class StaticWebAssetManifest
 
     /// <summary>Reads a manifest, or returns null if there is not a usable one there.</summary>
     /// <remarks>
-    /// Null rather than an exception: a published application has no manifest and does not need one,
-    /// so "not there" is an ordinary answer and the caller decides what it means.
+    /// <para>Null rather than an exception: a published application has no manifest and does not need
+    /// one, so "not there" is an ordinary answer and the caller decides what it means.</para>
     /// </remarks>
-    public static StaticWebAssetManifest? Load(string manifestPath)
+    /// <param name="onError">
+    /// Reports a manifest that is there but unreadable. A callback rather than a direct call to
+    /// <c>LoggingService</c> because this file is also compiled into <c>MLQT.McpTester</c>, which is a
+    /// standalone tool with no reference to MLQT's service layer and no reason to gain one — see the
+    /// <c>Compile Include</c> in its project file. Optional, and silence is a fair default: the caller
+    /// already has to handle null, and a corrupt manifest and an absent one lead to the same place.
+    /// </param>
+    public static StaticWebAssetManifest? Load(string manifestPath, Action<string, Exception>? onError = null)
     {
         if (!File.Exists(manifestPath))
             return null;
@@ -72,7 +79,7 @@ public sealed class StaticWebAssetManifest
         }
         catch (Exception ex)
         {
-            LoggingService.Error(nameof(StaticWebAssetManifest), $"Could not read {manifestPath}", ex);
+            onError?.Invoke($"Could not read {manifestPath}", ex);
             return null;
         }
     }

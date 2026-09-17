@@ -16,6 +16,18 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- Compiled in, not referenced. Resolving web assets from the SDK's manifest is the same
+             problem in both hosts (B133: a built - as opposed to published - app has no wwwroot
+             folder, so the window opens blank), and the answer should not be written twice. But this
+             app is deliberately standalone: it tests any MCP server and knows nothing about Modelica,
+             so a ProjectReference to MLQT.Services would drag ModelicaParser, ModelicaGraph,
+             RevisionControl, NLog, LibGit2Sharp and Hunspell into a tool that wants none of them.
+             Sharing the source shares the part with logic in it and costs nothing else. -->
+        <Compile Include="../MLQT.Services/StaticWebAssetManifest.cs"
+                 Link="Services/StaticWebAssetManifest.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="Photino.Blazor" Version="4.0.13" />
         <!-- Pinned forward so the whole graph sits on the 10.0.x line rather than the 9.0.1 that
              Photino's net9.0 asset group brings in. 7b-0 confirmed both work; this is tidiness. -->

@@ -2,6 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using MLQT.McpTester.Components;
 using MLQT.McpTester.Services;
+// StaticWebAssetManifest's own namespace. The type is compiled into this assembly from source rather
+// than referenced — see the Compile Include in the project file for why.
+using MLQT.Services;
 using MudBlazor.Services;
 using Photino.Blazor;
 
@@ -28,9 +31,7 @@ internal static class Program
         // "index.html" with no directory part, so the provider is expected to be wwwroot-rooted
         // already - and the parameterless CreateDefault does not do that. Get it wrong and the
         // window opens showing the loading div, with no error anywhere.
-        var wwwroot = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "wwwroot"));
-
-        var builder = PhotinoBlazorAppBuilder.CreateDefault(wwwroot, args);
+        var builder = PhotinoBlazorAppBuilder.CreateDefault(WebAssets(), args);
 
         builder.Services.AddMudServices();
         builder.Services.AddSingleton<McpClientService>();
@@ -54,5 +55,48 @@ internal static class Program
             Console.Error.WriteLine($"Unhandled: {e.ExceptionObject}");
 
         app.Run();
+    }
+
+    /// <summary>
+    /// Where the web assets are, whether this build was published or just built.
+    /// </summary>
+    /// <remarks>
+    /// <para><c>dotnet publish</c> writes a real <c>wwwroot</c>; <c>dotnet build</c> writes a manifest
+    /// pointing at the originals — the project's own <c>wwwroot</c>, MudBlazor's
+    /// <c>staticwebassets</c> folder in the NuGet cache, and so on. Only the first was handled here,
+    /// so a Debug build did not start at all: <c>PhysicalFileProvider</c> throws
+    /// <c>DirectoryNotFoundException</c> on a root that is not there, before the window is ever
+    /// created.</para>
+    ///
+    /// <para>This is B133, which was found and fixed in <c>MLQT.Photino</c> and not here — even though
+    /// this app was the rehearsal the port was done on first, and its <c>Main</c> carries the comment
+    /// warning about the other half of the same trap. The two hosts now answer it the same way, from
+    /// one shared <see cref="StaticWebAssetManifest"/>.</para>
+    ///
+    /// <para>The published folder is preferred when it exists: it is what ships, and a shipped
+    /// application should not depend on a manifest full of absolute paths to this machine's NuGet
+    /// cache.</para>
+    /// </remarks>
+    private static IFileProvider WebAssets()
+    {
+        var published = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        if (Directory.Exists(published))
+            return new PhysicalFileProvider(published);
+
+        var manifest = StaticWebAssetManifest.Load(
+            StaticWebAssetManifest.PathFor(AppContext.BaseDirectory, typeof(Program).Assembly.GetName().Name!),
+            (message, ex) => Console.Error.WriteLine($"{message}: {ex}"));
+
+        if (manifest is not null)
+            return new StaticWebAssetsFileProvider(manifest);
+
+        // Neither. Say so rather than throwing out of PhysicalFileProvider with a bare directory name,
+        // or opening a window that loads nothing - the two failures this method exists to tell apart.
+        Console.Error.WriteLine(
+            $"No web assets: neither {published} nor a static web assets manifest is beside the " +
+            "executable, so the window would be blank. Run dotnet publish, or build the project so " +
+            "the manifest is written.");
+
+        return new PhysicalFileProvider(AppContext.BaseDirectory);
     }
 }

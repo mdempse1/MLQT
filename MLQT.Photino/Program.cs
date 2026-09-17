@@ -159,7 +159,8 @@ internal static class Program
             return new PhysicalFileProvider(published);
 
         var manifest = StaticWebAssetManifest.Load(
-            StaticWebAssetManifest.PathFor(AppContext.BaseDirectory, nameof(MLQT) + ".Photino"));
+            StaticWebAssetManifest.PathFor(AppContext.BaseDirectory, nameof(MLQT) + ".Photino"),
+            (message, ex) => LoggingService.Error(nameof(StaticWebAssetManifest), message, ex));
 
         if (manifest is not null)
         {

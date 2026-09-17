@@ -267,4 +267,37 @@ public class StaticWebAssetManifestTests : IDisposable
         Assert.Equal(Path.Combine(_root, "MLQT.Photino.staticwebassets.runtime.json"),
                      StaticWebAssetManifest.PathFor(_root, "MLQT.Photino"));
     }
+
+    [Theory]
+    [InlineData("MLQT.Photino")]
+    [InlineData("MLQT.McpTester")]
+    public void EveryPhotinoHostFallsBackToTheManifest(string host)
+    {
+        // Both desktop apps are Photino hosts and both have to answer this, and for a year only one
+        // of them did. MLQT.McpTester was the rehearsal the port was done on first, so it got the
+        // wwwroot-rooted provider and the comment warning about the other half of the trap; the
+        // manifest fallback was worked out afterwards, in MLQT.Photino, and never came back. A Debug
+        // build of the tester therefore did not start at all — PhysicalFileProvider throws on a root
+        // that is not there, before a window exists.
+        //
+        // Read as text, like the installer guards: what is being checked is that a decision was made,
+        // and it compiles perfectly either way. Running the app is what would really prove it, and
+        // nothing runs this one — which is how it stayed broken.
+        var program = File.ReadAllText(Path.Combine(RepositoryRoot(), host, "Program.cs"));
+
+        Assert.Contains("StaticWebAssetManifest.Load", program);
+        Assert.Contains("StaticWebAssetsFileProvider", program);
+    }
+
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "MLQT.slnx")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException("repository root not found");
+    }
 }
