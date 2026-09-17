@@ -38,6 +38,21 @@ public class GuidanceToolsTests
         Assert.IsType<ToolError>(new GuidanceTools().GetGuidance("nonsense"));
     }
 
+    [Fact]
+    public void TheGuidanceQuotesThePagingLimitsThatAreActuallyEnforced()
+    {
+        // The guidance tells an agent how to read a finding list it is only ever shown part of, and it
+        // does that by quoting numbers: how many check_library returns inline, and how large a
+        // list_findings page may be. Written out in prose, they go stale the moment either constant
+        // moves — and a wrong number here is worse than none, because an agent that trusts it stops
+        // paging early and reports a total it never read.
+        var style = (string)Prop(new GuidanceTools().GetGuidance("style"), "guidance")!;
+        var workflows = (string)Prop(new GuidanceTools().GetGuidance("workflows"), "guidance")!;
+
+        Assert.Contains(StyleTools.MaxFindingLimit.ToString(), style);
+        Assert.Contains(StyleTools.MaxReturnedFindings.ToString(), workflows);
+    }
+
     private static object? Prop(object o, string name) => o.GetType().GetProperty(name)!.GetValue(o);
 }
 

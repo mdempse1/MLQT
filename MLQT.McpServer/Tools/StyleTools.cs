@@ -23,8 +23,16 @@ namespace MLQT.McpServer.Tools;
 [McpServerToolType]
 public sealed class StyleTools
 {
-    private const int MaxReturnedFindings = 200;
-    private const int MaxFindingLimit = 1000;
+    /// <summary>How many findings a check returns inline, out of however many it stored.</summary>
+    /// <remarks>
+    /// Internal, with <see cref="MaxFindingLimit"/>, because get_guidance quotes both numbers to tell
+    /// an agent how to read a result it cannot see the whole of — and a number written out in prose
+    /// beside the constant it describes is one that goes stale silently. A test holds the two together.
+    /// </remarks>
+    internal const int MaxReturnedFindings = 200;
+
+    /// <summary>The largest page list_findings will return; a bigger limit is clamped, not refused.</summary>
+    internal const int MaxFindingLimit = 1000;
 
     private readonly ILibraryDataService _libraries;
     private readonly ICodeReviewService _codeReview;

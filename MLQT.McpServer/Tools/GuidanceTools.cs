@@ -64,6 +64,12 @@ public sealed class GuidanceTools
             Quality pass on a library:
               get_style_settings -> enable rules -> check_library -> list_findings.
               Parse errors are available from list_findings immediately after loading (no check needed).
+              check_library answers with a COUNT and a sample, not the findings: findingCount is the real
+              total and findings holds only the first 200 (truncated says so). Read the rest through
+              list_findings, and narrow before you page — a real library runs to tens of thousands, which
+              is worth nothing to you as a list. See the 'style' topic for how to page and what to filter
+              on; if what you actually want is the whole set in a file, the mlqt CLI writes it in one go
+              (mlqt check <lib> --format json --out findings.json) and costs you no context at all.
 
             Fix a spelling mistake:
               spell_check -> spelling_suggestions -> correct_spelling.
@@ -239,6 +245,27 @@ public sealed class GuidanceTools
               library and are inert here.
             - list_findings aggregates parse errors (available at load) plus style/spell findings from any
               check that has run. Filter by severity / source / classId.
+
+            Severities are real. A style finding carries the severity its rule is configured with, written
+            as 'Style error', 'Style warning' or 'Style info'; a parse diagnostic is a bare 'Error' or
+            'Fatal'. The filter is a case-insensitive substring, so 'error' matches both kinds and
+            'Style error' only the configured rules. Start with the errors: on a library with tens of
+            thousands of findings they are usually a few dozen, and they are the ones the team chose to
+            treat as errors.
+
+            Reading them all, when you really need to:
+            - list_findings pages. limit defaults to 100 and is capped at 1000 (a larger value is clamped
+              silently, not refused); offset skips. The result carries total (after filtering, before
+              paging), offset, count and items — loop until offset >= total.
+            - Order is by class id then line, applied before paging, so pages do not overlap or skip. It
+              is recomputed per call, so do not run a check between pages.
+            - Prefer narrowing to paging. severity for triage, classId to work on one class, source to
+              separate parse errors from style findings. 18,000 findings is 19 calls and more text than
+              you can reason about; the count and a per-severity breakdown usually answer the question
+              that was actually asked.
+            - For a genuine full dump, use the CLI rather than this server: `mlqt check <lib> --format
+              json --out findings.json` runs the same pipeline to the same counts and adds Fingerprint
+              and Status, which is what baseline/ratchet work needs. There is no bulk export here.
             """,
 
         ["spelling"] = """
