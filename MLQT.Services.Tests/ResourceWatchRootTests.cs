@@ -110,8 +110,14 @@ public class ResourceWatchRootTests : IDisposable
         await _service.AnalyzeResourcesAsync(GraphWith("MyLib.Model", files));
         _service.StartMonitoringResources();
 
+        // Compared the way the service compares paths. On Windows the roots are derived from the
+        // reverse index, whose keys NormalizePath has already case-folded, so the root comes back
+        // lowercased — true before this change too, and not something a watcher or a caller can tell.
         var watched = _service.GetWatchedRoots();
-        Assert.Equal(new[] { Path.GetFullPath(resources) }, watched);
+        Assert.Equal(
+            new[] { Path.GetFullPath(resources) },
+            watched,
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     }
 
     [Fact]
