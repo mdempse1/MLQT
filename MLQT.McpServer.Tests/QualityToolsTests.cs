@@ -153,8 +153,8 @@ public class QualityToolsTests
         // One unterminated string produces both a lexer and a parser diagnostic.
         var parseErrors = res.Findings.Where(v => v.Summary == "Parser error").ToList();
         Assert.NotEmpty(parseErrors);
-        // Error, not the "Style warning" every other finding projects to, and tagged as the parser's
-        // so a style re-run cannot clear it.
+        // A bare "Error", not the "Style ..." prefix a style finding projects to, and tagged as the
+        // parser's so a style re-run cannot clear it.
         Assert.All(parseErrors, v => Assert.Equal("Error", v.Severity));
         Assert.All(parseErrors, v => Assert.Equal("Parser", v.Source));
         Assert.Contains(parseErrors, v => v.Details.Contains("Unterminated string literal"));
@@ -281,6 +281,66 @@ public class QualityToolsTests
 
         Assert.NotNull(result.Note);
         Assert.Contains("de_DE", result.Note);
+    }
+
+    [Fact]
+    public async Task CheckLibrary_HonoursTheRepositorysAcceptedSpellings()
+    {
+        // check_library took the repository's rules and not its accepted spellings, so every word in
+        // .mlqt/dictionary.txt came back as a misspelling: over MSL that was 21,249 findings against
+        // the GUI's and CLI's 18,193, the whole 3,056 being MLQT.Spelling.Description and
+        // MLQT.Spelling.Documentation (B166). spell_check had the same bug and was fixed; its sibling
+        // was not, and nothing here compared the two. DictionaryScope.RootForLibrary existed for this
+        // call and was referenced only by its own test.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P.mo"] = "model P\n  Real q \"The Stodola coefficient\";\nequation\n q=1;\nend P;",
+            [Path.Combine(".mlqt", "dictionary.txt")] = "Stodola\n",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings
+        {
+            SpellCheckDescription = true,
+            SpellCheckLanguages = ["en_US"],
+        };
+
+        var accepted = ToolAssert.Ok<CheckResult>(await Style(host).CheckLibrary());
+        Assert.DoesNotContain(accepted.Findings, v => v.Summary.Contains("Stodola"));
+
+        // And the word list is what is doing it, not the spell checker happening to know the word.
+        File.WriteAllText(Path.Combine(dir, ".mlqt", "dictionary.txt"), "");
+        var unaccepted = ToolAssert.Ok<CheckResult>(await Style(host).CheckLibrary());
+        Assert.Contains(unaccepted.Findings, v => v.Summary.Contains("Stodola"));
+    }
+
+    [Fact]
+    public async Task CheckLibrary_DoesNotCountExcludedLibrariesAsChecked()
+    {
+        // modelsChecked counted every class that parsed, excluded or not, so the same run over MSL
+        // reported 7,833 classes against the CLI's 6,677 — the 1,156 difference being exactly what
+        // ExcludedLibraries took out of scope. The CLI subtracts them so that a mistyped library name
+        // shows up as an unexpected number rather than as a quiet pass; the number is worth nothing
+        // for that if the two tools count it differently.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["Keep.mo"] = "model Keep\nend Keep;",
+            ["Skip.mo"] = "model Skip\nend Skip;",
+        });
+        var added = await host.Repositories.AddRepositoryAsync(dir, startMonitoring: false);
+        await host.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        added.Repository.StyleSettings = new ModelicaGraph.StyleCheckingSettings
+        {
+            ClassHasDescription = true,
+            ExcludedLibraries = ["Skip"],
+        };
+
+        var res = ToolAssert.Ok<CheckResult>(await Style(host).CheckLibrary());
+
+        Assert.Equal(1, res.ModelsChecked);
+        Assert.DoesNotContain(res.Findings, v => v.ModelName.StartsWith("Skip"));
     }
 
     [Fact]

@@ -115,8 +115,14 @@ public sealed class StyleTools
         if (string.IsNullOrWhiteSpace(source))
             return new ToolError("source must be non-empty Modelica code.");
 
-        var effective = settings?.ToSettings() ?? SingleRepoSettings() ?? new StyleCheckingSettings();
-        var context = StyleCheckContext.BuildStateless(effective, _customDictionary, _dictionaryManager);
+        // A snippet belongs to no class, so the only sensible scope is the one loaded repository — and
+        // then it is that repository's accepted words as well as its rules. Taking the rules and not
+        // the words reports a term the team has accepted as a misspelling; see spell_check, which
+        // answers this the same way.
+        var repository = SingleRepository();
+        var effective = settings?.ToSettings() ?? repository?.StyleSettings ?? new StyleCheckingSettings();
+        var context = StyleCheckContext.BuildStateless(
+            effective, _customDictionary, _dictionaryManager, repository?.LocalPath);
         var findings = StyleCheckRunner.RunStateless(source, effective, context);
         return ToCheckResult(findings, modelsChecked: 1);
     }
@@ -194,6 +200,11 @@ public sealed class StyleTools
         var explicitSettings = settings?.ToSettings();
         var all = new ConcurrentBag<LogMessage>();
         var checkedIds = new List<string>();
+        // Two different questions, and conflating them is how the count came to disagree with the
+        // CLI's. `checkable` is "was there anything here to read at all", which is what decides
+        // whether this call can say anything; `modelsChecked` is what the caller is told, and leaves
+        // out the classes an ExcludedLibraries pattern puts out of scope.
+        var checkable = 0;
         var modelsChecked = 0;
 
         // Style-check the trimmed representation (packages without their standalone children, which have
@@ -214,7 +225,11 @@ public sealed class StyleTools
             if (!_session.DependenciesAnalyzed &&
                 targets.Any(l => GraphAnalysisRunner.RequiresDependencyAnalysis(explicitSettings ?? RepoSettingsForLibrary(l))))
             {
-                await GraphBuilder.AnalyzeDependenciesAsync(graph);
+                // With the library roots, so modelica:// URIs resolve against every loaded library —
+                // the argument the CLI passes here and GraphRefresh passes on the edit path. Left out,
+                // this one call built the resource edges from unresolved URIs, so whether a resource
+                // resolved depended on whether analyze_dependencies or check_library ran first.
+                await GraphBuilder.AnalyzeDependenciesAsync(graph, GraphRefresh.BuildLibraryInfos(_libraries));
                 _session.DependenciesAnalyzed = true;
             }
 
@@ -234,7 +249,15 @@ public sealed class StyleTools
 
                 // Each library is checked with its own repository settings unless an override was passed.
                 var effective = explicitSettings ?? RepoSettingsForLibrary(library);
-                modelsChecked += models.Count(m => !m.IsParseFailurePlaceholder);
+                // Classes an ExcludedLibraries pattern takes out of scope are not checked, so they are
+                // not counted as checked either — the CLI subtracts them for the reason it gives at
+                // its own count: a mistyped library name then shows up as an unexpected number rather
+                // than as a quiet pass. Counted here, MSL reported 7,833 classes against the CLI's
+                // 6,677 for the identical run, the 1,156 being exactly what the settings excluded.
+                var parseable = models.Count(m => !m.IsParseFailurePlaceholder);
+                checkable += parseable;
+                modelsChecked += parseable - models.Count(
+                    m => !m.IsParseFailurePlaceholder && effective.IsLibraryExcluded(m.Id));
                 checkedIds.AddRange(models.Select(m => m.Id));
 
                 // Go through the same LibraryCheckSession facade the CLI uses so the per-class checks and
@@ -242,18 +265,28 @@ public sealed class StyleTools
                 // the tools. Dependency-requiring analyses only run if analyze_dependencies ran first.
                 // Whether the edges are present is read off the graph itself rather than the session
                 // flag, so this can't disagree with what the GUI and CLI see for the same library.
+                //
+                // repositoryRoot is the repository the library came out of, because that is where its
+                // accepted spellings live. Omitted, every word in .mlqt/dictionary.txt came back as a
+                // misspelling and check_library reported thousands of findings the GUI and CLI do not
+                // (B166): over MSL, 21,249 against their 18,193, the whole of the difference being
+                // MLQT.Spelling.Description and MLQT.Spelling.Documentation. The settings were read
+                // from the repository all along — taking those and not the words is the same mistake
+                // spell_check had, and DictionaryScope is the one answer both now go through.
                 var findings = LibraryCheckSession.Check(
                     graph, models, effective, _customDictionary, _dictionaryManager,
-                    honorSuppressions: true);
+                    honorSuppressions: true,
+                    repositoryRoot: DictionaryScope.RootForLibrary(_repositories, library));
                 foreach (var finding in findings)
-                    // Finding.ToLogMessage renders everything as a style warning; a parse diagnostic
-                    // has to keep its Error/Fatal severity and its "Parser" source.
+                    // Finding.ToLogMessage renders a style finding's severity as "Style error/warning/
+                    // info"; a parse diagnostic has to keep the bare Error/Fatal and its "Parser"
+                    // source, so a style re-run cannot clear it.
                     all.Add(RuleIds.IsParseDiagnostic(finding.RuleId)
                         ? ParserErrorReporter.ToLogMessage(finding)
                         : finding.ToLogMessage());
             }
 
-            if (modelsChecked == 0)
+            if (checkable == 0)
                 return new ToolError("No checkable classes are loaded (all failed to parse, or none present).");
 
             var reported = all.ToList();
@@ -292,7 +325,10 @@ public sealed class StyleTools
                 "'line' is the line in 'filePath' - use that pair to edit the file - and 'modelLine' is " +
                 "the line within the class's own source, for a caller working from get_class_source.")]
     public object ListFindings(
-        [Description("Filter by severity substring (case-insensitive), e.g. 'Error', 'Warning'.")]
+        [Description("Filter by severity substring (case-insensitive). A style finding carries the " +
+                     "severity its rule is configured with, as 'Style error', 'Style warning' or " +
+                     "'Style info'; a parse diagnostic is a bare 'Error' or 'Fatal'. So 'error' " +
+                     "matches both kinds, and 'Style error' matches only the configured rules.")]
         string? severity = null,
         [Description("Filter by source, e.g. 'Parser' or 'StyleChecking'.")] string? source = null,
         [Description("Filter to a single class id.")] string? classId = null,
@@ -387,8 +423,17 @@ public sealed class StyleTools
         return repo?.StyleSettings ?? new StyleCheckingSettings();
     }
 
-    private StyleCheckingSettings? SingleRepoSettings()
-        => _repositories.Repositories.Count == 1 ? _repositories.Repositories[0].StyleSettings : null;
+    /// <summary>
+    /// The one loaded repository, or null when there is not exactly one — the scope a stateless
+    /// snippet check falls back to.
+    /// </summary>
+    /// <remarks>
+    /// Returns the repository rather than just its settings, because a caller needs both halves of it
+    /// and taking them from different places is what B166 was: the rules came from the repository and
+    /// the accepted spellings did not, so a word the team had accepted was reported as a misspelling.
+    /// </remarks>
+    private Repository? SingleRepository()
+        => _repositories.Repositories.Count == 1 ? _repositories.Repositories[0] : null;
 
     /// <summary>
     /// One finding, with its class-relative line mapped to the line in the file it sits in. A caller
