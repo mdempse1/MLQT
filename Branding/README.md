@@ -3,13 +3,52 @@
 MLQT's icon and logo, as supplied by the designer (phase 7b-5, 2026-09-08). Source assets: edit these
 and rebuild, rather than editing a copy inside a project.
 
+**The rasters are generated.** `mlqt-16/24/32/48/256/512.png` and `mlqt.ico` come from the two SVG
+sources below — edit an SVG, then:
+
+```bash
+python3 Branding/render-icons.py
+```
+
 | File | Use |
 |------|-----|
 | `mlqt.ico` | The Windows application icon. `MLQT.Photino.csproj` sets it as `ApplicationIcon` (the icon on the `.exe`, which Explorer and Alt-Tab use) **and** copies it beside the executable, because Photino's `SetIconFile` takes a path rather than a resource. |
 | `mlqt-256.png` | The same icon for GTK, which does not read `.ico`. Copied beside the executable and used by the Linux host. |
 | `mlqt-16/24/32/48/512.png` | The other raster sizes. Installed by the Linux `.deb` into `/usr/share/icons/hicolor/<size>/apps/mlqt.png`, which is where the shell picks the size it wants (7b-7). |
-| `mlqt-mark.svg`, `mlqt-mark-on-dark.svg`, `mlqt-mark-mono.svg` | The mark alone, for light, dark and single-colour contexts. |
+| `mlqt-app-icon.svg` | **The source for the application icon**, 24px and up: the mark on a light plate. See below. |
+| `mlqt-app-icon-16.svg` | The source for the 16px raster only, drawn on the pixel grid. See below. |
+| `render-icons.py` | Regenerates every raster above from those two sources. |
+| `mlqt-mark.svg`, `mlqt-mark-on-dark.svg`, `mlqt-mark-mono.svg` | The mark alone, for light, dark and single-colour contexts. **Not** the application icon — it has no plate, so it disappears on a dark desktop. |
 | `mlqt-lockup*.svg`, `mlqt-lockup*-2x.png` | Mark plus wordmark. `-full` includes the strapline. |
+
+## Why the application icon sits on a plate
+
+The mark is dark navy ink on a transparent background, and on Ubuntu's dark dock it nearly vanished.
+The obvious fix — ship a light and a dark icon and let the desktop choose — **is not available on
+either platform**, so the icon carries its own light background instead and reads on any desktop.
+
+**Linux.** `Icon=` in a desktop entry is a single key; the spec has no dark variant. Nor can the
+application supply one at runtime: as the Wayland trace further down this file shows, the window
+makes five `xdg_toplevel` requests and none of them is an icon — GNOME matches the window to the
+desktop entry by `app_id` and reads a static file, so MLQT is never asked. And switching Ubuntu to
+dark does not switch the *icon* theme; Yaru-dark keeps the same application icons, so shipping a
+second icon into a "dark" theme would not be consulted either.
+
+**Windows.** A Win32 `.exe` carries one icon group, which is what Explorer and Alt-Tab read. The
+`altform-lightunplated` asset variants that would do this are an MSIX/AppxManifest feature, and MLQT
+ships through Inno Setup as a classic Win32 application.
+
+So there is one icon, and it has to survive any background — which is why nearly every icon in the
+Yaru set and on the Windows 11 taskbar is plated. Three details are load-bearing:
+
+- **The 1px `#C9CDDE` edge is not decoration.** Without it the near-white plate dissolves into a
+  light Windows 11 taskbar — the dark-desktop problem mirrored. It was checked against both.
+- **A dark plate was rejected, not overlooked.** The brand navy reads well on a light desktop and
+  then merges into the dark dock, trading the original problem for a subtler one.
+- **16px has its own source.** Scaled down from the 96px artwork, the three bars fall below a pixel
+  each and merge into a grey smudge. `mlqt-app-icon-16.svg` draws two bars and a heavier tick with
+  every edge on a whole pixel. Judge any change to it zoomed, at 16px, on a dark background — at
+  100% on a light one it always looks fine.
 
 ## Why the icon is set three times
 
