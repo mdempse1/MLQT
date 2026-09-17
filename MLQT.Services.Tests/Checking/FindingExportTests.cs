@@ -19,13 +19,18 @@ namespace MLQT.Services.Tests.Checking;
 public class FindingExportTests
 {
     private static LogMessage Finding(
-        string model, string rule, int lineInClass, string? element = null, string details = "") =>
-        new(model, "warning", lineInClass, $"{rule} on {model}", details)
+        string model, string rule, int lineInClass, string? element = null, string details = "",
+        RuleSeverity severity = RuleSeverity.Warning) =>
+        // The display label and the stamped severity together, as Finding.ToLogMessage produces them:
+        // the export writes the second and the app's list shows the first, so a fixture carrying only
+        // one of them could not tell the two apart.
+        new(model, $"Style {severity.ToString().ToLowerInvariant()}", lineInClass, $"{rule} on {model}", details)
         {
             RuleId = rule,
             ElementPath = element,
             Source = "StyleChecking",
             Fingerprint = $"{model}:{rule}:{lineInClass}",
+            StyleSeverity = severity,
         };
 
     /// <summary>Class locations whose lines map to the file, which is the ordinary case.</summary>
@@ -61,6 +66,50 @@ public class FindingExportTests
         {
             Assert.True(finding.TryGetProperty(field, out _), $"the export no longer writes {field}");
         }
+    }
+
+    [Theory]
+    [InlineData(RuleSeverity.Error, "Error")]
+    [InlineData(RuleSeverity.Warning, "Warning")]
+    [InlineData(RuleSeverity.Info, "Info")]
+    public void SeverityIsTheLevelAlone_AsTheCliWritesIt(RuleSeverity severity, string expected)
+    {
+        // The other half of the promise, and the half nothing was asserting: the names matched while
+        // this meaning did not. The app's issue list shows "Style warning" so a style finding reads
+        // differently from a parse diagnostic; the CLI's report writes "Warning", and this file exists
+        // to be diffed against that one. Exported with the prefix, the severity column disagreed on
+        // every row. `Source` is what separates the two kinds here.
+        var json = FindingExport.ToJson(
+            [Finding("Lib.Model", "MLQT.Doc.ClassDescription", 3, severity: severity)],
+            Locations(("Lib.Model", Path.Combine("C:", "lib", "Model.mo"), 10)),
+            new Dictionary<string, string>(),
+            null, DateTime.UtcNow);
+
+        Assert.Equal(expected, Parse(json).GetProperty("findings")[0].GetProperty("Severity").GetString());
+    }
+
+    [Fact]
+    public void AParseDiagnosticsSeverityIsWrittenThrough()
+    {
+        // A parse diagnostic carries no configured severity — it is not a rule and never goes through
+        // the severity map — so there is nothing structured to write and its own "Error" stands. The
+        // CLI writes "Error" for it too, so the two still agree.
+        var parseError = new LogMessage("Lib.Model", "Error", 1, "Parser error", "unexpected token")
+        {
+            Source = "Parser",
+            RuleId = "MLQT.Parse.SyntaxError",
+            Fingerprint = "fp",
+        };
+
+        var json = FindingExport.ToJson(
+            [parseError],
+            Locations(("Lib.Model", Path.Combine("C:", "lib", "Model.mo"), 10)),
+            new Dictionary<string, string>(),
+            null, DateTime.UtcNow);
+
+        var finding = Parse(json).GetProperty("findings")[0];
+        Assert.Equal("Error", finding.GetProperty("Severity").GetString());
+        Assert.Equal("Parser", finding.GetProperty("Source").GetString());
     }
 
     [Fact]

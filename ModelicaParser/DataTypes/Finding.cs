@@ -76,6 +76,7 @@ public sealed record Finding
             ElementPath = ElementPath,
             Fingerprint = Fingerprint,
             Discriminator = Discriminator,
+            StyleSeverity = Severity,
         };
 
     /// <summary>

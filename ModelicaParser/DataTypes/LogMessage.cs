@@ -88,6 +88,19 @@ public class LogMessage
     /// </summary>
     public string? Discriminator { get; set; }
 
+    /// <summary>
+    /// For a style finding, the configured <see cref="RuleSeverity"/> it was stamped with; <c>null</c>
+    /// for anything else (a parse diagnostic, an external tool's output).
+    ///
+    /// <para>Here for the same reason <see cref="RuleId"/> and <see cref="Fingerprint"/> are: the
+    /// structured value travels with the message rather than being recovered from
+    /// <see cref="Severity"/>, which is a display string. A consumer that has to write the severity
+    /// in some other vocabulary — the desktop app's export, whose field names and meanings match the
+    /// CLI's findings array — would otherwise have to parse the label back apart, and the two
+    /// spellings would drift the moment either end was reworded.</para>
+    /// </summary>
+    public RuleSeverity? StyleSeverity { get; set; }
+
     public LogMessage(string modelName, string severity, int lineNumber, string summary, string details = "")
     {
         ModelName = modelName;

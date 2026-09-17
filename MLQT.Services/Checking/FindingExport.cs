@@ -19,6 +19,13 @@ namespace MLQT.Services.Checking;
 /// two up on model, rule and line — reported nearly every finding as exclusive to both sides. Both
 /// numbers are written now, and the line and path come from <see cref="ReportLocation"/>, which is
 /// the same code the CLI's report uses rather than a second copy of the rule.</para>
+///
+/// <para><b>Severity is the level on its own</b> — <c>"Warning"</c>, not the <c>"Style warning"</c>
+/// the app's own issue list shows. The list carries the prefix so a style finding reads differently
+/// from a parse diagnostic; this file has <c>Source</c> for that, and a severity column spelt one way
+/// here and another in the CLI's report would disagree on every row of a diff. It comes from
+/// <see cref="LogMessage.StyleSeverity"/>, the value stamped on the finding, so the two spellings
+/// cannot drift apart.</para>
 /// </remarks>
 public static class FindingExport
 {
@@ -81,7 +88,13 @@ public static class FindingExport
                 .Select(m => new
                 {
                     RuleId = m.RuleId,
-                    Severity = m.Severity,
+                    // The CLI writes the level on its own — "Warning", "Error", "Info" — so this does
+                    // too, from the severity carried on the message rather than from its display
+                    // string. The app's own list says "Style warning" to tell a style finding apart
+                    // from a parse diagnostic at a glance; here `Source` already draws that line, and
+                    // a second vocabulary in a file whose whole purpose is to be diffed against the
+                    // CLI's would make the severity column disagree on every row.
+                    Severity = m.StyleSeverity?.ToString() ?? m.Severity,
                     Status = statusOf?.Invoke(m),
                     Model = m.ModelName,
                     Element = m.ElementPath,
