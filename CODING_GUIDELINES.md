@@ -925,6 +925,83 @@ private static ModelNode CreateModel(string name) => new()
 };
 ```
 
+### A test is not finished until you have watched it fail
+
+**Verify by mutation, not by going green.** Put the defect in — or take the fix out — and watch the
+named test fail. A passing test is not evidence about the code until it has been evidence about
+itself. This is the single most expensive lesson in the repository's history, and every example
+below is a real test that passed while proving nothing:
+
+- A property test that proves a diff script *valid* passes happily on a non-minimal one.
+- Two browser journeys passed vacuously on first write: one against a fixture that was already
+  canonically formatted, one against a rule that ships switched off.
+- A convention sweep enumerated `*.razor`; when the logic moved to `.razor.cs` it ran over markup
+  with no code in it and every check passed.
+- A guard opened with `if (source is null) return;`, so anywhere the source was not present it
+  returned silently — counted as coverage, capable of nothing.
+- A test asserted the *shape* of a path and never whether that shape opens the file it names.
+- A bUnit test found an element in one render and clicked it in the next; it failed only on a
+  slower runner.
+
+```csharp
+// DON'T: a guard that can quietly do nothing
+[Fact]
+public void EveryRuleIsDocumented()
+{
+    var docs = FindDocumentation();
+    if (docs is null) return;          // runs nowhere, passes everywhere
+    ...
+}
+
+// DO: refuse to be vacuous, and say why in the comment
+[Fact]
+public void EveryRuleIsDocumented()
+{
+    // A silent no-op here would reintroduce exactly the failure this test exists to prevent.
+    var docs = FindDocumentation()
+        ?? throw new InvalidOperationException("documentation folder not found from " + AppContext.BaseDirectory);
+    ...
+}
+```
+
+**Write the positive control beside the guard.** A test that asserts "with the exclusion applied,
+nothing is reported" is satisfied by a fixture that reports nothing either way. Assert the fixture
+*does* report without the exclusion, in the same file, or the pair rots into two empty sets matching.
+
+**Hold two lists together in both directions.** "Everything measured is built" and "everything built
+is measured" are different assertions and a defect hides in whichever one you left out.
+
+### Guard tests: a stated rule that nothing enforces is not a rule
+
+The recurring defect shape here is a promise made in a document, a rule id, or a comment, which no
+test holds anyone to — and which is then quietly broken by an ordinary correct-looking change. When
+you write such a promise, write the test in the same commit.
+
+- A rule id implies another surface honours it → a test over the catalogue.
+- A setting is documented → a test that the name exists in the app.
+- A script or workflow must stay in step with a list → read it as text and compare.
+- A sweep you found a defect with is worth running twice → make it a test.
+
+Name the likely cause in the failure message. The count alone rarely tells the next person what to
+change:
+
+```csharp
+Assert.True(problems.Count == 0,
+    $"line {row}: {actual} cell separators, header has {expected}"
+    + " — an unescaped '|' in a cell splits it, even inside backticks; write it as \\|");
+```
+
+### Cross-platform tests assert behaviour, not strings
+
+Path handling is the repeated offender: eighteen tests once assumed Windows paths while the code
+under test did not. Build paths through the shared `TestPaths` helper rather than with literals, and
+where a test genuinely cannot be expressed the same way on both platforms, branch and **say why** in
+a comment. Assert that a path *resolves* — that `Path.Combine(root, relative)` reaches the file —
+rather than that it looks a particular way.
+
+**Do not write test source through a shell heredoc.** It turns backslashes into escapes silently,
+and the failure is invisible in exactly the cases where the result still compiles.
+
 ---
 
 ## Summary Checklist
@@ -945,6 +1022,10 @@ Before committing code, verify:
 - [ ] Blazor components properly dispose of event subscriptions
 - [ ] StateHasChanged used correctly (with InvokeAsync when needed)
 - [ ] No unnecessary StateHasChanged calls after awaited operations
+- [ ] Every new test was watched failing against the defect it claims to catch
+- [ ] No test can pass vacuously — guards refuse to no-op, exclusion tests have a positive control
+- [ ] A rule stated in a document or implied by a rule id has a test holding the code to it
+- [ ] Paths in tests come from the shared helper, not from Windows-shaped literals
 
 ---
 
@@ -955,3 +1036,4 @@ Before committing code, verify:
 | 2026-02-12 | 1.0 | - | Initial draft |
 | 2026-03-11 | 1.1 | - | Added null-proof return-value capture pattern; InvokeAsync method-group form; zero-warning checklist items |
 | 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |
+| 2026-09-17 | 1.3 | - | Added to Testing: verify by mutation rather than by going green, positive controls beside guards, guard tests for stated-but-unenforced rules, and cross-platform path assertions. Distilled from the phase 7a/7b design notes before those notes were retired |

@@ -134,7 +134,7 @@ public class PortabilityTests
 
         Assert.False(File.Exists(Path.Combine(root, "MLQT", "MLQT.csproj")),
             "MLQT/MLQT.csproj is back. The MAUI host was replaced by MLQT.Photino in phase 7b; if it "
-            + "is needed again, that is a decision to record in Design/design-phase7b-photino.md.");
+            + "is needed again, that is a decision to record in Design/backlog.md.");
 
         var offenders = EveryProject()
             .Where(p => Regex.IsMatch(File.ReadAllText(p), @"ProjectReference[^>]*MLQT[\/]MLQT\.csproj"))

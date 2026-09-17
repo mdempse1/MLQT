@@ -44,9 +44,9 @@ namespace MLQT.Journeys;
 /// Chromium, so these show the application's content exactly as it ships and the *window* not at all:
 /// no native title bar, no taskbar, no menu. Anything about the window itself — the icon, the window
 /// size, a native file dialog — needs a photograph of the real Photino host, because nothing can
-/// drive that automatically (7a says why: a CDP-driven WebView2 is work that cannot be carried to
-/// WebKitGTK). Nor can it produce the SVN pictures (no server to talk to) or the Dymola check
-/// progress (no Dymola). Those stay photographs; <c>Design/roadmap.md</c> B152 lists them.</para>
+/// drive that automatically - a CDP-driven WebView2 is work that cannot be carried to WebKitGTK. Nor
+/// can it produce the SVN pictures (no server to talk to) or the Dymola check progress (no Dymola).
+/// Those stay photographs; <c>Design/backlog.md</c> B152 lists them, and so does CLAUDE.md.</para>
 /// </remarks>
 [Collection(JourneyCollection.Name)]
 public class DocumentationScreenshots(TestHostFixture host) : IDisposable

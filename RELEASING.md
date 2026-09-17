@@ -55,7 +55,10 @@ which is what backlog B145 was.
 3. Each platform's job publishes the three tools, **runs all three from the published tree**, builds
    its installer, **installs it and runs all three again from where they landed** — the CLI answers
    `--version`, the MCP server completes an `initialize` handshake, and the GUI runs its 16
-   `/selftest` probes. The Windows job then uninstalls and checks nothing was left behind.
+   `/selftest` probes. Each then **installs the same artefact a second time, over itself**, because
+   that is what every user after the first release does and it is where a `.deb` that will not merge
+   a conffile, a maintainer script that assumed nothing was there, or a file in use shows up. The
+   Windows job finally uninstalls and checks nothing was left behind.
 4. The Windows job opens a **draft** release with generated notes; the Linux job adds the `.deb` to
    it. Review it and publish.
 
@@ -111,6 +114,12 @@ artifacts to a release created separately — which looked like the process, and
 worked around. Fixed for 2026.4.0; both now accept a bare tag, and `v*` still works.
 
 If you ever find yourself uploading installers by hand again, that is the symptom, not the process.
+
+Every place that starts the GUI to run its 16 probes and waits for it to exit is **bounded by a
+timeout**, and both release jobs carry `timeout-minutes: 60` on top. A self-test that never finishes
+otherwise burns the runner's whole six-hour allowance and reports nothing about why.
+`TestRunnerScriptTests` holds all four bounds and the job-level one, so losing one is a failing test
+rather than a six-hour runner.
 
 There was a second bug hiding behind the first, and it could only be reached once the first was
 fixed. The very first tag that did fire built everything and then failed on the last step with

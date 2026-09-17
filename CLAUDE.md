@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and `Design/design-phase7b-photino.md` is the record of how it was done.
+MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and `skill-desktop-host.md` carries what the host work taught.
 
 The MLQT UI is intended to be a users primary way to manage Modelica libraries in revision control systems and supports SVN and Git. The intention is for users to work with MLQT to review and commit changes, pull updates, create new branches and push changes to the revision control system. It also provides static analysis of Modelica code to understand the impact of changes, apply formatting rules and check code against style guidelines.
 
@@ -319,6 +319,9 @@ Detailed documentation for specialized subsystems is available in `.claude/skill
 | `skill-cytoscape.md` | CytoscapeGraph component, cytoscapeGraph.js, layout options, script loading |
 | `skill-spell-checking.md` | Spell checking system: SpellChecker, dictionaries, custom words, style rule visitors, UI integration |
 | `skill-naming-conventions.md` | Naming convention checking: NamingValidator, NamingStyle, presets, FollowNamingConvention visitor, exception names |
+| `skill-encrypted-libraries.md` | Reading a vendor's generated help HTML: `DymolaHelpParser`, stub synthesis, `IsExternalStub` write guards, asymmetric resolution, accuracy |
+| `skill-desktop-host.md` | The Photino host: `HostAssetManifest`, the silent failure modes, window placement and icons, the three platform services, WebKitGTK-vs-WebView2 differences, `/selftest` |
+| `skill-gui-testing.md` | The four test layers over `MLQT.Shared`, verify-by-mutation, guard tests, `MLQT.TestHost` + Playwright journeys, generated documentation screenshots |
 
 ## User Documentation
 
@@ -363,32 +366,39 @@ an ordinary run never writes to the repository.
 
 **The caption in the markdown is the specification for the shot.** Where the two disagree, one of
 them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
-A handful cannot be produced this way at all (Dymola, SVN, the window frame); `Design/roadmap.md`
-B152 lists which and says why.
+A handful cannot be produced this way at all and stay photographs: the two Dymola shots
+(`code-review-4`, and `code-review-5` because the Finding Details dialog opens only for a finding
+carrying `Details`, which a style rule never produces), the six SVN ones (no server),
+`settings-reference-4` (that section renders only for an SVN repository), `git-operations-6` (the
+merge dialog's ready-to-merge phase needs a clean working copy, and MLQT only re-reads working-copy
+status after a VCS operation *in the application*), and anything showing the window frame.
+`skill-gui-testing.md` has the detail.
 
 ## Planning and Design Notes
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
-record of what was decided and what shipped. **Read the roadmap before
-starting anything substantial**: it holds the agreed sequencing, the decisions behind it, and the
-backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
+forward plan and the working list. **Read both before starting anything substantial.**
 
 | Document | Covers |
 |----------|--------|
-| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
-| `Design/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
-| `Design/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
-| `Design/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
-| `Design/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
-| `Design/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
-| `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
-| `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
-| `Design/design-phase7-gui-tests.md` | Phase 7a — the code-behind sweep, the test harness it enables, and the `/selftest` conformance baseline captured before the desktop-host migration |
-| `Design/design-phase7b-photino.md` | Phase 7b — replacing MAUI with Photino: the gating spike, the host, the three platform services, Windows-then-Linux conformance, packaging, and the cutover. **A historical record — the migration is done** |
-| `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and where the project is |
+| `Design/backlog.md` | The working list: every open item, with an id (`B1`–`Bnn`) that is never reused |
 
-Each phase note records what actually landed, including where the implementation deviated from the
-sketch — so when the note and the code disagree, that is a defect in one of them, not a detail.
+**Backlog ids are permanent.** They are cited from code comments, test summaries, build scripts and
+CI workflows, so a retired id is never given to a new item — new items continue from the highest
+number ever issued, whatever has since been closed. `MLQT.Cli.Tests/MarkdownTableTests.cs` holds the
+file's table structure and id uniqueness.
+
+**The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
+they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skill files —
+`skill-encrypted-libraries.md`, `skill-desktop-host.md` and `skill-gui-testing.md` are the three
+written specifically to carry that material. Git history has the notes themselves if the reasoning
+behind a delivered decision is ever needed.
+
+**Write a design note for a phase that has not shipped**, not for one that has: a note describing
+what was planned rather than what exists is worse than no note, and every review of this repository
+found notes that had drifted into exactly that. Retire it when the phase lands and move what is
+durable into the code, the guidelines or a skill.
 
 ## Documentation Maintenance
 
@@ -398,14 +408,12 @@ Update this file when:
 - Modifying service interfaces
 - Adding/removing NuGet packages
 
-Update `Design/roadmap.md` when:
-- A backlog item is finished, or a new one is found — the backlog is the working list, and an item
-  that is done but still open reads as outstanding work to whoever picks it up next
-- A phase ships, or a decision changes the agreed sequencing
+Update `Design/backlog.md` when:
+- A backlog item is finished, or a new one is found — it is the working list, and an item that is
+  done but still open reads as outstanding work to whoever picks it up next
 
-Update the phase's design note when its implementation deviates from what the note describes. The
-notes are read as the record of what was built; a note describing something that was planned and not
-built is worse than no note.
+Update `Design/roadmap.md` when:
+- A phase ships, or a decision changes the agreed sequencing
 
 Update relevant skill files for specialized subsystem changes.
 
@@ -542,4 +550,4 @@ lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that p
 assert nothing), as is source-generated code. `MLQT.Shared` joined the ratchet in phase 7a-5 at 80%,
 measuring `.razor.cs` and **not** filtering `.razor` — measured, a component's `BuildRenderTree` is not
 counted at all, and the filter the plan called for would have removed five ordinary classes from the
-report instead. See `Design/design-phase7-gui-tests.md`.
+report instead. See `skill-gui-testing.md`.

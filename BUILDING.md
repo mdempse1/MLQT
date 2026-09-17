@@ -24,6 +24,13 @@ dotnet run --project MLQT.Photino/MLQT.Photino.csproj
 On a Linux machine with no display — a container or a CI agent — run the application under
 `xvfb-run -a`.
 
+Three environment variables exist for debugging the host itself, all off by default:
+`MLQT_LOG_CONSOLE` turns the console log target back on (logging is file-only, so a window that opens
+and renders nothing says nothing in the terminal it was started from — look in the log file);
+`MLQT_DEVTOOLS` re-enables the webview's developer tools; `MLQT_PHOTINO_LOG` raises Photino's own
+message verbosity, which is **0 in an ordinary run** because every render batch would otherwise be
+base64-written to stdout synchronously on the thread producing it.
+
 ## Running the tests
 
 Test projects run on **xUnit v3 / Microsoft.Testing.Platform**, opted into repository-wide by
@@ -48,6 +55,16 @@ a runner does not have:
 Use `-CoreOnly` on a machine without Dymola or OpenModelica. A failure is a failure whichever suite
 it is in — excusing a suite by category is how a real failure once sat unnoticed beside the
 legitimately unrunnable ones.
+
+**On Ubuntu 26.04 Playwright ships no browser at all.** `install` refuses — the newest platform it
+knows is `ubuntu24.04-x64`. `run-all-tests.ps1` sets `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`
+for you, after which Chromium downloads and every journey passes. **WebKit still will not launch**: its
+build links `libicu74` and `libvpx9`, and 26.04 ships `libicu78` and no `libvpx9`. So the WebKit
+rehearsal is a CI job by necessity — `nightly-webkit.yml`, on `ubuntu-latest`.
+
+Journeys pick their browser from `MLQT_JOURNEY_BROWSER` (chromium by default). An unrecognised value
+throws rather than falling back, because a typo that silently reverts to Chromium produces a green run
+that tested nothing.
 
 ### Coverage
 
@@ -130,11 +147,17 @@ the moment it is being merged.
 | **Desktop Self-Test** | Publishes the real Photino host on each platform, runs its 16 `/selftest` probes and diffs them against the committed baseline. The parity gate |
 | **Code Coverage** | Runs the suites with coverage collection and gates on the per-class ratchet |
 
+`.github/workflows/nightly-webkit.yml` runs the whole journey suite under Playwright's WebKit at
+02:00 UTC — the only automated thing that drives MLQT's real UI on a WebKit core, and the rehearsal
+for WebKitGTK. It cannot be dispatched from a branch: `workflow_dispatch` resolves a workflow on the
+**default branch** only.
+
 No job installs a .NET workload. `build/validate-sarif.ps1` also runs on every push, checking a report
 generated from `TestFixtures/SarifSmoke/` against the SARIF 2.1.0 schema.
 
 ## Project documentation
 
 Each project has a README with API documentation. Architectural conventions for contributors are in
-[CLAUDE.md](CLAUDE.md) and [CODING_GUIDELINES.md](CODING_GUIDELINES.md); the design record for each
-delivered phase is in [Design/](Design/).
+[CLAUDE.md](CLAUDE.md) and [CODING_GUIDELINES.md](CODING_GUIDELINES.md); the forward plan and the
+working list of open items are in [Design/roadmap.md](Design/roadmap.md) and
+[Design/backlog.md](Design/backlog.md).

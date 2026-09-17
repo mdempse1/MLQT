@@ -56,8 +56,8 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 }
 
 # The pages, in the order a reader meets them: the user documentation, then the root pages, then the
-# design notes. Design/ is included so that the links into it from Documentation/ resolve, and
-# because those notes are committed Markdown that gets reviewed like any other.
+# roadmap and backlog. Design/ is included because those are committed Markdown that gets reviewed
+# like any other, and their tables are the ones most easily broken without it showing in a diff.
 $pages = @(
     Get-ChildItem -Path (Join-Path $repo 'Documentation') -Filter '*.md' | Sort-Object Name
     Get-Item -Path (Join-Path $repo 'README.md'), (Join-Path $repo 'BUILDING.md'),
