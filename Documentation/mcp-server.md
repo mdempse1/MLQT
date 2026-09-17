@@ -136,6 +136,33 @@ The `MLQT_MCP_TOOL_LOG` environment variable overrides the marker file: set it t
 
 The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value.
 
+## When the client says the server disconnected
+
+A client that reports *"Server disconnected"* or *"Server transport closed unexpectedly"* is telling
+you the process exited before the protocol got started — which means **MLQT's own log will have
+nothing in it**, because the failure happened before logging was set up.
+
+Look in the **client's** log instead, which is where the server's stderr goes. Claude Desktop keeps
+one per server at `~/.config/Claude/logs/mcp-server-<name>.log` (`%AppData%\Claude\logs\` on
+Windows); Claude Code keeps one per session under `~/.cache/claude-cli-nodejs/<project>/mcp-logs-<name>/`.
+The .NET stack trace of whatever went wrong will be in there, above the client's own disconnect
+message.
+
+To check the server outside any client, ask it for a handshake directly — this is what the release
+build does as a smoke test:
+
+```bash
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"1"}}}'; sleep 5; } | mlqt-mcp-server
+```
+
+A working server answers with its name and version. The `sleep` matters: a pipe that closes as soon
+as the request is written ends the session before the server has replied, which looks exactly like a
+server that cannot start.
+
+On Linux, one startup failure has a cause outside MLQT — see
+[inotify limits](troubleshooting.md#file-monitoring-stops-working-on-linux-inotify-limits) in the
+troubleshooting guide.
+
 ## Related documentation
 
 - [MLQT.McpServer/README.md](../MLQT.McpServer/README.md) — full tool list, project layout, and developer notes

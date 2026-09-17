@@ -15,7 +15,10 @@ using MLQT.Services.Interfaces;
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
-var builder = Host.CreateApplicationBuilder(args);
+// The generic host's defaults, minus the appsettings.json file watcher — on Linux that watcher is an
+// inotify instance the server never needed, and taking it is enough to kill the process at startup on
+// a machine at the per-user limit (B163). See McpHostSettings.
+var builder = new HostApplicationBuilder(McpHostSettings.Create(args));
 
 // stdout is reserved for the MCP JSON-RPC stream; every log line MUST go to stderr or it will
 // corrupt the protocol. Route the console logger to stderr for all levels.

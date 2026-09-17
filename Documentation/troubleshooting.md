@@ -100,6 +100,38 @@
 - **Hidden directory**: Files inside `.git`, `.svn`, or other hidden directories are ignored.
 - **Monitor paused**: During VCS operations, the file monitor is temporarily paused. It should resume automatically. If it doesn't, try switching away from the repository and back.
 
+### File Monitoring Stops Working on Linux (inotify limits)
+
+**Symptom:** The log fills with `Failed to create watcher for ...`, quoting
+`The configured user limit (128) on the number of inotify instances has been reached`. Change
+detection goes quiet for some files, and other programs started afterwards — the MLQT MCP server
+included — may fail to start at all.
+
+Linux caps how many directory watches one user can hold. There are two separate limits, and it is
+almost always the first that runs out:
+
+| Limit | Default | What uses one |
+|-------|---------|---------------|
+| `fs.inotify.max_user_instances` | 128 | One per watcher MLQT creates — a repository, a resource tree |
+| `fs.inotify.max_user_watches` | 65536 | One per directory inside a watched tree |
+
+MLQT now watches one tree per repository and one per library's `Resources` directory, so a normal
+project costs a handful. If you still hit the limit, you are sharing it with everything else you run
+— editors, browsers and file sync tools are all heavy users. Raise it:
+
+```bash
+echo 'fs.inotify.max_user_instances=512' | sudo tee /etc/sysctl.d/99-inotify.conf
+sudo sysctl --system
+```
+
+To see where they have gone, count the inotify handles each process holds:
+
+```bash
+for p in /proc/[0-9]*; do n=$(ls -l $p/fd 2>/dev/null | grep -c inotify); [ "$n" -gt 0 ] && echo "$n $(cat $p/comm)"; done | sort -rn | head
+```
+
+This limit does not exist on Windows.
+
 ## The log file
 
 **When something isn't right, the log file is the one place to look.** MLQT records its whole startup

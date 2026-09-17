@@ -15,6 +15,9 @@ namespace MLQT.Services;
 /// </summary>
 public class ExternalResourceService : IExternalResourceService, IDisposable
 {
+    /// <summary>The directory name a Modelica library keeps its external resources under.</summary>
+    private const string ResourcesDirectoryName = "Resources";
+
     private readonly Dictionary<string, List<ExternalResourceReference>> _modelResources = new();
     private readonly Dictionary<string, HashSet<string>> _reverseIndex = new(
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -247,8 +250,18 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
 
     public void StartMonitoringResources()
     {
-        UpdateWatchers();
-        Info("ExternalResourceService", $"Started monitoring {_watchers.Count} resource directories");
+        var directories = UpdateWatchers();
+
+        int watchers;
+        lock (_lock)
+        {
+            watchers = _watchers.Count;
+        }
+
+        // Both numbers, because they are no longer the same one: the watchers are placed on collapsed
+        // roots (see WatchRootFor), so "84 directories" used to mean "84 watchers, and the rest failed".
+        Info("ExternalResourceService",
+            $"Started monitoring {directories} resource directories through {watchers} watcher(s)");
     }
 
     public void StopMonitoringResources()
@@ -353,18 +366,68 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     }
 
     /// <summary>
-    /// Updates FileSystemWatchers to match the current set of referenced resource directories.
-    /// Adds watchers for new directories and removes watchers for directories no longer referenced.
+    /// Where to put the watcher that covers <paramref name="directory"/>, and whether it has to be
+    /// recursive to do so.
     /// </summary>
-    private void UpdateWatchers()
+    /// <remarks>
+    /// <para>A library's resources live under <c>&lt;library&gt;/Resources/</c> — that is what a
+    /// <c>modelica://Library/Resources/...</c> URI resolves to — so a referenced directory almost
+    /// always has a <c>Resources</c> ancestor, and every resource directory of one library shares it.
+    /// Collapsing to that ancestor and watching it recursively turns the Modelica Standard Library's
+    /// ~190 resource directories into <b>two</b> watchers.</para>
+    ///
+    /// <para><b>This is a resource limit, not a tidiness exercise.</b> One
+    /// <see cref="FileSystemWatcher"/> costs one inotify <i>instance</i> on Linux and the per-user limit
+    /// is 128 by default, so the watcher-per-directory version could not monitor MSL at all: it logged
+    /// 265 failures, settled for the 84 it got, and starved every other process of the user's — which is
+    /// how it took the MCP server down (B163). Windows has no comparable limit, which is why the design
+    /// survived until the host moved.</para>
+    ///
+    /// <para>The outermost <c>Resources</c> is taken rather than the nearest, so a nested one collapses
+    /// too. A directory with no such ancestor — a resource referenced by absolute path from somewhere
+    /// else entirely — keeps the old behaviour: itself, not recursive, since there is no bound on what
+    /// its parent might contain.</para>
+    /// </remarks>
+    internal static (string Root, bool Recursive) WatchRootFor(string directory)
     {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        var full = Path.GetFullPath(directory);
+
+        string? resourcesRoot = null;
+        for (var dir = full; dir is not null; dir = Path.GetDirectoryName(dir))
+        {
+            if (string.Equals(Path.GetFileName(dir), ResourcesDirectoryName, comparison))
+                resourcesRoot = dir;   // keep going: the last match up the chain is the outermost
+        }
+
+        return resourcesRoot is null ? (full, false) : (resourcesRoot, true);
+    }
+
+    /// <summary>
+    /// Updates FileSystemWatchers to match the current set of referenced resource directories.
+    /// Adds watchers for newly covered roots and removes watchers no longer covering anything.
+    /// </summary>
+    /// <returns>The number of resource directories the watchers now cover.</returns>
+    /// <remarks>
+    /// Watchers are placed on the roots <see cref="WatchRootFor"/> chooses, not on the directories
+    /// themselves — several hundred referenced directories normally collapse to one watcher per library.
+    /// Nothing downstream depends on which directory an event arrived through:
+    /// <see cref="OnResourceFileSystemEvent"/> filters on the reverse index, so a recursive watcher
+    /// simply offers it more paths to reject.
+    /// </remarks>
+    private int UpdateWatchers()
+    {
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
         HashSet<string> neededDirectories;
 
         lock (_lock)
         {
             // Collect all unique directories containing referenced resource files
-            neededDirectories = new HashSet<string>(
-                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            neededDirectories = new HashSet<string>(comparer);
 
             foreach (var resolvedPath in _reverseIndex.Keys)
             {
@@ -376,65 +439,79 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
             }
         }
 
+        // Collapse those directories to the roots actually watched. Two directories that map to the
+        // same root always agree about recursion, because it is a property of the root.
+        var neededRoots = new Dictionary<string, bool>(comparer);
+        foreach (var dir in neededDirectories)
+        {
+            var (root, recursive) = WatchRootFor(dir);
+            neededRoots[root] = recursive;
+        }
+
         lock (_lock)
         {
-            // Remove watchers for directories no longer needed
+            // Remove watchers for roots no longer needed
             var toRemove = _watchers.Keys
-                .Where(dir => !neededDirectories.Contains(dir))
+                .Where(root => !neededRoots.ContainsKey(root))
                 .ToList();
 
-            foreach (var dir in toRemove)
+            foreach (var root in toRemove)
             {
                 try
                 {
-                    _watchers[dir].EnableRaisingEvents = false;
-                    _watchers[dir].Dispose();
+                    _watchers[root].EnableRaisingEvents = false;
+                    _watchers[root].Dispose();
                 }
                 catch (Exception ex)
                 {
-                    Warn("ExternalResourceService", $"Error disposing watcher for {dir}: {ex.Message}");
+                    Warn("ExternalResourceService", $"Error disposing watcher for {root}: {ex.Message}");
                 }
-                _watchers.Remove(dir);
+                _watchers.Remove(root);
             }
 
-            // Add watchers for new directories
-            foreach (var dir in neededDirectories)
+            // Add watchers for new roots
+            foreach (var (root, recursive) in neededRoots)
             {
-                if (_watchers.ContainsKey(dir))
+                if (_watchers.ContainsKey(root))
                     continue;
 
                 try
                 {
-                    var watcher = new FileSystemWatcher(dir)
+                    var watcher = new FileSystemWatcher(root)
                     {
                         NotifyFilter = NotifyFilters.FileName
                                      | NotifyFilters.LastWrite
                                      | NotifyFilters.Size,
                         Filter = "*.*",
-                        IncludeSubdirectories = false,
+                        IncludeSubdirectories = recursive,
                         EnableRaisingEvents = true
                     };
 
-                    var capturedDir = dir;
-                    watcher.Created += (s, e) => OnResourceFileSystemEvent(capturedDir, e.FullPath, WatcherChangeTypes.Created);
-                    watcher.Changed += (s, e) => OnResourceFileSystemEvent(capturedDir, e.FullPath, WatcherChangeTypes.Changed);
-                    watcher.Deleted += (s, e) => OnResourceFileSystemEvent(capturedDir, e.FullPath, WatcherChangeTypes.Deleted);
+                    var capturedRoot = root;
+                    watcher.Created += (s, e) => OnResourceFileSystemEvent(capturedRoot, e.FullPath, WatcherChangeTypes.Created);
+                    watcher.Changed += (s, e) => OnResourceFileSystemEvent(capturedRoot, e.FullPath, WatcherChangeTypes.Changed);
+                    watcher.Deleted += (s, e) => OnResourceFileSystemEvent(capturedRoot, e.FullPath, WatcherChangeTypes.Deleted);
                     watcher.Renamed += (s, e) =>
                     {
-                        OnResourceFileSystemEvent(capturedDir, e.OldFullPath, WatcherChangeTypes.Deleted);
-                        OnResourceFileSystemEvent(capturedDir, e.FullPath, WatcherChangeTypes.Created);
+                        OnResourceFileSystemEvent(capturedRoot, e.OldFullPath, WatcherChangeTypes.Deleted);
+                        OnResourceFileSystemEvent(capturedRoot, e.FullPath, WatcherChangeTypes.Created);
                     };
-                    watcher.Error += (s, e) => OnWatcherError(capturedDir, e.GetException());
+                    watcher.Error += (s, e) => OnWatcherError(capturedRoot, e.GetException());
 
-                    _watchers[dir] = watcher;
-                    Debug("ExternalResourceService", $"Watching resource directory: {dir}");
+                    _watchers[root] = watcher;
+                    Debug("ExternalResourceService",
+                        recursive
+                            ? $"Watching resource tree: {root}"
+                            : $"Watching resource directory: {root}");
                 }
                 catch (Exception ex)
                 {
-                    Error("ExternalResourceService", $"Failed to create watcher for {dir}", ex);
+                    Error("ExternalResourceService", $"Failed to create watcher for {root}", ex);
                 }
             }
         }
+
+        return neededDirectories.Count;
     }
 
     /// <summary>
@@ -579,6 +656,18 @@ public class ExternalResourceService : IExternalResourceService, IDisposable
     {
         var fullPath = Path.GetFullPath(path);
         return OperatingSystem.IsWindows() ? fullPath.ToLowerInvariant() : fullPath;
+    }
+
+    /// <summary>
+    /// The directories currently carrying a watcher (for testing). One per library's resource tree,
+    /// not one per referenced directory — see <see cref="WatchRootFor"/>.
+    /// </summary>
+    internal IReadOnlyList<string> GetWatchedRoots()
+    {
+        lock (_lock)
+        {
+            return _watchers.Keys.ToList().AsReadOnly();
+        }
     }
 
     /// <summary>
