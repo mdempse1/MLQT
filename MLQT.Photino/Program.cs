@@ -90,6 +90,26 @@ internal static class Program
         app.MainWindow.LogVerbosity =
             int.TryParse(Environment.GetEnvironmentVariable("MLQT_PHOTINO_LOG"), out var verbosity) ? verbosity : 0;
 
+        // The webview's own right-click menu, and the Inspect entry on it. Both are on by default and
+        // neither belongs to MLQT: what a user right-clicking the page got was WebView2's menu on
+        // Windows and WebKitGTK's on Linux, offering to reload the page, to go back, and to open the
+        // developer tools on MLQT's markup. None of that is anything this application does.
+        //
+        // Set before Run, which is what creates the native window, so both are applied as it is made
+        // rather than to a window that has already been shown with them on.
+        //
+        // This is the *default* menu only - the DOM contextmenu event still fires on both platforms,
+        // which is what MLQT's own menus are built on. spellCheck.js listens for it on the document
+        // and opens the correction menu for a misspelled word in Code Review; that keeps working, and
+        // is the one behaviour to re-check by hand if this line is ever revisited.
+        app.MainWindow.SetContextMenuEnabled(false);
+
+        // Separately, because the menu is not the only way in: F12 and Ctrl+Shift+I open the developer
+        // tools directly. Off for the same reason, with an escape hatch in the shape the rest of this
+        // file uses - set MLQT_DEVTOOLS to get them back when debugging the host itself.
+        app.MainWindow.SetDevToolsEnabled(
+            Environment.GetEnvironmentVariable("MLQT_DEVTOOLS") is { Length: > 0 });
+
         var icon = ApplicationIcon();
 
         app.MainWindow

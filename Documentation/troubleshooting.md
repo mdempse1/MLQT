@@ -129,6 +129,12 @@ exchanges with the webview. It is silent by default for a reason: a page update 
 messages, base64-encoded and tens of kilobytes, and printing them all makes the application
 noticeably slower to use. Turn it on to diagnose the window, not to watch the application work.
 
+MLQT does not give you the webview's own right-click menu, and right-clicking the page does nothing
+unless MLQT has a menu for what you clicked (the correction menu on a misspelled word in Code Review
+is the one you are most likely to meet). The developer tools are off with it, for the same reason.
+If you are diagnosing a display problem and want them, set `MLQT_DEVTOOLS=1` before starting MLQT and
+F12 will open them.
+
 ## Frequently Asked Questions
 
 ### Can I edit Modelica code in MLQT?
