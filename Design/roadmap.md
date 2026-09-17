@@ -67,9 +67,13 @@ cannot be filtered by rule — every new rule makes that worse.
 
 The items are **B168–B203** in [backlog.md](backlog.md), grouped by area: findings and the Code
 Review page; library browser and navigation; projects, repositories and startup; analysis
-correctness; rules and formatting; external tools; MCP; revision control; the build. **B143 should be
-dealt with first and separately** — running `nightly-webkit.yml` by hand immediately after the merge,
-because it has never run at all.
+correctness; rules and formatting; external tools; MCP; revision control; the build. **B143 was dealt
+with first and separately** — `nightly-webkit.yml` was triggered by hand on 2026-09-17, having never
+run at all, and passed with 57 WebKit journeys executed and none skipped.
+
+**The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
+into eight work packages by shared root cause rather than by area, and records the eleven root causes
+established while planning — two of which change what the fix is.
 
 Two of the items are larger than the rest and worth naming here rather than only in the table:
 
