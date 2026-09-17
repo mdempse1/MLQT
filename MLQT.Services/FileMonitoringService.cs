@@ -12,8 +12,22 @@ namespace MLQT.Services;
 /// </summary>
 public class FileMonitoringService : IFileMonitoringService, IDisposable
 {
-    private readonly Dictionary<string, FileSystemWatcher> _watchers = new();
-    private readonly Dictionary<string, string> _repositoryPaths = new(); // repositoryId -> localPath
+    // Keyed by watched path, not by repository (B168). Repositories share a path more often than it
+    // looks: every repository monitors its VcsRootPath rather than its own folder, deliberately, so
+    // two libraries checked out of one working copy are two repositories watching one directory — and
+    // the same library reached both as a project repository and through the reference paths is the
+    // same thing again. Keyed by repository that produced one OS watcher per repository over the same
+    // tree, which wastes handles (inotify instances are scarce enough on Linux that this project has
+    // already exhausted them once) and, worse, made the two interfere: _lastChange is keyed by path
+    // alone, so the second watcher's event for the same file looked like a duplicate of the first
+    // and was debounced away, leaving one of the two repositories never told its file had changed.
+    //
+    // One watcher per path now, fanning out to every repository subscribed to it, so the debounce is
+    // applied once per edit and every subscriber still hears about it.
+    private readonly Dictionary<string, FileSystemWatcher> _watchers = new(PathComparer);
+    private readonly Dictionary<string, HashSet<string>> _subscribers = new(PathComparer); // path -> repositoryIds
+    private readonly Dictionary<string, string> _repositoryPaths = new(); // repositoryId -> watched path
+
     private readonly List<FileChangeInfo> _pendingChanges = new();
     private readonly object _lock = new();
 
@@ -23,10 +37,58 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
     private readonly ConcurrentDictionary<string, (DateTime Time, FileChangeType Type)> _lastChange = new();
     private readonly TimeSpan _debounceInterval = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>
+    /// How two watched paths are told apart. Case-insensitive on Windows and macOS, case-sensitive on
+    /// Linux — the same rule the filesystem itself applies, so that two spellings of one directory do
+    /// not become two watchers on it.
+    /// </summary>
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+
+    /// <summary>
+    /// The key a path is registered under: absolute, with any trailing separator removed, so that
+    /// <c>C:\Repo</c> and <c>C:\Repo\</c> are one watcher rather than two.
+    /// </summary>
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // An unusable path is not a reason to throw from here: StartMonitoring already declines
+            // a directory that is not there, and this keeps that the only outcome.
+            return path;
+        }
+    }
+
     public bool IsMonitoring => _watchers.Count > 0;
 
+    /// <summary>
+    /// How many <see cref="FileSystemWatcher"/> instances are open — directories, not repositories,
+    /// so several repositories sharing a working copy cost one between them (B168).
+    ///
+    /// <para>Here because the number is an operational fact rather than a detail: each watcher is an
+    /// inotify instance on Linux, the per-process limit is small, and this project has already
+    /// exhausted it once — 85 of 128 taken by one watcher per resource directory. A count that grows
+    /// with repositories rather than with directories is the shape of that failure returning.</para>
+    /// </summary>
+    public int WatchedPathCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _watchers.Count;
+            }
+        }
+    }
+
     /// <inheritdoc/>
-    public bool IsMonitoringRepository(string repositoryId) => _watchers.ContainsKey(repositoryId);
+    // Asked of the repository registry, not the watcher registry — the watchers are keyed by path now
+    // and several repositories can share one.
+    public bool IsMonitoringRepository(string repositoryId) => _repositoryPaths.ContainsKey(repositoryId);
 
     public IReadOnlyList<FileChangeInfo> PendingChanges
     {
@@ -67,17 +129,39 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
             return;
         }
 
+        var watchedPath = NormalizePath(localPath);
+
         lock (_lock)
         {
-            // Stop existing watcher if any
-            if (_watchers.ContainsKey(repositoryId))
+            // Whatever this repository was watching before, it is not watching it now. This also
+            // releases the old path's watcher when it was the last subscriber to it.
+            if (_repositoryPaths.ContainsKey(repositoryId))
             {
                 StopMonitoringInternal(repositoryId);
             }
 
+            _repositoryPaths[repositoryId] = watchedPath;
+
+            if (!_subscribers.TryGetValue(watchedPath, out var subscribers))
+            {
+                subscribers = new HashSet<string>(StringComparer.Ordinal);
+                _subscribers[watchedPath] = subscribers;
+            }
+            subscribers.Add(repositoryId);
+
+            // Another repository is already watching this directory; join it rather than opening a
+            // second watcher over the same tree.
+            if (_watchers.ContainsKey(watchedPath))
+            {
+                Info("FileMonitoringService",
+                    $"Repository {repositoryId} joined the existing watcher at {watchedPath} " +
+                    $"({subscribers.Count} repositories)");
+                return;
+            }
+
             try
             {
-                var watcher = new FileSystemWatcher(localPath)
+                var watcher = new FileSystemWatcher(watchedPath)
                 {
                     NotifyFilter = NotifyFilters.FileName
                                  | NotifyFilters.DirectoryName
@@ -88,20 +172,29 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
                     EnableRaisingEvents = true
                 };
 
-                watcher.Created += (s, e) => OnFileSystemEvent(repositoryId, e.FullPath, FileChangeType.Added);
-                watcher.Changed += (s, e) => OnFileSystemEvent(repositoryId, e.FullPath, FileChangeType.Modified);
-                watcher.Deleted += (s, e) => OnFileSystemEvent(repositoryId, e.FullPath, FileChangeType.Deleted);
-                watcher.Renamed += (s, e) => OnFileSystemRenamedEvent(repositoryId, e.OldFullPath, e.FullPath);
-                watcher.Error += (s, e) => OnWatcherError(repositoryId, e.GetException());
+                // The handlers close over the *path*, not over the repository that happened to ask
+                // first: which repositories care is looked up when the event arrives, so one joining
+                // or leaving later does not need the watcher rebuilt.
+                watcher.Created += (s, e) => OnFileSystemEvent(watchedPath, e.FullPath, FileChangeType.Added);
+                watcher.Changed += (s, e) => OnFileSystemEvent(watchedPath, e.FullPath, FileChangeType.Modified);
+                watcher.Deleted += (s, e) => OnFileSystemEvent(watchedPath, e.FullPath, FileChangeType.Deleted);
+                watcher.Renamed += (s, e) => OnFileSystemRenamedEvent(watchedPath, e.OldFullPath, e.FullPath);
+                watcher.Error += (s, e) => OnWatcherError(watchedPath, e.GetException());
 
-                _watchers[repositoryId] = watcher;
-                _repositoryPaths[repositoryId] = localPath;
+                _watchers[watchedPath] = watcher;
 
-                Info("FileMonitoringService", $"Started monitoring repository {repositoryId} at {localPath}");
+                Info("FileMonitoringService", $"Started monitoring repository {repositoryId} at {watchedPath}");
             }
             catch (Exception ex)
             {
-                Error("FileMonitoringService", $"Failed to start monitoring {localPath}", ex);
+                // The subscription is rolled back, or the repository would read as monitored while
+                // nothing was watching for it.
+                subscribers.Remove(repositoryId);
+                if (subscribers.Count == 0)
+                    _subscribers.Remove(watchedPath);
+                _repositoryPaths.Remove(repositoryId);
+
+                Error("FileMonitoringService", $"Failed to start monitoring {watchedPath}", ex);
             }
         }
     }
@@ -116,7 +209,29 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
 
     private void StopMonitoringInternal(string repositoryId)
     {
-        if (_watchers.TryGetValue(repositoryId, out var watcher))
+        if (!_repositoryPaths.TryGetValue(repositoryId, out var watchedPath))
+            return;
+
+        _repositoryPaths.Remove(repositoryId);
+
+        if (_subscribers.TryGetValue(watchedPath, out var subscribers))
+        {
+            subscribers.Remove(repositoryId);
+
+            // Another repository is still watching this directory, so the watcher stays. This is what
+            // makes StopMonitoring safe for one library of a working copy that holds several: it used
+            // to be the only subscriber by construction, because every repository had its own watcher.
+            if (subscribers.Count > 0)
+            {
+                Info("FileMonitoringService",
+                    $"Stopped monitoring repository {repositoryId}; {subscribers.Count} still watching {watchedPath}");
+                return;
+            }
+
+            _subscribers.Remove(watchedPath);
+        }
+
+        if (_watchers.TryGetValue(watchedPath, out var watcher))
         {
             try
             {
@@ -128,11 +243,10 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
                 Warn("FileMonitoringService", $"Error disposing watcher for repository {repositoryId}: {ex.Message}");
             }
 
-            _watchers.Remove(repositoryId);
-            _repositoryPaths.Remove(repositoryId);
-
-            Info("FileMonitoringService", $"Stopped monitoring repository {repositoryId}");
+            _watchers.Remove(watchedPath);
         }
+
+        Info("FileMonitoringService", $"Stopped monitoring repository {repositoryId}");
     }
 
     public void NotifyFileActivity(string repositoryId)
@@ -144,7 +258,9 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
     {
         lock (_lock)
         {
-            foreach (var repositoryId in _watchers.Keys.ToList())
+            // Over the repositories, not the watchers: the watchers are keyed by path now, and one
+            // path can have several repositories on it.
+            foreach (var repositoryId in _repositoryPaths.Keys.ToList())
             {
                 StopMonitoringInternal(repositoryId);
             }
@@ -183,12 +299,32 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
         OnPendingChangesUpdated?.Invoke();
     }
 
-    private void OnFileSystemEvent(string repositoryId, string fullPath, FileChangeType changeType)
+    /// <summary>
+    /// The repositories watching a path, as a snapshot. Taken under the lock and then used outside it,
+    /// because raising the events below with the lock held is how a handler that calls back in
+    /// deadlocks.
+    /// </summary>
+    private List<string> SubscribersOf(string watchedPath)
     {
+        lock (_lock)
+        {
+            return _subscribers.TryGetValue(watchedPath, out var subscribers)
+                ? subscribers.ToList()
+                : [];
+        }
+    }
+
+    private void OnFileSystemEvent(string watchedPath, string fullPath, FileChangeType changeType)
+    {
+        var repositories = SubscribersOf(watchedPath);
+
         // Always signal broad file activity (used to refresh VCS status indicators for
         // non-Modelica files), but skip hidden VCS directories to avoid noise from git/svn internals.
         if (!FileMonitoringServiceHelpers.IsInHiddenDirectory(fullPath))
-            OnRepositoryFileActivity?.Invoke(repositoryId);
+        {
+            foreach (var repositoryId in repositories)
+                OnRepositoryFileActivity?.Invoke(repositoryId);
+        }
 
         // Filter: only track .mo files, package.order files, and directory changes
         if (!ShouldTrackPath(fullPath, changeType))
@@ -209,32 +345,38 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
             ? Directory.Exists(fullPath)
             : !Path.HasExtension(fullPath);
 
-        var changeInfo = new FileChangeInfo
+        // One debounce decision per edit, then one change per subscribed repository. The debounce
+        // above is keyed by path alone, so doing it per repository - which is what two watchers over
+        // one tree amounted to - meant the first repository's event consumed the entry and the
+        // second repository's identical event was discarded as a duplicate of it (B168).
+        foreach (var repositoryId in repositories)
         {
-            ChangeType = changeType,
-            FilePath = fullPath,
-            RepositoryId = repositoryId,
-            IsDirectory = isDirectory
-        };
-
-        AddOrUpdateChange(changeInfo);
+            AddOrUpdateChange(new FileChangeInfo
+            {
+                ChangeType = changeType,
+                FilePath = fullPath,
+                RepositoryId = repositoryId,
+                IsDirectory = isDirectory
+            });
+        }
     }
 
-    private void OnFileSystemRenamedEvent(string repositoryId, string oldPath, string newPath)
+    private void OnFileSystemRenamedEvent(string watchedPath, string oldPath, string newPath)
     {
         if (!ShouldTrackPath(newPath, FileChangeType.Renamed) && !ShouldTrackPath(oldPath, FileChangeType.Renamed))
             return;
 
-        var changeInfo = new FileChangeInfo
+        foreach (var repositoryId in SubscribersOf(watchedPath))
         {
-            ChangeType = FileChangeType.Renamed,
-            FilePath = newPath,
-            OldFilePath = oldPath,
-            RepositoryId = repositoryId,
-            IsDirectory = Directory.Exists(newPath)
-        };
-
-        AddOrUpdateChange(changeInfo);
+            AddOrUpdateChange(new FileChangeInfo
+            {
+                ChangeType = FileChangeType.Renamed,
+                FilePath = newPath,
+                OldFilePath = oldPath,
+                RepositoryId = repositoryId,
+                IsDirectory = Directory.Exists(newPath)
+            });
+        }
     }
 
     private void OnWatcherError(string repositoryId, Exception ex)

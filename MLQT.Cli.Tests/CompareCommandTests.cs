@@ -172,6 +172,29 @@ public class CompareCommandTests
     }
 
     [Fact]
+    public void AFileThatCannotBeParsed_FailsTheGateOnItsOwnAccount()
+    {
+        // B201 removed the side effect this used to lean on. An unreadable file produced no classes
+        // at all, so everything it held read as missing and the gate failed because of the count.
+        // Now it leaves a placeholder that answers to the name the file is expected to define, so
+        // `Gain.mo` holding exactly `Gain` no longer looks missing — and without an explicit rule the
+        // command would have exited 0 on a library with a merge conflict marker in it.
+        //
+        // The distinguishing assertion is that nothing is reported missing and it still fails.
+        using var left = Original();
+        using var right = Restructured();
+        File.WriteAllText(
+            Path.Combine(right.Path, "Demo", "Blocks", "Gain.mo"),
+            "within Demo.Blocks;\n<<<<<<< HEAD\nmodel Gain\n");
+
+        var (code, stdout, _) = Run("compare", left.Path, right.Path);
+
+        Assert.Contains("No classes are missing from B.", stdout);
+        Assert.Equal(ExitCodes.GateFailed, code);
+        Assert.Contains("cannot be trusted", stdout);
+    }
+
+    [Fact]
     public void Json_CarriesTheCountsAndEveryMissingName()
     {
         using var left = Original();

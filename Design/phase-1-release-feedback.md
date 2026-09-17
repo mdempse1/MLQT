@@ -117,26 +117,51 @@ claims.
 This package existed to get the rhythm going against work that cannot go wrong, and to take five
 items off a list of thirty-six before starting anything that needs thought.
 
-### WP1 — Correctness: the things that lose data or lie about state
+### WP1 — Correctness: the things that lose data or lie about state — **B169 outstanding**
 
-**B201, B192, B198, B168, B169, B172** · 6 items · S–M
+**B201 ✅, B192 ✅, B168 ✅, B172 ✅, B198 narrowed, B204 ✅ (new)** · B169 not started
 
-Ordered by severity, not by size. **B201 is first in the phase after WP0**: a real library with one
-malformed file silently loses those classes, and the fix is a one-line condition change plus a
-regression test carrying the exact `within` / `import` / class shape found in ModelicaTools.
+| # | What it turned out to be |
+|---|------|
+| B201 | Worse than reported. The placeholder fired on `hasFatal && models.Count == 0`, and **outright garbage produced no placeholder either** — the path was dead for every failure that did not throw. Now "errors recorded and no classes extracted", whatever severity. The boundary is drawn against a class the parser *salvages*: that keeps its own node and its diagnostic, and a placeholder there would be a regression |
+| B192 | The three silent links in the chain: `CreateProject` does not await its save, `LoadRepositorySettingsAsync` replaces the in-memory project list from disk, and it then resolved the active project with `?? Projects.First()`. An explicitly requested id is no longer substituted; the fallback is kept for a saved active id naming a deleted project, which is what it was written for |
+| B168 | Watchers were keyed by repository, and repositories share a path routinely — every one watches its `VcsRootPath`, so two libraries in one working copy are two watchers over one tree. One watcher per path now, reference-counted, fanning out to each subscriber |
+| B172 | The `Include` regex discarded the delimiter, so `<stdio.h>` resolved to `<library>/Resources/Include/stdio.h` and every external function using the C standard library reported a missing file. **C's own rule carries the fix** — `<name>` is the compiler's search path, `"name"` is the project's — so no platform include paths and no list are needed for the main case; a short standard-name list is the second line for `#include "math.h"` |
+| B204 | `ExtractLibraryName` looked for the outermost class with `ParentModelName == null`, and it is the **empty string**, never null. It returned null on every call, ever, and every caller fell back to the folder name. Invisible while the two agree, which they usually do |
 
-B192 and B198 are both the project/repository load path and belong in one change — B192's diagnosis
-(a stale settings snapshot) is a plausible contributor to B198 as well, so **test B198 against the
-B192 fix before investigating it separately**. If it survives, take the backlog's own advice and
-check the single-library-at-top-level layout in `LibraryDiscovery` first.
+**B198 is narrowed, not fixed, and should not be closed.** The layout hypothesis the backlog named is
+disproven: a repository with `package.mo` at the top level is discovered, loaded, recorded, announced
+and visible to the query MainLayout gates its analysis on — `AddRepositoryLoadsItsLibraryTests`
+asserts each of those. B204 was found in that investigation and may be the whole of what the user
+saw. Reproducing it needs the user's own repository; the next question is whether the library was
+absent from the tree or merely misnamed.
 
-B168 and B169 are one shape twice: a thing reached two ways, resolved inconsistently. B169 needs a
-reproduction with two libraries whose registered roots share a prefix **before** anything is changed.
+**B169 is the one item of WP1 not attempted.** It needs a reproduction with two libraries whose
+registered resource roots share a prefix, and the backlog is explicit that nothing should change
+before that exists. It cannot be constructed from the fixtures here — it wants encrypted libraries
+with registered `Resources/` roots.
 
-B172 needs a product decision: resolve against the platform's real include paths (correct,
-platform-specific) or recognise standard headers by name (cheap, covers the complaint). Recommend the
-name list first, behind the same rule id, so the correct version can replace it later without a
-second finding appearing where users have already accepted one.
+**Three lessons, all about tests rather than code.**
+
+- **B201 hid behind a test written to cover it.**
+  `LoadModelicaFile_UnparseableContent_CreatesPlaceholderWithFullSource` wrapped its assertions in
+  `if (placeholder != null)` and recorded that producing nothing "is still acceptable — no crash
+  reached the caller". That is the defect, excused in the test for the machinery that prevents it.
+  A conditional assertion is not an assertion.
+- **Two of my own tests were vacuous, and only the controls caught them.** The first B168 suite
+  passed against the unfixed code — everything it asserted was already true, because each repository
+  had its own watcher. A real-filesystem test written to replace it *also* passed either way, and was
+  flaky besides: which repository wins depends on how the OS interleaves two watchers' events. What
+  finally distinguished the fix was counting the watchers, which is why `WatchedPathCount` exists.
+- **A test expectation can be the thing that is wrong.** The first B201 suite asserted a placeholder
+  for a truncated class; the parser salvages that class, which is correct, and the test was changed
+  rather than the code. Checking which of the two is wrong is the step, not a formality.
+
+**B201's blast radius reached `mlqt compare`.** An unreadable file used to produce no classes, so
+everything it held read as missing and the gate failed on the count. With a placeholder standing in,
+a single-class file stops looking missing — so `compare` would have exited 0 on a library with a
+merge conflict marker in it. It now fails on unparseable files explicitly, and the warning no longer
+claims their classes are "counted as absent", because they are not. `cli.md` changed with it.
 
 ### WP2 — The Code Review page
 

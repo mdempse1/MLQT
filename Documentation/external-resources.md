@@ -43,7 +43,7 @@ MLQT resolves extracted resource paths to absolute file system locations using t
 | **Relative paths** | Resolved relative to the directory containing the Modelica source file |
 | **Absolute paths** | Used as-is, but flagged as non-portable |
 | **Library names** | Searched across platform directories (`win32`, `win64`, `linux64`, `darwin64`, etc.) and compiler variants (`vs2022`, `gcc`, `clang`, etc.), with common library prefixes and extensions |
-| **`#include` directives** | Header filenames are searched in the annotated IncludeDirectory, or the default `Resources/Include` subdirectory |
+| **`#include` directives** | Header filenames are searched in the annotated IncludeDirectory, or the default `Resources/Include` subdirectory. A header the compiler supplies rather than the library is not tracked when it is not found there — `#include <stdio.h>` is not a missing file. Angle brackets are what say so, following C's own rule that `<name>` is on the compiler's search path and `"name"` is the project's own; a short list of standard header names covers libraries that write `#include "math.h"`. A bracketed header that *is* present under `Resources/Include` is still tracked, since `IncludeDirectory` works like a `-I` path |
 
 ## Layout
 

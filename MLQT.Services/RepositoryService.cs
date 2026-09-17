@@ -382,13 +382,24 @@ public class RepositoryService : IRepositoryService
         return libraries;
     }
 
+    /// <summary>
+    /// The library's own declared name, read out of its <c>package.mo</c>.
+    ///
+    /// <para>The outermost class is the one with no parent, and "no parent" is the <b>empty
+    /// string</b>, not null (B204). Asking for <c>== null</c> matched nothing, ever — for a file with
+    /// a <c>within</c> clause and for one without alike — so this silently returned null on every
+    /// call and every caller fell back to the directory name. That is usually the same word, which is
+    /// why it went unnoticed: a library called <c>Modelica</c> lives in a folder called
+    /// <c>Modelica</c>. It is wrong precisely when the folder is not named after the library, which
+    /// is the ordinary case for a repository checked out under its own name.</para>
+    /// </summary>
     private string? ExtractLibraryName(string packageMoPath)
     {
         try
         {
             var content = ModelicaFileEncoding.ReadAllTextOnly(packageMoPath);
             var models = ModelicaParserHelper.ExtractModels(content);
-            var topLevel = models.FirstOrDefault(m => m.ParentModelName == null);
+            var topLevel = models.FirstOrDefault(m => string.IsNullOrEmpty(m.ParentModelName));
             return topLevel?.Name;
         }
         catch (Exception ex)
@@ -691,10 +702,34 @@ public class RepositoryService : IRepositoryService
             _projects.AddRange(settings.Projects);
         }
 
-        // Determine the active project
+        // Determine the active project.
+        //
+        // The fallback to the first project is for the *saved* active id naming a project that is no
+        // longer there — a deleted or renamed project leaves exactly that state, and starting up on
+        // some project beats refusing to start.
+        //
+        // It is deliberately NOT applied to an explicitly requested projectId (B192). Substituting a
+        // different project for one the caller named is how "create a project, then Load Project"
+        // came up holding the previously selected project and its repositories: the new project had
+        // been created in memory and its save not yet awaited, so it was absent from the settings
+        // just re-read here, `FirstOrDefault` found nothing, and the `??` quietly loaded the first
+        // existing project instead. A caller that names a project either gets it or is told.
         var activeId = projectId ?? settings.ActiveProjectId ?? settings.Projects.First().Id;
-        var activeProject = settings.Projects.FirstOrDefault(p => p.Id == activeId)
-                            ?? settings.Projects.First();
+        var activeProject = settings.Projects.FirstOrDefault(p => p.Id == activeId);
+        if (activeProject is null)
+        {
+            if (projectId is not null)
+            {
+                var message =
+                    $"Project '{projectId}' was asked for but is not in the saved settings; " +
+                    $"loading '{settings.Projects.First().Name}' instead.";
+                Warn("RepositoryService", message);
+                AddLoadWarning(message);
+            }
+
+            activeProject = settings.Projects.First();
+        }
+
         _activeProjectId = activeProject.Id;
 
         Info("RepositoryService", $"Loading project '{activeProject.Name}' with {activeProject.Repositories.Count} repositories");
@@ -779,6 +814,16 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <summary>
+    /// Adds a project and starts persisting it.
+    ///
+    /// <para><b>The save is not awaited</b>, so the project exists in memory before it exists on
+    /// disk. A caller that is about to make something re-read the settings — <c>LoadRepositorySettingsAsync</c>
+    /// replaces the in-memory project list with what it finds there — must
+    /// <see cref="SaveRepositorySettingsAsync"/> first, or the new project can be gone by the time it
+    /// is looked for. That is B192: startup created a project, immediately loaded it by id, and got
+    /// the first existing project instead.</para>
+    /// </summary>
     public ProjectProfile CreateProject(string name)
     {
         var project = new ProjectProfile { Name = name };

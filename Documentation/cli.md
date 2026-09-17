@@ -889,7 +889,7 @@ inventories compared, so the command is much faster than a check.
 | Code | Meaning |
 |------|---------|
 | `0` | Every class in A is present in B |
-| `1` | Classes are missing from B |
+| `1` | Classes are missing from B, or a file on either side could not be parsed |
 | `2` | Usage or load error (bad path, no library found there) |
 
 Classes that only B has never fail the command — gaining a class is not a loss.
@@ -903,7 +903,7 @@ Comparing class inventories
   B  C:/Libraries/MyLibrary-after
      8501 classes in MyLibrary
 
-warning: 1 file(s) in B could not be parsed, so every class they hold is counted as absent:
+warning: 1 file(s) in B could not be parsed, so the classes they hold are unknown and this comparison cannot be trusted:
            MyLibrary/Blocks/Continuous.mo
 
 33 classes are missing from B:
@@ -928,9 +928,12 @@ Three things in that report are worth knowing about:
   *new* class in B is usually the same class re-rooted: most often its `within` clause was lost, so
   `MyLibrary.Blocks.LimPID` came back as plain `LimPID`. That is one class showing up twice — once as
   missing, once as added — and it is why the added list is on by default.
-- **Unparseable files are called out first.** A file the parser cannot get a class out of looks exactly
-  like a file whose classes were all deleted, and a bulk edit is the most likely thing to have left
-  one. Fix those before reading anything else in the list.
+- **Unparseable files are called out first, and they fail the command on their own.** A file the
+  parser cannot read leaves a placeholder standing in for it, named for the class the file is
+  expected to define — so one of its classes may match and the rest silently will not. What it
+  really held is unknown, so the comparison below it cannot be trusted and `compare` exits 1 even
+  when nothing is listed as missing. A bulk edit is the most likely thing to have left such a
+  file. Fix those before reading anything else in the list.
 
 ```bash
 # Did the reformat lose anything?

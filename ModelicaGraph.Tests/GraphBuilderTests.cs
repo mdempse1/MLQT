@@ -1069,17 +1069,18 @@ end Test;";
         var modelIds = GraphBuilder.LoadModelicaFile(graph, filePath, content);
 
         Assert.Single(graph.FileNodes);
-        var placeholder = graph.ModelNodes.FirstOrDefault(m => m.IsParseFailurePlaceholder);
-        if (placeholder != null)
-        {
-            Assert.Contains(placeholder.Id, modelIds);
-            Assert.Equal(content.Replace("\r\n", "\n").Replace("\r", "\n"), placeholder.Definition.ModelicaCode);
-            Assert.Contains(placeholder.Definition.ParserErrors,
-                e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            Assert.Equal("unknown", placeholder.ClassType);
-        }
-        // If the extractor survived and produced nothing rather than crashing, the
-        // behaviour is still acceptable — no crash reached the caller.
+
+        // Unconditional, and it did not used to be (B201). This test wrapped everything below in
+        // `if (placeholder != null)` and closed with "if the extractor survived and produced nothing
+        // rather than crashing, the behaviour is still acceptable — no crash reached the caller".
+        // Producing nothing is precisely the defect: the file leaves no node and its errors are
+        // dropped. The test written to cover the placeholder machinery was excusing its total
+        // absence — against this very input, which produced no placeholder at all.
+        var placeholder = Assert.Single(graph.ModelNodes, m => m.IsParseFailurePlaceholder);
+        Assert.Contains(placeholder.Id, modelIds);
+        Assert.Equal(content.Replace("\r\n", "\n").Replace("\r", "\n"), placeholder.Definition.ModelicaCode);
+        Assert.NotEmpty(placeholder.Definition.ParserErrors);
+        Assert.Equal("unknown", placeholder.ClassType);
     }
 
     [Fact]

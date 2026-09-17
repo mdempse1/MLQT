@@ -36,7 +36,7 @@
                                                                                   "reason":  "Phase 5c\u0027s authoring path. The covered half is the tool contract; the gap is the failure branches (unwritable file, class not found, malformed rule id). Reachable; not yet written."
                                                                               },
                     "MLQT.Services::MLQT.Services.DymolaCheckingService":  {
-                                                                               "coverage":  33.6,
+                                                                               "coverage":  34.2,
                                                                                "lines":  184,
                                                                                "bar":  80,
                                                                                "reason":  "Talks to a running Dymola over HTTP JSON-RPC. No licence and no install on a runner; the parsing and error paths are covered, the conversation is not."
@@ -48,7 +48,7 @@
                                                                                     "reason":  "25%, and new debt this branch created rather than inherited: 7a-4 moved both formatting paths here out of MainLayout. FormatChangedFilesAsync and FormatModifiedFilesAsync are tested against a temp directory, and the decisions inside the full save are tested separately (IncrementalFormatter, OrphanedFileSelector, ResolveSaveDirectory, EmptyDirectoryCleaner, FileNodeReconciler). What is uncovered is the 250-line sequencing of SaveAllLibrariesWithFormattingAsync itself, which needs a library on disk with a real file layout to restructure - a fixture, not a mock. Worth writing: it is the path Format All Files takes."
                                                                                 },
                     "MLQT.Services::MLQT.Services.OpenModelicaCheckingService":  {
-                                                                                     "coverage":  33.5,
+                                                                                     "coverage":  34,
                                                                                      "lines":  185,
                                                                                      "bar":  80,
                                                                                      "reason":  "Talks to a running OpenModelica over ZeroMQ. Same reason as DymolaCheckingService."
@@ -169,7 +169,7 @@
                                                                     },
                     "MLQT.Shared::MLQT.Shared.Layout.MainLayout":  {
                                                                        "coverage":  0,
-                                                                       "lines":  1087,
+                                                                       "lines":  1088,
                                                                        "bar":  80,
                                                                        "reason":  "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
                                                                    },

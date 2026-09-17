@@ -4,13 +4,14 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B203 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B204 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
-first end-to-end pass over the Photino release on 2026-09-17. Of B1–B167 all are closed except the
-two carried forward below, and the table they lived in was retired with the phase design notes on
-2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
+first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
+question. Of B1–B167 all are closed except the two carried forward below, and the table they lived
+in was retired with the phase design notes on 2026-09-17 — git history has it if the reasoning
+behind one of those ids is ever needed.
 
-New items start at **B204**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B205**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
@@ -63,18 +64,14 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
-| B192 | **Creating a new project on the startup screen loads the old one instead** | Projects | ⭐⭐⭐ | M | After creating a project and choosing Load Project, MLQT loads the **previously selected** project from the list rather than the new empty one, and the new project appears to take on that project's repositories. Two candidate faults — the selection not moving to the newly created row, and the create path copying the selected project rather than starting empty — and they may both be real. |
-| B198 | **A newly added repository did not load its library until MLQT was restarted** | Repositories | ⭐⭐⭐ | M | Adding `ModelicaEditorTestsGit` to a project added the repository but loaded no library; restarting the tool loaded it. The suspicion to test first is the **layout**: this repository holds a single library with `package.mo` at the top level, rather than libraries in subdirectories. If discovery is the cause it is a defect in `LibraryDiscovery`; if the discovery is right and the load is not triggered, it is in the add-repository path — which already had to be taught to run its analysis through the progress dialog (B127). |
+| B198 | **A newly added repository did not load its library until MLQT was restarted** | Repositories | ⭐⭐⭐ | M | Adding `ModelicaEditorTestsGit` to a project added the repository but loaded no library; restarting the tool loaded it. **The layout suspicion is ruled out.** A repository whose `package.mo` is at the top level is discovered (`LibraryDiscovery` returns the directory itself), loaded (`LoadLibrariesAsync` turns the empty relative path back into the repository path), recorded on the repository, announced to the tree, and visible to the `Libraries.Where(RepositoryId == id)` query MainLayout gates its analysis on — `AddRepositoryLoadsItsLibraryTests` asserts each of those against that layout. B204 was found alongside and is fixed: the *name* shown for such a library was the folder's, not the library's, which may be the whole of what was seen. **Still open because it has not been reproduced.** Next step is the user's own repository: whether the library is absent from the tree or merely misnamed, and whether `MainLayout.OpenAddRepositoryDialog` found a non-empty model set — it does nothing at all when that set is empty. |
 | B190 | **The UI, and sometimes the whole desktop, freezes during loading** | Performance | ⭐⭐⭐ | M | Reported during the loading step: MLQT's window is unresponsive, and at some points other windows are slow to redraw too — moving the MLQT window is sluggish and everything can stall for a few seconds. **Confirm it still happens before investigating**; it predates several fixes since, and the log records phase durations that would say where the time goes. Whatever is blocking is on a thread it should not be on. |
 
 ### Analysis correctness
 
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
-| B168 | **A file change may be counted twice when a library is in the project and in the reference libraries** | File monitoring | ⭐⭐ | S | Suspected on Photino: the same library reached both through a project repository and through the global reference-library paths appears to produce two change events per edit. B129 fixed the *loading* half of this — the same library reached two ways was parsed and indexed twice — and the monitoring half was not looked at. Confirm by counting events for one edit, then make the watcher set distinct by resolved path, as the loader now is. |
 | B169 | **External resources are sometimes attached to the wrong directory** | External resources | ⭐⭐⭐ | M | References get linked to the wrong directory when encrypted libraries have registered resource roots. Encrypted libraries register their unencrypted `Resources/` directory so `modelica://Lib/Resources/…` resolves; the symptom suggests a resolution that picks the wrong registered root when more than one is a prefix of the path. Needs a reproduction with two libraries whose roots share a prefix before anything is changed. |
-| B201 | **A file that fails to parse is dropped silently, with no node and no placeholder** | Parser / graph | ⭐⭐⭐ | S | Found from ModelicaTools: a file with an `import` between the `within` clause and the class is not valid Modelica, and the tightened grammar no longer salvages it through error recovery. A probe against the current `GraphBuilder` confirmed the file then yields **zero model nodes** — no diagnostic, no placeholder, despite the placeholder machinery added for exactly this. A real library with one malformed file loses those classes without anyone being told. |
-| B172 | **C/C++ standard library headers are reported as missing external files** | External resources | ⭐⭐ | M | An external function's `IncludeDirectory` / `Include` referring to a standard header is flagged as a missing file, because nothing knows where the platform's standard include paths are. Either resolve against the known system include paths, or recognise standard headers by name and never report them. The first is more correct and platform-specific; the second is cheap and would cover the complaint. |
 | B184 | **`--changed-from` re-checks everything it loaded** | CLI / performance | ⭐⭐⭐ | M | A changed-file check still runs every rule over every model, then filters. It should apply the rules only to the models in the modified files and compare those against the **baseline records for those models**. Everything still has to be *loaded* — base classes and reference resolution need it — but it need not be re-checked. The one analysis that genuinely has to run over everything is reference validation, and only when a model was deleted or renamed. This is the largest available win on check time in CI. |
 
 ### Rules and formatting

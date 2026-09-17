@@ -173,14 +173,32 @@ public partial class MainLayout : IDisposable
                 await RepositoryService.LoadRepositorySettingsAsync();
                 var newProject = RepositoryService.CreateProject(newProjectName);
                 selectedProjectId = newProject.Id;
+
+                // CreateProject does not await its own save, and everything below re-reads the
+                // settings — the check immediately after this, and LoadRepositorySettingsAsync,
+                // which replaces the in-memory project list with what is on disk. Without this the
+                // new project could still be absent from both, which is B192.
+                await RepositoryService.SaveRepositorySettingsAsync();
+
+                // And the snapshot read at the top of this method predates the project that was just
+                // created, so it has to be taken again or the check below asks about the wrong
+                // settings.
+                savedSettings = await SettingsService.GetAsync("Repositories", new RepositorySettingsCollection());
             }
 
             // Check if the selected project has repositories before showing the startup dialog.
             // If it has none, load settings silently (handles migration etc.) and skip the dialog.
             {
                 var checkId = selectedProjectId ?? savedSettings.ActiveProjectId ?? savedSettings.Projects.FirstOrDefault()?.Id;
-                var checkProject = savedSettings.Projects.FirstOrDefault(p => p.Id == checkId)
-                                   ?? savedSettings.Projects.FirstOrDefault();
+
+                // No `?? Projects.FirstOrDefault()` here (B192). Falling back to "some project" when
+                // the named one was not found is what let a brand-new project be judged by the
+                // repositories of the previously selected one: the new project is empty, so the
+                // silent-load shortcut below should have been taken, and instead the first existing
+                // project answered for it, reported repositories, and startup went on to load them.
+                // An id that names nothing is a null project, which the condition below already
+                // treats as "nothing to load".
+                var checkProject = savedSettings.Projects.FirstOrDefault(p => p.Id == checkId);
                 bool hasLegacyRepos = savedSettings.Projects.Count == 0 && savedSettings.Repositories.Count > 0;
                 if (!hasLegacyRepos && (checkProject == null || checkProject.Repositories.Count == 0))
                 {

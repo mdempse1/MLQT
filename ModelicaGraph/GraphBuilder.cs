@@ -57,11 +57,26 @@ public static class GraphBuilder
                 };
             }
 
-            // If extraction failed catastrophically we still want the file to appear in the
-            // library tree so the user can see and fix it. Produce a placeholder model that
-            // carries the full file contents and the fatal error.
-            bool hasFatal = fileParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure);
-            if (hasFatal && models.Count == 0)
+            // If extraction produced nothing we still want the file to appear in the library tree
+            // so the user can see and fix it. Produce a placeholder model that carries the full
+            // file contents and the errors.
+            //
+            // The test is "errors recorded and no classes extracted", *whatever severity the
+            // parser chose* (B201). It used to additionally require a FatalParseFailure, which
+            // only ANTLR crashing or a visitor throwing produces — and the interesting case is
+            // neither. A file the grammar rejects without anything throwing records
+            // RecoveredSyntax errors and extracts no classes: `hasFatal` was false, no placeholder
+            // was made, and the errors in fileParserErrors were dropped for want of a node to hang
+            // them on. A real library with one malformed file silently lost those classes.
+            //
+            // RecoveredSyntax's own summary is where the assumption hid: "the parser recovered and
+            // the rest of the file was still processed". It recovered; there was nothing left to
+            // process. Recovery says nothing about whether any class came out, so the count is
+            // asked directly instead.
+            //
+            // No errors and no classes is left alone deliberately: a file holding only a `within`
+            // clause and comments is valid and has nothing to report.
+            if (models.Count == 0 && fileParserErrors.Count > 0)
             {
                 var placeholderId = CreateParseFailurePlaceholder(graph, fileId, filePath, normalizedContent, fileParserErrors);
                 modelIDs.Add(placeholderId);
@@ -926,12 +941,30 @@ public static class GraphBuilder
 
             case ResourceReferenceType.ExternalInclude:
                 // Parse #include "filename.h" and resolve using IncludeDirectory
-                var headerFile = ParseIncludeDirective(info.RawPath);
-                if (headerFile != null)
+                var include = ParseIncludeDirective(info.RawPath);
+                if (include is { } directive)
                 {
                     var incDir = includeDirectory ?? GetDefaultIncludeDirectory(model.Id, libraries);
                     if (incDir != null)
-                        resolvedPath = Path.Combine(incDir, headerFile);
+                    {
+                        var candidate = Path.Combine(incDir, directive.Header);
+
+                        // A header the library ships is tracked whether or not it is there right now
+                        // — a missing one is exactly what this reporting is for. A header the
+                        // compiler supplies is not the library's to ship, so its absence from
+                        // Resources/Include is the normal case and not a finding (B172). Before this,
+                        // every external function using the C standard library reported a missing
+                        // file with nothing wrong with the library.
+                        //
+                        // IncludeDirectory behaves like a -I path, so a bracketed include can
+                        // legitimately resolve there; whether the file is actually present is what
+                        // settles it, which keeps this from hiding a header the library does ship.
+                        if (File.Exists(candidate)
+                            || !StandardCHeaders.IsSupplied(directive.Header, directive.IsSystemInclude))
+                        {
+                            resolvedPath = candidate;
+                        }
+                    }
                 }
                 break;
 
@@ -1109,11 +1142,17 @@ public static class GraphBuilder
     }
 
     /// <summary>
-    /// Parses an Include directive to extract the filename.
-    /// E.g., '#include "ModelicaStandardTables.h"' returns "ModelicaStandardTables.h"
+    /// Parses an Include directive into the file name it names and how it named it.
+    /// E.g., '#include "ModelicaStandardTables.h"' returns ("ModelicaStandardTables.h", false) and
+    /// '#include &lt;stdio.h&gt;' returns ("stdio.h", true).
     /// Handles both regular quotes and escaped quotes (\" from ANTLR string tokens).
     /// </summary>
-    private static string? ParseIncludeDirective(string rawInclude)
+    /// <remarks>
+    /// The delimiter used to be discarded, and it is the part that says whether MLQT can be expected
+    /// to find the file at all: angle brackets name the compiler's own search path, which MLQT does
+    /// not know (B172). See <see cref="StandardCHeaders"/>.
+    /// </remarks>
+    private static (string Header, bool IsSystemInclude)? ParseIncludeDirective(string rawInclude)
     {
         // First unescape any escaped quotes from ANTLR token text
         // The Include annotation value comes from a Modelica string like:
@@ -1126,9 +1165,12 @@ public static class GraphBuilder
         // Handle: #include "filename.h" or #include <filename.h>
         var match = System.Text.RegularExpressions.Regex.Match(
             unescaped,
-            @"#include\s*[""<]([^"">]+)[>""]");
+            @"#include\s*(?<open>[""<])(?<header>[^"">]+)[>""]");
 
-        return match.Success ? match.Groups[1].Value : null;
+        if (!match.Success)
+            return null;
+
+        return (match.Groups["header"].Value, match.Groups["open"].Value == "<");
     }
 
     /// <summary>

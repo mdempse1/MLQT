@@ -116,7 +116,17 @@ internal static class CompareCommand
         // A class going missing is the thing this command exists to catch, so it fails the same way a
         // quality gate does: exit 1, distinct from 2 for a bad invocation. Classes added on the right
         // are reported but never fail — gaining a class is not a loss.
-        return report.Missing.Count == 0 ? ExitCodes.Ok : ExitCodes.GateFailed;
+        //
+        // A file that could not be parsed fails too, and it has to be said explicitly (B201). It used
+        // to fail as a *side effect*: such a file produced no classes at all, so everything it held
+        // read as missing and the count above was non-zero. Now that an unreadable file leaves a
+        // placeholder node, the placeholder answers to the name the file is expected to define, so a
+        // single-class file stops looking missing and the gate would have passed in silence on a
+        // library with a corrupt file in it. The comparison is not trustworthy either way — the
+        // placeholder stands in for whatever the file really held, which nobody knows — so it is
+        // reported and it fails.
+        var unreadable = report.Left.UnparseableFiles.Count + report.Right.UnparseableFiles.Count;
+        return report.Missing.Count == 0 && unreadable == 0 ? ExitCodes.Ok : ExitCodes.GateFailed;
     }
 
     private static string FormatConsole(CompareReport report, CompareOptions opts)
@@ -183,9 +193,14 @@ internal static class CompareCommand
             return;
 
         text.AppendLine();
+
+        // Not "counted as absent" any more (B201). Such a file now leaves a placeholder standing in
+        // for it, named for the class the file is expected to define — so one of its classes may
+        // well match and the rest silently will not. What the file really held is unknown, which is
+        // the honest thing to say, and it is why this fails the command rather than only warning.
         text.AppendLine(
-            $"warning: {side.UnparseableFiles.Count} file(s) in {label} could not be parsed, so every " +
-            "class they hold is counted as absent:");
+            $"warning: {side.UnparseableFiles.Count} file(s) in {label} could not be parsed, so the " +
+            "classes they hold are unknown and this comparison cannot be trusted:");
         foreach (var file in side.UnparseableFiles)
             text.AppendLine($"           {file}");
     }
