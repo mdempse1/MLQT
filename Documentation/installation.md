@@ -23,6 +23,34 @@ sudo apt install ./mlqt_<version>_amd64.deb
 
 `apt` pulls the dependencies; `dpkg -i` does not, so prefer the form above.
 
+### The notice about `_apt` and permission denied
+
+Installing from your home directory ends with this, and it is **not an error**:
+
+```
+Notice: Download is performed unsandboxed as root as file '/home/you/Downloads/mlqt_<version>_amd64.deb'
+couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+```
+
+`apt` normally drops to the unprivileged `_apt` user while fetching packages, so that a hostile
+server cannot exploit the download code as root. A `.deb` already on your disk cannot be read by
+that user — your home directory is not traversable by it — so apt copies the file as root instead
+and says so. Nothing is skipped and nothing is left unverified; the sandbox protects against a
+download you have not yet made, which this is not. Note the prefix is `Notice:`, not `E:`.
+
+Check the install rather than the notice:
+
+```bash
+dpkg -l mlqt        # ii = installed
+mlqt --version
+```
+
+To avoid the message, install from a path `_apt` can read:
+
+```bash
+cp mlqt_<version>_amd64.deb /tmp/ && sudo apt install /tmp/mlqt_<version>_amd64.deb
+```
+
 ### What you need
 
 | | |
