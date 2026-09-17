@@ -159,7 +159,7 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 - **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code.
 - If the finding has **additional details**, clicking the row opens an **Finding Details dialog** showing the full summary, severity, line number, and detailed description.
-- In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. For a spelling finding the dialog also offers **Add to Dictionary**, which accepts the flagged word into the word list of the repository that owns the class (`.mlqt/dictionary.txt`) so it is no longer reported there. It is disabled for a class that belongs to no repository, such as a library reconstructed from a vendor's encrypted documentation.
+- In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. 
 
 ![Screenshot: The Finding Details dialog showing an finding with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 
@@ -208,12 +208,12 @@ For details on configuring naming conventions, presets, exception names, and und
 - **Style findings** are detected by a background process that runs after loading completes
 - **External tool errors** are added when you manually run a Dymola or OpenModelica check
 - Findings persist across model selections — switching models does not clear the findings list
-- Resolving an finding removes it from the list for the current session
+- Resolving a finding removes it from the list for the current session
 
 ## Filtering to what you have changed
 
 A mature library carries a lot of standing debt, and on a first look the Findings list is mostly that
-rather than anything you did. When the repository has a committed baseline
+rather than anything you did. When the repository has a committed baseline 
 (`.mlqt/baseline.json` — see [ci-quality-gate.md](ci-quality-gate.md)), the Findings toolbar offers a
 **Changes vs baseline** switch, and each row gains a **Baseline** column:
 

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Refresh the two caches a desktop shell reads. Both packages install dpkg triggers that would do
+# this anyway on a normal desktop, and neither is guaranteed to be present — a headless machine
+# installing this for the CLI has neither — so each is called only if it is there, and a failure to
+# refresh a cache is not a reason to fail the install.
+set -e
+
+case "$1" in
+    configure)
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications || true
+        fi
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -q -f -t /usr/share/icons/hicolor || true
+        fi
+        ;;
+esac
+
+exit 0

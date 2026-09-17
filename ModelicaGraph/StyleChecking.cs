@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
@@ -43,6 +44,37 @@ public static class StyleChecking
             .ToList();
 
     /// <summary>
+    /// Runs one rule's visitor over the class and collects what it found, timing it by name.
+    /// </summary>
+    /// <remarks>
+    /// <para>Fifteen call sites did this in three lines each. Folding them together removes the
+    /// duplication and is what makes the per-rule timing possible at all: backlog B128 measured the
+    /// per-class visitors at 86% of a check, which is true and useless - it does not say which rule
+    /// to look at. Named per visitor, it does.</para>
+    ///
+    /// <para>The timing is two <see cref="Stopwatch.GetTimestamp"/> reads whether or not anybody is
+    /// collecting; against a visitor walking a parse tree that is not measurable.</para>
+    /// </remarks>
+    private static void RunRule(
+        VisitorWithModelNameTracking visitor,
+        modelicaParser.Stored_definitionContext parsedCode,
+        List<Finding> findings,
+        CheckTimings? timings)
+    {
+        // Discounts shared lazy work - resolving a class's inherited element names - which runs
+        // inside whichever rule reaches the class first. Without that, the rule that happened to be
+        // first reads as the expensive one and the real cost hides behind it (B128).
+        var nestedBefore = CheckTimings.NestedTicks;
+        var started = Stopwatch.GetTimestamp();
+
+        visitor.VisitStored_definition(parsedCode);
+        findings.AddRange(visitor.Findings);
+
+        var elapsed = Stopwatch.GetTimestamp() - started - (CheckTimings.NestedTicks - nestedBefore);
+        timings?.Add(CheckTimings.Phase.RulePrefix + visitor.GetType().Name, elapsed);
+    }
+
+    /// <summary>
     /// Applies the style checks to a model and returns structured <see cref="Finding"/>s carrying
     /// rule id, severity, element identity, and a reformat-stable fingerprint. Foundation entry
     /// point for the CI pipeline, baseline/ratchet, and dashboard.
@@ -62,7 +94,8 @@ public static class StyleChecking
         bool honorSuppressions = true,
         NamingConventionConfig? namingConfig = null,
         Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
-        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
+        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null,
+        CheckTimings? timings = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -78,7 +111,10 @@ public static class StyleChecking
         if (settings.IsLibraryExcluded(fullModelId))
             return findings;
 
+        var parseStarted = Stopwatch.GetTimestamp();
         var parsedCode = _currentModel.EnsureParsed();
+        timings?.Add(CheckTimings.Phase.Parse, Stopwatch.GetTimestamp() - parseStarted);
+
         if (parsedCode == null)
             return findings;
 
@@ -87,73 +123,65 @@ public static class StyleChecking
 
         if (settings.ParameterHasDescription || settings.ConstantHasDescription)
         {
-            var visitor = new PublicParametersAndConstantsHaveDescription(settings.ParameterHasDescription, settings.ConstantHasDescription, basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(
+                new PublicParametersAndConstantsHaveDescription(settings.ParameterHasDescription, settings.ConstantHasDescription, basePackage),
+                parsedCode, findings, timings);
         }
         // Skip formatting-related style rules for models excluded from formatting
         if (!isExcludedFromFormatting)
         {
             if (settings.ImportStatementsFirst)
             {
-                var visitor = new ImportStatementsFirst(settings.ImportStatementsFirst, basePackage);
-                visitor.VisitStored_definition(parsedCode);
-                findings.AddRange(visitor.Findings);
+                RunRule(
+                    new ImportStatementsFirst(settings.ImportStatementsFirst, basePackage),
+                    parsedCode, findings, timings);
 
-                var visitor2 = new ExtendsClausesAtTop(false, basePackage);
-                visitor2.VisitStored_definition(parsedCode);
-                findings.AddRange(visitor2.Findings);
+                RunRule(new ExtendsClausesAtTop(false, basePackage), parsedCode, findings, timings);
             }
             if (settings.InitialEQAlgoFirst || settings.InitialEQAlgoLast)
             {
-                var visitor = new InitialEquationFirst(settings.InitialEQAlgoFirst, settings.InitialEQAlgoLast, basePackage);
-                visitor.VisitStored_definition(parsedCode);
-                findings.AddRange(visitor.Findings);
+                RunRule(
+                    new InitialEquationFirst(settings.InitialEQAlgoFirst, settings.InitialEQAlgoLast, basePackage),
+                    parsedCode, findings, timings);
             }
             if (settings.OneOfEachSection || settings.DontMixEquationAndAlgorithm)
             {
-                var visitor = new OneOfEachSection(settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, !settings.DontMixEquationAndAlgorithm, basePackage);
-                visitor.VisitStored_definition(parsedCode);
-                findings.AddRange(visitor.Findings);
+                RunRule(
+                    new OneOfEachSection(settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, settings.OneOfEachSection, !settings.DontMixEquationAndAlgorithm, basePackage),
+                    parsedCode, findings, timings);
             }
             if (settings.DontMixConnections)
             {
-                var visitor = new MixConnectionsAndEquations(basePackage);
-                visitor.VisitStored_definition(parsedCode);
-                findings.AddRange(visitor.Findings);
+                RunRule(new MixConnectionsAndEquations(basePackage), parsedCode, findings, timings);
             }
         }
         if (settings.ClassHasDescription)
         {
-            var visitor = new CheckClassDescriptionStrings(basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(new CheckClassDescriptionStrings(basePackage), parsedCode, findings, timings);
         }
         if (settings.ClassHasDocumentationInfo || settings.ClassHasDocumentationRevisions || settings.ClassHasIcon)
         {
-            var visitor = new CheckClassAnnotations(
+            RunRule(
+                new CheckClassAnnotations(
                 settings.ClassHasDocumentationInfo, settings.ClassHasDocumentationRevisions,
-                settings.ClassHasIcon, basePackage, baseClassHasIcon);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+                settings.ClassHasIcon, basePackage, baseClassHasIcon),
+                parsedCode, findings, timings);
         }
         if (settings.ValidateModelReferences && knownModelIds != null)
         {
-            var visitor = new CheckModelReferences(knownModelIds, basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(new CheckModelReferences(knownModelIds, basePackage), parsedCode, findings, timings);
         }
         if (settings.SpellCheckDescription && spellChecker != null)
         {
-            var visitor = new SpellCheckDescriptions(spellChecker, knownModelNames, basePackage, inheritedElementNames);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(
+                new SpellCheckDescriptions(spellChecker, knownModelNames, basePackage, inheritedElementNames),
+                parsedCode, findings, timings);
         }
         if (settings.SpellCheckDocumentation && spellChecker != null)
         {
-            var visitor = new SpellCheckDocumentation(spellChecker, knownModelNames, basePackage, inheritedElementNames);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(
+                new SpellCheckDocumentation(spellChecker, knownModelNames, basePackage, inheritedElementNames),
+                parsedCode, findings, timings);
         }
         if (settings.FollowNamingConvention)
         {
@@ -161,25 +189,23 @@ public static class StyleChecking
             // check more than one class build it once and pass it in — see StyleCheckContext. The
             // fallback keeps the single-class callers (a snippet, a test) working unchanged.
             var config = namingConfig ?? settings.NamingConvention.ToConfig();
-            var visitor = new FollowNamingConvention(config, basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(new FollowNamingConvention(config, basePackage), parsedCode, findings, timings);
         }
         if (settings.CheckDuplicateDeclarations || settings.CheckDuplicateImports)
         {
-            var visitor = new DuplicateDeclarations(settings.CheckDuplicateDeclarations, settings.CheckDuplicateImports, basePackage);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(
+                new DuplicateDeclarations(settings.CheckDuplicateDeclarations, settings.CheckDuplicateImports, basePackage),
+                parsedCode, findings, timings);
         }
         if (settings.CheckMissingUnits)
         {
-            var visitor = new MissingUnits(basePackage, unitLookup);
-            visitor.VisitStored_definition(parsedCode);
-            findings.AddRange(visitor.Findings);
+            RunRule(new MissingUnits(basePackage, unitLookup), parsedCode, findings, timings);
         }
         // MLQT.Unused.Import is not here: an import is visible to every class lexically nested below
         // it, which in a library means other files entirely, so it is decided by UnusedImportAnalyzer
         // over the graph rather than by looking at the declaring class on its own.
+
+        var tailStarted = Stopwatch.GetTimestamp();
 
         // Visitors emit at the record's default level; configuration is applied here. Shared with
         // the graph analyses (see StyleCheckingSettings.StampSeverities) so the two cannot disagree
@@ -207,6 +233,7 @@ public static class StyleChecking
                 .ToList();
         }
 
+        timings?.Add(CheckTimings.Phase.RulesTail, Stopwatch.GetTimestamp() - tailStarted);
         return findings;
     }
 
@@ -263,17 +290,30 @@ public static class StyleChecking
     /// <para>Answered once per class and cached: the class is checked by both spell-check visitors,
     /// and resolving the chain parses each base class it reaches.</para>
     /// </summary>
-    public static Func<string, IReadOnlySet<string>>? CreateInheritedElementNamesCallback(DirectedGraph? graph)
+    public static Func<string, IReadOnlySet<string>>? CreateInheritedElementNamesCallback(
+        DirectedGraph? graph, CheckTimings? timings = null)
     {
         if (graph == null) return null;
 
         // Shared across the parallel per-class checks, hence concurrent.
         var inheritedNames = new ConcurrentDictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
 
-        return modelId => inheritedNames.GetOrAdd(modelId, id => CollectInheritedElementNames(graph, id));
+        // And so is the interface of each class the walk passes through: a base class near the root of
+        // a library is on the chain of hundreds of others, and re-deriving it means re-parsing it.
+        var interfaces = new ClassElementResolver.InterfaceCache();
+
+        // Timed inside the factory, so only the run that actually resolves a class is charged for it.
+        // Without this the cost lands on whichever rule happened to ask first - which is why
+        // SpellCheckDescriptions measured at 122 seconds and SpellCheckDocumentation, doing the same
+        // work over the same text, at 6 (B128).
+        return modelId => inheritedNames.GetOrAdd(
+            modelId,
+            id => CheckTimings.MeasureNested(
+                timings, CheckTimings.Phase.InheritedNames, () => CollectInheritedElementNames(graph, id, interfaces)));
     }
 
-    private static IReadOnlySet<string> CollectInheritedElementNames(DirectedGraph graph, string modelId)
+    private static IReadOnlySet<string> CollectInheritedElementNames(
+        DirectedGraph graph, string modelId, ClassElementResolver.InterfaceCache? interfaces = null)
     {
         var node = graph.GetNode<ModelNode>(modelId);
         if (node == null)
@@ -282,7 +322,7 @@ public static class StyleChecking
         // Protected members are visible to a derived class, so they are names its prose can use.
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var element in ClassElementResolver.Collect(
-                     graph, node, includeProtected: true, includeInherited: true))
+                     graph, node, includeProtected: true, includeInherited: true, interfaces))
         {
             // Only what came from a base class: the class's own declarations are collected by the
             // visitor, which also has them for classes the graph does not know.

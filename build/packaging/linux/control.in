@@ -1,0 +1,23 @@
+Package: mlqt
+Version: @VERSION@
+Section: devel
+Priority: optional
+Architecture: @ARCH@
+Maintainer: M Dempsey Ltd <mike@dempsey.me.uk>
+Homepage: https://github.com/mdempse1/MLQT
+Installed-Size: @INSTALLED_SIZE@
+Depends: @DEPENDS@
+Recommends: git, subversion
+Description: Modelica Library Quality Tool
+ MLQT manages Modelica libraries under revision control. It reviews and commits
+ changes, pulls updates, creates branches and pushes to Git and SVN, and runs
+ static analysis over Modelica source: dependency impact, style rules, spell
+ checking and code formatting.
+ .
+ This package carries all three tools:
+ .
+  * MLQT, the desktop application (mlqt-gui, or the MLQT entry in the menu)
+  * mlqt, the headless CLI that style-checks a library in CI
+  * mlqt-mcp-server, the Model Context Protocol server for AI agents
+ .
+ The .NET runtime is bundled, so nothing needs to be added to apt for it.

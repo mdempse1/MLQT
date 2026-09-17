@@ -21,6 +21,8 @@ public static class LibraryCheckSession
     /// The check has parsed the class anyway and is about to release the tree, so this costs the
     /// measurement alone and saves a later coverage report a whole parse pass over the library. Left
     /// off unless the caller is going to report coverage.</param>
+    /// <param name="timings">Collects where the run's time went, or null (backlog B128). Costs two
+    /// timestamp reads per phase, so passing one is not a decision that needs weighing.</param>
     public static IReadOnlyList<Finding> Check(
         DirectedGraph graph,
         IEnumerable<ModelNode> models,
@@ -30,7 +32,8 @@ public static class LibraryCheckSession
         bool honorSuppressions = true,
         bool? dependenciesAnalyzed = null,
         string? repositoryRoot = null,
-        bool collectCoverage = false)
+        bool collectCoverage = false,
+        CheckTimings? timings = null)
     {
         // Classes recovered from an encrypted library's documentation are dropped here, at the one
         // place every surface goes through, rather than left to each caller to remember. They are
@@ -52,7 +55,7 @@ public static class LibraryCheckSession
 
         var context = StyleCheckContext.Build(
             settings, graph, customDictionary, dictionaryManager, repositoryRoot, collectCoverage,
-            honorSuppressions);
+            honorSuppressions, timings);
         var all = new System.Collections.Concurrent.ConcurrentBag<Finding>();
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
@@ -81,7 +84,10 @@ public static class LibraryCheckSession
         // Whole-graph analyses (Phase 6): run once over the checked model set and merge. A no-op until
         // graph analyzers are registered and their rules enabled, so it never affects a per-class-only run.
         var checkable = modelList.Where(m => m is not null && !m.IsParseFailurePlaceholder).ToList();
-        var graphContext = new GraphAnalysisContext(graph, settings, checkable, dependenciesAnalyzed);
+        var graphContext = new GraphAnalysisContext(graph, settings, checkable, dependenciesAnalyzed)
+        {
+            Timings = timings,
+        };
         results.AddRange(GraphAnalysisRunner.Run(graphContext, honorSuppressions));
 
         return results;

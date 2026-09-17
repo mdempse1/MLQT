@@ -1,6 +1,6 @@
 # Setting up the MLQT CI quality gate
 
-A hands-on guide to running MLQT's style/analysis checks in CI and gating on **new** findings, so you
+A hands-on guide to running MLQT's style/analysis checks in CI and failing on **new** findings, so you
 can trial it on a real Modelica library. For the full option reference see [cli.md](cli.md).
 
 ## What it does — the ratchet
@@ -9,7 +9,7 @@ can trial it on a real Modelica library. For the full option reference see [cli.
 library will have many findings; nobody fixes them all at once. So you:
 
 1. **Baseline** the current findings — they become *accepted debt* and never fail the build.
-2. **Gate** on findings that are *not* in the baseline — only genuinely new findings fail CI.
+2. **Fail** on findings that are *not* in the baseline — only genuinely new findings fail CI.
 3. Optionally **escalate** pre-existing findings in models a change touched (the "boy-scout rule").
 
 Parse errors are reported separately from all of this and always fail — see
@@ -23,46 +23,40 @@ never turns its accepted debt into new findings.
 
 ## 1. Get the `mlqt` command
 
-The CLI is a .NET tool (`MLQT.Cli`, command `mlqt`); it is not yet published to a public feed, so
-build it from this repository.
+`mlqt` comes from the **MLQT installer for your platform**: there is one per platform, and it
+carries the CLI, the desktop application and the MCP server together. Nothing is published to a
+package feed.
 
-**Quick local testing** (no install):
+**For a CI agent** (nothing preinstalled, no source tree) — the normal case:
+
+```bash
+sudo apt install ./mlqt_<version>_amd64.deb    # from the latest release
+mlqt check /path/to/MyLibrary
+```
+
+The `.deb` carries its own .NET runtime, so a Linux agent needs neither the SDK nor the runtime. On a
+Windows agent, run the setup `.exe` and let it put `mlqt` on the `PATH`. See
+[installation.md](installation.md).
+
+**Quick local testing from a clone** (no install):
 
 ```bash
 dotnet run --project MLQT.Cli -- check /path/to/MyLibrary
 ```
 
-**Install as a tool** (gives you a real `mlqt` command):
-
-```bash
-dotnet pack MLQT.Cli/MLQT.Cli.csproj -c Release -o ./nupkg
-dotnet tool install --global --add-source ./nupkg MLQT.Cli    # then: mlqt ...
-# update later:  dotnet tool update --global --add-source ./nupkg MLQT.Cli
-```
-
-**For a CI agent** (isolated, no global state):
-
-```bash
-dotnet tool install --tool-path ./tools --add-source ./nupkg MLQT.Cli
-./tools/mlqt check /path/to/MyLibrary
-```
-
 ### Which one should I use?
 
-All three run **identical code** — the difference is only distribution and ergonomics:
+Both run **identical code** — the difference is only distribution and ergonomics:
 
-- `dotnet run` builds and runs from the source tree in place. It needs the repository present and
-  rebuilds each time. Best for a **quick local trial while you're in the repo**.
-- `dotnet pack` wraps the build output into a single versioned NuGet package (`.nupkg`);
-  `dotnet tool install` extracts it into a per-user tool store and puts an **`mlqt` command on your
-  PATH**, decoupled from the repo. Best when you want to **run against many libraries** or on a
-  **machine/CI agent that doesn't have the source**. The `--tool-path ./tools` variant keeps the
-  install in a throwaway folder with no global state — the CI sweet spot.
+- **The platform installer** is the answer for a machine without the source, and the one to use for
+  **CI agents** and for **running against many libraries**. It needs no .NET SDK.
+- `dotnet run` builds and runs from the source tree in place. It needs the repository and the .NET
+  SDK present, and rebuilds each time. Best for a **quick local trial while you're in the repo**.
 
-Note that `dotnet tool` is **framework-dependent** either way: it is not a self-contained or
-single-file binary, so the .NET 10 runtime must be installed. (Standalone per-OS binaries are a
-separate, later packaging concern.) For local testing on your own machine you can skip packing
-entirely and just use `dotnet run`.
+A `dotnet tool` package (`.nupkg`) used to be published as well; it is gone. `dotnet tool install` is
+an *SDK* command, so shipping the CLI that way obliged every build agent to install the .NET SDK in
+order to run a linter — the opposite of what a headless tool is for. See
+[cli.md](cli.md).
 
 ### Point it at your repository root
 
@@ -96,7 +90,8 @@ you will see it on this very first run, and the command will exit `1`. That is d
 
 ## 3. Choose your rules — `.mlqt/settings.json`
 
-Create `<library-root>/.mlqt/settings.json` and turn on the rules you want. **Commit this file** —
+Create `<library-root>/.mlqt/settings.json` and turn on the rules you want. The easiest way is to use 
+the MLQT GUI but it is just a json file so can be created/edited manually. **Commit this file** —
 it is the shared configuration for everyone and for CI.
 
 ```jsonc
@@ -157,7 +152,7 @@ Add these with care:
 - **`ValidateModelReferences`** and **`ClassHasIcon`** — both need the libraries you depend on to be
   loaded. Pass `--dependency /path/to/ModelicaStandardLibrary` (repeatable) so `modelica://` links and
   icons inherited from `Modelica.Icons.*` resolve. Without it these report findings your code did not
-  earn — on ExternData, 96 of them. Dependencies are loaded for resolution only and are never reported
+  earn. Dependencies are loaded for resolution only and are never reported
   on. Use the **same** `--dependency` set for `baseline` as for `check`, or the two disagree about what
   resolves; the check warns when they differ. If the copy you point at is **not** the version the
   library's `uses(...)` declares, the run **stops with exit 2** rather than report findings that are
@@ -314,8 +309,7 @@ You get:
 
 ### GitHub
 
-Confirmed end to end on 2026-09-03: a report of 34 findings uploaded to a public repository was
-accepted (`processing_status: complete`, no errors) and rendered as alerts carrying each rule's
+Reports can be uploaded to a public repository and rendered as alerts carrying each rule's
 description, help body and category. Two things to get right, both of which fail quietly:
 
 - **The repository must be public**, or have a GitHub Code Security licence. A private repository

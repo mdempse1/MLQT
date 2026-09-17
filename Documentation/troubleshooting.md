@@ -100,6 +100,73 @@
 - **Hidden directory**: Files inside `.git`, `.svn`, or other hidden directories are ignored.
 - **Monitor paused**: During VCS operations, the file monitor is temporarily paused. It should resume automatically. If it doesn't, try switching away from the repository and back.
 
+### File Monitoring Stops Working on Linux (inotify limits)
+
+**Symptom:** The log fills with `Failed to create watcher for ...`, quoting
+`The configured user limit (128) on the number of inotify instances has been reached`. Change
+detection goes quiet for some files, and other programs started afterwards — the MLQT MCP server
+included — may fail to start at all.
+
+Linux caps how many directory watches one user can hold. There are two separate limits, and it is
+almost always the first that runs out:
+
+| Limit | Default | What uses one |
+|-------|---------|---------------|
+| `fs.inotify.max_user_instances` | 128 | One per watcher MLQT creates — a repository, a resource tree |
+| `fs.inotify.max_user_watches` | 65536 | One per directory inside a watched tree |
+
+MLQT now watches one tree per repository and one per library's `Resources` directory, so a normal
+project costs a handful. If you still hit the limit, you are sharing it with everything else you run
+— editors, browsers and file sync tools are all heavy users. Raise it:
+
+```bash
+echo 'fs.inotify.max_user_instances=512' | sudo tee /etc/sysctl.d/99-inotify.conf
+sudo sysctl --system
+```
+
+To see where they have gone, count the inotify handles each process holds:
+
+```bash
+for p in /proc/[0-9]*; do n=$(ls -l $p/fd 2>/dev/null | grep -c inotify); [ "$n" -gt 0 ] && echo "$n $(cat $p/comm)"; done | sort -rn | head
+```
+
+This limit does not exist on Windows.
+
+## The log file
+
+**When something isn't right, the log file is the one place to look.** MLQT records its whole startup
+sequence, every stage of the analysis pipeline with timings, and every warning and error there — and
+it does so whether or not anything went visibly wrong, so the record of a problem is usually already
+written by the time you notice it.
+
+| Platform | Where |
+|----------|-------|
+| Windows | `%LocalAppData%\MLQT\mlqt-<date>.log` |
+| Linux | `~/.local/share/MLQT/mlqt-<date>.log` |
+
+One file per day, kept for 30 days. Long-running steps are bracketed by `>>> STARTING` and
+`<<< COMPLETED` lines with timestamps, so "why did that take so long?" is usually answered by reading
+the pair rather than by reproducing it.
+
+**Nothing is written to the terminal**, even when MLQT is started from one. That is deliberate: it
+keeps the answer in one place regardless of how the application was launched, and console output is
+written synchronously on the thread producing it, which costs real time during a large analysis. If
+you are diagnosing something and want the lines as they happen, set `MLQT_LOG_CONSOLE=1` before
+starting MLQT and they will go to the console as well as the file. Set it to a level name
+(`MLQT_LOG_CONSOLE=Debug`) to choose how much.
+
+**If the window itself misbehaves** — it opens blank, or in the wrong place, or not at all — the
+desktop host has a second switch of its own. `MLQT_PHOTINO_LOG=1` makes it print every message it
+exchanges with the webview. It is silent by default for a reason: a page update is one of those
+messages, base64-encoded and tens of kilobytes, and printing them all makes the application
+noticeably slower to use. Turn it on to diagnose the window, not to watch the application work.
+
+MLQT does not give you the webview's own right-click menu, and right-clicking the page does nothing
+unless MLQT has a menu for what you clicked (the correction menu on a misspelled word in Code Review
+is the one you are most likely to meet). The developer tools are off with it, for the same reason.
+If you are diagnosing a display problem and want them, set `MLQT_DEVTOOLS=1` before starting MLQT and
+F12 will open them.
+
 ## Frequently Asked Questions
 
 ### Can I edit Modelica code in MLQT?

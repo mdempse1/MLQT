@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Not a product: it exists so the journeys can drive MLQT's UI without a desktop host. -->
+    <RootNamespace>MLQT.TestHost</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MLQT.Shared\MLQT.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

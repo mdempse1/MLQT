@@ -1,19 +1,38 @@
 # MLQT.McpTester
 
-A small MAUI Blazor (Windows) desktop app for manually testing **any** stdio MCP server — not just
-MLQT's. It launches a server, lists its tools, generates input fields from each tool's JSON Schema,
-calls the tool, and shows the result.
+A small Photino Blazor desktop app for manually testing **any** stdio MCP server — not just MLQT's.
+It launches a server, lists its tools, generates input fields from each tool's JSON Schema, calls the
+tool, and shows the result.
 
-Built as a MAUI Blazor Hybrid app (MudBlazor UI) to stay consistent with MLQT itself, and uses the
-official `ModelContextProtocol` client SDK.
+MudBlazor UI, the official `ModelContextProtocol` client SDK, and a Photino window — consistent with
+where MLQT itself is going.
+
+**It was a MAUI app until phase 7b-1** (2026-09-08), and was ported first on purpose. It is
+self-contained, has no project references and no users to disappoint, so it is the rehearsal for
+MLQT's own port: the same host, the same bootstrap, the same MudBlazor under the same engine. It also
+had to move regardless — while it was a MAUI app the MAUI workload had to stay installed in CI for
+its sake alone. Porting it runs on Linux as well now, which is useful for a tool whose whole job is
+launching MCP servers.
 
 ## Run
 
 ```bash
-dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
+dotnet run --project MLQT.McpTester/MLQT.McpTester.csproj
 ```
 
 (or open the solution and set `MLQT.McpTester` as the startup project.)
+
+A plain build works, and until 2026-09-17 it did not. `dotnet publish` writes a real `wwwroot`;
+`dotnet build` writes a manifest pointing at the originals — this project's own `wwwroot`, MudBlazor's
+folder in the NuGet cache, `_framework/blazor.webview.js` from its package — and the host has to read
+that manifest to find any of it. Serving `wwwroot` through a bare `PhysicalFileProvider` found nothing,
+so **a Debug build did not start at all**: the provider throws on a root that is not there, before a
+window exists. Publishing was the documented workaround.
+
+That is B133, which was found and fixed in `MLQT.Photino` and not here, even though this app was the
+rehearsal its port was done on. Both hosts now fall back to the manifest, through the one
+`StaticWebAssetManifest` — compiled into this project from source rather than referenced, so the tester
+keeps its independence from MLQT's service layer.
 
 ## Use
 

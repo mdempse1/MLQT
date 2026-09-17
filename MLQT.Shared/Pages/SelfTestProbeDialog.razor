@@ -1,0 +1,13 @@
+@*
+    The smallest thing DialogService can be asked to show.
+
+    It exists only so the mudblazor.overlays probe has something real to open. Using a component the
+    application actually uses would drag its services and its data in, and the probe would then be
+    asking whether that component works rather than whether the host can put an overlay on screen.
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudText id="selftest-dialog-content" Typo="Typo.body1">self-test</MudText>
+    </DialogContent>
+</MudDialog>

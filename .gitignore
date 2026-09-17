@@ -386,7 +386,7 @@ nul
 
 # Bundled SlikSVN command-line client — populated by build/fetch-svn-tools.ps1, not committed.
 # (The README and the folder itself are kept; only the binaries are ignored.)
-MLQT/svn-tools/win-x64/
+svn-tools/win-x64/
 
 # Findings exports from the GUI/CLI comparison recipe (Documentation/code-review.md). These are
 # generated, machine-specific and large — one full run over a sizeable library is tens of megabytes.
@@ -397,4 +397,8 @@ MLQT/svn-tools/win-x64/
 # file that IS committed - it is a reviewable record of accepted debt, like .mlqt/baseline.json.
 CoverageResults/
 CoverageReport/
+
+# The same, from build/run-all-tests.ps1 -Coverage, which measures more suites than the gate does.
+AllTestResults/
+AllTestCoverage/
 !build/coverage-baseline.json

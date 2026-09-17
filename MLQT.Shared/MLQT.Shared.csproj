@@ -7,7 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <SupportedPlatform Include="browser" />
+    <!-- So a component test can call the testable surface of a code-behind directly, rather
+         than reaching it by reflection, which reads badly and breaks silently on a rename. -->
+    <InternalsVisibleTo Include="MLQT.Shared.Tests" />
   </ItemGroup>
 
   <ItemGroup>

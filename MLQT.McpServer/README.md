@@ -2,7 +2,7 @@
 
 A standalone, headless [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
 MLQT's Modelica capabilities as tools for AI agents (Claude, etc.). It reuses the MLQT service layer
-(`MLQT.Services`, `ModelicaGraph`, `ModelicaParser`, `RevisionControl`) without the MAUI UI.
+(`MLQT.Services`, `ModelicaGraph`, `ModelicaParser`, `RevisionControl`) with no UI at all.
 
 Dymola / OpenModelica model checking is intentionally **not** exposed (those have their own servers).
 
@@ -80,16 +80,18 @@ directed by each tool's method signature, so a parameter that is genuinely a str
 
 `check_class` / `check_library` always report parse errors (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, regardless of which style rules are enabled — the same diagnostics the desktop app and `mlqt check` report, with identical wording and line numbers.
 
+A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `list_findings severity:"error"` selects rules the team set to Error without also matching the parse diagnostics' bare `Error`. Checking a library uses that repository's accepted spellings (`.mlqt/dictionary.txt`) as well as its rules, so the finding count matches the desktop app and `mlqt check` on the same source.
+
 `set_style_settings` **merges**: every rule toggle is optional, and one you leave out keeps the value it had. It writes the repository's committed `.mlqt/settings.json`, so this matters — sending a whole object to change one rule would otherwise rewrite the other twenty-eight. `get_style_settings` reports whether each rule is *switched on*, not whether it would currently run, so reading, changing one key and writing back is faithful even for a rule sitting behind a prerequisite that is off.
 
 ## Project layout
 
-- `Program.cs` — host, DI wiring (mirrors `MauiProgram` minus MAUI), stdio MCP server.
+- `Program.cs` — host, DI wiring (the desktop host's list, minus what needs a window), stdio MCP server.
 - `Tools/` — one `[McpServerToolType]` class per group.
 - `Dtos/` — trimmed, serialization-friendly result types (no UI/layout fields).
 - `Helpers/` — editing and resolution helpers: `ClassBodyEditor`, `ModelFilePersistence`, `EntityResolver`, `ModelicaNav`, `GraphRefresh`, `FileWritability`, `ToolDiagnostics`, and the diagram helpers (`DiagramGeometry`, `ConnectionLineAnnotator`, `ConnectorColor`, `ConnectorCompatibility`).
   The check pipeline itself is **not** here: `StyleCheckRunner`, `StyleCheckContext` and `LibraryCheckSession` live in `MLQT.Services/Checking/`, shared with the CLI and the desktop app so all three report the same findings.
-- `Services/HeadlessSettingsService.cs` — JSON settings store (replaces MAUI `Preferences`).
+- `Services/HeadlessSettingsService.cs` — JSON settings store, separate from the desktop application's.
 - `Services/SessionState.cs` — tracks whether opt-in analysis has run.
 - `dev/` — stdio test drivers (`smoke.sh`, `mcp_test.py`, `dep_test.py`, `vcs_test.py`).
 

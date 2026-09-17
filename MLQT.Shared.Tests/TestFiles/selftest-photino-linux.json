@@ -1,0 +1,102 @@
+{
+  "Host": "MLQT.Photino",
+  "RuntimeVersion": "10.0.12",
+  "Probes": [
+    {
+      "Id": "interop.dimensions",
+      "Name": "getDimensions returns a real window size",
+      "Status": "Pass",
+      "Detail": "1115x741"
+    },
+    {
+      "Id": "assets.rcl",
+      "Name": "Razor class library static assets are served",
+      "Status": "Pass",
+      "Detail": "HTTP 200"
+    },
+    {
+      "Id": "scripts.globals",
+      "Name": "Every library script defined its global",
+      "Status": "Pass",
+      "Detail": "all defined"
+    },
+    {
+      "Id": "cytoscape.layouts",
+      "Name": "Every layout extension registered with Cytoscape",
+      "Status": "Pass",
+      "Detail": "dagre, klay, fcose, spread"
+    },
+    {
+      "Id": "cytoscape.init",
+      "Name": "Cytoscape draws a two-node graph",
+      "Status": "Pass",
+      "Detail": "2 node(s)"
+    },
+    {
+      "Id": "interop.modules",
+      "Name": "The diff and spell-check interop respond",
+      "Status": "Pass",
+      "Detail": "both responded"
+    },
+    {
+      "Id": "mudblazor.overlays",
+      "Name": "A dialog, a snackbar and the popover layer reach the DOM",
+      "Status": "Pass",
+      "Detail": "dialog, snackbar and popover layer all present"
+    },
+    {
+      "Id": "fonts.roboto",
+      "Name": "Roboto is available to the page",
+      "Status": "Pass",
+      "Detail": "available"
+    },
+    {
+      "Id": "settings.roundtrip",
+      "Name": "Settings survive a write, read and delete",
+      "Status": "Pass",
+      "Detail": "round-tripped a complex type"
+    },
+    {
+      "Id": "settings.location",
+      "Name": "Settings have a real backing store",
+      "Status": "Pass",
+      "Detail": "/home/mike/.local/share/MLQT/settings.json"
+    },
+    {
+      "Id": "power.sleep",
+      "Name": "Sleep prevention can be turned on and off",
+      "Status": "Pass",
+      "Detail": "both calls returned"
+    },
+    {
+      "Id": "filepicker.wired",
+      "Name": "A file picker is wired up",
+      "Status": "Pass",
+      "Detail": "PhotinoFilePickerService"
+    },
+    {
+      "Id": "culture.invariant",
+      "Name": "Numbers parse and format invariantly",
+      "Status": "Pass",
+      "Detail": "separator \u0027.\u0027, 1.5 parsed: True"
+    },
+    {
+      "Id": "logging.writes",
+      "Name": "This process wrote a line to the log file",
+      "Status": "Pass",
+      "Detail": "/home/mike/.local/share/MLQT"
+    },
+    {
+      "Id": "svn.client",
+      "Name": "An svn client can be found",
+      "Status": "Pass",
+      "Detail": "none on PATH and none bundled"
+    },
+    {
+      "Id": "theme.builds",
+      "Name": "The application theme builds",
+      "Status": "Pass",
+      "Detail": "palette and typography present"
+    }
+  ]
+}

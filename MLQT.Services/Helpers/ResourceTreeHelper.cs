@@ -46,6 +46,15 @@ public static class ResourceTreeHelper
         if (result.Length == 2 && result[1] == ':')
             result += Path.DirectorySeparatorChar;
 
+        // The same case on Linux, and it produced the opposite answer. A POSIX absolute path splits
+        // with an empty leading segment, so two of them always share at least that one - and joining
+        // a single empty segment gives "", which every caller reads as "nothing in common". The
+        // external resources tree then renders empty for a project whose resources sit under
+        // different top-level directories, which on Linux is the ordinary case rather than an odd
+        // one. The shared root is "/", so say so.
+        if (result.Length == 0)
+            result = Path.DirectorySeparatorChar.ToString();
+
         return result;
     }
 }

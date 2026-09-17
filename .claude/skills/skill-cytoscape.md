@@ -195,7 +195,7 @@ Scripts must be loaded in this exact order (each extension auto-registers when `
 <script src="_content/MLQT.Shared/cytoscapeGraph.js"></script>
 ```
 
-All files are in `MLQT.Shared/wwwroot/lib/` (offline UMD bundles — no CDN, required for MAUI BlazorWebView).
+All files are in `MLQT.Shared/wwwroot/lib/` (offline UMD bundles — no CDN: the desktop host serves them from disk into a native webview, and must work with no network).
 
 **Peer dependency chain:**
 - `spread` requires `weaver.min.js` → exports `window.weaver`

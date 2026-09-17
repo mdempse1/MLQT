@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using WeCantSpell.Hunspell;
 
@@ -16,8 +17,37 @@ public record DictionarySource(string AffixFilePath, string DictionaryFilePath);
 public class SpellChecker
 {
     private readonly List<WordList> _dictionaries;
-    private readonly HashSet<string> _customWords;
+
+    /// <summary>
+    /// The accepted words, as an immutable snapshot swapped on write.
+    /// </summary>
+    /// <remarks>
+    /// A lock used to guard every read of this, and <see cref="IsCorrect"/> is called once per word
+    /// of every description and documentation string in a library - millions of times, on every core
+    /// at once. Measured over MSL the spell rules were **half of the whole check**, and a
+    /// micro-benchmark scaled 4.8x on 24 threads rather than the ~24x the work allows. Accepting a
+    /// word is something a person does a few times a day; reading the list happens millions of times
+    /// a minute, so the copy belongs on the write (B128).
+    /// </remarks>
+    private volatile HashSet<string> _customWords;
+
+    /// <summary>Guards writers against each other. Readers never take it.</summary>
     private readonly object _customWordsLock = new();
+
+    /// <summary>
+    /// Whether a word is known to the custom list or the dictionaries, remembered.
+    /// </summary>
+    /// <remarks>
+    /// <para>The dictionary lookup is the expensive half and it is a pure function of the word, so
+    /// the second time a library mentions "temperature" the answer is already here. A library's prose
+    /// repeats itself enormously - MSL asks about 6,487 classes' worth of description strings drawn
+    /// from a vocabulary of a few tens of thousands of distinct words.</para>
+    ///
+    /// <para>Context words are deliberately *not* part of the key: they differ per class, so they are
+    /// checked before this and a hit there never reaches the cache. Caching them would make the key a
+    /// set, which costs more to hash than the lookup it would save.</para>
+    /// </remarks>
+    private ConcurrentDictionary<string, bool> _known = new(StringComparer.Ordinal);
 
     private SpellChecker(List<WordList> dictionaries, HashSet<string> customWords)
     {
@@ -150,18 +180,23 @@ public class SpellChecker
     /// <summary>The word itself, against context words, custom words and the dictionaries.</summary>
     private bool IsKnown(string word, IReadOnlySet<string>? contextWords)
     {
-        // Check context words first (cheapest check)
+        // Context words first: they are per class, so they cannot be cached with the rest, and a set
+        // lookup is cheaper than anything below anyway.
         if (contextWords != null && contextWords.Contains(word))
             return true;
 
-        // Check custom words
-        lock (_customWordsLock)
-        {
-            if (_customWords.Contains(word))
-                return true;
-        }
+        // Everything else is a pure function of the word, so it is asked once per distinct word per
+        // process rather than once per occurrence.
+        return _known.GetOrAdd(word, KnownToCustomWordsOrDictionaries);
+    }
 
-        // Check each Hunspell dictionary
+    /// <summary>The half of the answer that does not depend on which class is being checked.</summary>
+    private bool KnownToCustomWordsOrDictionaries(string word)
+    {
+        // No lock: the field is swapped for a new set on write, never mutated in place.
+        if (_customWords.Contains(word))
+            return true;
+
         foreach (var dict in _dictionaries)
         {
             if (dict.Check(word))
@@ -313,21 +348,18 @@ public class SpellChecker
 
         lock (_customWordsLock)
         {
-            _customWords.Add(word.Trim());
+            // Copy, add, swap. Readers see the old set or the new one, never one being mutated.
+            _customWords = new HashSet<string>(_customWords, _customWords.Comparer) { word.Trim() };
+
+            // The cached answers were computed against the old list, and this word is in at least one
+            // of them as "unknown". Emptied rather than patched: accepting a word is rare, and a
+            // targeted removal would have to know about the possessive form too.
+            _known = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
         }
     }
 
     /// <summary>
     /// Returns a snapshot of the current custom words.
     /// </summary>
-    public IReadOnlyCollection<string> CustomWords
-    {
-        get
-        {
-            lock (_customWordsLock)
-            {
-                return _customWords.ToList().AsReadOnly();
-            }
-        }
-    }
+    public IReadOnlyCollection<string> CustomWords => _customWords.ToList().AsReadOnly();
 }

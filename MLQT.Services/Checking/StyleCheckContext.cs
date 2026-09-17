@@ -51,6 +51,16 @@ public sealed class StyleCheckContext
     public CoverageMeasurer? Coverage { get; private init; }
 
     /// <summary>
+    /// Where each phase's time is recorded, or null when nobody is measuring (backlog B128).
+    /// </summary>
+    /// <remarks>
+    /// Here for the same reason <see cref="Coverage"/> is: it is per run, not per class, and the
+    /// per-class checks run on every core - a static accumulator would have two runs reporting each
+    /// other's numbers, and the test suites run in parallel with each other.
+    /// </remarks>
+    public CheckTimings? Timings { get; set; }
+
+    /// <summary>
     /// The naming rules in the form the visitor wants them. Derived purely from the settings, so it
     /// is the same for every class in a run — it belongs here with the other once-per-run inputs
     /// rather than being rebuilt, with its dictionaries and sets, for each of a library's thousands
@@ -71,14 +81,15 @@ public sealed class StyleCheckContext
         IDictionaryManagerService dictionaryManager,
         string? repositoryRoot = null,
         bool collectCoverage = false,
-        bool honorSuppressions = true)
+        bool honorSuppressions = true,
+        CheckTimings? timings = null)
     {
         SpellChecker? spellChecker = null;
         if (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
             spellChecker = SpellCheckerFactory.Build(
                 settings.SpellCheckLanguages, customDictionary.WordsFor(repositoryRoot), dictionaryManager);
 
-        return Build(settings, graph, spellChecker, collectCoverage, honorSuppressions);
+        return Build(settings, graph, spellChecker, collectCoverage, honorSuppressions, timings);
     }
 
     /// <summary>Context for checking loaded models against a graph, reusing an already-built spell
@@ -90,7 +101,8 @@ public sealed class StyleCheckContext
         DirectedGraph graph,
         SpellChecker? spellChecker,
         bool collectCoverage = false,
-        bool honorSuppressions = true)
+        bool honorSuppressions = true,
+        CheckTimings? timings = null)
     {
         // Every class in the graph. Needed unconditionally (see ClassesCheckedSeparately), and the
         // reference-validation rule wants the same set, so it is built once.
@@ -105,6 +117,9 @@ public sealed class StyleCheckContext
 
         return new StyleCheckContext
         {
+            // Set here rather than by the caller afterwards: the shared lazy callbacks below capture
+            // it when they are created, and one assigned later would leave their work unmeasured.
+            Timings = timings,
             KnownModelIds = knownModelIds,
             ClassesCheckedSeparately = classIds,
             KnownModelNames = knownModelNames,
@@ -113,7 +128,7 @@ public sealed class StyleCheckContext
             // Descriptions and documentation name inherited members as freely as declared ones, so
             // the chain is followed whenever anything is being spell checked.
             InheritedElementNames = spellChecker != null && (settings.SpellCheckDescription || settings.SpellCheckDocumentation)
-                ? StyleChecking.CreateInheritedElementNamesCallback(graph)
+                ? StyleChecking.CreateInheritedElementNamesCallback(graph, timings)
                 : null,
             // The rule resolves types the same way the Unit coverage dimension does, so the findings
             // and the dashboard describe the same gaps.

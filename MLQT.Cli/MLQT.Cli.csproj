@@ -13,7 +13,6 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mlqt</ToolCommandName>
     <PackageId>MLQT.Cli</PackageId>
-    <Version>0.1.0</Version>
     <Description>Headless CLI for MLQT: style-check a Modelica library and report findings.</Description>
     <PackageProjectUrl>https://github.com/mdempse1/MLQT</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mdempse1/MLQT</RepositoryUrl>

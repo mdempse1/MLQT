@@ -127,6 +127,75 @@ public class DoublyLoadedLibraryTreeTests : IDisposable
     }
 
     [Fact]
+    public async Task TheModelCountDoesNotDependOnWhichCopyLoadedFirst()
+    {
+        // Reported from real use: the same project reported 77,860 models on one launch and 76,129 on
+        // the next, and the difference was read as a symptom of the host migration. It is this.
+        //
+        // A documented class is added as a stub only when its source is not already in the graph, so
+        // when the source wins the race the encrypted library never lists the id, and when it loses
+        // the id is listed by both libraries and the node is replaced underneath. Summing
+        // ModelIds.Count over the libraries therefore gave a different answer depending on which
+        // parallel load happened to finish first.
+        var sourceFirst = await LoadBothAsync("Claytex", encryptedFirst: false);
+        var encryptedFirst = await LoadBothAsync("Suspensions", encryptedFirst: true);
+
+        Assert.Equal(2, sourceFirst.TotalModelCount);
+        Assert.Equal(sourceFirst.TotalModelCount, encryptedFirst.TotalModelCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TheModelCountCountsEachClassOnce(bool encryptedFirst)
+    {
+        // Both copies hold the same two classes - the package and its Widget - so loading the second
+        // copy must not change the total. It is the number the deferred-analysis threshold is
+        // compared against, so an inflated one silently changes when the application defers its
+        // analysis instead of running it.
+        var both = await LoadBothAsync("Claytex", encryptedFirst);
+
+        var justSource = new LibraryDataService();
+        await justSource.AddLibraryFromPathAsync(WriteSource("Claytex"));
+
+        // Stated absolutely as well as relatively: the library is the package and its Widget, so the
+        // answer is two. Comparing two counts alone is satisfied by an implementation that returns
+        // zero for everything, which is exactly what the mutation run produced.
+        Assert.Equal(2, justSource.TotalModelCount);
+        Assert.Equal(2, both.TotalModelCount);
+    }
+
+    [Fact]
+    public async Task TheModelCountAddsUpAcrossDifferentLibraries()
+    {
+        // The other direction, so "count each class once" cannot be satisfied by counting too few:
+        // two libraries sharing no classes contribute both their sets.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromPathAsync(WriteSource("Claytex"));
+
+        Assert.Equal(2, service.TotalModelCount);
+
+        await service.AddLibraryFromPathAsync(WriteSource("Suspensions"));
+
+        Assert.Equal(4, service.TotalModelCount);
+    }
+
+    [Fact]
+    public async Task ClassesThatHaveLeftTheGraphAreNotCounted()
+    {
+        // Removing one of the two copies takes its classes out of the graph, but the other copy's
+        // index still lists the ids it shared with it - the indexes are per library and the removal
+        // is per node. Counting those would report classes that are no longer loaded, which is the
+        // reverse of the double-count and just as wrong.
+        var service = await LoadBothAsync("Claytex", encryptedFirst: true);
+        var source = service.Libraries.Single(l => l.SourceType != LibrarySourceType.EncryptedDirectory);
+
+        service.RemoveLibrary(source.Id);
+
+        Assert.Equal(0, service.TotalModelCount);
+    }
+
+    [Fact]
     public async Task AnEncryptedLibraryWithNoSourceCopy_IsStillItsOwnOwner()
     {
         // The fix must not make encrypted libraries disappear when there is no source copy to

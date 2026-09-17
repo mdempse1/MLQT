@@ -2,6 +2,49 @@
 
 MLQT includes built-in spell checking for Modelica description strings and documentation annotations. This helps catch typos in the text that is visible to users of your library — both the short descriptions that appear in component browsers and the full HTML documentation.
 
+## Reviewing Spelling Findings
+
+Spelling findings appear in the **Code Review** findings table alongside other style checking findings. Each finding shows the misspelled word, which model it is in, and the line number where it appears.
+
+### Finding a Misspelled Word
+
+When you click a spelling finding in the findings table, MLQT opens the corresponding model and scrolls the code view so the misspelled word is brought into view — so you don't have to hunt for it. The word is **highlighted inline** with a wavy red underline in the rendered Modelica source.
+
+To act on the word — see suggestions, correct it, add it to your dictionary, or ignore it — **right-click the underlined word** in the code view. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
+
+![Screenshot: The Code Review page with a misspelled word, "efficiancy", underlined by a wavy red line in both the description string and the documentation annotation. The correction menu is open just below the word, headed "Misspelled: efficiancy", listing suggestions with "efficiency" among them, a "Replace with" field, and the Add to Dictionary, Ignore and Close buttons. The findings table beneath reports the same word in the description and in the documentation info.](Images/spell-checking-1.png)
+
+## Correcting Spelling from the Code View
+
+Misspelled words are **highlighted inline** (wavy red underline) in the rendered Modelica source on the Code Review page. Right-clicking a highlighted word opens a correction menu, letting you fix a typo without leaving the page and have the change written to disk immediately.
+
+1. Right-click a highlighted misspelled word in the rendered code.
+2. A correction menu appears just below the word (so it never covers it), automatically nudged to stay within the screen edges. It offers:
+
+   | Option | Action |
+   |--------|--------|
+   | **Suggestions** | A list of possible correct spellings. Near matches from the repository's accepted spellings come first — mistype a term your team has accepted and the accepted spelling is what you want, not whatever the English dictionary makes of it — followed by the language dictionaries' own suggestions. Click one to apply it in place. |
+   | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
+   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** findings it covers in that repository are removed. Disabled for classes that belong to no repository. |
+   | **Ignore** | Accepts the word **in this class only**: MLQT writes `__MLQT(spelling="<word>")` onto the class and saves the file, then removes the findings for that word in that class. The waiver is in the source, so it survives re-formatting, is shared with the team when committed, and is honoured by the desktop app, the CLI and the MCP server alike. A possessive is recorded as the word itself (`Stodola's` is listed as `Stodola`). Use it for a term that is right *here*; use **Add to Dictionary** for one the whole repository uses. |
+   | **Close** | Closes the menu without taking any action. |
+
+3. When you apply a correction, MLQT replaces the word, **saves the file to disk**, re-parses it, and clears the resolved finding.
+
+![Screenshot: The Code Review page with a misspelled word, "efficiancy", underlined by a wavy red line in both the description string and the documentation annotation. The correction menu is open just below the word, headed "Misspelled: efficiancy", listing suggestions with "efficiency" among them, a "Replace with" field, and the Add to Dictionary, Ignore and Close buttons. The findings table beneath reports the same word in the description and in the documentation info.](Images/spell-checking-1.png)
+
+The replacement is **whole-word and case-sensitive**, and is only applied inside description strings and documentation prose. Occurrences inside HTML links (`href`s) and `<code>`/`<pre>` blocks are deliberately left untouched, so correcting a word never breaks a link or a code example. If the correction would produce code that fails to parse, the change is aborted and the file is left unchanged.
+
+The rest of the file is left exactly as it was, including its line endings — the corrected word is the only change, so the correction shows up in version control as a one-word diff.
+
+After a correction is applied, the code view reloads but keeps your current scroll position (both vertical and horizontal), so you stay where you were in the file rather than jumping back to the top-left.
+
+> **Note:** This corrects spelling only. Repairing **broken links** in documentation is a separate, planned feature — the spelling correction is careful not to disturb links, but it does not fix ones that are already broken.
+
+### Line Numbers
+
+Spelling findings report the actual line where the misspelled word appears, even within multi-line strings. For documentation annotations that span many lines of HTML, the line number points to the specific line containing the typo, not the line where the annotation starts.
+
 ## What Gets Checked
 
 Spell checking covers two types of text in Modelica code:
@@ -48,7 +91,7 @@ The spell checker is designed to minimize false positives. The following are aut
 | **Component and variable names in scope** | If a model declares `Real rflx`, the word "rflx" is valid within that model's descriptions, wherever in the class it is declared |
 | **Names inherited from base classes** | Everything the model inherits through `extends`, at any depth, counts too — so a description referring to a port or parameter that a base class declares is not flagged |
 | **Model names from loaded libraries** | Any model name from any loaded library (e.g., "Step", "Integrator", "PID") is treated as a valid word |
-| **Modelica and engineering terms** | A built-in list covers the vocabulary no English dictionary has: the language and its tools ("Modelica", "Dymola", "FMUs", "redeclaration"), and engineering, thermodynamic, electrical and mathematical terms ("revolute", "enthalpy", "isentropic", "thyristor", "airgap", "quaternions", "Hessenberg"). Terms whose British and American spellings differ are only accepted in the [language you selected](#language-dictionaries) — an `en_US` repository accepts "linearization" and still reports "linearisation" |
+| **Modelica and engineering terms** | A built-in list covers the vocabulary no English dictionary has: the language and its tools ("Modelica", "Dymola", "FMUs", "redeclaration"), and engineering, thermodynamic, electrical and mathematical terms ("revolute", "enthalpy", "isentropic", "thyristor", "airgap", "quaternions", "Hessenberg"). Terms whose British and American spellings differ are only accepted in the [language you selected](#language-dictionaries) — a `en_US` repository accepts "linearization" and still reports "linearisation" |
 
 ## Enabling Spell Checking
 
@@ -128,7 +171,7 @@ The word list is in **Settings > Repositories**, under the repository's spell-ch
 the **Accepted spellings** expandable section:
 
 - **Add a word** — Type a word in the text field and press Enter or click the **+** button. Case is
-  ignored when checking, so a word only needs listing once however it is capitalised, and the
+  ignored when checking, so a word only needs listing once however it is capitalised, and the 
   possessive of a listed word is accepted without listing it separately
 - **Remove a word** — Click the delete icon next to any word in the list
 - **Filter** — Use the filter text field to search within the word list
@@ -151,51 +194,12 @@ whatever pace suits.
 
 The fastest way to accept a word is from a spelling finding on the Code Review page — right-click
 the underlined word in the code view and choose **Add to Dictionary**. The word goes into the list of
-the repository that owns the class you are looking at, not into whichever repository is selected in
+custom words that belong to the repository that owns the class you are looking at, not into whichever repository is selected in
 settings. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
 
 If the class belongs to no repository — a library loaded on its own, or one reconstructed from a
 vendor's encrypted documentation — there is nowhere to write the word that a check would read back,
 so **Add to Dictionary** is disabled and says why.
-
-## Reviewing Spelling Findings
-
-Spelling findings appear in the **Code Review** findings table alongside other style checking findings. Each finding shows the misspelled word, which model it is in, and the line number where it appears.
-
-### Finding a Misspelled Word
-
-When you click a spelling finding in the findings table, MLQT opens the corresponding model and scrolls the code view so the misspelled word is brought into view — so you don't have to hunt for it. The word is **highlighted inline** with a wavy red underline in the rendered Modelica source.
-
-To act on the word — see suggestions, correct it, add it to your dictionary, or ignore it — **right-click the underlined word** in the code view. See [Correcting Spelling from the Code View](#correcting-spelling-from-the-code-view) below.
-
-## Correcting Spelling from the Code View
-
-Misspelled words are **highlighted inline** (wavy red underline) in the rendered Modelica source on the Code Review page. Right-clicking a highlighted word opens a correction menu, letting you fix a typo without leaving the page and have the change written to disk immediately.
-
-1. Right-click a highlighted misspelled word in the rendered code.
-2. A correction menu appears just below the word (so it never covers it), automatically nudged to stay within the screen edges. It offers:
-
-   | Option | Action |
-   |--------|--------|
-   | **Suggestions** | A list of possible correct spellings. Near matches from the repository's accepted spellings come first — mistype a term your team has accepted and the accepted spelling is what you want, not whatever the English dictionary makes of it — followed by the language dictionaries' own suggestions. Click one to apply it in place. |
-   | **Replace with** | A text field for typing your own replacement; press **Enter** or click **Apply**. |
-   | **Add to Dictionary** | Adds the word to the accepted spellings of the repository this class belongs to. Clicking a possessive records the word itself (`Stodola's` is listed as `Stodola`), since the possessive is then accepted anyway. The word is immediately accepted and **all** findings it covers in that repository are removed. Disabled for classes that belong to no repository. |
-   | **Ignore** | Accepts the word **in this class only**: MLQT writes `__MLQT(spelling="<word>")` onto the class and saves the file, then removes the findings for that word in that class. The waiver is in the source, so it survives re-formatting, is shared with the team when committed, and is honoured by the desktop app, the CLI and the MCP server alike. A possessive is recorded as the word itself (`Stodola's` is listed as `Stodola`). Use it for a term that is right *here*; use **Add to Dictionary** for one the whole repository uses. |
-   | **Close** | Closes the menu without taking any action. |
-
-3. When you apply a correction, MLQT replaces the word, **saves the file to disk**, re-parses it, and clears the resolved finding.
-
-The replacement is **whole-word and case-sensitive**, and is only applied inside description strings and documentation prose. Occurrences inside HTML links (`href`s) and `<code>`/`<pre>` blocks are deliberately left untouched, so correcting a word never breaks a link or a code example. If the correction would produce code that fails to parse, the change is aborted and the file is left unchanged.
-
-The rest of the file is left exactly as it was, including its line endings — the corrected word is the only change, so the correction shows up in version control as a one-word diff.
-
-After a correction is applied, the code view reloads but keeps your current scroll position (both vertical and horizontal), so you stay where you were in the file rather than jumping back to the top-left.
-
-> **Note:** This corrects spelling only. Repairing **broken links** in documentation is a separate, planned feature — the spelling correction is careful not to disturb links, but it does not fix ones that are already broken.
-
-### Line Numbers
-
-Spelling findings report the actual line where the misspelled word appears, even within multi-line strings. For documentation annotations that span many lines of HTML, the line number points to the specific line containing the typo, not the line where the annotation starts.
 
 ## Tips
 

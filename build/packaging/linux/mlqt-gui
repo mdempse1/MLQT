@@ -1,0 +1,24 @@
+#!/bin/bash
+# MLQT's GUI, from a terminal or a script. The desktop entry does not use this — it runs
+# /opt/mlqt/MLQT.Photino directly — and this file exists only so that `mlqt-gui` is on PATH beside
+# `mlqt` and `mlqt-mcp-server`.
+#
+# `exec -a` rather than a symlink, and that is the whole reason this is a script.
+#
+# A desktop shell has nothing but the window's app_id to identify an application by, and GTK takes
+# app_id from g_get_prgname() — the base name of argv[0]. Launched through a symlink called
+# mlqt-gui the window reports app_id "mlqt-gui", which matches no installed desktop entry, and on a
+# Wayland session MLQT is then unbranded in the dock, in Alt-Tab and in the window list (B134 —
+# SetIconFile is a no-op there, so the entry is the only icon mechanism there is). Measured with
+# WAYLAND_DEBUG=1, both ways:
+#
+#     symlink:      -> xdg_toplevel#43.set_app_id("mlqt-gui")
+#     exec -a:      -> xdg_toplevel#43.set_app_id("MLQT.Photino")
+#
+# bash, not sh: `exec -a` is a bashism and dash — which is /bin/sh on Debian and Ubuntu — answers
+# `exec: -a: not found`. Checked, because the shebang looked like a free choice.
+#
+# Overriding argv[0] is safe for the application itself: .NET's apphost resolves its base directory
+# from /proc/self/exe, not from argv[0], so the web assets and the settings file are found either
+# way. Verified — all 16 /selftest probes pass when launched like this.
+exec -a MLQT.Photino /opt/mlqt/MLQT.Photino "$@"

@@ -302,6 +302,45 @@ public class BaselineMaintenanceTests
         Assert.Contains("\"MLQT.Doc.ClassDescription\"", lib.BaselineText);
     }
 
+    // ---- the options the baseline commands share with check ---------------------------------------
+
+    [Fact]
+    public void Baseline_HonoursAnExplicitConfig()
+    {
+        // cli.md lists --config for create/prune/update, and nothing ran it. Writing a baseline runs
+        // the same check, so the settings decide what becomes accepted debt: a baseline taken under
+        // the wrong rules is wrong for as long as it is trusted, and silently so.
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        // Both halves, so the assertion cannot pass because the rule happened to be off anyway:
+        // the library's own settings turn it on, and the file named by --config turns it off.
+        Cli.Run("baseline", "create", lib.Path);
+        Assert.Contains("MLQT.Doc.ParameterDescription", lib.BaselineText);
+
+        var settings = Path.Combine(lib.Path, "elsewhere.json");
+        File.WriteAllText(settings, """{ "ParameterHasDescription": false }""");
+
+        Cli.Run("baseline", "create", lib.Path, "--config", settings, "--force");
+
+        Assert.DoesNotContain("MLQT.Doc.ParameterDescription", lib.BaselineText);
+    }
+
+    [Fact]
+    public void Baseline_AcceptsAllowVersionMismatch()
+    {
+        // The other option cli.md lists for these commands. It only changes behaviour when a
+        // dependency's version disagrees, which is hard to stage here - so this asserts the lesser
+        // thing that was nonetheless untrue of nothing else in the suite: the commands accept it,
+        // rather than rejecting it as an unknown option and exiting 2.
+        using var lib = new TempLibrary().WithModel(TwoUndescribed);
+
+        var (code, _, stderr) = Cli.Run("baseline", "create", lib.Path, "--allow-version-mismatch");
+
+        Assert.NotEqual(2, code);
+        Assert.DoesNotContain("unknown option", stderr);
+        Assert.Contains("MLQT.Doc.ParameterDescription", lib.BaselineText);
+    }
+
     // ---- dependency drift ------------------------------------------------------------------------
 
     [Fact]

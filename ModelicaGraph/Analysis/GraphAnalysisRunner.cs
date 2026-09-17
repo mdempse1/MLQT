@@ -56,7 +56,10 @@ public static class GraphAnalysisRunner
             .ToList();
         if (reportable.Count != context.Models.Count)
             context = new GraphAnalysisContext(
-                context.Graph, context.Settings, reportable, context.DependenciesAnalyzed);
+                context.Graph, context.Settings, reportable, context.DependenciesAnalyzed)
+            {
+                Timings = context.Timings,
+            };
 
         foreach (var analyzer in analyzers)
         {
@@ -69,7 +72,14 @@ public static class GraphAnalysisRunner
 
             try
             {
-                findings.AddRange(analyzer.Analyze(context));
+                // Named per analyzer, because "the graph analyses took 40 seconds" is not something
+                // anybody can act on and "UnusedMembersAnalyzer took 38 of them" is (B128).
+                var analysed = CheckTimings.Measure(
+                    context.Timings,
+                    CheckTimings.Phase.AnalysisPrefix + analyzer.GetType().Name,
+                    () => analyzer.Analyze(context));
+
+                findings.AddRange(analysed);
             }
             catch (Exception ex)
             {

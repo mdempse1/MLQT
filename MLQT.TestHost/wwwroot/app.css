@@ -1,0 +1,11 @@
+/*
+    The test host's own stylesheet, deliberately empty.
+
+    HostAssetManifest names "app.css" for every host - a slot for styling that belongs to the host
+    rather than to MLQT.Shared. This host contributes none, but the page is generated from the
+    manifest, so without this file every page load 404s on it (B120). Harmless in itself, and that is
+    the problem: it was noise in the server log that nothing asserted on and nobody read, sitting
+    exactly where a *real* missing asset would have appeared.
+
+    MLQT.Photino's copy is the same placeholder for the same reason.
+*/

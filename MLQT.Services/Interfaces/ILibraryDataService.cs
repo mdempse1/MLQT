@@ -16,6 +16,24 @@ public interface ILibraryDataService
     IReadOnlyList<LoadedLibrary> Libraries { get; }
 
     /// <summary>
+    /// How many classes are loaded, counting each one once.
+    /// </summary>
+    /// <remarks>
+    /// <para>Not <c>Libraries.Sum(l =&gt; l.ModelIds.Count)</c>, which is what the callers used to do
+    /// and which over-counts. The same library is routinely loaded twice — a tool's library folder
+    /// ships the encrypted build of a library the user also has checked out as source — and while only
+    /// one copy of each class survives in the graph, <b>both</b> <c>LoadedLibrary</c> entries can list
+    /// the id. Whether they do depends on which load won the race: a stub is not recorded at all when
+    /// the source is already there, and is recorded and later superseded when it is not.</para>
+    ///
+    /// <para>So the sum was not merely wrong, it was <b>differently wrong each run</b> — the same
+    /// project reported 77,860 and 76,129 on consecutive launches, and the difference was read as a
+    /// symptom of the host migration. It is the number the deferred-analysis threshold is compared
+    /// against.</para>
+    /// </remarks>
+    int TotalModelCount { get; }
+
+    /// <summary>
     /// Gets the name and root path of each loaded library, as needed by
     /// <c>GraphBuilder</c> to resolve <c>modelica://</c> URIs.
     /// </summary>

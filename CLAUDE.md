@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-MLQT is a cross-platform Blazor application built with .NET 10 targeting native platforms via .NET MAUI (Android, iOS, macOS Catalyst, Windows). UI components in the Shared project are hosted within MAUI using BlazorWebView.  Only the Windows build is currently included in the project.
+MLQT is a cross-platform Blazor application built with .NET 10. UI components in the Shared project are hosted in a desktop webview: **`MLQT.Photino`, on Windows and Linux** — WebView2 and WebKitGTK respectively. It was a .NET MAUI application until phase 7b-8 (2026-09-10), which deleted that host after verifying Photino against it on all 16 `/selftest` probes on both platforms. Nothing in the repository depends on MAUI now, `PortabilityTests` is what keeps it that way, and `skill-desktop-host.md` carries what the host work taught.
 
 The MLQT UI is intended to be a users primary way to manage Modelica libraries in revision control systems and supports SVN and Git. The intention is for users to work with MLQT to review and commit changes, pull updates, create new branches and push changes to the revision control system. It also provides static analysis of Modelica code to understand the impact of changes, apply formatting rules and check code against style guidelines.
 
@@ -12,12 +12,12 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 
 ## Solution Structure
 
-- **MLQT.Shared** - Shared Blazor components, pages, layouts, services
-- **MLQT** - .NET MAUI application
+- **MLQT.Shared** / **MLQT.Shared.Tests** - Shared Blazor components, pages, layouts, services. Component logic lives in `.razor.cs` code-behind partials (see below); the test project holds the code-behind policy guards, the bUnit harness and the frozen MAUI conformance baseline
+- **MLQT.Photino** - **The desktop host**, on Photino.Blazor (Windows and Linux). `Program.cs` is the whole of it: `AddMlqtCore()` plus the three platform services, the window, its icon and placement, and the one-time settings migration from the retired MAUI host
 - **MLQT.Services** / **MLQT.Services.Tests** - Business logic services
-- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer without MAUI. See `MLQT.McpServer/README.md`
-- **MLQT.McpTester** - MAUI Blazor (Windows) desktop app for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
-- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI (packaged as a `dotnet tool`). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
+- **MLQT.McpServer** / **MLQT.McpServer.Tests** - Headless Model Context Protocol (MCP) server exposing MLQT's Modelica capabilities as tools over stdio; reuses the service layer with no UI at all. See `MLQT.McpServer/README.md`
+- **MLQT.McpTester** - Photino Blazor desktop app (Windows and Linux) for manually testing any stdio MCP server: connect, list tools, auto-generate parameter fields from each tool's JSON Schema, call, and view results. Uses MudBlazor + the ModelContextProtocol client SDK. See `MLQT.McpTester/README.md`
+- **MLQT.Cli** / **MLQT.Cli.Tests** - Headless cross-platform `mlqt` CLI, shipped inside each platform's installer rather than as a `dotnet tool` (7b-7: `dotnet tool install` is an SDK command, so packaging it that way obliged a build agent to install the SDK to run a linter). `mlqt check` style-checks a Modelica library and emits console/JSON/JUnit/SARIF/TeamCity/markdown output with CI exit codes, reusing the shared check pipeline in `MLQT.Services/Checking/`; `mlqt baseline` manages the accepted-debt file; `mlqt compare` lists the classes one copy of a library has that another does not, matching on full Modelica name so a restructure on disk is not a difference; `mlqt hook` installs the check as a git pre-commit hook. See `Documentation/cli.md`
 - **ModelicaParser** / **ModelicaParser.Tests** - ANTLR-based Modelica parser
 - **ModelicaGraph** / **ModelicaGraph.Tests** - Directed graph for file/model relationships
 - **RevisionControl** / **RevisionControl.Tests** - Git/SVN integration
@@ -25,6 +25,12 @@ Use the CODING_GUIDELINES.md whenever generating or refactoring code.
 - **OpenModelicaInterface** / **OpenModelicaInterface.Tests** - OpenModelica ZeroMQ interface
 
 ## Build and Run Commands
+
+Test projects run on **xUnit v3 / Microsoft.Testing.Platform**, opted into repository-wide by
+`global.json` — an all-or-nothing switch, so every test project must stay on it. VSTest-only flags
+(`--nologo`, `-v`, `--logger trx`) are errors there and present as "0 tests ran" rather than as an
+error; use `--report-trx --report-trx-filename x` and `--coverlet` instead. `--filter` keeps its
+VSTest syntax. Test projects are `OutputType=Exe` and can be run directly as executables.
 
 ```bash
 # Build entire solution
@@ -35,8 +41,18 @@ dotnet test MLQT.Services.Tests
 dotnet test ModelicaParser.Tests
 dotnet test ModelicaGraph.Tests
 
-# Run MAUI application (Windows)
-dotnet build MLQT/MLQT.csproj && dotnet run --project MLQT/MLQT.csproj
+# Run every suite, including the two no CI job runs - see Test Cases below
+pwsh ./build/run-all-tests.ps1
+
+# Run the desktop application (Windows and Linux)
+dotnet run --project MLQT.Photino/MLQT.Photino.csproj
+
+# Publish the three shipping tools into one tree and prove each of them runs (phase 7b-7)
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
+
+# Build the Linux installer from that tree, and prove the packaged tools run (phase 7b-7)
+build/publish-tools.sh --runtime linux-x64 --self-contained --allow-missing-svn --version 1.2.3 --output publish/linux-x64
+build/package-deb.sh --version 1.2.3 --stage publish/linux-x64 --output artifacts
 ```
 
 ## Architecture Patterns
@@ -47,14 +63,16 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 **Pattern for platform-specific services:**
 1. Define interface in `MLQT.Services/Interfaces/`
-2. Implement in `MLQT/Services/` using MAUI APIs
-3. Register in `MLQT/MauiProgram.cs`
+2. Implement in `MLQT.Photino/Services/`, per platform where the platforms differ
+3. Register in `MLQT.Photino/Program.cs`
 
 **Pattern for reusable .NET services:**
 1. Define interface in `MLQT.Services/Interfaces/` — **always there**, even when the implementation
    lives in a subfolder such as `Checking/`. One folder answers "what services are there?"
 2. Implement in `MLQT.Services/`
-3. Register as singleton in `MauiProgram.cs`
+3. Register as singleton in `MLQT.Shared/MlqtServiceCollectionExtensions.cs` (`AddMlqtCore`) — **not**
+   in a host. Every host calls it, so a service registered in one host and not another is a class of
+   bug that stops existing
 
 ### Core Services
 
@@ -76,7 +94,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
 | **DymolaCheckingService** | Model checking via Dymola HTTP JSON-RPC |
 | **OpenModelicaCheckingService** | Model checking via OpenModelica ZeroMQ |
-| **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`) |
+| **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`, `~/.local/share/MLQT/` on Linux). **File only** — the console target is off unless `MLQT_LOG_CONSOLE` is set, so the log file is the single place to look |
 
 ### The shared check pipeline (`MLQT.Services/Checking/`)
 
@@ -93,14 +111,16 @@ the **same findings with the same line numbers**. Change the primitive, never on
 | **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
 | **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
 | **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation |
+| **CheckTimings** (in `ModelicaGraph/Analysis/`) | Where a run's time went, per phase: parse, each rule by name, each analysis, and the shared work a rule triggers. One instance per run, passed through the contexts. `mlqt check --timings` prints it; the desktop app logs it. **Use `MeasureNested` for anything lazy and cached**, or the first caller to reach it is billed for it and reads as the slow one (B128) |
 
-**Platform-specific services** (in `MLQT/Services/`, use MAUI APIs):
+**Platform-specific services** — the whole of what a host contributes, registered in
+`MLQT.Photino/Program.cs`:
 
-| Service | Purpose |
-|---------|---------|
-| **IFilePickerService** | Native file/folder picker dialogs |
-| **IPowerManagementService** | Prevents system sleep during long operations |
-| **ISettingsService** | Application settings persistence (JSON, per-project) |
+| Service | Implementation | Purpose |
+|---------|----------------|---------|
+| **IFilePickerService** | `MLQT.Photino/Services/PhotinoFilePickerService.cs` | Native file/folder picker dialogs, through the window |
+| **IPowerManagementService** | `MLQT.Photino/Services/PowerManagementService.cs` | Prevents system sleep during long operations — `SetThreadExecutionState` on Windows, an inhibit lock held through `systemd-inhibit` on Linux |
+| **ISettingsService** | `MLQT.Services/JsonSettingsService.cs` | Settings persistence, as JSON under `%LocalAppData%/MLQT` (`~/.local/share/MLQT`). Not host-specific at all any more, which is why it is in `MLQT.Services`; `MauiPreferencesFile` is read once on first run to bring a pre-7b user's settings across |
 
 ### Application State (AppState)
 
@@ -141,6 +161,8 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | `body2` | Modelica code, file paths, and values shown beside a label |
 | `caption` | Explanatory text under a control, and secondary detail in a tree |
 
+**Component logic goes in a code-behind file** (`Foo.razor` + `Foo.razor.cs` with `public partial class Foo`), not in an `@code { }` block — an `@code` block is for a component with no logic worth testing. Services in such a component are injected with `[Inject]` properties, not `@inject` directives, because a directive-injected service cannot be set by a test. The full rule, including which components are exempt, is in `CODING_GUIDELINES.md` §Blazor Patterns. The sweep is done — all 31 logic-bearing components are converted and `MLQT.Shared.Tests/CodeBehindPolicyTests.cs` holds the line.
+
 **Thread Safety**: In Razor event handlers, use `await InvokeAsync(StateHasChanged)`.
 
 **Graph Visualization**: Interactive network graphs use the `CytoscapeGraph` component (`Components/CytoscapeGraph.razor`) backed by Cytoscape.js. It accepts generic `DiagramNode`/`DiagramEdge` parameters. See `skill-cytoscape.md` for full details.
@@ -150,7 +172,8 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | File | Purpose |
 |------|---------|
 | `MLQT.slnx` | Solution file |
-| `MLQT/MauiProgram.cs` | DI setup, service registration |
+| `MLQT.Shared/MlqtServiceCollectionExtensions.cs` | `AddMlqtCore()` — the service registrations every host needs |
+| `MLQT.Photino/Program.cs` | The desktop host: the window, the three platform services, settings migration |
 | `MLQT.Shared/Layout/MainLayout.razor` | Main layout, analysis pipeline orchestration |
 | `MLQT.Shared/Models/AppState.cs` | Application state and cross-component events |
 | `MLQT.Shared/Components/LibraryBrowser.razor` | Model tree navigation, VCS operation UI |
@@ -278,7 +301,7 @@ External resources (data files, C libraries, images) are tracked as graph nodes:
 
 1. Define interface in appropriate `Interfaces/` folder
 2. Implement in `MLQT.Services/` or `MLQT.Shared/Services/`
-3. Register as singleton in `MauiProgram.cs`
+3. Register as singleton in `AddMlqtCore()` (`MLQT.Shared/MlqtServiceCollectionExtensions.cs`)
 4. Use events for cross-component communication
 5. Keep business logic in services, not Razor components
 
@@ -296,6 +319,9 @@ Detailed documentation for specialized subsystems is available in `.claude/skill
 | `skill-cytoscape.md` | CytoscapeGraph component, cytoscapeGraph.js, layout options, script loading |
 | `skill-spell-checking.md` | Spell checking system: SpellChecker, dictionaries, custom words, style rule visitors, UI integration |
 | `skill-naming-conventions.md` | Naming convention checking: NamingValidator, NamingStyle, presets, FollowNamingConvention visitor, exception names |
+| `skill-encrypted-libraries.md` | Reading a vendor's generated help HTML: `DymolaHelpParser`, stub synthesis, `IsExternalStub` write guards, asymmetric resolution, accuracy |
+| `skill-desktop-host.md` | The Photino host: `HostAssetManifest`, the silent failure modes, window placement and icons, the three platform services, WebKitGTK-vs-WebView2 differences, `/selftest` |
+| `skill-gui-testing.md` | The four test layers over `MLQT.Shared`, verify-by-mutation, guard tests, `MLQT.TestHost` + Playwright journeys, generated documentation screenshots |
 
 ## User Documentation
 
@@ -303,6 +329,7 @@ User-facing documentation is in `Documentation/`:
 
 | Document | Covers |
 |----------|--------|
+| `installation.md` | Both installers: the Linux `.deb` and the Windows setup, what each puts where, and removing them |
 | `getting-started.md` | Prerequisites, project/repo setup, first steps |
 | `library-browser.md` | Tree navigation, VCS status indicators, view modes |
 | `code-review.md` | Code viewer, diff, findings, external tool checks, formatting exclusion toggle |
@@ -324,29 +351,54 @@ User-facing documentation is in `Documentation/`:
 | `cli.md` | Headless `mlqt` CLI: install, `check` options, formats (console/JSON/JUnit/SARIF/TeamCity/markdown/review), baseline/ratchet, `compare` for missing classes, `hook` for the git pre-commit gate, `review` for pull-request comments, exit codes |
 | `ci-quality-gate.md` | Hands-on work-through: set up `mlqt` in CI, enable rules + severities, baseline existing debt, gate on new findings, wire into TeamCity/GitHub, comment on a pull request, install the pre-commit hook |
 | `troubleshooting.md` | Common findings, FAQ |
+**The screenshots are generated, not taken.** `MLQT.Journeys/DocumentationScreenshots` drives the
+real components in a real browser through `MLQT.TestHost`, against the fixture library, and writes
+each image as the file the markdown already links to:
+
+```powershell
+$env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
+MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
+```
+
+Run it **on its own, by that filter**: the journeys share one host, so a full-suite run reaches it
+with libraries and settings another journey left behind. With the variable unset it does nothing, so
+an ordinary run never writes to the repository.
+
+**The caption in the markdown is the specification for the shot.** Where the two disagree, one of
+them is wrong - and it is usually the picture, which is the point of being able to regenerate them.
+A handful cannot be produced this way at all and stay photographs: the two Dymola shots
+(`code-review-4`, and `code-review-5` because the Finding Details dialog opens only for a finding
+carrying `Details`, which a style rule never produces), the six SVN ones (no server),
+`settings-reference-4` (that section renders only for an SVN repository), `git-operations-6` (the
+merge dialog's ready-to-merge phase needs a clean working copy, and MLQT only re-reads working-copy
+status after a VCS operation *in the application*), and anything showing the window frame.
+`skill-gui-testing.md` has the detail.
 
 ## Planning and Design Notes
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
-record of what was decided and what shipped. **Read the roadmap before
-starting anything substantial**: it holds the agreed sequencing, the decisions behind it, and the
-backlog (items `B1`-`Bnn`), which is where work in progress is tracked.
+forward plan and the working list. **Read both before starting anything substantial.**
 
 | Document | Covers |
 |----------|--------|
-| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and the backlog — including which items are shipped and which are open |
-| `Design/design-ci-quality-gate.md` | The deep-dive behind §5: baseline/ratchet design, finding identity, CLI surface, phased plan |
-| `Design/design-phase1-findings-foundation.md` | Phase 1 — `Finding`, rule ids, severity map, fingerprints |
-| `Design/design-phase2-cli.md` | Phase 2 — the headless `mlqt` CLI and the shared check pipeline |
-| `Design/design-phase3-baseline.md` | Phase 3 — baseline/ratchet and changed-model escalation |
-| `Design/design-phase4-ci-ergonomics.md` | Phase 4 — SARIF, TeamCity, markdown, real per-rule severities |
-| `Design/design-phase5-suppression.md` | Phase 5 — `__MLQT` suppression, checker/formatter/authoring |
-| `Design/design-phase6-analyses-dashboard.md` | Phase 6 — Wave-1 analyses, graph-analyzer seam, metrics dashboard |
-| `Design/design-phase7-gui-tests.md` | Phase 7a — the GUI test harness that must precede the desktop-host migration |
-| `Design/design-encrypted-libraries.md` | Recovering classes from a vendor's generated help HTML |
+| `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and where the project is |
+| `Design/backlog.md` | The working list: every open item, with an id (`B1`–`Bnn`) that is never reused |
 
-Each phase note records what actually landed, including where the implementation deviated from the
-sketch — so when the note and the code disagree, that is a defect in one of them, not a detail.
+**Backlog ids are permanent.** They are cited from code comments, test summaries, build scripts and
+CI workflows, so a retired id is never given to a new item — new items continue from the highest
+number ever issued, whatever has since been closed. `MLQT.Cli.Tests/MarkdownTableTests.cs` holds the
+file's table structure and id uniqueness.
+
+**The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
+they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skill files —
+`skill-encrypted-libraries.md`, `skill-desktop-host.md` and `skill-gui-testing.md` are the three
+written specifically to carry that material. Git history has the notes themselves if the reasoning
+behind a delivered decision is ever needed.
+
+**Write a design note for a phase that has not shipped**, not for one that has: a note describing
+what was planned rather than what exists is worse than no note, and every review of this repository
+found notes that had drifted into exactly that. Retire it when the phase lands and move what is
+durable into the code, the guidelines or a skill.
 
 ## Documentation Maintenance
 
@@ -356,14 +408,12 @@ Update this file when:
 - Modifying service interfaces
 - Adding/removing NuGet packages
 
-Update `Design/roadmap.md` when:
-- A backlog item is finished, or a new one is found — the backlog is the working list, and an item
-  that is done but still open reads as outstanding work to whoever picks it up next
-- A phase ships, or a decision changes the agreed sequencing
+Update `Design/backlog.md` when:
+- A backlog item is finished, or a new one is found — it is the working list, and an item that is
+  done but still open reads as outstanding work to whoever picks it up next
 
-Update the phase's design note when its implementation deviates from what the note describes. The
-notes are read as the record of what was built; a note describing something that was planned and not
-built is worse than no note.
+Update `Design/roadmap.md` when:
+- A phase ships, or a decision changes the agreed sequencing
 
 Update relevant skill files for specialized subsystem changes.
 
@@ -380,8 +430,101 @@ a consumer can resolve. Run on every push by `build-and-test.yml`; run it locall
 
 Comprehensive tests are required for all classes with the goal being >80% coverage for each class.  The ModelicaParser assembly requires >95% coverage for all classes as this is critical to the project.
 
-**CI enforces this** — `build/check-coverage.ps1` runs all six suites, merges their reports, and fails
-the build per class. Run it locally the same way:
+Two scripts answer two different questions. Run the first before pushing; run the second when you
+have added a class or moved code between them.
+
+### "Do all the tests pass?" — `build/run-all-tests.ps1`
+
+```powershell
+./build/run-all-tests.ps1                        # all 10 suites, ~4 minutes
+./build/run-all-tests.ps1 -Coverage              # ...with a per-assembly coverage summary
+./build/run-all-tests.ps1 -CoreOnly -SkipBuild   # the 7 CI runs, against the current build
+./build/run-all-tests.ps1 -Configuration Debug   # Release by default, to match CI
+```
+
+`-Coverage` **reports; it does not gate**, and it measures more than the gate can. Two things are
+only visible here: `DymolaInterface` and `OpenModelicaInterface`, whose suites drive a live
+simulation tool so no CI job runs them, and the ~8 points the browser journeys add to `MLQT.Shared`
+by exercising the real UI. Both scripts take their assembly lists from
+`build/CoverageAssemblies.ps1`, so they cannot disagree about what "our code" means.
+
+It runs **every** suite, which is more than CI does and more than the coverage gate does:
+
+| | Suites |
+|---|---|
+| `run-all-tests.ps1` | all 10 — the 7 below, plus `DymolaInterface.Tests`, `OpenModelicaInterface.Tests` and `MLQT.Journeys` |
+| CI `build-libraries` (Windows) and `linux-tests` (Linux) | the same 7 on each platform; `ui-journeys` runs the journeys on both |
+| `check-coverage.ps1` | the same 7 — the other three contribute no coverage |
+
+**The suite list is read from `MLQT.slnx`**, not written out in the script, so a test project added to
+the solution is picked up without anyone remembering a list. This repository has been bitten by the
+same rule having two implementations often enough that a list would be a defect waiting to happen.
+
+**Three suites need something the machine may not have** and are the reason this script exists at all:
+`DymolaInterface.Tests` (a live Dymola) and `OpenModelicaInterface.Tests` (a live `omc`) run in **no**
+CI job — the workflow says why — so this is the only thing that runs them; `MLQT.Journeys` needs
+`pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once. On a machine without
+Dymola or OpenModelica, use `-CoreOnly`.
+
+**A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
+suites by category on the grounds that the machine might not have the tool, and immediately excused a
+real one — OpenModelica *is* installed on the main development machine, and
+`GetErrorStringAsync_AfterClear_ReturnsEmpty` fails against omc 1.26 (backlog B116). Excusing by
+category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
+not.
+
+### "Would the installer work?" — `build/publish-tools.sh`
+
+One installer per platform carries the GUI, the `mlqt` CLI and the MCP server, so all three are
+published into a **single tree** — they share every assembly below `MLQT.Shared`, and each carries its
+own `.deps.json`, so together they cost one copy rather than three.
+
+```bash
+build/publish-tools.sh --version 1.2.3 --output publish/win-x64 --allow-missing-svn
+build/publish-tools.sh --runtime linux-x64 --self-contained --version 1.2.3 --output publish/linux-x64
+```
+
+**The smoke tests are the point of it.** Building an installer around a tree nobody has run is how this
+phase produced a host that resolved no web assets (B133) and one that shipped no svn client (B144) —
+both of which built, published and installed perfectly. So each tool is asked something only a working
+build can answer: the CLI prints its version, the MCP server completes an `initialize` handshake over
+stdio, and the GUI runs the **16 `/selftest` probes against the published tree**. That last is the
+strongest check available anywhere in this repository — it resolves the RCL assets, runs interop,
+renders MudBlazor and exercises settings, logging and the svn locator, in the layout that ships.
+
+`--allow-missing-svn` is needed locally because the payload is fetched by `build/fetch-svn-tools.ps1`
+and is not committed. It defaults to **failing**, so a release cannot ship without the client by nobody
+remembering a flag — which is exactly how B144 happened.
+
+**Shell, not PowerShell**, and it is `build/package-deb.sh`'s reason applied to its own input: pwsh is
+not installed on a plain Ubuntu desktop, so a PowerShell publish step made the Linux half of the build
+unrunnable on an ordinary Linux box even though the packaging script beside it was shell. On Windows it
+runs under Git Bash. One consequence worth knowing: `mkfifo` under Git Bash makes an MSYS-emulated fifo
+that a native `.exe` cannot read from, so the MCP handshake here holds stdin open with an ordinary
+pipeline rather than the fifo `package-deb.sh` uses.
+
+The Windows installer is `build/installer/mlqt.iss` (Inno Setup 6), built from that tree. It refuses to
+compile if any of the three tools is missing.
+
+The Linux installer is `build/package-deb.sh`, which takes the same tree and writes a `.deb`.
+**Shell rather than PowerShell**: `dpkg-deb` exists only on a Debian machine, and pwsh is not on a
+plain Ubuntu desktop, so a `.ps1` would be a packaging script you cannot run on the machine that makes
+the package. It applies the same "prove it before shipping
+it" rule one layer further out — `publish-tools.sh` proves the three tools run, this proves the
+package puts them somewhere they still run from, by extracting it and asking each of them again,
+self-test probes included. Run it under `xvfb-run -a` on a machine with no display, or that last and
+strongest check is skipped.
+
+Its inputs are in `build/packaging/linux/`. **The desktop entry there is not cosmetic**: on a Wayland
+session it is the only thing that gives MLQT an icon anywhere — dock, Alt-Tab and window list — and
+it works by being named after the window's `app_id`, which is the GUI executable's file name. Rename
+either without the other and the icon silently disappears. `MLQT.Shared.Tests/DebianPackageTests`
+holds that chain together, as `WindowsInstallerTests` does for the Inno script.
+
+### "Would the coverage gate pass?" — `build/check-coverage.ps1`
+
+**CI enforces the per-class bar** — this script runs the seven measured suites, merges their reports,
+and fails the build per class. Run it locally the same way:
 
 ```powershell
 dotnet build MLQT.slnx -c Release
@@ -404,5 +547,7 @@ beside the untestable ones, indistinguishable from them and never asked about ag
 
 Classes under 25 coverable lines are measured but not gated (a four-line record whose only uncovered
 lines are the compiler's `Equals`/`GetHashCode` reads as 50%, and chasing that produces tests that
-assert nothing), as is source-generated code. `MLQT.Shared` has no tests at all until phase 7a builds
-the harness — see `Design/design-phase7-gui-tests.md`.
+assert nothing), as is source-generated code. `MLQT.Shared` joined the ratchet in phase 7a-5 at 80%,
+measuring `.razor.cs` and **not** filtering `.razor` — measured, a component's `BuildRenderTree` is not
+counted at all, and the filter the plan called for would have removed five ordinary classes from the
+report instead. See `skill-gui-testing.md`.

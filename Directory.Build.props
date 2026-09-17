@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    One version for everything the repository builds.
+
+    Phase 7b-7. Three tools now ship inside one installer per platform, so "which version is this?"
+    has to have one answer. It did not: `MLQT.Cli.csproj` pinned 0.1.0, everything else defaulted to
+    1.0.0, and the release workflow passed `-p:Version` to the two CLI commands and to nothing else.
+    So a tagged release produced a CLI that agreed with the tag, an MCP server that said 1.0.0, and a
+    GUI whose About line said 1.0.0 — measured, not assumed — for every release there has ever been.
+
+    `Version` flows into `AssemblyInformationalVersion`, which is what `MLQT.Cli/ToolInfo.cs` reports
+    from the `version` command and stamps into every SARIF document, and what
+    `MLQT.Shared/Layout/MainLayout.razor.cs` shows the user. Setting it here means neither has to be
+    told separately.
+
+    CI overrides it from the tag: `dotnet publish -p:Version=1.2.3`. A local build keeps the default
+    below, which is deliberately not a release number — an installer or a bug report saying
+    `0.0.0-dev` is telling you something true, where one saying `1.0.0` is not.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>0.0.0</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == '' and '$(Version)' == ''">dev</VersionSuffix>
+  </PropertyGroup>
+
+</Project>

@@ -2,6 +2,7 @@ using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
 using ModelicaParser.SpellChecking;
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using MLQT.Services.Checking;
 using System.Collections.Concurrent;
@@ -87,7 +88,12 @@ public class StyleCheckingWorker
             // service's cached spell checker rather than rebuilding one.
             // Coverage is measured alongside: this pass has parsed the class anyway, and the app's
             // Metrics tab would otherwise parse every one of them again the first time it is opened.
-            var context = StyleCheckContext.Build(_settings, _currentGraph, _spellChecker, collectCoverage: true);
+            // Where this pass's time goes, written to the log when it finishes. Costs two timestamp
+            // reads per phase; the alternative is that "the check felt slow" arrives with no evidence
+            // and gets answered by guessing, which is what B128 was.
+            var timings = new CheckTimings();
+            var context = StyleCheckContext.Build(
+                _settings, _currentGraph, _spellChecker, collectCoverage: true, timings: timings);
 
             // Process models in parallel with bounded concurrency
             var parallelOptions = new ParallelOptions
@@ -133,6 +139,17 @@ public class StyleCheckingWorker
 
             // Final progress update
             OnProgressChanged?.Invoke();
+
+            // One block, at the end, naming the slowest phases. Not every phase: the log is read by a
+            // person, and the tail of a breakdown is a dozen rules at under a percent each.
+            var breakdown = timings.Format();
+            if (breakdown.Count > 0)
+            {
+                LoggingService.Info(nameof(StyleCheckingWorker),
+                    $"{_repositoryName}: checked {modelIds.Count} class(es).");
+                foreach (var line in breakdown.Take(10))
+                    LoggingService.Info(nameof(StyleCheckingWorker), line);
+            }
         }
         finally
         {

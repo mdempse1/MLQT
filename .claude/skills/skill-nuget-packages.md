@@ -36,7 +36,7 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ### SlikSVN command-line client (bundled, not a NuGet package)
 - **Purpose**: `svn.exe` used for **all** SVN operations (much faster than the previously-used SharpSvn on large libraries). Resolved at runtime by `RevisionControl/SvnToolLocator.cs`.
-- **Used in**: bundled into the MLQT app output under `svn/`; staged by `build/fetch-svn-tools.ps1` into `MLQT/svn-tools/win-x64` (not committed to source control).
+- **Used in**: bundled into the MLQT app output under `svn/` on Windows; staged by `build/fetch-svn-tools.ps1` into `svn-tools/win-x64` at the repository root (not committed to source control). On Linux the `.deb` declares `subversion` rather than bundling it.
 - **License**: Apache 2.0 (SlikSVN is a distribution of [Apache Subversion](https://subversion.apache.org/)). Redistribution requires retaining the Apache license/NOTICE; keep these with the bundled binaries.
 
 ## UI Framework
@@ -54,19 +54,27 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 - **License**: [MIT](https://github.com/fgilde/MudBlazor.Extensions)
 - **NuGet**: https://www.nuget.org/packages/MudBlazor.Extensions
 
-## .NET MAUI
+## The desktop host
 
-### Microsoft.Maui.Controls
-- **Purpose**: Core controls for .NET MAUI cross-platform applications
-- **Used in**: MLQT (MAUI project)
-- **License**: [MIT](https://github.com/dotnet/maui/blob/main/LICENSE)
-- **Version**: `$(MauiVersion)` variable for synchronization
+MLQT was a .NET MAUI application until phase 7b-8. The `Microsoft.Maui.*` packages went with it;
+these two are what replaced them, and they are the whole of the host's dependency list.
 
-### Microsoft.AspNetCore.Components.WebView.Maui
-- **Purpose**: Enables hosting Blazor components in MAUI applications
-- **Used in**: MLQT (MAUI project)
-- **License**: [MIT](https://github.com/dotnet/maui/blob/main/LICENSE)
-- **Version**: `$(MauiVersion)` variable for synchronization
+### Photino.Blazor (v4.0.13)
+- **Purpose**: Hosts Blazor components in a native webview — WebView2 on Windows, WebKitGTK on Linux
+- **Used in**: MLQT.Photino, MLQT.McpTester
+- **License**: [Apache 2.0](https://github.com/tryphotino/photino.Blazor/blob/master/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/Photino.Blazor
+- **Note**: brings `Photino.Native`, which carries the per-platform native library. On Linux that
+  links `libwebkit2gtk-4.1`, `libgtk-3` and `libnotify`, none of which arrive with .NET — the `.deb`
+  declares them and `Documentation/installation.md` says so
+
+### Microsoft.AspNetCore.Components.WebView (v10.0.9)
+- **Purpose**: The webview-hosted Blazor renderer Photino.Blazor builds on
+- **Used in**: MLQT.Photino, MLQT.McpTester
+- **License**: [MIT](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.AspNetCore.Components.WebView
+- **Note**: referenced explicitly to pin the graph forward onto the 10.0.x line `MLQT.Shared` uses,
+  rather than the 9.0.1 that Photino's `net9.0` asset group would bring
 
 ## ASP.NET Core
 
@@ -103,25 +111,35 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ## Testing
 
-### xunit (v2.9.3)
+### xunit.v3 (v4.0.0)
 - **Purpose**: Core xUnit testing framework
 - **Used in**: All test projects
 - **License**: [Apache 2.0](https://github.com/xunit/xunit/blob/main/LICENSE)
-- **NuGet**: https://www.nuget.org/packages/xunit
+- **NuGet**: https://www.nuget.org/packages/xunit.v3
+- **Note**: v3 runs on **Microsoft.Testing.Platform**, not VSTest. On the .NET 10 SDK the VSTest
+  target refuses to run such a project at all, so `xunit.runner.visualstudio` and
+  `Microsoft.NET.Test.Sdk` are **not referenced** and `global.json` opts the whole repository into
+  the MTP-based `dotnet test`. That opt-in is all-or-nothing: every test project must be on it.
+  Test projects are `OutputType=Exe` and can also be run directly as executables.
 
-### xunit.runner.visualstudio (v3.1.5)
-- **Purpose**: Visual Studio test runner for xUnit
+### bunit (v2.9.0)
+- **Purpose**: Blazor component rendering for tests
+- **Used in**: MLQT.Shared.Tests
+- **License**: [MIT](https://github.com/bUnit-dev/bUnit/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/bunit
+- **Note**: v2 requires xUnit v3. Its context type is `BunitContext` (v1's `TestContext` collides
+  with xUnit v3's own `Xunit.TestContext`), and `Render<T>()` replaces `RenderComponent<T>()`.
+
+### Microsoft.Testing.Extensions.TrxReport (v2.3.3)
+- **Purpose**: TRX result files under Microsoft.Testing.Platform (`--report-trx`), which CI uploads
 - **Used in**: All test projects
-- **License**: [Apache 2.0](https://github.com/xunit/visualstudio.xunit/blob/main/License.txt)
-- **NuGet**: https://www.nuget.org/packages/xunit.runner.visualstudio
+- **License**: [MIT](https://github.com/microsoft/testfx/blob/main/LICENSE)
+- **NuGet**: https://www.nuget.org/packages/Microsoft.Testing.Extensions.TrxReport
+- **Note**: Must match the `Microsoft.Testing.Platform` version `xunit.v3` brings in. A mismatched
+  version fails at run time with a `MissingMethodException`, not at restore.
 
-### Microsoft.NET.Test.Sdk (v18.3.0) for running tests
-- **Used in**: All test projects
-- **License**: [MIT](https://github.com/microsoft/vstest/blob/main/LICENSE)
-- **NuGet**: https://www.nuget.org/packages/Microsoft.NET.Test.Sdk
-
-### coverlet.collector (v8.0.0)
-- **Purpose**: Code coverage collector for .NET
+### coverlet.MTP (v10.0.1)
+- **Purpose**: Code coverage under Microsoft.Testing.Platform (`--coverlet`)
 - **Used in**: All test projects
 - **License**: [MIT](https://github.com/coverlet-coverage/coverlet/blob/master/LICENSE)
 - **NuGet**: https://www.nuget.org/packages/coverlet.collector
@@ -134,31 +152,20 @@ All packages use permissive open-source licenses (MIT, BSD, Apache 2.0).
 
 ## Logging and Diagnostics
 
-### Microsoft.Extensions.Logging.Debug (v10.0.3)
+### Microsoft.Extensions.Logging.Debug (v10.0.0)
 - **Purpose**: Debug output provider for Microsoft.Extensions.Logging
-- **Used in**: MLQT (MAUI project)
+- **Used in**: MLQT.McpTester
 - **License**: [MIT](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT)
 - **NuGet**: https://www.nuget.org/packages/Microsoft.Extensions.Logging.Debug
 
 ## Version Management
-
-### MAUI Version Synchronization
-
-MAUI packages use `$(MauiVersion)` variable defined in project files to ensure version consistency:
-
-```xml
-<ItemGroup>
-    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
-</ItemGroup>
-```
 
 ### Development Dependencies
 
 Test packages are marked as development dependencies and don't ship with the application:
 
 ```xml
-<PackageReference Include="xunit" Version="2.9.2">
+<PackageReference Include="xunit.v3" Version="4.0.0">
     <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     <PrivateAssets>all</PrivateAssets>
 </PackageReference>
@@ -182,5 +189,6 @@ Test packages are marked as development dependencies and don't ship with the app
 | OpenModelicaInterface | NetMQ |
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
-| MLQT | Microsoft.Maui.*, Microsoft.AspNetCore.Components.WebView.Maui |
-| Test Projects | xunit, Microsoft.NET.Test.Sdk, coverlet.collector (RevisionControl.Tests also: SharpSvn) |
+| MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
+| MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol |
+| Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (MLQT.Shared.Tests also: bunit; RevisionControl.Tests also: SharpSvn) |

@@ -32,4 +32,7 @@ public sealed class InMemorySettingsService : ISettingsService
         _values.Clear();
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public string BackingStore => "in memory (test double)";
 }

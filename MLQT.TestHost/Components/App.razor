@@ -1,0 +1,68 @@
+@using MLQT.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+
+@*
+    Prerendering is off, and that is not a preference. A webview host renders interactively from the
+    first frame; Blazor Server by default renders the component tree statically on the server first.
+    MLQT's components issue JS interop during their initial render, which is legal in a webview and
+    throws during a static render - the first request to this host was a 500 for exactly that reason.
+    Prerendering here would make journeys fail on a difference the product does not have.
+*@
+@{ var interactive = new InteractiveServerRenderMode(prerender: false); }
+
+@*
+    The test host's page. Deliberately *generated* from HostAssetManifest rather than hand-written,
+    which makes drift impossible for this host by construction. The Photino host's page is
+    hand-written - it is a static file the webview loads, with no Razor underneath it - and is held
+    to the same manifest by HostAssetManifestTests instead.
+*@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MLQT (test host)</title>
+    <base href="/" />
+
+    @foreach (var stylesheet in HostAssetManifest.Stylesheets)
+    {
+        <link rel="stylesheet" href="@stylesheet" />
+    }
+
+    @*
+        The scoped-CSS bundle, which is named after the host assembly and so cannot live in the
+        manifest - each host adds its own. Omitting it does not look like a missing stylesheet: the
+        page renders, MudBlazor is styled, and syntax colours are right (CodeReview injects those at
+        runtime), but every rule in a .razor.css is absent - so the side-by-side diff loses
+        `display: flex` and stacks its panes, which is what reached the documentation images.
+    *@
+    <link rel="stylesheet" href="@HostAssetManifest.ScopedCssBundleFor("MLQT.TestHost")" />
+
+    <link rel="icon" href="data:," />
+
+    <HeadOutlet @rendermode="interactive" />
+</head>
+<body>
+    <Routes @rendermode="interactive" />
+
+    @* The bootstrap script is the one line that differs between hosts. *@
+    <script src="@HostAssetManifest.ServerBootstrapScript"></script>
+
+    @foreach (var script in HostAssetManifest.Scripts)
+    {
+        <script src="@script"></script>
+    }
+
+    @*
+        The inline helper every host page carries. Probe 1 of the /selftest route in 7a-7 exists
+        because losing it breaks every measurement the UI makes of its own window.
+    *@
+    <script>
+        window.getDimensions = function () {
+            return { width: window.innerWidth, height: window.innerHeight };
+        };
+    </script>
+</body>
+</html>

@@ -56,17 +56,48 @@ public sealed record Finding
     public string Fingerprint => FindingFingerprint.Compute(RuleId, ModelId, ElementPath, Discriminator);
 
     /// <summary>
-    /// Projects to the legacy <see cref="LogMessage"/> shape consumed by the GUI/MCP today.
-    /// Reproduces the exact strings existing consumers rely on (<c>"Style warning"</c> severity,
-    /// <c>"StyleChecking"</c> source, empty details).
+    /// Projects to the flat <see cref="LogMessage"/> shape consumed by the GUI and the MCP server
+    /// (source <c>"StyleChecking"</c>, empty details).
+    ///
+    /// <para>The severity is <see cref="SeverityLabel"/>, which reports <see cref="Severity"/>. It
+    /// used to be the constant <c>"Style warning"</c> whatever the finding said, which meant the
+    /// severity was resolved correctly by <c>StampSeverities</c> and then thrown away at this one
+    /// line: every finding reached the Code Review list and <c>list_findings</c> as a warning, a
+    /// filter for errors matched nothing, and configuring a rule to Error or Info changed no visible
+    /// thing (B165). The CLI reads <see cref="Severity"/> directly, which is why its gate was the
+    /// only one that worked. The docstring here called the constant a compatibility contract; the
+    /// only things asserting it were two tests.</para>
     /// </summary>
     public LogMessage ToLogMessage() =>
-        new(ModelId, "Style warning", LineNumber, Message)
+        new(ModelId, SeverityLabel, LineNumber, Message)
         {
             Source = LogMessage.StyleCheckingSource,
             RuleId = RuleId,
             ElementPath = ElementPath,
             Fingerprint = Fingerprint,
             Discriminator = Discriminator,
+            StyleSeverity = Severity,
         };
+
+    /// <summary>
+    /// How <see cref="Severity"/> reads in the flat message shape: <c>"Style error"</c>,
+    /// <c>"Style warning"</c> or <c>"Style info"</c>.
+    ///
+    /// <para>The <c>"Style "</c> prefix is kept because a <see cref="LogMessage"/> list mixes style
+    /// findings with the parser's, whose severities are the bare <c>"Error"</c> and <c>"Fatal"</c>
+    /// (see <c>ParserErrorReporter</c>) — dropping it would make a style error indistinguishable
+    /// from a file that would not parse. Keeping it also leaves every consumer's substring match
+    /// working: the MCP's <c>severity</c> filter and the Code Review search both test
+    /// <c>Contains</c>, so "error" finds "Style error" and "warning" still finds "Style warning".</para>
+    ///
+    /// <para><see cref="RuleSeverity.Off"/> reads as a warning. It is not a state a reported finding
+    /// reaches — <c>StampSeverities</c> substitutes the catalogue default for it — so this is a
+    /// fallback rather than a meaning.</para>
+    /// </summary>
+    public string SeverityLabel => Severity switch
+    {
+        RuleSeverity.Error => "Style error",
+        RuleSeverity.Info => "Style info",
+        _ => "Style warning",
+    };
 }

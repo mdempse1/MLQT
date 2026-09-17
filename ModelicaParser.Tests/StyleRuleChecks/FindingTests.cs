@@ -99,7 +99,7 @@ public class FindingProjectionTests
 
         Assert.Equal("MyLib.Foo", lm.ModelName);
         Assert.Equal("some message", lm.Summary);
-        Assert.Equal("Style warning", lm.Severity); // legacy constant, independent of Finding.Severity
+        Assert.Equal("Style error", lm.Severity); // reports Finding.Severity (B165), not a constant
         Assert.Equal("StyleChecking", lm.Source);
         Assert.Equal(42, lm.LineNumber);
         Assert.Equal("", lm.Details);
@@ -119,6 +119,49 @@ public class FindingProjectionTests
         };
 
         Assert.Equal("Stodola's", f.ToLogMessage().Discriminator);
+    }
+
+    [Theory]
+    [InlineData(RuleSeverity.Error, "Style error")]
+    [InlineData(RuleSeverity.Warning, "Style warning")]
+    [InlineData(RuleSeverity.Info, "Style info")]
+    public void ToLogMessage_ReportsTheFindingsSeverity(RuleSeverity severity, string expected)
+    {
+        // The projection used to hardcode "Style warning", so a rule configured to Error or Info was
+        // resolved correctly and then flattened at this one line — the Code Review list and the MCP's
+        // list_findings saw warnings and nothing else, and a filter for errors matched nothing
+        // whatever the settings said (B165). Only the CLI, which reads Finding.Severity directly, was
+        // unaffected, which is why its gate worked and no other surface's did.
+        var f = new Finding
+        {
+            RuleId = RuleIds.UnusedClass,
+            ModelId = "MyLib.Foo",
+            Message = "some message",
+            Severity = severity,
+        };
+
+        Assert.Equal(expected, f.ToLogMessage().Severity);
+    }
+
+    [Theory]
+    [InlineData(RuleSeverity.Error)]
+    [InlineData(RuleSeverity.Warning)]
+    [InlineData(RuleSeverity.Info)]
+    public void SeverityLabel_StaysMatchableBySubstring(RuleSeverity severity)
+    {
+        // Every consumer of the flat shape filters by substring rather than equality — the MCP's
+        // `severity` argument and the Code Review search box both call Contains — so each label has
+        // to contain the level's own name, case-insensitively. Renaming one to something that reads
+        // better ("Style problem", say) would silently answer nothing to every query.
+        var label = new Finding
+        {
+            RuleId = RuleIds.UnusedClass,
+            ModelId = "MyLib.Foo",
+            Message = "some message",
+            Severity = severity,
+        }.SeverityLabel;
+
+        Assert.Contains(severity.ToString(), label, StringComparison.OrdinalIgnoreCase);
     }
 }
 

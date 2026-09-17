@@ -1,4 +1,3 @@
-using Newtonsoft.Json.Bson;
 
 namespace ModelicaParser.Tests.ModelicaRendererTests;
 

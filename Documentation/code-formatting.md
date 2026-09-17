@@ -4,21 +4,51 @@ MLQT can automatically apply formatting rules to Modelica source files. This pag
 
 ## Formatting Settings
 
-Formatting behavior is controlled by the **Apply formatting rules** toggle in each repository's settings (see [Settings Reference](settings-reference.md#understanding-apply-formatting-rules)). When enabled, the following rules are applied during formatting:
+Formatting is controlled by six switches in each repository's settings, under **Formatting rules**. Open them with **Settings > Manage Repositories**, then click the repository's row.
 
-| Setting | Effect |
-|---------|--------|
-| **One of each section** | Ensures each section type (declarations, equations, algorithms) appears at most once |
-| **Import statements first** | Moves import statements to the top of the model, then `extends` clauses |
-| **Components before classes** | Sorts component declarations before nested class definitions |
-| **Initial equation/algorithm first** / **last** | Writes `initial equation` and `initial algorithm` blocks before, or after, the regular ones |
+![Screenshot: The "Formatting rules" section of the Edit Repository Details dialog, showing six toggle switches: "Apply formatting rules", "A class may only have 1 public, 1 protected, 1 equation or algorithm section", "Composition must be imports first; then extends at the top of the public/protected sections", "Composition must have components before classes", and the two initial equation/algorithm ordering switches.](Images/code-formatting-1.png)
+
+The first is the master switch; the other five say what "formatted" means for this repository. **The labels below are the dialog's own**, so you can match what you are reading to what is on the screen.
+
+| Switch | Rule id | Settings key | What the formatter does |
+|--------|---------|--------------|-------------------------|
+| **Apply formatting rules. If off then just used as part of style guidelines** | — | `ApplyFormattingRules` | The master switch. Off, MLQT reports layout but never rewrites a file. See [Understanding "Apply Formatting Rules"](settings-reference.md#understanding-apply-formatting-rules) |
+| **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | `OneOfEachSection` | Merges multiple sections of the same kind into one |
+| **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` | `ImportStatementsFirst` | Moves `import` statements to the top of each section, then `extends` clauses |
+| **Composition must have components before classes** | — *(formatting only)* | `ComponentsBeforeClasses` | Sorts component declarations before nested class definitions. Only does anything when *imports first* is also on |
+| **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | `InitialEQAlgoFirst` | Writes `initial equation` and `initial algorithm` blocks before the regular ones |
+| **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | `InitialEQAlgoLast` | Writes them after the regular ones |
+
+The two initial-section switches are mutually exclusive: turning one on turns the other off. *Components before classes* is a **refinement of** *imports first* rather than an alternative to it — the formatter only consults it inside the branch that imports-first selects, so on its own it changes nothing. [Settings Reference](settings-reference.md#formatting-rules) has the same six rows with their defaults and the full description of each.
+
+**Components before classes is formatting only.** It has no rule id, so it changes what the formatter writes and is never reported as a finding — `mlqt check` in CI cannot see it, and neither can the desktop findings list.
 
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
-source order and moves nothing at all — so the other three are **switched off with it**, both as
-formatting transforms and as style rules. Enabling *Import statements first* on its own would report
+source order and moves nothing at all — so the other switches are **switched off with it**, both as
+formatting transforms and as style rules. Enabling *imports first* on its own would report
 an arrangement the formatter could never produce, so MLQT does not let you: the switches are greyed
 out in repository settings, and a hand-edited settings file gets a warning from `mlqt check`. See
 [One of each section is required by the rest](settings-reference.md#one-of-each-section-is-required-by-the-rest).
+
+### Writing the settings by hand
+
+A repository's settings live in `.mlqt/settings.json`, committed with the code, and `mlqt check` reads the same file — so a repository that has never been opened in the desktop application can still be checked in CI. Each switch above can be written as its **Settings key**:
+
+```json
+{
+    "ApplyFormattingRules": true,
+    "OneOfEachSection": true,
+    "ImportStatementsFirst": true,
+    "ComponentsBeforeClasses": false,
+    "InitialEQAlgoFirst": true,
+    "InitialEQAlgoLast": false
+}
+```
+
+Two things to watch when writing this by hand:
+
+- **The key and the rule id are not spelled the same.** The key is `InitialEQAlgoFirst` with a capital `EQ`; the rule id is `MLQT.Style.InitialEqAlgoFirst`. The keys are what `settings.json` uses; the rule ids are what findings, `RuleSeverities` and `__MLQT(suppress="…")` use.
+- **A severity written against one of these does nothing.** These five are switches, not Off/Info/Warning/Error rows, and their level is worked out rather than chosen: a layout finding is a **warning** when *Apply formatting rules* is off and an **error** when it is on. Writing `"MLQT.Style.OneOfEachSection": "Error"` in `RuleSeverities` records only that the rule is on — the value is not read. See [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
 
 > **Formatting and checking agree about these.** Each row above is also a style rule, and the
 > formatter writes what the rule asks for. That was not always true of *Initial equation/algorithm
@@ -41,7 +71,7 @@ Formatting is triggered in specific situations. MLQT does not continuously refor
 
 When MLQT starts (or when you switch projects), it formats any files that VCS reports as modified or untracked. This ensures that your working copy is consistently formatted before you begin working.
 
-- Only files within the repository's Modelica library directory (`LocalPath`) are considered
+- Only files within the repository's specified directory (`LocalPath`) are considered
 - Each repository's own formatting settings are used
 - Repositories with **Apply formatting rules** disabled are skipped entirely
 - Files are identified via VCS status (modified, added, or untracked `.mo` files)
@@ -84,13 +114,47 @@ The **Format All Files** button in repository settings forces a complete reforma
 - After changing formatting rules and wanting to ensure complete consistency
 - After importing files from another source that may not follow your formatting conventions
 
-This is the most thorough formatting operation — it rebuilds the entire file structure using the `ModelicaPackageSaver`, which can reorganize files into the correct package directory structure.
+This is the most thorough formatting operation, and the one that restructures the repository on disk: it writes every package as a directory with one file per class. See [One File Per Class](#one-file-per-class) — the first run on a single-file library produces a very large commit.
 
 ### On Manual Refresh
 
 When you click the **Refresh** button to process pending file changes from external edits, formatting is applied to the changed files. Each repository's own formatting settings are used, so files from different repositories are formatted with the correct rules.
 
 See [File Monitoring & Refresh](file-monitoring.md) for details on the refresh process.
+
+## One File Per Class
+
+MLQT stores a library the way Modelica's own directory mapping describes it: **a package is a directory**, holding a `package.mo` for the package itself, **one `.mo` file per class inside it**, and a `package.order` naming them in order.
+
+If a library is currently one `.mo` file holding dozens of classes, a full format **expands it**. `Lib.mo` becomes `Lib/package.mo`, `Lib/Resistor.mo`, `Lib/Capacitor.mo` and so on; nested packages become nested directories; and the original single file is deleted once everything in it has been written somewhere else.
+
+> **Expect a very large commit the first time.** One file disappears and dozens appear in its place. Do it deliberately — on a clean working copy, as a commit of its own, at a moment when nobody has a long-running branch open — and say so in the commit message. It is a move, not a rewrite, but version control cannot tell until you commit it.
+
+### Why it is worth it
+
+The reason is version control, and it is the same reason MLQT formats at all: so that a diff shows the change and nothing else.
+
+- **A diff is per class.** A review shows which models were touched, rather than one enormous file with edits scattered through it.
+- **History is per class.** `git log Lib/Resistor.mo` — or `svn log` on the same path — answers *when did this model last change, and why* directly. In a single-file library every class shares one history, and that question cannot be asked at all.
+- **Blame points at the model.** The last person to touch a class is the last person to touch its file, not the last person to touch anything in the library.
+- **Merges conflict less.** Two people working on different models in the same package are no longer editing the same file.
+
+### What stays inside `package.mo`
+
+Not every class can have a file of its own, and MLQT leaves those inline in the parent package:
+
+- classes carrying an element prefix — `replaceable`, `redeclare`, `inner`, `outer` — which Modelica only permits inside their parent;
+- a class whose name differs from a sibling's only by case, which would collide on a case-insensitive file system;
+- a class named `package`, which would collide with `package.mo` itself;
+- short class definitions (`package Types = Modelica.Units.SI;`), which are written as a single line rather than as a directory.
+
+### When the restructure happens
+
+Only on the **full** library save: the [Format All Files](#format-all-files-button) button, and the automatic full reformat that runs when you change a repository's formatting settings.
+
+The incremental path — at startup, after a VCS operation, and after a refresh — rewrites the files a change touched **in place**. It never moves a class from one file to another, so day-to-day work does not quietly restructure your repository.
+
+A file that version control reports as newly **Added** is never removed by the tidy-up that follows a save, so a class you have created but not yet committed cannot be lost to it.
 
 ## Excluding Models from Formatting
 

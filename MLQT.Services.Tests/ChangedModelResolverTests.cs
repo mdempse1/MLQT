@@ -1,3 +1,4 @@
+using MLQT.TestSupport;
 using Moq;
 using MLQT.Services.Checking;
 using RevisionControl.Interfaces;
@@ -17,8 +18,8 @@ namespace MLQT.Services.Tests;
 /// </summary>
 public class ChangedModelResolverTests
 {
-    private const string Root = @"C:\repo";
-    private const string Library = @"C:\repo\Lib";
+    private static readonly string Root = TestPaths.Rooted("repo");
+    private static readonly string Library = TestPaths.Rooted("repo", "Lib");
 
     private static Mock<IRevisionControlSystem> Vcs(
         IReadOnlyList<string>? changedPaths, string? resolvedRevision = "abc123")

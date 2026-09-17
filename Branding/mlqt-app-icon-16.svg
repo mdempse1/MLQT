@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>MLQT</title>
+  <!-- 16px is drawn on the pixel grid rather than scaled down from mlqt-app-icon.svg: at this size
+       the three bars there fall below a pixel each and merge into one grey smudge. Two bars and a
+       heavier tick keep both halves of the mark legible. Every edge is on a whole pixel. -->
+  <rect x="0.5" y="0.5" width="15" height="15" rx="3.5" ry="3.5"
+        fill="#F2F3F7" stroke="#C9CDDE" stroke-width="1"/>
+  <rect x="3" y="3" width="9" height="2" fill="#2E3357"/>
+  <rect x="3" y="6" width="5" height="2" fill="#2E3357"/>
+  <polyline points="6,10 9,13 13,7" fill="none" stroke="#5B69AB" stroke-width="3"
+            stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>

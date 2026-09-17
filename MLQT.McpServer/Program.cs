@@ -10,19 +10,23 @@ using MLQT.Services.Interfaces;
 
 // Modelica source and the VCS protocols are culture-invariant: the decimal separator is always
 // '.', and ',' is never a thousands separator. Default every thread to the invariant culture so
-// number parsing/formatting is never corrupted by the host machine's locale (mirrors MauiProgram).
+// number parsing/formatting is never corrupted by the host machine's locale (as AddMlqtCore does
+// for the desktop host).
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
-var builder = Host.CreateApplicationBuilder(args);
+// The generic host's defaults, minus the appsettings.json file watcher — on Linux that watcher is an
+// inotify instance the server never needed, and taking it is enough to kill the process at startup on
+// a machine at the per-user limit (B163). See McpHostSettings.
+var builder = new HostApplicationBuilder(McpHostSettings.Create(args));
 
 // stdout is reserved for the MCP JSON-RPC stream; every log line MUST go to stderr or it will
 // corrupt the protocol. Route the console logger to stderr for all levels.
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
-// --- MLQT services (mirrors MauiProgram.cs, minus the MAUI-only services) ---
+// --- MLQT services (the desktop host's list, minus what only a desktop host needs) ---
 // ISettingsService is replaced by the headless JSON-file implementation.
-// IFilePickerService / IPowerManagementService are MAUI-only and unused by the service layer,
+// IFilePickerService / IPowerManagementService need a window and are unused by the service layer,
 // so they are intentionally omitted. Dymola/OpenModelica checking is out of scope for this server.
 builder.Services.AddSingleton<ISettingsService, HeadlessSettingsService>();
 builder.Services.AddSingleton<ILibraryDataService, LibraryDataService>();

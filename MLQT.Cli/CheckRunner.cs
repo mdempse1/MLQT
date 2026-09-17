@@ -238,6 +238,15 @@ internal static class CheckRunner
                 return ExitCodes.Error;
         }
 
+        // Last, and on stderr: stdout carries the report a CI job parses. Printed after the findings
+        // because it is the answer to "why did that take so long", which is a question asked once the
+        // waiting is over (backlog B128).
+        if (opts.Timings && load.Timings is { } timings)
+        {
+            foreach (var line in timings.Format())
+                await stderr.WriteLineAsync(line);
+        }
+
         return report.GatePassed && report.CoverageGatePassed ? ExitCodes.Ok : ExitCodes.GateFailed;
     }
 

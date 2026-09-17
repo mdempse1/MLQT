@@ -1,0 +1,5 @@
+{
+    "_comment": "Components allowed to keep a large @code block instead of a .razor.cs code-behind, accepted as a deliberate exception to the policy in CODING_GUIDELINES.md (Blazor Patterns, Code-Behind Files vs @code Blocks). Every entry carries a reason and the build fails on one that does not, the same rule coverage-baseline.json follows: exempting a component is a decision, not a keystroke. The list is empty on purpose. All eight components that kept an @code block after the 7a-1 sweep are display surfaces whose blocks are well under the limit, so none of them needed exempting. An entry here should be rare, and its reason should say what makes the component a display surface rather than that nobody has converted it yet, which is a reason to convert it.",
+    "maximumCodeBlockLines": 30,
+    "components": {}
+}

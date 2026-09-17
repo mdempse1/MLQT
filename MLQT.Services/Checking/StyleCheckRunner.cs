@@ -39,7 +39,7 @@ public static class StyleCheckRunner
             isExcludedFromFormatting: settings.IsModelExcludedFromFormatting(node.Id),
             baseClassHasIcon: context.BaseClassHasIcon, honorSuppressions: honorSuppressions,
             namingConfig: context.NamingConfig, inheritedElementNames: context.InheritedElementNames,
-            unitLookup: context.UnitLookup));
+            unitLookup: context.UnitLookup, timings: context.Timings));
 
         // While the tree is still here. The dashboard would otherwise parse this class again to ask
         // the same questions, once for every scope it appears in.
@@ -52,7 +52,11 @@ public static class StyleCheckRunner
         // measuring a layout dimension costs one walk and not measuring it costs a re-parse.
         if (context.Coverage is { } coverage
             && CoverageDimensions.ForClass(coverage.Dimensions, settings, node.Id) != CoverageDimension.None)
-            coverage.Measure(node);
+        {
+            // Timed separately because it is the one part of a check a caller can switch off, and
+            // "would turning coverage off help?" is a question the breakdown should answer (B128).
+            CheckTimings.Measure(context.Timings, CheckTimings.Phase.Coverage, () => coverage.Measure(node));
+        }
 
         node.Definition.ParsedCode = null; // release the parse tree to bound memory
         return findings;

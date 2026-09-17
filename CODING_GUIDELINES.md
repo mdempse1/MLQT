@@ -292,58 +292,164 @@ var json = """
 
 ## Blazor Patterns
 
+### Code-Behind Files vs `@code` Blocks
+
+**Put component logic in a code-behind file (`Foo.razor` + `Foo.razor.cs` with
+`public partial class Foo`). Use an inline `@code { }` block only when there is no logic worth
+testing.** This is the default for every component in `MLQT.Shared`.
+
+**Why.** A partial class in a plain `.cs` file is an ordinary C# type: a test can construct it, set
+its `[Inject]` properties and `[Parameter]` values, and call an event handler as a method — no
+renderer, no bUnit, no JS interop stand-in, no MudBlazor provider tree. Logic inside `@code { }` can
+only be reached by rendering the component and driving the UI, which is why `MLQT.Shared` went its
+first years with no tests at all while every other assembly is gated at 80%. It also matters for the
+coverage gate: `build/check-coverage.ps1` measures lines in `.cs` files and ignores lines mapped back
+to `.razor` markup, so logic in a code-behind file is gated and logic in an `@code` block is not.
+
+**Use a code-behind file when the component has any of:**
+
+- Event handlers with branching, validation, or error handling — anything beyond a one-line
+  `EventCallback` invocation or `NavState.ChangeModelID(id)` call.
+- Data transformation: filtering, sorting, grouping, mapping graph nodes to `TreeItemData<T>`,
+  formatting findings for display.
+- Lifecycle work beyond a single `await Service.LoadAsync()` — multi-step loads, cancellation,
+  conditional initialisation, `OnAfterRenderAsync(firstRender)` bootstrapping.
+- Subscriptions to `AppState` or service events (which also means `IDisposable` and an unsubscribe —
+  see [Event Handling](#event-handling-and-statehaschanged); `SharedUiConventionTests` checks the pair).
+- State-machine behaviour, computed properties, or non-trivial reactivity in `OnParametersSet` /
+  `ShouldRender`.
+- Anything you would feel uncomfortable shipping without a test.
+
+**An inline `@code { }` block is acceptable when the component is a thin display surface:**
+
+- Pure markup driven by `[Parameter]` values, with no behaviour — `RuleSeverityRow`,
+  `CurrentModelDisplay`.
+- One or two short handlers that only invoke an `EventCallback` or close a dialog —
+  `ConfirmDeleteProjectDialog`, `ErrorDialog`.
+- Layout shells and cascading-value relays.
+
+A component may keep a small `@code { }` block alongside a code-behind file for genuinely view-local
+helpers (a `RenderFragment`, a display-string expression used once in the markup) — but if it has
+a body with an `if`, an `await`, or a loop, it belongs in the `.razor.cs`.
+
+**Business logic does not belong in either.** Code-behind is the home for *component* logic — view
+state, event wiring, mapping a service result onto what the markup renders. Work that would run the
+same way with no UI attached (the analysis pipeline, formatting, VCS reaction, metrics computation)
+goes into `MLQT.Services` behind an interface, per
+[Adding New Features](CLAUDE.md) — the code-behind then calls it. Moving a 200-line method from
+`@code` into `.razor.cs` and stopping there swaps one wrong home for a slightly better one.
+
+**Code-behind conventions:**
+
+```csharp
+// Components/FindingsList.razor.cs
+using Microsoft.AspNetCore.Components;
+using MLQT.Services.Interfaces;
+using MLQT.Shared.Models;
+
+namespace MLQT.Shared.Components;
+
+public partial class FindingsList : IDisposable
+{
+    // 1. Parameters
+    [Parameter] public string RepositoryId { get; set; } = string.Empty;
+    [Parameter] public EventCallback<LogMessage> OnFindingSelected { get; set; }
+
+    // 2. Injected services — properties, not fields, so a test can set them
+    [Inject] private ICodeReviewService CodeReviewService { get; set; } = null!;
+    [Inject] private AppState NavState { get; set; } = null!;
+
+    // 3. Component state
+    private List<LogMessage> _findings = [];
+    private bool _isLoading;
+
+    // 4. Lifecycle
+    protected override void OnInitialized()
+    {
+        NavState.OnChangeModel += OnModelChanged;
+    }
+
+    // 5. Event handlers and private methods — the testable surface
+    private void OnModelChanged() => _findings = FilterForCurrentModel();
+
+    internal List<LogMessage> FilterForCurrentModel() => /* ... */;
+
+    // 6. Cleanup
+    public void Dispose() => NavState.OnChangeModel -= OnModelChanged;
+}
+```
+
+The `.razor` file then holds the `@page`/`@using` directives and markup, and nothing else.
+
+- **Namespace matches the folder** — `MLQT.Shared.Components`, `MLQT.Shared.Pages`,
+  `MLQT.Shared.Dialogs`, `MLQT.Shared.Layout` — because that is the namespace the Razor compiler
+  generates for the other half of the partial. Get it wrong and the error ("partial declarations must
+  be in the same namespace") is clear, but only at build time.
+- **Inject with `[Inject]` properties, not `@inject` directives.** `@inject` generates the property
+  in the `.razor.g.cs` half, where a test cannot set it. The `null!` initialiser suppresses CS8618;
+  DI populates the property before any user code runs.
+- **Mark the testable surface `internal`, not `private`,** where a test needs to call it directly,
+  and add `[assembly: InternalsVisibleTo("MLQT.Shared.Tests")]`. Reflection works too but reads
+  badly and breaks silently on a rename.
+- **`_camelCase` private fields, as everywhere else** — the naming rules above apply unchanged.
+
+**Migrating an existing component.** Move members across verbatim in one commit — no renames, no
+signature changes, no "while I'm here" fixes — so the diff reads as a move and the reviewer can see
+it is behaviour-neutral. Convert `@inject` to `[Inject]` in the same commit (mechanical). Add the
+tests in a *separate* commit. Any real fix the move uncovers is a third commit with its own reason.
+
 ### Component Structure
 
+A component with logic is two files. The `.razor` is markup:
+
 ```razor
-@* 1. Using directives *@
-@using MLQT.Services.Interfaces
+@* 1. Route and using directives — no @inject; see above *@
 @using MudBlazor
 
-@* 2. Dependency injection *@
-@inject ILibraryDataService LibraryDataService
-@inject ISnackbar Snackbar
-
-@* 3. Interface implementations *@
+@* 2. Interface declarations that the markup needs *@
 @implements IDisposable
 
-@* 4. Markup *@
+@* 3. Markup only *@
 <div class="component-container">
     @if (_isLoading)
     {
-        <MudProgressCircular Indeterminate="true" />
+        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
     }
     else
     {
-        <MudText>@_data</MudText>
+        <MudText Typo="Typo.body1">@_data</MudText>
     }
 </div>
+```
 
-@* 5. Code block *@
-@code {
-    // Parameters first
-    [Parameter]
-    public string ModelId { get; set; } = string.Empty;
+The `.razor.cs` is the code, in a fixed member order:
 
-    [Parameter]
-    public EventCallback<string> OnModelSelected { get; set; }
+```csharp
+using Microsoft.AspNetCore.Components;
+using MLQT.Services.Interfaces;
 
-    // Private fields
+namespace MLQT.Shared.Components;
+
+public partial class ModelSummary : IDisposable
+{
+    // 1. Parameters
+    [Parameter] public string ModelId { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnModelSelected { get; set; }
+
+    // 2. Injected services
+    [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
+
+    // 3. Private fields
     private bool _isLoading;
     private string _data = string.Empty;
 
-    // Lifecycle methods
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadDataAsync();
-    }
+    // 4. Lifecycle methods
+    protected override async Task OnInitializedAsync() => await LoadDataAsync();
 
-    // Event handlers
-    private async Task HandleClick()
-    {
-        await OnModelSelected.InvokeAsync(ModelId);
-    }
+    // 5. Event handlers
+    private async Task HandleClick() => await OnModelSelected.InvokeAsync(ModelId);
 
-    // Private methods
+    // 6. Private methods
     private async Task LoadDataAsync()
     {
         _isLoading = true;
@@ -357,13 +463,16 @@ var json = """
         }
     }
 
-    // IDisposable
+    // 7. Cleanup
     public void Dispose()
     {
-        // Cleanup
+        // Unsubscribe from every event subscribed above
     }
 }
 ```
+
+A component with **no** logic — a display surface driven by its parameters — is one `.razor` file
+with a short `@code { }` block, and needs no code-behind.
 
 ### Event Handling and StateHasChanged
 
@@ -816,6 +925,83 @@ private static ModelNode CreateModel(string name) => new()
 };
 ```
 
+### A test is not finished until you have watched it fail
+
+**Verify by mutation, not by going green.** Put the defect in — or take the fix out — and watch the
+named test fail. A passing test is not evidence about the code until it has been evidence about
+itself. This is the single most expensive lesson in the repository's history, and every example
+below is a real test that passed while proving nothing:
+
+- A property test that proves a diff script *valid* passes happily on a non-minimal one.
+- Two browser journeys passed vacuously on first write: one against a fixture that was already
+  canonically formatted, one against a rule that ships switched off.
+- A convention sweep enumerated `*.razor`; when the logic moved to `.razor.cs` it ran over markup
+  with no code in it and every check passed.
+- A guard opened with `if (source is null) return;`, so anywhere the source was not present it
+  returned silently — counted as coverage, capable of nothing.
+- A test asserted the *shape* of a path and never whether that shape opens the file it names.
+- A bUnit test found an element in one render and clicked it in the next; it failed only on a
+  slower runner.
+
+```csharp
+// DON'T: a guard that can quietly do nothing
+[Fact]
+public void EveryRuleIsDocumented()
+{
+    var docs = FindDocumentation();
+    if (docs is null) return;          // runs nowhere, passes everywhere
+    ...
+}
+
+// DO: refuse to be vacuous, and say why in the comment
+[Fact]
+public void EveryRuleIsDocumented()
+{
+    // A silent no-op here would reintroduce exactly the failure this test exists to prevent.
+    var docs = FindDocumentation()
+        ?? throw new InvalidOperationException("documentation folder not found from " + AppContext.BaseDirectory);
+    ...
+}
+```
+
+**Write the positive control beside the guard.** A test that asserts "with the exclusion applied,
+nothing is reported" is satisfied by a fixture that reports nothing either way. Assert the fixture
+*does* report without the exclusion, in the same file, or the pair rots into two empty sets matching.
+
+**Hold two lists together in both directions.** "Everything measured is built" and "everything built
+is measured" are different assertions and a defect hides in whichever one you left out.
+
+### Guard tests: a stated rule that nothing enforces is not a rule
+
+The recurring defect shape here is a promise made in a document, a rule id, or a comment, which no
+test holds anyone to — and which is then quietly broken by an ordinary correct-looking change. When
+you write such a promise, write the test in the same commit.
+
+- A rule id implies another surface honours it → a test over the catalogue.
+- A setting is documented → a test that the name exists in the app.
+- A script or workflow must stay in step with a list → read it as text and compare.
+- A sweep you found a defect with is worth running twice → make it a test.
+
+Name the likely cause in the failure message. The count alone rarely tells the next person what to
+change:
+
+```csharp
+Assert.True(problems.Count == 0,
+    $"line {row}: {actual} cell separators, header has {expected}"
+    + " — an unescaped '|' in a cell splits it, even inside backticks; write it as \\|");
+```
+
+### Cross-platform tests assert behaviour, not strings
+
+Path handling is the repeated offender: eighteen tests once assumed Windows paths while the code
+under test did not. Build paths through the shared `TestPaths` helper rather than with literals, and
+where a test genuinely cannot be expressed the same way on both platforms, branch and **say why** in
+a comment. Assert that a path *resolves* — that `Path.Combine(root, relative)` reaches the file —
+rather than that it looks a particular way.
+
+**Do not write test source through a shell heredoc.** It turns backslashes into escapes silently,
+and the failure is invisible in exactly the cases where the result still compiles.
+
 ---
 
 ## Summary Checklist
@@ -830,9 +1016,16 @@ Before committing code, verify:
 - [ ] XML documentation on public APIs
 - [ ] Specific exception types caught (not generic Exception)
 - [ ] Services registered with appropriate lifetimes
+- [ ] Component logic lives in a `.razor.cs` code-behind partial, not an `@code { }` block (see Blazor Patterns § Code-Behind Files vs `@code` Blocks)
+- [ ] Services in a component with a code-behind are injected via `[Inject]` properties, not `@inject`
+- [ ] Logic that would run the same way with no UI attached is in `MLQT.Services`, not in the component at all
 - [ ] Blazor components properly dispose of event subscriptions
 - [ ] StateHasChanged used correctly (with InvokeAsync when needed)
 - [ ] No unnecessary StateHasChanged calls after awaited operations
+- [ ] Every new test was watched failing against the defect it claims to catch
+- [ ] No test can pass vacuously — guards refuse to no-op, exclusion tests have a positive control
+- [ ] A rule stated in a document or implied by a rule id has a test holding the code to it
+- [ ] Paths in tests come from the shared helper, not from Windows-shaped literals
 
 ---
 
@@ -842,3 +1035,5 @@ Before committing code, verify:
 |------|---------|--------|---------|
 | 2026-02-12 | 1.0 | - | Initial draft |
 | 2026-03-11 | 1.1 | - | Added null-proof return-value capture pattern; InvokeAsync method-group form; zero-warning checklist items |
+| 2026-09-07 | 1.2 | - | Added the code-behind policy: component logic goes in a `.razor.cs` partial class, `@code { }` only for components with no logic worth testing. Reworked Component Structure around the split. Adapted from the workspace `Claytex.Net` guidelines for phase 7a |
+| 2026-09-17 | 1.3 | - | Added to Testing: verify by mutation rather than by going green, positive controls beside guards, guard tests for stated-but-unenforced rules, and cross-platform path assertions. Distilled from the phase 7a/7b design notes before those notes were retired |

@@ -1,0 +1,9 @@
+# Shell scripts must keep LF line endings on every platform. A Windows checkout with
+# core.autocrlf=true would otherwise give them CRLF, and a `#!/bin/bash\r` is not a valid
+# interpreter - the failure is `bad interpreter: No such file or directory`, which names the shell
+# and not the line ending. mlqt-gui in particular is copied verbatim into the Linux .deb, so a
+# mangled copy would reach users rather than only breaking a build.
+*.sh text eol=lf
+build/packaging/linux/mlqt-gui text eol=lf
+build/packaging/linux/postinst text eol=lf
+build/packaging/linux/postrm   text eol=lf

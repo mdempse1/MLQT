@@ -19,6 +19,14 @@ public sealed class GraphAnalysisContext
     /// </summary>
     public bool DependenciesAnalyzed { get; }
 
+    /// <summary>
+    /// Where each analysis's time is recorded, or null when nobody is measuring (backlog B128).
+    /// Settable rather than a constructor parameter because this context is rebuilt part-way through
+    /// <see cref="GraphAnalysisRunner"/> when the reported set is narrowed, and a collector that
+    /// silently did not survive that would report some analyses and not others.
+    /// </summary>
+    public CheckTimings? Timings { get; set; }
+
     /// <param name="dependenciesAnalyzed">Leave null to take the answer from
     /// <see cref="DirectedGraph.DependenciesAnalyzed"/>, which is the authoritative one. Pass a value
     /// only when the caller genuinely knows better than the graph (e.g. a test fixture that wires

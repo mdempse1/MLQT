@@ -276,7 +276,9 @@ public class FindingsFoundationTests
             Assert.Equal(findings[i].Message, messages[i].Summary);
             Assert.Equal(findings[i].ModelId, messages[i].ModelName);
             Assert.Equal(findings[i].LineNumber, messages[i].LineNumber);
-            Assert.Equal("Style warning", messages[i].Severity);
+            // The projection reports the finding's resolved severity rather than a constant (B165),
+            // so it is compared against the finding beside it like every other field here.
+            Assert.Equal(findings[i].SeverityLabel, messages[i].Severity);
             Assert.Equal("StyleChecking", messages[i].Source);
         }
     }

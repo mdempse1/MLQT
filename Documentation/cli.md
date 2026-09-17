@@ -1,8 +1,8 @@
 # MLQT CLI (`mlqt`)
 
 A headless, cross-platform command-line tool that style-checks a Modelica library and reports
-findings. It runs the same checks as the MLQT desktop app, with no UI and no MAUI dependency, so it
-works on Windows, Linux, and macOS and is suited to CI pipelines.
+findings. It runs the same checks as the MLQT desktop app, with no UI and no desktop dependency. It
+ships for Windows and Linux, and is suited to CI pipelines.
 
 > For a step-by-step guide to setting up the CI quality gate on a real library (enable rules,
 > baseline existing debt, gate on new findings, wire into TeamCity/GitHub), see
@@ -10,30 +10,29 @@ works on Windows, Linux, and macOS and is suited to CI pipelines.
 
 ## Install
 
-Two ways, depending on whether the machine has a .NET 10 runtime.
-
-**As a .NET tool** (Windows, Linux and macOS — one package covers all three). It is **not on
-nuget.org**: download `MLQT.Cli.<version>.nupkg` from the
-[latest release](https://github.com/mdempse1/MLQT/releases) and install it from the directory you
-saved it in, which is what `--add-source .` means below.
+**With MLQT itself.** The platform installers carry the CLI alongside the desktop application and
+the MCP server — see [installation.md](installation.md). On Linux the `.deb` puts it at
+`/usr/bin/mlqt` and bundles the .NET runtime, so a build agent needs nothing else:
 
 ```bash
-dotnet tool install --global --add-source . MLQT.Cli      # provides the `mlqt` command
-# or into an isolated location:
-dotnet tool install --tool-path ./tools --add-source . MLQT.Cli
+sudo apt install ./mlqt_<version>_amd64.deb && mlqt --version
 ```
 
-Requires the .NET 10 runtime.
+On Windows the installer offers to put `mlqt` on your `PATH`.
 
-**As a self-contained Linux binary**, for a build agent or container where you would rather not
-install .NET. Download `mlqt-<version>-linux-x64.tar.gz` from the same release:
+### On a machine you do not want a desktop application on
 
-```bash
-tar -xzf mlqt-<version>-linux-x64.tar.gz -C /opt/mlqt && /opt/mlqt/mlqt --version
-```
+There is one artefact per platform and the CLI is inside it, so this is the same download either
+way — the Linux `.deb` is the whole answer for a build agent, and it carries its own .NET runtime.
 
-It carries its own runtime, so it needs nothing preinstalled. Put the directory on your `PATH`, or
-call the binary by full path.
+A `dotnet tool` package and a standalone Linux tarball used to be published as well. **Both are
+gone.** `dotnet tool install` is an *SDK* command, so shipping the CLI that way obliged every build
+agent to install the .NET SDK in order to run a linter — which is the opposite of what a headless
+tool is for. The installers were the better answer, and keeping three routes to one binary meant
+three things to keep in step.
+
+If you have a `.nupkg` or a `.tar.gz` from an earlier release they keep working; nothing has changed
+about the CLI itself.
 
 ## Usage
 
@@ -51,15 +50,15 @@ copy of a library has that another does not, and `mlqt hook`
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above the library, else built-in defaults |
+| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
-| `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models | none |
+| `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models ([what a `<ref>` may be](#what-a-ref-may-be)) | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
 | `--format console\|json\|junit\|sarif\|teamcity\|markdown\|review` | Output format ([details](#output-formats)) | `console` |
 | `--sarif-base <path>` | Directory the file paths in SARIF output are written relative to. Set it to the repository root when the library is a subdirectory | the library |
 | `--sarif-include-accepted` | Keep accepted debt in SARIF output. Off by default — see [SARIF and GitHub](#sarif-and-github) | off |
 | `--out <file>` | Write the primary output to a file instead of stdout | stdout |
-| `--report <fmt>:<file>` | Also write this format to this file. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
+| `--report <fmt>:<file>` | Also write this format to this file. <fmt> accepts the same values as `--format`. Repeatable — see [Several reports from one run](#several-reports-from-one-run) | none |
 | `--fail-on off\|warning\|error` | Exit non-zero when findings reach this level | `error` |
 | `--min-coverage <spec>` | Fail when coverage is below a percentage — see [Gating on coverage](#gating-on-coverage). Repeatable | none |
 | `--coverage-ratchet` | Fail when any dimension is below the last recorded snapshot | off |
@@ -70,6 +69,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
+| `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
 | `-h`, `--help` | Show help | |
 | `--version` | Print the tool's version and exit. Used on its own, not with `check` | |
 
@@ -308,8 +308,8 @@ remaining languages, so the spelling findings will not match a machine that has 
 ```
 
 en_US and en_GB ship with the tool. Other languages need their Hunspell `.aff`/`.dic` pair installed
-on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (or the equivalent user profile path on Linux
-and macOS).
+on the agent, under `%LocalAppData%/MLQT/Dictionaries/` (`~/.local/share/MLQT/Dictionaries/` on
+Linux).
 
 ## Baseline / ratchet
 
@@ -321,6 +321,18 @@ mlqt baseline create <library-path>     # snapshot current findings -> <library-
 mlqt baseline prune  <library-path>     # drop entries whose findings are now fixed
 mlqt baseline update <library-path>     # regenerate: drop fixed entries AND accept new ones as debt
 ```
+
+All three take the same options. They are a subset of `check`'s, and mean the same things there:
+writing a baseline runs the same check, so it has to load the library the same way, or it would
+record findings that a check with the right dependencies never raises.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--baseline <path>` | Where to write (or re-read) the baseline | `<library-path>/.mlqt/baseline.json` |
+| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--dependency <path>` | Load another library so references resolve; never recorded as debt. Repeatable — see [Resolving references into other libraries](#resolving-references-into-other-libraries) | none |
+| `--allow-version-mismatch` | Continue despite a dependency version mismatch | off |
+| `--force` | Required by `update` to widen a baseline, and by `create` to overwrite one — see [`prune` vs `update`](#prune-vs-update) | off |
 
 ### Entries vs findings
 
@@ -395,8 +407,7 @@ dropped 1 entry now fixed
 entries behaves like `prune` and runs without it. **Never run `update --force` from CI** — that turns
 the gate off one commit at a time.
 
-`create`/`update`/`prune` accept `--baseline <path>` (default `<library-path>/.mlqt/baseline.json`)
-and `--config <path>`; `create` refuses to overwrite an existing file unless `--force` is given.
+`create` refuses to overwrite an existing baseline unless `--force` is given.
 
 The file records **when it was generated** and the **revision and branch** it describes, so a reviewer
 can tell how old the accepted debt is and diff from there:
@@ -461,6 +472,36 @@ Diagnostics are never captured in a baseline and are always classified **new** �
 [Diagnostics](#diagnostics).
 
 ### Changed-model escalation (the "boy-scout rule")
+
+#### What a `<ref>` may be
+
+It is resolved by the version control system holding the library, so what it accepts differs:
+
+| VCS | Accepted | Examples |
+|-----|----------|----------|
+| **Git** | A branch, tag or commit — anything `git` itself resolves | `main`, `origin/main`, `HEAD~1`, `v2.1.0`, a commit SHA |
+| **SVN** | A **revision**, not a branch name | `4567`, or the keywords `BASE`, `HEAD`, `PREV`, `COMMITTED` |
+
+Run it from inside the working copy, whichever it is.
+
+**SVN branch names are rejected**, with `could not resolve revision`. An SVN branch is a directory
+rather than a revision, so there is nothing for a revision diff to compare against; comparing two SVN
+branches is not supported. For a pre-commit gate use `--changed-from BASE`, which is your
+*uncommitted* local changes; to compare against the revision a release was branched at, pass that
+revision number.
+
+**An unresolvable ref is an error, not an empty diff.** A checkout with `master` and no local `main`
+fails rather than quietly deciding nothing changed — which would let a gate pass because it compared
+against nothing. The exit code is **2**, a setup error.
+
+MLQT prints what the diff found, so you can check it detected what you expected:
+
+```
+note: 3 changed .mo file(s), 5 model(s) changed since main
+```
+
+If that says `0 model(s) changed`, the ref probably already contains your change. Diff against one
+that is *behind* it — `HEAD~1`, `origin/main`.
 
 With `--changed-from <ref>`, existing debt in a model the change touched becomes **touched debt**.
 Works with Git and SVN.

@@ -369,6 +369,63 @@ end TestPackage;
     }
 
     [Fact]
+    public async Task RemoveModelsFromFile_ClearsTheLibraryIndexes()
+    {
+        // Rewritten set-based in 7b-5 - see DirectedGraph.RemoveNodes for the measurement. The loop
+        // it replaced walked ChildrenByParent once per removed model, which on a file holding
+        // thousands of generated classes is the difference between instant and a minute. Everything
+        // it has to leave behind is asserted here, because "faster" is only worth having if the
+        // indexes still agree with the graph afterwards.
+        var service = new LibraryDataService();
+        var library = await service.AddLibraryFromFileAsync("pkg.mo", """
+            package TestPackage
+              model Model1 end Model1;
+              model Model2 end Model2;
+            end TestPackage;
+            """);
+
+        service.RemoveModelsFromFile("pkg.mo");
+
+        Assert.Empty(library.ModelIds);
+        Assert.Empty(library.TopLevelModelIds);
+        Assert.All(library.ChildrenByParent.Values, Assert.Empty);
+    }
+
+    [Fact]
+    public async Task RemoveModelsFromFile_KeepsAParentThatStillHasChildrenElsewhere()
+    {
+        // The one thing the old loop was careful about and the rewrite must stay careful about: the
+        // parent stays a key even when its children in this file go, because a package's children can
+        // live in other files and the relationship is rebuilt from those on reload. Removing the key
+        // would drop them from the tree until the whole library was reloaded.
+        var service = new LibraryDataService();
+        var library = await service.AddLibraryFromFileAsync("pkg.mo", """
+            package TestPackage
+              model Model1 end Model1;
+            end TestPackage;
+            """);
+
+        service.RemoveModelsFromFile("pkg.mo");
+
+        Assert.Contains("TestPackage", library.ChildrenByParent.Keys);
+    }
+
+    [Fact]
+    public async Task RemoveModelsFromFile_LeavesAnotherFilesModelsAlone()
+    {
+        // A set-based removal takes one pass over each index, so a mistake in it takes out more than
+        // it was asked to rather than less.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("gone.mo", "model Doomed end Doomed;");
+        var keep = await service.AddLibraryFromFileAsync("kept.mo", "model Survivor end Survivor;");
+
+        service.RemoveModelsFromFile("gone.mo");
+
+        Assert.Contains("Survivor", keep.ModelIds);
+        Assert.NotNull(service.CombinedGraph.GetNode("Survivor"));
+    }
+
+    [Fact]
     public void RemoveModelsFromFile_FileNotInGraph_ReturnsEmpty()
     {
         var service = new LibraryDataService();

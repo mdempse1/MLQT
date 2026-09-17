@@ -1,6 +1,6 @@
 # MCP Server (AI Agent Access)
 
-MLQT ships a headless [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes MLQT's Modelica capabilities as tools an AI agent — such as Claude — can call. It lets an assistant read, understand, author, check and format Modelica code in your libraries directly, using the same parser, graph and services that power the desktop application, but without the MAUI UI.
+MLQT ships a headless [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes MLQT's Modelica capabilities as tools an AI agent — such as Claude — can call. It lets an assistant read, understand, author, check and format Modelica code in your libraries directly, using the same parser, graph and services that power the desktop application, but with no UI at all.
 
 Where the desktop app is for a person working interactively, the MCP server is for an AI agent working on your behalf. The two are complementary: the server operates on the `.mo` files of a loaded library, whether that library lives in a Git/SVN working copy or a plain directory.
 
@@ -12,44 +12,61 @@ The MCP server tells the AI agent:
 
 | Requirement | Details |
 |-------------|---------|
-| **.NET 10 SDK** | The server is a .NET 10 console application. |
-| **An MCP client** | Any MCP-capable client that launches servers over stdio — e.g. Claude Desktop, or the bundled [MLQT.McpTester](#testing-a-server-manually-mcptester). |
+| **MLQT, installed** | The platform installer carries the server; see [Install](#install) below. Nothing else to install — the Windows installer fetches the .NET runtime if it is absent, and the Linux `.deb` bundles it |
+| **An MCP client** | Any MCP-capable client that launches servers over stdio — e.g. Claude Desktop, or the bundled [MLQT.McpTester](#testing-a-server-manually-mcptester) |
 
-The server has no dependency on MAUI, Dymola or OpenModelica; model checking with external tools is intentionally not exposed (use the desktop app for that).  Use a separate MCP server for your chosen Modelica tool to fully close the loop and simulate what this MCP builds.
+The server has no dependency on a desktop, Dymola or OpenModelica; model checking with external tools is intentionally not exposed (use the desktop app for that).  Use a separate MCP server for your chosen Modelica tool to fully close the loop and simulate what this MCP builds.
 
-## Building and registering the server
+## Install
 
-Build it once so the executable exists:
+**With MLQT itself.** There is one installer per platform and it carries the MCP server alongside the desktop application and the `mlqt` CLI — one download, all three. See [installation.md](installation.md).
 
-```bash
-dotnet build MLQT.McpServer/MLQT.McpServer.csproj
+On **Linux**, the `.deb` puts the server at a fixed path:
+
+```
+/usr/bin/mlqt-mcp-server
 ```
 
-The server speaks MCP over **stdio**. Register it with your client by pointing at the built executable. For Claude Desktop, add it to the `mcpServers` section of the client configuration.  `path_to_mlqt_project_source` is the path to where you have checked out the Git repository on your machine.
+That is a symlink into `/opt/mlqt`, and its stability is the point of it: an agent registers the server by path, and `/opt/mlqt` is on nobody's `PATH`.
+
+On **Windows**, it sits beside the other two tools in the install directory:
+
+| Install mode | Path |
+|---|---|
+| Just for me *(the default)* | `%LocalAppData%\Programs\MLQT\MLQT.McpServer.exe` |
+| For all users | `C:\Program Files\MLQT\MLQT.McpServer.exe` |
+
+Unlike the CLI, the server is **not** added to your `PATH`. An MCP client launches it by full path, so there would be nothing for a `PATH` entry to do.
+
+**From source**, if you are working on MLQT itself: build it as [BUILDING.md](../BUILDING.md) describes, then register the executable it produces under `MLQT.McpServer/bin/`.
+
+## Registering the server with a client
+
+The server speaks MCP over **stdio**. Register it by pointing your client at the executable — for Claude Desktop, in the `mcpServers` section of the client configuration:
 
 ```json
 {
   "mcpServers": {
     "mlqt": {
-      "command": "C:/path_to_mlqt_project_source/MLQT.McpServer/bin/Debug/net10.0/MLQT.McpServer.exe"
+      "command": "/usr/bin/mlqt-mcp-server"
     }
   }
 }
 ```
 
-If you are using the Release zip file from Github, then the path to configure the McpServer is different due to the structure of the zip file. `path_to_mlqt_mcp_server_release` is the path to where you have extracted the zip file on your machine.
+and on Windows, with the path from the table above:
 
 ```json
 {
   "mcpServers": {
     "mlqt": {
-      "command": "C:/path_to_mlqt_mcp_server_release/MLQT.McpServer.exe"
+      "command": "C:/Users/<username>/AppData/Local/Programs/MLQT/MLQT.McpServer.exe"
     }
   }
 }
 ```
 
-After changing the configuration, fully restart the client so it launches the new server process. (A rebuild alone does not affect an already-running server — the client keeps it alive.)
+After changing the configuration, fully restart the client so it launches the new server process. (Reinstalling or rebuilding alone does not affect an already-running server — the client keeps it alive.)
 
 Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write anything else to stdout. Session settings persist to `%LocalAppData%/MLQT/mcp-settings.json`.
 
@@ -63,7 +80,7 @@ The server returns a short set of instructions to the client on connect, and a `
 
 3. **Learn classes from compact "views" rather than raw source.** `get_class_interface` (public parameters, connectors and, for functions, the signature — with inherited members merged in), `list_class_elements`, `get_class_documentation` and `get_class_behavior` (equations/connections) give an agent what it needs without reading the whole file. `search_classes` also returns each hit's description and a short documentation snippet so the agent can pick the right class — often a higher-level *aggregate* component the library provides — without opening each candidate.
 
-4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules. **Parse errors are not opt-in**: `check_class` and `check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine".
+4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules. **Parse errors are not opt-in**: `check_class` and `check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine". A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `list_findings severity:"error"` selects the rules the team set to Error and not the parse diagnostics' bare `Error`.
 
 5. **A finding carries two line numbers, and they are not interchangeable.** `list_findings`
 returns `line` — the line in `filePath` — alongside `modelLine`, the same finding's line within the
@@ -77,7 +94,7 @@ under `line`, because they answer a question about a class rather than about a f
 
 ## What the tools cover
 
-The server exposes 60+ tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 82 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
@@ -101,13 +118,13 @@ When you position components on the diagram with `set_component_placement`, the 
 
 ## Testing a server manually (McpTester)
 
-[MLQT.McpTester](../MLQT.McpTester/README.md) is a small Windows desktop app for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client.
+[MLQT.McpTester](../MLQT.McpTester/README.md) is a small desktop app, on Windows and Linux, for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client.
 
 ```bash
 dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run
 ```
 
-The **Use MLQT server** button fills in the built `MLQT.McpServer.exe` path (build `MLQT.McpServer` first). Note that optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `create_class`'s `standalone`) is omitted rather than sent as `false`.
+The **Use MLQT server** button pre-fills a path to a locally built `MLQT.McpServer.exe`; edit it to wherever your server actually is — the installed paths are under [Install](#install) above. Note that optional booleans render as a three-way selector — `(default)` / `true` / `false` — so an unset tri-state parameter (such as `create_class`'s `standalone`) is omitted rather than sent as `false`.
 
 ## Reviewing how an agent worked (tool-usage log)
 
@@ -118,6 +135,33 @@ Tool-usage logging is **off by default**. To turn it on, create a file named `mc
 The `MLQT_MCP_TOOL_LOG` environment variable overrides the marker file: set it to a path to force logging on at that path (regardless of the marker file), or to `off` to force it off.
 
 The server is also tolerant of clients that send boolean or numeric arguments encoded as JSON strings (e.g. `"standalone":"true"`): such scalars are coerced to the type the parameter declares before binding, so a quoted value behaves the same as the bare value.
+
+## When the client says the server disconnected
+
+A client that reports *"Server disconnected"* or *"Server transport closed unexpectedly"* is telling
+you the process exited before the protocol got started — which means **MLQT's own log will have
+nothing in it**, because the failure happened before logging was set up.
+
+Look in the **client's** log instead, which is where the server's stderr goes. Claude Desktop keeps
+one per server at `~/.config/Claude/logs/mcp-server-<name>.log` (`%AppData%\Claude\logs\` on
+Windows); Claude Code keeps one per session under `~/.cache/claude-cli-nodejs/<project>/mcp-logs-<name>/`.
+The .NET stack trace of whatever went wrong will be in there, above the client's own disconnect
+message.
+
+To check the server outside any client, ask it for a handshake directly — this is what the release
+build does as a smoke test:
+
+```bash
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual","version":"1"}}}'; sleep 5; } | mlqt-mcp-server
+```
+
+A working server answers with its name and version. The `sleep` matters: a pipe that closes as soon
+as the request is written ends the session before the server has replied, which looks exactly like a
+server that cannot start.
+
+On Linux, one startup failure has a cause outside MLQT — see
+[inotify limits](troubleshooting.md#file-monitoring-stops-working-on-linux-inotify-limits) in the
+troubleshooting guide.
 
 ## Related documentation
 

@@ -1,4 +1,5 @@
 using ModelicaGraph;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.DataTypes;
 using MLQT.Services;
@@ -18,7 +19,8 @@ internal sealed record LoadResult(
     DirectedGraph? Graph = null,
     IReadOnlyList<ModelNode>? Models = null,
     StyleCheckingSettings? Settings = null,
-    IReadOnlyList<string>? DependencyLibraries = null)
+    IReadOnlyList<string>? DependencyLibraries = null,
+    CheckTimings? Timings = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) =>
@@ -315,10 +317,11 @@ internal static class CheckPipeline
 
         // The accepted spellings come from the repository the library is in, so CI reads the same list
         // a developer's app does — see SettingsResolver.DictionaryRootFor for how it is located.
+        var timings = new CheckTimings();
         var findings = LibraryCheckSession
             .Check(graph, models, settings, customDictionary, dictionaryManager, honorSuppressions,
                    dependenciesAnalyzed: null, repositoryRoot: dictionaryRoot,
-                   collectCoverage: collectCoverage)
+                   collectCoverage: collectCoverage, timings: timings)
             .OrderBy(f => f.ModelId, StringComparer.Ordinal)
             .ThenBy(f => f.LineNumber)
             .ThenBy(f => f.RuleId, StringComparer.Ordinal)
@@ -341,6 +344,7 @@ internal static class CheckPipeline
         // The graph and model list are carried out so `--metrics` can compute coverage over exactly
         // the set that was checked, without loading the library a second time.
         return new LoadResult(
-            ExitCodes.Ok, findings, modelToFile, locations, modelsChecked, graph, models, settings, dependencyLibraries);
+            ExitCodes.Ok, findings, modelToFile, locations, modelsChecked, graph, models, settings,
+            dependencyLibraries, timings);
     }
 }

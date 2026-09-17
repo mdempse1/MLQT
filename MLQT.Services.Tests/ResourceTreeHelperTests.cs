@@ -1,3 +1,5 @@
+using System.IO;
+using MLQT.TestSupport;
 using MLQT.Services.Helpers;
 
 namespace MLQT.Services.Tests;
@@ -17,9 +19,9 @@ public class ResourceTreeHelperTests
     [Fact]
     public void FindCommonDirectoryRoot_SingleDirectory_ReturnsThatDirectory()
     {
-        var dirs = new List<string> { @"C:\Projects\MyLib\Resources" };
+        var dirs = new List<string> { TestPaths.Rooted("Projects", "MyLib", "Resources") };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects\MyLib\Resources", result);
+        Assert.Equal(TestPaths.Rooted("Projects", "MyLib", "Resources"), result);
     }
 
     [Fact]
@@ -27,11 +29,11 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\MyLib\Resources",
-            @"C:\Projects\MyLib\Resources"
+            TestPaths.Rooted("Projects", "MyLib", "Resources"),
+            TestPaths.Rooted("Projects", "MyLib", "Resources")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects\MyLib\Resources", result);
+        Assert.Equal(TestPaths.Rooted("Projects", "MyLib", "Resources"), result);
     }
 
     [Fact]
@@ -39,11 +41,11 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\MyLib\Resources\Data",
-            @"C:\Projects\MyLib\Resources\Images"
+            TestPaths.Rooted("Projects", "MyLib", "Resources", "Data"),
+            TestPaths.Rooted("Projects", "MyLib", "Resources", "Images")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects\MyLib\Resources", result);
+        Assert.Equal(TestPaths.Rooted("Projects", "MyLib", "Resources"), result);
     }
 
     [Fact]
@@ -51,11 +53,11 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\LibA\Resources",
-            @"C:\Projects\LibB\Resources"
+            TestPaths.Rooted("Projects", "LibA", "Resources"),
+            TestPaths.Rooted("Projects", "LibB", "Resources")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects", result);
+        Assert.Equal(TestPaths.Rooted("Projects"), result);
     }
 
     [Fact]
@@ -63,23 +65,32 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\LibA\Resources",
-            @"C:\Other\LibB\Resources"
+            TestPaths.Rooted("Projects", "LibA", "Resources"),
+            TestPaths.Rooted("Other", "LibB", "Resources")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        // Should return "C:\" not just "C:" (which would be a relative path on Windows)
-        Assert.Equal(@"C:\", result);
+
+        // The drive root on Windows ("C:" alone would be a relative path there) and "/" on Linux,
+        // where two absolute paths can share nothing else. Returning "" for the second case made the
+        // external resources tree render empty.
+        Assert.Equal(TestPaths.Root, result);
     }
 
     [Fact]
     public void FindCommonDirectoryRoot_NothingInCommon_ReturnsEmpty()
     {
-        var dirs = new List<string>
-        {
-            @"C:\Projects\LibA",
-            @"D:\Other\LibB"
-        };
+        // The one case TestPaths cannot express, because the two platforms reach it differently.
+        // On Windows, nothing in common means two volumes. On Linux there is no such thing for two
+        // absolute paths - they always share "/", which is what the previous test asserts - so it
+        // has to be two *relative* paths whose first segment differs. An earlier version of this
+        // test used two absolute Linux paths and so asserted the exact opposite of that test; both
+        // passed only because the code returned "" for the shared root, which was the bug.
+        var dirs = OperatingSystem.IsWindows()
+            ? new List<string> { TestPaths.Rooted("Projects", "LibA"), "D:" + Path.DirectorySeparatorChar + "Other" }
+            : new List<string> { TestPaths.Relative("Projects", "LibA"), TestPaths.Relative("Other", "LibB") };
+
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
+
         Assert.Equal("", result);
     }
 
@@ -88,12 +99,12 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\LibA\Resources",
-            @"C:\Projects\LibB\Resources",
-            @"C:\Projects\LibC\Data"
+            TestPaths.Rooted("Projects", "LibA", "Resources"),
+            TestPaths.Rooted("Projects", "LibB", "Resources"),
+            TestPaths.Rooted("Projects", "LibC", "Data")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects", result);
+        Assert.Equal(TestPaths.Rooted("Projects"), result);
     }
 
     [Fact]
@@ -101,11 +112,11 @@ public class ResourceTreeHelperTests
     {
         var dirs = new List<string>
         {
-            @"C:\Projects\MyLib\Resources\Data\SubDir1",
-            @"C:\Projects\MyLib\Resources\Images"
+            TestPaths.Rooted("Projects", "MyLib", "Resources", "Data", "SubDir1"),
+            TestPaths.Rooted("Projects", "MyLib", "Resources", "Images")
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);
-        Assert.Equal(@"C:\Projects\MyLib\Resources", result);
+        Assert.Equal(TestPaths.Rooted("Projects", "MyLib", "Resources"), result);
     }
 
     [Fact]
@@ -115,7 +126,7 @@ public class ResourceTreeHelperTests
         // resolved paths (absolute) mixed with unresolved paths (relative)
         var dirs = new List<string>
         {
-            @"C:\Projects\MyLib\Resources",
+            TestPaths.Rooted("Projects", "MyLib", "Resources"),
             @"Modelica\Resources\Data"
         };
         var result = ResourceTreeHelper.FindCommonDirectoryRoot(dirs);

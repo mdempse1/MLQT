@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <title>MLQT</title>
+  <!-- The plate. An application icon cannot follow the desktop's light/dark setting on either
+       platform (see README), so it carries its own background and reads on any of them. The 1px
+       edge is not decoration: without it the near-white plate dissolves into a light Windows
+       taskbar, which is the dark-desktop problem mirrored. -->
+  <rect x="0.5" y="0.5" width="95" height="95" rx="20" ry="20"
+        fill="#F2F3F7" stroke="#C9CDDE" stroke-width="1"/>
+  <!-- The mark exactly as mlqt-mark.svg draws it, scaled to leave the plate a margin. -->
+  <g transform="translate(8.52,7.2) scale(0.8)">
+    <rect x="8" y="12" width="56" height="13" fill="#2E3357"/>
+    <rect x="8" y="34" width="40" height="13" fill="#2E3357"/>
+    <rect x="8" y="56" width="26" height="13" fill="#2E3357"/>
+    <polyline points="50,70 62,84 86,54" fill="none" stroke="#5B69AB" stroke-width="12"
+              stroke-linecap="butt" stroke-linejoin="round"/>
+  </g>
+</svg>
