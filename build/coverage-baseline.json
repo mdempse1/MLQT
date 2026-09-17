@@ -60,8 +60,8 @@
                                                                                "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                            },
                     "MLQT.Shared::MLQT.Shared.Components.ChangeReview":  {
-                                                                             "coverage":  29.2,
-                                                                             "lines":  181,
+                                                                             "coverage":  29.4,
+                                                                             "lines":  180,
                                                                              "bar":  80,
                                                                              "reason":  "29%: the file-tree building is tested. The rest is tree selection state and the folder check-state cascade, which are MudTreeView interactions and need a render tree."
                                                                          },
@@ -72,10 +72,10 @@
                                                                            "reason":  "The diff algorithm itself is tested to sixteen cases including minimality and operation order. The uncovered part is the three renderings built on top of it - unified, side-by-side, and their context-collapsed variants - which produce DiffLine lists for a template to draw and are read by looking at them."
                                                                        },
                     "MLQT.Shared::MLQT.Shared.Components.LibraryBrowser":  {
-                                                                               "coverage":  22,
+                                                                               "coverage":  33.7,
                                                                                "lines":  439,
                                                                                "bar":  80,
-                                                                               "reason":  "22%: the tree building and the lazy-load selection regression are covered, the latter by the bUnit tests that exist for it specifically. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
+                                                                               "reason":  "34%: the tree building, the lazy-load selection regression and the reference-only labelling are covered, the last two by bUnit tests written for them specifically - B200 added the repository-mode render, which is what moved this from 22%. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
                                                                            },
                     "MLQT.Shared::MLQT.Shared.Components.NamingStyleSelect":  {
                                                                                   "coverage":  35.7,
@@ -127,7 +127,7 @@
                                                                              },
                     "MLQT.Shared::MLQT.Shared.Dialogs.CreatePullRequestDialog":  {
                                                                                      "coverage":  0,
-                                                                                     "lines":  36,
+                                                                                     "lines":  37,
                                                                                      "bar":  80,
                                                                                      "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                                  },
@@ -150,8 +150,8 @@
                                                                                "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                            },
                     "MLQT.Shared::MLQT.Shared.Dialogs.RevisionDiffDialog":  {
-                                                                                "coverage":  0,
-                                                                                "lines":  50,
+                                                                                "coverage":  2.3,
+                                                                                "lines":  43,
                                                                                 "bar":  80,
                                                                                 "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                             },
@@ -169,13 +169,13 @@
                                                                     },
                     "MLQT.Shared::MLQT.Shared.Layout.MainLayout":  {
                                                                        "coverage":  0,
-                                                                       "lines":  1070,
+                                                                       "lines":  1087,
                                                                        "bar":  80,
                                                                        "reason":  "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
                                                                    },
                     "MLQT.Shared::MLQT.Shared.Pages.CodeReview":  {
                                                                       "coverage":  0.6,
-                                                                      "lines":  1065,
+                                                                      "lines":  1024,
                                                                       "bar":  80,
                                                                       "reason":  "The largest page, and its decisions are now extracted and tested elsewhere: the finding decisions (FileLineOf, CanSuppressRule, ReportPathOf) in 7a-3, and in B119 the findings export (FindingExport), how far a rule waiver reaches (SuppressionScope) and what an accepted spelling covers (SpellingAcceptance). What is left here is orchestration that needs a render tree - the file picker, the snackbar, the re-render and the scroll restoration around each action - which the Layer 2 journeys cover and which a unit test could only assert mocks for."
                                                                   },
@@ -193,13 +193,13 @@
                                                                          },
                     "MLQT.Shared::MLQT.Shared.Pages.MetricsDashboard":  {
                                                                             "coverage":  3.6,
-                                                                            "lines":  360,
+                                                                            "lines":  356,
                                                                             "bar":  80,
                                                                             "reason":  "Scope matching, sub-package listing and the debt predicate are tested; so, since B119, are where a snapshot is stored, which repository owns a scope and which history files the trend reads (MetricsStorage), and aggregating same-timestamp points (MetricsSnapshot). What is left is the chart and table assembly around them, which needs a render tree."
                                                                         },
                     "MLQT.Shared::MLQT.Shared.Pages.SelfTest":  {
                                                                     "coverage":  0,
-                                                                    "lines":  269,
+                                                                    "lines":  279,
                                                                     "bar":  80,
                                                                     "reason":  "Every probe is a call into JS interop or a platform service, so the class does nothing measurable without a host. It is covered where it can be: 5 journeys drive the route through a real browser against MLQT.TestHost, and the committed MAUI baseline is its output from the real app. Neither suite is in the coverage merge. Raising this would mean testing the probes against fakes, which would assert that the fakes work and is the opposite of what the route is for."
                                                                 },

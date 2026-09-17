@@ -4,12 +4,15 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B167 have been issued.** They were opened between 2026-09-03 and 2026-09-17 by the seventeen
-end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b. All are closed except the three
-carried forward below, and the table they lived in was retired with the phase design notes on
+**B1–B203 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
+first end-to-end pass over the Photino release on 2026-09-17. Of B1–B167 all are closed except the
+two carried forward below, and the table they lived in was retired with the phase design notes on
 2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
 
-New items start at **B168**.
+New items start at **B204**. The watermark moves as items close, not only as they are opened: the id
+guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
+removed unless the watermark has advanced past it.
 
 `MLQT.Cli.Tests/MarkdownTableTests.cs` holds this file's table structure and the uniqueness of the
 ids. A blank line between two rows silently ends the table, and an unescaped `|` in a cell splits it
@@ -19,11 +22,10 @@ even inside backticks — both have happened, and neither is visible in review.
 
 ## Carried forward from phases 7a / 7b
 
-Three items whose id is already in use elsewhere and whose work is not finished.
+Two items whose id is already in use elsewhere and whose work is not finished.
 
 | # | Item | From | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
-| B143 | **`nightly-webkit.yml` has never run** | phase 7b-6 2026-09-09 | ⭐ | S | `workflow_dispatch` resolves a workflow on the **default branch**, so the job could not be triggered from the migration branch — not from CI, not from the CLI, and not locally either, because Playwright ships no WebKit build that runs on this development machine (B135). It is the one 7b-6 deliverable that shipped unproven. **The action is specific: run it once by hand immediately after the merge**, rather than letting 02:00 be its first outing. The first run of a job written blind has already failed twice (B142). |
 | B152 | **Twelve documentation screenshots are still photographs** | doc review 2026-09-11 | ⭐ | M | 41 of the 53 images are regenerated from the real UI by `DocumentationScreenshots`; the rest cannot be produced that way and are listed in CLAUDE.md and `skill-gui-testing.md`. Two of them need Dymola, six need an SVN server, one needs an SVN repository to render its settings section, one needs the merge dialog's ready-to-merge phase (which needs a VCS operation performed *in the application* to refresh working-copy status), and the rest show the window frame. **Not a defect** — recorded so nobody re-derives the list. Worth revisiting only if a fixture ever gains an SVN server. |
 | B166 | **`check_library` once returned a different finding count on each run, and the variance has not reproduced** | 2026-09-17 | ⭐⭐ | M | The three causes found alongside it are fixed — the MCP call passed the wrong dictionary root, `modelsChecked` counted excluded libraries, and one `AnalyzeDependenciesAsync` call omitted the library roots so `modelica://` resolution depended on call order. The original 20,763 / 20,790 / 20,766 spread did **not** reproduce: three calls in one session and three with a full reload between them each returned 21,249. Two details weaken the original report — the reload path returns a **hardcoded** `affectedModelCount: 0`, so "no source change" was read off a literal; and the runs were scoped to `Modelica` alone inside a graph holding seven other libraries, which is a materially different shape. **Left open at low confidence.** If it moves again, capture the **per-rule breakdown of two adjacent runs** — a total says nothing about which rule moved. |
 
@@ -54,7 +56,6 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 | B189 | **Opening a model from a finding does not reveal it in the tree** | Library browser | ⭐⭐ | S | Clicking a finding opens the model in the viewer but leaves the browser wherever it was, so there is no context for what was just opened. Expand to and select the model, the way a "reveal in tree" action would. |
 | B191 | **Nothing in the tree marks a model as modified** | Library browser | ⭐⭐⭐ | M | Add a marker for models with uncommitted changes, and **distinguish the kind of change**: one marker for edits that affect simulation, another for purely graphical or documentation edits. Then a filter view showing only modified models, filterable by that distinction. The classification is the substantial part — it needs a comparison of the parsed old and new class, not a text diff. |
 | B197 | **No way to peek at or navigate into a used class** | Library browser / Code Review | ⭐⭐ | M | Reviewing documentation, what looks like a variable name is highlighted and checking what it should be called means finding the base class by hand. Wanted: a quick peek, or navigation into the base class with a way back — ideally back through the last few classes visited, like an editor's navigation stack. |
-| B200 | **Only one reference repository is labelled "Reference Only"** | Library browser | ⭐⭐ | S | In repository view mode `ExternData` gains the label and the project's other reference repositories do not, although all of them have the flag set. Almost certainly the label is read from the wrong place for all but one path — the same shape as B80, where a reference-only fact was known in one place and not asked in another. |
 | B173 | **The resource tree has no horizontal scrollbar and cannot be resized** | External resources | ⭐⭐ | S | A long path in the External Resources tree is simply cut off: the panel neither scrolls sideways nor resizes. Either would do; both is better, and a splitter here would be the same control B186 wants on the Code Review page. |
 | B199 | **The dependency plot is unusable above a few hundred nodes** | Dependencies | ⭐⭐ | S | Over 1,000 nodes the Cytoscape graph is very slow to generate and the nodes are too small to read, so it costs a lot and shows nothing. Above a threshold, skip the plot and show the list alone — with a way to draw it anyway if the user insists. |
 
@@ -63,7 +64,6 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
 | B192 | **Creating a new project on the startup screen loads the old one instead** | Projects | ⭐⭐⭐ | M | After creating a project and choosing Load Project, MLQT loads the **previously selected** project from the list rather than the new empty one, and the new project appears to take on that project's repositories. Two candidate faults — the selection not moving to the newly created row, and the create path copying the selected project rather than starting empty — and they may both be real. |
-| B194 | **The startup dialog only responds to its buttons** | Projects | ⭐ | S | Clicking a row in the startup list does nothing; the action has to be taken from the button. Make the row itself trigger the same action, keeping the button. |
 | B198 | **A newly added repository did not load its library until MLQT was restarted** | Repositories | ⭐⭐⭐ | M | Adding `ModelicaEditorTestsGit` to a project added the repository but loaded no library; restarting the tool loaded it. The suspicion to test first is the **layout**: this repository holds a single library with `package.mo` at the top level, rather than libraries in subdirectories. If discovery is the cause it is a defect in `LibraryDiscovery`; if the discovery is right and the load is not triggered, it is in the add-repository path — which already had to be taught to run its analysis through the progress dialog (B127). |
 | B190 | **The UI, and sometimes the whole desktop, freezes during loading** | Performance | ⭐⭐⭐ | M | Reported during the loading step: MLQT's window is unresponsive, and at some points other windows are slow to redraw too — moving the MLQT window is sluggish and everything can stall for a few seconds. **Confirm it still happens before investigating**; it predates several fixes since, and the log records phase durations that would say where the time goes. Whatever is blocking is on a thread it should not be on. |
 
@@ -100,7 +100,6 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 |---|------|------|-------|--------|----------------|
 | B179 | **MCP loads an encrypted library but returns almost nothing about it** | MCP | ⭐⭐⭐ | M | An agent can load an encrypted library, but the tools do not return the public interface or the documentation — both of which **are** recovered from the vendor's help HTML and are sitting on the synthesized stub: description, base classes, parameters, connectors, inputs and outputs. `get_class_info` and its neighbours should return them for a stub, clearly marked as recovered from documentation rather than read from source, and still declaring the class not editable (B85). |
 | B196 | **The diagram tools give an agent no way to see what it drew** | MCP | ⭐⭐ | M | The diagram tools return a description, so the agent is laying out a picture it cannot look at. Rendering the SVG to **PNG** and returning it would let the agent judge its own layout — and the SVG is already produced, so the question is which conversion to take on (and what it costs in dependencies). Alongside that, the guidance the tools give needs to say how connector positions should be chosen to match MSL and the usual conventions, and it is worth asking what else would make an automatically generated diagram look right. |
-| B180 | **`MLQT.McpTester` starts with a path from one developer's machine** | McpTester | ⭐ | S | The default server path is hard-coded to a location that will not exist for anyone else. Blank, or something derivable — the MCP server beside the tester's own binary would be a useful default and would make the first run work. |
 
 ### Revision control
 
@@ -108,9 +107,3 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 |---|------|------|-------|--------|----------------|
 | B193 | **Switch Branch cannot reach a Git tag** | Git | ⭐⭐ | M | Switching to a tagged version of `ExternData` is not offered, although TortoiseGit does it on the same working copy. The branch selector presumably enumerates branches only; checking out a tag produces a detached HEAD, which the surrounding UI also has to be able to describe rather than showing an empty branch name. |
 | B202 | **The VCS History file diff compares against the working copy** | Git / SVN | ⭐⭐ | S | Clicking a file in a commit's changed-files popover opens a diff of that revision against the **working copy**. What a user reviewing history wants is what that commit *changed* — the selected commit against its predecessor. B155 corrected the documentation of the current behaviour after finding it reported confusing numbers; this changes the behaviour to the one the dialog is for. |
-
-### Build
-
-| # | Item | Area | Value | Effort | What is needed |
-|---|------|------|-------|--------|----------------|
-| B203 | **A clean Release build is not warning-free, and the record says it is** | Build | ⭐ | S | `dotnet build MLQT.slnx -c Release --no-incremental` emits **two** xUnit analyzer warnings, both in `ModelicaParser.Tests/SpellChecking/SpellCheckerConcurrencyTests.cs` (commit d1257e3, 2026-09-11): `xUnit1031` on a blocking task operation, and `xUnit1051` on a call taking a `CancellationToken`. They are invisible on an incremental build, which is why the phase-7 record reads 0 warnings — **B77's shape exactly**, one project later. Fix the two call sites, and measure warning counts from a build that actually compiled. |

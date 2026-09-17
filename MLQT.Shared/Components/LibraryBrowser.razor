@@ -75,8 +75,19 @@ else if (Repository != null)
                         break;
                 }
                 <MudText Typo="Typo.subtitle1">@Repository.Name</MudText>
+                @* Labels the repository, so it belongs beside the name rather than inside the
+                   current-branch row below: that row renders only for a non-Local repository with a
+                   revision, which is why every reference repository but one appeared unlabelled
+                   (B200). *@
+                @if (Repository.IsReferenceOnly)
+                {
+                    <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                                 Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
+                    </MudTooltip>
+                }
                 <MudSpacer/>
-                @if (Repository.VcsType != RepositoryVcsType.Local) 
+                @if (Repository.VcsType != RepositoryVcsType.Local)
                 {
                     <MudTooltip Text="Browse history">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.List" Size="Size.Medium" OnClick="ShowHistory"></MudIconButton>
@@ -97,14 +108,7 @@ else if (Repository != null)
                         <MudText Typo="Typo.body1">Detached HEAD</MudText>
                     }
                     <MudSpacer />
-                    @if (Repository.IsReferenceOnly)
-                    {
-                        <MudTooltip Text="This repository is marked Reference only: MLQT loads it so references into it resolve and never checks, formats or writes to it. Untick Reference only in Settings > Manage Repositories to work in it.">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
-                                     Icon="@Icons.Material.Outlined.Lock">Reference only</MudChip>
-                        </MudTooltip>
-                    }
-                    else
+                    @if (!Repository.IsReferenceOnly)
                     {
                     <MudTooltip Text="Switch branch">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Medium" OnClick="ShowSwitchBranchDialog" Class="compact-icon-button" />

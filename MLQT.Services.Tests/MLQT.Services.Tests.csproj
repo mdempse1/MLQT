@@ -46,5 +46,11 @@
   <ItemGroup>
     <!-- Linked, not copied: the platform-rooted-path rule has one implementation. See its remarks. -->
     <Compile Include="../TestSupport/TestPaths.cs" Link="TestSupport/TestPaths.cs" />
+
+    <!-- MLQT.McpTester has no test project of its own and is deliberately standalone, so a
+         ProjectReference would point the wrong way and drag a Photino window app into a headless
+         suite. Sharing the one file with logic in it is what B167 did in the other direction. -->
+    <Compile Include="../MLQT.McpTester/Services/McpServerLocator.cs"
+             Link="McpTester/McpServerLocator.cs" />
   </ItemGroup>
 </Project>

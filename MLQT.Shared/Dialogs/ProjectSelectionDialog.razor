@@ -10,9 +10,14 @@
             <MudStack Row="false" Spacing="0">
                 @foreach (var project in _projects)
                 {
-                    <MudRadio Dense="true" T="string" Value="@project.Id" Size="Size.Small" Color="Color.Primary">
-                        @($"{project.Name} ({project.Repositories.Count} repositories)")
-                    </MudRadio>
+                    @* The row loads the project, not only the radio plus the button (B194). The
+                       button stays: it is what makes the keyboard path work, since arrowing through
+                       a radio group moves the selection without committing it. *@
+                    <div class="project-row" @onclick="@(() => SelectAndLoad(project.Id))">
+                        <MudRadio Dense="true" T="string" Value="@project.Id" Size="Size.Small" Color="Color.Primary">
+                            @($"{project.Name} ({project.Repositories.Count} repositories)")
+                        </MudRadio>
+                    </div>
                 }
             </MudStack>
         </MudRadioGroup>

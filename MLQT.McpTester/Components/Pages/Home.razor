@@ -36,7 +36,10 @@
                 <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
                            OnClick="Disconnect">Disconnect</MudButton>
             }
-            <MudButton Variant="Variant.Text" OnClick="FillMlqtServer" Disabled="_connecting">Use MLQT server</MudButton>
+            @* Offered only when the server was actually located, or the button would replace whatever
+               the user typed with an empty string. *@
+            <MudButton Variant="Variant.Text" OnClick="FillMlqtServer"
+                       Disabled="@(_connecting || MlqtServerPath.Length == 0)">Use MLQT server</MudButton>
             @if (_connecting)
             {
                 <MudProgressCircular Indeterminate="true" Size="Size.Small" />
@@ -214,8 +217,12 @@
 }
 
 @code {
-    private const string MlqtServerPath =
-        @"C:\Projects\MLQT\MLQT.McpServer\bin\Debug\net10.0\MLQT.McpServer.exe";
+    // Derived, not hard-coded: the previous literal was one machine's path, so on every other
+    // machine the tester opened pre-filled with something that does not exist (B180). Empty when
+    // MLQT's server cannot be found, which is a normal outcome for a tool built to talk to any
+    // stdio MCP server.
+    private static readonly string MlqtServerPath = McpServerLocator.Locate(
+        AppContext.BaseDirectory, McpServerLocator.ExecutableName, File.Exists);
 
     private string _command = MlqtServerPath;
     private string _argsText = "";
