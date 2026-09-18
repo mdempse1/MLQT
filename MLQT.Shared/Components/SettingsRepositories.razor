@@ -24,11 +24,12 @@
                         <span @onclick:stopPropagation="true">
                             <MudTextField @bind-Value="_renameInput" Variant="Variant.Outlined"
                                 Margin="Margin.Dense" Immediate="true"
-                                Style="max-width: 250px;" />
+                                Style="max-width: 250px;"
+                                Error="@(RenameError is not null)" ErrorText="@RenameError" />
                         </span>
                         <span @onclick:stopPropagation="true">
                             <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
-                                OnClick="ConfirmRename" Disabled="@(string.IsNullOrWhiteSpace(_renameInput))" />
+                                OnClick="ConfirmRename" Disabled="@(RenameError is not null)" />
                         </span>
                         <span @onclick:stopPropagation="true">
                             <MudIconButton  Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" 
@@ -119,9 +120,10 @@
         {
             <MudTextField @bind-Value="_projectNameInput" Label="@_projectNameLabel"
                 Variant="Variant.Outlined" Margin="Margin.Dense"
-                Immediate="true" Style="max-width: 400px;" />
+                Immediate="true" Style="max-width: 400px;"
+                Error="@(NewProjectNameError is not null)" ErrorText="@NewProjectNameError" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success"
-                OnClick="ConfirmProjectName" Disabled="@(string.IsNullOrWhiteSpace(_projectNameInput))" />
+                OnClick="ConfirmProjectName" Disabled="@(NewProjectNameError is not null)" />
             <MudIconButton Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error"
                 OnClick="CancelProjectName" />
         }

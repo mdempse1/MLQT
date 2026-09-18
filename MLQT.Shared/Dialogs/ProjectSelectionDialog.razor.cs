@@ -29,8 +29,24 @@ public partial class ProjectSelectionDialog
         MudDialog?.Close(DialogResult.Ok(_selectedProject));
     }
 
+    /// <summary>
+    /// Why the name being typed cannot be used, or <c>null</c> when it can.
+    ///
+    /// <para>Evaluated while the field has focus (it is <c>Immediate</c>), so the reason appears as
+    /// the user types rather than after they commit. Only meaningful while the new-project controls
+    /// are showing: outside that, <c>_selectedProject</c> holds the id of the radio selection rather
+    /// than a name being composed.</para>
+    /// </summary>
+    internal string? NewProjectNameError =>
+        _showNewProjectControls ? ProjectNameRules.Validate(_selectedProject, _projects) : null;
+
     private void ConfirmProjectName()
     {
+        // The button is disabled while this is non-null, so reaching here with one means the click
+        // arrived some other way.
+        if (NewProjectNameError is not null)
+            return;
+
         _showNewProjectControls = false;
 
         if (string.IsNullOrWhiteSpace(_selectedProject))

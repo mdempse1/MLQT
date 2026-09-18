@@ -217,4 +217,42 @@ public class SharedUiConventionTests
             + "afterwards - which is B192. Name the project to load, or use CreateAndSelectProjectAsync "
             + "when the point is only to add a project to the saved settings.");
     }
+
+    /// <summary>
+    /// Every screen that names a project shows why a name is refused, and will not let it be
+    /// confirmed.
+    /// </summary>
+    /// <remarks>
+    /// <para>Three places can name a project: the startup selector, and creating or renaming one in
+    /// Settings - Manage Repositories. The rule itself lives once, in <c>ProjectNameRules</c>, and the
+    /// service refuses a name that reaches it regardless. What this holds is the half the user meets,
+    /// which is markup and therefore compiles whether or not it was written: a field bound to the
+    /// error and a confirm button disabled by it.</para>
+    ///
+    /// <para>Checked by reading, because the message itself cannot be asserted from a rendered test:
+    /// MudTextField emits <c>ErrorText</c> on the render after the value changes, so a single
+    /// synthetic keystroke shows the disabled button and not yet the reason.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData("Dialogs/ProjectSelectionDialog.razor", "NewProjectNameError")]
+    [InlineData("Components/SettingsRepositories.razor", "NewProjectNameError")]
+    [InlineData("Components/SettingsRepositories.razor", "RenameError")]
+    public void EveryPlaceThatNamesAProjectShowsWhyAndBlocksConfirm(string markupFile, string errorProperty)
+    {
+        var shared = SharedDirectory();
+        if (shared is null)
+            return;
+
+        var markup = File.ReadAllText(Path.Combine(shared, markupFile));
+
+        Assert.True(
+            markup.Contains($"ErrorText=\"@{errorProperty}\"", StringComparison.Ordinal),
+            $"{markupFile} does not show {errorProperty} to the user. Bind the field's ErrorText to it, "
+            + "or a refused name is refused with no reason given.");
+
+        Assert.True(
+            markup.Contains($"Disabled=\"@({errorProperty} is not null)\"", StringComparison.Ordinal),
+            $"{markupFile} does not disable its confirm button on {errorProperty}. Without it the name "
+            + "can be confirmed and the service throws instead, which reaches the user as a crash.");
+    }
 }

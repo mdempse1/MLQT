@@ -89,6 +89,8 @@ To manage projects, navigate to **Settings > Manage Repositories** (the last tab
 3. Enter a name for your project in the text field that appears
 4. Click the **checkmark** button to confirm, or the **X** button to cancel
 
+Project names have to be different from one another, so that a list of projects can be read. A name another project already has is refused as you type, with the checkmark unavailable until you change it — the comparison ignores capitalisation and surrounding spaces, since "Work" and "work " are not two projects anyone could tell apart. The same applies when renaming a project, and when naming one from the project selector MLQT shows at startup.
+
 ![Screenshot: The Manage Repositories panel showing the "New Project" name input field with the checkmark and X buttons beside it.](Images/getting-started-4.png)
 
 The new project is created and automatically becomes the active project. You can now add repositories to it.

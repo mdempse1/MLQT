@@ -844,7 +844,14 @@ public class RepositoryService : IRepositoryService
     {
         var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
-        var project = new ProjectProfile { Name = name };
+        // Checked against what is saved, not against the in-memory list, because this path runs
+        // before anything is loaded. The screens check first and show the reason; reaching here with
+        // a name already taken means something got past them.
+        var refusal = ProjectNameRules.Validate(name, settings.Projects);
+        if (refusal is not null)
+            throw new InvalidOperationException(refusal);
+
+        var project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
         settings.Projects.Add(project);
         settings.ActiveProjectId = project.Id;
 
@@ -870,22 +877,42 @@ public class RepositoryService : IRepositoryService
     /// </summary>
     public ProjectProfile CreateProject(string name)
     {
-        var project = new ProjectProfile { Name = name };
+        ProjectProfile project;
         lock (_lock)
         {
+            var refusal = ProjectNameRules.Validate(name, _projects);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
+
+            project = new ProjectProfile { Name = ProjectNameRules.Normalise(name) };
             _projects.Add(project);
         }
         _ = SaveRepositorySettingsAsync();
         return project;
     }
 
+    /// <summary>
+    /// Renames a project. Throws when the new name is already another project's.
+    /// </summary>
+    /// <remarks>
+    /// A uniqueness rule that only creation enforces is not a uniqueness rule: the same two projects
+    /// can be made indistinguishable by renaming one of them into the other. The project being
+    /// renamed is excluded from the comparison, so confirming a rename that changes nothing, or only
+    /// changes case, is allowed.
+    /// </remarks>
     public void RenameProject(string projectId, string newName)
     {
         lock (_lock)
         {
             var project = _projects.FirstOrDefault(p => p.Id == projectId);
-            if (project != null)
-                project.Name = newName;
+            if (project == null)
+                return;
+
+            var refusal = ProjectNameRules.Validate(newName, _projects, ignoringProjectId: projectId);
+            if (refusal is not null)
+                throw new InvalidOperationException(refusal);
+
+            project.Name = ProjectNameRules.Normalise(newName);
         }
         _ = SaveRepositorySettingsAsync();
     }

@@ -121,8 +121,28 @@ public partial class SettingsRepositories : IDisposable
         _showProjectNameInput = true;
     }
 
+    /// <summary>
+    /// Why the name being typed for a new project cannot be used, or <c>null</c> when it can.
+    /// Same rule as the startup selector applies — see <see cref="ProjectNameRules"/>.
+    /// </summary>
+    internal string? NewProjectNameError =>
+        _showProjectNameInput ? ProjectNameRules.Validate(_projectNameInput, _projects) : null;
+
+    /// <summary>
+    /// Why the name being typed for a rename cannot be used, or <c>null</c> when it can. The project
+    /// being renamed is excluded, so confirming without changing the name is not a clash with itself.
+    /// </summary>
+    internal string? RenameError =>
+        _renamingProjectId is null
+            ? null
+            : ProjectNameRules.Validate(_renameInput, _projects, ignoringProjectId: _renamingProjectId);
+
     private async Task ConfirmProjectName()
     {
+        // The confirm button is disabled while this is non-null.
+        if (NewProjectNameError is not null)
+            return;
+
         _showProjectNameInput = false;
 
         if (string.IsNullOrWhiteSpace(_projectNameInput))
@@ -153,6 +173,10 @@ public partial class SettingsRepositories : IDisposable
 
     private void ConfirmRename()
     {
+        // The confirm button is disabled while this is non-null.
+        if (RenameError is not null)
+            return;
+
         if (_renamingProjectId != null && !string.IsNullOrWhiteSpace(_renameInput))
         {
             RepositoryService.RenameProject(_renamingProjectId, _renameInput.Trim());
