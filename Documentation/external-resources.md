@@ -71,14 +71,14 @@ Only files matching at least one active filter are shown. Directories that conta
 
 ## Warning Filters
 
-Next to the file type filters, a separate set of **Warning** filter chips lets you quickly find resources with problems. Each chip shows the count of affected resources.
+Next to the file type filters, a separate set of **Warning** filter chips lets you quickly find resources with problems. Each chip shows how many resources it will show — a resource is counted once however many models reference it.
 
 | Filter | What It Shows |
 |--------|---------------|
 | **Missing** | Resources where the file or directory does not exist on disk. This includes resolved paths that point to non-existent files and unresolved `modelica://` URIs that could not be mapped to a path at all. |
 | **Absolute Paths** | Resources referenced using non-portable absolute paths (e.g., `C:\Data\file.mat`) instead of `modelica://` URIs. These will break when the library is used on a different machine. |
 
-When a warning filter is active, only resources matching the selected warning type(s) are shown in the tree. The file type filters still apply, so you can combine them — for example, select "Missing" and "Data Files" to see only missing data files.
+When a warning filter is active it decides on its own what is shown, and the file type filters are set aside: selecting "Missing" shows everything that is missing, whatever kind of file it is. That is deliberate — the file type filters cover only data, C code and libraries by default, so combining the two used to hide missing images, documents and anything with an unusual extension while the chip went on counting them.
 
 When no warning filters are selected, all resources are shown (subject to file type filters).
 

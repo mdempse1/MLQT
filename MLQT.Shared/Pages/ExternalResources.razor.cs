@@ -91,8 +91,14 @@ public partial class ExternalResources : IDisposable
     {
         _allResources = ExternalResourceService.GetAllResources();
         _allWarnings = ExternalResourceService.GetWarnings();
-        _missingCount = _allWarnings.Count(w => w.WarningType == ResourceWarningType.MissingFile);
-        _absolutePathCount = _allWarnings.Count(w => w.WarningType == ResourceWarningType.AbsolutePath);
+
+        // The counts are taken from the tree, after it is built, and not from the warning list
+        // (B207). A warning is recorded per *reference*, so a missing file six models mention is six
+        // warnings and one node, and the chip read "Missing (6)" over a tree showing one thing. The
+        // warning list also disagrees in the other direction: a path that could not be resolved at
+        // all appears in the tree as missing and produces no warning, because GenerateWarnings needs
+        // a resolved path to test. Counting the nodes makes the chip a promise about what clicking it
+        // shows, which is the only thing it can honestly be.
         BuildTreeStructure();
         _topLevelItems = GetTopLevelItems();
     }
@@ -146,7 +152,10 @@ public partial class ExternalResources : IDisposable
         }
 
         if (resolvedFileNodes.Count == 0 && unresolvedFileNodes.Count == 0)
+        {
+            CountWarnings([]);
             return;
+        }
 
         // Compute common root from resolved (absolute) paths only
         if (resolvedFileNodes.Count > 0)
@@ -194,6 +203,37 @@ public partial class ExternalResources : IDisposable
                 .ThenBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        // Every resource that reached the tree, each counted once — these two collections are what
+        // was de-duplicated above, so the chips and the tree cannot disagree about how many there are.
+        CountWarnings(resolvedFileNodes.Values.Concat(unresolvedFileNodes));
+    }
+
+    private void CountWarnings(IEnumerable<ResourceTreeNode> nodes)
+    {
+        (_missingCount, _absolutePathCount) = CountResourceWarnings(nodes);
+    }
+
+    /// <summary>
+    /// How many of these resources are missing, and how many were reached by an absolute path —
+    /// the two chip counts.
+    /// </summary>
+    /// <remarks>
+    /// Takes the tree's own nodes, which have already been de-duplicated by resolved path, so the
+    /// number on a chip is the number of things selecting it shows.
+    /// </remarks>
+    internal static (int Missing, int AbsolutePath) CountResourceWarnings(IEnumerable<ResourceTreeNode> nodes)
+    {
+        var missing = 0;
+        var absolute = 0;
+
+        foreach (var node in nodes)
+        {
+            if (node.IsMissing) missing++;
+            if (node.IsAbsolutePath) absolute++;
+        }
+
+        return (missing, absolute);
     }
 
     private ResourceTreeNode CreateFileNode(ExternalResourceReference resource, string displayPath, StringComparison comparison)
@@ -413,14 +453,44 @@ public partial class ExternalResources : IDisposable
         if (node.IsDirectory)
             return true;
 
-        // When a warning filter is active, only show nodes matching the selected warning types
-        if (IsWarningFilterActive)
-        {
-            if (!PassesWarningFilter(node))
-                return false;
-        }
+        return NodePassesFilters(node, _selectedWarningTypes, _selectedFileTypes);
+    }
 
-        return _selectedFileTypes.Contains(CategoryOf(node.FileExtension));
+    /// <summary>
+    /// Whether one resource survives the filters currently selected.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A warning filter answers on its own, and the file-type filter does not get a say
+    /// (B207).</b> Selecting "Missing" means "show me what is broken", and the type filter defaults
+    /// to data, C code and libraries only — so a missing image, document, or anything carrying an
+    /// extension nobody listed was counted by the chip and then could not be shown by it. The two
+    /// used to combine, which read as the chip overstating how much was wrong.</para>
+    ///
+    /// <para>Static so the rule can be asserted without a rendered page; the instance methods pass
+    /// their selections in.</para>
+    /// </remarks>
+    internal static bool NodePassesFilters(
+        ResourceTreeNode node,
+        IReadOnlyCollection<string> selectedWarningTypes,
+        IReadOnlyCollection<string> selectedFileTypes)
+    {
+        if (node.IsDirectory)
+            return true;
+
+        if (selectedWarningTypes.Count > 0)
+            return MatchesWarningTypes(node, selectedWarningTypes);
+
+        return selectedFileTypes.Contains(CategoryOf(node.FileExtension));
+    }
+
+    /// <summary>Whether a resource is one of the kinds of warning selected.</summary>
+    internal static bool MatchesWarningTypes(ResourceTreeNode node, IReadOnlyCollection<string> selectedWarningTypes)
+    {
+        if (selectedWarningTypes.Contains("missing") && node.IsMissing)
+            return true;
+        if (selectedWarningTypes.Contains("absolute") && node.IsAbsolutePath)
+            return true;
+        return false;
     }
 
     /// <summary>
@@ -452,14 +522,8 @@ public partial class ExternalResources : IDisposable
     internal static readonly string[] AllCategories =
         ["data", "ccode", "lib", "images", "documents", "other"];
 
-    private bool PassesWarningFilter(ResourceTreeNode node)
-    {
-        if (_selectedWarningTypes.Contains("missing") && node.IsMissing)
-            return true;
-        if (_selectedWarningTypes.Contains("absolute") && node.IsAbsolutePath)
-            return true;
-        return false;
-    }
+    private bool PassesWarningFilter(ResourceTreeNode node) =>
+        MatchesWarningTypes(node, _selectedWarningTypes);
 
     private static string GetNodeText(ResourceTreeNode? node)
     {
