@@ -815,14 +815,58 @@ public class RepositoryService : IRepositoryService
     }
 
     /// <summary>
-    /// Adds a project and starts persisting it.
+    /// Creates a project, makes it the active one, and persists both facts — <b>without loading
+    /// anything and without touching any in-memory state</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why this exists (B192).</b> Creating a project on the startup screen has to append to
+    /// the saved project list, and the only way to get that list into memory was
+    /// <see cref="LoadRepositorySettingsAsync"/> — which also opens every repository of the currently
+    /// active project and loads their libraries. So choosing "New Project" opened the previous
+    /// session's repositories, and nothing unloads them afterwards: that method never clears
+    /// <c>_repositories</c> or the graph, and only <see cref="SwitchProjectAsync"/> does. The user saw
+    /// the old repositories under a project that should have been empty, no progress dialog (the new
+    /// project genuinely has nothing to load), a UI still busy with the old project's analysis, and a
+    /// stale title.</para>
+    ///
+    /// <para><b>Why it touches no in-memory state.</b> <see cref="SaveRepositorySettingsAsync"/>
+    /// writes the active project's repository list from the loaded <c>_repositories</c>. Populating
+    /// <c>_projects</c> here without loading repositories would leave those two describing different
+    /// projects, and the next save — <see cref="CreateProject"/> starts one of its own — would write
+    /// an empty list over a project that has repositories, or one project's repositories into
+    /// another. Reading the settings, appending, and writing them back is the whole operation, and it
+    /// leaves nothing half-done for a later save to act on.</para>
+    ///
+    /// <para>The caller loads the new project afterwards in the ordinary way, with
+    /// <c>LoadRepositorySettingsAsync(project.Id)</c>.</para>
+    /// </remarks>
+    public async Task<ProjectProfile> CreateAndSelectProjectAsync(string name)
+    {
+        var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
+
+        var project = new ProjectProfile { Name = name };
+        settings.Projects.Add(project);
+        settings.ActiveProjectId = project.Id;
+
+        await _settingsService.SetAsync(SettingsKey, settings);
+
+        Info("RepositoryService", $"Created project '{name}' and made it active; nothing loaded");
+        return project;
+    }
+
+    /// <summary>
+    /// Adds a project to the in-memory list and starts persisting it.
     ///
     /// <para><b>The save is not awaited</b>, so the project exists in memory before it exists on
     /// disk. A caller that is about to make something re-read the settings — <c>LoadRepositorySettingsAsync</c>
     /// replaces the in-memory project list with what it finds there — must
     /// <see cref="SaveRepositorySettingsAsync"/> first, or the new project can be gone by the time it
-    /// is looked for. That is B192: startup created a project, immediately loaded it by id, and got
-    /// the first existing project instead.</para>
+    /// is looked for.</para>
+    ///
+    /// <para>This one requires the project list to be loaded already, and it writes the currently
+    /// loaded repositories out as part of saving. Use
+    /// <see cref="CreateAndSelectProjectAsync"/> where nothing has been loaded yet — at startup, in
+    /// particular.</para>
     /// </summary>
     public ProjectProfile CreateProject(string name)
     {

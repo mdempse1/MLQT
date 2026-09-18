@@ -180,4 +180,41 @@ public class SharedUiConventionTests
             "A <summary> directly follows a </summary>, which means one doc comment was left above "
             + "the member's real one: " + string.Join(", ", stacked));
     }
+
+    /// <summary>
+    /// <c>MainLayout</c> never loads repository settings without naming the project to load.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>B192, twice.</b> The startup path called <c>LoadRepositorySettingsAsync()</c> with no
+    /// argument purely to get the saved project list into memory, so that a newly created project
+    /// could be appended to it. That overload loads the <i>currently active</i> project: it opens
+    /// every repository in it and loads their libraries, and nothing afterwards unloads them — the
+    /// method never clears the loaded repositories or the graph, and only <c>SwitchProjectAsync</c>
+    /// does. So creating a project on the startup screen came up holding the previous session's
+    /// repositories.</para>
+    ///
+    /// <para>It reads as a harmless "make sure settings are loaded", which is why it survived a first
+    /// fix of this item, and it compiles wherever it is written. Every call from here names a project;
+    /// the no-argument form belongs to callers that really do mean "open whatever was open last".</para>
+    /// </remarks>
+    [Fact]
+    public void MainLayoutAlwaysNamesTheProjectItLoads()
+    {
+        var shared = SharedDirectory();
+        if (shared is null)
+            return;
+
+        var source = File.ReadAllText(Path.Combine(shared, "Layout", "MainLayout.razor.cs"));
+
+        // Strip comments first, so the explanation above the fixed call is not mistaken for the call.
+        var code = Regex.Replace(source, @"//.*", string.Empty);
+
+        var bare = Regex.Matches(code, @"LoadRepositorySettingsAsync\s*\(\s*\)").Count;
+
+        Assert.True(bare == 0,
+            $"MainLayout calls LoadRepositorySettingsAsync() with no project {bare} time(s). That overload "
+            + "loads the previously active project's repositories and libraries, and nothing unloads them "
+            + "afterwards - which is B192. Name the project to load, or use CreateAndSelectProjectAsync "
+            + "when the point is only to add a project to the saved settings.");
+    }
 }

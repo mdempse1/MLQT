@@ -293,8 +293,27 @@ public interface IRepositoryService
     ProjectProfile? GetActiveProject();
 
     /// <summary>
-    /// Creates a new empty project profile.
+    /// Creates a new empty project profile, makes it the active one, and persists both — without
+    /// loading any repository or library, and without changing any in-memory state.
     /// </summary>
+    /// <remarks>
+    /// For the startup path, where nothing has been loaded yet and nothing should be: obtaining the
+    /// project list through <see cref="LoadRepositorySettingsAsync"/> in order to append to it also
+    /// opens the previously active project's repositories, which is B192. The caller loads the new
+    /// project afterwards with <c>LoadRepositorySettingsAsync(project.Id)</c>.
+    /// </remarks>
+    /// <param name="name">Display name for the project.</param>
+    /// <returns>The created project profile.</returns>
+    Task<ProjectProfile> CreateAndSelectProjectAsync(string name);
+
+    /// <summary>
+    /// Creates a new empty project profile in the already-loaded project list.
+    /// </summary>
+    /// <remarks>
+    /// Requires the project list to have been loaded, and saving it writes the currently loaded
+    /// repositories out as the active project's. Use <see cref="CreateAndSelectProjectAsync"/> when
+    /// nothing has been loaded yet.
+    /// </remarks>
     /// <param name="name">Display name for the project.</param>
     /// <returns>The created project profile.</returns>
     ProjectProfile CreateProject(string name);

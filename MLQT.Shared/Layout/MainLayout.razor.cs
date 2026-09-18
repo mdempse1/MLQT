@@ -166,24 +166,27 @@ public partial class MainLayout : IDisposable
                 });
             }
 
-            // If the user requested a new project, load settings first (so existing projects
-            // are in memory), then create the new project and use its real ID.
+            // The user asked for a new project. Create it, load it, and stop: a project created a
+            // moment ago has no repositories, so there is nothing for the startup sequence below to
+            // load and nothing for its progress dialog to report.
+            //
+            // This used to call LoadRepositorySettingsAsync() with no argument first, to get the
+            // saved project list into memory so the new project could be appended to it. That call
+            // also opens every repository of the *currently active* project and loads their
+            // libraries — so choosing "New Project" quietly opened the previous session's work, and
+            // nothing then unloaded it: that method never clears the loaded repositories or the
+            // graph, and only SwitchProjectAsync does. The new project came up holding the old
+            // project's repositories, with no progress dialog, a UI still busy finishing the old
+            // project's analysis, and a stale title (B192).
+            //
+            // CreateAndSelectProjectAsync is the settings edit on its own, with nothing loaded.
             if (newProjectName != null)
             {
-                await RepositoryService.LoadRepositorySettingsAsync();
-                var newProject = RepositoryService.CreateProject(newProjectName);
-                selectedProjectId = newProject.Id;
-
-                // CreateProject does not await its own save, and everything below re-reads the
-                // settings — the check immediately after this, and LoadRepositorySettingsAsync,
-                // which replaces the in-memory project list with what is on disk. Without this the
-                // new project could still be absent from both, which is B192.
-                await RepositoryService.SaveRepositorySettingsAsync();
-
-                // And the snapshot read at the top of this method predates the project that was just
-                // created, so it has to be taken again or the check below asks about the wrong
-                // settings.
-                savedSettings = await SettingsService.GetAsync("Repositories", new RepositorySettingsCollection());
+                var newProject = await RepositoryService.CreateAndSelectProjectAsync(newProjectName);
+                await RepositoryService.LoadRepositorySettingsAsync(newProject.Id);
+                _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+                await InvokeAsync(StateHasChanged);
+                return;
             }
 
             // Check if the selected project has repositories before showing the startup dialog.

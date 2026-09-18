@@ -107,6 +107,16 @@ What each fix turned out to be, and the two things worth carrying into the rest 
 - **Closing a row means advancing the id watermark.** The guard checks that ids *above* the watermark
   run unbroken, so removing B180, B194, B200 and B203 while it sat at B167 would have read as four
   lost rows. The backlog now says B1–B203 issued, new items at B204, and says why.
+- **B192 was reported fixed when only its visible symptom's neighbours had been.** The first pass
+  found two genuine defects on the path, fixed them, tested them by mutation, and never asked the
+  plain question: *where do the repositories actually come from?* They came from a call whose comment
+  said "load settings first (so existing projects are in memory)" — a sentence that describes reading
+  a list and a method that opens working copies. **A call whose comment describes less than it does is
+  worth reading the body of**, and an item that reproduces after a fix means the mechanism was never
+  established, not that another edge case remains. The user's second report named four symptoms at
+  once (old repositories, no progress dialog, a busy UI, a stale title); one cause explains all four,
+  and that is what a mechanism looks like when you have it.
+
 - **A flapping coverage ratchet is a defect report, not noise.** `DymolaCheckingService` and
   `OpenModelicaCheckingService` each moved by one line between identical runs, and the first instinct
   — baseline the low value and move on — would have buried the cause. The line was
@@ -144,7 +154,7 @@ items off a list of thirty-six before starting anything that needs thought.
 | # | What it turned out to be |
 |---|------|
 | B201 | Worse than reported. The placeholder fired on `hasFatal && models.Count == 0`, and **outright garbage produced no placeholder either** — the path was dead for every failure that did not throw. Now "errors recorded and no classes extracted", whatever severity. The boundary is drawn against a class the parser *salvages*: that keeps its own node and its diagnostic, and a placeholder there would be a regression |
-| B192 | The three silent links in the chain: `CreateProject` does not await its save, `LoadRepositorySettingsAsync` replaces the in-memory project list from disk, and it then resolved the active project with `?? Projects.First()`. An explicitly requested id is no longer substituted; the fallback is kept for a saved active id naming a deleted project, which is what it was written for |
+| B192 | **Fixed twice.** The first pass removed two silent fallbacks that substitute a *different* project when the named one is not found — real, and kept. But the repositories were not arriving through project selection at all: the startup path called `LoadRepositorySettingsAsync()` with no argument, purely to get the saved project list into memory, and that overload **opens every repository of the currently active project and loads their libraries**. Nothing unloads them — it never clears the loaded repositories or the graph, and only `SwitchProjectAsync` does. `CreateAndSelectProjectAsync` is the missing primitive: append a project to the saved settings and make it active, loading nothing |
 | B168 | Watchers were keyed by repository, and repositories share a path routinely — every one watches its `VcsRootPath`, so two libraries in one working copy are two watchers over one tree. One watcher per path now, reference-counted, fanning out to each subscriber |
 | B172 | The `Include` regex discarded the delimiter, so `<stdio.h>` resolved to `<library>/Resources/Include/stdio.h` and every external function using the C standard library reported a missing file. **C's own rule carries the fix** — `<name>` is the compiler's search path, `"name"` is the project's — so no platform include paths and no list are needed for the main case; a short standard-name list is the second line for `#include "math.h"` |
 | B204 | `ExtractLibraryName` looked for the outermost class with `ParentModelName == null`, and it is the **empty string**, never null. It returned null on every call, ever, and every caller fell back to the folder name. Invisible while the two agree, which they usually do |
