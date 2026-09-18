@@ -64,14 +64,29 @@ on **99.98% / 99.77% of 114,642 identifier tokens**, round-trip byte-exact over 
 `Finding.LineNumber` is already class-relative to the text such a view shows, so B182 needs no map,
 B183's scroll is a line number, and B185's fallback is already the fast path.
 
-**Where option (2) still earns its place:** if the formatted view is kept as a mode — and it should
-be, it is the honest preview of what the formatter will write — then findings shown against *that*
-view still need the map. It becomes an enhancement to a secondary mode rather than the foundation of
-the page.
+**Decided 2026-09-18, and WP2 now opens with it.** The question was put once more, and harder: *run
+`ModelicaRenderer` on the **save path only**, when the repository has Apply Formatting on, and show
+the bytes that are on disk — or in the revision — everywhere else.* That is Part II of the analysis
+note (§10–§15), and it is what WP2 below is now built around. What it settles:
 
-Read that note before starting WP2. It also names the three things still undecided (whether the
-formatted view is kept and what the default is, what hide-annotations means in a fidelity view, and
-whether `DiffViewer`'s side-by-side path adopts the classifier) and sizes the work.
+- **The formatted view is not kept as a mode of the code viewer.** With formatting on, the file on
+  disk already *is* the renderer's output — MLQT's own MSL renders 400/400 byte-identical — so the
+  mode only says anything new when the user is *about* to turn formatting on. That preview belongs
+  beside *Format All Files*, and it is not in this phase. **This is the one decision here that is
+  expensive to reverse**, because it deletes the rendered path rather than leaving it behind a toggle.
+- **Hide-annotations becomes range elision, and it is not deferrable** — hiding class definitions in a
+  package is the same mechanism and is on for every package. One type, four callers.
+- **`DiffViewer` adopts the classifier.** It already speaks the `<KEYWORD>…` markup, so this deletes
+  more than it adds, and it is all of B178.
+- **One thing is still open and is decided by a measurement, not an argument:** whether
+  `PackageCodeTrimmer` is converted from re-rendering to verbatim excision. It feeds the check
+  pipeline all three surfaces share, so the parity number decides it (B216).
+
+**Where option (2) still earns its place:** nowhere in this phase. If a formatted preview is ever
+built beside *Format All Files*, findings are not shown against it and it needs no map.
+
+Read Part II before starting WP2 — §14 is the staging the package below follows, §13 the risks, and
+§11a/§11b the two places Part II supersedes Part I's sizing.
 
 **The lesson for the rest of this phase**, since it was nearly expensive: the rejected option was
 rejected from a reading of the code, not a measurement, and the reading was of *how the code works
@@ -234,26 +249,56 @@ claims their classes are "counted as absent", because they are not. `cli.md` cha
 
 ### WP2 — The Code Review page
 
-**B182, B185, B183, B176, B186, B187, B178, B189, B197**, and **B173** alongside B186 · 10 items ·
-the bulk of the phase
+**B213, B214, B215, B216, B217, B218** (new, from the decision above) and **B182, B185, B183, B178,
+B176, B186, B187, B189, B197**, with **B173** alongside B186 · 16 items · the bulk of the phase
 
 The keystone package, and what the roadmap's ordering argument is really about: every new analysis
-wave lands here. Strict internal order, because most of it sits on the line map.
+wave lands here. Strict internal order, because most of it sits on **the viewer showing the file** —
+which is what the decision above changed, and it is a different foundation from the line map this
+package was previously built on.
 
-1. **Measure** the two costs B185 names. Nothing else starts until that number exists.
-2. **B182** — the renderer line map, and the finding-line mapping through it.
-3. **B183** — stable alphabetical ordering (one line) and scroll-to-line, using the map. The existing
-   `spellCheck.scrollWordIntoView` / `setScroll` interop is the machinery to extend, not to duplicate.
-4. **B185** — the size threshold, with the no-reformat path as the identity case of the map.
-5. **B186 with B173** — resizable panes. `MudExSplitPanel` is **already a dependency and already in
+**Steps 1–5 are `analysis-viewer-fidelity.md` §14's S0–S5 with backlog ids attached.** The stage
+letters are kept because the gates are written there.
+
+1. **S0/S1 — measure, and nothing starts until both numbers exist.** Two measurements, not one:
+   - **S0**: re-run the note's §9 harness with its two known gaps closed — the
+     `_inGraphicsAnnotationLevel > 2` counter and per-line token splitting. Gate: round trip 100% on
+     both libraries, agreement ≥ 99.9%. **If agreement falls, the package reverts to Part I's milder
+     shape** and the decision above is reopened.
+   - **S1**: how many classes carry `SourceMatchesFile == false` after a normal load, and does a
+     prototype excision trimmer still produce 34329 findings on MSL with no line moving other than by
+     the removed ranges. This decides B216, and only B216.
+   - This also answers the two costs **B185** named, because it separates the parse from the render.
+2. **B213 — the classifier** (`ModelicaTokenClassifier`, in `ModelicaParser` beside
+   `ModelicaRenderer`). The largest single piece. Two property tests carry it: round trip and
+   agreement. >95% per class, and a `run-mutation.ps1 -Mutate` pass over the new file.
+3. **B214 — `SourceElision`.** Independent of B213 and can be built alongside it; step 4 needs both.
+4. **B215 — the viewer shows the file.** The source rule, the classifier in place of the renderer,
+   `ShowRawSource` deleted. **B182, B183 and B185 close here**: B182 by identity rather than by a map,
+   B183's scroll because the finding's line is the viewer's line — the existing
+   `spellCheck.scrollWordIntoView` / `setScroll` interop is the machinery to extend, not to duplicate
+   — and B183's other half (stable alphabetical ordering) is still one line and independent of all of
+   this. B185's threshold becomes the lex-only tier. The page gets its first component tests.
+5. **B178 with B217** — `DiffViewer` adopts the classifier on both sides and `HighlightRawModelica`
+   is deleted; B217 is the class diff comparing stored text against the file, which the same source
+   rule fixes. **B217 is predicted, not observed** — confirm it against a package with standalone
+   children and an uncommitted change before writing anything.
+6. **B216, if S1 says so**, and **B218** — the trimmer and the MCP annotation strip. Both are the same
+   mechanism reaching the check pipeline and an agent; neither is needed for the viewer, so both can
+   be taken later or in another phase.
+7. **B186 with B173** — resizable panes. `MudExSplitPanel` is **already a dependency and already in
    use** in `MainLayout.razor:233`, so this is one control applied twice, and the fixed `221px` and
    hidden pager collapse into one measured value.
-6. **B176** (search over the rendered source) and **B187** (AND plus a rule filter) — independent of
-   the map, so they can run in parallel with 2–5. B187 must untangle the scope-through-search-string
-   smuggling first.
-7. **B178** — the shared colour source. Independent of everything else here.
-8. **B189** then **B197** — reveal-in-tree, then the navigation stack over it. Both hang off the
-   finding-click path that B183 rewrites, so they come last and are cheap once it exists.
+8. **B176** (search over the source — now the user's own source) and **B187** (AND plus a rule filter)
+   — independent of the classifier, so they can run in parallel with 2–5. B187 must untangle the
+   scope-through-search-string smuggling first.
+9. **B189** then **B197** — reveal-in-tree, then the navigation stack over it. Both hang off the
+   finding-click path step 4 rewrites, so they come last and are cheap once it exists. B197's peek now
+   lands in the user's own text, which is the point of it.
+
+**The standing trap in this package** is scope: the change touches the viewer, both diff views, the
+MCP source tool and possibly the check pipeline. Steps 1–5 are each shippable alone and step 6 is
+explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting
 
@@ -433,8 +478,9 @@ question about code.
 ## Sequencing summary
 
 ```
-WP0 ──▶ WP1 ──▶ WP2   measure ▸ B182 map ▸ B183 ▸ B185 ▸ B186/B173 ▸ B189 ▸ B197
-          │              with B176, B187, B178 in parallel
+WP0 ──▶ WP1 ──▶ WP2   S0/S1 measure ▸ B213 classifier ▸ B214 elision ▸ B215 viewer
+          │              (closes B182, B183, B185) ▸ B178/B217 diff ▸ B186/B173 ▸ B189 ▸ B197
+          │              with B176, B187 in parallel; B216, B218 separable at any point
           ├──▶ WP3   rules, independent
           ├──▶ WP5   external tools, independent
           ├──▶ WP6   revision control, independent

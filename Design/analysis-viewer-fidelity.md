@@ -1,9 +1,15 @@
 # Analysis — a viewer mode that preserves the original formatting
 
-**Status: analysis only. Nothing here is decided, and no code has been changed.** Written on
+**Status: analysis, and now a plan. No code has been changed.** Written on
 2026-09-17 to feed the decision recorded as "the one decision that shapes the phase" in
 `phase-1-release-feedback.md`, which is being edited elsewhere. Kept separate on purpose; if the
 recommendation here is accepted, that note's section is what changes, and this file is retired.
+
+**Part I (§1–§9) is the measurement** that says a fidelity *mode* is possible beside the rendered
+view. **Part II (§10–§15), added 2026-09-18, is the stronger proposal and the plan**: run
+`ModelicaRenderer` on the save path only, and show the file everywhere else. Part II supersedes Part
+I's sizing in two places — §11a and §11b — and answers the three questions §8 left open. Read §14 for
+the staging and §15 for what still needs a decision.
 
 The question asked: *the Code Review page reformats what it shows, so a user who has not enabled
 "apply formatting" sees something very different from what their Modelica editor shows. What would it
@@ -381,3 +387,257 @@ The two properties worth keeping as tests, whatever is built:
   byte-identical to its input, as `C:\Projects\Modelica\MSL` is — the classifier's category sequence
   matches the renderer's. This pins the colours to today's behaviour without a golden file, and it is
   how the one remaining rule was found.
+
+---
+
+# Part II — the stronger proposal, and a plan
+
+**Added 2026-09-18**, after the question was put more sharply than §7 had framed it:
+
+> *Run `ModelicaRenderer` on the **save path only**, when the repository has Apply Formatting on.
+> Everywhere else — the code viewer, every diff view — show the bytes that are on disk (or in the
+> revision) and colour them with the classifier. Feasible? Does it simplify things in the end? Would
+> the diff views get the right highlighting? What are the risks?*
+
+Part I asked whether a fidelity *mode* could exist beside the rendered one. This asks whether the
+rendered one should exist on a read path at all. The four answers, short: **yes; yes, materially;
+yes, and almost for free; and the risks are concentrated in three places that Part I named as small
+and the survey below says are not.**
+
+## 10. The survey — every place the renderer runs
+
+The proposal sounds large. It is not, and the reason is worth stating first: **`ModelicaRenderer` has
+exactly two callers on a read path in the whole product.**
+
+| Caller | What it is for | Under the proposal |
+|---|---|---|
+| `CodeReview.razor.cs:716` | Colour the class for the viewer | **Replaced** by the classifier |
+| `PackageCodeTrimmer.cs:90` (`MainLayout.razor.cs:829`, `CheckPipeline.cs:294`, `StyleTools.cs:226`) | Remove a package's inline standalone children before checking | **The one hard case — §11a** |
+| `ClassQueryTools.cs:97` | Strip annotations from a class for an MCP agent | Elision (§11b) — and then an agent's line numbers match its findings too |
+| `ModelicaPackageSaver`, `IncrementalFormatter` | Write formatted files | **Unchanged — this is the save path** |
+| `SettingsRepositories.razor` | Nothing. A comment | — |
+
+**Half the proposal is already true.** The save path is already gated on the toggle —
+`FormattingPipeline.cs:94` and `:223`, `IncrementalFormatter.cs:51`, `MainLayout.razor.cs:1265` all
+return early when `ApplyFormattingRules` is off. Nothing about writing needs to change. The proposal
+is a change to reading only.
+
+**And the formatted view is largely redundant already.** With formatting on, the file on disk *is*
+the renderer's output — §1's control says so: `C:\Projects\Modelica\MSL`, which MLQT formats, renders
+400/400 byte-identical. So a "formatted" mode differs from the file in only three situations:
+formatting is on but *Format All Files* has never been run; a file was edited outside MLQT since; or
+a formatting rule was changed a moment ago and nothing has been saved yet. That is an argument for
+keeping a preview, but not for keeping it as a **mode of the code viewer**: it is a preview of a
+transformation, and it belongs beside the button that performs the transformation (repository
+settings, next to *Format All Files*), where its question — *what will this do to my files?* — is the
+question the user is actually asking. Recommend building it there, later, or not at all; a `mlqt` run
+and a diff answers it today.
+
+## 10.1 What the proposal deletes
+
+Not "makes optional" — deletes.
+
+- **The per-repository `FormattingOptions` lookup in the viewer** (`CodeReview.razor.cs:711`) and with
+  it the idea that a *display* has formatting settings at all.
+- **`ShowRawSource`** (`CodeReview.razor.cs:836`) — the no-colour third representation. The lexer-only
+  tier replaces it and colours what lexed. §5 measured that the lexer never failed, on any of five
+  deliberately malformed inputs.
+- **`DiffViewer.HighlightRawModelica`** and the keyword/number regexes (`DiffViewer.razor.cs:554`–`658`)
+  — about 100 lines of a second, worse highlighter. This is the whole of **B178**.
+- **The renderer line map that B182 was going to require.** Not deferred: never built. §7's table.
+- **`RenderCacheKey`'s formatting dimension**, and much of the render cache's reason to exist — the
+  classify step is 73 ms on the largest file in MSL against 291 ms for render+highlight.
+
+Against that, one thing gets **harder**, not easier, and §11b is it.
+
+## 11. What the survey found that Part I did not
+
+Three things. The first two change the sizing; the third is a live defect.
+
+### 11a. `PackageCodeTrimmer` is the second read-path renderer, and it is shared
+
+Part I §6c mentions the trimmer as a reason the *stored* text may not be the file. That understates
+it. The trimmer runs the renderer over every package with inline standalone children, sets
+`SourceMatchesFile = false`, and is run by **all three surfaces** — desktop, CLI, MCP — precisely so
+they check the same representation. So for those packages:
+
+- The viewer cannot show the stored text and call it fidelity; it has to re-slice the file.
+- But the **findings** were computed against the trimmed text, so their class-relative lines are
+  against a document the viewer would no longer be showing. **B182 comes back for exactly this
+  population** — which is why it has to be measured before anything is built (S1 below). Packages are
+  19% / 33% of classes, and only those with inline standalone children are affected.
+- `ClassLocation.LinesMapToFile` is already `false` for them, so every *file-based* report already
+  falls back to the class declaration rather than pointing at a line. That is today's honest answer
+  and it stays available.
+
+**The clean fix is to stop rendering there too**: excise each standalone child's
+`[StartIndex..StopIndex]` from the package's source and keep everything else verbatim. `ModelNode`
+carries both offsets already (`ModelNode.cs:85`, `:92`). That would make the trimmed text a
+*subsequence* of the file rather than a rewrite of it, restore `SourceMatchesFile` for those packages,
+and improve the CLI and MCP reports — not just the viewer. It is the same drop-only mechanism §11b
+needs.
+
+**It is also the riskiest single change in the proposal**, because the trimmer feeds the check
+pipeline that the GUI, `mlqt check` and the MCP server share, and finding-count parity across them is
+a standing invariant (MSL = 34329). Two reassurances, neither sufficient on its own: the trimmer
+passes `FormattingOptions.None`, which reorders nothing (`FormattingOptions.cs:13`–`16`), and no rule
+in `RuleIds` is sensitive to whitespace or line length — the formatter-derived rules are all about
+*section order*. So the prediction is that counts do not move. **Predictions of that kind are what S1
+exists to replace with a number.**
+
+### 11b. Elision is on the critical path, not a later piece
+
+Part I §6b treats hide-annotations as "the largest piece of new design" and suggests it could ship a
+release later with the toggle disabled. The survey says it cannot, because it is not one consumer but
+four:
+
+| Consumer | Today | Verbatim equivalent |
+|---|---|---|
+| Hide annotations (viewer) | renderer does not visit them | drop the annotation's source range |
+| **Hide class definitions** — `excludeClassDefs` at `CodeReview.razor.cs:628`, **on for every package** | renderer does not visit them | drop each nested class's source range |
+| MCP `get_class_source(includeAnnotations: false)` — `ClassQueryTools.cs:97` | renderer with `showAnnotations: false` | the same drop |
+| The trimmer, if §11a is taken | renderer with `classNamesToExclude` | the same drop |
+
+The second row is the one that moves the schedule: **every package opens with class definitions
+hidden**, so a fidelity viewer with no elision would show a package's entire nested contents inline —
+which for a top-level package is most of a library. Elision is not a toggle that can be disabled for a
+release; it is how a package is displayed at all.
+
+The compensation is that one mechanism serves all four, and it is the simplest kind: an ordered,
+non-overlapping list of dropped source-line ranges, each optionally replaced by a single marker line
+(`annotation(…)`). Monotone, therefore trivially invertible in both directions, and testable as a
+property. This is a line map — §7 was right that one is needed — but over a **drop-only transformation
+with an explicit range list**, not inferred from the emissions of a 3,500-line renderer that four
+other surfaces share. That difference is the whole risk argument.
+
+### 11c. The diff's working-copy side is already wrong for these classes
+
+`LoadModelDiffAsync` feeds `DiffViewer` `Definition.ModelicaCode` as the working copy
+(`CodeReview.razor.cs:590`–`595`) and a slice of the **file** at HEAD. For a trimmed package those two
+are not comparable documents: HEAD carries the inline children, the working-copy side does not, so the
+diff should be showing every standalone child as deleted. The same applies to any class whose stored
+text has been through the formatter since it was read.
+
+**This is predicted, not observed** — it needs five minutes with a package that has standalone children
+and an uncommitted change. If it holds it is a bug to raise on its own, and the source rule in §6c
+fixes it as a side effect: *use the stored code while `SourceMatchesFile`, otherwise re-slice the
+file*.
+
+### 11d. Two traps in the re-slice
+
+- **Offsets and encoding.** `StartIndex`/`StopIndex` are documented as offsets into the file *read with
+  Latin-1 to match the parser* (`ModelNode.cs:76`). `ModelicaFileEncoding` decodes per file, and a
+  UTF-8 file with any multi-byte character decodes to a different character count. **Re-slicing must
+  use the same decoder the offsets were recorded with**, or the slice is silently off by the number of
+  multi-byte characters before it. A test with a `°` in a docstring ahead of the class start is the
+  guard.
+- **Line endings.** The round-trip claim in §5 is exact *after* `NormalizeLineEndings`. That is the
+  right normalisation — `CodeViewer` works in lines — but "byte-exact" should be read as
+  "character-exact modulo line endings" wherever it appears in this note.
+
+## 12. Does it give the diff views the right highlighting?
+
+**Yes, and it is the cheapest part of the whole proposal**, because `DiffViewer` already speaks the
+markup. `ApplyModelicaSyntaxHighlighting` (`DiffViewer.razor.cs:562`) checks for `<KEYWORD>` and, when
+it finds it, converts the tags to `code-*` spans exactly as `CodeViewer` does; the regex highlighter is
+only the fallback for lines that arrive raw. Both diff sides are *already* raw source (§2), so they are
+already the input the classifier wants.
+
+So the work is: classify each side, hand `DiffViewer` tagged lines, and the fallback becomes
+unreachable and is deleted. One new requirement — the HEAD side is a revision's text with no
+`ModelNode` behind it and it may not parse — and the tiering answers it: parse tree if it parses,
+lexer-only if it does not, verbatim if even that fails.
+
+The same applies to `ChangeReview`'s file-level diff (`ChangeReview.razor.cs:316`), which is raw whole
+files today and would become the first *coloured* file diff in the product. It is a separate, optional
+step: whole-file classification is the same call, but its cost is per file rather than per class.
+
+## 13. Risks and drawbacks
+
+Ordered by what they could cost, not by likelihood.
+
+1. **Findings still do not line up for trimmed packages** (§11a). The proposal fixes B182 for the large
+   majority of classes and leaves this population exactly where it is — unless the trimmer is converted
+   too, which is the riskiest change here. **Mitigation:** S1 measures the population and the parity
+   before anything is built; if the trimmer cannot be converted safely, those packages keep today's
+   honest fallback (`LinesMapToFile == false` → point at the class, not a line) and the viewer
+   re-slices for display only, at the cost of finding lines in packages remaining unreliable. That is
+   not a regression, but it is a promise not kept.
+2. **Elision is real work and it is required on day one** (§11b). Four consumers, an invertible map, and
+   a property test. **Mitigation:** build it once, in `ModelicaParser`, with the map as the public type;
+   do not let each caller invent one — that is exactly the defect shape this repository keeps finding.
+3. **Multi-line tokens** (§6a). 0.18% of tokens, 25–28% of lines, 91–99% of files. Get it wrong and a
+   quarter of every file loses its colour; `CodeViewer._tagRegex` is per line and `(.*?)` does not cross
+   one. **Mitigation:** it is a property, not a case — *every emitted line's tags balance* — and it can
+   be asserted over the whole fixture library.
+4. **Blast radius on the shared check pipeline**, if §11a is taken. **Mitigation:** the parity number is
+   already the standing invariant; S1 runs it.
+5. **The affordance that goes away.** No "what will the formatter do to this class?" view. For a
+   repository with formatting on, the file already answers it. For one with formatting off, the answer
+   is *nothing, that is what off means*. The genuine gap is "I am about to turn formatting on" — answer
+   it beside *Format All Files*, not in the viewer.
+6. **Presentation regressions, all of the form "the file is not laid out for a pane."** Dymola writes
+   graphics annotations as single enormous lines, so horizontal scrolling appears where the renderer
+   used to wrap; tabs are now the file's tabs; trailing whitespace is visible. Each is arguably correct
+   — it is what the editor shows — but it is a visible change, and the hide-annotations default carries
+   most of it (41–44% of lines are wholly inside an annotation).
+7. **Encoding and offsets** (§11d). Silent, and off by a few characters, which is the worst kind.
+8. **Test debt.** `MLQT.Shared.Tests` has exactly one test file over this area
+   (`Components/CodeViewerHtmlTests.cs`); `CodeReview` itself has no component tests. Little to rework,
+   nothing to lean on. The classifier lands in `ModelicaParser`, where the bar is **>95% per class**.
+9. **Scope.** The proposal touches the viewer, both diff views, the MCP source tool and possibly the
+   check pipeline. **Mitigation:** the staging below makes every step shippable alone, and S5/S6 are
+   explicitly optional.
+
+**What it is not a risk to:** `CodeViewer`, `SyntaxHighlightingSettings`, the runtime CSS, the
+spell-check overlay, `ModelicaRenderer` itself, the formatter, and every rule and analysis. The markup
+contract does not change.
+
+## 14. The plan
+
+Each stage ends somewhere the product is shippable. Gates are named because two of them can send the
+plan back to Part I's milder shape.
+
+| | Stage | Size | Gate |
+|---|---|---|---|
+| **S0** | Re-run §9's harness with the two known gaps closed: the `_inGraphicsAnnotationLevel > 2` counter, and per-line token splitting | S | Round trip 100% on both libraries; agreement ≥ 99.9%. **If agreement falls, stop** — the classification is not as positional as §5 says |
+| **S1** | **Measure, before any code.** (i) How many classes carry `SourceMatchesFile == false` after a normal load of MSL and Buildings. (ii) Prototype the excision trimmer and run `mlqt check` over MSL: is the count still 34329, and does any finding's line move other than by the removed ranges? | S | (ii) clean → S6 is in scope. (ii) dirty → S6 is dropped and §13.1's fallback is what ships |
+| **S2** | **`ModelicaTokenClassifier`** in `ModelicaParser`, beside `ModelicaRenderer`. Offset-driven; three tiers (parse tree → lexer only → verbatim); per-line tag splitting; inter-token gaps HTML-safe (§6e) | **M** | Two property tests over the fixture library: **round trip** (strip tags == source) and **agreement** (categories match `ModelicaRenderer` on already-formatted input). >95% class coverage, and a `run-mutation.ps1 -Mutate` pass over the new file — it is exactly the kind of code that was added for |
+| **S3** | **`SourceElision`** — ordered dropped line ranges with optional marker lines, `ToSourceLine`/`ToDisplayLine`. One type, four consumers (§11b) | **M** | Invertibility as a property; a package renders with its nested classes collapsed and the map round-trips every displayed line |
+| **S4** | **Wire `CodeReview`**: the source rule (stored while `SourceMatchesFile`, else re-slice by offsets with the matching decoder), classifier in place of `ModelicaRenderer`, `ShowRawSource` deleted, `PrependElementPrefix` inserting into verbatim text, findings mapped by identity or through the elision map | **S–M** | **B182, B183 and B185 close here**, and the first component tests for the page arrive with them |
+| **S5** | **`DiffViewer` adopts the classifier** on both sides; `HighlightRawModelica` deleted | S | **B178 closes.** `ChangeReview`'s whole-file diff is a further optional step |
+| **S6** | **The excision trimmer** (conditional on S1) | M | Parity holds; `SourceMatchesFile` becomes true for the converted packages; CLI and MCP line numbers improve with no change to either |
+
+**Ordering.** S0 and S1 are a day between them and they are the whole of the risk. S2 and S3 are
+independent of each other and can be built in either order or together; S4 needs both. S5 needs only
+S2. S6 needs only S1's verdict and can be taken at any point after it — including much later.
+
+**Against WP2's existing order**, this replaces steps 1–4 and 7 (measure, the B182 map, B183, B185,
+B178) and leaves 5, 6 and 8 (panes, search, reveal-in-tree and the navigation stack) untouched — except
+that B197's peek now lands in the user's own text, which is the point of it.
+
+**Backlog.** New ids start at **B213**. The plan wants at least: the classifier, the elision type, the
+viewer wiring, the diff adoption, the trimmer conversion, and — if §11c holds — the diff-of-a-trimmed-
+package defect. This note is retired when S4 lands, with the durable parts moving into the classifier's
+own documentation and a skill file.
+
+**Documentation.** `code-review.md` (what the viewer shows, and that it is the file),
+`settings-reference.md` (the formatting toggle no longer affects display), `code-formatting.md`
+(formatting is a save-time transformation, full stop), and `mcp-server.md` if `get_class_source`
+changes. The generated screenshots for Code Review are regenerated by `DocumentationScreenshots`, and
+**their captions are the specification** — the captions are what to check first when the pictures
+change.
+
+## 15. What still needs deciding
+
+Part I's three questions, answered under this proposal, plus one new one.
+
+1. **Is the formatted view kept?** — **No, not as a viewer mode.** §10. Build a preview beside *Format
+   All Files* if one is wanted at all. This is the decision that most wants confirming, because it is
+   the one that cannot be undone cheaply once the mode is deleted.
+2. **What does hide-annotations do?** — Range elision, and it is neither optional nor deferrable,
+   because hiding class definitions in a package is the same mechanism and is on by default. §11b.
+3. **Does `DiffViewer` adopt the classifier?** — **Yes.** It is S5, it is small, and it deletes more
+   than it adds. §12.
+4. **New: is the trimmer converted?** — S1 decides it with a number. Everything else in the plan works
+   either way; only the promise in §13.1 changes.

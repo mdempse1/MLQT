@@ -75,8 +75,19 @@ run at all, and passed with 57 WebKit journeys executed and none skipped.
 into eight work packages by shared root cause rather than by area, and records the eleven root causes
 established while planning — two of which change what the fix is.
 
-Two of the items are larger than the rest and worth naming here rather than only in the table:
+The phase has grown since: **B204–B212** while fixing and confirming the first set, and **B213–B218**
+on 2026-09-18 from the one decision that shapes it.
 
+Three of the items are larger than the rest and worth naming here rather than only in the table:
+
+- **B213–B215 — the Code Review page shows the file, not a reformat of it.** `ModelicaRenderer` runs
+  on the save path only, when the repository has Apply Formatting on; everything the user reads —
+  the viewer and both diff views — is the bytes on disk or in the revision, coloured by a token
+  classifier driven from the original source. Measured in
+  [analysis-viewer-fidelity.md](analysis-viewer-fidelity.md): ~95% of displayed lines are currently
+  not where the user's editor puts them, the colouring survives without the reformat at 99.8%+, and
+  the fidelity path is ~45% cheaper. It closes B182, B183, B185 and B178 as consequences rather than
+  as work, and WP2 is now built on it.
 - **B184 — make `--changed-from` check only what changed.** Everything still has to be loaded, but
   re-checking everything then filtering is the largest available win on CI check time.
 - **B191 — distinguish the kind of change a model carries.** Marking a model as modified is small;
