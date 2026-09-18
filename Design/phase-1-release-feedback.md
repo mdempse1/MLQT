@@ -293,6 +293,37 @@ class, and that capability is worth well beyond the marker — which is also why
 here big enough to be its own phase. B188 (a persisted repository order) is unrelated and small; it
 is here only because nothing else needs it.
 
+### WP8 — Test-harness fidelity
+
+**B205** · 1 item · M · new, and it is not a product area, which is why it is its own package
+
+None of WP2–WP7 is a place for it: they are areas of the application, and this is about whether the
+suite can tell the truth about them. It is grouped here with the standing pattern below rather than
+squeezed into whichever package happened to be open.
+
+**B205** — `MLQT.Services.Tests`'s `ISettingsService` double stores objects by reference while the
+real service and the project's two other doubles round-trip through JSON. The work is not the swap,
+which is a few lines; it is **running the suite afterwards and treating each failure as a finding**.
+A test that only passed because the double aliased was not testing what it claimed, and
+`LoadRepositorySettingsAsync`'s unsaved "Default" project is already one place where the app and the
+suite disagree.
+
+**The standing pattern this package exists to keep visible.** Four tests in this phase asserted
+something they could not see, and each was found by accident rather than by looking:
+
+| Where | What it did | How it surfaced |
+|---|---|---|
+| `LoadModelicaFile_UnparseableContent_...` | assertions inside `if (placeholder != null)`, with a comment excusing the null case | B201 — the excused case *was* the defect |
+| `StartCheckingAsync_WhenAlreadyRunning_...` | second call attempted only `if (service.IsRunning)`, closing on `callCount >= 1` | a coverage figure that moved by one line between runs |
+| my first B168 suite | asserted state that was already true of the unfixed code | the mutation check |
+| my first B200 test | asserted MudTooltip text, which is never in the markup | the positive control |
+
+Two of those are mine, which is the point: writing the test after the fix makes it very easy to
+assert the behaviour you just built rather than the one that was missing. **A test that cannot fail
+is worse than no test**, because it is counted. The cheap defences, in the order they have actually
+worked here: a positive control beside every negative assertion, a mutation check before believing a
+guard, and suspicion of any `if` wrapped around an assertion.
+
 ### Not in any package
 
 **B179** and **B196**, the two MCP items, have no dependency on anything above and no dependency on
@@ -315,6 +346,7 @@ WP0 ──▶ WP1 ──▶ WP2   measure ▸ B182 map ▸ B183 ▸ B185 ▸ B18
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first
                        └──▶ WP7   B191 only if confirmed in scope
 
+WP8   test-harness fidelity (B205) — independent; before WP2 if the suite is to be trusted there
 WP-less: B179, B196 (MCP) — separable at any point
 ```
 

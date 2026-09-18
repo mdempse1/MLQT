@@ -4,14 +4,14 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B204 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B205 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
 first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
-question. Of B1–B167 all are closed except the two carried forward below, and the table they lived
-in was retired with the phase design notes on 2026-09-17 — git history has it if the reasoning
-behind one of those ids is ever needed.
+question, and B205 while fixing B192. Of B1–B167 all are closed except the two carried forward
+below, and the table they lived in was retired with the phase design notes on 2026-09-17 — git
+history has it if the reasoning behind one of those ids is ever needed.
 
-New items start at **B205**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B206**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
@@ -97,6 +97,12 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 |---|------|------|-------|--------|----------------|
 | B179 | **MCP loads an encrypted library but returns almost nothing about it** | MCP | ⭐⭐⭐ | M | An agent can load an encrypted library, but the tools do not return the public interface or the documentation — both of which **are** recovered from the vendor's help HTML and are sitting on the synthesized stub: description, base classes, parameters, connectors, inputs and outputs. `get_class_info` and its neighbours should return them for a stub, clearly marked as recovered from documentation rather than read from source, and still declaring the class not editable (B85). |
 | B196 | **The diagram tools give an agent no way to see what it drew** | MCP | ⭐⭐ | M | The diagram tools return a description, so the agent is laying out a picture it cannot look at. Rendering the SVG to **PNG** and returning it would let the agent judge its own layout — and the SVG is already produced, so the question is which conversion to take on (and what it costs in dependencies). Alongside that, the guidance the tools give needs to say how connector positions should be chosen to match MSL and the usual conventions, and it is worth asking what else would make an automatically generated diagram look right. |
+
+### Test harness
+
+| # | Item | Area | Value | Effort | What is needed |
+|---|------|------|-------|--------|----------------|
+| B205 | **The settings test double stores objects by reference, so tests and the app disagree** | Tests | ⭐⭐ | M | `MLQT.Services.Tests/InMemorySettingsService.cs` keeps a `Dictionary<string, object>` and hands the same instance back from `GetAsync`. The real `JsonSettingsService` round-trips through JSON, and so do the project's **other two** doubles — `MLQT.McpServer.Tests` and `MLQT.TestHost` — so the one that behaves differently is the one used most: 27 call sites across 13 files. Three consequences, and the first is the one that matters: **production code that mutates the object `GetAsync` returned and does not save it behaves differently under test than in the app.** There is already such a site — `RepositoryService.LoadRepositorySettingsAsync` adds a "Default" project and sets `ActiveProjectId` without saving (the `if (settings.Projects.Count == 0)` branch), which persists under this double and does not in the app. Second, a "before" snapshot and a later read are one object, so a test can assert against a value the code has since changed; that has already cost one wrong assertion. Third, nothing exercises JSON fidelity, so a property that does not round-trip — no setter, `init`-only, ignored — looks fine. **Make it serialise like the other two, or better, keep one double for all three projects; then run the suite and treat whatever fails as the finding rather than as breakage.** |
 
 ### Revision control
 
