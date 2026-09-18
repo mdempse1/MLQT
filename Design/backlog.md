@@ -72,7 +72,6 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
-| B169 | **External resources are sometimes attached to the wrong directory** | External resources | ⭐⭐⭐ | M | References get linked to the wrong directory when encrypted libraries have registered resource roots. Encrypted libraries register their unencrypted `Resources/` directory so `modelica://Lib/Resources/…` resolves; the symptom suggests a resolution that picks the wrong registered root when more than one is a prefix of the path. Needs a reproduction with two libraries whose roots share a prefix before anything is changed. |
 | B184 | **`--changed-from` re-checks everything it loaded** | CLI / performance | ⭐⭐⭐ | M | A changed-file check still runs every rule over every model, then filters. It should apply the rules only to the models in the modified files and compare those against the **baseline records for those models**. Everything still has to be *loaded* — base classes and reference resolution need it — but it need not be re-checked. The one analysis that genuinely has to run over everything is reference validation, and only when a model was deleted or renamed. This is the largest available win on check time in CI. |
 
 ### Rules and formatting

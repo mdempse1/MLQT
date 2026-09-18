@@ -676,9 +676,9 @@ public static class GraphBuilder
             foreach (var info in resources)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in resources)
@@ -868,9 +868,9 @@ public static class GraphBuilder
             foreach (var info in kvp.Value)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList);
+                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in kvp.Value)
@@ -908,7 +908,7 @@ public static class GraphBuilder
             case ResourceReferenceType.ExternalLibraryDirectory:
             case ResourceReferenceType.ExternalSourceDirectory:
                 // These are directory references - create directory node AND scan for files within
-                resolvedPath = ResolveModelicaUri(info.RawPath, libraries);
+                resolvedPath = ResolveModelicaUri(info.RawPath, libraries, FilePathOf(model, graph));
                 if (resolvedPath != null && Directory.Exists(resolvedPath))
                 {
                     // Create the directory node
@@ -944,7 +944,7 @@ public static class GraphBuilder
                 var include = ParseIncludeDirective(info.RawPath);
                 if (include is { } directive)
                 {
-                    var incDir = includeDirectory ?? GetDefaultIncludeDirectory(model.Id, libraries);
+                    var incDir = includeDirectory ?? GetDefaultIncludeDirectory(model.Id, libraries, FilePathOf(model, graph));
                     if (incDir != null)
                     {
                         var candidate = Path.Combine(incDir, directive.Header);
@@ -970,7 +970,7 @@ public static class GraphBuilder
 
             case ResourceReferenceType.ExternalLibrary:
                 // Resolve all platform variants of the library file
-                var libDir = libraryDirectory ?? GetDefaultLibraryDirectory(model.Id, libraries);
+                var libDir = libraryDirectory ?? GetDefaultLibraryDirectory(model.Id, libraries, FilePathOf(model, graph));
                 if (libDir != null)
                 {
                     var libraryFiles = ResolveAllLibraryFiles(info.RawPath, libDir);
@@ -1054,7 +1054,7 @@ public static class GraphBuilder
     {
         if (rawPath.StartsWith("modelica://", StringComparison.OrdinalIgnoreCase))
         {
-            return ResolveModelicaUri(rawPath, libraries);
+            return ResolveModelicaUri(rawPath, libraries, FilePathOf(model, graph));
         }
         else if (Path.IsPathRooted(rawPath))
         {
@@ -1088,7 +1088,8 @@ public static class GraphBuilder
     /// or: modelica://LibraryName.SubPackage/path/to/resource.ext
     /// Also handles malformed URIs with double slashes (e.g., modelica://Lib//Resources/...)
     /// </summary>
-    private static string? ResolveModelicaUri(string uri, List<LibraryInfo> libraries)
+    private static string? ResolveModelicaUri(
+        string uri, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         // Strip the modelica:// prefix
         if (!uri.StartsWith("modelica://", StringComparison.OrdinalIgnoreCase))
@@ -1125,8 +1126,7 @@ public static class GraphBuilder
         var libraryName = libraryIdentifier.Split('.')[0];
 
         // Find the library
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;
@@ -1151,6 +1151,103 @@ public static class GraphBuilder
             Path.Combine(basePath, resourcePath.Replace('/', Path.DirectorySeparatorChar)));
 
         return fullPath;
+    }
+
+
+    /// <summary>
+    /// Which of the loaded libraries a <c>modelica://</c> URI means, when more than one answers to
+    /// the name.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Library names are not unique across loaded libraries (B169).</b> A commercial library
+    /// is routinely present twice: the encrypted build a tool ships, and the source the team has
+    /// checked out. Both register under the same name — the encrypted one drops its version suffix,
+    /// so "Claytex 2026.1" is "Claytex" — and both have a <c>Resources/</c> directory. Picking the
+    /// first by name therefore picked whichever happened to load first, and a model's own resources
+    /// were attached to the other copy's directory. Nine libraries collide this way in the setup it
+    /// was reported from.</para>
+    ///
+    /// <para>The referencing file settles it: a model resolves <c>modelica://Claytex/Resources/x</c>
+    /// against the copy of Claytex it is itself part of. The longest matching root wins, so a library
+    /// nested inside another still resolves to the nearer one. Where the file says nothing — a class
+    /// recovered from documentation has no file of its own — the first match is kept, because such a
+    /// class belongs to the encrypted copy and preferring source would be wrong for it.</para>
+    /// </remarks>
+    private static LibraryInfo? SelectLibrary(
+        List<LibraryInfo> libraries, string libraryName, string? referencingFilePath)
+    {
+        LibraryInfo? only = null;
+        List<LibraryInfo>? matches = null;
+
+        foreach (var candidate in libraries)
+        {
+            if (!candidate.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (only is null)
+            {
+                only = candidate;
+                continue;
+            }
+
+            matches ??= [only];
+            matches.Add(candidate);
+        }
+
+        // The ordinary case, and the one worth not allocating for: one library of that name.
+        if (matches is null)
+            return only;
+
+        if (!string.IsNullOrEmpty(referencingFilePath))
+        {
+            LibraryInfo? owning = null;
+            foreach (var candidate in matches)
+            {
+                if (!IsUnderRoot(referencingFilePath, candidate.RootPath))
+                    continue;
+
+                if (owning is null || candidate.RootPath.Length > owning.RootPath.Length)
+                    owning = candidate;
+            }
+
+            if (owning is not null)
+                return owning;
+        }
+
+        // No file to go on, which means a class recovered from documentation rather than read from
+        // source. Its resources belong to the copy it was recovered from, and nothing here can say
+        // which that was - so this keeps the previous behaviour rather than guessing. Preferring
+        // readable source would be actively wrong for such a class.
+        return matches[0];
+    }
+
+    /// <summary>Whether a file lies inside a directory.</summary>
+    private static bool IsUnderRoot(string filePath, string root)
+    {
+        if (string.IsNullOrEmpty(root))
+            return false;
+
+        var comparison = OperatingSystem.IsLinux()
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        var normalisedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var normalisedFile = Path.GetFullPath(filePath);
+
+        return normalisedFile.StartsWith(normalisedRoot, comparison)
+               && (normalisedFile.Length == normalisedRoot.Length
+                   || normalisedFile[normalisedRoot.Length] == Path.DirectorySeparatorChar
+                   || normalisedFile[normalisedRoot.Length] == Path.AltDirectorySeparatorChar);
+    }
+
+    /// <summary>The file a model was read from, or null when it has none (a documentation stub).</summary>
+    private static string? FilePathOf(ModelNode model, DirectedGraph graph)
+    {
+        var containingFileId = model.ContainingFileId;
+        if (containingFileId is null)
+            return null;
+
+        return graph.GetNode<FileNode>(containingFileId)?.FilePath;
     }
 
     /// <summary>
@@ -1189,11 +1286,11 @@ public static class GraphBuilder
     /// Gets the default IncludeDirectory for a model based on its library.
     /// Default: modelica://LibraryName/Resources/Include
     /// </summary>
-    private static string? GetDefaultIncludeDirectory(string modelId, List<LibraryInfo> libraries)
+    private static string? GetDefaultIncludeDirectory(
+        string modelId, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         var libraryName = ModelicaName.RootLibraryOf(modelId);
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;
@@ -1205,11 +1302,11 @@ public static class GraphBuilder
     /// Gets the default LibraryDirectory for a model based on its library.
     /// Default: modelica://LibraryName/Resources/Library
     /// </summary>
-    private static string? GetDefaultLibraryDirectory(string modelId, List<LibraryInfo> libraries)
+    private static string? GetDefaultLibraryDirectory(
+        string modelId, List<LibraryInfo> libraries, string? referencingFilePath)
     {
         var libraryName = ModelicaName.RootLibraryOf(modelId);
-        var library = libraries.FirstOrDefault(l =>
-            l.Name.Equals(libraryName, StringComparison.OrdinalIgnoreCase));
+        var library = SelectLibrary(libraries, libraryName, referencingFilePath);
 
         if (library == null)
             return null;

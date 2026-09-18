@@ -147,9 +147,9 @@ claims.
 This package existed to get the rhythm going against work that cannot go wrong, and to take five
 items off a list of thirty-six before starting anything that needs thought.
 
-### WP1 — Correctness: the things that lose data or lie about state — **B169 outstanding**
+### WP1 — Correctness: the things that lose data or lie about state — **complete**
 
-**B201 ✅, B192 ✅, B168 ✅, B172 ✅, B198 narrowed, B204 ✅ (new)** · B169 not started
+**B201 ✅, B192 ✅, B168 ✅, B169 ✅, B172 ✅, B204 ✅** · B198 narrowed and left open
 
 | # | What it turned out to be |
 |---|------|
@@ -177,10 +177,20 @@ says what was searched for. A second sighting can therefore distinguish "no libr
 "discovered but not loaded" from "loaded but not shown", which the original report could not: it is
 the same observation for all three.
 
-**B169 is the one item of WP1 not attempted.** It needs a reproduction with two libraries whose
-registered resource roots share a prefix, and the backlog is explicit that nothing should change
-before that exists. It cannot be constructed from the fixtures here — it wants encrypted libraries
-with registered `Resources/` roots.
+**B169 turned out to be simpler than its own description, once the repositories were available.** The
+backlog guessed at "a resolution that picks the wrong registered root when more than one is a prefix
+of the path". Prefixes have nothing to do with it: **library names are not unique across loaded
+libraries**, and `ResolveModelicaUri` took the first match by name. A commercial library is routinely
+loaded twice — the encrypted build a tool ships and the source the team has checked out — and the
+encrypted copy drops its version suffix, so `Claytex 2026.1` registers as `Claytex`. Nine names
+collide in the reported setup.
+
+The referencing file settles it: a model resolves `modelica://Claytex/Resources/x` against the copy
+of Claytex it is itself part of. Measured on the real libraries, with the encrypted copy listed
+first: **38 resources, all 38 to the encrypted root before and all 38 to the source root after.**
+
+Worth keeping: the guess in the backlog entry was confident and wrong, and it would have sent anyone
+who trusted it looking at prefix matching. An item's stated cause is a lead, not a finding.
 
 **Three lessons, all about tests rather than code.**
 
