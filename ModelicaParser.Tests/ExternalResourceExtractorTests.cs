@@ -125,7 +125,14 @@ end TestModel;";
     [Fact]
     public void ExtractLoadResource_WithConcatenation_NotSupported()
     {
-        // loadResource with a single string argument (most common case)
+        // A composed argument has a path only once the model is translated, so there is nothing here
+        // MLQT can resolve.
+        //
+        // This test used to assert the opposite - two resources, "modelica://MyLib/Resources/" and
+        // "data.txt" - which is what the extractor did by capturing every literal it met inside the
+        // call. Its own name said "NotSupported" while it pinned the behaviour in place. Those
+        // fragments were then resolved as relative paths and reported as missing files: B210, seen in
+        // Claytex as loadResource("modelica://" + packageName + "/package.mo").
         var code = @"
 model TestModel
   parameter String fileName = Modelica.Utilities.Files.loadResource(""modelica://MyLib/Resources/"" + ""data.txt"");
@@ -133,9 +140,7 @@ end TestModel;";
 
         var resources = ExtractResources(code);
 
-        Assert.Equal(2, resources.Count);
-        Assert.Equal("modelica://MyLib/Resources/", resources[0].RawPath);
-        Assert.Equal("data.txt", resources[1].RawPath);
+        Assert.Empty(resources);
     }
 
     [Fact]

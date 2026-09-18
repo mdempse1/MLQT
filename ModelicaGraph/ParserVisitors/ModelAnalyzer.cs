@@ -42,6 +42,8 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private readonly List<ExternalResourceInfo> _resources = new();
     private bool _inLoadResourceCall;
+    /// <summary>The path a loadResource call names, when its argument is a lone string literal (B210).</summary>
+    private string? _loadResourcePath;
 
     // --- LoadSelector Pass 1 state (from LoadSelectorAnalyzer) ---
     private bool _isParameterDeclaration;
@@ -236,10 +238,20 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
                 if (function == "Modelica.Utilities.Files.loadResource" ||
                     function == "ModelicaServices.ExternalReferences.loadResource")
                 {
-                    // External resource: capture the resource path argument
+                    // External resource: capture the argument only when it *is* a path.
+                    //
+                    // A composed argument - loadResource("modelica://" + packageName + "/package.mo")
+                    // - has a value only once the model is translated. Capturing every literal met
+                    // inside the call turned that one line into two resources, "modelica://" and
+                    // "/package.mo", and the second was reported as a missing file (B210).
+                    //
+                    // The arguments are still walked, because they can hold component and type
+                    // references that this visitor exists to record; only the capture is gated.
+                    _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
                     _inLoadResourceCall = true;
                     Visit(context.function_call_args());
                     _inLoadResourceCall = false;
+                    _loadResourcePath = null;
 
                     // LoadSelector Pass 1: flag loadResource default for parameter tracking
                     if (_isParameterDeclaration)
@@ -260,15 +272,17 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
             var text = context.STRING().GetText();
             if (_inLoadResourceCall)
             {
-                // Inside loadResource() call — capture the argument as a LoadResource reference
+                // Only the literal the call consists of, and only once - not every literal inside a
+                // composed expression.
                 var path = StripQuotes(text);
-                if (!string.IsNullOrWhiteSpace(path))
+                if (_loadResourcePath is not null && path == _loadResourcePath)
                 {
                     _resources.Add(new ExternalResourceInfo
                     {
                         RawPath = path,
                         ReferenceType = ResourceReferenceType.LoadResource
                     });
+                    _loadResourcePath = null;
                 }
             }
             else

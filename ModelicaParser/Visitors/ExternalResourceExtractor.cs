@@ -31,6 +31,9 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
     private readonly List<ExternalResourceInfo> _resources = new();
     private bool _inLoadResourceCall = false;
 
+    /// <summary>The path a loadResource call names, when its argument is a lone string literal (B210).</summary>
+    private string? _loadResourcePath;
+
     /// <summary>
     /// Gets the extracted external resource references.
     /// </summary>
@@ -201,9 +204,16 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
                 if (function == "Modelica.Utilities.Files.loadResource" ||
                     function == "ModelicaServices.ExternalReferences.loadResource")
                 {
+                    // Only when the argument *is* a path. A composed one -
+                    // loadResource("modelica://" + packageName + "/package.mo") - has a value only
+                    // once the model is translated, and capturing every literal inside the call made
+                    // two resources out of that line, the second of which was then reported missing
+                    // (B210).
+                    _loadResourcePath = ResourceArgument.SoleStringLiteral(context.function_call_args());
                     _inLoadResourceCall = true;
                     Visit(context.function_call_args());
                     _inLoadResourceCall = false;
+                    _loadResourcePath = null;
                     return null;
                 }
             }
@@ -215,15 +225,16 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
             var text = context.STRING().GetText();
             if (_inLoadResourceCall)
             {
-                // Inside loadResource call - capture the argument as a LoadResource reference
+                // Only the literal the call consists of, and only once.
                 var path = StripQuotes(text);
-                if (!string.IsNullOrWhiteSpace(path))
+                if (_loadResourcePath is not null && path == _loadResourcePath)
                 {
                     _resources.Add(new ExternalResourceInfo
                     {
                         RawPath = path,
                         ReferenceType = ResourceReferenceType.LoadResource
                     });
+                    _loadResourcePath = null;
                 }
             }
             else
