@@ -670,20 +670,25 @@ public static class GraphBuilder
             var model = graph.GetNode<ModelNode>(modelId);
             if (model == null) continue;
 
-            string? includeDirectory = null;
-            string? libraryDirectory = null;
+            // Every directory, not just the last one seen (B211). IncludeDirectory and
+            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // assigning to a single variable kept whichever came last, so every #include in the
+            // class was looked for in that one directory and reported missing from it.
+            var includeDirectories = new List<string>();
+            var libraryDirectories = new List<string>();
 
             foreach (var info in resources)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
+                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
+                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in resources)
             {
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectory, libraryDirectory);
+                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
             }
         }
 
@@ -862,19 +867,24 @@ public static class GraphBuilder
             var model = graph.GetNode<ModelNode>(kvp.Key);
             if (model == null) continue;
 
-            string? includeDirectory = null;
-            string? libraryDirectory = null;
+            // Every directory, not just the last one seen (B211). IncludeDirectory and
+            // LibraryDirectory are commonly arrays - VeSyMA.Roads.Functions.Internal.readNormal
+            // declares IncludeDirectory={"modelica://VeSyMA/...","modelica://Claytex/..."} - and
+            // assigning to a single variable kept whichever came last, so every #include in the
+            // class was looked for in that one directory and reported missing from it.
+            var includeDirectories = new List<string>();
+            var libraryDirectories = new List<string>();
 
             foreach (var info in kvp.Value)
             {
                 if (info.ReferenceType == ResourceReferenceType.ExternalIncludeDirectory)
-                    includeDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
+                    AddResolved(includeDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
                 else if (info.ReferenceType == ResourceReferenceType.ExternalLibraryDirectory)
-                    libraryDirectory = ResolveModelicaUri(info.RawPath, libraryList, FilePathOf(model, graph));
+                    AddResolved(libraryDirectories, info.RawPath, libraryList, FilePathOf(model, graph));
             }
 
             foreach (var info in kvp.Value)
-                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectory, libraryDirectory);
+                CreateResourceNodeAndEdge(graph, model, info, libraryList, includeDirectories, libraryDirectories);
         }
 
         // Parse trees were already released in Phases 1 and 3 immediately after use.
@@ -889,8 +899,8 @@ public static class GraphBuilder
         ModelNode model,
         ExternalResourceInfo info,
         List<LibraryInfo> libraries,
-        string? includeDirectory,
-        string? libraryDirectory)
+        IReadOnlyList<string> includeDirectories,
+        IReadOnlyList<string> libraryDirectories)
     {
         string? resolvedPath = null;
         bool isDirectory = false;
@@ -944,7 +954,16 @@ public static class GraphBuilder
                 var include = ParseIncludeDirective(info.RawPath);
                 if (include is { } directive)
                 {
-                    var incDir = includeDirectory ?? GetDefaultIncludeDirectory(model.Id, libraries, FilePathOf(model, graph));
+                    // Every declared IncludeDirectory is searched, in the order written, and the
+                    // first that holds the file wins (B211). A class listing two of them is
+                    // ordinary - VeSyMA.Roads.Functions.Internal.readNormal names VeSyMA's and
+                    // Claytex's - and looking in only one of them reported a header that is present
+                    // in the other as missing from the one it was never in.
+                    var searched = includeDirectories.Count > 0
+                        ? includeDirectories
+                        : Existing(GetDefaultIncludeDirectory(model.Id, libraries, FilePathOf(model, graph)));
+
+                    var incDir = FirstDirectoryHolding(searched, directive.Header);
                     if (incDir != null)
                     {
                         var candidate = Path.Combine(incDir, directive.Header);
@@ -970,8 +989,13 @@ public static class GraphBuilder
 
             case ResourceReferenceType.ExternalLibrary:
                 // Resolve all platform variants of the library file
-                var libDir = libraryDirectory ?? GetDefaultLibraryDirectory(model.Id, libraries, FilePathOf(model, graph));
-                if (libDir != null)
+                // Searched across every declared LibraryDirectory, for the same reason as the
+                // include directories above (B211).
+                var libDirs = libraryDirectories.Count > 0
+                    ? libraryDirectories
+                    : Existing(GetDefaultLibraryDirectory(model.Id, libraries, FilePathOf(model, graph)));
+
+                foreach (var libDir in libDirs)
                 {
                     var libraryFiles = ResolveAllLibraryFiles(info.RawPath, libDir);
                     foreach (var libPath in libraryFiles)
@@ -1153,6 +1177,51 @@ public static class GraphBuilder
         return fullPath;
     }
 
+
+
+    /// <summary>Resolves a directory URI and records it, skipping duplicates and failures.</summary>
+    private static void AddResolved(
+        List<string> directories, string rawPath, List<LibraryInfo> libraries, string? referencingFilePath)
+    {
+        var resolved = ResolveModelicaUri(rawPath, libraries, referencingFilePath);
+        if (resolved is null)
+            return;
+
+        foreach (var existing in directories)
+        {
+            if (string.Equals(existing, resolved, PathComparison))
+                return;
+        }
+
+        directories.Add(resolved);
+    }
+
+    /// <summary>A one-or-no-element list, for the default directory when a class declares none.</summary>
+    private static IReadOnlyList<string> Existing(string? directory) =>
+        directory is null ? [] : [directory];
+
+    /// <summary>
+    /// The first of <paramref name="directories"/> that holds <paramref name="fileName"/>, or the
+    /// first directory when none of them does.
+    /// </summary>
+    /// <remarks>
+    /// Falling back to the first rather than to nothing is what keeps a genuinely absent header
+    /// reportable: it still needs one definite path to be named by. Which of several is named is
+    /// arbitrary, and the file is missing from all of them either way.
+    /// </remarks>
+    private static string? FirstDirectoryHolding(IReadOnlyList<string> directories, string fileName)
+    {
+        foreach (var directory in directories)
+        {
+            if (File.Exists(Path.Combine(directory, fileName)))
+                return directory;
+        }
+
+        return directories.Count > 0 ? directories[0] : null;
+    }
+
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
     /// <summary>
     /// Which of the loaded libraries a <c>modelica://</c> URI means, when more than one answers to

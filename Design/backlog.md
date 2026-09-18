@@ -4,15 +4,15 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B210 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B211 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
 first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
 question, B205 while fixing B192, B206 while trying to reproduce B198, B207–B209 while confirming
-B172, and B210 from the resource reports in Claytex. Of B1–B167 all are closed except the two
-carried forward below, and the table they lived in was retired with the phase design notes on
-2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
+B172, and B210–B211 from the resource reports in Claytex and VeSyMA. Of B1–B167 all are closed
+except the two carried forward below, and the table they lived in was retired with the phase design
+notes on 2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
 
-New items start at **B211**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B212**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
