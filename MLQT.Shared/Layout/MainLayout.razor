@@ -17,6 +17,18 @@
 <MudSnackbarProvider />
 
 <style>
+    @* A startup step that is waiting to be run. The whole row is the target, so it has to look like
+       one — the play button alone is a small thing to aim at, and nothing else said the row could be
+       clicked (B194). Applied only while the step is actually runnable, so a step that has finished
+       or one that is waiting on another does not invite a click that would do nothing. *@
+    .mlqt-deferred-step {
+        cursor: pointer;
+    }
+
+    .mlqt-deferred-step:hover {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+
     .mud-layout {
         height: 100vh;
         width: 100vw;
@@ -324,12 +336,19 @@
                     <MudText Typo="Typo.body1">Formatting modified files</MudText>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredDependenciesFromDialogAsync"
+                         Class="@(_step3deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step3deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredDependenciesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Analyse dependencies now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredDependenciesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {
@@ -342,12 +361,19 @@
                     </MudStack>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredStyleCheckingFromDialogAsync"
+                         Class="@(_step4deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step4deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredStyleCheckingFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Run style checking now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredStyleCheckingFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {
@@ -360,12 +386,19 @@
                     </MudStack>
                 </ChildContent>
             </MudListItem>
-            <MudListItem>
+            @* The whole row runs the step, not only the play button (B194). The button stays: it is
+               what says the row is actionable at a glance, and it is the keyboard target. Both
+               reach the same handler, and a click on the button bubbles to the row, so the handler
+               refuses the second arrival rather than starting the work twice. *@
+            <MudListItem T="string" OnClick="RunDeferredExternalResourcesFromDialogAsync"
+                         Class="@(_step5deferred && !_runningDeferredStep ? "mlqt-deferred-step" : null)">
                 <AvatarContent>
                     @if (_step5deferred)
                     {
-                        <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
-                            OnClick="RunDeferredExternalResourcesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        <MudTooltip Text="Analyse external resources now">
+                            <MudIconButton Icon="@Icons.Material.Outlined.PlayCircle" Color="Color.Primary" Size="Size.Large" Style="padding: 0px !important"
+                                OnClick="RunDeferredExternalResourcesFromDialogAsync" Disabled="_runningDeferredStep" />
+                        </MudTooltip>
                     }
                     else
                     {

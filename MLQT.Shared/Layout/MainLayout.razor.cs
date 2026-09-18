@@ -1118,8 +1118,34 @@ public partial class MainLayout : IDisposable
 
     // ========== Startup Dialog Deferred Button Handlers ==========
 
+    /// <summary>
+    /// Whether a deferred startup step the user just clicked should actually be started.
+    /// </summary>
+    /// <param name="stepIsDeferred">
+    /// Whether this step is still waiting to be run. False once it has been started or has finished,
+    /// and a click on such a row must do nothing rather than run it a second time.
+    /// </param>
+    /// <param name="anyStepRunning">
+    /// Whether some deferred step is already running. This is the state the play buttons express by
+    /// being disabled; the row has to honour it too.
+    /// </param>
+    /// <remarks>
+    /// <para>Static and taking both flags so the decision can be tested without rendering
+    /// <c>MainLayout</c>, which is the part of this change with any logic in it.</para>
+    ///
+    /// <para><b>Why it is needed at all (B194).</b> The startup dialog's rows became clickable as well
+    /// as their play buttons, and a click on a button bubbles to the row, so both handlers fire for
+    /// one press. Each wrapper below sets <c>_runningDeferredStep</c> before its first <c>await</c>,
+    /// so the second arrival sees it here and stops — the work is started once however the user
+    /// pressed it.</para>
+    /// </remarks>
+    internal static bool ShouldStartDeferredStep(bool stepIsDeferred, bool anyStepRunning) =>
+        stepIsDeferred && !anyStepRunning;
+
     private async Task RunDeferredDependenciesFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step3deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step3running = true;
         _step3deferred = false;
@@ -1136,6 +1162,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunDeferredStyleCheckingFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step4deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step4running = true;
         _step4deferred = false;
@@ -1165,6 +1193,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunDeferredExternalResourcesFromDialogAsync()
     {
+        if (!ShouldStartDeferredStep(_step5deferred, _runningDeferredStep)) return;
+
         _runningDeferredStep = true;
         _step5running = true;
         _step5deferred = false;
@@ -1181,6 +1211,8 @@ public partial class MainLayout : IDisposable
 
     private async Task RunAllDeferredFromDialogAsync()
     {
+        if (_runningDeferredStep) return;
+
         _runningDeferredStep = true;
         StateHasChanged();
 

@@ -87,7 +87,7 @@ that is where the savings are. Cross-package dependencies are named where they e
 
 ### WP0 — Unblock, and clear the confirmed one-liners — **✅ complete**
 
-**B143 ✅, B203 ✅, B180 ✅, B194 ✅, B200 ✅** · 5 items · no shared machinery, no risk
+**B143 ✅, B203 ✅, B180 ✅, B194 ✅ (fixed twice — see below), B200 ✅** · 5 items
 
 What each fix turned out to be, and the two things worth carrying into the rest of the phase:
 
@@ -96,7 +96,7 @@ What each fix turned out to be, and the two things worth carrying into the rest 
 | B203 | `async Task` + `await reading`, and `TestContext.Current.CancellationToken` on the `Task.Run`. **Re-measured properly**: a full `dotnet build MLQT.slnx -c Release --no-incremental` now reports 0 warnings, which is the claim the item was really about | The build is the test |
 | B200 | The chip moved to `TitleContent` beside the repository name. The `if/else` it shared with the branch buttons became a negated `if`, so the buttons stay withheld from a reference repository | `LibraryBrowserReferenceOnlyTests` — 7 tests, and the 2 that matter fail against the old markup |
 | B180 | `McpServerLocator` probes beside the tester, then the sibling project's output for the *same* configuration and framework, then gives up and returns `""`. Platform-aware executable name, which the old literal was not. "Use MLQT server" is disabled when nothing was found, so it cannot blank the box | `McpServerLocatorTests` — 8 tests, linked by source since the tester has no suite of its own |
-| B194 | The row is a clickable element that sets the selection and closes, with a `.razor.css` hover so it looks like a target. The button stays as the keyboard path | `ProjectSelectionDialogTests` — 4 tests, 3 fail against the old markup |
+| B194 | **The wrong dialog first.** "The startup dialog" is the *progress* dialog with the deferred-analysis steps, not the project picker shown before it. Each deferred step could only be started from the small play button in its avatar slot; the row now runs it too. The project-picker change was reverted | `StartupDialogDeferredStepTests` — 10 tests, the 3 row assertions fail against the old markup |
 
 **Two lessons for the packages that follow.**
 
@@ -107,6 +107,13 @@ What each fix turned out to be, and the two things worth carrying into the rest 
 - **Closing a row means advancing the id watermark.** The guard checks that ids *above* the watermark
   run unbroken, so removing B180, B194, B200 and B203 while it sat at B167 would have read as four
   lost rows. The backlog now says B1–B203 issued, new items at B204, and says why.
+- **B194 was implemented against the wrong dialog, and nothing in the process would have caught it.**
+  The item said "the startup dialog" and "clicking a row in the startup list"; MLQT shows two dialogs
+  during startup and the words fit the project picker, which is the one that appears first. Tests,
+  mutation checks and review all confirmed a correct fix to something nobody had asked about — none
+  of them can tell you the target was wrong. **When an item names a screen rather than a symbol, say
+  which screen you took it to mean before building it**, because that is the one assumption the
+  verification cannot reach. The real fix is above; the picker was returned to how it was.
 
 **B143** was run by hand on 2026-09-17 (`workflow_dispatch`, run 35257465944, `main`, 2m59s), and it
 passed: **57 journeys under WebKit, 0 failed, 0 skipped.** That number is the point of recording it.

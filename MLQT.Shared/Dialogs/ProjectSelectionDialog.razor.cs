@@ -29,21 +29,6 @@ public partial class ProjectSelectionDialog
         MudDialog?.Close(DialogResult.Ok(_selectedProject));
     }
 
-    /// <summary>
-    /// What clicking a row does: pick that project and load it, in one action (B194).
-    ///
-    /// <para>The radio alone only moved the selection, so the only way to get out of this dialog was
-    /// the button — and a startup list whose rows do nothing reads as broken rather than as modal.
-    /// It sets the selection explicitly rather than relying on the click reaching the radio first,
-    /// because the row is the outer element and the order the two handlers run in is not something
-    /// to depend on.</para>
-    /// </summary>
-    private void SelectAndLoad(string projectId)
-    {
-        _selectedProject = projectId;
-        Select();
-    }
-
     private void ConfirmProjectName()
     {
         _showNewProjectControls = false;
