@@ -560,13 +560,30 @@ objected to. A surviving mutant is a statement the suite executes and does not d
 
 ```powershell
 dotnet tool install --global dotnet-stryker      # once
+
+# One file, a few minutes - the everyday use, after a fix or before trusting a guard
 ./build/run-mutation.ps1 -Mutate '**/ProjectNameRules.cs'
 ./build/run-mutation.ps1 -Project ModelicaParser -Mutate '**/Helpers/*.cs'
+
+# Every measured assembly, many hours, resumable - the audit
+./build/run-mutation.ps1 -All
+./build/run-mutation.ps1 -Summarise          # rebuild the report from runs already done
 ```
 
-**Always pass `-Mutate`.** One file takes about three minutes, most of it the build and the baseline
-test run; a whole assembly takes hours. **It reports, it does not gate** — some survivors are
-equivalent mutants no test can kill. Read the survivors, not the score.
+**For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
+and the baseline test run, and a whole assembly takes hours.
+
+**`-All`** mutates the same seven assemblies the coverage gate measures, smallest first so the early
+ones calibrate the machine before anything committing starts. It writes to `MutationReport/`
+(git-ignored) and **is resumable** — a project whose report is already there is skipped, so Ctrl-C and
+run it again to continue. Each project's result is printed as it finishes, and the run ends with
+`MutationReport/mutation-survivors.md`: one list of every surviving mutant, grouped by project and
+file, with the line each one changed. `-Summarise` rebuilds that file from whatever is on disk
+without mutating anything.
+
+**It reports, it does not gate** — some survivors are equivalent mutants no test can kill, and some
+are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
+the score.
 
 Two things about it are not discoverable and cost an afternoon between them:
 
