@@ -4,15 +4,15 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B209 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B210 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
 first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
-question, B205 while fixing B192, B206 while trying to reproduce B198, and B207–B209 while
-confirming B172. Of B1–B167 all are closed except the two carried forward below, and the table they
-lived in was retired with the phase design notes on 2026-09-17 — git history has it if the reasoning
-behind one of those ids is ever needed.
+question, B205 while fixing B192, B206 while trying to reproduce B198, B207–B209 while confirming
+B172, and B210 from the resource reports in Claytex. Of B1–B167 all are closed except the two
+carried forward below, and the table they lived in was retired with the phase design notes on
+2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
 
-New items start at **B210**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B211**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
@@ -73,6 +73,7 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
 | B184 | **`--changed-from` re-checks everything it loaded** | CLI / performance | ⭐⭐⭐ | M | A changed-file check still runs every rule over every model, then filters. It should apply the rules only to the models in the modified files and compare those against the **baseline records for those models**. Everything still has to be *loaded* — base classes and reference resolution need it — but it need not be re-checked. The one analysis that genuinely has to run over everything is reference validation, and only when a model was deleted or renamed. This is the largest available win on check time in CI. |
+| B210 | **A resource path that is not a string literal is reported as a missing file** | External resources | ⭐⭐ | M | Analysing Claytex produces `Resource file not found: ...\Bushes\Components\{fileName_1_xr,fileName_1_yr,fileName_1_zr}` — the *text of an array expression*, treated as a relative path and resolved against the class's own directory. `LoadSelectorModificationAnalyzer.ExtractModificationValue` returns `StripQuotes(modExpr.GetText())` for anything it does not recognise as a `loadResource` call, so a modification binding parameters (`fileName_1={fileName_1_xr,...}`), a concatenation, or any other expression becomes a path. **The rule that is missing: a resource path MLQT can resolve has to be a string literal.** Anything else has a value only at translation time, so it can be neither resolved nor reported absent. Note the declaration path already knows this in part — it skips a default of `"NoName"` or `""` — and the modification path does not, which is the same rule living in one place and not the other. Decide what a non-literal reference should do: most likely still recorded, so the class is known to use a file, but never counted as missing. The same fallback serves `LoadResource` parameters, so check both. |
 
 ### Rules and formatting
 

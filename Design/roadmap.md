@@ -85,10 +85,16 @@ Two of the items are larger than the rest and worth naming here rather than only
 
 ### 2. Wave-2 analyses
 
-The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage and
-cyclic-dependency detection. See §2 below for the three-state resolution model these are built on —
-it is the thing that keeps a reference into an invisible library from flooding a real repository with
-false errors.
+The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
+cyclic-dependency detection and external-resource validation. See §2 below for the three-state
+resolution model these are built on — it is the thing that keeps a reference into an invisible
+library from flooding a real repository with false errors.
+
+**External-resource validation is the one added after the phase-1 testing**, and it is a gap rather
+than an enhancement: MLQT already finds missing resources and shows them on the External Resources
+tab, but they are `ResourceWarning`s rather than `Finding`s. They have no rule id, so they never
+reach `mlqt check`, cannot be baselined and cannot fail a build — a library can lose a file out of
+`Resources/` and every gate stays green.
 
 ### 3. Extensibility, then the flagships
 
@@ -171,12 +177,18 @@ Shipped first, so MLQT earned trust in CI before attempting resolution-dependent
 
 ### Wave 2 — resolution-dependent (built on the confidence-aware resolver) — **phase 2**
 
+Resource validation belongs here rather than in Wave 1 for the same reason the rest of this wave
+does: a `modelica://OtherLib/Resources/x` into a library that is not loaded, or into an encrypted one
+whose files nobody can enumerate, must not be reported as broken. It is the three-state rule applied
+to files instead of classes.
+
 | Item | Value | Effort | Notes |
 |------|-------|--------|-------|
 | **Broken references / unresolved `extends` & types** | ⭐⭐⭐ | L | Extends existing `ValidateModelReferences`. Only errors on state 3 above |
 | **Connection integrity** (unconnected/incompatible/duplicate `connect`, direction) | ⭐⭐⭐ | L | Promotes the `ConnectorCompatibility` helper; connector *types* may be external → same three-state gate |
 | **Deprecated-API usage** | ⭐⭐ | M | References to `obsolete` classes + MSL-version compatibility. Needs the target library visible |
 | **Cyclic-dependency detection** | ⭐⭐ | S | The directed graph already exists; surface package dependency cycles |
+| **External-resource validation** | ⭐⭐⭐ | M | **Nothing checks these today.** Missing data files, images and C sources are found — `ExternalResourceService` does the work and the External Resources tab shows it — but they are `ResourceWarning`s and not `Finding`s, so they have no rule id, never reach `mlqt check`, cannot be baselined, and cannot gate CI. A library can lose a `Resources/` file and every gate stays green. Needs a rule id per kind (missing file, missing annotated directory, absolute path), which then brings severity, suppression and the ratchet with it |
 
 ### Flagships (phase 3; brush the no-simulation boundary — keep inside it)
 
