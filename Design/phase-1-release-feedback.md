@@ -347,21 +347,38 @@ A test that only passed because the double aliased was not testing what it claim
 `LoadRepositorySettingsAsync`'s unsaved "Default" project is already one place where the app and the
 suite disagree.
 
-**The standing pattern this package exists to keep visible.** Four tests in this phase asserted
-something they could not see, and each was found by accident rather than by looking:
+**The standing pattern this package exists to keep visible.** Six tests in this phase asserted
+something they could not see, and every one was found by accident rather than by looking:
 
 | Where | What it did | How it surfaced |
 |---|---|---|
 | `LoadModelicaFile_UnparseableContent_...` | assertions inside `if (placeholder != null)`, with a comment excusing the null case | B201 — the excused case *was* the defect |
 | `StartCheckingAsync_WhenAlreadyRunning_...` | second call attempted only `if (service.IsRunning)`, closing on `callCount >= 1` | a coverage figure that moved by one line between runs |
+| `ExtractLoadResource_WithConcatenation_NotSupported` | asserted the defect *as behaviour* — two resources from a concatenation — while its own name said NotSupported | B210, when the behaviour was corrected and the test failed |
 | my first B168 suite | asserted state that was already true of the unfixed code | the mutation check |
 | my first B200 test | asserted MudTooltip text, which is never in the markup | the positive control |
+| my first B211 suite | looked a header up by file name and asserted on whichever node came back — and the defect's whole shape was **two** nodes of that name, one of them fine | the mutation check |
 
-Two of those are mine, which is the point: writing the test after the fix makes it very easy to
+Four of those are mine, which is the point: writing the test after the fix makes it very easy to
 assert the behaviour you just built rather than the one that was missing. **A test that cannot fail
-is worse than no test**, because it is counted. The cheap defences, in the order they have actually
-worked here: a positive control beside every negative assertion, a mutation check before believing a
-guard, and suspicion of any `if` wrapped around an assertion.
+is worse than no test**, because it is counted.
+
+Three sub-shapes, and they need different defences:
+
+- **A conditional assertion** (`if (x != null) { assert }`) — the excused branch is usually the
+  defect. Suspect any `if` wrapped around an assertion.
+- **An expectation copied from the current behaviour.** `..._NotSupported` pinned the bug in place
+  and its own name admitted it. When a test fails after a fix, ask which of the two is wrong before
+  changing either.
+- **Reading state the defect duplicates.** B211 produced two resource nodes for one file — one
+  missing, one fine — so a test that fetched "the" node by name found whichever came first and
+  passed either way. **Assert the count, not the contents**, whenever the failure mode is a
+  duplicate rather than a wrong value.
+
+The defences that have actually worked here, in that order: a positive control beside every negative
+assertion, a mutation check before believing any guard, and measuring on a sample that is known to
+contain the failing case — B169's first fix was verified on real data holding none of it, and looked
+complete because the measurement agreed.
 
 ### Not in any package
 
