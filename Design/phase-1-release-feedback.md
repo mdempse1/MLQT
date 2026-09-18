@@ -107,6 +107,19 @@ What each fix turned out to be, and the two things worth carrying into the rest 
 - **Closing a row means advancing the id watermark.** The guard checks that ids *above* the watermark
   run unbroken, so removing B180, B194, B200 and B203 while it sat at B167 would have read as four
   lost rows. The backlog now says B1–B203 issued, new items at B204, and says why.
+- **A flapping coverage ratchet is a defect report, not noise.** `DymolaCheckingService` and
+  `OpenModelicaCheckingService` each moved by one line between identical runs, and the first instinct
+  — baseline the low value and move on — would have buried the cause. The line was
+  `StartCheckingAsync`'s `if (_isRunning) return;`, and the reason it was covered about one run in
+  four is that the test named `..._WhenAlreadyRunning_DoesNotStartAgain` only attempted its second
+  call `if (service.IsRunning)`, which was usually false by the time it looked: the factory throws at
+  once, so the background task had already cleared the flag in its `finally`. Its closing assertion
+  was `callCount >= 1`, which cannot fail. So the test never checked what it was named for, and the
+  coverage number was the only thing saying so. Both now hold the first check open at a gate and
+  assert the refused call never reached the factory; four runs agree to the line. **The same
+  `if (condition) { assert }` shape as B201's placeholder test** — that is three in this phase, and it
+  is worth looking for deliberately.
+
 - **B194 was implemented against the wrong dialog, and nothing in the process would have caught it.**
   The item said "the startup dialog" and "clicking a row in the startup list"; MLQT shows two dialogs
   during startup and the words fit the project picker, which is the one that appears first. Tests,

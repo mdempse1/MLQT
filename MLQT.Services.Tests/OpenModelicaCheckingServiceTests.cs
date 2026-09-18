@@ -248,41 +248,67 @@ public class OpenModelicaCheckingServiceTests
 
     #region StartCheckingAsync Tests
 
+    /// <summary>
+    /// A second check started while the first is still running is refused.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>This test used to be a coin toss, and it is where a coverage oscillation came
+    /// from.</b> It started a check, waited 50ms, and then only tried the second call
+    /// <c>if (service.IsRunning)</c> — which was usually false, because the factory threw at once and
+    /// the background task had already cleared the flag in its <c>finally</c>. So the early return in
+    /// <c>StartCheckingAsync</c> was covered in roughly one run in four, moving
+    /// <c>OpenModelicaCheckingService</c>'s measured coverage by one line and flapping the ratchet.
+    /// Its closing assertion was <c>callCount &gt;= 1</c>, which cannot fail, so the test never
+    /// checked the thing its name promises either.</para>
+    ///
+    /// <para>The first call is now held open by a gate the test releases, so "already running" is a
+    /// state the test creates rather than one it hopes to catch. <c>callCount</c> is the assertion:
+    /// the refused call must never reach the factory.</para>
+    /// </remarks>
     [Fact]
     public async Task StartCheckingAsync_WhenAlreadyRunning_DoesNotStartAgain()
     {
-        // Arrange
         var mockFactory = CreateMockFactory();
-        // Setup factory to throw so we know if GetOrCreateAsync was called multiple times
         var callCount = 0;
-        mockFactory.Setup(f => f.GetOrCreateAsync())
-            .ReturnsAsync(() =>
-            {
-                callCount++;
-                throw new Exception("Test exception");
-            });
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Holds the first check inside the factory until the test lets go, so "already running" is
+        // true for as long as the second call needs it to be.
+        async Task<OpenModelicaInterface.OpenModelicaInterface> BlockThenFail()
+        {
+            Interlocked.Increment(ref callCount);
+            await gate.Task;
+            throw new InvalidOperationException("no OpenModelica in a unit test");
+        }
+
+        mockFactory.Setup(f => f.GetOrCreateAsync()).Returns(BlockThenFail);
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
         var (graph, modelNode) = CreateSimpleModelGraph();
 
-        // Start first check (will fail but sets IsRunning briefly)
+        await service.StartCheckingAsync(modelNode, graph);
+        await WaitUntilAsync(() => service.IsRunning, "the first check never started");
+
+        // The call under test. It must return without starting anything.
         await service.StartCheckingAsync(modelNode, graph);
 
-        // Give it time to start
-        await Task.Delay(50);
+        gate.SetResult();
+        await WaitUntilAsync(() => !service.IsRunning, "the first check never finished");
 
-        // If the service is running, starting again should do nothing
-        if (service.IsRunning)
-        {
-            await service.StartCheckingAsync(modelNode, graph);
-            // Only one call should have been made (second call should return immediately)
-        }
+        Assert.Equal(1, Volatile.Read(ref callCount));
+    }
 
-        // Wait for completion
-        await Task.Delay(200);
+    /// <summary>
+    /// Waits for a state the test has arranged to be reachable, rather than sleeping for a guess.
+    /// The timeout is a failure report, not a synchronisation device.
+    /// </summary>
+    private static async Task WaitUntilAsync(Func<bool> condition, string whatFailed)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(5, TestContext.Current.CancellationToken);
 
-        // Assert - The exact count depends on timing, but we verify it doesn't throw
-        Assert.True(callCount >= 1);
+        Assert.True(condition(), whatFailed);
     }
 
     [Fact]
