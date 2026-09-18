@@ -4,14 +4,15 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B205 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B206 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
 first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
-question, and B205 while fixing B192. Of B1–B167 all are closed except the two carried forward
-below, and the table they lived in was retired with the phase design notes on 2026-09-17 — git
-history has it if the reasoning behind one of those ids is ever needed.
+question, B205 while fixing B192, and B206 while trying to reproduce B198. Of B1–B167 all are
+closed except the two carried forward below, and the table they lived in was retired with the
+phase design notes on 2026-09-17 — git history has it if the reasoning behind one of those ids is
+ever needed.
 
-New items start at **B206**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B207**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
@@ -64,7 +65,7 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 
 | # | Item | Area | Value | Effort | What is needed |
 |---|------|------|-------|--------|----------------|
-| B198 | **A newly added repository did not load its library until MLQT was restarted** | Repositories | ⭐⭐⭐ | M | Adding `ModelicaEditorTestsGit` to a project added the repository but loaded no library; restarting the tool loaded it. **The layout suspicion is ruled out.** A repository whose `package.mo` is at the top level is discovered (`LibraryDiscovery` returns the directory itself), loaded (`LoadLibrariesAsync` turns the empty relative path back into the repository path), recorded on the repository, announced to the tree, and visible to the `Libraries.Where(RepositoryId == id)` query MainLayout gates its analysis on — `AddRepositoryLoadsItsLibraryTests` asserts each of those against that layout. B204 was found alongside and is fixed: the *name* shown for such a library was the folder's, not the library's, which may be the whole of what was seen. **Still open because it has not been reproduced.** Next step is the user's own repository: whether the library is absent from the tree or merely misnamed, and whether `MainLayout.OpenAddRepositoryDialog` found a non-empty model set — it does nothing at all when that set is empty. |
+| B198 | **A newly added repository did not load its library until MLQT was restarted, and has not reproduced** | Repositories | ⭐⭐ | M | Reported once, against `ModelicaEditorTestsGit`; restarting the tool loaded it. **Not reproduced after several attempts** on a build carrying the fixes below. Two candidates were investigated and both are ruled out. The *layout* — a single library with `package.mo` at the top level — is disproven by `AddRepositoryLoadsItsLibraryTests`: such a library is discovered, loaded, recorded on the repository, announced to the tree, and visible to the `Libraries.Where(RepositoryId == id)` query MainLayout gates its analysis on, with a subdirectory layout as the control. **B204** — the discovered library being labelled with the folder name rather than its own — would have looked like this, but the library in that repository has the same name as its folder, so it was never visible there. **Left open at low confidence**, like B166. It is worth noting the report came before B192 was fixed, and that fix removed a path on which a *different* project's repositories were loaded at startup and left loaded — enough to confuse what belonged to what. If it recurs, B206 now makes it report itself: the two silent outcomes (nothing found, nothing loadable) each say so, so the next sighting can distinguish "no library discovered" from "discovered but not loaded" from "loaded but not shown", which the original report could not. |
 | B190 | **The UI, and sometimes the whole desktop, freezes during loading** | Performance | ⭐⭐⭐ | M | Reported during the loading step: MLQT's window is unresponsive, and at some points other windows are slow to redraw too — moving the MLQT window is sluggish and everything can stall for a few seconds. **Confirm it still happens before investigating**; it predates several fixes since, and the log records phase durations that would say where the time goes. Whatever is blocking is on a thread it should not be on. |
 
 ### Analysis correctness

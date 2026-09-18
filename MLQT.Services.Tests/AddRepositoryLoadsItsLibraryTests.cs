@@ -221,4 +221,66 @@ public class AddRepositoryLoadsItsLibraryTests : IDisposable
 
         Assert.True(announced > 0, "nothing announced that the set of loaded libraries had changed");
     }
+
+    /// <summary>A folder with nothing in it that MLQT recognises as a library.</summary>
+    private string NoLibraryAtAll()
+    {
+        var path = Path.Combine(_root, "Empty");
+        Directory.CreateDirectory(Path.Combine(path, "docs"));
+        File.WriteAllText(Path.Combine(path, "README.md"), "no Modelica here");
+        File.WriteAllText(Path.Combine(path, "docs", "notes.txt"), "nor here");
+        return path;
+    }
+
+    [Fact]
+    public async Task ARepositoryWithNoLibraryIsStillAddedSuccessfully()
+    {
+        // The behaviour stays: it is a repository, it just has nothing to load yet. Failing the add
+        // would stop someone pointing MLQT at a folder before putting a library in it.
+        var (service, _) = CreateService();
+
+        var result = await service.AddRepositoryAsync(NoLibraryAtAll(), startMonitoring: false);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.DiscoveredLibraries);
+    }
+
+    [Fact]
+    public async Task ARepositoryWithNoLibrarySaysSo()
+    {
+        // B206. Adding one used to be silent apart from a log line: the dialog closed reporting
+        // success, nothing appeared, and that is indistinguishable from a library that failed to
+        // load - which is why B198 could not be told apart from either.
+        var (service, _) = CreateService();
+        var path = NoLibraryAtAll();
+
+        var result = await service.AddRepositoryAsync(path, startMonitoring: false);
+
+        var warning = Assert.Single(result.Warnings, w => w.Contains("No Modelica library was found"));
+        Assert.Contains(path, warning);
+    }
+
+    [Fact]
+    public async Task TheWarningSaysWhatWasLookedFor()
+    {
+        // So the user can see why their layout was not recognised, rather than only that it was not.
+        var (service, _) = CreateService();
+
+        var result = await service.AddRepositoryAsync(NoLibraryAtAll(), startMonitoring: false);
+
+        var warning = Assert.Single(result.Warnings, w => w.Contains("No Modelica library was found"));
+        Assert.Contains("package.mo", warning);
+        Assert.Contains("subfolder", warning);
+    }
+
+    [Fact]
+    public async Task ARepositoryThatDoesHoldALibrarySaysNothingOfTheSort()
+    {
+        // The control, and the one that would catch this firing on every ordinary add.
+        var (service, _) = CreateService();
+
+        var result = await service.AddRepositoryAsync(SingleLibraryAtTopLevel(), startMonitoring: false);
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("No Modelica library was found"));
+    }
 }

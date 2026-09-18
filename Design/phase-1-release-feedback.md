@@ -159,12 +159,23 @@ items off a list of thirty-six before starting anything that needs thought.
 | B172 | The `Include` regex discarded the delimiter, so `<stdio.h>` resolved to `<library>/Resources/Include/stdio.h` and every external function using the C standard library reported a missing file. **C's own rule carries the fix** — `<name>` is the compiler's search path, `"name"` is the project's — so no platform include paths and no list are needed for the main case; a short standard-name list is the second line for `#include "math.h"` |
 | B204 | `ExtractLibraryName` looked for the outermost class with `ParentModelName == null`, and it is the **empty string**, never null. It returned null on every call, ever, and every caller fell back to the folder name. Invisible while the two agree, which they usually do |
 
-**B198 is narrowed, not fixed, and should not be closed.** The layout hypothesis the backlog named is
-disproven: a repository with `package.mo` at the top level is discovered, loaded, recorded, announced
-and visible to the query MainLayout gates its analysis on — `AddRepositoryLoadsItsLibraryTests`
-asserts each of those. B204 was found in that investigation and may be the whole of what the user
-saw. Reproducing it needs the user's own repository; the next question is whether the library was
-absent from the tree or merely misnamed.
+**B198 has not reproduced, and is left open at low confidence** — the same treatment as B166. Both
+candidates are now ruled out rather than merely untested. The *layout* is disproven by
+`AddRepositoryLoadsItsLibraryTests`. **B204** would have looked exactly like the report — a library
+labelled with its folder's name rather than its own — but the library in that repository shares its
+folder's name, so B204 was never visible there.
+
+Worth carrying forward: the report predates the B192 fix, which removed a path that loaded a
+*different* project's repositories at startup and left them loaded. That is enough to muddle what
+belonged to which project, and it is the most likely remaining explanation without being a
+demonstrable one.
+
+**B206 makes a recurrence report itself**, which is the useful outcome of failing to reproduce
+something. Adding a repository had two silent failures — nothing found, and things found but none
+loadable — and both closed the dialog reporting success over an empty tree. Each now says so, and
+says what was searched for. A second sighting can therefore distinguish "no library discovered" from
+"discovered but not loaded" from "loaded but not shown", which the original report could not: it is
+the same observation for all three.
 
 **B169 is the one item of WP1 not attempted.** It needs a reproduction with two libraries whose
 registered resource roots share a prefix, and the backlog is explicit that nothing should change

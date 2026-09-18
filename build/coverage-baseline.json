@@ -97,7 +97,7 @@
                                                                                        },
                     "MLQT.Shared::MLQT.Shared.Components.SettingsRepositories":  {
                                                                                      "coverage":  1.6,
-                                                                                     "lines":  241,
+                                                                                     "lines":  249,
                                                                                      "bar":  80,
                                                                                      "reason":  "The change detection that decides whether a reformat runs is tested - it is the part that matters. The rest is a settings panel: repository add/remove/edit, project switching and the dialogs they raise."
                                                                                  },
@@ -114,10 +114,10 @@
                                                                            "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                        },
                     "MLQT.Shared::MLQT.Shared.Dialogs.AddRepositoryDialog":  {
-                                                                                 "coverage":  44.9,
-                                                                                 "lines":  109,
+                                                                                 "coverage":  44.3,
+                                                                                 "lines":  115,
                                                                                  "bar":  80,
-                                                                                 "reason":  "A wizard over a native folder picker and a clone/checkout. Neither can be driven from a unit test; the picker is faked in the 7a-6 test host, which is where this gets covered."
+                                                                                 "reason":  "A wizard over a native folder picker and a clone/checkout. Neither can be driven from a unit test; the picker is faked in the 7a-6 test host, which is where this gets covered. 44.9% -> 44.3% is B206 adding six lines here and no test reaching them: the warning for libraries that were discovered but none of which loaded needs a repository whose load fails, which is a test-host scenario rather than a unit one. The sibling case - nothing discovered at all - is in the service and is covered there."
                                                                              },
                     "MLQT.Shared::MLQT.Shared.Dialogs.CommitChangesDialog":  {
                                                                                  "coverage":  10.3,

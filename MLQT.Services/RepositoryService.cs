@@ -251,6 +251,17 @@ public class RepositoryService : IRepositoryService
                 d => d.RelativePath,
                 d => d.LibraryName);
 
+            // A repository with nothing in it that MLQT can read is added successfully and then does
+            // nothing, which looks exactly like a library that failed to load (B206). Say so, and say
+            // what was looked for, so the user can see why their layout was not recognised rather
+            // than being left with an empty tree and no account of it.
+            if (discoveredLibraries.Count == 0)
+            {
+                var message = LibraryDiscovery.NothingFoundIn(repository.LocalPath);
+                result.Warnings.Add(message);
+                Warn("RepositoryService", message);
+            }
+
             // Load settings if they exist, create a new settings class if they don't
             var settingsPath = Path.Combine(repository.LocalPath, ".mlqt", "settings.json");
             if (File.Exists(settingsPath))
