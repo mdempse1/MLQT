@@ -1000,6 +1000,18 @@ public static class GraphBuilder
         if (resolvedPath == null)
             return;
 
+        // A reference that resolves to a directory that is really there is a directory reference,
+        // whatever kind of annotation named it (B208). `loadResource` is allowed to name a directory
+        // — `modelica://ModelicaTest/Resources/Data` in the Modelica Standard Library does — and
+        // nothing in the reference itself says which it is, so this was assumed to be a file and
+        // tested with File.Exists. The directory is on disk and MLQT reported it missing.
+        //
+        // Asked only when the path resolved: it is a question about what is on disk, and a path that
+        // is absent is left as a file, which is the right thing to report for a reference nobody can
+        // satisfy either way.
+        if (!isDirectory && Directory.Exists(resolvedPath))
+            isDirectory = true;
+
         // Create the resource node
         IGraphNode resourceNode;
         if (isDirectory)

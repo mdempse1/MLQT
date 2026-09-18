@@ -1,6 +1,8 @@
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
 
+using ModelicaParser.Helpers;
+
 namespace ModelicaParser.Visitors;
 
 /// <summary>
@@ -248,63 +250,14 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
         // Find all modelica:// URIs in the text
         // These can appear in HTML documentation strings like:
         //   <img src="modelica://Modelica/Resources/Images/foo.png">
-        var searchText = text;
-        int startIndex = 0;
-
-        while (startIndex < searchText.Length)
+        foreach (var uri in ModelicaUriScanner.FindFileUris(text))
         {
-            var uriStart = searchText.IndexOf("modelica://", startIndex, StringComparison.OrdinalIgnoreCase);
-            if (uriStart < 0)
-                break;
-
-            // Extract the URI up to the next whitespace, quote, or angle bracket
-            var uriEnd = uriStart + "modelica://".Length;
-            while (uriEnd < searchText.Length &&
-                   !char.IsWhiteSpace(searchText[uriEnd]) &&
-                   searchText[uriEnd] != '"' &&
-                   searchText[uriEnd] != '\'' &&
-                   searchText[uriEnd] != '>' &&
-                   searchText[uriEnd] != '<' &&
-                   searchText[uriEnd] != ')' &&
-                   searchText[uriEnd] != '\\')
+            _resources.Add(new ExternalResourceInfo
             {
-                uriEnd++;
-            }
-
-            var uri = searchText.Substring(uriStart, uriEnd - uriStart);
-
-            // Only include URIs that reference files (have a file extension)
-            // Skip model references like modelica://Modelica.Blocks.Continuous
-            if (HasFileExtension(uri))
-            {
-                _resources.Add(new ExternalResourceInfo
-                {
-                    RawPath = uri,
-                    ReferenceType = ResourceReferenceType.UriReference
-                });
-            }
-
-            startIndex = uriEnd;
+                RawPath = uri,
+                ReferenceType = ResourceReferenceType.UriReference
+            });
         }
-    }
-
-    /// <summary>
-    /// Checks if a modelica:// URI references a file (has an extension like .mat, .png, .txt).
-    /// URIs without a '/' path separator after the library name are model references, not files.
-    /// </summary>
-    private static bool HasFileExtension(string uri)
-    {
-        // Strip the modelica:// prefix
-        var pathPart = uri.Substring("modelica://".Length);
-
-        // Must have a '/' to be a file reference (model references use dots only)
-        var lastSlash = pathPart.LastIndexOf('/');
-        if (lastSlash < 0)
-            return false;
-
-        var lastSegment = pathPart.Substring(lastSlash + 1);
-        var dotIndex = lastSegment.LastIndexOf('.');
-        return dotIndex > 0 && dotIndex < lastSegment.Length - 1;
     }
 
     /// <summary>

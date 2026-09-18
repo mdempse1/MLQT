@@ -204,9 +204,13 @@ public partial class ExternalResources : IDisposable
                 .ToList();
         }
 
-        // Every resource that reached the tree, each counted once — these two collections are what
-        // was de-duplicated above, so the chips and the tree cannot disagree about how many there are.
-        CountWarnings(resolvedFileNodes.Values.Concat(unresolvedFileNodes));
+        // Counted from the tree itself, not from the node lists above (B207 again). A node whose path
+        // is already occupied is *dropped* by AddChildNode — and that happens for real: a resource
+        // referenced as a file at a path that is also an ancestor directory of other resources, which
+        // is what `modelica://ModelicaTest/Resources/Data` is in the Modelica Standard Library. It was
+        // built, counted, and then discarded on insertion, so the chip read one higher than the tree
+        // could ever show. Walking what was inserted is the only count that cannot say that.
+        CountWarnings(_treeChildren.Values.SelectMany(children => children));
     }
 
     private void CountWarnings(IEnumerable<ResourceTreeNode> nodes)

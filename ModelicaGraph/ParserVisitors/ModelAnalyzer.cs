@@ -1,6 +1,7 @@
 using Antlr4.Runtime.Misc;
 using ModelicaParser;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -504,53 +505,17 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
 
     private void ExtractModelicaUris(string stringLiteral)
     {
-        var text = StripQuotes(stringLiteral);
-        if (string.IsNullOrWhiteSpace(text)) return;
-
-        var searchText = text;
-        int startIndex = 0;
-
-        while (startIndex < searchText.Length)
+        // Scanned by the shared helper, not by a copy of its loop. This method and
+        // ExternalResourceExtractor's held byte-for-byte identical versions, and the graph build uses
+        // this one - so B209 was fixed in the other and nothing a user could see changed.
+        foreach (var uri in ModelicaUriScanner.FindFileUris(StripQuotes(stringLiteral)))
         {
-            var uriStart = searchText.IndexOf("modelica://", startIndex, StringComparison.OrdinalIgnoreCase);
-            if (uriStart < 0) break;
-
-            var uriEnd = uriStart + "modelica://".Length;
-            while (uriEnd < searchText.Length &&
-                   !char.IsWhiteSpace(searchText[uriEnd]) &&
-                   searchText[uriEnd] != '"' &&
-                   searchText[uriEnd] != '\'' &&
-                   searchText[uriEnd] != '>' &&
-                   searchText[uriEnd] != '<' &&
-                   searchText[uriEnd] != ')' &&
-                   searchText[uriEnd] != '\\')
+            _resources.Add(new ExternalResourceInfo
             {
-                uriEnd++;
-            }
-
-            var uri = searchText.Substring(uriStart, uriEnd - uriStart);
-            if (HasFileExtension(uri))
-            {
-                _resources.Add(new ExternalResourceInfo
-                {
-                    RawPath = uri,
-                    ReferenceType = ResourceReferenceType.UriReference
-                });
-            }
-
-            startIndex = uriEnd;
+                RawPath = uri,
+                ReferenceType = ResourceReferenceType.UriReference
+            });
         }
-    }
-
-    private static bool HasFileExtension(string uri)
-    {
-        var pathPart = uri.Substring("modelica://".Length);
-        var lastSlash = pathPart.LastIndexOf('/');
-        if (lastSlash < 0) return false;
-
-        var lastSegment = pathPart.Substring(lastSlash + 1);
-        var dotIndex = lastSegment.LastIndexOf('.');
-        return dotIndex > 0 && dotIndex < lastSegment.Length - 1;
     }
 
     #endregion
