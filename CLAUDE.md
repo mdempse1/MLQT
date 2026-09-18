@@ -551,3 +551,34 @@ assert nothing), as is source-generated code. `MLQT.Shared` joined the ratchet i
 measuring `.razor.cs` and **not** filtering `.razor` — measured, a component's `BuildRenderTree` is not
 counted at all, and the filter the plan called for would have removed five ordinary classes from the
 report instead. See `skill-gui-testing.md`.
+
+### "Do the tests actually check anything?" — `build/run-mutation.ps1`
+
+Coverage says a line ran. **Mutation testing says it was checked**: Stryker changes the code in small
+ways — an operator flipped, a condition inverted, a string emptied — and reports the changes no test
+objected to. A surviving mutant is a statement the suite executes and does not depend on.
+
+```powershell
+dotnet tool install --global dotnet-stryker      # once
+./build/run-mutation.ps1 -Mutate '**/ProjectNameRules.cs'
+./build/run-mutation.ps1 -Project ModelicaParser -Mutate '**/Helpers/*.cs'
+```
+
+**Always pass `-Mutate`.** One file takes about three minutes, most of it the build and the baseline
+test run; a whole assembly takes hours. **It reports, it does not gate** — some survivors are
+equivalent mutants no test can kill. Read the survivors, not the score.
+
+Two things about it are not discoverable and cost an afternoon between them:
+
+- **`--test-runner mtp` is required.** Every test project here is xUnit v3, which *is*
+  Microsoft.Testing.Platform, and Stryker defaults to VSTest. Without it Stryker fails with "not yet
+  supported by Stryker, see issue 3094" naming every test project, which reads as *this repository
+  cannot be mutation tested*. It can; the option is in `--help` and not in that message.
+- **A filter that matches nothing reports every mutant as `Ignored` and a clean score.** The script
+  fails loudly on that instead, because a run that mutated nothing looks exactly like a suite that
+  caught everything. `-Mutate` is relative to `-Project`, so naming a file from another assembly is
+  the easy way to get a hollow pass.
+
+It exists because phase 1 produced six tests that asserted something they could not see, each found
+by accident. Pointed at its first file it immediately found two real gaps: a public method with no
+test at all, and a user-facing message that could be emptied unnoticed. See `Design/backlog.md` B212.

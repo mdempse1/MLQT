@@ -97,6 +97,42 @@ public class ProjectNameRulesTests
         Assert.Null(ProjectNameRules.Validate("Work", projects, ignoringProjectId: work.Id));
     }
 
+
+    [Fact]
+    public void TheRefusalForAnEmptyNameSaysWhatToDo()
+    {
+        // The message is the reason Validate returns a string rather than a bool: the screen showing
+        // it and the service refusing have to say the same thing. Asserting only that it is non-null
+        // let the text be emptied without any test noticing - found by mutation testing (B212).
+        var refusal = ProjectNameRules.Validate("   ", Projects("Work"));
+
+        Assert.NotNull(refusal);
+        Assert.Contains("name", refusal, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IsAvailableAgreesWithValidate()
+    {
+        // IsAvailable had no test at all: inverting it to `is not null` killed nothing. A helper
+        // that returns the exact opposite of its name is the kind of thing a suite should not be
+        // able to miss (B212).
+        var projects = Projects("Work", "Archive");
+
+        Assert.True(ProjectNameRules.IsAvailable("Research", projects));
+        Assert.False(ProjectNameRules.IsAvailable("Work", projects));
+        Assert.False(ProjectNameRules.IsAvailable("   ", projects));
+    }
+
+    [Fact]
+    public void IsAvailableHonoursTheIgnoredProject()
+    {
+        var projects = Projects("Work", "Archive");
+        var work = projects[0];
+
+        Assert.True(ProjectNameRules.IsAvailable("Work", projects, ignoringProjectId: work.Id));
+        Assert.False(ProjectNameRules.IsAvailable("Archive", projects, ignoringProjectId: work.Id));
+    }
+
     [Fact]
     public void NormaliseTrims()
     {

@@ -332,9 +332,9 @@ class, and that capability is worth well beyond the marker — which is also why
 here big enough to be its own phase. B188 (a persisted repository order) is unrelated and small; it
 is here only because nothing else needs it.
 
-### WP8 — Test-harness fidelity — **B205 ✅, B212 raised**
+### WP8 — Test-harness fidelity — **✅ complete**
 
-**B205 ✅, B212** · not a product area, which is why it is its own package
+**B205 ✅, B212 ✅** · not a product area, which is why it is its own package
 
 None of WP2–WP7 is a place for it: they are areas of the application, and this is about whether the
 suite can tell the truth about them. It is grouped here with the standing pattern below rather than
@@ -352,18 +352,39 @@ depend on the aliasing. Worth saying rather than leaving implied: the swap was c
 bug hunt, and the defect it *prevents* is still the one described above, where
 `LoadRepositorySettingsAsync` adds a "Default" project it never saves.
 
-**B212 — nothing mechanically catches a test that cannot fail.** A source-scanning guard was
-attempted here and abandoned, and the reason belongs in the note rather than only in a commit. The
-obvious rule is "every assertion is behind an `if`" — and it would not have caught the test that
+**B212 ✅ — `build/run-mutation.ps1`.** A source-scanning guard was attempted first and abandoned.
+The obvious rule is "every assertion is behind an `if`" — and it would not have caught the test that
 started all this, because `LoadModelicaFile_UnparseableContent_...` had a real unconditional
 assertion *and* a conditional block hiding the defect. A scanner written to that rule flagged 62
-methods, essentially all of them environment guards on tests that need a git or SVN working copy.
-The shape needs semantics, not syntax.
+methods, essentially all environment guards on tests needing a git or SVN working copy. The shape
+needs semantics, not syntax.
 
-**Mutation testing is the mechanically sound answer** and is raised as B212: every one of the six
-below survives a mutation of the code it claims to test, which is precisely what a mutation runner
-reports. It is the only thing found here that would have caught them without somebody thinking to
-look.
+Mutation testing is the mechanically sound answer, and Stryker.NET does work here — which the tool
+itself denies. Every test project is xUnit v3, which *is* Microsoft.Testing.Platform, so Stryker's
+VSTest default fails with "not yet supported by Stryker, see issue 3094" listing every test project.
+That reads as *this repository cannot be mutation tested*. **`--test-runner mtp` is in `--help` and
+not in that message.**
+
+**It found two real gaps on the first file it was pointed at**, both in code written earlier in this
+phase: `ProjectNameRules.IsAvailable` had no test at all — inverting it to `is not null` killed
+nothing — and the "Enter a name for the project." message could be emptied unnoticed, though the
+whole reason `Validate` returns a message rather than a bool is that the screen and the service must
+say the same thing. Both fixed; that file is now at 100%.
+
+**A report, not a gate**, and scoped: about three minutes for one file, hours for an assembly, so
+`-Mutate` is effectively required. A score is not a number to chase — pointed at `StandardCHeaders`
+it reports survivors for individual header names in a literal list, which is exactly the equivalent
+mutant nobody should write a test for.
+
+**Deliberately not scheduled in CI.** A nightly run costs hours of runner time, and B143 is the
+standing evidence that a scheduled job written blind fails the first time it matters. It is a tool to
+reach for when a suite's honesty is in question — after a fix, before trusting a guard — rather than
+something to run at 02:00 and stop reading.
+
+**The script's own first version had the bug it exists to find.** Given a filter matching no file,
+Stryker reported every mutant as `Ignored` and the script printed "no surviving mutants" — a clean
+pass over nothing at all. It now fails loudly unless mutants were actually *executed*, because the
+first fix counted every mutant rather than only the ones that ran, and still passed.
 
 **The standing pattern this package exists to keep visible.** Six tests in this phase asserted
 something they could not see, and every one was found by accident rather than by looking:
