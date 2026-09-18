@@ -158,10 +158,11 @@ public class NewProjectAtStartupTests : IDisposable
         var (service, _, settings) = CreateService();
         var before = await APreviousSession(settings);
 
-        // Snapshotted, because this suite's ISettingsService double stores the object by reference
-        // rather than serialising it: `before`, what the service reads, and what is read back
-        // afterwards are all one instance, so counting `before.Projects` after the call counts the
-        // new project too. The real JsonSettingsService round-trips through JSON and does not alias.
+        // Snapshotted rather than counted afterwards, which is simply the clearer way to write it.
+        // It used to be necessary: the double stored objects by reference, so `before` and what was
+        // read back were one instance and counting after the call counted the new project too. B205
+        // replaced it with one that round-trips like the real service, so this no longer has to be
+        // defensive - it is kept because a snapshot says what it means.
         var idsBefore = before.Projects.Select(p => p.Id).ToList();
 
         await service.CreateAndSelectProjectAsync("Brand New");

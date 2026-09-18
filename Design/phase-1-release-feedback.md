@@ -332,20 +332,38 @@ class, and that capability is worth well beyond the marker — which is also why
 here big enough to be its own phase. B188 (a persisted repository order) is unrelated and small; it
 is here only because nothing else needs it.
 
-### WP8 — Test-harness fidelity
+### WP8 — Test-harness fidelity — **B205 ✅, B212 raised**
 
-**B205** · 1 item · M · new, and it is not a product area, which is why it is its own package
+**B205 ✅, B212** · not a product area, which is why it is its own package
 
 None of WP2–WP7 is a place for it: they are areas of the application, and this is about whether the
 suite can tell the truth about them. It is grouped here with the standing pattern below rather than
 squeezed into whichever package happened to be open.
 
-**B205** — `MLQT.Services.Tests`'s `ISettingsService` double stores objects by reference while the
-real service and the project's two other doubles round-trip through JSON. The work is not the swap,
-which is a few lines; it is **running the suite afterwards and treating each failure as a finding**.
-A test that only passed because the double aliased was not testing what it claimed, and
-`LoadRepositorySettingsAsync`'s unsaved "Default" project is already one place where the app and the
-suite disagree.
+**B205 ✅.** There were three settings doubles; two round-tripped through JSON and the most-used one
+stored objects by reference. There is now **one**, in `TestSupport/`, shared by both test suites — and
+a `SettingsServiceContract` that the double, the desktop `JsonSettingsService` and the MCP server's
+`HeadlessSettingsService` all derive from, so they are held to the same storage semantics rather than
+trusted to agree. That is the durable part: a double is only useful while it behaves like the thing
+it stands in for, and nothing was checking that.
+
+Running the suite afterwards was the point, and it produced **no failures** — nothing had come to
+depend on the aliasing. Worth saying rather than leaving implied: the swap was cheap insurance, not a
+bug hunt, and the defect it *prevents* is still the one described above, where
+`LoadRepositorySettingsAsync` adds a "Default" project it never saves.
+
+**B212 — nothing mechanically catches a test that cannot fail.** A source-scanning guard was
+attempted here and abandoned, and the reason belongs in the note rather than only in a commit. The
+obvious rule is "every assertion is behind an `if`" — and it would not have caught the test that
+started all this, because `LoadModelicaFile_UnparseableContent_...` had a real unconditional
+assertion *and* a conditional block hiding the defect. A scanner written to that rule flagged 62
+methods, essentially all of them environment guards on tests that need a git or SVN working copy.
+The shape needs semantics, not syntax.
+
+**Mutation testing is the mechanically sound answer** and is raised as B212: every one of the six
+below survives a mutation of the code it claims to test, which is precisely what a mutation runner
+reports. It is the only thing found here that would have caught them without somebody thinking to
+look.
 
 **The standing pattern this package exists to keep visible.** Six tests in this phase asserted
 something they could not see, and every one was found by accident rather than by looking:
