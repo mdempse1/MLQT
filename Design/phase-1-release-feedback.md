@@ -459,6 +459,45 @@ Three sub-shapes, and they need different defences:
   passed either way. **Assert the count, not the contents**, whenever the failure mode is a
   duplicate rather than a wrong value.
 
+### What the first whole-solution run found — 2026-09-19
+
+`-All` over all seven measured assemblies, 5h 40m:
+
+| Project | Mutants run | Killed | Survived | No coverage | Score |
+|---|---|---|---|---|---|
+| ModelicaParser | 6,361 | 5,292 | 1,069 | 0 | 83.2% |
+| ModelicaGraph | 2,354 | 1,738 | 616 | 0 | 73.8% |
+| MLQT.Cli | 1,340 | 905 | 435 | 0 | 67.5% |
+| MLQT.McpServer | 2,631 | 1,421 | 851 | 359 | 54.0% |
+| RevisionControl | 1,561 | 817 | 406 | 338 | 52.3% |
+| MLQT.Services | 3,714 | 1,922 | 1,792 | 0 | 51.8% |
+| MLQT.Shared | 5,673 | 693 | 821 | 4,159 | 12.2% |
+
+**Two of those numbers mean nothing and have to be said first.** `MLQT.Shared`'s 12.2% is its
+`NoCoverage` column: MainLayout at 0%, CodeReview at 0.6%, the VCS dialogs at 0% — every one of them
+already in `coverage-baseline.json` with a reason, because they need a render tree or a working copy.
+Mutation testing re-reports the coverage ratchet's ledger there and adds nothing. And `ModelicaParser`
+scoring highest is the bar working as intended: it is the assembly held to 95%.
+
+**The real column is `Survived`** — covered code the suite runs and does not depend on, which is the
+one thing coverage cannot see. 5,990 of them, and reading by hand is hopeless, so the useful question
+was *which survivors sit on a line this repository has written a comment to defend*. Grepping the
+survivor list for `IsExternalStub`, `ReferenceOnly`, `Encrypted`, `Excluded`, `IsDiagnostic` and
+`Suppress` answered it in one pass and produced **B219-B223**.
+
+The answer is uncomfortable and worth stating plainly: **the invariants documented most carefully
+here are the ones with no test behind them.** `LibraryCheckSession.cs:44` carries three lines of
+comment explaining why a stub must never be judged, and inverting it kills nothing. So does
+`GraphAnalysisContext.cs:47`. `FormattingPipeline.cs:144` excludes encrypted libraries from the full
+save — a write into one would be corruption — and nothing notices its removal. The comment was
+treated as the safeguard.
+
+One finding is not a missing test at all. `ImpactAnalysisService` survives 121 arithmetic mutations
+because it computes an SVG layout — jitter, force relaxation, clamping — that **nothing reads**:
+Cytoscape lays the graph out itself. The right answer there is to delete it (B222), and the only test
+touching it asserts `SvgWidth >= 700` against a `Math.Max(700, ...)`, which is the second sub-shape
+above, found by the tool rather than by accident this time.
+
 The defences that have actually worked here, in that order: a positive control beside every negative
 assertion, a mutation check before believing any guard, and measuring on a sample that is known to
 contain the failing case — B169's first fix was verified on real data holding none of it, and looked

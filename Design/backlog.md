@@ -4,17 +4,18 @@ The working list. Every open item has an id, and **an id is never reused** — t
 code comments, test summaries, build scripts and CI workflows, so a new item takes the next number
 above the highest ever issued, whatever has since been closed.
 
-**B1–B218 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
+**B1–B223 have been issued.** B1–B167 were opened between 2026-09-03 and 2026-09-17 by the
 seventeen end-of-branch reviews of the CI/CD toolchain and by phases 7a and 7b; B168–B203 by the
 first end-to-end pass over the Photino release on 2026-09-17; B204 while settling B198's layout
 question, B205 while fixing B192, B206 while trying to reproduce B198, B207–B209 while confirming
 B172, B210–B211 from the resource reports in
 Claytex and VeSyMA, B212 from WP8, and B213–B218 on 2026-09-18 from the decision that WP2 opens with
-`analysis-viewer-fidelity.md` Part II. Of B1–B167 all are closed
+`analysis-viewer-fidelity.md` Part II, and B219–B223 on 2026-09-19 from the whole-solution
+mutation audit. Of B1–B167 all are closed
 except the two carried forward below, and the table they lived in was retired with the phase design
 notes on 2026-09-17 — git history has it if the reasoning behind one of those ids is ever needed.
 
-New items start at **B219**. The watermark moves as items close, not only as they are opened: the id
+New items start at **B224**. The watermark moves as items close, not only as they are opened: the id
 guard checks that the ids *above* it run unbroken, so a closed row leaves a gap the moment it is
 removed unless the watermark has advanced past it.
 
@@ -113,3 +114,21 @@ exclusively. Grouped by area; the ids are in the order they were written down.
 |---|------|------|-------|--------|----------------|
 | B193 | **Switch Branch cannot reach a Git tag** | Git | ⭐⭐ | M | Switching to a tagged version of `ExternData` is not offered, although TortoiseGit does it on the same working copy. The branch selector presumably enumerates branches only; checking out a tag produces a detached HEAD, which the surrounding UI also has to be able to describe rather than showing an empty branch name. |
 | B202 | **The VCS History file diff compares against the working copy** | Git / SVN | ⭐⭐ | S | Clicking a file in a commit's changed-files popover opens a diff of that revision against the **working copy**. What a user reviewing history wants is what that commit *changed* — the selected commit against its predecessor. B155 corrected the documentation of the current behaviour after finding it reported confusing numbers; this changes the behaviour to the one the dialog is for. |
+
+### Test fidelity — from the whole-solution mutation audit
+
+Opened 2026-09-19 from `build/run-mutation.ps1 -All` over all seven measured assemblies (5h 40m;
+23,634 mutants run, 5,990 survived, 4,159 in `MLQT.Shared` code no test executes at all — which is
+the coverage ratchet's existing, reasoned debt and not a finding here). What *is* a finding is
+below, and it has one shape: **the invariants this repository documents most carefully are the ones
+with no test behind them.** Each line cited carries a comment explaining why the guard matters, is
+executed by the suite — so the coverage gate is satisfied — and can be deleted or inverted without a
+single test objecting. Regenerate the survivor list with `-Summarise`; it is git-ignored.
+
+| # | Item | Area | Value | Effort | What is needed |
+|---|------|------|-------|--------|----------------|
+| B219 | **Nothing notices if an external-stub write/report guard is removed** | Checking | ⭐⭐⭐ | S | Four guards keep MLQT from reporting on, or writing to, a library whose source it cannot read, and a mutation of each survives: `LibraryCheckSession.cs:44` (`!node.IsExternalStub` — invert it and every encrypted library's reconstructed source is style-checked), `GraphAnalysisContext.cs:47` (the same filter for the whole-graph analyses), and `FormattingPipeline.cs:144-145` (`SourceType != EncryptedDirectory` and `!ReferenceOnlyScope.IsReference` — invert either and the full-library save writes into a reference or encrypted checkout). Needs one test per guard asserting the *excluded* outcome, not the included one. |
+| B220 | **The formatting-exclusion decisions are covered but unchecked** | Rules / formatting | ⭐⭐⭐ | S | The same shape as B39/B40/B50/B52, now measured rather than found by a user. `FormattingExclusion.cs:57` (the `Suppressions is null` short-circuit), `CoverageDimensions.cs:147` (`FormattingExcludedModels.Count > 0 && IsModelExcludedFromFormatting`) and `StyleCheckingSettings.cs:310` (the excluded-library pattern cache's identity check — mutate it and a settings edit is ignored until restart, silently applying the previous exclusions) all survive mutation. These are the three places the answer "is this class out of scope?" is decided; none of them is pinned. |
+| B221 | **Nothing notices if a parse diagnostic becomes suppressible or baselineable** | MCP / CLI | ⭐⭐ | S | "Always reported, never configurable, never baselined" is stated in CLAUDE.md and enforced in four places, none of them tested: `SuppressionTools.cs:64` (the MCP refusal — mutate the `\|\|` and `Doc.ParseError` can be waived by annotation), `MetricsRecorder.cs:92` (`!RuleIds.IsDiagnostic` in the recorded debt count), `StyleTools.cs:286` (`honorSuppressions: true` — flip it and the MCP style check reports findings the user has waived) and `Baseline.cs:191/267` (`ExcludedLibraries` round-tripping through the ledger, which is what drift detection compares). |
+| B222 | **`ImpactAnalysisService` computes an SVG layout nothing reads** | Dependencies | ⭐⭐ | S | About 150 lines — circular placement, deterministic jitter, a 50-iteration force relaxation and edge clamping — producing `NetworkNode.X`/`.Y` and `ImpactAnalysisResult.SvgWidth`/`.SvgHeight`. `Dependencies.razor.cs:121` maps to `DiagramNode` and Cytoscape lays the graph out itself; nothing reads any of the four. The only reader is `ImpactAnalysisServiceTests.cs:201-202`, asserting `SvgWidth >= 700` against a `Math.Max(700, …)` whose default is also 700 — the "expectation copied from behaviour" shape in WP8's table, and the reason 121 of this file's survivors are arithmetic. Delete the layout, the four members and that test. |
+| B223 | **The read-only-settings guard on a reference repository is unchecked** | Repositories | ⭐⭐ | S | `RepositoryService.cs:317` (`if (repository.IsSettingsReadOnly)`), `:634` (`repo.IsSettingsReadOnly = true`) and `:241` (`repository.IsReferenceOnly && isReferenceOnly is null`) all survive mutation, so nothing holds the rule that a reference repository's settings are not written back. B169 is the reminder of what this class of mistake costs: a reference library treated as an ordinary one reported resources it cannot have. |
