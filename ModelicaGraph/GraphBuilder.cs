@@ -1167,11 +1167,13 @@ public static class GraphBuilder
     /// were attached to the other copy's directory. Nine libraries collide this way in the setup it
     /// was reported from.</para>
     ///
-    /// <para>The referencing file settles it: a model resolves <c>modelica://Claytex/Resources/x</c>
-    /// against the copy of Claytex it is itself part of. The longest matching root wins, so a library
-    /// nested inside another still resolves to the nearer one. Where the file says nothing — a class
-    /// recovered from documentation has no file of its own — the first match is kept, because such a
-    /// class belongs to the encrypted copy and preferring source would be wrong for it.</para>
+    /// <para>Two things settle it, in order. The referencing file, when it lies inside one of the
+    /// candidates: a model resolves <c>modelica://Claytex/Resources/x</c> against the copy of Claytex
+    /// it is itself part of, longest matching root first. Then, for everything else — and that is
+    /// most references, because a library naming another library's resources sits inside neither of
+    /// its copies — the readable one, because <b>an encrypted library can never be the right answer
+    /// while a readable copy exists.</b> Nothing can read its code, so nothing knows what it
+    /// references; every reference naming it was written somewhere else.</para>
     /// </remarks>
     private static LibraryInfo? SelectLibrary(
         List<LibraryInfo> libraries, string libraryName, string? referencingFilePath)
@@ -1198,6 +1200,8 @@ public static class GraphBuilder
         if (matches is null)
             return only;
 
+        // The copy the referencing file is itself inside, if it is inside one. Longest root wins, so
+        // a library nested inside another resolves to the nearer one.
         if (!string.IsNullOrEmpty(referencingFilePath))
         {
             LibraryInfo? owning = null;
@@ -1214,10 +1218,22 @@ public static class GraphBuilder
                 return owning;
         }
 
-        // No file to go on, which means a class recovered from documentation rather than read from
-        // source. Its resources belong to the copy it was recovered from, and nothing here can say
-        // which that was - so this keeps the previous behaviour rather than guessing. Preferring
-        // readable source would be actively wrong for such a class.
+        // Otherwise the readable copy, and this is the case that matters most: a reference from one
+        // library into another. A model in Engines naming modelica://Claytex/Resources/x sits under
+        // neither Claytex root, so the test above cannot separate them - and most references are of
+        // this kind, which is why fixing only the same-library case left most resources still
+        // attached to the encrypted build.
+        //
+        // An encrypted library can never be the right answer while a readable copy exists. Nothing
+        // can read its code, so nothing knows what it references: every reference naming it was
+        // written somewhere else, and the copy that someone can actually open is the one they meant.
+        foreach (var candidate in matches)
+        {
+            if (!candidate.IsEncrypted)
+                return candidate;
+        }
+
+        // Every copy is encrypted. Nothing distinguishes them, so the first keeps the old behaviour.
         return matches[0];
     }
 

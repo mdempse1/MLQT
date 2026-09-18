@@ -95,7 +95,8 @@ public class LibraryDataService : ILibraryDataService
             var rootPath = lib.SourceType == LibrarySourceType.File
                 ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
                 : lib.SourcePath;
-            return new LibraryInfo(lib.Name, rootPath);
+            return new LibraryInfo(lib.Name, rootPath,
+                isEncrypted: lib.SourceType == LibrarySourceType.EncryptedDirectory);
         }).ToList();
     }
 

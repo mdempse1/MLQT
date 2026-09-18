@@ -185,12 +185,30 @@ loaded twice — the encrypted build a tool ships and the source the team has ch
 encrypted copy drops its version suffix, so `Claytex 2026.1` registers as `Claytex`. Nine names
 collide in the reported setup.
 
-The referencing file settles it: a model resolves `modelica://Claytex/Resources/x` against the copy
-of Claytex it is itself part of. Measured on the real libraries, with the encrypted copy listed
-first: **38 resources, all 38 to the encrypted root before and all 38 to the source root after.**
+Two rules settle it, in that order. The **referencing file**, when it lies inside one of the
+candidates: a model resolves `modelica://Claytex/Resources/x` against the copy of Claytex it is part
+of. Then, for everything else, the **readable copy** — because an encrypted library can never be the
+right answer while a readable one exists. Nothing can read its code, so nothing knows what it
+references; every reference naming it was written somewhere else.
 
-Worth keeping: the guess in the backlog entry was confident and wrong, and it would have sent anyone
-who trusted it looking at prefix matching. An item's stated cause is a lead, not a finding.
+**The second rule was missing from the first attempt and had to be reported again.** The file rule
+alone fixes only same-library references, and most references are not of that kind: a model in
+Engines naming `modelica://Claytex/...` sits inside neither Claytex root, so the file cannot separate
+them and it fell back to first-match — the encrypted build. Measured on the real libraries with the
+encrypted copies registered first, loading Engines and Claytex source: 599 resources, and with the
+readable preference switched off the cross-library ones move to the encrypted root.
+
+**The removed fallback was removed for a reason that was wrong.** The first attempt dropped
+"prefer readable source" on the grounds that a class recovered from documentation belongs to the
+encrypted copy, so its resources do too. That is true and irrelevant: stubs are excluded from
+dependency analysis entirely, so they never produce a resource reference at all. The premise was
+about a case that cannot arise, and it cost the user a second report.
+
+Two things worth keeping. The guess in the backlog entry was confident and wrong — it pointed at
+prefix matching, which has nothing to do with it — so **an item's stated cause is a lead, not a
+finding**. And the first fix was verified on real data that did not contain the failing case: 38
+resources, all same-library. **Measuring the wrong sample proves nothing**, and the fix looked
+complete because the measurement agreed with it.
 
 **Three lessons, all about tests rather than code.**
 

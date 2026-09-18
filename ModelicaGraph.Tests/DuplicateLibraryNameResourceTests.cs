@@ -100,4 +100,74 @@ public class DuplicateLibraryNameResourceTests : IDisposable
         Assert.NotNull(resolved);
         Assert.StartsWith(LibraryRoot("Source"), resolved, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// A second library, whose models reference SharedName's resources from outside either copy of
+    /// it — which is what most references actually look like.
+    /// </summary>
+    private void CreateReferencingLibrary()
+    {
+        var library = Path.Combine(_root, "Other", "Referencing");
+        Directory.CreateDirectory(library);
+    }
+
+    private async Task<string?> ResolvedPathForACrossLibraryReference(bool shippedIsEncrypted)
+    {
+        CreateReferencingLibrary();
+        var referencing = Path.Combine(_root, "Other", "Referencing");
+        var graph = new DirectedGraph();
+
+        GraphBuilder.LoadModelicaFile(graph, Path.Combine(referencing, "Uses.mo"), """
+            within Referencing;
+            model Uses
+              parameter String p = Modelica.Utilities.Files.loadResource("modelica://SharedName/Resources/Data/table.mat");
+            end Uses;
+            """);
+
+        // The encrypted copy first, so a first-match rule would choose it.
+        await GraphBuilder.AnalyzeDependenciesAsync(graph,
+        [
+            new LibraryInfo("SharedName", LibraryRoot("Shipped"), isEncrypted: shippedIsEncrypted),
+            new LibraryInfo("SharedName", LibraryRoot("Source")),
+            new LibraryInfo("Referencing", referencing)
+        ]);
+
+        return graph.ResourceFileNodes.SingleOrDefault()?.ResolvedPath;
+    }
+
+    [Fact]
+    public async Task AReferenceFromAnotherLibraryResolvesToTheReadableCopy()
+    {
+        // The case the first attempt at this missed, and the one most references fall into: the
+        // referencing model sits inside neither copy, so the file cannot separate them. An encrypted
+        // library cannot be the answer while a readable one exists - nothing can read its code, so
+        // nothing knows what it references, and every reference naming it was written elsewhere.
+        var resolved = await ResolvedPathForACrossLibraryReference(shippedIsEncrypted: true);
+
+        Assert.NotNull(resolved);
+        Assert.StartsWith(LibraryRoot("Source"), resolved, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WithNeitherCopyEncryptedTheFirstIsStillTaken()
+    {
+        // Two readable copies of one name is a genuinely ambiguous setup and nothing here can rank
+        // them, so the previous behaviour is kept rather than a preference invented.
+        var resolved = await ResolvedPathForACrossLibraryReference(shippedIsEncrypted: false);
+
+        Assert.NotNull(resolved);
+        Assert.StartsWith(LibraryRoot("Shipped"), resolved, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TheReferencingFileStillWinsOverTheReadablePreference()
+    {
+        // Order matters between the two rules: a model inside the encrypted copy - which only
+        // happens if that copy has readable files after all - resolves against its own copy rather
+        // than being sent to the other one.
+        var resolved = await ResolvedPathFor("Shipped", "Shipped", "Source");
+
+        Assert.NotNull(resolved);
+        Assert.StartsWith(LibraryRoot("Shipped"), resolved, StringComparison.OrdinalIgnoreCase);
+    }
 }
