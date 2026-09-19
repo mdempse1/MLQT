@@ -65,9 +65,20 @@
                 </MudChipSet>
             </MudStack>
 
-            <MudGrid Spacing="1">
-                <MudItem xs="4">
-                    <MudPaper Elevation="0" Outlined="true" Style="height: calc(100vh - 210px); overflow-y: auto;">
+            @* A fixed 4/8 grid split gave the tree a third of the width and no way to change it, so
+               a long resource path was simply cut off — it neither scrolled sideways nor resized
+               (B173). Same control as the Code Review page uses between its viewer and its findings,
+               and the one MainLayout uses between the tree and the tabs; `overflow: auto` rather
+               than `overflow-y`, so a path too long for whatever width the user has chosen can still
+               be read by scrolling to it. *@
+            <MudExSplitPanel ColumnLayout="true" SplitterSize="4" SplitterColor="Color.Primary"
+                             Style="height: calc(100vh - 210px);">
+                <Left>
+                    <MudExSplitPanelItem MinSize="180" Style="width: 33%; min-width: 180px; box-shadow: none;">
+                    @* mlqt-resource-tree-pane is a handle for ResizablePanesJourney — see the note
+                       on the findings pane in CodeReview.razor. *@
+                    <MudPaper Elevation="0" Outlined="true" Class="mlqt-resource-tree-pane"
+                              Style="height: 100%; overflow: auto;">
                         <MudTreeView T="ResourceTreeNode"
                             @key="_treeKey"
                             @ref="_treeView"
@@ -90,9 +101,11 @@
                             </ItemTemplate>
                         </MudTreeView>
                     </MudPaper>
-                </MudItem>
-                <MudItem xs="8">
-                    <MudPaper Elevation="0" Outlined="true" Class="pa-2" Style="height: calc(100vh - 210px); overflow-y: auto;">
+                    </MudExSplitPanelItem>
+                </Left>
+                <Right>
+                    <MudExSplitPanelItem MinSize="240" Style="width: 67%; min-width: 240px; box-shadow: none;">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-2" Style="height: 100%; overflow: auto;">
                         @if (_selectedResource == null)
                         {
                             <MudText Typo="Typo.body1" Color="Color.Secondary">Select a resource to see which models reference it.</MudText>
@@ -135,8 +148,9 @@
                             </MudStack>
                         }
                     </MudPaper>
-                </MudItem>
-            </MudGrid>
+                    </MudExSplitPanelItem>
+                </Right>
+            </MudExSplitPanel>
         </MudStack>
     }
 </MudPaper>

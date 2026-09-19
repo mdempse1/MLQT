@@ -358,9 +358,18 @@ real components in a real browser through `MLQT.TestHost`, against the fixture l
 each image as the file the markdown already links to:
 
 ```powershell
-$env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
+$env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see below
 MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
 ```
+
+**Give it an absolute path.** A relative one resolves against the *test executable's* directory, not
+the repository, so `Documentation/Images` quietly writes 41 pictures into
+`MLQT.Journeys/bin/Release/net10.0/` and `git status` shows nothing changed — which reads as "the UI
+did not move" rather than as "the pictures went somewhere else".
+
+**Expect a larger diff than the change.** The fixture builds a fresh git repository each run, so
+every shot showing the commit hash differs whether or not the UI did. That is the cost of pictures
+generated from a real repository, not a reason to hand-pick which ones to keep.
 
 Run it **on its own, by that filter**: the journeys share one host, so a full-suite run reaches it
 with libraries and settings another journey left behind. With the variable unset it does nothing, so

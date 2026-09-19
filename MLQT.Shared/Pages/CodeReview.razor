@@ -89,8 +89,17 @@
                 }
             </MudAlert>
         }
-        @* Height calculation: 221 px for table, 185px for other stuff*@
-        <MudPaper Elevation="1" Style="height: calc(100vh - 405px); display: flex; flex-direction: column;" Class="mt-1 mb-2">
+        @* The viewer and the findings share the space, and the user decides how (B186). It used to
+           be two fixed heights — 221 px for the table and 405 px subtracted from the viewport, the
+           second being the first plus 185 px for everything above — so the table showed five rows
+           whatever the screen, its pager sat on the bottom edge, and the rest of a long finding was
+           simply unreachable. Same control as the one splitting the tree from the tabs in
+           MainLayout, turned the other way. *@
+        <MudExSplitPanel ColumnLayout="false" SplitterSize="4" SplitterColor="Color.Primary"
+                         Style="height: calc(100vh - 185px);" Class="mt-1 mb-2">
+            <Left>
+                <MudExSplitPanelItem MinSize="120" Style="height: 65%; min-height: 120px; box-shadow: none;">
+        <MudPaper Elevation="1" Style="height: 100%; display: flex; flex-direction: column;">
         @if (_isDiffMode)
         {
             @if (_isLoadingDiff)
@@ -124,14 +133,27 @@
                 <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords" Height="100%" />
         }
         </MudPaper>
-        <MudPaper Elevation="2" Height="221px" Style="overflow-y: auto; position: relative;">
+                </MudExSplitPanelItem>
+            </Left>
+            <Right>
+                <MudExSplitPanelItem MinSize="120" Style="height: 35%; min-height: 120px; box-shadow: none;">
+        @* mlqt-findings-pane is a handle for ResizablePanesJourney, which has to measure this pane
+           to show that dragging the splitter changes it. MudBlazor's own classes are the wrong thing
+           to measure against — they move with the library and say nothing about our layout. *@
+        <MudPaper Elevation="2" Class="mlqt-findings-pane" Style="height: 100%; position: relative;">
             @* Ordered here rather than bound straight to the service's list, which arrives in
                whatever order the parallel check produced — so the same library reviewed twice
                presented the same findings in two different orders (B183). By class, then by line
                within it, then by rule, which is the order a reader works through a class in. *@
+            @* Virtualised and scrolled rather than paged, which is the other half of B186: a pager
+               shows a fixed number of rows however much room the table has, so resizing the pane
+               only moved which rows were cut off. Scrolling makes every finding reachable at any
+               size, and virtualising keeps that affordable — a real library produces tens of
+               thousands of them (26,557 for the Modelica Standard Library). *@
             <MudTable T="LogMessage" Items="@OrderedFindings" Hover="true" Breakpoint="Breakpoint.Sm"
-                Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
-                FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
+                Dense="true" FixedHeader="true" OnRowClick="RowClickEvent" Virtualize="true"
+                Height="calc(100% - 48px)"
+                Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>
                     <MudText Typo="Typo.body1">@FindingsHeading</MudText>
                     <MudSpacer />
@@ -194,11 +216,11 @@
                         }
                     </MudTd>
                 </RowTemplate>
-                <PagerContent>
-                    <MudTablePager HideRowsPerPage="true" PageSizeOptions="new int[] { 5, 10, 25, 50, int.MaxValue }" />
-                </PagerContent>
             </MudTable>
         </MudPaper>
+                </MudExSplitPanelItem>
+            </Right>
+        </MudExSplitPanel>
     </MudStack>
 </MudPaper>
 

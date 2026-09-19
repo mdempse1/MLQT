@@ -314,9 +314,20 @@ letters are kept because the gates are written there.
    reaching the check pipeline and an agent; neither is needed for the viewer, so both can be taken
    later or in another phase. **B231** (the offset documentation) belongs with whichever of B215 or
    B216 lands first, since both read those fields.
-7. **B186 with B173** — resizable panes. `MudExSplitPanel` is **already a dependency and already in
-   use** in `MainLayout.razor:233`, so this is one control applied twice, and the fixed `221px` and
-   hidden pager collapse into one measured value.
+7. **B186 ✅ with B173 ✅** — resizable panes. `MudExSplitPanel` is **already a dependency and already
+   in use** in `MainLayout.razor:233`, so this is one control applied twice, and the fixed `221px`
+   and hidden pager collapse into one measured value. **The pager did not collapse into a value — it
+   went.** A pager shows a fixed number of rows however much room the table has, so resizing alone
+   would only have changed which rows were cut off; the table is virtualised and scrolled instead,
+   which also carries a real library's tens of thousands of findings.
+
+   **This is the first item in the phase that could not be checked by reading**, and it is worth
+   recording what that cost. The layout looked right in a screenshot while the splitter did nothing,
+   and the journey that caught it was itself wrong twice first: MainLayout's splitter is on every
+   page and nests around the page's own, so a `.First` locator dragged the outer one — which works
+   perfectly — and reported the inner one broken. A probe that printed the DOM settled it in one run
+   after two rounds of guessing. Drive the browser, and when a UI test fails, ask what it is looking
+   at before changing what it is looking at.
 8. **B176** (search over the source — now the user's own source) and **B187** (AND plus a rule filter)
    — independent of the classifier, so they can run in parallel with 2–5. B187 must untangle the
    scope-through-search-string smuggling first.
