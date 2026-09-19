@@ -290,10 +290,15 @@ letters are kept because the gates are written there.
    `spellCheck.scrollWordIntoView` / `setScroll` interop is the machinery to extend, not to duplicate
    — and B183's other half (stable alphabetical ordering) is still one line and independent of all of
    this. B185's threshold becomes the lex-only tier. The page gets its first component tests.
-5. **B178 with B217** — `DiffViewer` adopts the classifier on both sides and `HighlightRawModelica`
-   is deleted; B217 is the class diff comparing stored text against the file, which the same source
-   rule fixes. **B217 is predicted, not observed** — confirm it against a package with standalone
-   children and an uncommitted change before writing anything.
+5. **B178 ✅ with B217 ✅** — `DiffViewer` adopted the classifier on both sides and
+   `HighlightRawModelica` is gone; B217 was confirmed (a trimmed package showed every inline child
+   as a deletion) and both sides of the class diff now come from the file. **Both were mis-diagnosed
+   in planning and both were smaller than the diagnosis**: B178's root-cause row said the two
+   highlighters "cannot be merged — a diff hunk is not parseable" and that the fix was to share a
+   colour source between two stylesheets. The sides are whole documents rather than hunks, so one
+   classifier serves both; and the preset already reached the diff, since the runtime stylesheet is
+   global and `!important`. The real fault was that the regex could only produce four of the nine
+   categories, so identifiers and types were plain text in one pane and coloured in the other.
 6. **B230 first, then B216** (S1 said yes), and **B218**. B230 is a guard clause in front of an
    existing render and removes 55% / 95% of the trimmed-package population on its own, so it is worth
    taking before the rest of this step whatever happens to B216. B216 and B218 are the same mechanism

@@ -151,6 +151,48 @@ public partial class DiffViewer : IAsyncDisposable
         return string.Join(" / ", parts) + " lines";
     }
 
+    /// <summary>
+    /// Each line as it will be shown: Modelica coloured by the same classifier the code viewer uses,
+    /// anything else left as it is.
+    ///
+    /// <para>This is what closes B178. The diff used to colour its own panes with a keyword regex
+    /// while the single-file viewer was coloured from the parse tree, so the same code was coloured
+    /// two ways in two panes of the same page and only one of them followed the user's chosen
+    /// scheme. The two highlighters could not be merged while one of them rebuilt the text —
+    /// a diff hunk is not parseable — but now that the classifier emits the source in place, both
+    /// panes can be the same one.</para>
+    ///
+    /// <para>Falls back to the plain lines <b>HTML-encoded</b> whenever the classifier does not
+    /// return exactly one markup line per source line. It cannot, by construction: the emitter
+    /// round-trips the source and so preserves its line count. But the diff indexes these two arrays
+    /// in step, and being wrong about that would mean showing one line's colouring on another line's
+    /// text — worse than showing no colouring at all. The encoding is done here because for a
+    /// Modelica file nothing downstream encodes: the classifier's own output is already safe outside
+    /// its tags, and encoding it a second time would turn a stray <c>&amp;</c> into
+    /// <c>&amp;amp;</c> on screen.</para>
+    /// </summary>
+    internal static string[] DisplayLines(string? content, string[] plainLines, bool isModelicaFile)
+    {
+        if (!isModelicaFile)
+            return plainLines;
+
+        if (!string.IsNullOrEmpty(content))
+        {
+            try
+            {
+                var markup = ModelicaTokenClassifier.Highlight(content);
+                if (markup.Count == plainLines.Length)
+                    return [.. markup];
+            }
+            catch
+            {
+                // Fall through to the plain, encoded lines.
+            }
+        }
+
+        return [.. plainLines.Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? "")];
+    }
+
     private void ComputeDiff()
     {
         _unifiedLines.Clear();
@@ -178,20 +220,25 @@ public partial class DiffViewer : IAsyncDisposable
 
         try
         {
-            // Compute LCS-based diff
+            // The diff is computed on the plain text and only then dressed up: comparing markup
+            // would diff the colouring as well as the code, and a line that merely changed category
+            // would read as a change.
             var diffResult = ComputeLcsDiff(originalLines, modifiedLines);
+
+            var originalDisplay = DisplayLines(OriginalContent, originalLines, _isModelicaFile);
+            var modifiedDisplay = DisplayLines(ModifiedContent, modifiedLines, _isModelicaFile);
 
             if (ViewMode == DiffViewMode.SideBySideFull)
             {
-                ComputeFullSideBySide(originalLines, modifiedLines, diffResult);
+                ComputeFullSideBySide(originalDisplay, modifiedDisplay, diffResult);
             }
             else if (ViewMode == DiffViewMode.SideBySide)
             {
-                ComputeSideBySideWithContext(originalLines, modifiedLines, diffResult);
+                ComputeSideBySideWithContext(originalDisplay, modifiedDisplay, diffResult);
             }
             else
             {
-                ComputeUnifiedWithContext(originalLines, modifiedLines, diffResult);
+                ComputeUnifiedWithContext(originalDisplay, modifiedDisplay, diffResult);
             }
         }
         catch (OutOfMemoryException)
@@ -538,117 +585,26 @@ public partial class DiffViewer : IAsyncDisposable
         return content;
     }
 
-    private static readonly string[] _modelicaKeywords = new[]
-    {
-        "algorithm", "and", "annotation", "block", "break", "class", "connect",
-        "connector", "constant", "constrainedby", "der", "discrete", "each",
-        "else", "elseif", "elsewhen", "encapsulated", "end", "enumeration",
-        "equation", "expandable", "extends", "external", "false", "final",
-        "flow", "for", "function", "if", "import", "impure", "in", "initial",
-        "inner", "input", "loop", "model", "not", "operator", "or", "outer",
-        "output", "package", "parameter", "partial", "protected", "public",
-        "pure", "record", "redeclare", "replaceable", "return", "stream",
-        "then", "true", "type", "when", "while", "within"
-    };
-
-    private static readonly System.Text.RegularExpressions.Regex _modelicaKeywordRegex =
-        new(@"\b(" + string.Join("|", _modelicaKeywords) + @")\b",
+    private static readonly System.Text.RegularExpressions.Regex _tagRegex =
+        new(@"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
             System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    private static readonly System.Text.RegularExpressions.Regex _modelicaNumberRegex =
-        new(@"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private string ApplyModelicaSyntaxHighlighting(string line)
-    {
-        // Check if line contains pre-rendered markup tags (from ModelicaRenderer)
-        if (line.Contains("<KEYWORD>"))
-        {
-            return System.Text.RegularExpressions.Regex.Replace(
-                line,
-                @"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
-                match =>
-                {
-                    var tagType = match.Groups[1].Value.ToLower();
-                    var content = match.Groups[2].Value;
-                    content = System.Web.HttpUtility.HtmlEncode(content);
-                    return $"<span class=\"code-{tagType}\">{content}</span>";
-                }
-            );
-        }
-
-        // Raw Modelica text — tokenize into comments, strings, and code segments,
-        // then HTML-encode and highlight each appropriately.
-        return HighlightRawModelica(line);
-    }
-
     /// <summary>
-    /// Tokenizes a raw Modelica line into string literals, line comments, and code segments,
-    /// then applies HTML encoding and syntax highlighting to each token.
+    /// Turns the classifier's tags into the <c>code-*</c> spans the stylesheet colours, which is the
+    /// same conversion <c>CodeViewer</c> makes — so the diff and the single-file view now follow one
+    /// scheme (B178).
+    ///
+    /// <para>A line with no tags is HTML-encoded and shown plain. That covers a file that is not
+    /// Modelica, the <c>...</c> that marks elided context, and the fallback in
+    /// <see cref="DisplayLines"/>. It replaced a second highlighter — a keyword-list regex over the
+    /// raw line, with its own palette — which coloured the same code differently from the pane
+    /// beside it and ignored the user's chosen preset entirely.</para>
     /// </summary>
-    private static string HighlightRawModelica(string line)
-    {
-        var sb = new System.Text.StringBuilder();
-        int i = 0;
-        int codeStart = 0;
-
-        while (i < line.Length)
-        {
-            // Check for line comment
-            if (i + 1 < line.Length && line[i] == '/' && line[i + 1] == '/')
-            {
-                // Flush preceding code segment
-                if (i > codeStart)
-                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
-
-                var comment = line.Substring(i);
-                sb.Append($"<span class=\"code-comment\">{System.Web.HttpUtility.HtmlEncode(comment)}</span>");
-                return sb.ToString(); // Comment runs to end of line
-            }
-
-            // Check for string literal
-            if (line[i] == '"')
-            {
-                // Flush preceding code segment
-                if (i > codeStart)
-                    sb.Append(HighlightCodeSegment(line.Substring(codeStart, i - codeStart)));
-
-                int stringEnd = i + 1;
-                while (stringEnd < line.Length)
-                {
-                    if (line[stringEnd] == '\\') { stringEnd += 2; continue; }
-                    if (line[stringEnd] == '"') { stringEnd++; break; }
-                    stringEnd++;
-                }
-                var str = line.Substring(i, stringEnd - i);
-                sb.Append($"<span class=\"code-string\">{System.Web.HttpUtility.HtmlEncode(str)}</span>");
-                i = stringEnd;
-                codeStart = i;
-                continue;
-            }
-
-            i++;
-        }
-
-        // Flush remaining code segment
-        if (codeStart < line.Length)
-            sb.Append(HighlightCodeSegment(line.Substring(codeStart)));
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// HTML-encodes a code segment and highlights keywords and numbers.
-    /// </summary>
-    private static string HighlightCodeSegment(string segment)
-    {
-        var encoded = System.Web.HttpUtility.HtmlEncode(segment);
-        encoded = _modelicaKeywordRegex.Replace(encoded,
-            m => $"<span class=\"code-keyword\">{m.Value}</span>");
-        encoded = _modelicaNumberRegex.Replace(encoded,
-            m => $"<span class=\"code-number\">{m.Value}</span>");
-        return encoded;
-    }
+    internal static string ApplyModelicaSyntaxHighlighting(string line) =>
+        _tagRegex.Replace(line, match =>
+            $"<span class=\"code-{match.Groups[1].Value.ToLower()}\">"
+            + System.Web.HttpUtility.HtmlEncode(match.Groups[2].Value)
+            + "</span>");
 
     private class DiffLine
     {

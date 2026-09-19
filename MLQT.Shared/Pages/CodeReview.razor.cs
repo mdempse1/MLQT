@@ -630,12 +630,7 @@ public partial class CodeReview : IAsyncDisposable
                     _originalModelCode = "";
                 }
 
-                // Use the raw source code for the current working copy version
-                var currentCode = _currentModelNode.Definition.ModelicaCode;
-                var currentPrefix = _currentModelNode.ElementPrefix;
-                _modifiedModelCode = string.IsNullOrEmpty(currentPrefix)
-                    ? currentCode
-                    : currentPrefix + " " + currentCode;
+                _modifiedModelCode = WorkingCopyText(_currentModelNode, LibraryDataService.CombinedGraph);
             });
         }
         catch (Exception ex)
@@ -805,6 +800,23 @@ public partial class CodeReview : IAsyncDisposable
                 });
             }, TaskScheduler.Default);
         }
+    }
+
+    /// <summary>
+    /// The working-copy side of the class diff: the class as it is on disk now, to compare against
+    /// the same class at HEAD.
+    ///
+    /// <para>This used to be <c>Definition.ModelicaCode</c> directly, which is the same text for
+    /// most classes and <b>a different document</b> for two populations: a package whose inline
+    /// standalone children the trimmer removed, and any class the formatter rewrote since it was
+    /// read. For those, the diff compared a rewrite against the file and reported changes the user
+    /// had not made — a trimmed package showed every standalone child as deleted (B217). Both sides
+    /// now come from the file.</para>
+    /// </summary>
+    internal static string WorkingCopyText(ModelNode model, DirectedGraph graph)
+    {
+        var code = ClassSource.For(model, graph);
+        return string.IsNullOrEmpty(model.ElementPrefix) ? code : model.ElementPrefix + " " + code;
     }
 
     /// <summary>
