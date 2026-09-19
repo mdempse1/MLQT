@@ -89,6 +89,34 @@ public sealed class SourceElision
     }
 
     /// <summary>
+    /// One elision covering all of <paramref name="elisions"/>. A range wholly inside another is
+    /// dropped — hiding a package's nested classes already hides the annotations inside them, and
+    /// asking for both is the ordinary case rather than a mistake.
+    ///
+    /// <para>Ranges that merely <em>overlap</em> are still refused by <see cref="Of"/>: one covering
+    /// the other is a question with an obvious answer, and two halves of each other is not.</para>
+    /// </summary>
+    public static SourceElision Merge(params SourceElision?[] elisions)
+    {
+        ArgumentNullException.ThrowIfNull(elisions);
+
+        var all = elisions.Where(e => e is not null)
+            .SelectMany(e => e!.Ranges)
+            // Widest first, so a range is only ever dropped in favour of one that covers it — and
+            // two identical ranges leave one behind rather than none.
+            .OrderByDescending(r => r.Length)
+            .ThenBy(r => r.FirstLine)
+            .ToList();
+
+        var kept = new List<ElidedRange>();
+        foreach (var range in all)
+            if (!kept.Any(k => k.FirstLine <= range.FirstLine && range.LastLine <= k.LastLine))
+                kept.Add(range);
+
+        return Of(kept);
+    }
+
+    /// <summary>
     /// The lines to display: <paramref name="lines"/> with each range replaced by its replacement,
     /// or removed where it has none.
     /// </summary>

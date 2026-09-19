@@ -4,8 +4,11 @@ using Antlr4.Runtime;
 using DymolaInterface;
 using OpenModelicaInterface;
 using RevisionControl;
+using ModelicaGraph;
+using ModelicaParser.Helpers;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.StyleRules;
+using ModelicaParser.Visitors;
 
 namespace MLQT.Shared.Pages;
 
@@ -31,8 +34,14 @@ public partial class CodeReview : IAsyncDisposable
     private bool _showAnnotations = true;
     private bool _showHighlighted = true;
     private List<string>? _highlightedCode = null;
-    private string _modelicaCode { get; set; } = "";
-    private int _lines = 10;
+
+    /// <summary>
+    /// What the viewer is hiding, so a finding's line in the class can be turned into the line it is
+    /// showing at. <see cref="SourceElision.None"/> whenever nothing is hidden, which is the common
+    /// case for a model.
+    /// </summary>
+    private SourceElision _elision = SourceElision.None;
+
     private ModelNode? _currentModelNode = null;
     private int _modelsToCheck = 0;
     private int _modelsChecked = 0;
@@ -78,6 +87,13 @@ public partial class CodeReview : IAsyncDisposable
     // Consumed once the selected model's content has rendered (see OnAfterRenderAsync).
     private string? _pendingScrollWord;
 
+    /// <summary>
+    /// The line in the class a clicked finding is about, waiting for that class to be on screen.
+    /// Mapped through <see cref="_elision"/> at the last moment rather than when it is armed,
+    /// because the class may not be the one currently shown and the map is the new one's.
+    /// </summary>
+    private int? _pendingScrollLine;
+
     // Set when the correction context menu opens with a provisional position. On the next after-render
     // OnAfterRenderAsync re-measures the now-rendered menu and clamps it within the viewport, writing
     // the result back into _contextMenuX/_contextMenuY so .NET stays the source of truth (later
@@ -87,7 +103,12 @@ public partial class CodeReview : IAsyncDisposable
     // Code rendering state
     private bool _isLoadingCode = false;
     private record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
-    private readonly Dictionary<RenderCacheKey, List<string>> _renderCache = new();
+
+    /// <summary>The lines on screen and what was hidden to produce them — one without the other
+    /// cannot answer which line of the class a displayed line is.</summary>
+    internal record ShownClass(List<string> Lines, SourceElision Elision);
+
+    private readonly Dictionary<RenderCacheKey, ShownClass> _renderCache = new();
 
     // Diff view state
     private bool _isDiffMode = false;
@@ -237,6 +258,27 @@ public partial class CodeReview : IAsyncDisposable
             catch (Exception)
             {
                 // View may have been torn down; ignore.
+            }
+        }
+
+        // After clicking any other finding, scroll the line it is about into view. This is only
+        // possible now that the viewer shows the class itself: a finding's line is counted against
+        // the class's own source, and until B215 the page showed a reformatted copy of it that was
+        // 17-24% longer, so the number pointed at whatever happened to be there (B182, B183).
+        if (_pendingScrollLine is { } pending && !_isLoadingCode && _highlightedCode is { Count: > 0 })
+        {
+            _pendingScrollLine = null;
+            var displayLine = _elision.ToDisplayLine(pending);
+            if (displayLine is { } target)
+            {
+                try
+                {
+                    await JSRuntime.InvokeVoidAsync("spellCheck.scrollLineIntoView", ".code-viewer", target);
+                }
+                catch (Exception)
+                {
+                    // View may have been torn down; ignore.
+                }
             }
         }
 
@@ -628,25 +670,17 @@ public partial class CodeReview : IAsyncDisposable
         bool excludeClassDefs = _currentModelNode.ClassType == "package";
         var cacheKey = new RenderCacheKey(selectedModelId, _showAnnotations, _showHighlighted, excludeClassDefs);
 
-        // When a model has parser errors, skip ModelicaRenderer entirely — rendering a
-        // partial/invalid parse tree produces misleading or truncated output. Show the raw
-        // source from Definition.ModelicaCode so the user sees exactly what's in the file,
-        // unmodified, with no syntax highlighting. Placeholder nodes (whole-file failures)
-        // benefit from this the most — they carry the full file as ModelicaCode.
-        if (_currentModelNode.HasParserErrors)
-        {
-            ShowRawSource(selectedModelId);
-            return;
-        }
+        // A model with parser errors needs no special case any more. ModelicaTokenClassifier colours
+        // what the lexer recovered and copies the rest through, so a class that does not parse is
+        // shown exactly and in colour, where it used to be shown in no colour at all.
 
         if (_renderCache.TryGetValue(cacheKey, out var cachedCode))
         {
             // Cache hit — set code and render immediately BEFORE any await.
             // Any await would yield to the Blazor sync context which is blocked
             // by MainLayout/LibraryBrowser re-rendering 27K tree nodes.
-            _highlightedCode = cachedCode;
-            _lines = Math.Max(10, cachedCode.Count);
-            _modelicaCode = string.Join("\n", cachedCode);
+            _highlightedCode = cachedCode.Lines;
+            _elision = cachedCode.Elision;
             _isLoadingCode = false;
 
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
@@ -693,9 +727,7 @@ public partial class CodeReview : IAsyncDisposable
             var modelNode = _currentModelNode;
             var showHighlighted = _showHighlighted;
             var showAnnotations = _showAnnotations;
-            // Rendering follows the rules of the repository the class belongs to, the same ones the
-            // formatter would apply on save. There is no app-wide copy of these to fall back on.
-            var formatting = StyleSettingsForModel(modelNode.Id)?.ToFormattingOptions() ?? FormattingOptions.None;
+            var graph = LibraryDataService.CombinedGraph;
 
             // Render parse/format on a background thread. Display the code as soon as this
             // completes — crucially, do NOT gate code display on the VCS status check.
@@ -704,25 +736,7 @@ public partial class CodeReview : IAsyncDisposable
             // a stalled VCS call left the loading spinner spinning forever even though the
             // rendered code was ready in milliseconds. The VCS check now runs independently
             // (mirroring the cache-hit path) and only updates the modified/diff indicator.
-            var renderTask = Task.Run(() =>
-            {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var (parseTree, errors) =
-                    ModelicaParserHelper.ParseWithErrors(modelNode.Definition.ModelicaCode ?? "");
-                modelNode.Definition.ParsedCode = parseTree;
-                var parseDuration = sw.ElapsedMilliseconds;
-
-                sw.Restart();
-                var visitor = new ModelicaRenderer(
-                    renderForCodeEditor: showHighlighted,
-                    showAnnotations: showAnnotations,
-                    excludeClassDefinitions: excludeClassDefs,
-                    formatting: formatting);
-                visitor.VisitStored_definition(parseTree);
-                var renderDuration = sw.ElapsedMilliseconds;
-
-                return (visitor.Code, visitor.Code.Count, parseDuration, renderDuration);
-            });
+            var renderTask = Task.Run(() => Show(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs));
 
             _ = renderTask.ContinueWith(async _ =>
             {
@@ -734,14 +748,10 @@ public partial class CodeReview : IAsyncDisposable
 
                 try
                 {
-                    var (code, lineCount, parseMs, renderMs) = renderTask.Result;
-
-                    // If the model has an element prefix (redeclare, replaceable, etc.),
-                    // prepend it to the class definition line (skipping any within clause)
-                    PrependElementPrefix(code, modelNode.ElementPrefix, showHighlighted);
+                    var shown = renderTask.Result;
 
                     LoggingService.Debug("CodeReview",
-                        $"  Parse: {parseMs}ms, Render: {renderMs}ms, Lines: {lineCount}");
+                        $"  Lines: {shown.Lines.Count}, hidden ranges: {shown.Elision.Ranges.Count}");
 
                     var invokeAsyncSw = System.Diagnostics.Stopwatch.StartNew();
                     await InvokeAsync(() =>
@@ -749,13 +759,12 @@ public partial class CodeReview : IAsyncDisposable
                         LoggingService.Debug("CodeReview",
                             $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
 
-                        _highlightedCode = code;
-                        _lines = Math.Max(10, lineCount);
-                        _modelicaCode = string.Join("\n", code);
+                        _highlightedCode = shown.Lines;
+                        _elision = shown.Elision;
                         _isLoadingCode = false;
 
                         // Store in cache for future clicks
-                        _renderCache[cacheKey] = code;
+                        _renderCache[cacheKey] = shown;
 
                         OnFindingsScopeChanged(FindingsScopeAllModels);
                         StateHasChanged();
@@ -799,76 +808,58 @@ public partial class CodeReview : IAsyncDisposable
     }
 
     /// <summary>
-    /// Loads the full original contents of the file that contains the given model, so that
-    /// models whose extraction was truncated by a parse failure still show the whole file
-    /// to the user rather than just the successfully-extracted prefix. Returns <c>null</c>
-    /// if the containing file can't be located on disk — the caller will then fall back to
-    /// <c>Definition.ModelicaCode</c>, which for placeholder nodes is already the full file.
+    /// The class as the viewer shows it: <b>the user's own text</b>, coloured in place, with
+    /// whatever is hidden taken out by whole lines and a map back to where those lines were.
+    ///
+    /// <para>This replaced a pass through <c>ModelicaRenderer</c>. The renderer rebuilds the text in
+    /// order to colour it, so for a repository that has not accepted MLQT's formatting roughly 95%
+    /// of what was on screen was not where the user's editor puts it, and the document was 17–24%
+    /// longer than their file — which is why a finding's line number never matched it (B182). The
+    /// colouring never needed the rewrite: it comes from the parse tree, and
+    /// <see cref="ModelicaTokenClassifier"/> reads the same tree without touching the text.</para>
+    ///
+    /// <para>Static, and everything it needs is passed in, because it runs on a background thread
+    /// and must not read component state that the UI thread is changing underneath it.</para>
     /// </summary>
-    private string? LoadOriginalFileContents(ModelNode? model)
+    internal static ShownClass Show(
+        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations, bool hideClassDefinitions)
     {
-        if (model == null || string.IsNullOrEmpty(model.ContainingFileId))
-            return null;
+        // The stored text while it is still the file's, otherwise the file sliced again — for a
+        // package whose inline children the trimmer removed, or a class the formatter rewrote.
+        var source = ClassSource.For(model, graph);
 
-        var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId);
-        if (fileNode == null || string.IsNullOrEmpty(fileNode.FilePath) || !File.Exists(fileNode.FilePath))
-            return null;
+        var (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
 
-        try
-        {
-            return ModelicaFileEncoding.ReadAllTextOnly(fileNode.FilePath);
-        }
-        catch
-        {
-            return null;
-        }
+        var lines = showHighlighted
+            ? ModelicaTokenClassifier.Highlight(tree, stream, source)
+            : ModelicaTokenClassifier.Plain(source);
+
+        // Both hiding operations are the same one, and a package that hides its nested classes has
+        // already hidden the annotations inside them — Merge is what keeps those from colliding.
+        var elision = SourceElision.Merge(
+            hideClassDefinitions ? ElisionFinder.NestedClasses(tree, source, ClassMarker(showHighlighted)) : null,
+            showAnnotations ? null : ElisionFinder.Annotations(tree, source, AnnotationMarker(showHighlighted)));
+
+        var display = elision.Apply(lines);
+
+        // The class slice excludes `replaceable` / `redeclare`, which sit before it in the file.
+        PrependElementPrefix(display, model.ElementPrefix, showHighlighted);
+
+        return new ShownClass(display, elision);
     }
 
     /// <summary>
-    /// Displays the raw, unrendered source of the current model. Used when the model has
-    /// parser errors — running ModelicaRenderer on a broken parse tree yields misleading
-    /// output, so we show the file contents verbatim instead. For non-placeholder models
-    /// the file is read fresh from disk so the user sees the *entire* original file,
-    /// not just the sub-range that the extractor managed to pull out before it failed.
-    /// Each line is HTML-encoded so that any <c>&lt;</c> or <c>&gt;</c> characters in the
-    /// source don't get mistaken for CodeViewer markup tags; no syntax highlighting is applied.
+    /// What stands in for a hidden nested class: its declaration, so the package still reads as a
+    /// list of what it contains rather than as a hole.
     /// </summary>
-    private void ShowRawSource(string selectedModelId)
-    {
-        var raw = LoadOriginalFileContents(_currentModelNode)
-            ?? _currentModelNode?.Definition.ModelicaCode
-            ?? string.Empty;
-        var normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
-        var lines = normalized.Split('\n')
-            .Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? string.Empty)
-            .ToList();
+    private static Func<string, string?> ClassMarker(bool showHighlighted) => name => showHighlighted
+        ? $"  <COMMENT>// {name} …</COMMENT>"
+        : $"  // {name} …";
 
-        _highlightedCode = lines;
-        _lines = Math.Max(10, lines.Count);
-        _modelicaCode = normalized;
-        _isLoadingCode = false;
-
-        // Deliberately do NOT populate _renderCache — raw content isn't tied to the
-        // render-option cache key and we don't want it served to a later cache hit if the
-        // model is ever cleared of errors (e.g. after a reload/fix).
-
-        OnFindingsScopeChanged(FindingsScopeAllModels);
-        StateHasChanged();
-
-        // Run VCS check in the background so the diff toggle reflects working-copy state.
-        _ = Task.Run(() => CheckModelVcsStatus()).ContinueWith(async _ =>
-        {
-            if (NavState.ModelID != selectedModelId)
-                return;
-            await InvokeAsync(async () =>
-            {
-                if (!_isModelModified)
-                    _isDiffMode = false;
-                await SetViewMode(_isDiffMode, _diffViewMode);
-                StateHasChanged();
-            });
-        }, TaskScheduler.Default);
-    }
+    /// <summary>What stands in for a hidden annotation.</summary>
+    private static Func<string, string?> AnnotationMarker(bool showHighlighted) => _ => showHighlighted
+        ? "  <COMMENT>// annotation …</COMMENT>"
+        : "  // annotation …";
 
     /// <summary>
     /// Formats element prefix keywords (e.g., "redeclare", "inner replaceable") as a
@@ -992,6 +983,18 @@ public partial class CodeReview : IAsyncDisposable
             _checkCancellationTokenSource.Token);
     }
 
+    /// <summary>
+    /// The findings in a stable order: by class, then by line within it, then by rule. The check
+    /// runs in parallel and its list comes back in completion order, so without this the same
+    /// library reviewed twice showed the same findings in two different orders and a user could not
+    /// pick up where they left off (B183).
+    /// </summary>
+    private IEnumerable<LogMessage> OrderedFindings =>
+        CodeReviewService.LogMessages
+            .OrderBy(m => m.ModelName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.LineNumber)
+            .ThenBy(m => m.RuleId, StringComparer.Ordinal);
+
     private void RowClickEvent(TableRowClickEventArgs<LogMessage> args)
     {
         _currentFinding = args.Item;
@@ -1008,6 +1011,12 @@ public partial class CodeReview : IAsyncDisposable
         {
             _findingDetailsVisible = true;
         }
+
+        // Every other finding scrolls to the line it names. A finding that carries no line (a
+        // whole-class one, say) leaves this alone rather than scrolling to the top, because the
+        // class declaration is already where the viewer opens.
+        if (_pendingScrollWord is null && _currentFinding.LineNumber > 0)
+            _pendingScrollLine = _currentFinding.LineNumber;
 
         NavState.ChangeModelID(_currentFinding.ModelName);
     }

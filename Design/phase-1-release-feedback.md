@@ -281,7 +281,10 @@ letters are kept because the gates are written there.
    `ModelicaRenderer`). The largest single piece. Two property tests carry it: round trip and
    agreement. >95% per class, and a `run-mutation.ps1 -Mutate` pass over the new file.
 3. **B214 — `SourceElision`.** Independent of B213 and can be built alongside it; step 4 needs both.
-4. **B215 — the viewer shows the file.** The source rule, the classifier in place of the renderer,
+4. **B215 ✅ — the viewer shows the file**, with **B182 ✅** and **B183 ✅**. **B185 is what is left
+   of this step**: the lexer-only tier is built and public, but nothing chooses it yet, so the size
+   threshold still has to be measured and set. B231 ✅ came with it — the re-slice rule §17.4 said
+   to read first, now `ClassSource`. The source rule, the classifier in place of the renderer,
    `ShowRawSource` deleted. **B182, B183 and B185 close here**: B182 by identity rather than by a map,
    B183's scroll because the finding's line is the viewer's line — the existing
    `spellCheck.scrollWordIntoView` / `setScroll` interop is the machinery to extend, not to duplicate

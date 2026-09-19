@@ -161,6 +161,32 @@ public class ClassSourceTests
     }
 
     [Fact]
+    public void AFileSomethingElseIsWritingLeavesTheStoredTextShowing()
+    {
+        // The formatter writing the file while the viewer reads it, or a VCS operation mid-flight.
+        // A viewer that throws here is worse than one showing a moment-old copy.
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, File);
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, File);
+            var model = graph.GetNode<ModelNode>("Some.Package.Second")!;
+            model.Definition.ModelicaCode = "model Second \"stale\" end Second;";
+            model.SourceMatchesFile = false;
+
+            using var exclusive = new FileStream(
+                path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+            Assert.Equal("model Second \"stale\" end Second;", ClassSource.For(model, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void AFileThatIsNoLongerThereLeavesTheStoredTextShowing()
     {
         var graph = new DirectedGraph();

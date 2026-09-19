@@ -125,7 +125,11 @@
         }
         </MudPaper>
         <MudPaper Elevation="2" Height="221px" Style="overflow-y: auto; position: relative;">
-            <MudTable T="LogMessage" Items="@CodeReviewService.LogMessages" Hover="true" Breakpoint="Breakpoint.Sm"
+            @* Ordered here rather than bound straight to the service's list, which arrives in
+               whatever order the parallel check produced — so the same library reviewed twice
+               presented the same findings in two different orders (B183). By class, then by line
+               within it, then by rule, which is the order a reader works through a class in. *@
+            <MudTable T="LogMessage" Items="@OrderedFindings" Hover="true" Breakpoint="Breakpoint.Sm"
                 Dense="true" FixedHeader="true" OnRowClick="RowClickEvent"
                 FixedFooter="true" Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>

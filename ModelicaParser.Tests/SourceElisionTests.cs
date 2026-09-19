@@ -145,6 +145,56 @@ public class SourceElisionTests
         { "mixed", [new ElidedRange(1, 1, "…"), new ElidedRange(3, 6, null), new ElidedRange(8, 10, "…")] },
     };
 
+    // ── merging ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MergingKeepsTheWiderOfTwoNestedRanges()
+    {
+        // The viewer's ordinary case: hiding a package's nested classes already hides the
+        // annotations inside them, so asking for both must not produce an overlap.
+        var merged = SourceElision.Merge(
+            SourceElision.Of([new ElidedRange(2, 8, "class")]),
+            SourceElision.Of([new ElidedRange(4, 5, "annotation")]));
+
+        Assert.Equal(new ElidedRange(2, 8, "class"), Assert.Single(merged.Ranges));
+    }
+
+    [Fact]
+    public void MergingKeepsRangesThatDoNotContainEachOther()
+    {
+        var merged = SourceElision.Merge(
+            SourceElision.Of([new ElidedRange(2, 3, null)]),
+            SourceElision.Of([new ElidedRange(7, 9, null)]));
+
+        Assert.Equal([new ElidedRange(2, 3, null), new ElidedRange(7, 9, null)], merged.Ranges);
+    }
+
+    [Fact]
+    public void MergingIdenticalRangesLeavesOneBehind_NotNone()
+    {
+        var merged = SourceElision.Merge(
+            SourceElision.Of([new ElidedRange(2, 3, "…")]),
+            SourceElision.Of([new ElidedRange(2, 3, "…")]));
+
+        Assert.Single(merged.Ranges);
+    }
+
+    [Fact]
+    public void MergingRangesThatOnlyHalfOverlapIsStillRefused()
+    {
+        // Neither covers the other, so there is no obvious answer and the caller hears about it.
+        Assert.Throws<ArgumentException>(() => SourceElision.Merge(
+            SourceElision.Of([new ElidedRange(2, 6, null)]),
+            SourceElision.Of([new ElidedRange(4, 9, null)])));
+    }
+
+    [Fact]
+    public void MergingNothingHidesNothing()
+    {
+        Assert.True(SourceElision.Merge().IsEmpty);
+        Assert.True(SourceElision.Merge(null, SourceElision.None).IsEmpty);
+    }
+
     // ── what it refuses ───────────────────────────────────────────────────────────
 
     [Fact]
