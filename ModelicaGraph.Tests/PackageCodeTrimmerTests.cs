@@ -110,6 +110,127 @@ public class PackageCodeTrimmerTests
         Assert.DoesNotContain("model A", graph.GetNode<ModelNode>("P")!.Definition.ModelicaCode);
     }
 
+    /// <summary>
+    /// A package whose standalone children are already stored in their own files has nothing inline
+    /// to trim, so it must not be touched at all (B230).
+    ///
+    /// <para>It used to be rendered anyway — the children were excluded from a tree they were never
+    /// in — which left the package holding the renderer's text instead of the file's and
+    /// <see cref="ModelNode.SourceMatchesFile"/> false, so every later report fell back to the class
+    /// declaration rather than pointing at a line. Measured on a normal load, that was <b>377 of
+    /// 688</b> trimmed packages in the Modelica Standard Library and <b>1,172 of 1,235</b> in
+    /// Buildings, where 1,073 of them came out longer than the file they came from.</para>
+    /// </summary>
+    [Fact]
+    public void PackageWhoseChildrenAreInTheirOwnFilesIsNotRewritten()
+    {
+        var graph = new DirectedGraph();
+        // Laid out the way a hand-written file is rather than the way the renderer writes one, so
+        // that a rewrite shows up in the text and not only in the flag. With a package body the
+        // renderer happens to reproduce, this test passes against the unfixed code.
+        GraphBuilder.LoadModelicaFile(graph, "P/package.mo", """
+            package P "p"
+              constant Real    k =  1   "loosely spaced";
+            end P;
+            """);
+        GraphBuilder.LoadModelicaFile(graph, "P/A.mo", """
+            within P;
+            model A "in its own file"
+            end A;
+            """);
+
+        var package = graph.GetNode<ModelNode>("P")!;
+        var before = package.Definition.ModelicaCode;
+
+        // The premise: P really does have a standalone child, so it is a candidate for trimming and
+        // this test is not passing because the trimmer found nothing to consider.
+        Assert.True(graph.GetNode<ModelNode>("P.A")!.CanBeStoredStandalone);
+        Assert.Equal("P", graph.GetNode<ModelNode>("P.A")!.ParentModelName);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        Assert.Equal(before, package.Definition.ModelicaCode);
+        Assert.True(package.SourceMatchesFile);
+    }
+
+    /// <summary>
+    /// The control for the test above: a package with an inline standalone child is still trimmed,
+    /// and still says so. Without this, the B230 guard could be widened to "never trim anything" and
+    /// nothing here would object.
+    /// </summary>
+    [Fact]
+    public void PackageWithAnInlineChildIsStillTrimmedAndSaysSoOnTheNode()
+    {
+        var graph = Build();
+        var package = graph.GetNode<ModelNode>("P")!;
+        Assert.True(package.SourceMatchesFile);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        Assert.DoesNotContain("model A", package.Definition.ModelicaCode);
+        Assert.False(package.SourceMatchesFile);
+    }
+
+    /// <summary>
+    /// The usual shape of a real library: a <c>package.mo</c> with some children inline and some in
+    /// their own files. <b>One inline child is enough</b> to make the package worth trimming.
+    ///
+    /// <para>Without this, B230's guard can be inverted from "any child is inline" to "every child
+    /// is", and nothing objects — the two agree on a package whose children are all inline and on
+    /// one where none are, which is all the other tests here have. A library laid out this way would
+    /// then stop being trimmed at all, silently giving back the memory the trimmer exists to save.
+    /// Stryker found it as a surviving `Any()` → `All()` mutation.</para>
+    /// </summary>
+    [Fact]
+    public void PackageIsTrimmedWhenOnlySomeOfItsChildrenAreInline()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "R/package.mo", """
+            package R "r"
+              model Inline "inline in package.mo"
+              end Inline;
+            end R;
+            """);
+        GraphBuilder.LoadModelicaFile(graph, "R/Own.mo", """
+            within R;
+            model Own "in its own file"
+            end Own;
+            """);
+
+        var package = graph.GetNode<ModelNode>("R")!;
+        Assert.Contains("model Inline", package.Definition.ModelicaCode);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        Assert.DoesNotContain("model Inline", package.Definition.ModelicaCode);
+    }
+
+    /// <summary>
+    /// Trimming removes the children and nothing else. The renderer it goes through can be told to
+    /// drop annotations, and a package that silently lost its <c>annotation(…)</c> would start
+    /// reporting missing icons and missing documentation that are present in the file — findings
+    /// about MLQT's own rewrite rather than about the library. Stryker found the option unchecked.
+    /// </summary>
+    [Fact]
+    public void TrimmingKeepsThePackagesOwnAnnotation()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "S/package.mo", """
+            package S "s"
+              model Child "inline"
+              end Child;
+              annotation (Documentation(info="<html>kept</html>"));
+            end S;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("S")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model Child", after);
+        Assert.Contains("Documentation", after);
+        Assert.Contains("kept", after);
+    }
+
     [Fact]
     public void VisibilityIsLoadedOntoTheNodes_NotDerivedFromTheTrimmedSource()
     {

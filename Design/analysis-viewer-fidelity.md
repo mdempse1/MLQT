@@ -826,6 +826,17 @@ Four things, none of them the shape of the plan.
 3. **B230 is new and is the cheapest thing in the package**: stop re-rendering a package that has no
    inline child. It removes 55% / 95% of the trimmed-package population on its own, before B216
    removes the rest, and it is a guard clause in front of an existing render.
+
+   **✅ done 2026-09-19**, and it behaved exactly as the measurement said it would:
+
+   | classes whose lines stop mapping to the file | before | after |
+   |---|---|---|
+   | MSL `Modelica` | 688 (10.61%) | **311 (4.79%)** |
+   | `Buildings` | 1,235 (16.44%) | **63 (0.84%)** |
+
+   **The finding count did not move** — 26,557 and 31,823, the same on both sides of the change,
+   which is what a guard clause in front of a rewrite should do. 174 MSL findings pick up their true
+   file line on the way; the 654 that remain are B216's, and they are now the whole of the gap.
 4. **B215's source rule must be rewritten before it is implemented** (§17.4). As specified it would
    have produced a viewer that shows the wrong class entirely, on a CRLF library — which is all of
    them — and it would have looked like a classifier bug.

@@ -110,7 +110,7 @@ the **same findings with the same line numbers**. Change the primitive, never on
 | **Baseline** / **FindingClassifier** | The accepted-debt ledger, New/AcceptedDebt/TouchedDebt classification, and drift against the rules the baseline was taken with |
 | **ClassLocation** | Where a class starts in its file. Findings carry class-relative lines; every report maps them through this |
 | **ChangedModelResolver** / **ChangedLineResolver** | Which models, and which lines, a change touched. `VcsLocator` owns which system a path belongs to |
-| **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation |
+| **PackageCodeTrimmer** (in `ModelicaGraph/`) | Trims a package's inline standalone children before checking, so every surface checks the same representation. **Only where a child really is inline** — one that already lives in its own file is not in the package's source, so re-rendering the package around it rewrote the text and lost the line mapping for nothing (B230) |
 | **CheckTimings** (in `ModelicaGraph/Analysis/`) | Where a run's time went, per phase: parse, each rule by name, each analysis, and the shared work a rule triggers. One instance per run, passed through the contexts. `mlqt check --timings` prints it; the desktop app logs it. **Use `MeasureNested` for anything lazy and cached**, or the first caller to reach it is billed for it and reads as the slow one (B128) |
 
 **Platform-specific services** — the whole of what a host contributes, registered in

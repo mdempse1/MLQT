@@ -43,7 +43,20 @@ public static class PackageCodeTrimmer
             !m.ChildrenTrimmed &&
             (onlyModelIds is null || onlyModelIds.Contains(m.Id)) &&
             childrenByParent.TryGetValue(m.Id, out var children) &&
-            children.Any(c => c.CanBeStoredStandalone)).ToList();
+            // The child has to be inline in THIS package's own file. A standalone child already
+            // stored in its own file is not in the package's source to begin with, so the render
+            // below would exclude it from a tree it was never in and write the package back
+            // unchanged in meaning but rebuilt in text — losing the line mapping
+            // (ModelNode.SourceMatchesFile) for nothing. That was the majority of the work and all
+            // of the damage: 377 of 688 trimmed packages in MSL and 1,172 of 1,235 in Buildings,
+            // where 1,073 came out longer than the file they came from (backlog B230).
+            //
+            // Sharing the file is the cheap half of the question. The exact one is whether the
+            // child's [StartIndex..StopIndex] falls inside the package's, which also excludes a
+            // sibling sitting beside the package in the same file; on both libraries the two answers
+            // agree exactly, and B216 asks the precise question because it excises those ranges.
+            children.Any(c => c.CanBeStoredStandalone &&
+                              string.Equals(c.ContainingFileId, m.ContainingFileId, StringComparison.Ordinal))).ToList();
         if (packagesToTrim.Count == 0)
             return;
 
