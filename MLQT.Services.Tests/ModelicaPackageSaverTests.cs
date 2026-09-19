@@ -145,6 +145,72 @@ public class ModelicaPackageSaverTests : IDisposable
         Assert.Contains("Real    y;", written);
     }
 
+    private const string PackageSource = """
+        package TestPackage
+        end TestPackage;
+        """;
+
+    /// <summary>Two equation sections, which OneOfEachSection merges into one - a change the
+    /// renderer makes structurally, so "was this reformatted?" has a visible answer.</summary>
+    private const string TwoSections = """
+        model Inner
+          Real    y;
+          Real    z;
+        equation
+          y = 1;
+        equation
+          z = 2;
+        end Inner;
+        """;
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_DoesNotReformatAnExcludedModel_EvenWhenFormattingWouldChangeIt()
+    {
+        // The two exclusion tests above pass FormattingOptions.None, so the renderer would have
+        // produced the same text anyway and neither could see whether the exclusion was honoured at
+        // all. This passes options that visibly restructure a class, so the difference between
+        // "excluded" and "reformatted" is something an assertion can detect.
+        //
+        // The early return in the saver's exclusion branch is still not killable, and deliberately
+        // not chased: the line before it releases the parse tree, so the renderer below could not
+        // run even if the return went. Two mechanisms, one observable outcome — which is the right
+        // reading of that survivor, and the reason this test asserts the outcome and not the return.
+        var graph = CreateGraphWithPackage("TestPackage", PackageSource,
+            new List<(string, string, string)> { ("Inner", TwoSections, "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, new FormattingOptions(OneOfEachSection: true),
+            excludedModelIds: new[] { "TestPackage.Inner" });
+
+        var written = ModelicaFileEncoding.ReadAllTextOnly(
+            result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
+
+        Assert.Equal(TwoSections, WithinClause.Strip(written));
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_DoesReformatAModelThatIsNotExcluded()
+    {
+        // The positive control, and the reason the test above is worth anything: these same options
+        // on the same source must actually restructure it, or "unchanged" would be true of every
+        // class whether excluded or not.
+        var graph = CreateGraphWithPackage("TestPackage", PackageSource,
+            new List<(string, string, string)> { ("Inner", TwoSections, "model") });
+        var modelIds = graph.ModelNodes.Select(m => m.Id).ToHashSet();
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, modelIds, outputDir, false, new FormattingOptions(OneOfEachSection: true));
+
+        var written = ModelicaFileEncoding.ReadAllTextOnly(
+            result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
+
+        Assert.NotEqual(TwoSections, WithinClause.Strip(written));
+        Assert.Equal(1, written.Split("equation").Length - 1);   // the two sections became one
+    }
+
     [Fact]
     public void SaveLibraryToDirectoryWithResult_StillWritesTheWithinClauseToDisk()
     {

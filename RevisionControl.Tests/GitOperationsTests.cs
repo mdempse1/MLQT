@@ -1085,6 +1085,101 @@ public class GitOperationsTests : IDisposable
         Assert.NotNull(result.ErrorMessage);
     }
 
+    /// <summary>
+    /// A force push must refuse when the remote has moved on — the whole of what
+    /// <c>--force-with-lease</c> buys over a plain <c>--force</c>.
+    ///
+    /// <para>Nothing tested this. The interface promises the lease in its own documentation
+    /// (<c>IRevisionControlSystem.ForcePush</c>, <c>IRepositoryService.ForcePushAsync</c>), the
+    /// implementation builds the argument string, and the string was not named in a single test — so
+    /// the mutation audit could replace it wholesale and no test objected. Dropping to a plain
+    /// <c>--force</c> would still pass every other test here, and would silently delete a colleague's
+    /// pushed commits the first time two people worked on one branch.</para>
+    ///
+    /// <para>So this asserts the behaviour rather than the flag: after someone else pushes, the force
+    /// push fails <b>and their commit is still on the remote</b>. The second half is what a plain
+    /// --force would break, and is the reason not to settle for asserting the command text.</para>
+    /// </summary>
+    [Fact]
+    public void ForcePush_WhenTheRemoteHasMovedOn_IsRefusedAndLeavesTheOtherCommitAlone()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        // Ours: one commit, pushed.
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+        }
+
+        // Theirs: a separate clone that adds a commit and pushes it first.
+        var theirsPath = NewTempPath("GitOpsTheirs");
+        RunGit(Path.GetTempPath(), $"clone \"{remotePath}\" \"{theirsPath}\"");
+        File.WriteAllText(Path.Combine(theirsPath, "theirs.mo"), "model B end B;");
+        RunGit(theirsPath, "add theirs.mo");
+        RunGit(theirsPath, "-c user.email=t@t -c user.name=T commit -m \"Theirs\"");
+        RunGit(theirsPath, "push origin HEAD");
+
+        var theirCommit = RunGit(theirsPath, "rev-parse HEAD").Trim();
+        Assert.NotEmpty(theirCommit);
+
+        // Ours rewrites its own history without ever seeing their commit.
+        using (var repo = new Repository(oursPath))
+        {
+            AddCommit(repo, oursPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Ours, rewritten");
+        }
+
+        var result = _git.ForcePush(oursPath);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.ErrorMessage);
+
+        // The part that matters: their work is still there.
+        var remoteHead = RunGit(remotePath, "rev-parse HEAD").Trim();
+        Assert.Equal(theirCommit, remoteHead);
+    }
+
+    [Fact]
+    public void ForcePush_WhenTheRemoteHasNotMovedOn_Succeeds()
+    {
+        // The positive control. Without it the test above would pass just as well against a force
+        // push that always failed, or one that was never issued at all.
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+            AddCommit(ours, oursPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Ours again");
+        }
+
+        var result = _git.ForcePush(oursPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+    }
+
+    /// <summary>Runs git in a directory and returns stdout; the tests above need a real remote.</summary>
+    private static string RunGit(string workingDirectory, string args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git", args)
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var stdout = process.StandardOutput.ReadToEnd();
+        process.StandardError.ReadToEnd();
+        process.WaitForExit(20000);
+        return stdout;
+    }
+
     [Fact]
     public void ForcePush_WithNoRemote_ReturnsError()
     {
