@@ -40,6 +40,13 @@ public static class LibraryCheckSession
         // loaded so that references into them resolve — not so they can be judged: their "source"
         // is MLQT's own reconstruction, so any finding would be about the reconstruction, and it
         // would name a third-party library the user cannot edit in any case.
+        //
+        // This is the first of three filters, not the only one: StyleCheckRunner.RunFindings returns
+        // nothing for a stub, and GraphAnalysisContext drops them again for the whole-graph pass. So
+        // removing *this* one changes no result any caller can see, and mutation testing reports it
+        // as a survivor for that reason (B219) — it is deliberate depth, not an untested guard. The
+        // observable rule is covered by ExternalStubWriteGuardTests; keep it that way rather than
+        // reading the survivor as a missing test.
         var modelList = (models as IReadOnlyList<ModelNode> ?? models.ToList())
             .Where(node => node is null || !node.IsExternalStub)
             .ToList();

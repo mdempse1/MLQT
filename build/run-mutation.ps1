@@ -28,9 +28,10 @@
     The suite that must object. Defaults to the matching .Tests project.
 
 .PARAMETER Mutate
-    A file pattern limiting what is mutated, e.g. '**/ProjectNameRules.cs' or '**/Checking/*.cs'.
-    STRONGLY RECOMMENDED for a single run. A whole assembly takes hours; one file takes about three
-    minutes, most of which is the initial build and baseline test run.
+    One or more file patterns limiting what is mutated, e.g. '**/ProjectNameRules.cs' or
+    '**/Checking/*.cs'. STRONGLY RECOMMENDED for a single run. A whole assembly takes hours; one file
+    takes about three minutes, almost all of it the initial build and baseline test run - which is
+    why several files are worth passing in one call rather than one run each.
 
 .PARAMETER All
     Mutate every measured assembly in turn and write one report over the lot. Takes many hours and is
@@ -75,7 +76,7 @@
 param(
     [string] $Project = 'MLQT.Services',
     [string] $TestProject = '',
-    [string] $Mutate = '',
+    [string[]] $Mutate = @(),
     [string] $Output = '',
     [string] $Configuration = 'Release',
     [switch] $All,
@@ -214,7 +215,7 @@ function Write-ConsolidatedReport([string] $root) {
 }
 
 # Mutates one project. Returns Stryker's exit code.
-function Invoke-Stryker([string] $project, [string] $testProject, [string] $mutate, [string] $outputDirectory) {
+function Invoke-Stryker([string] $project, [string] $testProject, [string[]] $mutate, [string] $outputDirectory) {
     $testProjectFile = Join-Path $repoRoot "$testProject/$testProject.csproj"
 
     $arguments = @(
@@ -226,7 +227,7 @@ function Invoke-Stryker([string] $project, [string] $testProject, [string] $muta
         '--reporter', 'cleartext'
         '--output', $outputDirectory
     )
-    if ($mutate) { $arguments += @('--mutate', $mutate) }
+    foreach ($pattern in $mutate) { $arguments += @('--mutate', $pattern) }
     if ($Concurrency -gt 0) { $arguments += @('--concurrency', "$Concurrency") }
 
     # Out-Host, not the pipeline: Stryker's progress is the only sign of life during a run that can
@@ -275,7 +276,7 @@ try {
 
             Write-Host "=== $($entry.Project) ===" -ForegroundColor Cyan
             $started = Get-Date
-            [void](Invoke-Stryker $entry.Project $entry.TestProject '' $projectDirectory)
+            [void](Invoke-Stryker $entry.Project $entry.TestProject @() $projectDirectory)
             $elapsed = (Get-Date) - $started
 
             if (Test-Path $reportPath) {
@@ -309,13 +310,13 @@ try {
         }
     }
 
-    if (-not $Mutate) {
+    if ($Mutate.Count -eq 0) {
         Write-Host "No -Mutate filter given, so the whole of $Project will be mutated." -ForegroundColor Yellow
         Write-Host "That takes hours. Ctrl-C now and pass -Mutate '**/SomeFile.cs' to scope it," -ForegroundColor Yellow
         Write-Host "or -All to mutate everything deliberately." -ForegroundColor Yellow
     }
 
-    Write-Host "Mutating $Project$(if ($Mutate) { " ($Mutate)" }) against $TestProject" -ForegroundColor Cyan
+    Write-Host "Mutating $Project$(if ($Mutate.Count) { " ($($Mutate -join ', '))" }) against $TestProject" -ForegroundColor Cyan
     $strykerExit = Invoke-Stryker $Project $TestProject $Mutate $Output
 
     $report = Get-ReportPath $Output
@@ -330,7 +331,8 @@ try {
             # counting every mutant rather than only the ones that were executed.
             Write-Host "NO MUTANT WAS RUN. This is not a pass." -ForegroundColor Red
             Write-Host "  Every mutant was filtered out or failed to compile, so the suite was never" -ForegroundColor Red
-            Write-Host "  asked anything. -Mutate '$Mutate' most likely matched no file in ${Project}:" -ForegroundColor Red
+            Write-Host "  asked anything. -Mutate '$($Mutate -join "', '")' most likely matched no file" -ForegroundColor Red
+            Write-Host "  in ${Project}:" -ForegroundColor Red
             Write-Host "  the pattern is relative to the project being mutated, so '**/Foo.cs' finds" -ForegroundColor Red
             Write-Host "  nothing when Foo.cs belongs to another assembly. Check -Project too." -ForegroundColor Red
             exit 1

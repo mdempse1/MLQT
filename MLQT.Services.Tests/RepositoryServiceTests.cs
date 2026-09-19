@@ -264,7 +264,7 @@ public class RepositoryServiceTests
         var repo = service.GetRepository(SandboxedId(addResult));
 
         Assert.NotNull(repo);
-        Assert.Equal(addResult.Repository.Id, repo.Id);
+        Assert.Equal(addResult.Repository!.Id, repo.Id);
     }
 
     [Fact]
@@ -384,7 +384,7 @@ public class RepositoryServiceTests
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Check that libraries were loaded with the correct repository ID
-        Assert.NotEmpty(addResult.Repository.LibraryIds);
+        Assert.NotEmpty(addResult.Repository!.LibraryIds);
     }
 
     [Fact]
@@ -403,7 +403,7 @@ public class RepositoryServiceTests
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Check that library IDs were added
-        Assert.NotEmpty(addResult.Repository.LibraryIds);
+        Assert.NotEmpty(addResult.Repository!.LibraryIds);
     }
 
     #endregion
@@ -425,7 +425,7 @@ public class RepositoryServiceTests
         await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Get a library ID that was loaded
-        var libraryId = addResult.Repository.LibraryIds.FirstOrDefault();
+        var libraryId = addResult.Repository!.LibraryIds.FirstOrDefault();
         if (libraryId == null)
         {
             return; // No libraries loaded, skip test
@@ -434,7 +434,7 @@ public class RepositoryServiceTests
         var foundRepo = service.GetRepositoryForLibrary(libraryId);
 
         Assert.NotNull(foundRepo);
-        Assert.Equal(addResult.Repository.Id, foundRepo.Id);
+        Assert.Equal(addResult.Repository!.Id, foundRepo.Id);
     }
 
     [Fact]
@@ -632,7 +632,7 @@ public class RepositoryServiceTests
         }
 
         // Act
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, "branches/non-existent-branch-12345");
+        var result = await service.MergeBranchAsync(addResult.Repository!.Id, "branches/non-existent-branch-12345");
 
         // Assert
         Assert.False(result.Success);
@@ -659,7 +659,7 @@ public class RepositoryServiceTests
         }
 
         // Act
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, "main");
+        var result = await service.MergeBranchAsync(addResult.Repository!.Id, "main");
 
         // Assert - Git merge is implemented; merging the current branch returns a valid result
         Assert.NotNull(result);
@@ -684,7 +684,7 @@ public class RepositoryServiceTests
         }
 
         // Get available branches
-        var branches = service.GetBranches(addResult.Repository.Id);
+        var branches = service.GetBranches(addResult.Repository!.Id);
         if (branches.Count < 2)
         {
             // Need at least 2 branches to test merge
@@ -692,7 +692,7 @@ public class RepositoryServiceTests
         }
 
         // Find a branch that is not the current one
-        var currentBranch = addResult.Repository.CurrentBranch;
+        var currentBranch = addResult.Repository!.CurrentBranch;
         var otherBranch = branches.FirstOrDefault(b => b.Name != currentBranch && !b.IsCurrent);
 
         if (otherBranch == null)
@@ -704,7 +704,7 @@ public class RepositoryServiceTests
         service.OnRepositoriesChanged += () => eventFired = true;
 
         // Act - even if merge has no changes, event should fire
-        var result = await service.MergeBranchAsync(addResult.Repository.Id, otherBranch.Name);
+        var result = await service.MergeBranchAsync(addResult.Repository!.Id, otherBranch.Name);
 
         // Assert - we can't control whether there are actual changes to merge,
         // but if the merge completes (with or without changes), event should fire
@@ -752,6 +752,11 @@ public class RepositoryServiceTests
     /// copy" into a failing test. Route <b>every</b> service call that names a repository id through
     /// it, reads included — a read that has strayed outside the sandbox is the warning that the next
     /// write will too.</para>
+    ///
+    /// <para><b>The SVN tests above are the deliberate exception</b> and do not call this. They need a
+    /// server, so they run against <c>C:\Projects\ModelicaEditorTest</c> — a working copy the developer
+    /// sets up, outside the temp directory by design, and skipped entirely when it is absent. They
+    /// carry the same hazard and no guard; naming a fixed path is the whole of what protects them.</para>
     /// </summary>
     private static string SandboxedId(AddRepositoryResult addResult)
     {
@@ -1147,7 +1152,7 @@ public class RepositoryServiceTests
             var foundRepo = service.GetRepositoryForLibrary(libraryId);
 
             Assert.NotNull(foundRepo);
-            Assert.Equal(addResult.Repository.Id, foundRepo.Id);
+            Assert.Equal(addResult.Repository!.Id, foundRepo.Id);
         }
         finally
         {

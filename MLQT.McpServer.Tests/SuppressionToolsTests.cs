@@ -51,6 +51,40 @@ public class SuppressionToolsTests
         Assert.Contains("__MLQT", kLine);
     }
 
+    [Theory]
+    [InlineData("MLQT.Parse.SyntaxError")]
+    [InlineData("MLQT.Parse.Failure")]
+    [InlineData("MLQT.Check.Failed")]
+    [InlineData("Parse.SyntaxError")]
+    [InlineData("Check.Failed")]
+    public async Task SuppressRule_ADiagnostic_IsRefused(string ruleId)
+    {
+        // "Always reported, never configurable, never baselined" - and never suppressible, because
+        // writing the annotation would edit the user's source and change nothing, leaving them to
+        // conclude the finding was waived. Nothing tested the refusal: the mutation audit could turn
+        // the `||` into `&&`, and empty the "MLQT." prefix, without a single test objecting (B221).
+        // Both forms are here because both are what the guard is for - the caller may name a rule
+        // with or without the prefix, and only one of the two was ever reaching it.
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = Source(host, "P.M");
+
+        var err = ToolAssert.Error(await tools.SuppressRule("P.M", ruleId));
+
+        Assert.Contains("diagnostic", err.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(before, Source(host, "P.M"));   // and the source is untouched
+    }
+
+    [Fact]
+    public async Task SuppressRule_AnOrdinaryRule_IsStillAccepted()
+    {
+        // The positive control for the theory above: the refusal must not have swallowed everything.
+        using var host = new TestHost();
+
+        ToolAssert.Ok<StructureEditResult>(
+            await Load(host).SuppressRule("P.M", "MLQT.Doc.ClassDescription", reason: "legacy"));
+    }
+
     [Fact]
     public async Task SuppressRule_UnknownComponent_Errors()
     {

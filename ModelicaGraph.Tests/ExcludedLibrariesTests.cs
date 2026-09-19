@@ -58,6 +58,54 @@ public class ExcludedLibrariesTests
         Assert.False(settings.IsLibraryExcluded("Tests.Case"));
     }
 
+    [Fact]
+    public void ReplacingOneExclusionWithAnother_TakesEffect()
+    {
+        // EditingTheListTakesEffect above goes empty -> one -> empty, and both empty states return
+        // from IsLibraryExcluded before the pattern cache is ever consulted. So it never asks the
+        // cache to notice a change, and a mutation making the cache ignore edits outright survived
+        // it (B220). Going from one non-empty list to a different non-empty list is what exercises
+        // the invalidation - and it is what a user does when they correct a name in Settings.
+        var settings = new StyleCheckingSettings();
+        settings.ExcludedLibraries.Add("Tests");
+        Assert.True(settings.IsLibraryExcluded("Tests.Case"));
+
+        settings.ExcludedLibraries[0] = "Other";
+
+        Assert.False(settings.IsLibraryExcluded("Tests.Case"));
+        Assert.True(settings.IsLibraryExcluded("Other.Case"));
+    }
+
+    [Fact]
+    public void AddingASecondExclusion_TakesEffect()
+    {
+        // The list growing rather than changing: the compiled set is compared entry by entry, so a
+        // shorter prefix matching is not the same as being unchanged.
+        var settings = new StyleCheckingSettings();
+        settings.ExcludedLibraries.Add("Tests");
+        Assert.True(settings.IsLibraryExcluded("Tests.Case"));
+        Assert.False(settings.IsLibraryExcluded("Other.Case"));
+
+        settings.ExcludedLibraries.Add("Other");
+
+        Assert.True(settings.IsLibraryExcluded("Tests.Case"));
+        Assert.True(settings.IsLibraryExcluded("Other.Case"));
+    }
+
+    [Fact]
+    public void RemovingOneOfTwoExclusions_TakesEffect()
+    {
+        var settings = new StyleCheckingSettings();
+        settings.ExcludedLibraries.Add("Tests");
+        settings.ExcludedLibraries.Add("Other");
+        Assert.True(settings.IsLibraryExcluded("Other.Case"));
+
+        settings.ExcludedLibraries.Remove("Other");
+
+        Assert.True(settings.IsLibraryExcluded("Tests.Case"));
+        Assert.False(settings.IsLibraryExcluded("Other.Case"));
+    }
+
     // --- effect on checking ---------------------------------------------------------------------
 
     [Fact]

@@ -134,17 +134,11 @@ public sealed class FormattingPipeline : IFormattingPipeline
     {
         LogProcessStart(nameof(FormattingPipeline), "Saving all libraries with formatting");
 
-        // Reference libraries are dropped before anything else looks at the list — every kind of
-        // them. The encrypted ones hold only reconstructions from vendor documentation, so there is
-        // nothing here that could be written back and the saver refuses them outright; a readable one
-        // is a tool's installed library, which the settings page promises is never formatted. That
-        // half used to rest on filterRepositoryId being non-null, which is true of every caller today
-        // and is not what the parameter means.
-        IReadOnlyList<LoadedLibrary> libraries = _libraryData.Libraries
-            .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
-            .Where(l => !ReferenceOnlyScope.IsReference(l, _repositories))
-            .Where(l => filterRepositoryId == null || l.RepositoryId == filterRepositoryId)
-            .ToList();
+        // Reference and encrypted libraries are dropped before anything else looks at the list. The
+        // rule and the reasons live in FormattableLibraries, where they can be asked on their own —
+        // this is what decides whether MLQT writes into a library it must not touch.
+        IReadOnlyList<LoadedLibrary> libraries =
+            FormattableLibraries.Select(_libraryData.Libraries, _repositories, filterRepositoryId);
 
         // Collect all original file paths before we start saving
         // When filtering by repository, only consider files from those libraries

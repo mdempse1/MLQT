@@ -24,14 +24,4 @@ public class ImpactAnalysisResult
     /// Count of models impacted (excluding selected models).
     /// </summary>
     public int ImpactedModelsCount { get; set; }
-
-    /// <summary>
-    /// Recommended SVG width for the visualization.
-    /// </summary>
-    public int SvgWidth { get; set; } = 700;
-
-    /// <summary>
-    /// Recommended SVG height for the visualization.
-    /// </summary>
-    public int SvgHeight { get; set; } = 450;
 }

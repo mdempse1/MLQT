@@ -382,6 +382,47 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         Assert.DoesNotContain("P", excluded);
     }
 
+    // ---- a writable repository whose .mlqt settings file cannot be written (B223) ---------------
+
+    [Fact]
+    public async Task WhenTheSettingsFileCannotBeWritten_TheRepositoryIsMarkedAndTheUserIsTold()
+    {
+        // Distinct from reference-only: the repository is the user's own and MLQT keeps monitoring
+        // and checking it, but the per-repository settings cannot be kept beside the code, so it
+        // silently falls back to the global ones. Silently is the problem, which is why there is a
+        // warning - and nothing tested either half. The mutation audit could set the flag to false
+        // and delete the warning's condition without a failure (B223).
+        var h = Build();
+        var path = WriteLibrary("Ours");
+
+        // A file where the directory has to go: Directory.CreateDirectory then throws IOException,
+        // which is what the write guard catches. Simulating a permission failure by permission needs
+        // an ACL edit that does not mean the same thing on both platforms.
+        File.WriteAllText(Path.Combine(path, ".mlqt"), "not a directory");
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            path, startMonitoring: false, isReferenceOnly: false);
+
+        Assert.True(added.Repository!.IsSettingsReadOnly);
+        Assert.False(added.Repository.IsReferenceOnly);   // still the user's own repository
+        Assert.Contains(added.Warnings, w => w.Contains("Ours") && w.Contains("Global settings"));
+    }
+
+    [Fact]
+    public async Task AnOrdinaryRepositoryIsNotMarkedReadOnly_AndWarnsAboutNothing()
+    {
+        // The positive control: the assertions above must not pass because every repository is
+        // marked, or because the warning list is never read.
+        var h = Build();
+
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: false, isReferenceOnly: false);
+
+        Assert.False(added.Repository!.IsSettingsReadOnly);
+        Assert.Empty(added.Warnings);
+        Assert.True(File.Exists(Path.Combine(added.Repository.LocalPath, ".mlqt", "settings.json")));
+    }
+
     [Fact]
     public void AFolderThatCannotBeWrittenTo_IsOfferedAsReferenceOnly()
     {

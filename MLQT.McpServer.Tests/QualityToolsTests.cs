@@ -103,6 +103,42 @@ public class QualityToolsTests
         Assert.True(res.FindingCount >= 1);
     }
 
+    /// <summary>Two classes with no description; one of them waives the rule in its own source.</summary>
+    private const string SuppressedPair = """
+        model Plain
+          Real p;
+        equation
+          p = 1;
+        end Plain;
+
+        model Waived
+          annotation(__MLQT(suppress="MLQT.Doc.ClassDescription", reason="legacy"));
+          Real q;
+        equation
+          q = 1;
+        end Waived;
+        """;
+
+    [Fact]
+    public void CheckLibrary_HonoursAClassesOwnSuppression()
+    {
+        // check_library passes honorSuppressions: true, and flipping that to false survived the
+        // mutation audit - no test had ever put a suppressed class in front of it (B221). An agent
+        // reading findings the user has explicitly waived is worse than noise: it will go and
+        // "fix" them.
+        using var host = new TestHost();
+        LoadSingle(host, "Pair.mo", SuppressedPair);
+
+        var res = ToolAssert.Ok<CheckResult>(Style(host)
+            .CheckLibrary(settings: new StyleSettingsInput { ClassHasDescription = true })
+            .GetAwaiter().GetResult());
+
+        // The positive control and the assertion are the same two classes: one with no waiver must
+        // still be reported, or "nothing was reported" would pass by reporting nothing at all.
+        Assert.Contains(res.Findings, f => f.ModelName == "Plain");
+        Assert.DoesNotContain(res.Findings, f => f.ModelName == "Waived");
+    }
+
     // ----- parse diagnostics -----
     // A file that does not parse is the one problem no style rule can report — every rule reads a
     // parse tree that is missing the code in question. The MCP surface must say so, or an agent

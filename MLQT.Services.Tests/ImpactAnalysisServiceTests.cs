@@ -145,35 +145,43 @@ public class ImpactAnalysisServiceTests
     }
 
     [Fact]
-    public void AnalyzeImpact_SetsNodePositions()
+    public void AnalyzeImpact_EveryEdgeEndIsANodeInTheSameResult()
     {
+        // What replaced three tests that asserted the SVG layout this service no longer computes
+        // (B222): each looped over a collection asserting a bound the code could not violate -
+        // node.X > 0 against a clamp of 40, SvgWidth >= 700 against Math.Max(700, ...) - and would
+        // have passed on an empty result. Cytoscape lays the graph out itself; what it needs from
+        // this service is that an edge never names an id there is no node for, because it drops such
+        // an edge silently and the user sees a missing arrow rather than an error.
         var service = new ImpactAnalysisService();
         var graph = CreateGraphWithDependencies();
 
         var result = service.AnalyzeImpact(graph, new List<string> { "Model1" });
 
-        foreach (var node in result.Nodes)
+        Assert.NotEmpty(result.Edges);
+        var nodeIds = result.Nodes.Select(n => n.Id).ToHashSet();
+        Assert.All(result.Edges, e =>
         {
-            Assert.True(node.X > 0);
-            Assert.True(node.Y > 0);
-        }
+            Assert.Contains(e.FromId, nodeIds);
+            Assert.Contains(e.ToId, nodeIds);
+        });
     }
 
     [Fact]
-    public void AnalyzeImpact_SetsEdgeCoordinates()
+    public void AnalyzeImpact_NodesAreExactlyTheSelectedAndImpactedModels()
     {
+        // The count, not a sample: the failure mode worth catching here is a model appearing twice -
+        // once as selected and once as impacted - which asserting "contains Model1" cannot see.
         var service = new ImpactAnalysisService();
         var graph = CreateGraphWithDependencies();
 
         var result = service.AnalyzeImpact(graph, new List<string> { "Model1" });
 
-        foreach (var edge in result.Edges)
-        {
-            Assert.True(edge.X1 >= 0);
-            Assert.True(edge.Y1 >= 0);
-            Assert.True(edge.X2 >= 0);
-            Assert.True(edge.Y2 >= 0);
-        }
+        Assert.Equal(
+            new[] { "Model1", "Model2", "Model3", "Model4" },
+            result.Nodes.Select(n => n.Id).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+        Assert.Equal(result.Nodes.Count, result.Nodes.Select(n => n.Id).Distinct().Count());
+        Assert.Equal(3, result.ImpactedModelsCount);
     }
 
     [Fact]
@@ -188,18 +196,6 @@ public class ImpactAnalysisServiceTests
         var model2Detail = result.ImpactDetails.FirstOrDefault(d => d.ModelId == "Model2");
         Assert.NotNull(model2Detail);
         Assert.Contains("Model1", model2Detail.ImpactedBy);
-    }
-
-    [Fact]
-    public void AnalyzeImpact_SetsSvgDimensions()
-    {
-        var service = new ImpactAnalysisService();
-        var graph = CreateGraphWithDependencies();
-
-        var result = service.AnalyzeImpact(graph, new List<string> { "Model1" }, 800, 600);
-
-        Assert.True(result.SvgWidth >= 700);
-        Assert.True(result.SvgHeight >= 450);
     }
 
     [Fact]
