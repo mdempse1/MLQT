@@ -1335,6 +1335,50 @@ document.head.appendChild(style);
         StateHasChanged();
     }
 
+    #region Going into a class this one uses (B197)
+
+    /// <summary>
+    /// The classes <paramref name="modelId"/> uses, in name order, for the "go to" menu.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Empty until dependency analysis has run</b>, and that is a real state rather than a
+    /// guard: the edges are what this reads, they are built by that pass, and for a large repository
+    /// the pass is deferred until the user asks for it. <c>DirectedGraph.DependenciesAnalyzed</c> is
+    /// the one way to ask — a model happening to have no edges is not the same answer, and the menu
+    /// has to say "not analysed yet" rather than "uses nothing".</para>
+    ///
+    /// <para>A class does not lead to itself: a self-reference is possible in the graph and is not
+    /// somewhere to navigate to.</para>
+    /// </remarks>
+    internal static IReadOnlyList<ModelNode> UsedClassesOf(DirectedGraph graph, string? modelId)
+    {
+        if (graph is null || string.IsNullOrEmpty(modelId) || !graph.DependenciesAnalyzed)
+            return [];
+
+        return [.. graph.GetUsedModels(modelId)
+            .Where(m => m is not null && m.Id != modelId)
+            .DistinctBy(m => m.Id, StringComparer.Ordinal)
+            .OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private IReadOnlyList<ModelNode> UsedClasses =>
+        UsedClassesOf(LibraryDataService.CombinedGraph, _currentModelNode?.Id);
+
+    private string UsedClassesTooltip =>
+        !LibraryDataService.CombinedGraph.DependenciesAnalyzed
+            ? "Run dependency analysis to see what this class uses"
+            : UsedClasses.Count == 0
+                ? "This class uses nothing else"
+                : "Go to a class this one uses — the back arrow returns";
+
+    /// <summary>
+    /// Opens a class this one uses. Goes through <c>ChangeModelID</c> like every other way of
+    /// selecting a class, so it is recorded in the history and the back arrow returns here (B197).
+    /// </summary>
+    private void GoToUsedClass(string modelId) => NavState.ChangeModelID(modelId);
+
+    #endregion
+
     #region Searching the code (B176)
 
     /// <summary>

@@ -340,9 +340,14 @@ letters are kept because the gates are written there.
    needs a repository, which starts the analysis pipeline and timed out another journey; through a
    clicked finding works in isolation in 11 s and then never renders in a full run. The journey was
    written, failed that way, and was removed rather than left red or made opt-in.
-9. **B189** then **B197** — reveal-in-tree, then the navigation stack over it. Both hang off the
+9. **B189 ✅** then **B197 ✅** — reveal-in-tree, then the navigation stack over it. Both hang off the
    finding-click path step 4 rewrites, so they come last and are cheap once it exists. B197's peek now
-   lands in the user's own text, which is the point of it.
+   lands in the user's own text, which is the point of it. **They were cheap, and B197 shipped two of
+   its three parts**: a menu of the classes this one uses, and back/forward over everything that
+   moves the selection. The peek itself — hovering an identifier and seeing its class without
+   leaving — is not done; it needs a token resolved to a class, which the classifier's `TYPE` and
+   `NAME` tags make possible but do not do. The history lives on `AppState` rather than on the page,
+   because every tab moves the selection and one page's history would only know its own moves.
 
 **The standing trap in this package** is scope: the change touches the viewer, both diff views, the
 MCP source tool and possibly the check pipeline. Steps 1–5 are each shippable alone and step 6 is

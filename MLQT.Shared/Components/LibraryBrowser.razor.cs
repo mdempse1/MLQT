@@ -532,7 +532,18 @@ public partial class LibraryBrowser : IDisposable
     private void OnModelSelected(ModelNode? selectedNode)
     {
         _currentModelName = selectedNode?.Id ?? string.Empty;
-        NavState.ChangeModelID(_currentModelName);
+
+        // Flagged across the call because ChangeModelID raises OnChangeModel synchronously, and the
+        // handler would otherwise reveal a class the user has this moment clicked on.
+        _selectingFromTree = true;
+        try
+        {
+            NavState.ChangeModelID(_currentModelName);
+        }
+        finally
+        {
+            _selectingFromTree = false;
+        }
     }
 
     private void OnModelsSelected(IReadOnlyCollection<ModelNode> selectedNodes)
@@ -557,7 +568,86 @@ public partial class LibraryBrowser : IDisposable
     private async void OnModelChanged()
     {
         _currentModelName = NavState.ModelID;
+
+        // Opened from somewhere else — a finding, a dependency, the navigation stack — so show where
+        // it is (B189). A class opened this way used to appear in the viewer while the tree stayed
+        // wherever it was, which left nothing to say what had just been opened or what it sits in.
+        if (!_selectingFromTree)
+            await RevealAsync(NavState.ModelID);
+
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Set while this browser is the thing that changed the selection, so the reveal does not fight
+    /// the click that caused it: a user who has just collapsed a package and clicked a class
+    /// elsewhere should not have it expanded again underneath them.
+    /// </summary>
+    private bool _selectingFromTree;
+
+    /// <summary>
+    /// The ids that have to be open for <paramref name="modelId"/> to be visible, outermost first
+    /// and not including the class itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>Walked through <c>ParentModelName</c> rather than by splitting the dotted name, because
+    /// containment is what the tree nests by and the two are not always the same thing — a class
+    /// reached through a library alias, or one whose name carries dots of its own (a quoted
+    /// identifier), would give a chain of packages that do not exist.</para>
+    ///
+    /// <para>Stops at a name the lookup does not know, and guards against a cycle: a malformed graph
+    /// should leave the tree unrevealed, not spin.</para>
+    /// </remarks>
+    internal static List<string> AncestorChain(string? modelId, Func<string, ModelNode?> lookup)
+    {
+        var chain = new List<string>();
+        if (string.IsNullOrEmpty(modelId))
+            return chain;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = lookup(modelId);
+
+        while (current is not null
+               && !string.IsNullOrEmpty(current.ParentModelName)
+               && seen.Add(current.Id))
+        {
+            chain.Add(current.ParentModelName!);
+            current = lookup(current.ParentModelName!);
+        }
+
+        chain.Reverse();
+        return chain;
+    }
+
+    /// <summary>
+    /// Opens the packages above <paramref name="modelId"/> and selects it, if it is in this tree.
+    /// </summary>
+    /// <remarks>
+    /// Several browsers are rendered in repository mode, one per repository, and a class belongs to
+    /// one of them — so this returns without touching anything when the chain does not start at one
+    /// of this tree's own roots. Otherwise every repository's tree would expand for every class.
+    /// </remarks>
+    private async Task RevealAsync(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId) || TreeItems.Count == 0)
+            return;
+
+        var chain = AncestorChain(modelId, LibraryDataService.GetModelById);
+        var rootId = chain.Count > 0 ? chain[0] : modelId;
+
+        if (!TreeItems.Any(item => item.Value?.Id == rootId))
+            return;
+
+        foreach (var id in chain)
+            _expandedNodeIds.Add(id);
+
+        // The same walk a rebuild uses, and for the same reason: a node marked expanded whose
+        // children have never been fetched renders open and empty.
+        await RestoreExpansionStateAsync(TreeItems);
+
+        var model = LibraryDataService.GetModelById(modelId);
+        if (model is not null)
+            _selectedNodes = [model];
     }
 
     private async Task RefreshRepository()

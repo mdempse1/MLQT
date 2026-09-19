@@ -21,6 +21,17 @@ public partial class CurrentModelDisplay : IDisposable
         await InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// Names the class the back button would return to, so the user knows before pressing it. A
+    /// plain "Back" says nothing after three or four moves, which is when it is actually wanted.
+    /// </summary>
+    private string BackTooltip =>
+        NavState.Back.Count == 0 ? "Back" : $"Back to {NavState.Back[0]}";
+
+    private void GoBack() => NavState.GoBack();
+
+    private void GoForward() => NavState.GoForward();
+
     private async void OnSelectedModelsChanged()
     {
         _currentModelName = string.Join(", ", NavState.SelectedModelIDs);

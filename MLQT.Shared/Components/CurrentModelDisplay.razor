@@ -1,4 +1,15 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+    @* The way back through the classes visited (B197). Beside the name of the class they act on,
+       rather than on one page's toolbar, because every tab moves the selection and the history is
+       one history. *@
+    <MudTooltip Text="@BackTooltip" Placement="Placement.Bottom">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" Color="Color.Primary"
+                       Disabled="@(!NavState.CanGoBack)" OnClick="GoBack" aria-label="Back to the previous class" />
+    </MudTooltip>
+    <MudTooltip Text="Forward" Placement="Placement.Bottom">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small" Color="Color.Primary"
+                       Disabled="@(!NavState.CanGoForward)" OnClick="GoForward" aria-label="Forward" />
+    </MudTooltip>
     <MudTextField @bind-Value="_currentModelName" Label="Current class:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
     @if (!string.IsNullOrEmpty(_currentModelFileName))
     {

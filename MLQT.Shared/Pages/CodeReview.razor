@@ -64,6 +64,18 @@
                     </MudTooltip>
                 }    
             </MudButtonGroup>
+            @* Into a class this one uses, with the back arrow beside the class name to return
+               (B197). Checking what a base class calls something meant finding it by hand. *@
+            <MudTooltip Text="@UsedClassesTooltip" Arrow="true" Placement="Placement.Bottom">
+                <MudMenu Icon="@Icons.Material.Filled.CallMade" Color="Color.Primary" Size="Size.Medium"
+                         Variant="Variant.Outlined" Dense="true" MaxHeight="400"
+                         Disabled="@(UsedClasses.Count == 0)" aria-label="Go to a class this one uses">
+                    @foreach (var used in UsedClasses)
+                    {
+                        <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))">@used.Id</MudMenuItem>
+                    }
+                </MudMenu>
+            </MudTooltip>
             <MudSpacer />
             @* Searching the class on screen (B176). Locating a parameter in a long class meant
                scrolling and reading; this finds it, counts the hits and steps through them. The

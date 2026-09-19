@@ -45,9 +45,103 @@ public class AppState
     /// </summary>
     public void ChangeModelID(string modelID)
     {
+        RecordVisit(modelID);
         ModelID = modelID;
         OnChangeModel?.Invoke();
     }
+
+    #region Where the user has been (B197)
+
+    /// <summary>
+    /// The classes visited, oldest first, and where in them the user currently is.
+    /// </summary>
+    /// <remarks>
+    /// <para>Here rather than on a page because every surface moves the selection — the tree, a
+    /// finding, the dependency graph — and a history kept by one of them would only know about its
+    /// own moves. It is session memory in the same sense as <c>MetricsScope</c>: not persisted, and
+    /// nothing is wrong if it is empty.</para>
+    /// </remarks>
+    private readonly List<string> _visited = [];
+    private int _visitedIndex = -1;
+    private bool _movingThroughHistory;
+
+    /// <summary>How many classes are remembered. Enough to get back, not enough to be a list.</summary>
+    private const int VisitLimit = 50;
+
+    public bool CanGoBack => _visitedIndex > 0;
+
+    public bool CanGoForward => _visitedIndex >= 0 && _visitedIndex < _visited.Count - 1;
+
+    /// <summary>The classes behind the current one, nearest first — for a back button's menu.</summary>
+    public IReadOnlyList<string> Back =>
+        _visitedIndex <= 0 ? [] : [.. _visited.Take(_visitedIndex).Reverse()];
+
+    /// <summary>Goes back one class, if there is one. Does not record the move as a new visit.</summary>
+    public void GoBack()
+    {
+        if (!CanGoBack)
+            return;
+
+        _visitedIndex--;
+        MoveTo(_visited[_visitedIndex]);
+    }
+
+    /// <summary>Goes forward one class, if the user has been back.</summary>
+    public void GoForward()
+    {
+        if (!CanGoForward)
+            return;
+
+        _visitedIndex++;
+        MoveTo(_visited[_visitedIndex]);
+    }
+
+    private void MoveTo(string modelID)
+    {
+        _movingThroughHistory = true;
+        try
+        {
+            ModelID = modelID;
+            OnChangeModel?.Invoke();
+        }
+        finally
+        {
+            _movingThroughHistory = false;
+        }
+    }
+
+    /// <summary>
+    /// Remembers a class the user has opened.
+    /// </summary>
+    /// <remarks>
+    /// <para>Going somewhere new after going back <b>discards what was ahead</b>, which is what every
+    /// editor and browser does: keeping it would offer a "forward" to a class the user has just
+    /// chosen not to look at.</para>
+    ///
+    /// <para>Re-selecting the class already shown is not a visit. It happens on its own — a reload
+    /// re-raises the selection to refresh the page (<c>LibraryBrowser</c> does exactly that after a
+    /// VCS operation) — and counting it would fill the history with one class repeated.</para>
+    /// </remarks>
+    private void RecordVisit(string modelID)
+    {
+        if (_movingThroughHistory || string.IsNullOrEmpty(modelID))
+            return;
+
+        if (_visitedIndex >= 0 && _visited[_visitedIndex] == modelID)
+            return;
+
+        if (_visitedIndex < _visited.Count - 1)
+            _visited.RemoveRange(_visitedIndex + 1, _visited.Count - _visitedIndex - 1);
+
+        _visited.Add(modelID);
+
+        if (_visited.Count > VisitLimit)
+            _visited.RemoveAt(0);
+
+        _visitedIndex = _visited.Count - 1;
+    }
+
+    #endregion
 
     /// <summary>
     /// Sets the selected models (for multi-select mode) and notifies listeners.
