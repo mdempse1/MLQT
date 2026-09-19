@@ -290,6 +290,15 @@ letters are kept because the gates are written there.
    `spellCheck.scrollWordIntoView` / `setScroll` interop is the machinery to extend, not to duplicate
    — and B183's other half (stable alphabetical ordering) is still one line and independent of all of
    this. B185's threshold becomes the lex-only tier. The page gets its first component tests.
+   **B185 ✅, and its own row was wrong twice over.** There is no size to threshold on, and turning
+   the highlighting off would have saved nothing: the cost is the **parse**, made quadratic by a run
+   of comments inside an `equation` section (**B235**, where the real fix is — it costs the CLI and
+   the MCP server the same minutes it costs the page). What ships is that the viewer stops
+   *waiting*: above 64 KB the lexer paints at once and the tree's colouring lands when it lands.
+   **The measurement caught itself getting this wrong.** Its first version varied the annotations and
+   a block of comments together and blamed the annotations; the error only surfaced because an
+   unrelated edit dropped the comments and the 72-second case became 367 ms. Vary one thing — and
+   re-run a number before building on it.
 5. **B178 ✅ with B217 ✅** — `DiffViewer` adopted the classifier on both sides and
    `HighlightRawModelica` is gone; B217 was confirmed (a trimmed package showed every inline child
    as a deletion) and both sides of the class diff now come from the file. **Both were mis-diagnosed

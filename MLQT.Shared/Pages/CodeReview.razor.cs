@@ -731,6 +731,41 @@ public partial class CodeReview : IAsyncDisposable
             // a stalled VCS call left the loading spinner spinning forever even though the
             // rendered code was ready in milliseconds. The VCS check now runs independently
             // (mirroring the cache-hit path) and only updates the modified/diff indicator.
+            // A class big enough that a stall would be noticed is painted from the lexer first, so
+            // it appears at once instead of after however long the parse takes — which for a class
+            // carrying a run of comments inside an equation section is quadratic, and was measured
+            // at 69 seconds for 4,000 of them (B185, and B235 for the cause). The tree's colouring
+            // replaces it when the parse lands.
+            if ((modelNode.Definition.ModelicaCode?.Length ?? 0) > PaintBeforeParsingAbove)
+            {
+                _ = Task.Run(() => Show(modelNode, graph, showHighlighted, showAnnotations,
+                                        excludeClassDefs, parse: false))
+                    .ContinueWith(async quick =>
+                    {
+                        // Dropped if the user has moved on, or if the parse beat it here.
+                        if (NavState.ModelID != selectedModelId || !_isLoadingCode || !quick.IsCompletedSuccessfully)
+                            return;
+
+                        await InvokeAsync(() =>
+                        {
+                            if (NavState.ModelID != selectedModelId || !_isLoadingCode)
+                                return;
+
+                            _highlightedCode = quick.Result.Lines;
+                            _elision = quick.Result.Elision;
+
+                            // Clearing this is the point of the exercise: while it is set the page
+                            // shows a spinner in place of the viewer, so painting the lines without
+                            // it would change nothing the user can see.
+                            _isLoadingCode = false;
+
+                            LoggingService.Debug("CodeReview",
+                                $"  First paint from the lexer: {quick.Result.Lines.Count} lines");
+                            StateHasChanged();
+                        });
+                    }, TaskScheduler.Default);
+            }
+
             var renderTask = Task.Run(() => Show(modelNode, graph, showHighlighted, showAnnotations, excludeClassDefs));
 
             _ = renderTask.ContinueWith(async _ =>
@@ -820,6 +855,31 @@ public partial class CodeReview : IAsyncDisposable
     }
 
     /// <summary>
+    /// The size of a class above which it is painted from the lexer first and the parse is allowed
+    /// to catch up (B185).
+    ///
+    /// <para><b>Measured, and it is not what the backlog guessed.</b> Neither the highlighting nor
+    /// the reformat is what made a large class take minutes — B215 removed the reformat, lexing is
+    /// 11–79 ms and classifying 20–148 ms at every size tried. It is the <b>parse</b>, and the
+    /// trigger is a specific shape rather than size: a run of comment lines inside an
+    /// <c>equation</c> section is quadratic. 500 of them parse in 1.5 s, 1,000 in 4.4 s, 2,000 in
+    /// 17 s and 4,000 in 69 s, at only 323 KB — four times the work for twice the text, which
+    /// extrapolates to the five minutes reported. The input is legal Modelica and parses without a
+    /// single error, so this is the parser's prediction rather than its error recovery, and it costs
+    /// the checker and the CLI as much as it costs this page. That is <b>B235</b>, and it is the
+    /// real fix.</para>
+    ///
+    /// <para>This threshold is therefore not a prediction of slowness and must not be read as one:
+    /// 4,000 <em>annotated</em> declarations are 554 KB and parse in 367 ms, while the 69-second
+    /// case is a third of that size. It is a judgement about when a stall would be <em>noticed</em>.
+    /// Below it the parse is over before anyone could see a spinner; above it the lexer paints the
+    /// class at once and the tree's colouring — which differs only in telling a type or a call from
+    /// a plain identifier — arrives when it arrives. 64 KB leaves all but 52 classes in the Modelica
+    /// Standard Library and 13 in Buildings on the direct path.</para>
+    /// </summary>
+    internal const int PaintBeforeParsingAbove = 64 * 1024;
+
+    /// <summary>
     /// The class as the viewer shows it: <b>the user's own text</b>, coloured in place, with
     /// whatever is hidden taken out by whole lines and a map back to where those lines were.
     ///
@@ -830,17 +890,28 @@ public partial class CodeReview : IAsyncDisposable
     /// colouring never needed the rewrite: it comes from the parse tree, and
     /// <see cref="ModelicaTokenClassifier"/> reads the same tree without touching the text.</para>
     ///
+    /// <para>With <paramref name="parse"/> false the categories come from the token stream alone:
+    /// the text is identical and only the tree's knowledge is missing, so an identifier is not yet
+    /// known to be a type or a call and nothing can be hidden. That is the first paint of a class
+    /// big enough for the parse to be worth not waiting for.</para>
+    ///
     /// <para>Static, and everything it needs is passed in, because it runs on a background thread
     /// and must not read component state that the UI thread is changing underneath it.</para>
     /// </summary>
     internal static ShownClass Show(
-        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations, bool hideClassDefinitions)
+        ModelNode model, DirectedGraph graph, bool showHighlighted, bool showAnnotations,
+        bool hideClassDefinitions, bool parse = true)
     {
         // The stored text while it is still the file's, otherwise the file sliced again — for a
         // package whose inline children the trimmer removed, or a class the formatter rewrote.
         var source = ClassSource.For(model, graph);
 
-        var (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+        modelicaParser.Stored_definitionContext? tree = null;
+        BufferedTokenStream stream;
+        if (parse)
+            (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+        else
+            stream = ModelicaTokenClassifier.TokensOnly(source);
 
         var lines = showHighlighted
             ? ModelicaTokenClassifier.Highlight(tree, stream, source)
