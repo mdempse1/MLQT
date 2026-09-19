@@ -156,6 +156,12 @@ The incremental path — at startup, after a VCS operation, and after a refresh 
 
 A file that version control reports as newly **Added** is never removed by the tidy-up that follows a save, so a class you have created but not yet committed cannot be lost to it.
 
+## How files end
+
+Every `.mo` and `package.order` file MLQT writes ends with a newline, whichever path wrote it. This matters more than it sounds: the two paths used to disagree, so a library formatted incrementally and later put through **Format All Files** came back with every file modified and nothing changed in any of them — a commit of thousands of empty diffs with any real change buried inside it.
+
+If you are upgrading from a version before this was fixed, expect **one** such commit: the files gain the newline they were missing, once, and are stable afterwards. Committing that on its own, before making any other change, keeps it out of the way of a review.
+
 ## Excluding Models from Formatting
 
 Individual models can be excluded from auto-formatting using the **FormatClear** toggle button in the Code Review toolbar. This is useful for models where the original author's formatting should be preserved, or where MLQT's formatting rules produce undesirable results.

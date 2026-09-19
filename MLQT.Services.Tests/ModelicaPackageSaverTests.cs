@@ -141,7 +141,12 @@ public class ModelicaPackageSaverTests : IDisposable
         var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
         var written = ModelicaFileEncoding.ReadAllTextOnly(innerFile);
 
-        Assert.Equal(original, WithinClause.Strip(written));
+        // The file ends with a newline, as every file MLQT writes does (B236). That is the file's
+        // terminator, not the class's content: `original` here deliberately has none and its
+        // irregular spacing is what the exclusion actually protects, which the second assertion
+        // checks. An excluded class still gets written — it is a member of a library being saved —
+        // so it has to end the same way as the files around it or a later save moves it again.
+        Assert.Equal(original + "\n", WithinClause.Strip(written));
         Assert.Contains("Real    y;", written);
     }
 
@@ -187,7 +192,8 @@ public class ModelicaPackageSaverTests : IDisposable
         var written = ModelicaFileEncoding.ReadAllTextOnly(
             result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
 
-        Assert.Equal(TwoSections, WithinClause.Strip(written));
+        // The trailing newline is the file's, not the class's — see the test above.
+        Assert.Equal(TwoSections + "\n", WithinClause.Strip(written));
     }
 
     [Fact]

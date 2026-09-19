@@ -376,7 +376,7 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting, and what the renderer writes
 
-**B236, B181, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
+**B236 ✅, B181, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
@@ -401,6 +401,24 @@ this package re-runs for the rule work regardless.
   claims it was reformmated by MLQT on 02/09/2026 which would have been during the 2026.4.0 development.
   So I'm wondering if the difference is down to now I'm clicking "Format All Files" on the repository 
   settings page and maybe the formatting was applied via a different route when I did it previously
+
+  **✅ Fixed 2026-09-19, and that last guess was the answer.** It is not a regression and there was
+  nothing to bisect: `git log -S` puts both behaviours in the initial public commit. The incremental
+  formatter has always appended a trailing newline and the full library save has always joined the
+  rendered lines without one, so the route decided the ending — and since the incremental path runs
+  at startup and after every VCS operation, it is the one that had formatted the library. The rule
+  is now `ModelicaFileEncoding.EnsureFinalNewline`, applied by every write in the funnel CLAUDE.md
+  already designates, and public so a caller comparing disk against what it would write compares
+  like with like. That second half was not optional: MCP's `format_class` decides whether to write
+  by comparing the two, and putting the rule only in the writer would have made it report every
+  already-formatted file as changed and rewrite it on every call — the same defect one layer along.
+
+  **What the measurement added, which reading would not have.** Over MSL: 5,753 files, none left
+  without a final newline, and of the 2,480 that both paths rewrite the two now agree byte for byte
+  on 2,471. The 9 that differ are all `package.mo`, and they are not a formatting disagreement — the
+  full save extracts inline standalone children into their own files and the incremental path does
+  not, which is the documented one-file-per-class restructure. Worth knowing before B216, which
+  changes how packages are rendered: that asymmetry is the population it operates on.
 
 - **B181** — `OneOfEachSection` is the working template for a formatting concern that also reports,
   and `FormattingOptions.ComponentsBeforeClasses` already exists. Giving it an id also closes B103's

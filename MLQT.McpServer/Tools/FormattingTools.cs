@@ -170,7 +170,10 @@ public sealed class FormattingTools
             return new FormatClassResult(classId, PreviewOnly: true, Changed: false, ctx.FilePath, rendered);
         }
 
-        var changed = NormalizeEol(original) != NormalizeEol(rendered);
+        // Compared as it would be written, not as it was rendered: the writer ends the file with a
+        // newline, so comparing the raw render against a file that has one reports every already
+        // formatted file as changed and rewrites it on every call.
+        var changed = NormalizeEol(original) != NormalizeEol(ModelicaFileEncoding.EnsureFinalNewline(rendered));
         if (changed)
         {
             if (FileWritability.RequireWritable(ctx.FilePath, "format this file") is { } readOnly)

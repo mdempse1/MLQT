@@ -96,11 +96,12 @@ public static class ModelicaFileEncoding
     /// <inheritdoc cref="WriteAllText"/>
     public static async Task WriteAllTextAsync(string path, string text, Encoding? encoding = null)
     {
+        text = EnsureFinalNewline(text);
         await File.WriteAllTextAsync(path, text, encoding ?? EncodingToWrite(path, text));
     }
 
     /// <summary>
-    /// Writes text to a file.
+    /// Writes text to a file, ending it with a newline (<see cref="EnsureFinalNewline"/>).
     ///
     /// <para>When <paramref name="encoding"/> is null the existing file's encoding is preserved, so
     /// a round trip through MLQT does not silently rewrite a library in a different encoding from
@@ -109,8 +110,32 @@ public static class ModelicaFileEncoding
     /// </summary>
     public static void WriteAllText(string path, string text, Encoding? encoding = null)
     {
+        text = EnsureFinalNewline(text);
         File.WriteAllText(path, text, encoding ?? EncodingToWrite(path, text));
     }
+
+    /// <summary>
+    /// <paramref name="text"/> ending in a newline — **the one answer to how a file MLQT writes
+    /// ends**, applied by every write here and callable by anything that needs to know what would
+    /// be written before writing it.
+    ///
+    /// <para>It is here rather than in a formatter because the question is about files, not about
+    /// formatting, and because the alternative has been tried: the incremental formatter appended
+    /// <c>"\n"</c> from the initial commit and the full library save did not, so which of the two
+    /// last touched a file decided how it ended. Nobody noticed until a user ran <b>Format All
+    /// Files</b> over a library the incremental path had formatted and every file in it came back
+    /// modified with nothing changed in any of them (B236). <c>package.order</c> was already
+    /// terminated, because <see cref="WriteAllLines"/> mirrors <c>File.WriteAllLines</c> — so a
+    /// single save left the two kinds of file in a package ending differently.</para>
+    ///
+    /// <para>Empty stays empty: a <c>package.order</c> for a package with no children is written as
+    /// nothing, and a file holding one newline is not nothing. Text that already ends in a newline
+    /// is returned unchanged rather than trimmed to one, because trailing blank lines someone put
+    /// in a file by hand are not this function's business to remove — the renderer's output never
+    /// has any.</para>
+    /// </summary>
+    public static string EnsureFinalNewline(string text) =>
+        text.Length == 0 || text[^1] == '\n' ? text : text + "\n";
 
     /// <summary>
     /// The encoding to write <paramref name="text"/> to <paramref name="path"/> with, preserving

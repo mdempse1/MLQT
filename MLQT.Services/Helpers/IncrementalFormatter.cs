@@ -143,7 +143,10 @@ public static class IncrementalFormatter
                     return;
                 }
 
-                formattedFiles[fileEntry.FilePath] = formatted.TrimEnd() + "\n";
+                // How the file ends is ModelicaFileEncoding.EnsureFinalNewline's answer, applied by
+                // the write below. This path used to append "\n" itself, which is how it and the
+                // full library save came to disagree (B236).
+                formattedFiles[fileEntry.FilePath] = formatted;
 
                 // Bring each class's stored code up to date with what is about to be written, so style
                 // checking and the code viewer see the formatted source without waiting for a reload.
