@@ -72,11 +72,23 @@ with first and separately** — `nightly-webkit.yml` was triggered by hand on 20
 run at all, and passed with 57 WebKit journeys executed and none skipped.
 
 **The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
-into eight work packages by shared root cause rather than by area, and records the eleven root causes
-established while planning — two of which change what the fix is.
+into work packages by shared root cause rather than by area (WP0–WP10; WP0, WP1, WP2 and WP8 are
+done), and records the eleven root causes established while planning — two of which change what the
+fix is.
 
-The phase has grown since: **B204–B212** while fixing and confirming the first set, and **B213–B218**
-on 2026-09-18 from the one decision that shapes it.
+The phase has grown since: **B204–B212** while fixing and confirming the first set, **B213–B218**
+on 2026-09-18 from the one decision that shapes it, and **B230–B237** on 2026-09-19 from running it.
+
+**One of those is deliberately outside the phase. B233** — an annotation sharing a line with real
+code survives "hide annotations", because `ElisionFinder` removes a construct as a unit or not at
+all. That default is right (dropping whole lines would leave the user reading
+`Real x "d" annotation (Placement(`), and it already hides the bulk: 41–44% of lines sit wholly
+inside an annotation. What remains is the inline `Placement` on declarations, which is exactly the
+noise the toggle was asked about. Doing it properly means splicing **markup rather than source** —
+the elision applies to highlighted lines, so a cut at a character offset can land inside a tag — and
+the likely shape is the classifier exposing where each token's markup begins so a line can be
+rebuilt from whole tags. **Measure what fraction of annotations this actually leaves before
+committing to that**, which is why it is a candidate here and not a phase-1 item.
 
 Three of the items are larger than the rest and worth naming here rather than only in the table:
 

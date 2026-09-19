@@ -247,11 +247,30 @@ a single-class file stops looking missing — so `compare` would have exited 0 o
 merge conflict marker in it. It now fails on unparseable files explicitly, and the warning no longer
 claims their classes are "counted as absent", because they are not. `cli.md` changed with it.
 
-### WP2 — The Code Review page
+### WP2 — The Code Review page — **✅ complete**
 
-**B213, B214, B215, B216, B217, B218** (from the decision above) and **B230, B231, B232** (from
-running its first step) and **B182, B185, B183, B178, B176, B186, B187, B189, B197**, with **B173**
-alongside B186 · 19 items · the bulk of the phase
+**B213 ✅, B214 ✅, B215 ✅, B217 ✅** (from the decision above) and **B230 ✅, B231 ✅** (from
+running its first step) and **B182 ✅, B185 ✅, B183 ✅, B178 ✅, B176 ✅, B186 ✅, B187 ✅, B189 ✅,
+B197 ✅**, with **B173 ✅** alongside B186 · 15 items · the bulk of the phase — **complete
+2026-09-19**
+
+**Four items planned here were moved out rather than closed**, and the reason is worth keeping: the
+sequencing diagram carried B216 and B218 as *"separable at any point"*, which was true while this
+package was open and became false the moment it closed — "separable" silently turns into "owned by a
+finished package". B232 and B237 were worse off again: they were written into the prose of a step
+rather than into any package's item list, so nothing at the top of a WP ever counted them. All four
+now have a package:
+
+| Moved | To | Because |
+|-------|----|---------|
+| **B216** trimmer excision | WP3 | it changes what the renderer writes and its gate is the parity number, which WP3 re-runs anyway |
+| **B232** subscripts coloured as calls | WP3 | same — a renderer output change, decided by whether the visible difference is wanted |
+| **B218** `get_class_source` rewrite | WP10 | the same shape as the two MCP items that were already package-less |
+| **B237** nothing proves the search is wired | WP9 | a shared-journey-host defect, which is that package's subject |
+
+**B233** (annotations sharing a line with code survive the hide) is deliberately **not in phase 1**:
+its own row says to measure what fraction of annotations it actually leaves before committing to
+splicing markup rather than source. It is a roadmap candidate, not a package item.
 
 The keystone package, and what the roadmap's ordering argument is really about: every new analysis
 wave lands here. Strict internal order, because most of it sits on **the viewer showing the file** —
@@ -308,12 +327,12 @@ letters are kept because the gates are written there.
    classifier serves both; and the preset already reached the diff, since the runtime stylesheet is
    global and `!important`. The real fault was that the regex could only produce four of the nine
    categories, so identifiers and types were plain text in one pane and coloured in the other.
-6. **B230 first, then B216** (S1 said yes), and **B218**. B230 is a guard clause in front of an
-   existing render and removes 55% / 95% of the trimmed-package population on its own, so it is worth
-   taking before the rest of this step whatever happens to B216. B216 and B218 are the same mechanism
-   reaching the check pipeline and an agent; neither is needed for the viewer, so both can be taken
-   later or in another phase. **B231** (the offset documentation) belongs with whichever of B215 or
-   B216 lands first, since both read those fields.
+6. **B230 ✅ taken; B216 → WP3 and B218 → WP10.** B230 is a guard clause in front of an existing
+   render and removed 55% / 95% of the trimmed-package population on its own, which is why it was
+   worth taking before anything else here whatever happened to B216. B216 and B218 are the same
+   mechanism reaching the check pipeline and an agent, and neither is needed for the viewer — so with
+   the viewer done they are ordinary items in other packages rather than a loose end of this one.
+   **B231 ✅** (the offset documentation) landed with B215, since both read those fields.
 7. **B186 ✅ with B173 ✅** — resizable panes. `MudExSplitPanel` is **already a dependency and already
    in use** in `MainLayout.razor:233`, so this is one control applied twice, and the fixed `221px`
    and hidden pager collapse into one measured value. **The pager did not collapse into a value — it
@@ -339,7 +358,9 @@ letters are kept because the gates are written there.
    class selected, and neither way of getting one survives the shared journey host — through the tree
    needs a repository, which starts the analysis pipeline and timed out another journey; through a
    clicked finding works in isolation in 11 s and then never renders in a full run. The journey was
-   written, failed that way, and was removed rather than left red or made opt-in.
+   written, failed that way, and was removed rather than left red or made opt-in. **B237 is in WP9**,
+   because the useful half of it is not the journey but the reason a class will not open once the
+   other journeys have run — `ResizablePanesJourney` meets the same wall the moment it needs one.
 9. **B189 ✅** then **B197 ✅** — reveal-in-tree, then the navigation stack over it. Both hang off the
    finding-click path step 4 rewrites, so they come last and are cheap once it exists. B197's peek now
    lands in the user's own text, which is the point of it. **They were cheap, and B197 shipped two of
@@ -353,13 +374,19 @@ letters are kept because the gates are written there.
 MCP source tool and possibly the check pipeline. Steps 1–5 are each shippable alone and step 6 is
 explicitly optional — keep them that way.
 
-### WP3 — Rules and formatting
+### WP3 — Rules and formatting, and what the renderer writes
 
-**B236, B181, B177, B195, B175** · 5 items · M
+**B236, B181, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
 Walk that path once with three rules in hand rather than three times.
+
+**Two of the seven are not rules at all** — B236, B216 and B232 are all changes to what the renderer
+*produces*, which is why they are here rather than anywhere else, and they share a gate: a change to
+renderer output is judged by a whole-library comparison, not by reading. B236 and B216 both want the
+parity number (MSL = 34329 findings, no finding moving except as the change accounts for it) that
+this package re-runs for the rule work regardless.
 
 - **B236 first, and it is not like the other four.** They add or refine rules; this is a regression in
   what the formatter *writes* — every file now ends without its final newline, so reformatting a
@@ -385,6 +412,19 @@ Walk that path once with three rules in hand rather than three times.
   `FormattingExcludedModels`. Both mechanisms are already honoured everywhere (B39, B65) and the
   annotation writer already exists for suppression, so this is a change of which writer the button
   calls.
+- **B216** — the trimmer re-renders a package where it could excise. **S1 already decided it is in
+  scope and measured the gate**: no finding lost on either library, MSL gains 2 correct
+  `OneOfEachSection` findings (excision leaves an empty section that re-rendering dropped — baseline
+  drift to declare, not a regression), and the line map is exact over 30,599 lines. It is the
+  riskiest change in this package because it feeds the pipeline all three surfaces share, so it wants
+  the parity run and nothing else taken at the same time. **Finish the file's seven mutation
+  survivors with it** — excision keeps two of the decisions they sit on and deletes the rest with the
+  render, so each ends either killed by a test or gone with the code.
+- **B232** — `ModelicaRenderer` colours array subscripts as function calls, in two facets of one
+  mutable-field bug. Mostly a decision rather than a fix: the classifier already declines to
+  reproduce either facet, so closing this is agreeing that the visible change is wanted and saying so
+  in the catalogue. It is the **entire** residue of B213's 99.998% agreement measurement, which is
+  the argument that nothing else in the renderer's colouring is in doubt.
 
 **The standing trap in this package** is a catalogued promise with no test behind it: a rule id
 implies every other surface honours it, and only a test over `RuleCatalog` holds anyone to that. Each
@@ -601,9 +641,10 @@ assertion, a mutation check before believing any guard, and measuring on a sampl
 contain the failing case — B169's first fix was verified on real data holding none of it, and looked
 complete because the measurement agreed.
 
-### WP9 — The mutation survivors deliberately left
+### WP9 — The test debt deliberately left
 
-**B227, B228, B229** · opened by WP8's audit, and held back from it on purpose
+**B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234** and
+**B237** from WP2
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
 repository has written a comment to defend?* — and then a second — *which sit on code that writes to
@@ -637,38 +678,83 @@ was dead code to delete rather than test. Half of a careful pass over this mater
 tests at all. Record what was read and judged equivalent, so the next audit does not re-raise it —
 `LibraryCheckSession.cs:43` and the saver's exclusion branch already carry that note in the code.
 
-### Not in any package
+**B234 belongs here for the same reason B229 does**: a group of survivors that no test *could* kill
+as things stand. The classifier's emit-loop mutants survive because the only assertion strong enough
+to catch them — `RoundTripsOverAWholeLibrary`, exact over 8,367 files and 1.1M lines — is opt-in
+behind `MLQT_FIDELITY_CORPUS`, so neither CI nor `run-mutation.ps1` runs it. Three ways out and they
+are genuinely different decisions: commit a corpus big enough to exercise the loop (the question is
+which *shapes* — multi-line tokens, skipped characters, text `PreprocessCode` tidies — not volume),
+have CI fetch a library, or accept it as a manual gate and put it in the release checklist. Until
+one is chosen, **a green suite says nothing about fidelity** unless someone remembered a variable,
+which is the whole complaint.
 
-**B179** and **B196**, the two MCP items, have no dependency on anything above and no dependency on
-each other. They are separable at any point: B179 returns what is already sitting on the synthesized
-stub (description, base classes, parameters, connectors, inputs and outputs), marked as recovered
-from documentation rather than read from source and still declaring the class not editable (B85).
-B196 is a question about a dependency — which SVG-to-PNG conversion to take on — before it is a
-question about code.
+**B237 is the other half of the same problem at the journey layer**, and the item to take first here
+because the other packages are waiting on it: a class cannot be opened in the shared journey host
+once other journeys have run, and nobody knows why. B176's wiring is what noticed it, but the
+finding generalises — `ResizablePanesJourney` hits the same wall the moment it needs a class, and so
+will every journey the remaining packages want. The useful outcome is the diagnosis, not the one
+journey; a host of its own is the fallback, not the answer.
+
+**What WP2 taught this package.** Both items arrived because a check that exists is not a check that
+runs. The mutation report could not see either one — it reports on the tests it ran, so a test that
+never runs and a test that does not exist are the same entry. That is worth stating as the shape,
+because it is the third variant of a defect this repository keeps producing: a guard whose existence
+is mistaken for its enforcement.
+
+### WP10 — MCP, whenever
+
+**B179, B196, B218** · 3 items · S–M · no dependency on any other package
+
+These were "not in any package" until B218 joined them from WP2 and made three. That is the point of
+giving them a number: an item filed as separable-at-any-point is an item nothing ever schedules, and
+WP2 has just demonstrated what that costs. None of the three depends on the others.
+
+- **B179** returns what is already sitting on the synthesized stub (description, base classes,
+  parameters, connectors, inputs and outputs), marked as recovered from documentation rather than
+  read from source and still declaring the class not editable (B85).
+- **B196** is a question about a dependency — which SVG-to-PNG conversion to take on — before it is
+  a question about code.
+- **B218** is the one with a prerequisite, and it is already met: with `includeAnnotations: false`
+  the tool re-renders through `ModelicaRenderer`, so an agent reads text that is not the file and
+  whose line numbers do not match the findings the same server reports. B214's elision now strips
+  the annotations without touching anything else, so this is a swap of one call for another. Take it
+  first — it is the smallest and it makes the server internally consistent, which the other two
+  assume.
 
 ---
 
 ## Sequencing summary
 
 ```
-WP0 ──▶ WP1 ──▶ WP2   S0/S1 measure ▸ B213 classifier ▸ B214 elision ▸ B215 viewer
-          │              (closes B182, B183, B185) ▸ B178/B217 diff ▸ B186/B173 ▸ B189 ▸ B197
-          │              with B176, B187 in parallel; B216, B218 separable at any point
-          ├──▶ WP3   rules, independent
+WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ B215 viewer
+          │              (closed B182, B183, B185) ▸ B178/B217 diff ▸ B186/B173 ▸ B189 ▸ B197
+          │              with B176, B187 in parallel; B230/B231 taken
+          │              moved out: B216, B232 ▶ WP3 · B218 ▶ WP10 · B237 ▶ WP9
+          ├──▶ WP3   B236 first (shipped regression) ▸ rules ▸ B216 ▸ B232
+          │              the three renderer-output items share one gate: the parity run
           ├──▶ WP5   external tools, independent
           ├──▶ WP6   revision control, independent
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7   B191 only if confirmed in scope
 
-WP8   test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
-        └──▶ WP9   B228 ▸ B229 ▸ B227 — the survivors WP8 left; needs no other package
-WP-less: B179, B196 (MCP) — separable at any point
+WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
+        └──▶ WP9   B237 first (it blocks other packages' journeys) ▸ B228 ▸ B229 ▸ B227 ▸ B234
+                       needs no other package
+WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
+
+Not in phase 1: B233 (hide-annotations on shared lines) — measure the residue first; see roadmap
 ```
 
 WP3, WP5 and WP6 depend on nothing in WP2 and can be taken whenever a change of subject is wanted.
 WP4's B184 is placed after WP1 on purpose: re-scoping what gets checked is not worth doing while a
 malformed file can still drop classes out of the graph underneath it (B201).
+
+**Every open item in this phase now names a package**, and that is a property worth keeping rather
+than a tidy-up. The two ways an item escaped were "separable at any point" against a package that
+later closed, and a mention in a step's prose that no item list counted — both of which read as
+*scheduled* right up until the package shipped without them. An item that genuinely belongs nowhere
+belongs on the roadmap, where it is at least a candidate, not in the margin of a plan.
 
 WP9 follows WP8 because it is WP8's leftovers, not because anything blocks it: it needs no other
 package and can be taken whenever there is appetite for it. **It is the one package with no deadline**
