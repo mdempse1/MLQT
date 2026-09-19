@@ -353,12 +353,25 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 
 ### WP4 — Performance, measured before it is touched
 
-**B190, B174, B184, B199** · 4 items · M–L
+**B190, B174, B184, B199, B235** · 5 items · M–L
 
 **No change in this package without a measurement first.** The log at `%LocalAppData%/MLQT/*.log`
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;
 B128 established both. B174 says explicitly not to theorise first.
 
+- **B235 arrived from WP2 with its measurement already done**, which is the one item here that
+  starts past this package's gate rather than at it: a run of comments inside an `equation` section
+  makes the parse quadratic (69 s for 4,000 of them, against 367 ms for a *larger* class without
+  them), on legal input with zero parse errors. **Take it with B174, not apart from it.** B174 is
+  "loading and style checking are getting slow" and says to start from the log; B235 is a named,
+  reproducible cause of exactly that, and every surface parses — so it is also part of B184's
+  subject, CI check time. Whether it explains a useful share of B174's ~300 s is itself a
+  measurement, and the honest order is to look for this shape in the real libraries before assuming
+  it is the answer.
+- **Its blast radius is the largest in the phase**, which nothing else here shares: the fix is in the
+  grammar, so it changes `ModelicaParser` — the assembly at a >95% coverage bar that the GUI, the
+  CLI, the MCP server and every rule sit on. The gate is finding-count parity (MSL = 34329) on top of
+  the usual suites, the same one B216 carries.
 - **B190** — confirm the freeze still happens before investigating it. It predates several fixes.
 - **B184** is the largest available win on CI check time and the most delicate change in the phase.
   `ChangedModelResolver.Resolve` currently runs **after** `load.Findings` is fully computed
@@ -605,7 +618,8 @@ WP0 ──▶ WP1 ──▶ WP2   S0/S1 measure ▸ B213 classifier ▸ B214 eli
           ├──▶ WP3   rules, independent
           ├──▶ WP5   external tools, independent
           ├──▶ WP6   revision control, independent
-          └──▶ WP4   perf; B184 after WP1 so the graph is trusted first
+          └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
+                       B235 from WP2, measured already — take it with B174
                        └──▶ WP7   B191 only if confirmed in scope
 
 WP8   test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
