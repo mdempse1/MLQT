@@ -261,7 +261,7 @@ public class RepositoryServiceTests
         var addResult = service.AddRepositoryAsync(testPath).Result;
         Assert.True(addResult.Success);
 
-        var repo = service.GetRepository(addResult.Repository!.Id);
+        var repo = service.GetRepository(SandboxedId(addResult));
 
         Assert.NotNull(repo);
         Assert.Equal(addResult.Repository.Id, repo.Id);
@@ -292,7 +292,7 @@ public class RepositoryServiceTests
         Assert.True(addResult.Success);
         Assert.Single(service.Repositories);
 
-        service.RemoveRepository(addResult.Repository!.Id, false);
+        service.RemoveRepository(SandboxedId(addResult), false);
 
         Assert.Empty(service.Repositories);
     }
@@ -357,7 +357,7 @@ public class RepositoryServiceTests
         var eventFired = false;
         service.OnRepositoriesChanged += () => eventFired = true;
 
-        service.RemoveRepository(addResult.Repository!.Id, false);
+        service.RemoveRepository(SandboxedId(addResult), false);
 
         Assert.True(eventFired);
     }
@@ -381,7 +381,7 @@ public class RepositoryServiceTests
 
         Assert.True(addResult.Success);
 
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Check that libraries were loaded with the correct repository ID
         Assert.NotEmpty(addResult.Repository.LibraryIds);
@@ -400,7 +400,7 @@ public class RepositoryServiceTests
         var service = CreateService();
         var addResult = await service.AddRepositoryAsync(testPath);
 
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Check that library IDs were added
         Assert.NotEmpty(addResult.Repository.LibraryIds);
@@ -422,7 +422,7 @@ public class RepositoryServiceTests
 
         var service = CreateService();
         var addResult = await service.AddRepositoryAsync(testPath);
-        await service.LoadLibrariesAsync(addResult.Repository!.Id);
+        await service.LoadLibrariesAsync(SandboxedId(addResult));
 
         // Get a library ID that was loaded
         var libraryId = addResult.Repository.LibraryIds.FirstOrDefault();
@@ -595,7 +595,7 @@ public class RepositoryServiceTests
             }
 
             // Act
-            var result = await service.MergeBranchAsync(addResult.Repository!.Id, "branches/test");
+            var result = await service.MergeBranchAsync(SandboxedId(addResult), "branches/test");
 
             // Assert
             Assert.False(result.Success);
@@ -736,6 +736,57 @@ public class RepositoryServiceTests
 
     #region Git Temp Repository Tests
 
+    /// <summary>
+    /// The repository's id, having first proved it really is the throwaway one this test made.
+    ///
+    /// <para>Every test below builds a git repository under <see cref="Path.GetTempPath"/> and then
+    /// asks the service to commit, branch, switch, revert, push or clean inside it. That is only safe
+    /// while the service resolves the path correctly — and on 2026-09-19 it did not. Under mutation
+    /// testing a path in <c>RepositoryService</c> was replaced with <c>""</c>, git fell back to the
+    /// process working directory, which is the MLQT checkout itself, and these tests created two
+    /// branches, committed to them and discarded every uncommitted change in the developer's tree.
+    /// The tests were correct; what was missing was any statement that they had hold of the right
+    /// repository.</para>
+    ///
+    /// <para>So this is not a style assertion. It is the thing that turns "MLQT rewrote my working
+    /// copy" into a failing test. Route <b>every</b> service call that names a repository id through
+    /// it, reads included — a read that has strayed outside the sandbox is the warning that the next
+    /// write will too.</para>
+    /// </summary>
+    private static string SandboxedId(AddRepositoryResult addResult)
+    {
+        var repository = addResult.Repository!;
+        var temp = Path.GetTempPath();
+
+        Assert.True(repository.LocalPath.StartsWith(temp, StringComparison.OrdinalIgnoreCase),
+            $"Refusing to operate on '{repository.LocalPath}': it is outside {temp}.");
+        Assert.True(string.IsNullOrEmpty(repository.VcsRootPath)
+                    || repository.VcsRootPath.StartsWith(temp, StringComparison.OrdinalIgnoreCase),
+            $"Refusing to operate on VCS root '{repository.VcsRootPath}': it is outside {temp}.");
+
+        return repository.Id;
+    }
+
+    [Fact]
+    public void SandboxedId_RefusesARepositoryOutsideTheTempDirectory()
+    {
+        // The positive control for the guard above. Without this the guard is itself an assertion
+        // nobody has seen fail, which is the exact shape it exists to catch: it would pass happily if
+        // StartsWith were inverted, or if Repository were never null and the path never checked.
+        var strayed = new AddRepositoryResult
+        {
+            Success = true,
+            Repository = new DataTypes.Repository
+            {
+                LocalPath = AppContext.BaseDirectory,      // the build output, not Path.GetTempPath()
+                VcsRootPath = AppContext.BaseDirectory,
+            },
+        };
+
+        var ex = Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => SandboxedId(strayed));
+        Assert.Contains("Refusing to operate on", ex.Message);
+    }
+
     private static string? CreateTempGitRepo(string packageMoContent = "package TestLib end TestLib;")
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "RepoServiceTest_" + Guid.NewGuid().ToString("N"));
@@ -832,7 +883,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir);
             if (!addResult.Success) return;
 
-            var branches = service.GetBranches(addResult.Repository!.Id);
+            var branches = service.GetBranches(SandboxedId(addResult));
 
             Assert.NotNull(branches);
             Assert.NotEmpty(branches);
@@ -855,7 +906,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir);
             if (!addResult.Success) return;
 
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+            var logEntries = service.GetLogEntries(SandboxedId(addResult));
 
             Assert.NotNull(logEntries);
             Assert.NotEmpty(logEntries); // Should have at least our initial commit
@@ -878,7 +929,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir);
             if (!addResult.Success) return;
 
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
             Assert.NotNull(changes);
             // May be empty (clean repo) or have changes
@@ -943,7 +994,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            service.RemoveRepository(addResult.Repository!.Id, unloadLibraries: false);
+            service.RemoveRepository(SandboxedId(addResult), unloadLibraries: false);
 
             Assert.Empty(service.Repositories);
         }
@@ -965,7 +1016,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var libraries = await service.DiscoverLibrariesAsync(addResult.Repository!.Id);
+            var libraries = await service.DiscoverLibrariesAsync(SandboxedId(addResult));
 
             Assert.NotEmpty(libraries);
         }
@@ -987,7 +1038,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var content = service.GetFileContentAtRevision(addResult.Repository!.Id, "package.mo", "HEAD");
+            var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", "HEAD");
 
             Assert.NotNull(content);
             Assert.Contains("TestLib", content);
@@ -1039,11 +1090,11 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Get the HEAD revision
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+            var logEntries = service.GetLogEntries(SandboxedId(addResult));
             if (!logEntries.Any()) return;
 
             var headRevision = logEntries.First().Revision;
-            var changedFiles = service.GetChangedFiles(addResult.Repository!.Id, headRevision);
+            var changedFiles = service.GetChangedFiles(SandboxedId(addResult), headRevision);
 
             Assert.NotNull(changedFiles);
         }
@@ -1066,7 +1117,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Should not throw
-            await service.RefreshRepositoryAsync(addResult.Repository!.Id);
+            await service.RefreshRepositoryAsync(SandboxedId(addResult));
         }
         finally
         {
@@ -1088,9 +1139,9 @@ public class RepositoryServiceTests
             if (!addResult.Success || !addResult.DiscoveredLibraries.Any()) return;
 
             // Load a library
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
+            await service.LoadLibrariesAsync(SandboxedId(addResult));
 
-            var libraryId = addResult.Repository.LibraryIds.FirstOrDefault();
+            var libraryId = addResult.Repository!.LibraryIds.FirstOrDefault();
             if (libraryId == null) return;
 
             var foundRepo = service.GetRepositoryForLibrary(libraryId);
@@ -1117,7 +1168,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Should not throw (no remote means not pushed)
-            var result = await service.IsBranchPushedAsync(addResult.Repository!.Id);
+            var result = await service.IsBranchPushedAsync(SandboxedId(addResult));
 
             // Local-only repo with no remote: result depends on implementation
             Assert.IsType<bool>(result);
@@ -1355,7 +1406,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.CommitAsync(addResult.Repository!.Id, "test commit");
+            var result = await service.CommitAsync(SandboxedId(addResult), "test commit");
 
             Assert.False(result.Success);
             Assert.NotNull(result.ErrorMessage);
@@ -1373,7 +1424,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.UpdateRepositoryAsync(addResult.Repository!.Id);
+            var result = await service.UpdateRepositoryAsync(SandboxedId(addResult));
 
             Assert.True(result.Success);
             Assert.False(result.HasChanges);
@@ -1391,7 +1442,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.RevertFilesAsync(addResult.Repository!.Id, new[] { "package.mo" });
+            var result = await service.RevertFilesAsync(SandboxedId(addResult), new[] { "package.mo" });
 
             Assert.False(result.Success);
         }
@@ -1408,7 +1459,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
             Assert.Empty(changes);
         }
@@ -1425,7 +1476,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var branches = service.GetBranches(addResult.Repository!.Id);
+            var branches = service.GetBranches(SandboxedId(addResult));
 
             Assert.Empty(branches);
         }
@@ -1442,7 +1493,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.SwitchBranchAsync(addResult.Repository!.Id, "main");
+            var result = await service.SwitchBranchAsync(SandboxedId(addResult), "main");
 
             Assert.False(result.Success);
         }
@@ -1459,7 +1510,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "feature-branch");
+            var result = await service.CreateBranchAsync(SandboxedId(addResult), "feature-branch");
 
             Assert.False(result.Success);
         }
@@ -1476,7 +1527,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.PushAsync(addResult.Repository!.Id);
+            var result = await service.PushAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1493,7 +1544,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.CleanWorkspaceAsync(addResult.Repository!.Id);
+            var result = await service.CleanWorkspaceAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1510,7 +1561,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.ForcePushAsync(addResult.Repository!.Id);
+            var result = await service.ForcePushAsync(SandboxedId(addResult));
 
             Assert.False(result.Success);
         }
@@ -1527,7 +1578,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.IsBranchPushedAsync(addResult.Repository!.Id);
+            var result = await service.IsBranchPushedAsync(SandboxedId(addResult));
 
             Assert.False(result);
         }
@@ -1544,7 +1595,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.RebaseAsync(addResult.Repository!.Id, "main");
+            var result = await service.RebaseAsync(SandboxedId(addResult), "main");
 
             Assert.False(result.Success);
             Assert.NotNull(result.ErrorMessage);
@@ -1563,7 +1614,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var result = await service.CheckoutRevisionAsync(addResult.Repository!.Id, "HEAD");
+            var result = await service.CheckoutRevisionAsync(SandboxedId(addResult), "HEAD");
 
             Assert.False(result.Success);
         }
@@ -1581,7 +1632,7 @@ public class RepositoryServiceTests
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
             // Local repos read the current file directly (no revision needed)
-            var content = service.GetFileContentAtRevision(addResult.Repository!.Id, "package.mo", null);
+            var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", null);
 
             Assert.NotNull(content);
             Assert.Contains("LocalLib", content);
@@ -1599,7 +1650,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+            var logEntries = service.GetLogEntries(SandboxedId(addResult));
 
             Assert.Empty(logEntries);
         }
@@ -1616,7 +1667,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var changedFiles = service.GetChangedFiles(addResult.Repository!.Id, "HEAD");
+            var changedFiles = service.GetChangedFiles(SandboxedId(addResult), "HEAD");
 
             Assert.Empty(changedFiles);
         }
@@ -1633,7 +1684,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success || addResult.Repository?.VcsType != RepositoryVcsType.Local) return;
 
-            var url = await service.GetPullRequestUrlAsync(addResult.Repository!.Id);
+            var url = await service.GetPullRequestUrlAsync(SandboxedId(addResult));
 
             Assert.Null(url);
         }
@@ -1653,7 +1704,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // ContinueRebase will fail (no rebase in progress) but covers the code path
-            var result = await service.ContinueRebaseAsync(addResult.Repository!.Id);
+            var result = await service.ContinueRebaseAsync(SandboxedId(addResult));
 
             Assert.NotNull(result);
         }
@@ -1673,7 +1724,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // AbortRebase will fail (no rebase in progress) but covers the code path
-            var result = await service.AbortRebaseAsync(addResult.Repository!.Id);
+            var result = await service.AbortRebaseAsync(SandboxedId(addResult));
 
             Assert.NotNull(result);
         }
@@ -1696,7 +1747,7 @@ public class RepositoryServiceTests
             File.WriteAllText(Path.Combine(tempDir, "NewFile.mo"), "model NewModel end NewModel;");
             RunGit(tempDir, "add NewFile.mo");
 
-            var result = await service.CommitAsync(addResult.Repository!.Id, "Add new file");
+            var result = await service.CommitAsync(SandboxedId(addResult), "Add new file");
 
             Assert.True(result.Success);
         }
@@ -1715,7 +1766,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "feature-branch", switchToBranch: false);
+            var result = await service.CreateBranchAsync(SandboxedId(addResult), "feature-branch", switchToBranch: false);
 
             Assert.True(result.Success);
         }
@@ -1735,7 +1786,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Create and switch to branch (switchToBranch=true covers lines 872-875)
-            var result = await service.CreateBranchAsync(addResult.Repository!.Id, "new-feature", switchToBranch: true);
+            var result = await service.CreateBranchAsync(SandboxedId(addResult), "new-feature", switchToBranch: true);
 
             Assert.True(result.Success);
         }
@@ -1757,7 +1808,7 @@ public class RepositoryServiceTests
             // Create a second branch first (without switching)
             RunGit(tempDir, "branch dev-branch");
 
-            var result = await service.SwitchBranchAsync(addResult.Repository!.Id, "dev-branch");
+            var result = await service.SwitchBranchAsync(SandboxedId(addResult), "dev-branch");
 
             Assert.True(result.Success);
         }
@@ -1777,7 +1828,7 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Covers the non-null, non-local path through GetConflictVersionsAsync
-            var (ours, theirs) = await service.GetConflictVersionsAsync(addResult.Repository!.Id, "package.mo");
+            var (ours, theirs) = await service.GetConflictVersionsAsync(SandboxedId(addResult), "package.mo");
 
             // Clean repo → no conflict versions, both null
             Assert.Null(ours);
@@ -1800,7 +1851,7 @@ public class RepositoryServiceTests
 
             // Covers the non-null, non-local path through GetPullRequestUrlAsync
             // Local git repo without remote → null
-            var url = await service.GetPullRequestUrlAsync(addResult.Repository!.Id);
+            var url = await service.GetPullRequestUrlAsync(SandboxedId(addResult));
 
             // No remote configured, so null expected
             Assert.Null(url);
@@ -1822,7 +1873,7 @@ public class RepositoryServiceTests
 
             // Covers the non-null Git path through ResolveConflictAsync
             // No conflict in clean repo, so it will return false/error but code is covered
-            var result = await service.ResolveConflictAsync(addResult.Repository!.Id, "package.mo", ConflictResolutionChoice.KeepMine);
+            var result = await service.ResolveConflictAsync(SandboxedId(addResult), "package.mo", ConflictResolutionChoice.KeepMine);
 
             Assert.NotNull(result);
         }
@@ -1842,10 +1893,10 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Rebase onto current branch (main/master → itself, may succeed trivially)
-            var branches = service.GetBranches(addResult.Repository!.Id);
+            var branches = service.GetBranches(SandboxedId(addResult));
             var currentBranch = branches.FirstOrDefault(b => b.IsCurrent)?.Name ?? "main";
 
-            var result = await service.RebaseAsync(addResult.Repository!.Id, currentBranch);
+            var result = await service.RebaseAsync(SandboxedId(addResult), currentBranch);
 
             Assert.NotNull(result);
         }
@@ -1865,11 +1916,11 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
+            await service.LoadLibrariesAsync(SandboxedId(addResult));
             Assert.NotEmpty(libraryDataService.Libraries);
 
             // Remove with unloadLibraries=true
-            service.RemoveRepository(addResult.Repository!.Id, unloadLibraries: true);
+            service.RemoveRepository(SandboxedId(addResult), unloadLibraries: true);
 
             Assert.Empty(service.Repositories);
             Assert.Empty(libraryDataService.Libraries);
@@ -1998,7 +2049,7 @@ public class RepositoryServiceTests
             service.OnRepositoryLoadStateChanged += (repoId, isLoading) =>
                 stateChanges.Add((repoId, isLoading));
 
-            await service.LoadLibrariesAsync(addResult.Repository!.Id);
+            await service.LoadLibrariesAsync(SandboxedId(addResult));
 
             // Should have fired started (true) and completed (false)
             Assert.Contains(stateChanges, s => s.isLoading);
@@ -2185,13 +2236,13 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Prime the cache by calling GetWorkingCopyChanges
-            service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            service.GetWorkingCopyChanges(SandboxedId(addResult));
 
             // Should not throw
-            service.InvalidateWorkingCopyCache(addResult.Repository!.Id);
+            service.InvalidateWorkingCopyCache(SandboxedId(addResult));
 
             // Cache is cleared, next call should still work
-            var changes = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes = service.GetWorkingCopyChanges(SandboxedId(addResult));
             Assert.NotNull(changes);
         }
         finally { try { Directory.Delete(tempDir, true); } catch { } }
@@ -2224,9 +2275,9 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // First call populates cache
-            var changes1 = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes1 = service.GetWorkingCopyChanges(SandboxedId(addResult));
             // Second call should use cache (same result object if cache hit)
-            var changes2 = service.GetWorkingCopyChanges(addResult.Repository!.Id);
+            var changes2 = service.GetWorkingCopyChanges(SandboxedId(addResult));
 
             Assert.NotNull(changes1);
             Assert.NotNull(changes2);
@@ -2250,7 +2301,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var result = await service.UpdateRepositoryAsync(addResult.Repository!.Id);
+            var result = await service.UpdateRepositoryAsync(SandboxedId(addResult));
 
             // Local git with no remote → succeeds but no changes (or may fail gracefully)
             Assert.NotNull(result);
@@ -2277,7 +2328,7 @@ public class RepositoryServiceTests
             // Modify a file to revert
             File.WriteAllText(Path.Combine(tempDir, "package.mo"), "package TestLib \"modified\" end TestLib;");
 
-            var result = await service.RevertFilesAsync(addResult.Repository!.Id, new[] { "package.mo" });
+            var result = await service.RevertFilesAsync(SandboxedId(addResult), new[] { "package.mo" });
 
             Assert.NotNull(result);
         }
@@ -2301,11 +2352,11 @@ public class RepositoryServiceTests
             if (!addResult.Success) return;
 
             // Get current HEAD revision
-            var logEntries = service.GetLogEntries(addResult.Repository!.Id);
+            var logEntries = service.GetLogEntries(SandboxedId(addResult));
             if (!logEntries.Any()) return;
 
             var headRevision = logEntries.First().Revision;
-            var result = await service.CheckoutRevisionAsync(addResult.Repository!.Id, headRevision);
+            var result = await service.CheckoutRevisionAsync(SandboxedId(addResult), headRevision);
 
             Assert.NotNull(result);
         }
@@ -2438,7 +2489,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var result = await service.CleanWorkspaceAsync(addResult.Repository!.Id);
+            var result = await service.CleanWorkspaceAsync(SandboxedId(addResult));
 
             Assert.NotNull(result);
         }
@@ -2457,7 +2508,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var result = await service.PushAsync(addResult.Repository!.Id);
+            var result = await service.PushAsync(SandboxedId(addResult));
 
             // No remote configured, push should fail
             Assert.NotNull(result);
@@ -2477,7 +2528,7 @@ public class RepositoryServiceTests
             var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
             if (!addResult.Success) return;
 
-            var result = await service.ForcePushAsync(addResult.Repository!.Id);
+            var result = await service.ForcePushAsync(SandboxedId(addResult));
 
             Assert.NotNull(result);
         }
