@@ -68,6 +68,7 @@ public sealed class StyleSettingsInput
     private static readonly Toggle[] _toggles =
     [
         new(RuleIds.ImportStatementsFirst, i => i.ImportStatementsFirst, (i, v) => i.ImportStatementsFirst = v),
+        new(RuleIds.ComponentsBeforeClasses, i => i.ComponentsBeforeClasses, (i, v) => i.ComponentsBeforeClasses = v),
         new(RuleIds.OneOfEachSection, i => i.OneOfEachSection, (i, v) => i.OneOfEachSection = v),
         new(RuleIds.DontMixEquationAndAlgorithm, i => i.DontMixEquationAndAlgorithm, (i, v) => i.DontMixEquationAndAlgorithm = v),
         new(RuleIds.DontMixConnections, i => i.DontMixConnections, (i, v) => i.DontMixConnections = v),

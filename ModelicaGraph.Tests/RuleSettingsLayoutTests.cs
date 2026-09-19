@@ -149,9 +149,12 @@ public class RuleSettingsLayoutTests
         if (SettingsMarkup() is not { } markup)
             return;
 
+        // Matched on the rule id rather than the settings property: B181 gave this switch a rule of
+        // its own, so it binds through IsRuleSwitchedOn like the four beside it instead of to a
+        // plain bool.
         var switchMarkup = Regex.Match(
             markup,
-            @"<MudSwitch[^>]*?SelectedSettings\.ComponentsBeforeClasses.*?/>",
+            @"<MudSwitch[^>]*?RuleIds\.ComponentsBeforeClasses.*?/>",
             RegexOptions.Singleline);
 
         Assert.True(switchMarkup.Success, "the components-before-classes switch is no longer in the dialog");

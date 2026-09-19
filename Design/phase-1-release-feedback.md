@@ -376,7 +376,7 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting, and what the renderer writes
 
-**B236 ✅, B181, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
+**B236 ✅, B181 ✅, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
@@ -423,6 +423,20 @@ this package re-runs for the rule work regardless.
 - **B181** — `OneOfEachSection` is the working template for a formatting concern that also reports,
   and `FormattingOptions.ComponentsBeforeClasses` already exists. Giving it an id also closes B103's
   gap: it is the one row in `settings-reference.md` with no rule id to bind its label to.
+
+  **✅ Done 2026-09-19.** The template held and the six places were the six places. Two things the
+  row did not say. The prerequisite is `ImportStatementsFirst`, not `OneOfEachSection` like its
+  neighbours — the renderer reads the option only inside the branch imports-first selects — and
+  **the section is the unit, not the class**: components are grouped before classes within each
+  `public`/`protected` section and nothing moves across the boundary, so a whole-class comparison
+  would report exactly the arrangement formatting produces.
+
+  **It also turned up a defect of its own (B238), which had to be fixed first.** A rule switched on
+  while its prerequisite is off did not survive a save: the bool facade serialized the *effective*
+  answer, so it wrote `false` for a rule the user had enabled, and the facade's setter removes the
+  map entry when given false. A new rule sitting behind two prerequisites would have been the most
+  exposed thing in the settings file, so B181 could not ship on top of it. The three existing
+  ordering rules had the same hole and nothing had ever asked.
 - **B177** and **B195** both belong to `PackageOrderAnalyzer`'s family. B195 needs the explicit
   "match Dymola" setting, because Dymola never descends into non-package folders and so gives no
   signal at all for the stray-file half.

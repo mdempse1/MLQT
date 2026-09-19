@@ -182,11 +182,18 @@ public class FindingsFoundationTests
     [Fact]
     public void Settings_RoundTripThroughJson_PreservesEnablement()
     {
+        // Components-before-classes was a plain formatter flag when this test was written and is a
+        // rule with a prerequisite since B181, so it is only in effect with imports-first and
+        // one-of-each-section on. Those are set here so the assertion below is about serialization
+        // rather than about the prerequisite chain — B238's tests cover the configured-but-inert
+        // case, which is the one that used to lose the setting.
         var original = new StyleCheckingSettings
         {
             ClassHasDescription = true,
             FollowNamingConvention = true,
-            ComponentsBeforeClasses = true // formatter flag, must survive too
+            OneOfEachSection = true,
+            ImportStatementsFirst = true,
+            ComponentsBeforeClasses = true
         };
 
         var json = JsonSerializer.Serialize(original);

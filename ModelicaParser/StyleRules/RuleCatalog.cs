@@ -116,6 +116,12 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.InitialEqAlgoFirst, "Initial sections first", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear before regular ones.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.OneOfEachSection),
             new RuleDefinition(RuleIds.InitialEqAlgoLast, "Initial sections last", "Ordering", RuleSeverity.Warning, "Initial equation/algorithm sections must appear after regular ones.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.OneOfEachSection),
             new RuleDefinition(RuleIds.OneOfEachSection, "One of each section", "Ordering", RuleSeverity.Warning, "A class must not contain more than one of each section type.", SeverityFollowsFormatter: true),
+            // Requires ImportStatementsFirst rather than OneOfEachSection, unlike its neighbours: the
+            // renderer reads this option only inside the branch imports-first selects, so with that
+            // off it reorders nothing and the rule would report an arrangement formatting cannot
+            // reach. The prerequisite chains — imports-first itself requires one-of-each-section — so
+            // naming the nearer one states the real dependency without restating the far one.
+            new RuleDefinition(RuleIds.ComponentsBeforeClasses, "Components before classes", "Ordering", RuleSeverity.Warning, "Component declarations must appear before nested class definitions within a section.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.ImportStatementsFirst),
             new RuleDefinition(RuleIds.DontMixEquationAndAlgorithm, "Don't mix equation and algorithm", "Ordering", RuleSeverity.Warning, "A class must not mix equation and algorithm sections."),
             new RuleDefinition(RuleIds.DontMixConnections, "Don't mix connections and equations", "Ordering", RuleSeverity.Warning, "An equation section must not mix connect statements and equations."),
             new RuleDefinition(RuleIds.ClassDescription, "Class has description", "Documentation", RuleSeverity.Warning, "A class must have a description string."),

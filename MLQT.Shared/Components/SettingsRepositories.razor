@@ -215,9 +215,10 @@
             }
             @* Bound to what is *configured*, not to what currently takes effect. SeverityFor reports an
                ordering rule as Off while the prerequisite is off, so binding these to the rule facades
-               redrew them as unticked - which reads as MLQT having switched four of the user's settings
-               off, and disagreed with the components-before-classes switch beside them, which is a plain
-               bool and had nothing to mask it. Nothing is lost either way; this just says so. *@
+               redrew them as unticked - which reads as MLQT having switched the user's settings off.
+               Nothing is lost either way; this just says so. All five switches here are the same now:
+               components-before-classes was the exception while it was a plain formatter bool with
+               nothing to mask it, and B181 made it a rule like the rest. *@
             <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
                 Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.ImportStatementsFirst, v))"
@@ -232,7 +233,9 @@
                IsRuleSwitchedOn rather than the ImportStatementsFirst facade, for the reason the other
                three switches here give: a facade reports its rule off while OneOfEachSection is off,
                so a gate drawn from it would disable this switch for a second, invisible reason. *@
-            <MudSwitch @bind-Value="SelectedSettings.ComponentsBeforeClasses" Color="Color.Primary" Size="Size.Small"
+            <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
+                Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.ComponentsBeforeClasses)"
+                ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.ComponentsBeforeClasses, v))"
                 Disabled="!SelectedSettings.OneOfEachSection
                           || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 Label="Composition must have components before classes" />

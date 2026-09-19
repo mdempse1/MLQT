@@ -15,7 +15,6 @@ public class StyleCheckingSettings
 
     // Code formatting settings (formatter flags — NOT style-check rules; consumed by ModelicaRenderer)
     public bool ApplyFormattingRules { get; set; } = false;
-    public bool ComponentsBeforeClasses { get; set; } = false;
 
     // ---------------------------------------------------------------------------------------------
     // Per-rule severity map (the source of truth for rule enablement/severity).
@@ -223,16 +222,74 @@ public class StyleCheckingSettings
             RuleSeverities[ruleId] = severity;
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // The four rules with a prerequisite are NOT serialized through their bool facade (B238).
+    //
+    // A facade's getter answers the effective question — "will this rule run?" — which is what every
+    // caller of it wants and is false while the prerequisite is off. Serializing that wrote
+    // `"ImportStatementsFirst": false` for a rule the user had switched on, and because the bool
+    // setter *removes* the map entry when given false, reading the file back deleted the entry that
+    // the RuleSeverities map ahead of it had just restored. So a repository that switched an
+    // ordering rule on and then turned OneOfEachSection off lost the ordering rule at the next save,
+    // silently, while the settings dialog went on showing it ticked — the dialog binds to
+    // IsRuleSwitchedOn precisely so an inert rule still reads as configured.
+    //
+    // The bool reconciliation was designed to be order-independent and is, for `true`: enabling only
+    // seeds a default when the map has no entry. The asymmetry is that disabling removes
+    // unconditionally, which is right for a caller saying "turn this off" and wrong for a redundant
+    // `false` that only means "not currently in effect".
+    //
+    // So the legacy JSON name now carries the *configured* value, and the effective facade is out of
+    // the JSON surface entirely. Old settings files still load — the name they use is unchanged —
+    // and nothing that reads the facade in C# changes meaning.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The configured state of a rule with a prerequisite, under the property name settings files
+    /// have always used. See the note above: this is what is written and read, while the facade
+    /// beside it stays the effective answer for callers.
+    /// </summary>
+    private bool Configured(string ruleId) => IsRuleSwitchedOn(ruleId);
+
     // Code formatting style rules
+    [JsonIgnore]
     public bool ImportStatementsFirst
     {
         get => IsRuleEnabled(RuleIds.ImportStatementsFirst);
         set => SetRuleEnabled(RuleIds.ImportStatementsFirst, value);
     }
+
+    [JsonPropertyName(nameof(ImportStatementsFirst))]
+    public bool ImportStatementsFirstConfigured
+    {
+        get => Configured(RuleIds.ImportStatementsFirst);
+        set => SetRuleEnabled(RuleIds.ImportStatementsFirst, value);
+    }
+
+    // No prerequisite, so effective and configured are the same answer and the facade serializes
+    // unchanged. It is the prerequisite of the other three.
     public bool OneOfEachSection
     {
         get => IsRuleEnabled(RuleIds.OneOfEachSection);
         set => SetRuleEnabled(RuleIds.OneOfEachSection, value);
+    }
+
+    /// <summary>
+    /// Was a plain formatter flag until B181 gave it a rule id. The JSON property name is unchanged,
+    /// so a settings file written by an earlier MLQT still loads.
+    /// </summary>
+    [JsonIgnore]
+    public bool ComponentsBeforeClasses
+    {
+        get => IsRuleEnabled(RuleIds.ComponentsBeforeClasses);
+        set => SetRuleEnabled(RuleIds.ComponentsBeforeClasses, value);
+    }
+
+    [JsonPropertyName(nameof(ComponentsBeforeClasses))]
+    public bool ComponentsBeforeClassesConfigured
+    {
+        get => Configured(RuleIds.ComponentsBeforeClasses);
+        set => SetRuleEnabled(RuleIds.ComponentsBeforeClasses, value);
     }
     public bool DontMixEquationAndAlgorithm
     {
@@ -244,14 +301,31 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.DontMixConnections);
         set => SetRuleEnabled(RuleIds.DontMixConnections, value);
     }
+    [JsonIgnore]
     public bool InitialEQAlgoFirst
     {
         get => IsRuleEnabled(RuleIds.InitialEqAlgoFirst);
         set => SetRuleEnabled(RuleIds.InitialEqAlgoFirst, value);
     }
+
+    [JsonPropertyName(nameof(InitialEQAlgoFirst))]
+    public bool InitialEQAlgoFirstConfigured
+    {
+        get => Configured(RuleIds.InitialEqAlgoFirst);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoFirst, value);
+    }
+
+    [JsonIgnore]
     public bool InitialEQAlgoLast
     {
         get => IsRuleEnabled(RuleIds.InitialEqAlgoLast);
+        set => SetRuleEnabled(RuleIds.InitialEqAlgoLast, value);
+    }
+
+    [JsonPropertyName(nameof(InitialEQAlgoLast))]
+    public bool InitialEQAlgoLastConfigured
+    {
+        get => Configured(RuleIds.InitialEqAlgoLast);
         set => SetRuleEnabled(RuleIds.InitialEqAlgoLast, value);
     }
 

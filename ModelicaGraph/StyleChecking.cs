@@ -138,6 +138,13 @@ public static class StyleChecking
 
                 RunRule(new ExtendsClausesAtTop(false, basePackage), parsedCode, findings, timings);
             }
+            // Its own switch, unlike ExtendsAtTop above: that one is governed by imports-first and
+            // runs whenever it does, while this is a separate convention that happens to share the
+            // prerequisite. SeverityFor resolves the chain, so asking IsRuleEnabled here is enough.
+            if (settings.ComponentsBeforeClasses)
+            {
+                RunRule(new ComponentsBeforeClasses(basePackage), parsedCode, findings, timings);
+            }
             if (settings.InitialEQAlgoFirst || settings.InitialEQAlgoLast)
             {
                 RunRule(
