@@ -177,6 +177,48 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
         Assert.Equal(0, measured[0]);
     }
 
+    /// <summary>
+    /// A resource name stays on one line and the pane scrolls sideways to reach the rest of it,
+    /// rather than wrapping to whatever width the splitter is at.
+    ///
+    /// <para>Three things have to agree or the picture is unchanged: the label wraps because it is
+    /// <c>white-space: normal</c>, the row clips because <c>.mud-treeview-item-content</c> is
+    /// <c>overflow: hidden</c>, and the tree can never be wider than the pane because every level of
+    /// it sizes to its parent — so there is nothing for the pane's <c>overflow-x</c> to scroll.</para>
+    /// </summary>
+    [Fact]
+    public async Task ALongResourceNameKeepsToOneLineAndScrolls()
+    {
+        var page = await OpenAsync(2, withResources: true);
+        await Assertions.Expect(page.GetByText(new Regex("Filter by type:")).First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        // The fixture's own resource names are all short enough to fit, so the case being tested has
+        // to be made rather than waited for. The name is the only thing borrowed; everything the
+        // assertions look at is the page's own layout.
+        await page.EvaluateAsync(@"() => {
+            const label = document.querySelector('.mlqt-resource-tree-pane .mud-treeview-item-label');
+            label.textContent = 'SaturatingInductor_LossyRepresentationOfTheThing.png (1)';
+        }");
+        await page.WaitForTimeoutAsync(300);
+
+        var measured = await page.EvaluateAsync<string[]>(@"() => {
+            const pane = document.querySelector('.mlqt-resource-tree-pane');
+            const label = pane.querySelector('.mud-treeview-item-label');
+            return [getComputedStyle(label).whiteSpace,
+                    String(pane.scrollWidth - pane.clientWidth),
+                    String(Math.round(label.getBoundingClientRect().height))];
+        }");
+
+        Assert.Equal("nowrap", measured[0]);
+        Assert.True(int.Parse(measured[1]) > 0,
+            $"the pane should have something to scroll to; overflow was {measured[1]}px");
+
+        // One line. Wrapped, this row was two, which is what the report was about.
+        Assert.True(int.Parse(measured[2]) < 40,
+            $"the name should be on one line; the label was {measured[2]}px tall");
+    }
+
     [Fact]
     public async Task TheResourceTreeColumnCanBeWidened()
     {

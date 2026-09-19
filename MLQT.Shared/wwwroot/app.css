@@ -161,3 +161,33 @@ body * {
     min-height: 0;
     overflow-y: auto;
 }
+
+/* ── The resource tree on the External Resources page ────────────────────────────
+   A row stays on one line and the pane scrolls sideways to reach the rest of it,
+   rather than the name wrapping to fit whatever width the splitter is at.
+
+   Three things have to agree or nothing happens. The label wraps because it is
+   `white-space: normal`; the row clips because `.mud-treeview-item-content` is
+   `overflow: hidden`; and the tree can never be wider than the pane because every level
+   of it sizes to its parent, so there is nothing for the pane's `overflow-x: auto` to
+   scroll. Fix one or two of those and the result is the same picture, which is what
+   makes this worth writing down.
+
+   `min-width: 100%` alongside `width: max-content` on the row is what keeps the hover
+   and selection highlight spanning the full width of the pane for a short name, instead
+   of stopping at the end of the text. */
+
+.mlqt-resource-tree-pane .mud-treeview-item-label {
+    white-space: nowrap;
+}
+
+.mlqt-resource-tree-pane .mud-treeview-item-content {
+    overflow: visible;
+    width: max-content;
+    min-width: 100%;
+}
+
+.mlqt-resource-tree-pane .mud-treeview {
+    overflow: visible;
+    min-width: max-content;
+}
