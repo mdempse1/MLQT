@@ -473,7 +473,7 @@ public sealed class StyleTools
         var file = _libraries.CombinedGraph.GetNode<FileNode>(node.ContainingFileId);
         return string.IsNullOrEmpty(file?.FilePath)
             ? null
-            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile);
+            : new ClassLocation(file.FilePath, node.StartLine, node.SourceMatchesFile, node.TrimElision);
     }
 
     private static CheckResult ToCheckResult(IReadOnlyList<LogMessage> findings, int modelsChecked)

@@ -12,6 +12,29 @@ namespace ModelicaGraph.Tests;
 /// stored source, because they have their own nodes. Checking must not be able to tell — a rule whose
 /// result changes with the trim reports different counts on a fresh load and on a file reload, which
 /// is exactly what happened to the unused-class rule.
+///
+/// <para><b>The surviving mutants, read rather than chased (B216).</b> The item asked for the file's
+/// seven survivors to be finished with the rewrite, and the honest end state is that each is killed
+/// by a test, gone with the code, or judged here. Three went with the render: the parse-error guard,
+/// the short-class early return and <c>excludeClassDefinitions: false</c> are not in the excising
+/// version at all. Four are killed by the tests below — the standalone rule, the duplicate-name
+/// rule, the per-child file check and CRLF handling. What is left is judged equivalent and recorded
+/// so the next audit does not re-raise it:</para>
+///
+/// <list type="bullet">
+/// <item>The package-level <c>Any(...)</c> filter is now a pure optimisation. The per-child loop
+/// asks the same question again before cutting anything, so widening the filter lets more packages
+/// into the loop and they come out with no ranges and unchanged.</item>
+/// <item><c>if (standaloneNames.Count == 0) return;</c> is the same shape: with no names, no ranges
+/// are built and the method returns on the next check anyway.</item>
+/// <item><c>lowerName != "package"</c> guards a class literally named <c>package</c>, which cannot
+/// exist — it is a reserved word, so such a file does not parse and no node is ever created. A test
+/// for it was written, found to assert nothing, and removed.</item>
+/// <item>The range guards (<c>first &lt; 2</c>, <c>last &gt;= lines.Length</c>) and
+/// <c>OwnsItsLines</c>'s leading-whitespace check are bounds checks on data a loader does not
+/// produce: a child of a package is inside it. They turn a swallowed <c>IndexOutOfRangeException</c>
+/// into a clean skip, and a test would have to fabricate a node to reach them.</item>
+/// </list>
 /// </summary>
 public class PackageCodeTrimmerTests
 {
@@ -157,6 +180,12 @@ public class PackageCodeTrimmerTests
     /// The control for the test above: a package with an inline standalone child is still trimmed,
     /// and still says so. Without this, the B230 guard could be widened to "never trim anything" and
     /// nothing here would object.
+    ///
+    /// <para><b>What it says changed with B216.</b> Trimming used to re-render the package, so its
+    /// lines were the renderer's and <c>SourceMatchesFile</c> went false. It now excises the
+    /// children's lines, so what is left is the file's own text and the node carries the
+    /// <see cref="ModelNode.TrimElision"/> that says which lines are missing — the mapping is kept
+    /// rather than abandoned.</para>
     /// </summary>
     [Fact]
     public void PackageWithAnInlineChildIsStillTrimmedAndSaysSoOnTheNode()
@@ -164,11 +193,35 @@ public class PackageCodeTrimmerTests
         var graph = Build();
         var package = graph.GetNode<ModelNode>("P")!;
         Assert.True(package.SourceMatchesFile);
+        Assert.Null(package.TrimElision);
 
         PackageCodeTrimmer.TrimStandaloneChildren(graph);
 
         Assert.DoesNotContain("model A", package.Definition.ModelicaCode);
-        Assert.False(package.SourceMatchesFile);
+        Assert.True(package.SourceMatchesFile);
+        Assert.NotNull(package.TrimElision);
+        Assert.False(package.TrimElision!.IsEmpty);
+    }
+
+    /// <summary>
+    /// The point of excising rather than re-rendering: every line that survives is the file's own,
+    /// and the elision says where it came from.
+    /// </summary>
+    [Fact]
+    public void WhatIsLeftIsTheFilesOwnText_AndTheElisionMapsItBack()
+    {
+        var graph = Build();
+        var package = graph.GetNode<ModelNode>("P")!;
+        var original = package.Definition.ModelicaCode.Replace("\r\n", "\n").Split('\n');
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var trimmed = package.Definition.ModelicaCode.Split('\n');
+        var elision = package.TrimElision!;
+
+        // Every remaining line is character-for-character the line the elision says it came from.
+        for (var display = 1; display <= trimmed.Length; display++)
+            Assert.Equal(original[elision.ToSourceLine(display) - 1], trimmed[display - 1]);
     }
 
     /// <summary>
@@ -203,6 +256,157 @@ public class PackageCodeTrimmerTests
         PackageCodeTrimmer.TrimStandaloneChildren(graph);
 
         Assert.DoesNotContain("model Inline", package.Definition.ModelicaCode);
+    }
+
+    /// <summary>
+    /// A child that cannot be stored standalone stays in the package's source, because that is
+    /// where it has to live: <c>replaceable</c>, <c>redeclare</c>, <c>inner</c> and <c>outer</c>
+    /// classes cannot be pulled out into a file of their own.
+    /// </summary>
+    [Fact]
+    public void ANonStandaloneChildIsNotExcised()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "W.mo", """
+            package W "w"
+              replaceable model Inner "cannot be standalone"
+              end Inner;
+              model Plain "can be"
+              end Plain;
+            end W;
+            """);
+
+        Assert.False(graph.GetNode<ModelNode>("W.Inner")!.CanBeStoredStandalone);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("W")!.Definition.ModelicaCode;
+        Assert.Contains("model Inner", after);
+        Assert.DoesNotContain("model Plain", after);
+    }
+
+    /// <summary>
+    /// Two children whose names differ only in case cannot both be written to their own file on a
+    /// case-insensitive filesystem, so neither is treated as standalone — the same rule
+    /// <c>ModelicaPackageSaver</c> applies when it writes them out.
+    /// </summary>
+    [Fact]
+    public void ChildrenWhoseNamesDifferOnlyInCaseAreNotExcised()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "X.mo", """
+            package X "x"
+              model Thing "one"
+              end Thing;
+              model thing "the other"
+              end thing;
+            end X;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("X")!.Definition.ModelicaCode;
+        Assert.Contains("model Thing", after);
+        Assert.Contains("model thing", after);
+    }
+
+    /// <summary>
+    /// The stored source can have CRLF endings — it is a slice of a file, and every file in the
+    /// Modelica Standard Library and in Buildings is CRLF. Splitting on the wrong terminator would
+    /// make the line numbers meaningless and the excision cut in the wrong places.
+    /// </summary>
+    [Fact]
+    public void ACrlfStoredSourceIsTrimmedCorrectly()
+    {
+        var graph = new DirectedGraph();
+        var crlf = string.Join(new string([(char)13, (char)10]),
+            "package Z \"z\"", "  model A \"a\"", "  end A;", "  constant Real k = 1;", "end Z;", "");
+        GraphBuilder.LoadModelicaFile(graph, "Z.mo", crlf);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("Z")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model A", after);
+        Assert.Contains("constant Real k = 1;", after);
+        Assert.Contains("end Z;", after);
+    }
+
+    /// <summary>
+    /// A child that does not have its lines to itself is left where it is (B216).
+    ///
+    /// <para>Excising works by dropping whole lines, so a class sharing a line with its neighbour
+    /// cannot go without taking that neighbour with it. It is kept instead, which costs nothing: a
+    /// rule visitor skips a nested standalone class definition because it has its own node and is
+    /// checked there. <c>ElisionFinder</c> makes the same call for the same reason.</para>
+    /// </summary>
+    [Fact]
+    public void AChildSharingALineWithItsNeighbourIsNotExcised()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "T.mo", """
+            package T "t"
+              model A "a" end A; model B "b" end B;
+            end T;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("T")!.Definition.ModelicaCode;
+        Assert.Contains("model A", after);
+        Assert.Contains("model B", after);
+    }
+
+    /// <summary>
+    /// The control for the test above, on the same shape: one child per line really is excised, so
+    /// the guard is about sharing a line and not about this fixture.
+    /// </summary>
+    [Fact]
+    public void AChildOnItsOwnLinesIsExcised()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "U.mo", """
+            package U "u"
+              model A "a"
+              end A;
+              model B "b"
+              end B;
+            end U;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("U")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model A", after);
+        Assert.DoesNotContain("model B", after);
+        Assert.Contains("package U", after);
+        Assert.Contains("end U;", after);
+    }
+
+    /// <summary>
+    /// A sibling class beside the package in the same file is not one of its children to cut out.
+    /// Its lines are outside the package's, and subtracting the package's start line from them
+    /// gives a range that means nothing in the package's own text.
+    /// </summary>
+    [Fact]
+    public void ASiblingInTheSameFileIsNotTouched()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "V.mo", """
+            package V "v"
+              model A "a"
+              end A;
+            end V;
+
+            model Beside "not part of V"
+            end Beside;
+            """);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("V")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model A", after);
+        Assert.DoesNotContain("Beside", after);   // never was in V's source
+        Assert.Contains("end V;", after);
     }
 
     /// <summary>

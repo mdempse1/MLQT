@@ -376,7 +376,7 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting, and what the renderer writes
 
-**B236 ✅, B181 ✅, B177 ✅, B195 ✅, B175 ✅** · 5 items · M · plus **B216** and **B232** from WP2
+**B236 ✅, B181 ✅, B177 ✅, B195 ✅, B175 ✅** · 5 items · M · plus **B216 ✅** and **B232 ✅** from WP2 · **complete 2026-09-20**
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
@@ -387,6 +387,20 @@ Walk that path once with three rules in hand rather than three times.
 renderer output is judged by a whole-library comparison, not by reading. B236 and B216 both want the
 parity number (MSL = 34329 findings, no finding moving except as the change accounts for it) that
 this package re-runs for the rule work regardless.
+
+**✅ The package is done, and the gate was worth having.** Each of the three renderer-output items
+was judged by running it over a whole library rather than by reading it, and each time that found
+something reading would not have. B236's cause was not the one its row named. B195's premise — that
+MLQT descends into folders Dymola ignores — turned out to be false. And B216's parity run is the
+clearest case: it confirmed S1's prediction exactly (0 findings lost on either library, the 2
+`OneOfEachSection` findings gained on MSL and no others) *and* showed the real payoff, which S1 had
+not put a number on — **466 findings across the two libraries that used to be pinned to the class
+declaration now point at the line they are about**.
+
+**The parity number in the line above is stale and deliberately left.** It was written when the
+enabled rule set was whatever produced 34329; the runs here used an explicit nine-rule config and
+got 9008 on MSL. What matters is not the absolute figure but that it is compared against itself
+across a change, which is how each of these was judged.
 
 - **B236 first, and it is not like the other four.** They add or refine rules; this is a regression in
   what the formatter *writes* — every file now ends without its final newline, so reformatting a

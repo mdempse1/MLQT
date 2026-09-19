@@ -132,19 +132,43 @@ public class FileLineReportingTests
     }
 
     [Fact]
-    public void APackageWhoseSourceWasTrimmed_IsReportedAtItsDeclaration()
+    public void APackageWhoseSourceWasTrimmed_IsReportedAtTheLineItIsReallyAbout()
     {
-        // A package's stored source has its inline children removed and the rest re-rendered, so a
-        // line inside it is the renderer's, not the file's. Adding the offset anyway would point at a
-        // real line belonging to another class; the package's own declaration is reported instead.
+        // A package's stored source has its inline children removed. That used to mean re-rendering
+        // the rest, so a line inside it was the renderer's and not the file's, and the report fell
+        // back to the package's own declaration — true, but no more precise than naming the class.
+        //
+        // B216 excises the children's lines instead, so what is left is the file's own text with
+        // runs of lines missing, and the node carries the map. The offset is taken after putting
+        // those lines back, which lands on the line the finding is actually about: line 16 is
+        // `end Fix;`, where the missing Documentation(revisions=…) annotation belongs.
         using var lib = Fixture();
 
         var findings = FindingsFor(lib.LibraryPath, "Fix");
 
         var finding = Assert.Single(findings);
-        // Inside the trimmed text this is not line 1, so the offset would have moved it — onto
-        // `model First`, a class that is perfectly well documented.
+
+        // Inside the trimmed text this is not line 1, so a report that ignored the map would be
+        // somewhere else entirely — and one that ignored the trim would land on `model First`, a
+        // class that is perfectly well documented.
         Assert.True(finding.GetProperty("ModelLine").GetInt32() > 1);
-        Assert.Equal(2, finding.GetProperty("Line").GetInt32());   // `package Fix "A library"`
+        Assert.Equal(16, finding.GetProperty("Line").GetInt32());
+    }
+
+    [Fact]
+    public void TheTrimmedLineMapDoesNotDriftOntoAnotherClass()
+    {
+        // The failure this guards against is the one that made the old fallback the safe answer: an
+        // offset applied to trimmed text points into a class that is not the one being reported on.
+        // `model First` is fully documented, so a finding landing on its lines would be a finding
+        // about code with nothing wrong with it.
+        using var lib = Fixture();
+
+        var finding = Assert.Single(FindingsFor(lib.LibraryPath, "Fix"));
+        var line = finding.GetProperty("Line").GetInt32();
+
+        Assert.False(line is >= 4 and <= 6, $"line {line} is inside `model First`");
+        Assert.False(line is >= 8 and <= 10, $"line {line} is inside `model Second`");
+        Assert.False(line is >= 12 and <= 14, $"line {line} is inside `model Late`");
     }
 }

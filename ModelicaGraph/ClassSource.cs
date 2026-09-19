@@ -8,10 +8,11 @@ namespace ModelicaGraph;
 /// rather than checks it.
 ///
 /// <para>Usually that is simply <c>Definition.ModelicaCode</c>, which starts life as an exact slice
-/// of the file. Two things rewrite it — the formatter after a save, which is correct because the
-/// file now says the same, and <see cref="PackageCodeTrimmer"/> for a package with inline standalone
-/// children, which is not. <see cref="ModelNode.SourceMatchesFile"/> is the flag that says which,
-/// and when it is false this reads the file again and slices the class back out of it.</para>
+/// of the file. Two things change it — the formatter after a save, which is correct because the
+/// file now says the same, and <see cref="PackageCodeTrimmer"/>, which excises a package's inline
+/// standalone children and so leaves text that is the file's own but no longer all of the class.
+/// <see cref="ModelNode.StoredSourceIsWholeClass"/> is the flag that says which, and when it is
+/// false this reads the file again and slices the class back out of it.</para>
 ///
 /// <para><b>Slicing is not as obvious as the fields make it look</b>, which is why it is here and
 /// not at each call site. The offsets are into the file's text with line endings normalised, because
@@ -43,7 +44,7 @@ public static class ClassSource
         ArgumentNullException.ThrowIfNull(graph);
 
         var stored = model.Definition.ModelicaCode ?? string.Empty;
-        if (model.SourceMatchesFile)
+        if (model.StoredSourceIsWholeClass)
             return stored;
 
         var path = graph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;

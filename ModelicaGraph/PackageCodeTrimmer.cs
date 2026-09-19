@@ -1,7 +1,5 @@
-using System.Collections.Concurrent;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.Helpers;
-using ModelicaParser.Visitors;
 
 namespace ModelicaGraph;
 
@@ -10,9 +8,17 @@ namespace ModelicaGraph;
 /// their own graph nodes), freeing the duplicated inline source for large libraries. Shared by the GUI
 /// startup and the headless CLI/MCP so all paths style-check the same representation.
 ///
-/// The trimmed source is stored WITHOUT a leading <c>within</c> clause: the <c>within</c> is only needed
-/// transiently to parse the class in isolation, and keeping it would shift every finding's line number
-/// by one relative to the original file (the number a user sees in their Modelica tool).
+/// <para><b>It cuts the children's lines out; it does not rebuild the package.</b> Everything left is
+/// the file's own text, character for character, and <see cref="ModelNode.TrimElision"/> records
+/// which lines went — so a finding's line still maps to a line in the file (B216). Re-rendering the
+/// package instead, which is what this did, rewrote the whole of it as a side effect of removing
+/// part of it: the mapping was gone, and every finding in a trimmed package was reported at the
+/// class declaration because nothing could say where it really was. Measured over the Modelica
+/// Standard Library, that was 432 findings; over Buildings, 34.</para>
+///
+/// <para>The excision is also why nothing here has to think about the <c>within</c> clause any more.
+/// A package's stored code never carries one, and since the text is no longer parsed and re-emitted
+/// there is no round trip to add one and strip it off again.</para>
 /// </summary>
 public static class PackageCodeTrimmer
 {
@@ -51,10 +57,10 @@ public static class PackageCodeTrimmer
             // of the damage: 377 of 688 trimmed packages in MSL and 1,172 of 1,235 in Buildings,
             // where 1,073 came out longer than the file they came from (backlog B230).
             //
-            // Sharing the file is the cheap half of the question. The exact one is whether the
-            // child's [StartIndex..StopIndex] falls inside the package's, which also excludes a
-            // sibling sitting beside the package in the same file; on both libraries the two answers
-            // agree exactly, and B216 asks the precise question because it excises those ranges.
+            // Sharing the file is the cheap half of the question, and it stays the one asked here.
+            // The exact one — whether the child's lines fall inside the package's — is asked per
+            // child below, where it has to be anyway before a range can be cut out. Asking it twice
+            // would mean walking every child of every package to decide whether to walk them again.
             children.Any(c => c.CanBeStoredStandalone &&
                               string.Equals(c.ContainingFileId, m.ContainingFileId, StringComparison.Ordinal))).ToList();
         if (packagesToTrim.Count == 0)
@@ -87,44 +93,89 @@ public static class PackageCodeTrimmer
                 if (standaloneNames.Count == 0)
                     return;
 
-                // Prepend a within clause only so the class parses in isolation (required by the grammar
-                // for name resolution during rendering).
-                var codeToParse = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
+                // Excised rather than rendered away (B216). Cutting the children's lines out leaves
+                // every line that is still there exactly as the user wrote it, so the text is a
+                // subsequence of the file and the relation between the two is a SourceElision —
+                // monotone, so mapping a finding's line back is arithmetic. Re-rendering instead
+                // rebuilt the whole package as a side effect of removing part of it, and the line
+                // mapping went with it: every finding in a trimmed package pointed at the class
+                // declaration because nothing could say where it really was.
+                var lines = model.Definition.ModelicaCode.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
-                var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(codeToParse);
-                if (parseTree == null || errors.Count > 0)
+                var ranges = new List<ElidedRange>();
+                foreach (var child in children)
+                {
+                    if (!standaloneNames.Contains(child.Definition.Name))
+                        continue;
+
+                    // Only a child that is actually inline in this package's file. A child already
+                    // in its own file is not in this text at all, and its line numbers are measured
+                    // against that file — subtracting this package's start line from them produces a
+                    // range that means nothing here, and on a package with one child of each kind
+                    // the two ranges collided and the whole trim was abandoned. This is B230's
+                    // question asked per child rather than per package.
+                    if (!string.Equals(child.ContainingFileId, model.ContainingFileId, StringComparison.Ordinal))
+                        continue;
+
+                    // The child's lines relative to this package's own source. Line numbers, not the
+                    // character offsets the item named: both are on the node, and lines are what an
+                    // elision is made of — going through offsets would mean converting back.
+                    var first = child.StartLine - model.StartLine + 1;
+                    var last = child.StopLine - model.StartLine + 1;
+
+                    // Only a child that owns its lines. One sharing a line with something else
+                    // cannot be dropped without taking that with it, and ElisionFinder makes the
+                    // same call for the same reason: a construct goes as a unit or not at all.
+                    if (first < 2 || last < first || last >= lines.Length)
+                        continue;
+                    if (!OwnsItsLines(lines, first, last))
+                        continue;
+
+                    ranges.Add(new ElidedRange(first, last, Replacement: null));
+                }
+
+                if (ranges.Count == 0)
                     return;
 
-                // Short class definitions (X = Y) have no body to trim.
-                foreach (var classDef in parseTree.class_definition())
-                    if (classDef.class_specifier()?.short_class_specifier() != null)
-                        return;
+                var elision = SourceElision.Of(ranges);
 
-                var visitor = new ModelicaRenderer(
-                    renderForCodeEditor: false,
-                    showAnnotations: true,
-                    excludeClassDefinitions: false,
-                    tokenStream: null,
-                    classNamesToExclude: standaloneNames,
-                    formatting: FormattingOptions.None);
-                visitor.VisitStored_definition(parseTree);
-                var trimmedCode = string.Join("\n", visitor.Code);
-
-                // Drop the leading within line so stored line numbers align with the source file.
                 // Setting ModelicaCode releases the parse tree with it — a tree read from the old
                 // source describes code that is no longer here.
-                model.Definition.ModelicaCode = WithinClause.Strip(trimmedCode);
+                model.Definition.ModelicaCode = string.Join("\n", elision.Apply(lines));
+                model.TrimElision = elision;
 
-                // The children are gone and the rest has been through the renderer, so a line in this
-                // text is no longer the file's line. Reports fall back to the class declaration
-                // rather than pointing confidently at the wrong line — see ModelNode.SourceMatchesFile.
-                model.SourceMatchesFile = false;
-
+                // Still the file's own text, so a line in it still maps to a line in the file —
+                // through the elision rather than by adding the offset. See ClassLocation.FileLine.
+                model.SourceMatchesFile = true;
             }
             catch
             {
                 // If trimming a model fails, keep the original — it's still valid.
             }
         });
+    }
+
+    /// <summary>
+    /// Whether the class occupying lines <paramref name="first"/>..<paramref name="last"/> has those
+    /// lines to itself, so dropping them takes nothing else with it.
+    ///
+    /// <para>A class written as <c>model A end A; model B end B;</c> on one line shares it with its
+    /// neighbour; so does one whose <c>end</c> is followed by a comment about the next declaration.
+    /// Neither can be excised, and the whole point of excising is that what is left is untouched, so
+    /// such a child is simply kept. It is then still nested inside the package's source, which is
+    /// harmless: a rule visitor skips a nested standalone class definition because it has its own
+    /// node and is checked there.</para>
+    /// </summary>
+    private static bool OwnsItsLines(string[] lines, int first, int last)
+    {
+        var opening = lines[first - 1].TrimStart();
+        var closing = lines[last - 1].TrimEnd();
+
+        // The parser's start line is the class_definition, which begins at its first keyword — so
+        // anything before it on that line belongs to something else. The stop line ends at `end X`,
+        // and the `;` after it is the only thing allowed to follow.
+        return opening.Length > 0
+            && lines[first - 1].AsSpan(0, lines[first - 1].Length - opening.Length).IsWhiteSpace()
+            && closing.EndsWith(';');
     }
 }

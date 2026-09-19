@@ -208,6 +208,51 @@ public class FormattingOptOutWriterTests
     }
 
     [Fact]
+    public void RemovingTheLastArgumentOfMlqtLeavesNoTrailingComma()
+    {
+        // The other side of the separator problem: `format=false` is last here, so the comma that
+        // has to go is the one before it rather than the one after.
+        var source = "model M\n  annotation(__MLQT(suppress=\"MLQT.Doc.ClassDescription\", format=false));\nend M;\n";
+
+        var result = Remove(source);
+
+        Assert.Contains("suppress=\"MLQT.Doc.ClassDescription\"", result);
+        Assert.DoesNotContain("format", result);
+        Assert.DoesNotContain(", )", result);
+        Assert.NotNull(ModelicaParserHelper.Parse(result));
+    }
+
+    [Fact]
+    public void AClassPathThatNamesNothing_IsAnErrorRatherThanASilentNoOp()
+    {
+        // Both directions. A caller that has lost track of where the class is must be told, not
+        // quietly handed back the file it passed in — the button would then report success and
+        // change nothing.
+        const string Source = "package P\n  model Inner\n  end Inner;\nend P;\n";
+
+        Assert.False(MlqtSuppressionWriter.TryAddFormattingOptOutToFile(
+            Source, ["Missing"], out _, out var addError));
+        Assert.Contains("Missing", addError!);
+
+        Assert.False(MlqtSuppressionWriter.TryRemoveFormattingOptOutFromFile(
+            Source, ["Missing"], out var removed, out var removeError));
+        Assert.Contains("Missing", removeError!);
+        Assert.Equal(Source, removed);
+    }
+
+    [Fact]
+    public void AnEmptySource_IsRefusedByBothDirections()
+    {
+        Assert.False(MlqtSuppressionWriter.TryAddFormattingOptOutToFile(
+            string.Empty, null, out _, out var addError));
+        Assert.NotNull(addError);
+
+        Assert.False(MlqtSuppressionWriter.TryRemoveFormattingOptOutFromFile(
+            string.Empty, null, out _, out var removeError));
+        Assert.NotNull(removeError);
+    }
+
+    [Fact]
     public void AFileThatDoesNotParse_IsLeftExactlyAsItIs()
     {
         // The parser recovers from most errors rather than returning nothing, so the re-parse in the

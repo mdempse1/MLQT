@@ -222,10 +222,10 @@
                                                                                         "reason":  "Not yet tested to the parser assembly\u0027s 95% bar: the uncovered lines are the error-recovery and diagnostic-formatting branches reached only by malformed input. Reachable; nobody has written them."
                                                                                     },
                     "ModelicaParser::ModelicaParser.StyleRules.MlqtSuppressionWriter":  {
-                                                                                            "coverage":  94.2,
-                                                                                            "lines":  121,
+                                                                                            "coverage":  93.0,
+                                                                                            "lines":  148,
                                                                                             "bar":  95,
-                                                                                            "reason":  "0.7 points under the bar. The uncovered lines are the splice positions for annotation shapes the writer can encounter but no fixture yet produces. Reachable; not yet written."
+                                                                                            "reason":  "2 points under the bar, and deliberately. B175 added the removal half of the writer, whose uncovered lines are two `Parse(...) is null` guards: one before the splice and one re-parsing the result. Neither is reachable from these entry points - the parser recovers rather than returning nothing - but the second is the backstop on a method that rewrites a class's source rather than adding to it, and removing a safety net to move a number is the wrong trade. The rest of the class is the older debt: splice positions for annotation shapes no fixture yet produces."
                                                                                         },
                     "RevisionControl::RevisionControl.SvnCli":  {
                                                                     "coverage":  0,

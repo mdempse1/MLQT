@@ -1,4 +1,5 @@
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 using RevisionControl;
 
 namespace ModelicaGraph.DataTypes;
@@ -65,6 +66,35 @@ public class ModelNode : GraphNode
     /// declaration, which is never wrong about which class is meant.</para>
     /// </summary>
     public bool SourceMatchesFile { get; set; } = true;
+
+    /// <summary>
+    /// Which lines of this class's own source are not in its stored <see cref="ModelDefinition.ModelicaCode"/>,
+    /// when the two differ only by whole lines having been dropped (B216).
+    ///
+    /// <para>A package's inline standalone children are excised rather than rendered away, so the
+    /// text that is left is the file's own, character for character, with runs of lines missing.
+    /// That is a <see cref="SourceElision"/> — monotone and invertible — so a finding's line in the
+    /// stored text still maps to a line in the file, and <see cref="SourceMatchesFile"/> stays true.
+    /// Before this, trimming rebuilt the package through the renderer and the mapping was gone: the
+    /// findings in a trimmed package pointed at the class declaration and nothing more precise.</para>
+    ///
+    /// <para><c>null</c> means the stored source is contiguous — nothing was dropped — which is the
+    /// case for every class that is not a trimmed package.</para>
+    /// </summary>
+    public SourceElision? TrimElision { get; set; }
+
+    /// <summary>
+    /// Whether the stored source is the whole class as the file has it — nothing rewritten and
+    /// nothing dropped.
+    ///
+    /// <para><see cref="SourceMatchesFile"/> used to answer both this and "does a line in the stored
+    /// text map to a line in the file?", because the only thing that rewrote the text also destroyed
+    /// the mapping. B216 separates them: a trimmed package's lines still map, through
+    /// <see cref="TrimElision"/>, but its children are missing from the text — so anything that
+    /// wants to <em>show</em> the class has to read the file again, while anything reporting a line
+    /// does not.</para>
+    /// </summary>
+    public bool StoredSourceIsWholeClass => SourceMatchesFile && TrimElision is null;
 
     /// <summary>
     /// Ending line number in the source file.
@@ -144,7 +174,8 @@ public class ModelNode : GraphNode
         CoverageFacts? Coverage,
         ModelicaParser.StyleRules.SuppressionSet? Suppressions,
         bool SourceMatchesFile,
-        bool ChildrenTrimmed);
+        bool ChildrenTrimmed,
+        SourceElision? TrimElision);
 
     /// <summary>Captures this class's source and everything derived from it.</summary>
     public SourceSnapshot TakeSourceSnapshot() => new(
@@ -153,7 +184,8 @@ public class ModelNode : GraphNode
         Definition.Coverage,
         Definition.Suppressions,
         SourceMatchesFile,
-        ChildrenTrimmed);
+        ChildrenTrimmed,
+        TrimElision);
 
     /// <summary>
     /// Puts a snapshot back, in the order the setters require: the source first, because assigning it
@@ -167,6 +199,7 @@ public class ModelNode : GraphNode
         Definition.Suppressions = snapshot.Suppressions;
         SourceMatchesFile = snapshot.SourceMatchesFile;
         ChildrenTrimmed = snapshot.ChildrenTrimmed;
+        TrimElision = snapshot.TrimElision;
     }
 
     /// <summary>

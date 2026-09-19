@@ -43,8 +43,10 @@ public class CodeReviewDiffSourceTests
             PackageCodeTrimmer.TrimStandaloneChildren(graph);
 
             // The premise: the trimmer really did take the child out of the stored text, so the two
-            // sides of the diff really were different documents.
-            Assert.False(package.SourceMatchesFile);
+            // sides of the diff really were different documents. Since B216 the stored text is the
+            // file's own lines minus the child's, which the node records as an elision — so what
+            // this test is about is unchanged, and the difference is still a whole class.
+            Assert.NotNull(package.TrimElision);
             Assert.DoesNotContain("model A", package.Definition.ModelicaCode);
 
             var workingCopy = CodeReview.WorkingCopyText(package, graph);

@@ -520,8 +520,10 @@ public partial class CodeReview : IAsyncDisposable
                     return;
             }
 
-            _currentModelNode = LibraryDataService.GetModelById(modelId) ?? _currentModelNode;
-            _isExcludedFromFormatting = FormattingExclusion.Excludes(_currentModelNode, repository.StyleSettings);
+            // Re-fetched because saving the file reloads it, which replaces the node.
+            var reloaded = LibraryDataService.GetModelById(modelId) ?? target.Node;
+            _currentModelNode = reloaded;
+            _isExcludedFromFormatting = FormattingExclusion.Excludes(reloaded, repository.StyleSettings);
 
             CheckModelVcsStatus();
             OnModelSelected();
