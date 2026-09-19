@@ -150,9 +150,13 @@
                only moved which rows were cut off. Scrolling makes every finding reachable at any
                size, and virtualising keeps that affordable — a real library produces tens of
                thousands of them (26,557 for the Modelica Standard Library). *@
+            @* No Height here on purpose: app.css gives this pane a flex column, so the rows take
+               whatever is left after the toolbar. A height of `calc(100% - 48px)` assumed the
+               toolbar was 48 px, which stopped being true as soon as it wrapped — and the overflow
+               then appeared on the pane instead, scrolling the heading and the search box away
+               along with the rows. *@
             <MudTable T="LogMessage" Items="@OrderedFindings" Hover="true" Breakpoint="Breakpoint.Sm"
                 Dense="true" FixedHeader="true" OnRowClick="RowClickEvent" Virtualize="true"
-                Height="calc(100% - 48px)"
                 Filter="new Func<LogMessage,bool>(FilterFunc1)">
                 <ToolBarContent>
                     <MudText Typo="Typo.body1">@FindingsHeading</MudText>

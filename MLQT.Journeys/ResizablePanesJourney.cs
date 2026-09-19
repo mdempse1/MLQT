@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using MLQT.Services.Interfaces;
+using ModelicaParser.DataTypes;
 using Xunit;
 
 namespace MLQT.Journeys;
@@ -27,10 +28,23 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
 
     public void Dispose() => _library.Dispose();
 
-    private async Task<IPage> OpenAsync(int tabIndex, bool withResources = false)
+    private async Task<IPage> OpenAsync(int tabIndex, bool withResources = false, bool withFindings = false)
     {
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
+
+        if (withFindings)
+        {
+            // Findings put straight into the service the page reads, rather than produced by the
+            // check. That is deliberate: these tests are about a table scrolling, and getting the
+            // application to raise findings of its own needs a repository, a settings file turning
+            // rules on, and a check run — three steps, minutes of pipeline, and none of it about
+            // scrolling. What the table must not do is depend on where its rows came from.
+            var review = host.Services.GetRequiredService<ICodeReviewService>();
+            review.ClearLogMessages();
+            review.AddLogMessages(Enumerable.Range(1, 40).Select(i => new LogMessage(
+                $"Lib.Class{i:D2}", "Style warning", i, $"A finding about Class{i:D2}")));
+        }
 
         if (withResources)
         {
@@ -111,20 +125,56 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
     [Fact]
     public async Task EveryFindingIsReachableWithoutAPager()
     {
-        var page = await OpenAsync(0);
+        var page = await OpenAsync(0, withFindings: true);
 
         var heading = page.GetByText(new Regex(@"\d+ Findings to review")).First;
         await Assertions.Expect(heading).ToBeVisibleAsync(new() { Timeout = 20_000 });
 
-        // The heading counts them; the table has to show them all. Two assertions and the first is
-        // the discriminating one: a pager is what made a finding unreachable, by showing a fixed
-        // number of rows however much room the table had. The second holds whatever the fixture
-        // produces — the journeys share a host, so how many findings exist here depends on what ran
-        // before, and a test that needed more than five of them would be testing journey ordering.
+        // A pager is what made a finding unreachable, by showing a fixed number of rows however much
+        // room the table had.
         Assert.Equal(0, await page.Locator(".mud-table-pagination").CountAsync());
 
         var reported = int.Parse(Regex.Match(await heading.InnerTextAsync(), @"\d+").Value);
-        Assert.Equal(reported, await page.Locator(".mud-table-body .mud-table-row").CountAsync());
+        Assert.True(reported > 1, "this needs more findings than fit on screen or it proves nothing");
+
+        // Reaching the last one is the claim, and it cannot be made by counting rows: the table is
+        // virtualised, so the DOM holds the rows on screen and a handful either side, never all of
+        // them. Counting was this test's first mistake — it compared a rendered window against a
+        // total and happened to agree only while every row fitted.
+        await page.Locator(".mud-table-container").First
+                  .EvaluateAsync("e => e.scrollTop = e.scrollHeight");
+        await page.WaitForTimeoutAsync(600);
+
+        await Assertions.Expect(page.GetByText($"A finding about Class{reported:D2}").First)
+                        .ToBeVisibleAsync(new() { Timeout = 10_000 });
+    }
+
+    /// <summary>
+    /// One scrollbar, on the rows. <c>MudExSplitPanelItem</c> gives its content
+    /// <c>overflow: auto</c>, so when the toolbar and the table together outgrew the pane the pane
+    /// scrolled as well — carrying the heading, the filters and the search box out of view along
+    /// with the rows, and leaving the user two scrollbars of which the obvious one moved the wrong
+    /// thing.
+    /// </summary>
+    [Fact]
+    public async Task OnlyTheRowsScroll_NotTheWholeFindingsPane()
+    {
+        var page = await OpenAsync(0, withFindings: true);
+        await Assertions.Expect(page.GetByText(new Regex(@"\d+ Findings to review")).First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        // Squeeze the pane until the rows cannot possibly fit, which is the state the defect needed.
+        await DragAsync(page, Splitter(page, "mlqt-findings-pane"), dx: 0, dy: 260);
+
+        var measured = await page.EvaluateAsync<int[]>(@"() => {
+            const pane = document.querySelector('.mlqt-findings-pane');
+            const rows = pane.querySelector('.mud-table-container');
+            return [pane.scrollHeight - pane.clientHeight, rows.scrollHeight - rows.clientHeight];
+        }");
+
+        Assert.True(measured[1] > 0,
+            $"the rows should have more to scroll than fits: overflow was {measured[1]}px");
+        Assert.Equal(0, measured[0]);
     }
 
     [Fact]

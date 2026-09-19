@@ -122,3 +122,42 @@ body * {
 ::-webkit-scrollbar-corner {
     background: transparent;
 }
+
+/* ── The findings pane on the Code Review page ───────────────────────────────────
+   One scrollbar, on the rows, and not a second one around the whole thing.
+
+   MudExSplitPanelItem gives its content `overflow: auto`, which is right for a pane whose content
+   is a document and wrong for one holding a table that scrolls itself: as soon as the toolbar plus
+   the table were taller than the pane, that outer box scrolled too, carrying the heading, the
+   filters and the search box out of view along with the rows. Two scrollbars, and the one the user
+   reached for moved the wrong thing.
+
+   So the pane does not scroll, and the table's own container takes exactly the height left over
+   after the toolbar. That is a flex calculation rather than a subtraction, because the toolbar's
+   height is not a constant — it carries a heading, two switches, a download button and a search
+   box, and wraps to a second line in a narrow pane. `MudTable Height="calc(100% - 48px)"` assumed
+   48px of it, which is true until it is not.
+
+   `min-height: 0` on both flex children is what lets them be *shorter* than their content: without
+   it a flex item's floor is its content height, the container never shrinks, and the scrollbar
+   reappears on the outer box no matter what overflow says. */
+
+.mlqt-findings-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.mlqt-findings-pane > .mud-table {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-findings-pane .mud-table-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
