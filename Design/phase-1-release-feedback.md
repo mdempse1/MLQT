@@ -376,7 +376,7 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting, and what the renderer writes
 
-**B236 ✅, B181 ✅, B177 ✅, B195 ✅, B175** · 5 items · M · plus **B216** and **B232** from WP2
+**B236 ✅, B181 ✅, B177 ✅, B195 ✅, B175 ✅** · 5 items · M · plus **B216** and **B232** from WP2
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
@@ -457,6 +457,14 @@ this package re-runs for the rule work regardless.
   `FormattingExcludedModels`. Both mechanisms are already honoured everywhere (B39, B65) and the
   annotation writer already exists for suppression, so this is a change of which writer the button
   calls.
+
+  **✅ Done 2026-09-19, and it was not only a change of which writer the button calls.** The writer
+  could add a directive; nothing had ever needed to take one out, and a toggle has two directions.
+  Removal is the half with the risk, because it rewrites a class's source rather than adding to it:
+  it widens as each container empties and re-parses the result before returning it. The button was
+  also reading its own state from the name list alone, so a class carrying the annotation showed as
+  not excluded and the button offered to exclude it again — the exclusions-must-agree shape, in the
+  one place that had been left.
 - **B216** — the trimmer re-renders a package where it could excise. **S1 already decided it is in
   scope and measured the gate**: no finding lost on either library, MSL gains 2 correct
   `OneOfEachSection` findings (excision leaves an empty section that re-rendering dropped — baseline

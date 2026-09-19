@@ -139,6 +139,7 @@ public partial class CodeReview : IAsyncDisposable
     private string? _currentRepositoryId;
     private string? _currentRelativeFilePath;
     private bool _isExcludedFromFormatting;
+    private bool _togglingExclusion;
 
     //Tool logos
     const string _dymolaLogo = @"<svg width=""24"" height=""24"" viewBox=""0 0 24 24"">
@@ -456,55 +457,111 @@ public partial class CodeReview : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Takes the current class out of formatting, or puts it back — by writing
+    /// <c>__MLQT(format=false)</c> into its source rather than by adding its name to
+    /// <c>FormattingExcludedModels</c> (B175).
+    ///
+    /// <para><b>Why the annotation.</b> The name list does not survive the class being renamed or
+    /// moved: the entry stays behind naming nothing, the class comes back under the formatter, and
+    /// the next save reorders code somebody had deliberately left alone. The annotation travels with
+    /// the class, is committed with it, and is the mechanism the documentation already steers people
+    /// to. Both are honoured everywhere (B39, B65), so this changes which one the button writes and
+    /// nothing about what reads it.</para>
+    ///
+    /// <para><b>Re-including clears both.</b> A class excluded by an earlier MLQT is in the name
+    /// list and has no annotation, so the button would otherwise be unable to undo its own past
+    /// behaviour.</para>
+    /// </summary>
     private async Task ToggleFormattingExclusionAsync()
     {
-        if (_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))
+        if (_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId) || _togglingExclusion)
             return;
 
         var repository = RepositoryService.GetRepository(_currentRepositoryId);
         if (repository?.StyleSettings == null)
             return;
 
+        var target = ResolveClassSourceTarget(_currentModelNode.Id);
+        if (target is null)
+            return;
+
         var modelId = _currentModelNode.Id;
-        var excluded = repository.StyleSettings.FormattingExcludedModels;
-
-        if (_isExcludedFromFormatting)
+        _togglingExclusion = true;
+        try
         {
-            // Re-include the model
-            excluded.Remove(modelId);
-            _isExcludedFromFormatting = false;
-        }
-        else
-        {
-            // Exclude the model
-            if (!excluded.Contains(modelId))
-                excluded.Add(modelId);
-            _isExcludedFromFormatting = true;
-
-            // If the file is modified in VCS, revert it to discard formatting changes
-            if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
+            if (_isExcludedFromFormatting)
             {
-                await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+                if (!await WriteFormattingOptOutAsync(target, add: false))
+                    return;
 
-                // Reload the file to pick up the reverted content
-                var fileId = _currentModelNode.ContainingFileId ?? "";
-                var fileNode = LibraryDataService.CombinedGraph.GetNode<FileNode>(fileId);
-                if (fileNode != null)
+                // The list entry too: a class excluded before B175, or one carrying both.
+                repository.StyleSettings.FormattingExcludedModels.Remove(modelId);
+                await RepositoryService.SaveRepositorySettingsAsync();
+            }
+            else
+            {
+                // Reverting comes first. It discards the formatting the class has already had
+                // applied, which is the point of the button — and doing it afterwards would discard
+                // the annotation along with it.
+                if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
                 {
-                    await LibraryDataService.ReloadFileAsync(fileNode.FilePath);
-                    // Re-fetch the model node since it may have been replaced
+                    await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+                    await LibraryDataService.ReloadFileAsync(target.FilePath);
                     _currentModelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
+
+                    // The reverted file is what the annotation has to be spliced into.
+                    target = ResolveClassSourceTarget(modelId);
+                    if (target is null)
+                        return;
                 }
 
-                // Refresh VCS status
-                CheckModelVcsStatus();
-
-                // Re-render
-                OnModelSelected();
+                if (!await WriteFormattingOptOutAsync(target, add: true))
+                    return;
             }
+
+            _currentModelNode = LibraryDataService.GetModelById(modelId) ?? _currentModelNode;
+            _isExcludedFromFormatting = FormattingExclusion.Excludes(_currentModelNode, repository.StyleSettings);
+
+            CheckModelVcsStatus();
+            OnModelSelected();
+
+            Snackbar.Add(
+                _isExcludedFromFormatting
+                    ? "This class is now excluded from formatting, recorded in its own source so it survives a rename."
+                    : "This class is back under the formatter.",
+                MudBlazor.Severity.Success);
+        }
+        finally
+        {
+            _togglingExclusion = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Adds or removes the class's <c>format=false</c> directive and saves the file.</summary>
+    private async Task<bool> WriteFormattingOptOutAsync(ClassSourceTarget target, bool add)
+    {
+        var fileContent = await ReadTargetFileAsync(target);
+        if (fileContent is null)
+            return false;
+
+        var written = add
+            ? MlqtSuppressionWriter.TryAddFormattingOptOutToFile(
+                fileContent, target.ClassPath, out var newContent, out var error)
+            : MlqtSuppressionWriter.TryRemoveFormattingOptOutFromFile(
+                fileContent, target.ClassPath, out newContent, out error);
+
+        if (!written)
+        {
+            Snackbar.Add($"Could not change the formatting exclusion: {error}", MudBlazor.Severity.Error);
+            return false;
         }
 
-        await RepositoryService.SaveRepositorySettingsAsync();
+        // Nothing to write when the class already said what was asked of it — which is the ordinary
+        // case for re-including a class that was only ever in the name list.
+        return string.Equals(newContent, fileContent, StringComparison.Ordinal)
+            || await SaveAnnotatedFileAsync(target, newContent);
     }
 
     #region Diff View Methods
@@ -545,7 +602,10 @@ public partial class CodeReview : IAsyncDisposable
             return;
 
         _currentRepositoryId = repository.Id;
-        _isExcludedFromFormatting = repository.StyleSettings?.IsModelExcludedFromFormatting(_currentModelNode.Id) ?? false;
+        // FormattingExclusion, not the name list alone: a class carrying __MLQT(format=false)
+        // is excluded and the toggle has to show it that way, or the button offers to exclude a
+        // class that already is.
+        _isExcludedFromFormatting = FormattingExclusion.Excludes(_currentModelNode, repository.StyleSettings);
 
         // Compute the path relative to VcsRootPath — this matches what GetWorkingCopyChanges
         // returns (paths are always relative to VcsRootPath, not LocalPath).

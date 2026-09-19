@@ -81,6 +81,76 @@ public static class MlqtSuppressionWriter
 
     private const string SuppressArgument = "suppress";
     private const string SpellingArgument = "spelling";
+    private const string FormatArgument = "format";
+
+    /// <summary>
+    /// Write <c>__MLQT(format=false)</c> onto a class in a whole <em>file's</em> text — the
+    /// rename-safe way to take a class out of formatting, and the one the documentation steers
+    /// people to (B175). The name list in <c>StyleCheckingSettings.FormattingExcludedModels</c> does
+    /// the same job and does not survive the class being renamed or moved.
+    ///
+    /// <para><b>A bare directive, not a list.</b> <c>suppress</c> and <c>spelling</c> accumulate
+    /// comma-separated entries inside one quoted string; this is a boolean written unquoted, so it
+    /// merges into an existing <c>__MLQT</c> as a new argument and is never appended to. A class
+    /// that already carries it is left exactly as it is rather than gaining a second copy.</para>
+    /// </summary>
+    public static bool TryAddFormattingOptOutToFile(
+        string fileContent, string[]? classPath, out string newContent, out string? error)
+        => EditFile(fileContent, classPath, component: null, FormatArgument, "false", reason: null,
+            out newContent, out error);
+
+    /// <summary>
+    /// Remove <c>format=false</c> from a class, putting it back under the formatter — the other half
+    /// of the toggle, which the suppression writer had no need for until now.
+    ///
+    /// <para>It tidies up after itself: an <c>__MLQT</c> left with no arguments goes, and an
+    /// annotation left with no arguments goes with it, along with the <c>;</c> that terminated it
+    /// when it was a class-body annotation. The alternative is leaving <c>annotation(__MLQT());</c>
+    /// behind in the user's file — legal, and something no one would write on purpose.</para>
+    ///
+    /// <para>The result is re-parsed before it is returned. This rewrites a file rather than adding
+    /// to it, so a splice that produced something unparseable would replace a class's source with
+    /// broken text; failing here means the file is not written at all.</para>
+    /// </summary>
+    public static bool TryRemoveFormattingOptOutFromFile(
+        string fileContent, string[]? classPath, out string newContent, out string? error)
+    {
+        newContent = fileContent;
+        error = null;
+
+        var usedCrlf = fileContent.Contains("\r\n");
+        var lf = fileContent.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        var tree = ModelicaParserHelper.Parse(lf);
+        if (tree is null)
+        {
+            error = "could not parse the source";
+            return false;
+        }
+
+        var locator = new Locator(classPath, component: null, FormatArgument);
+        locator.Visit(tree);
+
+        if (locator.ClassTarget is not { } target)
+        {
+            error = classPath is { Length: > 0 }
+                ? $"could not locate the class '{string.Join('.', classPath)}' in the source"
+                : "could not locate the class body";
+            return false;
+        }
+
+        if (target.Removal(lf) is not { } newLf)
+            return true;   // Not there: nothing to remove, and nothing to report either.
+
+        if (ModelicaParserHelper.Parse(newLf) is null)
+        {
+            error = "removing the annotation would have left the file unparseable, so it was not changed";
+            return false;
+        }
+
+        newContent = usedCrlf ? newLf.Replace("\n", "\r\n") : newLf;
+        return true;
+    }
 
     private static bool EditFile(
         string fileContent, string[]? classPath, string? component, string argument, string value, string? reason,
@@ -156,15 +226,30 @@ public static class MlqtSuppressionWriter
         public int? MlqtArgsStart;           // start of an existing __MLQT argument list (argument not there yet)
         public int? ValueStop;               // stop index of an existing suppress/spelling value (append here)
 
+        // Spans, for removing an argument again rather than adding one (B175).
+        public (int Start, int Stop)? ArgumentSpan;    // the whole `format=false` argument
+        public (int Start, int Stop)? MlqtSpan;        // the whole `__MLQT(…)` argument
+        public (int Start, int Stop)? AnnotationSpan;  // the whole `annotation(…)`, without its `;`
+        public int MlqtArgCount;
+        public int AnnotationArgCount;
+
         public string Apply(string code, string argument, string value, string? reason)
         {
+            // A bare directive (`format=false`) is a value, not a list: if it is already there the
+            // class already says what we are about to say, so leave the source alone rather than
+            // appending into the middle of `false`.
+            if (IsBare(argument))
+            {
+                if (ArgumentSpan is not null)
+                    return code;
+            }
             // Existing list → append the entry before its closing quote.
-            if (ValueStop is { } stop)
+            else if (ValueStop is { } stop)
                 return code[..stop] + "," + value + code[stop..];
 
             // Existing __MLQT without this argument → add it.
             if (MlqtArgsStart is { } mlqtAt)
-                return code[..mlqtAt] + $"{argument}=\"{value}\", " + code[mlqtAt..];
+                return code[..mlqtAt] + Assignment(argument, value) + ", " + code[mlqtAt..];
 
             // Existing annotation without __MLQT → add __MLQT as a new argument. When the annotation is
             // laid out multi-line (the first argument sits on its own indented line), put __MLQT on its
@@ -183,10 +268,91 @@ public static class MlqtSuppressionWriter
                 : code[..InsertOffset] + "\n  annotation(" + Directive(argument, value, reason) + ");" + code[InsertOffset..];
         }
 
+        /// <summary>A directive whose value is written unquoted, because it is not a list of names.</summary>
+        private static bool IsBare(string argument) => argument == FormatArgument;
+
+        private static string Assignment(string argument, string value)
+            => IsBare(argument) ? $"{argument}={value}" : $"{argument}=\"{value}\"";
+
         private static string Directive(string argument, string value, string? reason)
             => string.IsNullOrWhiteSpace(reason)
-                ? $"__MLQT({argument}=\"{value}\")"
-                : $"__MLQT({argument}=\"{value}\", reason=\"{reason.Replace("\"", "\\\"")}\")";
+                ? $"__MLQT({Assignment(argument, value)})"
+                : $"__MLQT({Assignment(argument, value)}, reason=\"{reason.Replace("\"", "\\\"")}\")";
+
+        /// <summary>
+        /// <paramref name="code"/> with the located argument removed, or null when it is not there.
+        ///
+        /// <para>Removal widens as each container empties: the argument alone while <c>__MLQT</c>
+        /// still holds something else, the whole <c>__MLQT(…)</c> when it does not, and the whole
+        /// annotation when that was all the annotation held. Each step takes the separator with it,
+        /// which is what stops the result being <c>annotation(Icon(…), )</c>.</para>
+        /// </summary>
+        public string? Removal(string code)
+        {
+            if (ArgumentSpan is not { } arg)
+                return null;
+
+            // Still something else inside __MLQT: take just this argument and one separator.
+            if (MlqtArgCount > 1)
+                return Splice(code, arg.Start, arg.Stop);
+
+            if (MlqtSpan is not { } mlqt)
+                return Splice(code, arg.Start, arg.Stop);
+
+            // __MLQT held nothing else, and neither did the annotation: the annotation goes.
+            if (AnnotationArgCount <= 1 && AnnotationSpan is { } annotation)
+                return RemoveAnnotation(code, annotation);
+
+            return Splice(code, mlqt.Start, mlqt.Stop);
+        }
+
+        /// <summary>
+        /// Cuts <c>[start..stop]</c> together with the comma that joins it to its neighbours —
+        /// the one that follows it, or failing that the one before it, so removing the last item in
+        /// a list does not leave a trailing comma.
+        /// </summary>
+        private static string Splice(string code, int start, int stop)
+        {
+            var end = stop + 1;
+            while (end < code.Length && char.IsWhiteSpace(code[end])) end++;
+            if (end < code.Length && code[end] == ',')
+            {
+                end++;
+                while (end < code.Length && (code[end] == ' ' || code[end] == '\t')) end++;
+                if (end < code.Length && code[end] == '\n') end++;
+                return code[..start] + code[end..];
+            }
+
+            var from = start;
+            while (from > 0 && char.IsWhiteSpace(code[from - 1])) from--;
+            if (from > 0 && code[from - 1] == ',')
+                return code[..(from - 1)] + code[(stop + 1)..];
+
+            return code[..start] + code[(stop + 1)..];
+        }
+
+        /// <summary>
+        /// Removes a whole annotation. A class-body annotation is a statement, so its terminating
+        /// <c>;</c> and the blank line it sat on go with it; an inline one belongs to an element
+        /// whose <c>;</c> is not the annotation's to take.
+        /// </summary>
+        private string RemoveAnnotation(string code, (int Start, int Stop) annotation)
+        {
+            var end = annotation.Stop + 1;
+
+            if (!Inline)
+            {
+                while (end < code.Length && (code[end] == ' ' || code[end] == '\t')) end++;
+                if (end < code.Length && code[end] == ';') end++;
+            }
+
+            var start = annotation.Start;
+            while (start > 0 && (code[start - 1] == ' ' || code[start - 1] == '\t')) start--;
+            if (!Inline && start > 0 && code[start - 1] == '\n')
+                start--;
+
+            return code[..start] + code[end..];
+        }
     }
 
     private sealed class Locator : modelicaBaseVisitor<object?>
@@ -282,11 +448,15 @@ public static class MlqtSuppressionWriter
         private static void FillFromAnnotation(
             Target target, modelicaParser.AnnotationContext? annotation, string argument)
         {
+            if (annotation is not null)
+                target.AnnotationSpan = (annotation.Start.StartIndex, annotation.Stop.StopIndex);
+
             var args = annotation?.class_modification()?.argument_list();
             if (args is null)
                 return;
 
             target.AnnotationArgsStart = args.Start.StartIndex;
+            target.AnnotationArgCount = args.argument().Length;
 
             foreach (var arg in args.argument())
             {
@@ -294,14 +464,20 @@ public static class MlqtSuppressionWriter
                 if (elemMod?.name()?.GetText() != "__MLQT")
                     continue;
 
+                target.MlqtSpan = (arg.Start.StartIndex, arg.Stop.StopIndex);
+
                 var mlqtArgs = elemMod.modification()?.class_modification()?.argument_list();
                 target.MlqtArgsStart = mlqtArgs?.Start.StartIndex;
+                target.MlqtArgCount = mlqtArgs?.argument().Length ?? 0;
 
                 foreach (var mlqtArg in mlqtArgs?.argument() ?? [])
                 {
                     var m = mlqtArg.element_modification_or_replaceable()?.element_modification();
                     if (m?.name()?.GetText() != argument)
                         continue;
+
+                    target.ArgumentSpan = (mlqtArg.Start.StartIndex, mlqtArg.Stop.StopIndex);
+
                     // The value expression's last token is the closing quote of "a,b".
                     var expr = m.modification()?.modification_expression();
                     if (expr is not null)

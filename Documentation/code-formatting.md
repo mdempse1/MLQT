@@ -169,17 +169,22 @@ Individual models can be excluded from auto-formatting using the **FormatClear**
 ### How It Works
 
 - Toggle the FormatClear button (the "A" with a strikethrough) while a model is selected to exclude it from formatting
-- Excluded models are stored in the `FormattingExcludedModels` list in the repository's `.mlqt/settings.json` file
+- **The exclusion is written into the class itself**, as `annotation(__MLQT(format=false))` — so it travels with the class when it is renamed or moved, and it is committed alongside the code it applies to. See [In the source instead](#in-the-source-instead-__mlqtformatfalse) below for what the directive means everywhere else
 - Excluded models skip the formatter during **all** formatting operations: startup formatting, VCS change formatting, pre-commit formatting, and Format All Files
-- When you exclude a model that belongs to a VCS-tracked repository, MLQT reverts the model's file to undo any formatting changes that were already applied. This restores the file to its last committed state
-- To re-include a model, select it and toggle the same button again. The model will be formatted on the next formatting pass
+- When you exclude a model that belongs to a VCS-tracked repository, MLQT first reverts the model's file to undo any formatting changes that were already applied — restoring it to its last committed state — and then writes the annotation. The file is therefore modified afterwards, by that one line
+- To re-include a model, select it and toggle the same button again: the directive is removed, along with the annotation itself if that is all it held. The model will be formatted on the next formatting pass
+
+Earlier versions of MLQT recorded the exclusion as a class name in the `FormattingExcludedModels`
+list in `.mlqt/settings.json` instead. That list is still honoured, so nothing you excluded before
+has changed, and re-including a class clears it from the list as well as from the source. It is no
+longer what the button writes, because a name in a settings file does not survive the class being
+renamed — the entry stays behind naming nothing and the class quietly comes back under the
+formatter.
 
 ### In the source instead: `__MLQT(format=false)`
 
-The name list lives in the repository's settings, so it goes stale the moment a class is renamed or
-moved — the entry still names the old id, silently, and the class starts being reformatted again.
-Saying it in the class instead avoids that, and is the **preferred way** for anything you intend to
-keep:
+This is what the toolbar button writes. It is also worth writing by hand when you want to record a
+reason, which the button cannot ask you for:
 
 ```modelica
 model Rectifier "Order matters to the solver"
@@ -206,7 +211,9 @@ will.
 still shows what has been waived — including the layout rows on the coverage figures.
 
 The two mechanisms are otherwise interchangeable, and the name list stays supported: a class named in
-`FormattingExcludedModels` **or** carrying the annotation is excluded.
+`FormattingExcludedModels` **or** carrying the annotation is excluded. The list is no longer written
+by the toolbar button, and you can still add names to it by hand — for a class whose source you
+cannot change, such as one in a reference-only repository.
 
 ### Effect on Style Checking
 

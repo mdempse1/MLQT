@@ -221,7 +221,7 @@ Individual models can be excluded from automatic formatting. This is useful for 
 
 | Setting | Description |
 |---------|-------------|
-| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. |
+| **FormattingExcludedModels** | A list of fully qualified model IDs that are excluded from the formatter. Excluded models skip auto-formatting entirely, and formatting-rule style findings are suppressed for those models. Non-formatting style rules (descriptions, naming conventions, spell checking, reference validation, etc.) still apply normally. **Maintained by hand.** The Code Review toolbar button writes `__MLQT(format=false)` into the class instead, because a name here does not survive the class being renamed; this list stays honoured for anything already in it, and for a class whose source you cannot edit. See [code-formatting.md](code-formatting.md#excluding-models-from-formatting). |
 
 A helper method `IsModelExcludedFromFormatting(string modelId)` is available for checking whether a given model is in the exclusion list.
 
