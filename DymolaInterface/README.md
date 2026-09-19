@@ -143,6 +143,8 @@ await dymola.SetVariableAsync("myVariable", 42.0);
 - `StopDymolaProcessAsync()` - Stop Dymola process
 - `IsOfflineMode()` - Check if in offline mode
 - `SetOfflineMode(bool)` - Enable/disable offline mode
+- `ProcessId` - OS process id of the Dymola this interface started; `null` when it attached to one started elsewhere, after `Detach()`, or once that process has exited
+- `CommandTimeout` - How long one command may run before the call gives up (default `DefaultCommandTimeout`, five minutes); read afresh for every command, so it can be raised around a single long simulation and restored afterwards
 
 ### Model Operations
 - `CheckModelAsync(problem, simulate, constraint)` - Check a model

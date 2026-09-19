@@ -30,6 +30,12 @@ public sealed class FakeDymolaHttpHandler : HttpMessageHandler
     /// </summary>
     public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
 
+    /// <summary>
+    /// How long to hold each request before answering, to stand in for a slow Dymola. The
+    /// wait honours the request's cancellation, as a real network call does.
+    /// </summary>
+    public TimeSpan ResponseDelay { get; set; } = TimeSpan.Zero;
+
     public IReadOnlyList<CapturedRequest> Requests => _requests;
 
     public CapturedRequest LastRequest => _requests[^1];
@@ -59,6 +65,9 @@ public sealed class FakeDymolaHttpHandler : HttpMessageHandler
             : 0;
 
         _requests.Add(new CapturedRequest(method, paramsClone, body, id));
+
+        if (ResponseDelay > TimeSpan.Zero)
+            await Task.Delay(ResponseDelay, cancellationToken);
 
         return new HttpResponseMessage(StatusCode)
         {

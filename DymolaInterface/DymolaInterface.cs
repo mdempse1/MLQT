@@ -46,6 +46,7 @@ public class DymolaInterface : IDisposable
     private bool _isOffline;
     private bool _disposed;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
+    private TimeSpan _commandTimeout = DefaultCommandTimeout;
 
     public DymolaInterface(string dymolaPath = "", int portNumber = 8082, string hostname = "127.0.0.1")
     {
@@ -53,7 +54,9 @@ public class DymolaInterface : IDisposable
         _portNumber = portNumber;
         _hostname = hostname;
         _dymolaUrl = $"http://{hostname}:{portNumber}";
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(300) };
+        // No client-wide limit: each request is bounded by CommandTimeout instead, which,
+        // unlike HttpClient.Timeout, can still be changed after the first request is sent.
+        _httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _rpcId = 0;
         _isOffline = !IsDymolaRunning();
     }
@@ -200,7 +203,8 @@ public class DymolaInterface : IDisposable
             var request = new { method = "ping", @params = (object?)null, id = _rpcId };
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
-            var response = _httpClient.PostAsync(_dymolaUrl, content).GetAwaiter().GetResult();
+            using var limit = new CancellationTokenSource(_commandTimeout);
+            var response = _httpClient.PostAsync(_dymolaUrl, content, limit.Token).GetAwaiter().GetResult();
             return response.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -223,6 +227,28 @@ public class DymolaInterface : IDisposable
     #endregion
 
     #region Core JSON-RPC + parameter transformation
+
+    /// <summary>
+    /// The per-command time-out a new interface starts with: five minutes, the limit every
+    /// command had before <see cref="CommandTimeout"/> made it configurable.
+    /// </summary>
+    public static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromSeconds(300);
+
+    /// <summary>
+    /// How long one Dymola command may run before the call gives up and returns as if it had
+    /// failed. Read afresh for every command, so a caller can raise it around a single long
+    /// operation - a simulation that runs for hours - and restore it afterwards. Use
+    /// <see cref="Timeout.InfiniteTimeSpan"/> for no limit. Dymola itself carries on with a
+    /// command whose call has given up.
+    /// </summary>
+    public TimeSpan CommandTimeout
+    {
+        get => _commandTimeout;
+        set => _commandTimeout = value > TimeSpan.Zero || value == Timeout.InfiniteTimeSpan
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(value), value,
+                "The command time-out must be positive, or Timeout.InfiniteTimeSpan for no limit.");
+    }
 
     /// <summary>
     /// Transform a C# parameter value into the form Dymola's JSON-RPC server expects.
@@ -354,8 +380,9 @@ public class DymolaInterface : IDisposable
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync(_dymolaUrl, content);
-            var responseText = await response.Content.ReadAsStringAsync();
+            using var limit = new CancellationTokenSource(_commandTimeout);
+            var response = await _httpClient.PostAsync(_dymolaUrl, content, limit.Token);
+            var responseText = await response.Content.ReadAsStringAsync(limit.Token);
 
             var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseText);
 
