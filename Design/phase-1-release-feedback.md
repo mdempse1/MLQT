@@ -356,7 +356,10 @@ Walk that path once with three rules in hand rather than three times.
   reason about it** — the entry names the two lines that write the text and the one that trims it,
   but the fault is a one-character difference on a path several rewrites have crossed, and reading
   will lose to `git log` here. Small, and worth taking before this package's rule work whatever the
-  order of the rest.
+  order of the rest. Additional comment, the 2026.3.1 release does the same but the MSL repository
+  claims it was reformmated by MLQT on 02/09/2026 which would have been during the 2026.4.0 development.
+  So I'm wondering if the difference is down to now I'm clicking "Format All Files" on the repository 
+  settings page and maybe the formatting was applied via a different route when I did it previously
 
 - **B181** — `OneOfEachSection` is the working template for a formatting concern that also reports,
   and `FormattingOptions.ComponentsBeforeClasses` already exists. Giving it an id also closes B103's
