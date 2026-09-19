@@ -72,22 +72,36 @@ public class ModelNode : GraphNode
     public int StopLine { get; set; }
 
     /// <summary>
-    /// Zero-based character offset of the first character of the
-    /// <c>class_definition</c> rule in the underlying source file, read with
-    /// <see cref="System.Text.Encoding.Latin1"/> to match the parser.
-    /// <c>-1</c> when not populated (legacy placeholder nodes, snapshots
-    /// written before the field existed, etc.). Used by snapshot rehydration
-    /// to slice the same character range the parser originally captured —
-    /// line-based slicing alone can leak preceding element prefixes
+    /// Zero-based character offset of the first character of the <c>class_definition</c> rule —
+    /// <b>into the file's text with its line endings normalised to LF</b>, which is what
+    /// <c>ModelicaParserHelper.PreprocessCode</c> hands the lexer and therefore the only text these
+    /// offsets mean anything against. <c>-1</c> when not populated (legacy placeholder nodes,
+    /// snapshots written before the field existed).
+    ///
+    /// <para><b>Do not slice a file with these by hand — use <c>ClassSource.SliceFromFile</c>.</b>
+    /// This said for a long time that the offsets were into the file "read with
+    /// <c>Encoding.Latin1</c> to match the parser", and that <see cref="StopIndex"/> was the last
+    /// character of the class. Both are wrong, and following either produced a slice that matched
+    /// <b>0 of 13,997 classes</b> across the Modelica Standard Library and Buildings: every file in
+    /// both is CRLF, so slicing the file as read drifts by one character per line above the class,
+    /// and for a class a few thousand lines down the result is somebody else's class entirely
+    /// (backlog B231).</para>
+    ///
+    /// <para>Used by snapshot rehydration to slice the same character range the parser originally
+    /// captured — line-based slicing alone can leak preceding element prefixes
     /// (<c>replaceable</c>, <c>redeclare</c>, …) into the rehydrated
-    /// <see cref="ModelDefinition.ModelicaCode"/> and break re-parsing.
+    /// <see cref="ModelDefinition.ModelicaCode"/> and break re-parsing.</para>
     /// </summary>
     public int StartIndex { get; set; } = -1;
 
     /// <summary>
-    /// Zero-based character offset of the last character of the
-    /// <c>class_definition</c> rule (inclusive) in the underlying source file.
-    /// <c>-1</c> when not populated. See <see cref="StartIndex"/>.
+    /// Zero-based offset of the last character of the <c>class_definition</c> rule, in the same
+    /// normalised text as <see cref="StartIndex"/>. <c>-1</c> when not populated.
+    ///
+    /// <para><b>This is not the last character of the class as stored.</b> The rule ends at the
+    /// <c>IDENT</c> of <c>end A</c>, so the <c>;</c> that closes the statement is <em>after</em> it
+    /// — which is why <c>ClassSource.SliceFromFile</c> takes the terminator as well, and why
+    /// slicing <c>[StartIndex..StopIndex]</c> comes back one character short of what is stored.</para>
     /// </summary>
     public int StopIndex { get; set; } = -1;
 
