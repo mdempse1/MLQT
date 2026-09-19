@@ -266,6 +266,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
+| `MLQT.Structure.SingleFilePackage` | Warning | A package held entirely in one `.mo` file whose classes could each have a file of their own. Judged on whether they *could* be split: a package whose children must be inline (`replaceable`, `redeclare`, `inner`, `outer`) is correctly one file and is not reported, and neither is a package someone has already begun splitting. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |
@@ -290,6 +291,42 @@ them by name). Without the first, a library's example package reads as entirely 
 A library's *public API* is still reported — nothing inside the library uses it because its users are
 downstream — which is why `MLQT.Unused.PublicClass` is Info and off by default, and best suited to an
 application library. For a foundational library, either leave it off or exclude the library (below).
+
+### Matching Dymola on `package.order`
+
+Dymola reports an incomplete `package.order` itself, on load:
+
+```
+Warning: The package.order is incomplete, since the class Bad in file/directory .../Sub/Bad.mo is missing.
+```
+
+MLQT's `MLQT.Structure.PackageOrder` answers a **larger** question than that, in two ways:
+
+- it also reports *stale* entries — an entry naming a class or member that is not there, which
+  Dymola says nothing about;
+- it reports a class stored in a file whose name does not match it. Dymola resolves a package's
+  children by file name, in exactly two places — `Package/Name.mo` and `Package/Name/package.mo` —
+  so a `Widget.mo` holding `model Odd` is a class it cannot load from there and never warns about.
+  MLQT reads every `.mo` file in a package directory and takes each class's own name, so it loads
+  that class and can see that `package.order` does not list it.
+
+Neither tool descends into a directory with no `package.mo`, so a `.mo` file in an ordinary folder is
+invisible to both.
+
+| Setting | Effect |
+|---------|--------|
+| `"PackageOrderMatchesDymola": false` | Default. MLQT's full answer: stale entries, and every unlisted child wherever it is stored. |
+| `"PackageOrderMatchesDymola": true` | Only what Dymola would warn about: an unlisted child stored where Dymola looks for it. |
+
+Switch it on for a repository whose agreed standard is "no warnings on load in Dymola" — MLQT's gate
+is then the same gate rather than a stricter one that fails a build over something the tool of record
+accepts. It narrows one rule's findings and does not switch anything off, so the rule still has to be
+enabled for either answer.
+
+What it removes is worth keeping unless you have that reason. A stale entry is usually a class that
+was renamed or deleted and left behind, and a class in a mismatched file name is a class Dymola
+cannot load at all — which is a more serious problem than the one this rule usually reports, not a
+less serious one.
 
 ### Excluding whole libraries from the checks
 
@@ -335,6 +372,8 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckMissingUnits": true,
     "CheckUnusedImports": true,
     "CheckPackageOrder": true,
+    "CheckSingleFilePackage": true,
+    "PackageOrderMatchesDymola": false,
     "CheckUsesUndeclared": true,
     "CheckUsesDeclaredUnused": true,
     "CheckUnusedClass": true,

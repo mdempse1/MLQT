@@ -434,6 +434,23 @@
                     ValueChanged="@(v => SelectedSettings.SetRuleSeverity(rule.Id, v))" />
             }
 
+            @* A modifier on one rule rather than a rule of its own, so it is a switch rather than a
+               severity picker and sits below the rules instead of among them. Shown only while
+               package.order checking is on, because that is the only thing it changes. *@
+            @if (SelectedSettings.CheckPackageOrder)
+            {
+                <MudSwitch @bind-Value="SelectedSettings.PackageOrderMatchesDymola" Color="Color.Primary" Size="Size.Small"
+                    Label="Report only the package.order problems Dymola would warn about" />
+                <MudText Typo="Typo.caption" Class="mb-1">
+                    Dymola warns that a package.order is incomplete only for a class stored where it looks
+                    — <code>Package/Name.mo</code> or <code>Package/Name/package.mo</code> — and says nothing
+                    about an entry naming a class that is not there. Switch this on for a repository whose
+                    standard is "no warnings on load in Dymola"; leave it off for MLQT's fuller answer,
+                    which also reports stale entries and classes stored in a file Dymola could not load
+                    them from.
+                </MudText>
+            }
+
             <MudText Typo="Typo.subtitle2" Class="mt-4">Excluded libraries</MudText>
             <MudText Typo="Typo.body1" Class="mt-2 mb-1">
                 Top-level library names that are loaded but never reported on — typically the test-case and

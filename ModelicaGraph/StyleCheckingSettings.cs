@@ -147,6 +147,9 @@ public class StyleCheckingSettings
         !SeveritiesEqual(other) ||
         ApplyFormattingRules != other.ApplyFormattingRules ||
         ComponentsBeforeClasses != other.ComponentsBeforeClasses ||
+        // Changes which package.order findings are reported, so the answer differs even though no
+        // rule was switched on or off.
+        PackageOrderMatchesDymola != other.PackageOrderMatchesDymola ||
         !NamingConvention.Equals(other.NamingConvention) ||
         !SpellCheckLanguages.SequenceEqual(other.SpellCheckLanguages) ||
         !ExcludedLibraries.SequenceEqual(other.ExcludedLibraries, StringComparer.OrdinalIgnoreCase) ||
@@ -502,6 +505,27 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.PackageOrder);
         set => SetRuleEnabled(RuleIds.PackageOrder, value);
     }
+    public bool CheckSingleFilePackage
+    {
+        get => IsRuleEnabled(RuleIds.SingleFilePackage);
+        set => SetRuleEnabled(RuleIds.SingleFilePackage, value);
+    }
+
+    /// <summary>
+    /// Narrow <c>MLQT.Structure.PackageOrder</c> to what Dymola's own loader would warn about: a
+    /// child class stored where Dymola looks for it and missing from package.order (B195).
+    ///
+    /// <para>A modifier on a rule rather than a rule of its own, because it does not decide whether
+    /// anything is checked — it decides which of one rule's findings are reported. Off means MLQT's
+    /// full answer, which is the larger one: Dymola never descends into a directory that is not a
+    /// package, so a class stored somewhere it does not look produces no warning from it at all, and
+    /// it says nothing about a package.order entry naming something that is not there.</para>
+    ///
+    /// <para>The use for it is a repository whose agreed standard is "no warnings on load in
+    /// Dymola". Turning it on makes MLQT's gate the same gate rather than a stricter one that fails
+    /// a build over something the tool of record accepts.</para>
+    /// </summary>
+    public bool PackageOrderMatchesDymola { get; set; } = false;
     public bool CheckUsesUndeclared
     {
         get => IsRuleEnabled(RuleIds.UsesUndeclared);

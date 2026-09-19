@@ -376,7 +376,7 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting, and what the renderer writes
 
-**B236 ✅, B181 ✅, B177, B195, B175** · 5 items · M · plus **B216** and **B232** from WP2
+**B236 ✅, B181 ✅, B177 ✅, B195 ✅, B175** · 5 items · M · plus **B216** and **B232** from WP2
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
@@ -440,6 +440,19 @@ this package re-runs for the rule work regardless.
 - **B177** and **B195** both belong to `PackageOrderAnalyzer`'s family. B195 needs the explicit
   "match Dymola" setting, because Dymola never descends into non-package folders and so gives no
   signal at all for the stray-file half.
+
+  **✅ Done 2026-09-19, and that second sentence was wrong.** B177 is `MLQT.Structure.SingleFilePackage`,
+  an analyzer beside the package.order one, judging **could this be split** rather than how big the
+  file is. B195 is `PackageOrderMatchesDymola`, a modifier on one rule rather than a rule of its own.
+
+  **There is no stray-file half.** MLQT does not descend into a directory without a `package.mo`
+  either — `LibraryDataService` skips them for the same reason Dymola does — so the asymmetry this
+  package was told to preserve does not exist. Found by running the CLI over a fixture with a file
+  in a plain folder and watching the model count not move. What the setting actually drops is stale
+  entries, which Dymola says nothing about, and a class in a file whose name does not match it,
+  which MLQT loads and Dymola cannot. **That is the third item in this phase whose row described a
+  mechanism that was not there**, after B185 and B236, and in all three cases the thing that found
+  it was running the code rather than reading it.
 - **B175** — the exclusion button writes `__MLQT(format=false)` instead of a name into
   `FormattingExcludedModels`. Both mechanisms are already honoured everywhere (B39, B65) and the
   annotation writer already exists for suppression, so this is a change of which writer the button

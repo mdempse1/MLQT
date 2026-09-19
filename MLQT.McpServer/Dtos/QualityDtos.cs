@@ -43,6 +43,7 @@ public sealed class StyleSettingsInput
     public bool? CheckMissingUnits { get; set; }
     public bool? CheckUnusedImports { get; set; }
     public bool? CheckPackageOrder { get; set; }
+    public bool? CheckSingleFilePackage { get; set; }
     public bool? CheckUsesUndeclared { get; set; }
     public bool? CheckUsesDeclaredUnused { get; set; }
     public bool? CheckUnusedClass { get; set; }
@@ -89,6 +90,7 @@ public sealed class StyleSettingsInput
         new(RuleIds.MissingUnit, i => i.CheckMissingUnits, (i, v) => i.CheckMissingUnits = v),
         new(RuleIds.UnusedImport, i => i.CheckUnusedImports, (i, v) => i.CheckUnusedImports = v),
         new(RuleIds.PackageOrder, i => i.CheckPackageOrder, (i, v) => i.CheckPackageOrder = v),
+        new(RuleIds.SingleFilePackage, i => i.CheckSingleFilePackage, (i, v) => i.CheckSingleFilePackage = v),
         new(RuleIds.UsesUndeclared, i => i.CheckUsesUndeclared, (i, v) => i.CheckUsesUndeclared = v),
         new(RuleIds.UsesDeclaredUnused, i => i.CheckUsesDeclaredUnused, (i, v) => i.CheckUsesDeclaredUnused = v),
         new(RuleIds.UnusedClass, i => i.CheckUnusedClass, (i, v) => i.CheckUnusedClass = v),
