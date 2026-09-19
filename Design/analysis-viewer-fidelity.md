@@ -823,6 +823,19 @@ Four things, none of them the shape of the plan.
    `der`/`initial`/`pure`, plus the dotted-name granularity rule — all of them in the *comparison*
    and the *walk*, none of them in the emitter. The emitter is unchanged from §9 and was exact first
    time, on 1.1M lines.
+
+   **✅ B213 and B214 both done 2026-09-19.** `ModelicaTokenClassifier`, `SourceElision` and
+   `ElisionFinder`, 61 tests, still exact over all 8,367 files. Two things the plan had wrong:
+
+   - **The tiering.** §4 and §14 describe the lexer-only tier as the fallback for a class that fails
+     to parse. It is not reachable that way — the parser *recovers* rather than throwing, so the
+     parse-tree tier already handles malformed input, which the round trip over five deliberately
+     broken inputs shows. The lexer-only tier is what a **caller** picks for a class too large to be
+     worth parsing, which is B185's size threshold. Same three tiers, different reason for two of
+     them.
+   - **Eliding a construct that shares a line with code.** §6b assumed an in-line edit; the elision
+     is applied to *markup*, so cutting a line at a character offset can cut inside a tag. B214 ships
+     the honest version — a construct goes as a unit or stays — and **B233** holds the rest.
 3. **B230 is new and is the cheapest thing in the package**: stop re-rendering a package that has no
    inline child. It removes 55% / 95% of the trimmed-package population on its own, before B216
    removes the rest, and it is a guard clause in front of an existing render.
