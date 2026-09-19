@@ -249,8 +249,9 @@ claims their classes are "counted as absent", because they are not. `cli.md` cha
 
 ### WP2 — The Code Review page
 
-**B213, B214, B215, B216, B217, B218** (new, from the decision above) and **B182, B185, B183, B178,
-B176, B186, B187, B189, B197**, with **B173** alongside B186 · 16 items · the bulk of the phase
+**B213, B214, B215, B216, B217, B218** (from the decision above) and **B230, B231, B232** (from
+running its first step) and **B182, B185, B183, B178, B176, B186, B187, B189, B197**, with **B173**
+alongside B186 · 19 items · the bulk of the phase
 
 The keystone package, and what the roadmap's ordering argument is really about: every new analysis
 wave lands here. Strict internal order, because most of it sits on **the viewer showing the file** —
@@ -260,15 +261,22 @@ package was previously built on.
 **Steps 1–5 are `analysis-viewer-fidelity.md` §14's S0–S5 with backlog ids attached.** The stage
 letters are kept because the gates are written there.
 
-1. **S0/S1 — measure, and nothing starts until both numbers exist.** Two measurements, not one:
-   - **S0**: re-run the note's §9 harness with its two known gaps closed — the
-     `_inGraphicsAnnotationLevel > 2` counter and per-line token splitting. Gate: round trip 100% on
-     both libraries, agreement ≥ 99.9%. **If agreement falls, the package reverts to Part I's milder
-     shape** and the decision above is reopened.
-   - **S1**: how many classes carry `SourceMatchesFile == false` after a normal load, and does a
-     prototype excision trimmer still produce 34329 findings on MSL with no line moving other than by
-     the removed ranges. This decides B216, and only B216.
-   - This also answers the two costs **B185** named, because it separates the parse from the render.
+1. **S0/S1 — measure, and nothing starts until both numbers exist. ✅ done 2026-09-19, both gates
+   pass.** Results and what they change are `analysis-viewer-fidelity.md` **Part III (§16–§18)**;
+   the headlines:
+   - **S0 ✅** — round trip exact over **8,367 files / 1,103,108 lines**; agreement **99.9989% /
+     99.9984%** with the renderer's own defects mirrored, **99.9519% / 99.9639%** without, zero
+     misalignment. The whole residue is one renderer defect in two facets (**B232**), and the
+     classifier is right in both directions.
+   - **S1 ✅** — **10.6% / 16.4%** of classes lose their line mapping to the trimmer, and **55% /
+     95% of those rewrites remove nothing at all** (**B230**, the cheapest item in the package).
+     The excision trimmer loses no finding, adds 2 correct ones in MSL and 0 in Buildings, and its
+     line map is exact over 30,599 lines. **B216 is in scope**, with a baseline-drift note.
+   - **Read §17.4 before B215.** The re-slice rule this plan specified — "re-read the file and slice
+     `[StartIndex..StopIndex]`" — matches **0 of 13,997 classes**. The offsets are into the
+     line-ending-normalised text and the slice is `[Start..Stop+1]`; as specified it would have shown
+     the wrong class entirely on any CRLF library, which is all of them (**B231**).
+   - This also answered the two costs **B185** named, because it separates the parse from the render.
 2. **B213 — the classifier** (`ModelicaTokenClassifier`, in `ModelicaParser` beside
    `ModelicaRenderer`). The largest single piece. Two property tests carry it: round trip and
    agreement. >95% per class, and a `run-mutation.ps1 -Mutate` pass over the new file.
@@ -283,9 +291,12 @@ letters are kept because the gates are written there.
    is deleted; B217 is the class diff comparing stored text against the file, which the same source
    rule fixes. **B217 is predicted, not observed** — confirm it against a package with standalone
    children and an uncommitted change before writing anything.
-6. **B216, if S1 says so**, and **B218** — the trimmer and the MCP annotation strip. Both are the same
-   mechanism reaching the check pipeline and an agent; neither is needed for the viewer, so both can
-   be taken later or in another phase.
+6. **B230 first, then B216** (S1 said yes), and **B218**. B230 is a guard clause in front of an
+   existing render and removes 55% / 95% of the trimmed-package population on its own, so it is worth
+   taking before the rest of this step whatever happens to B216. B216 and B218 are the same mechanism
+   reaching the check pipeline and an agent; neither is needed for the viewer, so both can be taken
+   later or in another phase. **B231** (the offset documentation) belongs with whichever of B215 or
+   B216 lands first, since both read those fields.
 7. **B186 with B173** — resizable panes. `MudExSplitPanel` is **already a dependency and already in
    use** in `MainLayout.razor:233`, so this is one control applied twice, and the fixed `221px` and
    hidden pager collapse into one measured value.

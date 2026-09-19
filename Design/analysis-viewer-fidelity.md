@@ -11,6 +11,11 @@ view. **Part II (§10–§15), added 2026-09-18, is the stronger proposal and th
 I's sizing in two places — §11a and §11b — and answers the three questions §8 left open. Read §14 for
 the staging and §15 for what still needs a decision.
 
+**Part III (§16–§18), added 2026-09-19, is S0 and S1 actually run. Both gates pass.** It corrects
+Part I in three places (§16a–c) and **Part II's re-slice rule in §6c/§11d is wrong as written**
+(§17.4) — read §17.4 before implementing B215. B216 is in scope; B230, B231 and B232 were opened on
+the way.
+
 The question asked: *the Code Review page reformats what it shows, so a user who has not enabled
 "apply formatting" sees something very different from what their Modelica editor shows. What would it
 take to have a view that preserves the original text and still highlights it?*
@@ -641,3 +646,200 @@ Part I's three questions, answered under this proposal, plus one new one.
    than it adds. §12.
 4. **New: is the trimmer converted?** — S1 decides it with a number. Everything else in the plan works
    either way; only the promise in §13.1 changes.
+
+---
+
+# Part III — S0 and S1, run
+
+**2026-09-19. Both gates pass, and the plan changes in four places.** The harnesses were built in a
+scratch directory against `ModelicaParser.csproj` and `MLQT.Services.csproj`; what is durable about
+them is reproduced below, in the same spirit as §9.
+
+## 16. S0 — the classifier against the renderer
+
+Every `.mo` file in both libraries, not a sample. Two properties, measured together.
+
+| | ModelicaStandardLibrary | Modelica-Buildings-Original |
+|---|---|---|
+| files | 2,671 | 5,696 |
+| lines | 391,811 | 711,297 |
+| **round trip** (strip the tags, get the source) | **2,671 / 2,671 (100%)** | **5,696 / 5,696 (100%)** |
+| files that threw | 0 | 0 |
+| word tokens compared | 783,787 | 1,417,097 |
+| **agreement**, renderer defects mirrored | **99.9989%** (residue 9) | **99.9984%** (residue 22) |
+| **agreement**, not mirrored | 99.9519% (residue 377) | 99.9639% (residue 512) |
+| misaligned tokens | **0** | **0** |
+
+**Gate: PASS**, on both readings and both libraries. Round trip is exact over **8,367 files and
+1,103,108 lines**.
+
+Three things this run established that §5's prototype did not.
+
+**a. The comparison has to be made at the same granularity, and over keywords too.** The renderer
+emits a dotted name as one tag — `<TYPE>Modelica.Icons.IconsPackage</TYPE>` — where the classifier
+tags each `IDENT`. Compared naively that reports every dotted name as a divergence and then loses
+alignment for the rest of the file; §5's "98.2% before the annotation flag" was partly this.
+Splitting the renderer's tag on the dots that separate names — *not* on a dot inside a quoted
+identifier, and `ModelicaReference` really does contain a class called `'Connections.branch()'` —
+brings misalignment to zero. Keywords belong in the comparison as well: that is what found (b).
+
+**b. `der`, `initial` and `pure` are coloured as function calls.** They are keywords, not
+identifiers, so a lexical fallback calls them `KEYWORD`; the renderer writes `FunctionCall` for them
+in `primary: (component_reference | 'der' | 'initial' | 'pure') function_call_args`
+(`ModelicaRenderer.cs:2899`), and they *are* calls. An identifier-only comparison cannot see this at
+all.
+
+**c. The graphics-annotation level has three increment sites, not one.** §6/§9 named
+`_inGraphicsAnnotationLevel` as a single counter to add. It is incremented in three places, one level
+per nested *argument*:
+
+| | |
+|---|---|
+| `VisitFunction_arguments` :3066 | around the first positional expression |
+| `VisitFunction_argument` :3149 | around each later one — **and this is how a *named* argument's value gets one**, since `named_argument : IDENT '=' function_argument` |
+| `VisitArray_arguments` :3195 | around each array element |
+
+The middle one is the one that matters: `DynamicSelect` inside
+`Ellipse(lineColor=DynamicSelect(…))` is coloured as a function because its named argument's value
+is a `function_argument`. With only the first site implemented, agreement was 99.59% and every
+disagreement was a `DynamicSelect`.
+
+### 16.1 The residue is two renderer defects, and the classifier is right in both
+
+Nothing else disagreed. Both facets are the same field, `_isFunction`, being a mutable field rather
+than a scoped fact:
+
+- **It leaks into array subscripts.** `VisitComponent_reference` visits the reference's
+  `array_subscripts` while `_isFunction` is still set (`:3007`), so in `den2[i] := …` the subscript
+  `i` is coloured as a function call. **377 tokens in MSL, 512 in Buildings.**
+- **A nested call then clears it for the rest of the reference.** In `m[integer(i),j] := …` the
+  inner `integer(…)` sets the flag and clears it on the way out, so `j` — and everything after it in
+  that same reference — loses the colouring the leak had given it. **9 tokens in MSL, 22 in
+  Buildings**, and these are the ones that remain when the leak is mirrored.
+
+They are worth **B232** on their own. The classifier should not reproduce either: a subscript is not
+a call. That is a deliberate, tiny, visible change — 889 tokens across 1.1M lines — and it should be
+stated in the commit rather than discovered.
+
+## 17. S1 — the trimmed-package population, the excision trimmer, and the re-slice
+
+### 17.1 How big the problem is, and how much of it is self-inflicted
+
+| after a normal load + `PackageCodeTrimmer` | MSL `Modelica` | `Buildings` |
+|---|---|---|
+| classes | 6,487 | 7,510 |
+| packages | 844 (13.0%) | 2,180 (29.0%) |
+| classes with `SourceMatchesFile == false` **before** trimming | 0 | 0 |
+| ...**after** | **688 (10.61%)** | **1,235 (16.44%)** |
+| of those, rewritten with **no inline child to remove at all** | **377 (55%)** | **1,172 (95%)** |
+| ...whose text got *longer* | 303 | 1,073 |
+| time | 1,342 ms | 203 ms |
+
+So **10.6% / 16.4% of classes lose their line mapping** — that is the population §11a predicted and
+the size of what B215 alone cannot fix. And **the majority of it buys nothing**: a package whose
+standalone children are already in their own files has nothing inline to trim, but the trimmer
+renders it anyway, marks `SourceMatchesFile` false, and in Buildings makes 1,073 packages *longer*
+than the file they came from. In Buildings **95%** of the damage is of that kind.
+
+That is a defect in its own right, it is independent of B216, and it is a guard clause:
+**B230**.
+
+### 17.2 The excision trimmer
+
+Same selection rule, excising each inline child's `[StartIndex..StopIndex]` instead of re-rendering.
+Only children sharing the package's `ContainingFileId` are candidates — a child in its own file has
+offsets into *that* file, and comparing them against this package's range is not merely useless but
+can excise a range that is not a class at all.
+
+| | MSL | Buildings |
+|---|---|---|
+| packages actually trimmed | 311 | 63 |
+| time | **7 ms** (vs 1,342) | **9 ms** (vs 203) |
+| `SourceMatchesFile` false afterwards | **0** | **0** |
+| result still a subsequence of the file | 311 / 311 | 63 / 63 |
+| **line map exact** | **311 / 311 packages** | **63 / 63 packages** |
+| lines checked / wrong | 24,997 / **0** | 5,602 / **0** |
+
+"The lines still map" is not an argument here, it is 30,599 lines checked one at a time: stored line
+*k* is file line `StartLine + k - 1 + (lines removed above k)`, with the same text on it. The only
+divergence is the **first** line of a nested class, which carries none of the file's indentation
+because the slice begins at the class keyword — true of every class slice, nothing to do with
+excision.
+
+### 17.3 Parity — the gate for B216
+
+Both trimmers, same settings (every configurable rule on), same models, same session.
+
+| | MSL | Buildings |
+|---|---|---|
+| findings, render-trim | 26,557 | 31,823 |
+| findings, excise-trim | **26,559** | **31,823** |
+| delta | **+2** | **0** |
+| findings lost | **0** | **0** |
+| same finding, same line | 24,387 | 28,590 |
+| same finding, line moved | 828 | — |
+
+**Nothing is lost and two things appear**, both `MLQT.Style.OneOfEachSection`
+(`Modelica.Media.Air.ReferenceAir`, `Modelica.Media.Common`). The cause is visible and benign:
+excision leaves behind a section header whose only contents were standalone children, where
+re-rendering dropped the now-empty section. The file really does have two `public` sections, so the
+new findings are **correct** — but they are a +2 drift a baseline will report, and B216 must say so.
+
+The 828 moved lines are **the fix, not a regression**: under excision a finding's line is the file's
+line. That is the whole point, and it is why B216 cannot be judged by "the count did not move".
+
+**Gate: PASS. B216 is in scope**, with a baseline-drift note.
+
+### 17.4 The re-slice rule in §6c and §11d is wrong as written
+
+B215's fallback — "re-read the file and slice `[StartIndex..StopIndex]`" — **does not work at all**:
+
+| slicing the class out of its file | MSL | Buildings |
+|---|---|---|
+| file text as read, `[Start..Stop]` | **0 / 6,487** | **0 / 7,510** |
+| line endings normalised, `[Start..Stop+1]` | **6,454 / 6,487 (99.49%)** | **7,388 / 7,510 (98.38%)** |
+
+Two corrections, and the first is the dangerous one:
+
+- **The offsets are into the line-ending-normalised text**, not the file as read. Every `.mo` file in
+  both libraries is CRLF, and `PreprocessCode` normalises before the lexer ever assigns an offset, so
+  slicing the file as read drifts by one character per line above the class. It is not slightly
+  wrong: for a class 5,000 lines down a file the slice lands in the middle of some other class.
+  §11d worried about multi-byte characters; the line endings are a much larger version of the same
+  mistake, and every file has them.
+- **`StopIndex` is one short of the class's last character in practice** — `[Start..Stop+1]` is the
+  slice that matches. The field documents itself as the inclusive offset of the last character
+  (`ModelNode.cs:90`); it is not, and a comment that is wrong about an offset is worth **B231**.
+
+The 33 / 122 remaining are **short class definitions** (`model Cylinder = Cylinder_analytic_CAD;`),
+where the stored text carries a trailing `;` the slice does not. A named case, not a mystery.
+
+## 18. What the measurements change
+
+Four things, none of them the shape of the plan.
+
+1. **Both gates pass.** §14's S0 and S1 are done; B213 is unblocked and B216 is in scope.
+2. **B213 grew a little and shrank a little.** Three increment sites rather than one, plus
+   `der`/`initial`/`pure`, plus the dotted-name granularity rule — all of them in the *comparison*
+   and the *walk*, none of them in the emitter. The emitter is unchanged from §9 and was exact first
+   time, on 1.1M lines.
+3. **B230 is new and is the cheapest thing in the package**: stop re-rendering a package that has no
+   inline child. It removes 55% / 95% of the trimmed-package population on its own, before B216
+   removes the rest, and it is a guard clause in front of an existing render.
+4. **B215's source rule must be rewritten before it is implemented** (§17.4). As specified it would
+   have produced a viewer that shows the wrong class entirely, on a CRLF library — which is all of
+   them — and it would have looked like a classifier bug.
+
+**Two new defects found on the way**, neither of which the plan was looking for: **B231** (the
+offset documentation) and **B232** (the renderer's `_isFunction` leak). Both are recorded rather than
+fixed here.
+
+### 18.1 One thing B213 should know about parsing
+
+`ModelDefinition` caches the parse tree but not the token stream, and the classifier needs both — the
+tree for the categories, the stream for the offsets and for the characters the lexer skipped. The
+viewer re-parses today (`CodeReview.razor.cs:713`), so parsing again is not a regression, and §5
+measured the whole fidelity path as ~45% cheaper end to end regardless. But there is a cheaper
+option worth trying: **lex alone (18 ms) and reuse the cached tree (206 ms saved)**, since the token
+indices agree as long as both come from the same `PreprocessCode` output. Measure it before assuming
+it; the correctness of the categories does not depend on it.
