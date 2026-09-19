@@ -64,6 +64,28 @@
                     </MudTooltip>
                 }    
             </MudButtonGroup>
+            <MudSpacer />
+            @* Searching the class on screen (B176). Locating a parameter in a long class meant
+               scrolling and reading; this finds it, counts the hits and steps through them. The
+               buttons wrap at both ends, so the last match steps to the first rather than stopping. *@
+            <MudTextField T="string" Value="@_codeSearch" ValueChanged="OnCodeSearchChanged"
+                Immediate="true" Placeholder="Find in code" Adornment="Adornment.Start"
+                AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                Class="mt-0" Style="max-width: 220px;" Typo="Typo.body1"
+                Disabled="@(_highlightedCode is null or { Count: 0 })" />
+            <MudText Typo="Typo.caption" Class="align-self-center" Style="min-width: 84px;">@CodeSearchStatus</MudText>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+                <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
+                        Size="Size.Medium" Disabled="@(_codeMatches.Count == 0)"
+                        OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
+                </MudTooltip>
+                <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
+                        Size="Size.Medium" Disabled="@(_codeMatches.Count == 0)"
+                        OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
+                </MudTooltip>
+            </MudButtonGroup>
         </MudStack>
         @* A recovered class explains itself in the comment at the top of its own source. An alert
            here as well cost the page enough vertical space to push the findings table below the fold,
@@ -130,7 +152,8 @@
         }
         else
         {
-                <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords" Height="100%" />
+                <CodeViewer Lines="@_highlightedCode" MisspelledWords="@_misspelledWords"
+                            SearchTerm="@_codeSearch" Height="100%" />
         }
         </MudPaper>
                 </MudExSplitPanelItem>
@@ -172,9 +195,23 @@
                             Color="Color.Default" Disabled="_exporting" OnClick="ExportFindingsAsync"
                             aria-label="Export all findings" />
                     </MudTooltip>
-                    <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
-                        AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
-                        Typo="Typo.body1"></MudTextField>
+                    @* Narrowing to a rule, which the search box could not do: a rule's words are not
+                       in the finding's text, and typing its id was a term that widened the list
+                       rather than narrowing it (B187). Only the rules the current findings use are
+                       offered — see RulesInFindings. *@
+                    <MudSelect T="string" Value="@_ruleFilter" ValueChanged="OnRuleFilterChanged"
+                        Placeholder="All rules" Dense="true" Margin="Margin.Dense" Clearable="true"
+                        Class="mt-0 ml-4" Style="max-width: 260px;" Typo="Typo.body1">
+                        @foreach (var rule in RulesInFindings)
+                        {
+                            <MudSelectItem T="string" Value="@rule.Id">@rule.Title</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTooltip Text="Every word must match, so a second word narrows the list rather than widening it">
+                        <MudTextField @bind-Value="_searchString" Placeholder="Search" Adornment="Adornment.Start"
+                            AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0 ml-4"
+                            Typo="Typo.body1"></MudTextField>
+                    </MudTooltip>
                 </ToolBarContent>
                 <HeaderContent>
                     <MudTh>Model</MudTh>

@@ -328,9 +328,18 @@ letters are kept because the gates are written there.
    perfectly — and reported the inner one broken. A probe that printed the DOM settled it in one run
    after two rounds of guessing. Drive the browser, and when a UI test fails, ask what it is looking
    at before changing what it is looking at.
-8. **B176** (search over the source — now the user's own source) and **B187** (AND plus a rule filter)
-   — independent of the classifier, so they can run in parallel with 2–5. B187 must untangle the
-   scope-through-search-string smuggling first.
+8. **B176 ✅** (search over the source — now the user's own source) and **B187 ✅** (AND plus a rule
+   filter) — independent of the classifier, so they can run in parallel with 2–5. B187 must untangle
+   the scope-through-search-string smuggling first. **That ordering was the whole of B187**: swapping
+   OR for AND before pulling the scope out would have excluded every finding, because the class name
+   was itself one of the terms. The filter is now a pure function with tests over it.
+
+   **B176 left a gap that is worth naming rather than papering over (B237).** Its logic is
+   unit-tested on both sides, but the wiring between them has no automated guard: searching needs a
+   class selected, and neither way of getting one survives the shared journey host — through the tree
+   needs a repository, which starts the analysis pipeline and timed out another journey; through a
+   clicked finding works in isolation in 11 s and then never renders in a full run. The journey was
+   written, failed that way, and was removed rather than left red or made opt-in.
 9. **B189** then **B197** — reveal-in-tree, then the navigation stack over it. Both hang off the
    finding-click path step 4 rewrites, so they come last and are cheap once it exists. B197's peek now
    lands in the user's own text, which is the point of it.

@@ -22,9 +22,18 @@ public partial class CodeViewer
     [Parameter]
     public IReadOnlyCollection<string>? MisspelledWords { get; set; }
 
+    /// <summary>
+    /// Text the user is searching the code for. Every occurrence is wrapped in a
+    /// <c>.code-search-match</c> span so it stands out (B176). Case-insensitive, because nobody
+    /// searching code for <c>der</c> means only lower-case <c>der</c>.
+    /// </summary>
+    [Parameter]
+    public string? SearchTerm { get; set; }
+
     private List<string> _htmlLines = new();
     private List<string>? _lastLines;
     private IReadOnlyCollection<string>? _lastWords;
+    private string? _lastSearch;
 
     private static readonly System.Text.RegularExpressions.Regex _tagRegex =
         new(@"<(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION|LINENUMBER)>(.*?)</\1>",
@@ -32,12 +41,14 @@ public partial class CodeViewer
 
     protected override void OnParametersSet()
     {
-        // Re-process when the lines reference changes or the misspelled-word set changes.
-        if (Lines != _lastLines || !ReferenceEquals(MisspelledWords, _lastWords))
+        // Re-process when the lines reference changes, the misspelled-word set changes, or the
+        // search term does.
+        if (Lines != _lastLines || !ReferenceEquals(MisspelledWords, _lastWords) || SearchTerm != _lastSearch)
         {
             _lastLines = Lines;
             _lastWords = MisspelledWords;
-            _htmlLines = ToHtml(Lines, MisspelledWords);
+            _lastSearch = SearchTerm;
+            _htmlLines = ToHtml(Lines, MisspelledWords, SearchTerm);
         }
     }
 
@@ -52,8 +63,35 @@ public partial class CodeViewer
     /// ampersands in ordinary strings and comments, and it is interpolated into markup the browser
     /// then parses.
     /// </remarks>
-    internal static List<string> ToHtml(List<string>? lines, IReadOnlyCollection<string>? misspelledWords)
-        => ConvertLinesToHtml(lines, BuildMisspellMatcher(misspelledWords));
+    internal static List<string> ToHtml(
+        List<string>? lines, IReadOnlyCollection<string>? misspelledWords, string? searchTerm = null)
+        => ConvertLinesToHtml(lines, BuildMisspellMatcher(misspelledWords), BuildSearchMatcher(searchTerm));
+
+    /// <summary>
+    /// A matcher for the search term, or null when there is nothing to find.
+    ///
+    /// <para>Built against the <b>HTML-encoded</b> form of the term, because that is what the
+    /// content has been turned into by the time this runs — searching for <c>&lt;html&gt;</c> in a
+    /// documentation string has to find <c>&amp;lt;html&amp;gt;</c>. The misspell matcher above is
+    /// built the same way for the same reason.</para>
+    ///
+    /// <para><b>What this cannot highlight</b>, and it is a real limit rather than an oversight: a
+    /// match that spans two tokens. The text is coloured token by token, so <c>der(y)</c> is a
+    /// FUNCTION, an OPERATOR and an IDENT in three separate spans, and a highlight across them would
+    /// have to be three spans too. The <em>line</em> is still found and still scrolled to — the page
+    /// searches the plain text — so the match is reachable, just not tinted.</para>
+    /// </summary>
+    private static System.Text.RegularExpressions.Regex? BuildSearchMatcher(string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+            return null;
+
+        var encoded = System.Web.HttpUtility.HtmlEncode(searchTerm);
+        return new System.Text.RegularExpressions.Regex(
+            System.Text.RegularExpressions.Regex.Escape(encoded),
+            System.Text.RegularExpressions.RegexOptions.Compiled
+            | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
 
     /// <summary>
     /// Holds a compiled whole-word matcher for the misspelled-word set plus a map from the
@@ -94,7 +132,8 @@ public partial class CodeViewer
     /// <summary>
     /// Pre-converts all markup lines to HTML in one pass.
     /// </summary>
-    private static List<string> ConvertLinesToHtml(List<string>? lines, MisspellMatcher? misspell)
+    private static List<string> ConvertLinesToHtml(
+        List<string>? lines, MisspellMatcher? misspell, System.Text.RegularExpressions.Regex? search = null)
     {
         if (lines == null || lines.Count == 0)
             return new List<string>();
@@ -137,6 +176,11 @@ public partial class CodeViewer
                         return $"<span class=\"code-misspell\" data-word=\"{attr}\">{m.Value}</span>";
                     });
                 }
+
+                // Search matches are marked in every token type, and not in the line number: a
+                // search for "1" would otherwise light up the gutter rather than the code.
+                if (search != null && tagType != "linenumber")
+                    content = search.Replace(content, m => $"<span class=\"code-search-match\">{m.Value}</span>");
 
                 return $"<span class=\"code-{tagType}\">{content}</span>";
             });

@@ -55,6 +55,24 @@ public partial class CodeReview : IAsyncDisposable
     private bool FindingsScopeAllModels = false;
 
     /// <summary>
+    /// The rule the findings list is narrowed to, or null for all of them (B187). Held here rather
+    /// than smuggled into the search box, which is the mistake the class scope made.
+    /// </summary>
+    private string? _ruleFilter;
+
+    /// <summary>What the user is searching the <em>code</em> for, and where they are in it (B176).</summary>
+    private string _codeSearch = "";
+
+    /// <summary>
+    /// The display lines carrying a match, in order. Recomputed when the term or the class changes,
+    /// because it indexes into what is on screen.
+    /// </summary>
+    private List<int> _codeMatches = [];
+
+    /// <summary>Which of <see cref="_codeMatches"/> the user is on, zero-based.</summary>
+    private int _codeMatchIndex;
+
+    /// <summary>
     /// Narrows the findings list to what this working copy has changed — new findings, plus standing
     /// debt in a file waiting to be committed. Off by default so nothing is hidden until asked for.
     /// </summary>
@@ -677,6 +695,7 @@ public partial class CodeReview : IAsyncDisposable
             _highlightedCode = cachedCode.Lines;
             _elision = cachedCode.Elision;
             _isLoadingCode = false;
+            RecomputeCodeMatches();
 
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
 
@@ -792,6 +811,7 @@ public partial class CodeReview : IAsyncDisposable
                         _highlightedCode = shown.Lines;
                         _elision = shown.Elision;
                         _isLoadingCode = false;
+                        RecomputeCodeMatches();
 
                         // Store in cache for future clicks
                         _renderCache[cacheKey] = shown;
@@ -1233,14 +1253,172 @@ document.head.appendChild(style);
         if (ShowChangesOnly && !BaselineStatus.Snapshot.IsChangedFromBaseline(element))
             return false;
 
-        return FilterFunc(element, _searchString + (FindingsScopeAllModels ? " " + NavState.ModelID : ""));
+        return Matches(
+            element,
+            _searchString,
+            onlyModelId: FindingsScopeAllModels && NavState.ModelID.Length > 0 ? NavState.ModelID : null,
+            ruleId: _ruleFilter);
     }
+
+    /// <summary>
+    /// Whether a finding survives the three things the user can narrow by: the class, the rule, and
+    /// the words in the search box.
+    ///
+    /// <para><b>The terms are AND, not OR</b> (B187). Typing two things into one box means "both",
+    /// which is what anyone doing it expects and what makes a second word useful — under OR each
+    /// word could only ever widen the result, so the box got less precise the more you told it. Each
+    /// term still matches across any field, so a partial class name and a keyword work together.</para>
+    ///
+    /// <para><b>The class scope is a parameter, not a word in the search string.</b> It used to be
+    /// appended to it (<c>_searchString + " " + NavState.ModelID</c>) and then stripped back out
+    /// inside the filter, which is why AND could not simply be swapped in: with the scope smuggled
+    /// through as a term, requiring every term to match would have excluded every finding whose text
+    /// did not also contain the class name — which is all of them.</para>
+    /// </summary>
+    internal static bool Matches(LogMessage finding, string? search, string? onlyModelId, string? ruleId)
+    {
+        if (!string.IsNullOrEmpty(onlyModelId) && finding.ModelName != onlyModelId)
+            return false;
+
+        if (!string.IsNullOrEmpty(ruleId) && finding.RuleId != ruleId)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(search))
+            return true;
+
+        foreach (var term in search.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!MatchesAnyField(finding, term))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>One term against every field the list shows, case-insensitively.</summary>
+    private static bool MatchesAnyField(LogMessage finding, string term) =>
+        Contains(finding.ModelName, term)
+        || Contains(finding.Summary, term)
+        || Contains(finding.Details, term)
+        || Contains(finding.Severity, term)
+        || Contains(finding.RuleId, term);
+
+    private static bool Contains(string? field, string term) =>
+        !string.IsNullOrEmpty(field) && field.Contains(term, StringComparison.OrdinalIgnoreCase);
 
     private void OnChangesOnlyChanged(bool value)
     {
         ShowChangesOnly = value;
         StateHasChanged();
     }
+
+    /// <summary>
+    /// The rules the current findings actually use, with their catalogue titles, for the rule filter
+    /// to offer.
+    ///
+    /// <para>Built from the findings rather than from <c>RuleCatalog</c> so the list is what is in
+    /// front of the user: offering all forty-odd rules, most of which produced nothing here, makes
+    /// the control something to search rather than something to pick from. A rule the catalogue does
+    /// not know — an external tool's output — falls back to its id.</para>
+    /// </summary>
+    private IEnumerable<(string Id, string Title)> RulesInFindings =>
+        CodeReviewService.LogMessages
+            .Select(m => m.RuleId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal)
+            .Select(id => (Id: id!, Title: RuleCatalog.BuiltIn.TryGetValue(id!, out var def) ? def.Title : id!))
+            .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase);
+
+    private void OnRuleFilterChanged(string? ruleId)
+    {
+        _ruleFilter = string.IsNullOrEmpty(ruleId) ? null : ruleId;
+        StateHasChanged();
+    }
+
+    #region Searching the code (B176)
+
+    /// <summary>
+    /// The 1-based display lines containing <paramref name="term"/>, searched over the code the way
+    /// the user reads it — tags stripped, entities decoded.
+    ///
+    /// <para>Searching the markup instead would find <c>KEYWORD</c> in every line and miss
+    /// <c>&lt;html&gt;</c> in a documentation string, which is written <c>&amp;lt;html&amp;gt;</c>
+    /// there. It is also why a match spanning two tokens is found here even though
+    /// <c>CodeViewer</c> cannot tint it: this reads the line, not its spans.</para>
+    /// </summary>
+    internal static List<int> FindMatchingLines(IReadOnlyList<string>? displayLines, string? term)
+    {
+        if (displayLines is null || string.IsNullOrWhiteSpace(term))
+            return [];
+
+        var matches = new List<int>();
+        for (var i = 0; i < displayLines.Count; i++)
+        {
+            if (PlainTextOf(displayLines[i]).Contains(term, StringComparison.OrdinalIgnoreCase))
+                matches.Add(i + 1);
+        }
+
+        return matches;
+    }
+
+    private static readonly Regex MarkupTagRegex =
+        new(@"</?(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION)>", RegexOptions.Compiled);
+
+    private static string PlainTextOf(string markupLine) =>
+        System.Net.WebUtility.HtmlDecode(MarkupTagRegex.Replace(markupLine, ""));
+
+    /// <summary>
+    /// Re-finds the matches against whatever is now on screen. Called whenever the displayed lines
+    /// change — a different class, the annotations toggled — because the match list is line numbers
+    /// into that list, and stale ones would scroll to whatever happens to be at them now.
+    /// </summary>
+    private void RecomputeCodeMatches()
+    {
+        _codeMatches = FindMatchingLines(_highlightedCode, _codeSearch);
+        _codeMatchIndex = 0;
+    }
+
+    private async Task OnCodeSearchChanged(string value)
+    {
+        _codeSearch = value ?? "";
+        _codeMatches = FindMatchingLines(_highlightedCode, _codeSearch);
+        _codeMatchIndex = 0;
+
+        // Jump to the first hit as the user types, so the box is useful before they reach for the
+        // next button at all.
+        if (_codeMatches.Count > 0)
+            await ScrollToCurrentMatchAsync();
+    }
+
+    private async Task StepCodeMatch(int by)
+    {
+        if (_codeMatches.Count == 0)
+            return;
+
+        // Wraps in both directions: the alternative is a button that stops working at the ends,
+        // which reads as broken rather than as finished.
+        _codeMatchIndex = (_codeMatchIndex + by + _codeMatches.Count) % _codeMatches.Count;
+        await ScrollToCurrentMatchAsync();
+    }
+
+    private async Task ScrollToCurrentMatchAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync(
+                "spellCheck.scrollLineIntoView", ".code-viewer", _codeMatches[_codeMatchIndex]);
+        }
+        catch (Exception)
+        {
+            // View may have been torn down; ignore.
+        }
+    }
+
+    private string CodeSearchStatus => _codeSearch.Length == 0
+        ? ""
+        : _codeMatches.Count == 0 ? "no matches" : $"{_codeMatchIndex + 1} of {_codeMatches.Count}";
+
+    #endregion
 
     private bool _exporting;
 
@@ -1357,43 +1535,6 @@ document.head.appendChild(style);
         _ => Color.Default
     };
 
-    private bool FilterFunc(LogMessage element, string searchString)
-    {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-
-        if (FindingsScopeAllModels && NavState.ModelID.Length > 0) {
-            if (element.ModelName == NavState.ModelID) {
-                //Remove the model name from the search string before continuing
-                searchString = searchString.Replace(NavState.ModelID,"").Trim();
-                if (searchString.Length > 0) {
-                    var strings = searchString.ToLower().Split(' ');
-                    if (element.Summary.Length > 0 && strings.Any(element.Summary.ToLower().Contains))
-                        return true;
-                    if (element.Details.Length > 0 && strings.Any(element.Details.ToLower().Contains))
-                        return true;
-                    if (element.Severity.Length > 0 && strings.Any(element.Severity.ToLower().Contains))
-                        return true;
-                    return false;
-                }
-                return true;
-            }
-        }
-        else {
-            var strings = searchString.Split(' ');
-            if (strings.Any(element.ModelName.Contains))
-                return true;
-
-            var stringsLowerCase = searchString.ToLower().Split(' ');
-            if (element.Summary.Length > 0 && stringsLowerCase.Any(element.Summary.ToLower().Contains))
-                return true;
-            if (element.Details.Length > 0 && stringsLowerCase.Any(element.Details.ToLower().Contains))
-                return true;
-            if (element.Severity.Length > 0 && stringsLowerCase.Any(element.Severity.ToLower().Contains))
-                return true;
-        }
-        return false;
-    }
 
     private void ResolveFinding()
     {

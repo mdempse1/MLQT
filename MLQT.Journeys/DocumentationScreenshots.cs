@@ -928,19 +928,8 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// the code viewer, the findings list and the dependency graph show anything - and doing it the
     /// way a user does is what keeps the picture honest about the number of clicks involved.
     /// </remarks>
-    private static async Task SelectAClassAsync(IPage page, string className = "Modified")
-    {
-        // Expanding and selecting are different gestures, and the tree is lazy: clicking the node's
-        // label selects it and leaves it closed, so the children a later step wants are not in the
-        // DOM at all. The arrow is what loads them.
-        await ExpandAsync(page, "Lib");
-
-        var target = NodeByText(page, className);
-
-        Assert.True(await target.CountAsync() > 0, $"{className} is not in the tree");
-        await target.ClickAsync();
-        await page.WaitForTimeoutAsync(1500);
-    }
+    private static Task SelectAClassAsync(IPage page, string className = "Modified") =>
+        LibraryTree.SelectClassAsync(page, className);
 
     /// <summary>
     /// The row a piece of text sits in — its nearest enclosing stack.
@@ -975,8 +964,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     private static ILocator LeftToolbar(IPage page) => page.Locator(".mud-button-group-root").First;
 
     /// <summary>One tree node, addressed by the text on it.</summary>
-    private static ILocator NodeByText(IPage page, string text) =>
-        page.Locator(".mud-treeview-item-content", new PageLocatorOptions { HasTextString = text }).First;
+    private static ILocator NodeByText(IPage page, string text) => LibraryTree.NodeByText(page, text);
 
     /// <summary>
     /// Opens one tree node by its arrow, and waits for its children to arrive.
@@ -987,26 +975,7 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
     /// unconditional click would have shut what the first one opened. MudBlazor marks an open
     /// node's arrow with <c>mud-transform</c>, which is the only way to ask.
     /// </remarks>
-    private static async Task ExpandAsync(IPage page, string nodeText)
-    {
-        var node = NodeByText(page, nodeText);
-        await node.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
-
-        var icon = node.Locator(".mud-treeview-item-arrow-expand").First;
-        if (await icon.CountAsync() > 0 &&
-            (await icon.GetAttributeAsync("class"))?.Contains("mud-transform") == true)
-            return;
-
-        var arrow = node.Locator(".mud-treeview-item-arrow button").First;
-
-        if (await arrow.CountAsync() > 0)
-            await arrow.ClickAsync();
-        else
-            await node.DblClickAsync();
-
-        // Server-side children: the node's own click returns before they are fetched.
-        await page.WaitForTimeoutAsync(1500);
-    }
+    private static Task ExpandAsync(IPage page, string nodeText) => LibraryTree.ExpandAsync(page, nodeText);
 
     /// <summary>Ticks a tree node's impact-analysis checkbox.</summary>
     private static async Task CheckInTheTreeAsync(IPage page, string nodeText)

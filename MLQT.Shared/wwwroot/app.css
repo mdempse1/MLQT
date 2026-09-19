@@ -191,3 +191,24 @@ body * {
     overflow: visible;
     min-width: max-content;
 }
+
+/* ── Find in code ────────────────────────────────────────────────────────────────
+   A match keeps the syntax colour it already had and gains a background, rather than being
+   recoloured: the point of searching code is to find something in it, not to stop being
+   able to read what kind of thing it is. `inherit` on the colour is doing that work — the
+   span sits inside the token's own span, so without it the browser would keep the token
+   colour anyway, and saying so stops a later edit from "tidying" it into a foreground
+   colour. */
+
+.code-search-match {
+    background-color: rgba(255, 213, 79, 0.55);
+    color: inherit;
+    border-radius: 2px;
+}
+
+/* Dark themes get a dimmer wash: the light one is legible on white and glares on near-black. */
+@media (prefers-color-scheme: dark) {
+    .code-search-match {
+        background-color: rgba(255, 213, 79, 0.3);
+    }
+}
