@@ -341,11 +341,22 @@ explicitly optional — keep them that way.
 
 ### WP3 — Rules and formatting
 
-**B181, B177, B195, B175** · 4 items · M
+**B236, B181, B177, B195, B175** · 5 items · M
 
 Batched because a new rule id walks the same six places every time: `RuleIds`, `RuleCatalog`,
 `RuleSettingsLayout`, the visitor or analyzer, `settings-reference.md`, and the catalogue guard test.
 Walk that path once with three rules in hand rather than three times.
+
+- **B236 first, and it is not like the other four.** They add or refine rules; this is a regression in
+  what the formatter *writes* — every file now ends without its final newline, so reformatting a
+  library that an earlier build formatted reports every file in it as modified. That is the worst
+  shape a formatting defect can take: a diff of thousands of files with nothing in them, which hides
+  any real change inside it and makes the reformat look untrustworthy. It also predates 2026.4.0, so
+  it is in a shipped release and will keep costing users until it is out. **Bisect it rather than
+  reason about it** — the entry names the two lines that write the text and the one that trims it,
+  but the fault is a one-character difference on a path several rewrites have crossed, and reading
+  will lose to `git log` here. Small, and worth taking before this package's rule work whatever the
+  order of the rest.
 
 - **B181** — `OneOfEachSection` is the working template for a formatting concern that also reports,
   and `FormattingOptions.ComponentsBeforeClasses` already exists. Giving it an id also closes B103's
