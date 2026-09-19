@@ -503,6 +503,42 @@ assertion, a mutation check before believing any guard, and measuring on a sampl
 contain the failing case — B169's first fix was verified on real data holding none of it, and looked
 complete because the measurement agreed.
 
+### WP9 — The mutation survivors deliberately left
+
+**B227, B228, B229** · opened by WP8's audit, and held back from it on purpose
+
+WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
+repository has written a comment to defend?* — and then a second — *which sit on code that writes to
+a user's files or their remote?* Those produced B219-B226, all closed. What is left is everything the
+two questions did not reach, and it is not a backlog of defects: most of it is equivalent mutants and
+code nobody should test. Three groups are worth a deliberate pass, in this order.
+
+**B228 first, because it is small and finishable.** Four survivors in `ModelicaFileEncoding`, of
+which the real one drops a byte-order mark from a file MLQT was asked to preserve. An afternoon,
+and it settles whether the encoding round trip — which CLAUDE.md singles out as progressive
+corruption when it goes wrong — holds under its own tests rather than under inspection.
+
+**B229 next, because it is the largest gap and the reason is structural.** 11% of covered mutants
+killed in each of the two external-tool services, and they are the only code in the solution whose
+suites no CI job runs. Nothing outside one machine exercises them. That is a decision the project
+made knowingly — a live Dymola cannot be a runner dependency — and the audit has now priced it.
+The work is a live-tool session, not a CI change.
+
+**B227 last, and only with a sampling plan.** 361 survivors in `ModelicaRenderer` at an 85% kill
+rate: the best-tested large thing here and still the biggest absolute count anywhere. Read in groups
+— indentation state, section ordering, annotation placement, line breaking — and decide per group
+whether the behaviour is specified anywhere at all. **The failure mode is specific and likely**:
+361 survivors read end to end produces tests that assert the renderer's current output instead of
+its contract, which is the "expectation copied from behaviour" sub-shape in WP8's table, at scale
+and self-inflicted. If a group has no specification, the honest outcome is to write one down or
+leave the survivors alone — not to freeze today's bytes.
+
+**What this package must not become.** A mutation score is not a target, and WP8's own findings are
+the argument: of the eight survivors it investigated closely, three were equivalent mutants and one
+was dead code to delete rather than test. Half of a careful pass over this material produces no
+tests at all. Record what was read and judged equivalent, so the next audit does not re-raise it —
+`LibraryCheckSession.cs:43` and the saver's exclusion branch already carry that note in the code.
+
 ### Not in any package
 
 **B179** and **B196**, the two MCP items, have no dependency on anything above and no dependency on
@@ -526,13 +562,20 @@ WP0 ──▶ WP1 ──▶ WP2   S0/S1 measure ▸ B213 classifier ▸ B214 eli
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first
                        └──▶ WP7   B191 only if confirmed in scope
 
-WP8   test-harness fidelity (B205) — independent; before WP2 if the suite is to be trusted there
+WP8   test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
+        └──▶ WP9   B228 ▸ B229 ▸ B227 — the survivors WP8 left; needs no other package
 WP-less: B179, B196 (MCP) — separable at any point
 ```
 
 WP3, WP5 and WP6 depend on nothing in WP2 and can be taken whenever a change of subject is wanted.
 WP4's B184 is placed after WP1 on purpose: re-scoping what gets checked is not worth doing while a
 malformed file can still drop classes out of the graph underneath it (B201).
+
+WP9 follows WP8 because it is WP8's leftovers, not because anything blocks it: it needs no other
+package and can be taken whenever there is appetite for it. **It is the one package with no deadline**
+— nothing in it can corrupt a repository or lose a commit, which was the line WP8 used to decide what
+had to be fixed the same day. Take B228 on a quiet afternoon, B229 when there is a machine with
+Dymola and `omc` on it, and B227 only when there is time to do it properly.
 
 ## Ground rules for the phase
 
