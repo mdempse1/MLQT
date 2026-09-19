@@ -554,6 +554,27 @@ measuring `.razor.cs` and **not** filtering `.razor` — measured, a component's
 counted at all, and the filter the plan called for would have removed five ordinary classes from the
 report instead. See `skill-gui-testing.md`.
 
+### "Does the viewer still show the user's own file?" — a real library, by hand
+
+**The strongest test in this repository runs nowhere automatically** (backlog B234).
+`ModelicaTokenClassifierTests.RoundTripsOverAWholeLibrary` is the whole fidelity claim — strip the
+highlight tags and what comes back is the source, character for character — and it is asserted over
+**8,367 files and 1.1M lines** of real Modelica. A library that size cannot live in the repository,
+so it is opt-in, which means **neither CI nor `run-mutation.ps1` ever executes it**, and the
+surviving mutants in the classifier's emit loop are exactly the ones it would kill.
+
+**Run it by hand after any change to `ModelicaTokenClassifier`, and before a release that carries
+one:**
+
+```powershell
+$env:MLQT_FIDELITY_CORPUS = "C:\Projects\Modelica\ModelicaStandardLibrary;C:\Projects\Modelica\Modelica-Buildings-Original"
+dotnet test ModelicaParser.Tests --filter "FullyQualifiedName~RoundTripsOverAWholeLibrary"
+```
+
+Several libraries are separated by `;`. With the variable unset the test returns immediately, so an
+ordinary run is unaffected — which is the trap, not a convenience: a green suite says nothing about
+fidelity unless this has been run.
+
 ### "Do the tests actually check anything?" — `build/run-mutation.ps1`
 
 Coverage says a line ran. **Mutation testing says it was checked**: Stryker changes the code in small
