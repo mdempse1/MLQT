@@ -215,15 +215,18 @@ public class ModelicaTokenClassifierTests
     }
 
     /// <summary>
-    /// The one place the two deliberately differ, and the reason the property above is asserted on a
-    /// corpus that avoids it rather than with a tolerance (backlog B232).
+    /// The one place the two used to differ, and the reason the property above was asserted on a
+    /// corpus that avoided it rather than with a tolerance (backlog B232).
     ///
-    /// <para>The renderer holds <c>_isFunction</c> in a field and visits a reference's
-    /// <c>array_subscripts</c> without clearing it, so the subscript of an assignment target is
-    /// coloured as a function call. Scoped properly, it is an identifier — which is what it is.</para>
+    /// <para>The renderer held <c>_isFunction</c> in a field and visited a reference's
+    /// <c>array_subscripts</c> without clearing it, so the subscript of an assignment target was
+    /// coloured as a function call — 377 tokens in MSL and 512 in Buildings, and the whole residue
+    /// of a 99.998% agreement. The classifier declined to reproduce it, which left one of the two
+    /// deliberately wrong; <b>B232 scoped the field, so they now agree</b> and this test says so
+    /// from the side that first noticed.</para>
     /// </summary>
     [Fact]
-    public void ASubscriptIsNotAFunctionCall_UnlikeTheRenderer()
+    public void ASubscriptIsNotAFunctionCall_AndTheRendererAgrees()
     {
         const string source = """
             function F "f"
@@ -240,7 +243,8 @@ public class ModelicaTokenClassifierTests
             tokenStream: stream, classNamesToExclude: null, formatting: FormattingOptions.None);
         renderer.VisitStored_definition(tree);
 
-        Assert.Contains(("FUNCTION", "i"), WordTokens(renderer.Code));
+        Assert.Contains(("IDENT", "i"), WordTokens(renderer.Code));
+        Assert.DoesNotContain(("FUNCTION", "i"), WordTokens(renderer.Code));
         Assert.Contains(("IDENT", "i"), WordTokens(ModelicaTokenClassifier.Highlight(tree, stream, source)));
     }
 

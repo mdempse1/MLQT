@@ -2128,9 +2128,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         else if (context.component_reference() != null && context.function_call_args() != null)
         {
             // Function call equation: component_reference function_call_args
+            // Restored rather than cleared (B232): a call nested inside another reference's
+            // subscripts used to switch the colouring off for the rest of the outer reference.
+            var wasFunction = _isFunction;
             _isFunction = true;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunction;
             Visit(context.function_call_args());
         }
 
@@ -2156,16 +2159,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Visit(context.output_expression_list());
             Write(")");
             Write(Operator(":="));
+            var wasFunctionInOutputList = _isFunction;
             _isFunction = true;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunctionInOutputList;
             Visit(functionCallArgs[0]);
         }
         else if (context.component_reference() != null)
         {
+            var wasFunctionInStatement = _isFunction;
             _isFunction = true;
             Visit(context.component_reference());
-            _isFunction = false;
+            _isFunction = wasFunctionInStatement;
 
             if (context.expression() != null)
             {
@@ -2890,9 +2895,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             //(component_reference | 'der' | 'initial' | 'pure') function_call_args
             if (context.component_reference()!=null) 
             {
+                var wasFunctionInCall = _isFunction;
                 _isFunction = true;
                 Visit(context.component_reference());
-                _isFunction = false;
+                _isFunction = wasFunctionInCall;
             }
             else
             {
@@ -3012,7 +3018,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 }
                 else if (child is modelicaParser.Array_subscriptsContext arrSubs)
                 {
+                    // A subscript is not part of the call being made (B232). `den2[i] := …` visits
+                    // the subscript while _isFunction is still set for the reference, so `i` was
+                    // coloured as a function call — 377 tokens in MSL, 512 in Buildings, and the
+                    // whole residue of the classifier's 99.998% agreement measurement.
+                    var wasFunction = _isFunction;
+                    _isFunction = false;
                     Visit(arrSubs);
+                    _isFunction = wasFunction;
                 }
             }
         }
