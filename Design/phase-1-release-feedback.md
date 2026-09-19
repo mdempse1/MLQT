@@ -379,7 +379,7 @@ is here only because nothing else needs it.
 
 ### WP8 — Test-harness fidelity — **✅ complete**
 
-**B205 ✅, B212 ✅** · not a product area, which is why it is its own package
+**B205 ✅, B212 ✅, B219–B226 ✅** · not a product area, which is why it is its own package
 
 None of WP2–WP7 is a place for it: they are areas of the application, and this is about whether the
 suite can tell the truth about them. It is grouped here with the standing pattern below rather than
@@ -483,7 +483,9 @@ scoring highest is the bar working as intended: it is the assembly held to 95%.
 one thing coverage cannot see. 5,990 of them, and reading by hand is hopeless, so the useful question
 was *which survivors sit on a line this repository has written a comment to defend*. Grepping the
 survivor list for `IsExternalStub`, `ReferenceOnly`, `Encrypted`, `Excluded`, `IsDiagnostic` and
-`Suppress` answered it in one pass and produced **B219-B223**.
+`Suppress` answered it in one pass and produced **B219-B223**. A second pass asked a different
+question - *which sit on code that writes to a user's files or their remote* - and produced
+**B225-B226**. All closed; what neither question reached is WP9.
 
 The answer is uncomfortable and worth stating plainly: **the invariants documented most carefully
 here are the ones with no test behind them.** `LibraryCheckSession.cs:44` carries three lines of
@@ -497,6 +499,22 @@ because it computes an SVG layout — jitter, force relaxation, clamping — tha
 Cytoscape lays the graph out itself. The right answer there is to delete it (B222), and the only test
 touching it asserts `SvgWidth >= 700` against a `Math.Max(700, ...)`, which is the second sub-shape
 above, found by the tool rather than by accident this time.
+
+**Three of the eight closely investigated survivors were equivalent mutants**, and reading the exact
+replacement rather than the line number is what showed it: `GraphAnalysisContext.cs:47` forces a
+filter over a list with nothing to filter, `FormattingExclusion.cs:57` and `CoverageDimensions.cs:147`
+are short-circuits in front of a slower answer that agrees, and `LibraryCheckSession.cs:44` is the
+first of three stub filters so removing it changes no observable result. The first write-up of
+B219 and B220 claimed all of these as gaps. **A survivor is a question, not a defect** — and the
+cost of the other reading is tests that assert nothing, which is what this package exists to stop.
+Each is now noted in the code so a later audit does not re-raise it.
+
+**The audit also damaged this repository while running, which is B224** — mutating a path in
+`RepositoryService` to `""` made git fall back to the process working directory, and
+`RepositoryServiceTests` created branches in the MLQT checkout, committed to one and discarded the
+working tree, twice. Any mutated code doing file or VCS work can act on the repository the run
+started in. `SandboxedId` now proves a test repository is under `Path.GetTempPath()` before any
+operation names it.
 
 The defences that have actually worked here, in that order: a positive control beside every negative
 assertion, a mutation check before believing any guard, and measuring on a sample that is known to
