@@ -720,7 +720,7 @@ complete because the measurement agreed.
 ### WP9 — The test debt deliberately left
 
 **B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234** and
-**B237** from WP2
+**B237** from WP2, and **B256** which is the only dated item in the phase
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
 repository has written a comment to defend?* — and then a second — *which sit on code that writes to
@@ -753,6 +753,18 @@ the argument: of the eight survivors it investigated closely, three were equival
 was dead code to delete rather than test. Half of a careful pass over this material produces no
 tests at all. Record what was read and judged equivalent, so the next audit does not re-raise it —
 `LibraryCheckSession.cs:43` and the saver's exclusion branch already carry that note in the code.
+
+**B256 is the one item in this phase with a deadline, and it should be taken first for that reason
+alone.** `ubuntu-latest` becomes Ubuntu 26 on 19 October 2026, and six jobs across three workflows
+ride that floating label. It belongs in this package rather than anywhere else because it is the
+same shape as B229 and B234 — a rehearsal that stops being possible, rather than a test somebody
+has not written. Playwright ships **no** browser build for 26.04, and the override that rescues
+Chromium does not rescue WebKit, whose build wants `libicu74` and `libvpx9` that the release does
+not have. `run-all-tests.ps1` already handles a too-new Ubuntu and no workflow does, which is the
+gap. **The nightly WebKit job is what is really at stake**: it exists because WebKitGTK is what the
+Linux desktop host runs on, so losing it means the Linux GUI is rehearsed nowhere at all. The
+failure arrives on a date rather than on a commit, so left alone it lands on whatever push happens
+to be next and reads as that change having broken something.
 
 **B234 belongs here for the same reason B229 does**: a group of survivors that no test *could* kill
 as things stand. The classifier's emit-loop mutants survive because the only assertion strong enough
