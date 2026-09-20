@@ -123,6 +123,71 @@ body * {
     background: transparent;
 }
 
+/* ── The tab pane, and why no page in it subtracts from the viewport ─────────────
+   The same rule as the findings pane below, one level out, and for the same reason.
+
+   Every page in the tab host used to set its own height as `calc(100vh - N)`: 185px on Code
+   Review, 140px on Dependencies, 135px on External Resources. Three different numbers for the same
+   distance, which is the tell — N stands for the app bar, the pane margins, the current-class box,
+   the tab header and the page's own toolbar, and nobody can keep a constant equal to the sum of
+   five things they do not control.
+
+   Measured, Code Review's was right to within 12px. That is not a margin, it is the absence of
+   one: the parse-error alert is 34px, so a class with a syntax error made the page taller than the
+   window, and the first thing a page-level scrollbar carries out of view is the box telling you
+   which class you are looking at (B250).
+
+   So the chain from this pane down to a page is a flex column and each page fills what is left.
+   `min-height: 0` at every step is what allows a flex item to be shorter than its content; without
+   it each one's floor is its content height, nothing ever shrinks, and the overflow reappears
+   further out. The panels scroll rather than clip, so a page that does want more room than there
+   is gets a scrollbar of its own instead of moving the furniture. */
+
+.mlqt-tab-host {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* MudStack renders as `d-flex flex-column`; there is no `mud-stack` class to hang this on. */
+.mlqt-tab-host > .d-flex,
+.mlqt-tab-host .mud-tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-tab-host .mud-tabs-panels {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* A page's own root, and the stack inside it. Both have to pass the height through or the page
+   sizes to its content and the pane scrolls instead of the page filling it. */
+.mlqt-page-fill,
+.mlqt-page-fill > .d-flex {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* A MudExSplitPanel that takes the room left over. Both elements are needed: the `Class` lands on
+   the grid wrapper and the panel itself is inside it, so styling only one leaves the other sizing
+   to its content — which is the whole of what this is trying to stop. */
+.mlqt-fill-splitter {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.mlqt-fill-splitter > .mud-ex-split-panel {
+    height: 100%;
+    min-height: 0;
+}
+
 /* ── The findings pane on the Code Review page ───────────────────────────────────
    One scrollbar, on the rows, and not a second one around the whole thing.
 

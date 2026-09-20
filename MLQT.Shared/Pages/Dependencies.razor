@@ -1,4 +1,6 @@
-<MudPaper Elevation="1" Height="calc(100vh - 140px)" Class="pa-2" Style="overflow-y: auto;">
+﻿@* Fills the tab pane; app.css passes the height down the chain. It used to subtract 140px from
+   the viewport - a different guess at the same chrome Code Review guessed 185 at (B250). *@
+<MudPaper Elevation="1" Height="100%" Class="pa-2 mlqt-page-fill" Style="overflow-y: auto;">
     @if (NavState.IsDeferredMode && !NavState.HasDependencyAnalysisRun)
     {
         <MudStack Row="false" AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 100%;">

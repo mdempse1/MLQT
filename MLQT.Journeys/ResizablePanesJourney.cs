@@ -219,6 +219,120 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
             $"the name should be on one line; the label was {measured[2]}px tall");
     }
 
+    /// <summary>
+    /// B250 — the page itself does not scroll. The Code Review tab is built from regions that
+    /// declare their own scrolling, so a scrollbar on the document means something above them has
+    /// asked for more room than there is, and the first thing it carries out of view is the
+    /// current-class box that tells you what you are looking at.
+    /// </summary>
+    [Fact]
+    public async Task ThePageItselfNeverScrolls()
+    {
+        var page = await OpenAsync(0, withFindings: true);
+        await Assertions.Expect(page.GetByText(new Regex(@"\d+ Findings to review")).First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        Assert.Equal(0, await PageOverflowAsync(page));
+    }
+
+    /// <summary>
+    /// The same claim after the splitter has been dragged, which is the state the report came from.
+    /// A height computed from the viewport rather than from the space actually left over is only
+    /// wrong once something above it changes size, so the resting layout can be right while every
+    /// layout the user produces is not.
+    /// </summary>
+    [Fact]
+    public async Task ThePageStillDoesNotScrollAfterTheSplitterMoves()
+    {
+        var page = await OpenAsync(0, withFindings: true);
+        await Assertions.Expect(page.GetByText(new Regex(@"\d+ Findings to review")).First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        foreach (var dy in new[] { -200, 260 })
+        {
+            await DragAsync(page, Splitter(page, "mlqt-findings-pane"), dx: 0, dy: dy);
+            Assert.Equal(0, await PageOverflowAsync(page));
+        }
+    }
+
+    /// <summary>
+    /// How far the document can scroll, and — when that is not zero — what is tall enough to
+    /// explain it. The diagnostic is in the assertion because the number on its own says only that
+    /// the page is too tall, and the answer is always which element made it so.
+    /// </summary>
+    private static async Task<int> PageOverflowAsync(IPage page)
+    {
+        var report = await page.EvaluateAsync<string>(@"() => {
+            const doc = document.documentElement;
+            const overflow = doc.scrollHeight - doc.clientHeight;
+            if (overflow <= 0) return '0';
+
+            const tall = [...document.querySelectorAll('body *')]
+                .filter(e => e.getBoundingClientRect().height > doc.clientHeight)
+                .slice(0, 6)
+                .map(e => `${e.tagName.toLowerCase()}.${(e.className || '').toString().split(' ')[0]}`
+                          + ` ${Math.round(e.getBoundingClientRect().height)}px`
+                          + (e.getAttribute('style') ? ` [${e.getAttribute('style')}]` : ''));
+
+            return `${overflow}|viewport ${doc.clientHeight}px|` + tall.join(' / ');
+        }");
+
+        if (report == "0")
+            return 0;
+
+        var parts = report.Split('|');
+        Assert.Fail($"the page scrolls by {parts[0]}px ({parts[1]}), which takes the current-class "
+                    + $"box out of view. Taller than the viewport: {parts[2]}");
+        return 0;
+    }
+
+    /// <summary>
+    /// The page tolerates something new above the viewer. This is the case the report came from and
+    /// the one a resting-state assertion cannot see: the layout was right to within 12px, so it
+    /// looked correct until a class with a syntax error put a 34px alert above the splitter.
+    ///
+    /// <para><b>The alert is inserted rather than provoked.</b> Rendering the real one needs a class
+    /// that fails to parse, selected in the tree — three moving parts, none of them about layout,
+    /// and the claim here is only that the page absorbs a taller header. What is inserted is the
+    /// element the page itself renders, into the position the page renders it, so what is measured
+    /// is this page's flex chain and not a contrivance.</para>
+    /// </summary>
+    [Fact]
+    public async Task ThePageAbsorbsAnAlertAboveTheViewer()
+    {
+        var page = await OpenAsync(0, withFindings: true);
+        await Assertions.Expect(page.GetByText(new Regex(@"\d+ Findings to review")).First)
+                        .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        var grew = await page.EvaluateAsync<int>(@"() => {
+            const panels = [...document.querySelectorAll('.mud-ex-split-panel:has(.mlqt-findings-pane)')];
+            const splitter = panels[panels.length - 1].closest('.mud-ex-split-panel-grid') ?? panels[panels.length - 1];
+            const before = splitter.getBoundingClientRect().height;
+
+            const alert = document.createElement('div');
+            alert.className = 'mud-alert mud-alert-filled-warning mt-1 mb-0 py-1 mlqt-test-alert';
+            alert.style.height = '34px';
+            alert.textContent = 'This model has 3 parser errors.';
+            splitter.parentElement.insertBefore(alert, splitter);
+            return Math.round(before);
+        }");
+
+        Assert.True(grew > 0, "the splitter should have had a height to begin with");
+        await page.WaitForTimeoutAsync(400);
+
+        Assert.Equal(0, await PageOverflowAsync(page));
+
+        // And the alert really is taking room from the viewer rather than being ignored.
+        var after = await page.EvaluateAsync<int>(@"() => {
+            const panels = [...document.querySelectorAll('.mud-ex-split-panel:has(.mlqt-findings-pane)')];
+            const splitter = panels[panels.length - 1].closest('.mud-ex-split-panel-grid') ?? panels[panels.length - 1];
+            return Math.round(splitter.getBoundingClientRect().height);
+        }");
+
+        Assert.True(after < grew,
+            $"the viewer should have given up the alert's height, not pushed the page down: {grew} -> {after}");
+    }
+
     [Fact]
     public async Task TheResourceTreeColumnCanBeWidened()
     {

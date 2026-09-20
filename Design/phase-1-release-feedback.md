@@ -779,16 +779,32 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B250, B253 ✅, B254 ✅, B247, B248, B249, B233** · 7 items · S each · all from using it
+**B250 ✅, B253 ✅, B254 ✅, B247, B248, B249, B233** · 7 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
 using the result turned up. None of them is large, and none of them needs anything the page does not
 already have.
 
-- **B250 first** — a page that scrolls as a whole, taking the class name with it, is the one of these
-  that makes the page harder to use rather than merely rougher. It is the double-scrollbar shape one
-  level out, and `ResizablePanesJourney` is already driving the splitter that provokes it.
+- **B250 ✅ first** — a page that scrolls as a whole, taking the class name with it, is the one of
+  these that makes the page harder to use rather than merely rougher. It is the double-scrollbar
+  shape one level out, and `ResizablePanesJourney` is already driving the splitter that provokes it.
+
+  **✅ Done 2026-09-20, and the row's guess at the cause was wrong** — it was not a panel being
+  resized. The viewer's height was `calc(100vh - 185px)` and its top measures 173px, so the page
+  came to `100vh - 12px`: not a margin, the absence of one. The parse-error alert is 34px. **What
+  made it findable was that three pages carried three different constants for the same distance**
+  (185, 140, 135, and 210 for a fourth panel) — a number nobody can keep equal to the sum of five
+  things they do not control. All four are gone; the chain from the tab pane down is a flex column
+  and each page fills what is left. The fix `.mlqt-findings-pane` already documented, one level out,
+  in the words its own note used: *a flex calculation rather than a subtraction*.
+
+  **Two things about this package's method, both borne out here.** The first is that the browser
+  answers questions reading cannot: the tab host's stack was already 8px taller than its parent and
+  nobody could have known, because `MudExSplitPanelItem`'s `overflow: auto` was absorbing it. The
+  second is that a layout fix needs mutation like any other — reverting it and inserting the real
+  alert shows the viewer holding its 535px while the page grows, which is the defect, and no
+  amount of looking at the rendered page says that.
 - **B253 ✅** — done, and worth reading as a method rather than as a fix. **Three explanations, two
   of them wrong**, and each wrong one was arrived at by reading code that looked expensive rather
   than by measuring: a redundant VCS query on the UI thread, then the scroll-position interop. Both

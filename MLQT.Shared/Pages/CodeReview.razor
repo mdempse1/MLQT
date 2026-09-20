@@ -9,7 +9,7 @@
 @using ModelicaParser.SpellChecking
 @using ModelicaParser.StyleRules
 
-<MudPaper Elevation="0" Class="mt-1">
+<MudPaper Elevation="0" Class="mt-1 mlqt-page-fill">
     <MudStack Row="false" Style="gap:0px !important;">
         <MudStack Row="true">
             <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
@@ -129,8 +129,14 @@
            whatever the screen, its pager sat on the bottom edge, and the rest of a long finding was
            simply unreachable. Same control as the one splitting the tree from the tabs in
            MainLayout, turned the other way. *@
+        @* Whatever is left after the toolbar and, when there is one, the alert above it. It used to
+           be `calc(100vh - 185px)` — 185 being a hand-count of the app bar, the pane margins, the
+           current-class box, the tab header and this page's own toolbar, which came to within 12px
+           of the truth. An alert is 34px, so a class with a syntax error scrolled the whole page
+           (B250). `min-height: 0` is in app.css and is what lets this be shorter than the viewer
+           inside it. *@
         <MudExSplitPanel ColumnLayout="false" SplitterSize="4" SplitterColor="Color.Primary"
-                         Style="height: calc(100vh - 185px);" Class="mt-1 mb-2">
+                         Class="mt-1 mb-2 mlqt-fill-splitter">
             <Left>
                 <MudExSplitPanelItem MinSize="120" Style="height: 65%; min-height: 120px; box-shadow: none;">
         <MudPaper Elevation="1" Style="height: 100%; display: flex; flex-direction: column;">

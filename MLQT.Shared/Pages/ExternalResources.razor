@@ -1,4 +1,5 @@
-<MudPaper Elevation="1" Height="calc(100vh - 135px)" Class="pt-2" Style="overflow-y: auto;">
+﻿@* Fills the tab pane; app.css passes the height down the chain (B250). *@
+<MudPaper Elevation="1" Height="100%" Class="pt-2 mlqt-page-fill" Style="overflow-y: auto;">
     @if (NavState.IsDeferredMode && !NavState.HasExternalResourcesAnalyzed && _allResources.Count == 0)
     {
         <MudStack Row="false" AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 100%;">
@@ -72,7 +73,7 @@
                than `overflow-y`, so a path too long for whatever width the user has chosen can still
                be read by scrolling to it. *@
             <MudExSplitPanel ColumnLayout="true" SplitterSize="4" SplitterColor="Color.Primary"
-                             Style="height: calc(100vh - 210px);">
+                             Class="mlqt-fill-splitter">
                 <Left>
                     <MudExSplitPanelItem MinSize="180" Style="width: 33%; min-width: 180px; box-shadow: none;">
                     @* mlqt-resource-tree-pane is a handle for ResizablePanesJourney — see the note

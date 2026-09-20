@@ -289,7 +289,13 @@
                 </MudExSplitPanelItem>
             </Left>
             <Right>
-                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2">
+                @* `mlqt-tab-host` makes this pane a flex column so the tabs take the height that is
+                   actually left rather than one computed from the viewport. See app.css: every page
+                   in here used to subtract its own guess at the chrome above it (185px, 140px,
+                   135px — three numbers for the same distance), and the Code Review page's was
+                   right to within 12px, so anything that grew above it scrolled the whole page and
+                   took the current-class box with it (B250). *@
+                <MudExSplitPanelItem MinSize="400" Style="width: 75%; min-width:400px; box-shadow: none;" Class="mt-2 mb-2 ml-2 mr-2 mlqt-tab-host">
                     <MudStack Row="false" Style="gap:0px !important;">
                         <CurrentModelDisplay />
                         <MudTabs Outlined="true" MinimumTabWidth="50px" Rounded="true">
