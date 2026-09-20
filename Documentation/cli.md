@@ -515,6 +515,32 @@ Works with Git and SVN.
 > SVN has no merge base to ask for, so there the comparison is against the revision itself and a
 > long-lived branch will see trunk's later changes in it.
 
+### What a `--changed-from` run checks
+
+**The whole library is always loaded, and only the changed models are checked.** Loading is not
+optional — a class cannot be checked without its base classes, and a type written as `SI.Length`
+cannot be resolved without the library that defines it — but nothing is gained by applying the rules
+to a model the change did not touch. On a large library this is most of the run.
+
+**Except when the run also asks for whole-library numbers.** `--metrics`, `--min-coverage` and
+`--coverage-ratchet` measure the library, not the change: coverage over the dozen models a commit
+touched is not that library's coverage, and a ratchet that recorded it would move the baseline to a
+number nothing can be compared against. So a run that asks for any of those **checks everything**,
+exactly as it did before, and says so:
+
+```
+note: --metrics measures the whole library, so every model is checked
+```
+
+There is nothing to configure. Ask only for findings and the run is fast; ask for coverage and it is
+thorough. If you want both, run them as two commands — the coverage one on a schedule rather than on
+every push, since its answer changes slowly.
+
+**What the report counts.** In a `--changed-from` run without coverage, every number in the summary
+is over the models that were checked. A baseline entry for a model the change did not touch is
+neither reported as fixed nor counted as accepted debt — it was not looked at, and saying anything
+about it would be a guess.
+
 The three policies are:
 
 | Policy | Listed in the report? | Fails the gate? |

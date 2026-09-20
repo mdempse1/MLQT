@@ -499,7 +499,7 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 
 ### WP4 — Performance, measured before it is touched
 
-**B190 ✅, B174 ✅, B184, B199, B235 ✅** · 5 items · M–L
+**B190 ✅, B174 ✅, B184 ✅, B199, B235 ✅** · 5 items · M–L
 
 **No change in this package without a measurement first.** The log at `%LocalAppData%/MLQT/*.log`
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;

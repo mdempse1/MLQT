@@ -85,13 +85,37 @@ internal static class CheckRunner
                 "several findings, so the accepted count below can be larger");
         }
 
+        // Whole-library numbers make a run check the whole library. Coverage over the dozen models a
+        // commit touched is not the library's coverage, and a ratchet that recorded it would move the
+        // baseline to a figure nothing can be compared against — so asking for any of these opts out
+        // of the changed-only check rather than quietly narrowing what they mean (B184).
+        var wantsWholeLibraryNumbers = opts.RecordMetrics || opts.Coverage.IsActive;
+        if (opts.ChangedFrom is not null && wantsWholeLibraryNumbers)
+        {
+            stderr.WriteLine(
+                $"note: {(opts.RecordMetrics ? "--metrics" : "coverage")} measures the whole library, " +
+                "so every model is checked");
+        }
+
+        // What a changed-only run checked, for the summary and for the baseline comparison below.
+        ChangedModelResult? changed = null;
+
         var load = await CheckPipeline.LoadAndCheckAsync(
             opts.LibraryPath, opts.ConfigPath, stderr,
             honorSuppressions: !opts.NoSuppress, dependencyPaths: opts.DependencyPaths,
             allowVersionMismatch: opts.AllowVersionMismatch,
             // Only when this run is going to report or judge coverage: the check has the parse tree in
             // hand, so measuring here costs the measurement alone rather than a second pass.
-            collectCoverage: opts.RecordMetrics || opts.Coverage.IsActive);
+            collectCoverage: wantsWholeLibraryNumbers,
+            selectModelsToCheck: opts.ChangedFrom is null || wantsWholeLibraryNumbers
+                ? null
+                : modelToFile =>
+                {
+                    changed = ChangedModelResolver.Resolve(opts.LibraryPath, opts.ChangedFrom, modelToFile);
+                    return changed.Ok
+                        ? new ModelSelection(changed.ChangedModelIds)
+                        : ModelSelection.Failed(changed.Error!);
+                });
         if (!load.Ok)
             return load.ExitCode;
 
@@ -125,15 +149,21 @@ internal static class CheckRunner
             }
         }
 
-        IReadOnlySet<string>? changedModelIds = null;
-        if (opts.ChangedFrom is not null)
+        // Resolved during the load when the check was narrowed to it; still to do when the run wanted
+        // whole-library numbers and so checked everything.
+        if (opts.ChangedFrom is not null && changed is null)
         {
-            var changed = ChangedModelResolver.Resolve(opts.LibraryPath, opts.ChangedFrom, load.ModelToFile);
+            changed = ChangedModelResolver.Resolve(opts.LibraryPath, opts.ChangedFrom, load.ModelToFile);
             if (!changed.Ok)
             {
                 stderr.WriteLine($"error: {changed.Error}");
                 return ExitCodes.Error;
             }
+        }
+
+        IReadOnlySet<string>? changedModelIds = null;
+        if (changed is not null)
+        {
             stderr.WriteLine(
                 $"note: {changed.ChangedFileCount} changed .mo file(s), " +
                 $"{changed.ChangedModelIds.Count} model(s) changed since {opts.ChangedFrom}");
