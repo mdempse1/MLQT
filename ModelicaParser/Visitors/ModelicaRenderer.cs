@@ -2592,8 +2592,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitEquation_or_comment([NotNull] modelicaParser.Equation_or_commentContext context)
     {
-        if (context.c_comment() != null && !string.IsNullOrWhiteSpace(context.c_comment().GetText()))
-            Visit(context.c_comment());
+        if (context.c_comment() is { Length: > 0 } comments)
+        {
+            foreach (var comment in comments)
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
+        }
         else
         {
             Visit(context.equation());
@@ -2605,8 +2609,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitStatement_or_comment([NotNull] modelicaParser.Statement_or_commentContext context)
     {
-        if (context.c_comment() != null && !string.IsNullOrWhiteSpace(context.c_comment().GetText()))
-            Visit(context.c_comment());
+        if (context.c_comment() is { Length: > 0 } comments)
+        {
+            foreach (var comment in comments)
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
+        }
         else
         {
             Visit(context.statement());

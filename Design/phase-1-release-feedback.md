@@ -499,7 +499,7 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 
 ### WP4 — Performance, measured before it is touched
 
-**B190, B174, B184, B199, B235** · 5 items · M–L
+**B190, B174 ✅, B184, B199, B235 ✅** · 5 items · M–L
 
 **No change in this package without a measurement first.** The log at `%LocalAppData%/MLQT/*.log`
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;
@@ -525,7 +525,7 @@ One change made on the strength of that (below), and **two hypotheses tested and
 it** — recorded because this is B253's lesson arriving again in the same package it was learned in:
 reading code that looks expensive is not measuring it.
 
-- **B235 arrived from WP2 with its measurement already done**, which is the one item here that
+- **B235 ✅ arrived from WP2 with its measurement already done**, which is the one item here that
   starts past this package's gate rather than at it: a run of comments inside an `equation` section
   makes the parse quadratic (69 s for 4,000 of them, against 367 ms for a *larger* class without
   them), on legal input with zero parse errors. **Take it with B174, not apart from it.** B174 is
@@ -534,6 +534,20 @@ reading code that looks expensive is not measuring it.
   subject, CI check time. Whether it explains a useful share of B174's ~300 s is itself a
   measurement, and the honest order is to look for this shape in the real libraries before assuming
   it is the answer.
+
+  **✅ Done 2026-09-20. Measuring one more shape than the row asked for is what found it.** Adding
+  *the same comments followed by one real equation* to the comparison gave 22ms where the trailing
+  run gives 16,813ms — 764× — which says the cost is not comments and not equation sections but a
+  **trailing run in any `(c_comment | X)*` loop**, where the parser scans the whole run at every
+  comment to decide whether the loop has ended. `element_list` had it too, so the fix covers all
+  three loops rather than the one that was reported. One character in each: `c_comment+`. Measured
+  16,813ms → 79ms and 17,933ms → 81ms, both linear.
+
+  **The blast radius the row warned about was real and the gates answered it.** 8,367 files rendered
+  before and after with **0 differing**, so the write path is byte-identical; the classifier's whole
+  round trip still exact; MSL and Buildings finding counts unchanged. **Reverting the grammar alone
+  no longer builds**, because the call sites take an array now — the coupling is its own guard, and
+  worth more than a comment saying "do not revert this".
 - **Its blast radius is the largest in the phase**, which nothing else here shares: the fix is in the
   grammar, so it changes `ModelicaParser` — the assembly at a >95% coverage bar that the GUI, the
   CLI, the MCP server and every rule sit on. The gate is finding-count parity (MSL = 34329) on top of

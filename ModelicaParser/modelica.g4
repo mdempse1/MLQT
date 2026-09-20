@@ -125,7 +125,7 @@ external_function_call
 
 //Added support for tracking c-style comments among element definitions
 element_list
-    : (c_comment | element ';')*
+    : (c_comment+ | element ';')*
     ;
 
 element
@@ -366,12 +366,12 @@ connect_clause
 
 //Added to support tracking comments within equations and statements
 equation_or_comment
-    : (c_comment | (equation ';'))
+    : (c_comment+ | (equation ';'))
     ;
 
 //Added to support tracking comments within equations and statements
 statement_or_comment
-    : (c_comment | (statement ';'))
+    : (c_comment+ | (statement ';'))
     ;
     
 //Separated out elseif_expression for clarity in syntax highlighting
