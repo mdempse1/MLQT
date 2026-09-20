@@ -1651,6 +1651,114 @@ document.head.appendChild(style);
     }
 
     private bool _suppressing;
+    private bool _splitting;
+
+    /// <summary>
+    /// A finding whose fix is to restructure the package it names (B242).
+    ///
+    /// <para>Offered from the findings list because that is where the user meets the problem. The
+    /// alternative MLQT had was <b>Format All Files</b>, which restructures the whole repository —
+    /// thousands of files rewritten to correct the one package that arrived from another tool this
+    /// morning.</para>
+    /// </summary>
+    internal static bool CanSplitPackage(LogMessage? finding)
+        => finding is { Source: LogMessage.StyleCheckingSource }
+           && finding.RuleId == RuleIds.SingleFilePackage;
+
+    /// <summary>
+    /// Writes the package this finding names as a directory with a file per class, and reloads the
+    /// files that changed.
+    /// </summary>
+    private async Task SplitPackageForFinding(LogMessage? finding)
+    {
+        if (!CanSplitPackage(finding) || _splitting)
+            return;
+
+        var package = LibraryDataService.GetModelById(finding!.ModelName);
+        if (package is null)
+        {
+            Snackbar.Add("Cannot locate that package any more; refresh and try again.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(package.Id));
+        var repository = string.IsNullOrEmpty(library?.RepositoryId)
+            ? null : RepositoryService.GetRepository(library.RepositoryId);
+        if (repository is null || library is null)
+        {
+            Snackbar.Add("That package is not in a repository MLQT can write to.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        // It creates a directory and deletes a file, so it asks first. Everything it does is
+        // recoverable from version control, but not by pressing the button again.
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Split into files",
+            $"Write {package.Definition.Name} as a directory with one file per class, and delete "
+            + $"{Path.GetFileName(CurrentFilePathOf(package) ?? "the single file")}?",
+            yesText: "Split", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+
+        _splitting = true;
+        try
+        {
+            var settings = repository.StyleSettings ?? new StyleCheckingSettings();
+
+            // MLQT's own write, so the monitor is paused across it exactly as it is for a save —
+            // otherwise the new files come back as external changes to process.
+            FileMonitoringService.StopMonitoring(repository.Id);
+            PackageSplitter.SplitResult result;
+            try
+            {
+                result = PackageSplitter.Split(
+                    LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions());
+
+                if (result.Succeeded || result.WrittenFiles.Count > 0)
+                {
+                    var changed = result.WrittenFiles.Concat(result.RemovedFiles).ToList();
+                    await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
+                }
+            }
+            finally
+            {
+                FileMonitoringService.ClearPendingChanges(repository.Id);
+                if (!string.IsNullOrEmpty(repository.VcsRootPath))
+                    FileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+            }
+
+            if (!result.Succeeded)
+            {
+                Snackbar.Add(result.Error, MudBlazor.Severity.Error);
+                return;
+            }
+
+            // The finding described the old arrangement, so it goes with it. A re-check would not
+            // raise it again — which is the test this is held to.
+            CodeReviewService.RemoveLogMessagesByPredicate(
+                m => m.RuleId == RuleIds.SingleFilePackage
+                     && string.Equals(m.ModelName, package.Id, StringComparison.Ordinal));
+
+            NavState.VcsModelsChanged(repository.Id, library.ModelIds.ToList());
+            OnModelSelected();
+            Snackbar.Add(
+                $"{package.Definition.Name} is now a directory with {result.WrittenFiles.Count} file(s).",
+                MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error("CodeReview", $"Failed to split {package.Id}", ex);
+            Snackbar.Add($"Could not split the package: {ex.Message}", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _splitting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string? CurrentFilePathOf(ModelNode model) =>
+        LibraryDataService.CombinedGraph.GetNode<FileNode>(model.ContainingFileId ?? "")?.FilePath;
 
     // A style finding that carries a rule id can be waived in source with a __MLQT annotation.
     // Spelling findings are excluded — a blanket waiver of the spelling rule would silence every

@@ -163,6 +163,26 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 ![Screenshot: The Finding Details dialog showing an finding with model name in the title, summary text, severity and line number, and the Details section with additional information such as the check model log from Dymola. The Resolve and Close buttons at the bottom.](Images/code-review-5.png)
 
+#### Splitting a single-file package
+
+A finding from `MLQT.Structure.SingleFilePackage` — a package held in one `.mo` file whose classes
+could each have a file of their own — carries a **Split into files** button at the end of its row,
+and the same action in the Finding Details dialog. This is the usual way a package arrives from
+another Modelica tool, which saves the whole thing as one file; MLQT never restructures it on its
+own, because the formatting that runs day to day rewrites files in place and never moves a class
+between them.
+
+The action writes that package as a directory with one file per class and a matching
+`package.order`, deletes the file it came from, and leaves the rest of the repository untouched. It
+asks first, since it creates a directory and deletes a file. Everything it does is an ordinary
+working-copy change, so version control can undo it.
+
+The alternative is **Format All Files** in repository settings, which does the same restructuring to
+the whole library — the right thing when you mean it, and a commit of thousands of files when you
+only wanted to correct one package.
+
+See [Code Formatting — A package that arrives from another tool](code-formatting.md#a-package-that-arrives-from-another-tool).
+
 #### Suppressing a Rule
 
 Each style-rule finding row has a **Suppress** button at the end of the row — except a spelling finding, which gets the word-scoped **Ignore** in the correction menu instead, and a diagnostic (`MLQT.Parse.*`, `MLQT.Check.Failed`), which cannot be waived at all because it reports that the results are incomplete; the same action also appears in the Finding Details dialog when that dialog is shown. Unlike **Resolve** — which just clears the row until the next check re-reports it — **Suppress** records a permanent, in-source waiver so the rule is no longer reported for that element:

@@ -172,6 +172,16 @@ Warning, precisely so this does not pass unnoticed:
 package Pumps is stored as a single file; its 4 classes could each have a file of their own
 ```
 
+**Fix it from the finding.** The row in Code Review carries a **Split into files** action, and so
+does the Finding Details dialog. It writes that one package as a directory with a file per class and
+a matching `package.order`, deletes the single file it came from, and leaves the rest of the
+repository alone — which is the difference between it and **Format All Files**, where correcting one
+package means rewriting every file in the library. It asks before it does it, since it creates a
+directory and deletes a file.
+
+Nothing else moves: the parent package's `package.order` already names this package and still does,
+because what changes is where the package is stored, not what it is called.
+
 See [settings-reference.md](settings-reference.md#where-the-rules-live) for turning the rule off if
 your repository keeps packages single-file on purpose.
 

@@ -257,9 +257,22 @@
                         </MudTd>
                     }
                     <MudTd DataLabel="" Style="text-align: center; vertical-align:top;" Class="compact-table">
+                        @if (CanSplitPackage(context))
+                        {
+                            @* The fix for this finding, where the user meets it. The alternative was
+                               Format All Files, which restructures the whole repository to correct
+                               one package. *@
+                            <div @onclick:stopPropagation="true" style="display:inline-block;">
+                                <MudTooltip Text="Split this package into a directory with one file per class">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small"
+                                        Color="Color.Default" Disabled="_splitting"
+                                        OnClick="@(() => SplitPackageForFinding(context))" aria-label="Split this package into files" />
+                                </MudTooltip>
+                            </div>
+                        }
                         @if (CanSuppressRule(context))
                         {
-                            <div @onclick:stopPropagation="true">
+                            <div @onclick:stopPropagation="true" style="display:inline-block;">
                                 <MudTooltip Text="Suppress this rule here (writes a __MLQT annotation into the source)">
                                     <MudIconButton Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Small"
                                         Color="Color.Default" Disabled="_suppressing"
@@ -367,6 +380,12 @@
                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(!CanAddToDictionary)"
                         OnClick="AddToDictionary" Class="px-10">Add to Dictionary</MudButton>
                 </MudTooltip>
+            }
+            @if (CanSplitPackage(_currentFinding))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@(() => SplitPackageForFinding(_currentFinding))"
+                           Disabled="_splitting" StartIcon="@Icons.Material.Filled.CallSplit" Class="px-10">Split into files
+                </MudButton>
             }
             @if (CanSuppressRule(_currentFinding))
             {

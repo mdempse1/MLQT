@@ -173,6 +173,15 @@ public class RuleDocumentationTests
                         continue;
 
                     var stated = row[column].Trim();
+
+                    // A rule that is on out of the box says so beside its level, because the level
+                    // alone cannot: "Warning" reads identically whether the rule runs or waits to be
+                    // switched on. The marker is stripped before the level is compared, and then
+                    // required — or not — depending on what the catalog says (B241).
+                    var claimsOnByDefault = stated.Contains("on by default", StringComparison.OrdinalIgnoreCase);
+                    if (claimsOnByDefault)
+                        stated = OnByDefaultMarker.Replace(stated, string.Empty).Trim();
+
                     var expected = asksAboutDefault
                         ? offByDefault.SeverityFor(rule).ToString()
                         : definition.DefaultSeverity.ToString();
@@ -180,6 +189,12 @@ public class RuleDocumentationTests
 
                     if (!string.Equals(stated, expected, StringComparison.OrdinalIgnoreCase))
                         wrong.Add($"{rule}: under \"{header}\" the page says \"{stated}\", the code says {expected}");
+
+                    if (asksAboutLevel && claimsOnByDefault != definition.EnabledByDefault)
+                        wrong.Add(definition.EnabledByDefault
+                            ? $"{rule} is on by default and the page does not say so — a reader has no "
+                              + "way to tell it apart from a rule that waits to be switched on"
+                            : $"{rule} is not on by default, but the page says it is");
                 }
             }
         }
@@ -191,6 +206,10 @@ public class RuleDocumentationTests
             + "\"Default\" is about whether the rule is on; call it \"Severity when on\" if it is about "
             + "the level it carries once it is:\n  " + string.Join("\n  ", wrong));
     }
+
+    /// <summary>The "(on by default)" note, in whatever emphasis the page writes it with.</summary>
+    private static readonly Regex OnByDefaultMarker =
+        new(@"\*{0,2}\(on by default\)\*{0,2}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>A markdown table: its header cells, and each body row's cells.</summary>
     private static List<(List<string> Headers, List<List<string>> Rows)> Tables(string page)
