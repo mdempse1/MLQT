@@ -108,7 +108,7 @@ public class PackageOrderMatchesDymolaTests : IDisposable
         // whether it is reported.
         var graph = Build(Path.Combine("P", "Widget.mo"), ["Other"]);
 
-        Assert.Empty(Analyze(graph, matchDymola: true).Where(f => f.Discriminator == "missing"));
+        Assert.DoesNotContain(Analyze(graph, matchDymola: true), f => f.Discriminator == "missing");
         Assert.Single(Analyze(graph, matchDymola: false), f => f.Discriminator == "missing");
     }
 
@@ -120,7 +120,7 @@ public class PackageOrderMatchesDymolaTests : IDisposable
         // arrives only from a graph assembled some other way. Treated the same as the case above.
         var graph = Build(Path.Combine("P", "Extras", "A.mo"), ["Other"]);
 
-        Assert.Empty(Analyze(graph, matchDymola: true).Where(f => f.Discriminator == "missing"));
+        Assert.DoesNotContain(Analyze(graph, matchDymola: true), f => f.Discriminator == "missing");
         Assert.Single(Analyze(graph, matchDymola: false), f => f.Discriminator == "missing");
     }
 
@@ -158,7 +158,7 @@ public class PackageOrderMatchesDymolaTests : IDisposable
         // than a removal.
         var graph = Build(Path.Combine("P", "A.mo"), ["A", "Ghost"]);
 
-        Assert.Empty(Analyze(graph, matchDymola: true).Where(f => f.Discriminator == "stale"));
+        Assert.DoesNotContain(Analyze(graph, matchDymola: true), f => f.Discriminator == "stale");
         Assert.Single(Analyze(graph, matchDymola: false), f => f.Discriminator == "stale");
     }
 

@@ -168,7 +168,7 @@ public class SingleFilePackageAnalyzerTests
         var graph = Build([("A", "P.mo", true)]);
         var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
 
-        Assert.Single(GraphAnalysisRunner.Run(ctx).Where(f => f.RuleId == RuleIds.SingleFilePackage));
+        Assert.Single(GraphAnalysisRunner.Run(ctx), f => f.RuleId == RuleIds.SingleFilePackage);
     }
 
     [Fact]
@@ -181,6 +181,6 @@ public class SingleFilePackageAnalyzerTests
         settings.SetRuleEnabled(RuleIds.SingleFilePackage, false);
         var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
 
-        Assert.Empty(GraphAnalysisRunner.Run(ctx).Where(f => f.RuleId == RuleIds.SingleFilePackage));
+        Assert.DoesNotContain(GraphAnalysisRunner.Run(ctx), f => f.RuleId == RuleIds.SingleFilePackage);
     }
 }

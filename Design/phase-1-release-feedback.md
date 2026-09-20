@@ -546,13 +546,22 @@ reading past a red line is not.
 
 ### WP6 — Revision control
 
-**B193, B202** · 2 items · S–M
+**B193, B202, B240** · 3 items · S–M
 
 B193's real work is not enumerating tags, it is the surrounding UI being able to describe a detached
 HEAD rather than showing an empty branch name — and `LibraryBrowser.razor:97` already has a
 "Detached HEAD" branch, so that half may be closer than it looks. B202 changes the history diff from
 revision-against-working-copy to revision-against-predecessor, which is what the dialog is for; B155
 documented the current behaviour, so the documentation changes with it.
+
+**B240 is a decision before it is a change.** `SvnRevisionControlSystem` reads a conflicted file's
+`.mine`/`.rN` sidecars with `File.ReadAllText`, so a Windows-1252 library's conflict diff shows
+replacement characters where its accented characters are. Read-only and display-only, so nothing is
+corrupted — but the fix is not simply to call `ModelicaFileEncoding`, because **`RevisionControl` has
+no project references at all**. That is deliberate: it is the one assembly that knows nothing about
+Modelica. Reaching the funnel means either giving that up or passing a decoder in from the caller,
+and which of those is right is the question to answer first. Found by B239's scan, which is the only
+reason anyone knows.
 
 ### WP7 — The two large ones
 
@@ -768,6 +777,45 @@ never runs and a test that does not exist are the same entry. That is worth stat
 because it is the third variant of a defect this repository keeps producing: a guard whose existence
 is mistaken for its enforcement.
 
+### WP11 — Code Review, second pass
+
+**B233, B247, B248, B249, B250** · 5 items · S each · all from using it
+
+Everything here was reported by someone working in the page rather than found by reading it, which is
+why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
+using the result turned up. None of them is large, and none of them needs anything the page does not
+already have.
+
+- **B250 first** — a page that scrolls as a whole, taking the class name with it, is the one of these
+  that makes the page harder to use rather than merely rougher. It is the double-scrollbar shape one
+  level out, and `ResizablePanesJourney` is already driving the splitter that provokes it.
+- **B247** (how many findings are showing) is the smallest and repays the most: three filters now
+  narrow that table and nothing says what they did.
+- **B248** and **B249** are placement. They belong together because they are the same judgement made
+  twice — a control's parts scattered along a toolbar — and because moving the navigation arrows for
+  B249 is what makes its tooltip true.
+- **B233** was outside the phase until 2026-09-20, on the grounds that nobody had said the inline
+  annotations mattered. Somebody has: a `connect(...)` equation carries its annotation on the same
+  line, so hiding annotations does nothing to an equation section, which is where the noise is. The
+  measurement it asks for is still the first step, but it is now a measurement over equation lines.
+
+### WP12 — Rules, second pass
+
+**B245, B246** · 2 items · S–M
+
+Two rule defects found by pointing the checker at a real library, which is the only way either would
+have been found. They are separate from WP3 because that package shipped, and separate from each
+other except in kind.
+
+- **B246 first, and it is not small in effect.** `MLQT.Structure.UsesUndeclared` reports Modelica's
+  own built-ins — `Connections`, `ExternalObject`, `rooted` — and the graphical primitives inside
+  annotations, which is why **every** library reports a missing `uses(Line)`. A rule that fires on
+  every library is a rule nobody can leave on, so this is not cosmetic: it is the difference between
+  the rule being usable and not.
+- **B245** is a change to the **write** path — which children the saver is willing to store as
+  separate files — so it carries WP3's gate with it: a full-library save compared before and after,
+  and the parity number. Four pairs in MSL are waiting on it, `JFET`/`Jfet` among them.
+
 ### WP10 — MCP, whenever
 
 **B179, B196, B218** · 3 items · S–M · no dependency on any other package
@@ -797,10 +845,14 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           │              (closed B182, B183, B185) ▸ B178/B217 diff ▸ B186/B173 ▸ B189 ▸ B197
           │              with B176, B187 in parallel; B230/B231 taken
           │              moved out: B216, B232 ▶ WP3 · B218 ▶ WP10 · B237 ▶ WP9
-          ├──▶ WP3   B236 first (shipped regression) ▸ rules ▸ B216 ▸ B232
-          │              the three renderer-output items share one gate: the parity run
+          ├──▶ WP3 ✅ B236 ▸ B181 ▸ B177/B195 ▸ B175 ▸ B232 ▸ B216 — complete 2026-09-20
           ├──▶ WP5   external tools, independent
-          ├──▶ WP6   revision control, independent
+          ├──▶ WP6   revision control, independent; B240 is a decision about
+          │              whether RevisionControl may depend on anything
+          ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
+          │              everything reported from using what WP2 built
+          ├──▶ WP12  rules, second pass — B246 first (it fires on every library),
+          │              then B245, which changes the write path and wants WP3's gate
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7   B191 only if confirmed in scope
@@ -810,15 +862,18 @@ WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the su
                        needs no other package
 WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
 
-Not in phase 1: B233 (hide-annotations on shared lines) — measure the residue first; see roadmap
+No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
+recurred) — both recorded above as needing no work rather than waiting for someone
 ```
 
 WP3, WP5 and WP6 depend on nothing in WP2 and can be taken whenever a change of subject is wanted.
 WP4's B184 is placed after WP1 on purpose: re-scoping what gets checked is not worth doing while a
 malformed file can still drop classes out of the graph underneath it (B201).
 
-**Every open item in this phase now names a package**, and that is a property worth keeping rather
-than a tidy-up. The two ways an item escaped were "separable at any point" against a package that
+**Every open item in this phase names a package**, bar the two recorded above as needing no work
+(B152, B166), and that is a property worth keeping rather than a tidy-up. It has been re-checked
+after each round of new items, most recently on 2026-09-20 when six arrived at once and made two new
+packages necessary. The two ways an item escaped were "separable at any point" against a package that
 later closed, and a mention in a step's prose that no item list counted — both of which read as
 *scheduled* right up until the package shipped without them. An item that genuinely belongs nowhere
 belongs on the roadmap, where it is at least a candidate, not in the margin of a plan.

@@ -1741,7 +1741,7 @@ document.head.appendChild(style);
 
             if (!result.Succeeded)
             {
-                Snackbar.Add(result.Error, MudBlazor.Severity.Error);
+                Snackbar.Add(result.Error!, MudBlazor.Severity.Error);
                 return;
             }
 
