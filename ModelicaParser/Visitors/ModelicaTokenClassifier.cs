@@ -331,15 +331,21 @@ public static class ModelicaTokenClassifier
     };
 
     /// <summary>
-    /// Whether a <c>component_reference</c> is the thing being called. The renderer sets
-    /// <c>_isFunction</c> in exactly these three places (:2131, :2159/:2166, :2893) — and for a
-    /// statement it does so for a plain assignment as well as for a call, which is why the target of
-    /// <c>x := 1</c> is coloured as a function today.
+    /// Whether a <c>component_reference</c> is the thing being called, which is what the renderer
+    /// tracks with <c>_isFunction</c>.
+    ///
+    /// <para>An equation and a statement both read
+    /// <c>component_reference (':=' expression | function_call_args)</c> or its equation equivalent,
+    /// so the reference is a call in one form and a plain variable in the other. This mirrored the
+    /// renderer in answering <c>true</c> for every statement, which coloured the target of
+    /// <c>x := 1</c> as a function — reported against <c>y_dd</c> in MultiBody's
+    /// <c>maxWithoutEvent_dd</c> and fixed on both sides (B254).</para>
     /// </summary>
     private static bool IsCallTarget(ParserRuleContext? parent, IParseTree reference) => parent switch
     {
         modelicaParser.EquationContext equation => equation.function_call_args() is not null,
-        modelicaParser.StatementContext => true,
+        modelicaParser.StatementContext statement =>
+            statement.expression() is null && statement.function_call_args() is { Length: > 0 },
         modelicaParser.PrimaryContext primary => primary.function_call_args() is not null,
         _ => false,
     };

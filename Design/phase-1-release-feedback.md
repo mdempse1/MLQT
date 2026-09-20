@@ -779,7 +779,7 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B250, B253 ✅, B247, B248, B249, B233** · 6 items · S each · all from using it
+**B250, B253 ✅, B254 ✅, B247, B248, B249, B233** · 7 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
@@ -798,6 +798,14 @@ already have.
   ran inline while everything inside the window was queued — which is exactly the reported "slow
   once, then fast twice" and is a shape worth recognising again: **an intermittent cost that tracks
   an idle period is a throttle or a cache, not the work in front of you.**
+- **B254 ✅** — done, and it is the opposite method to B253's: one reading of the grammar answered
+  it. `statement : component_reference (':=' expression | function_call_args)` — the reference is a
+  call in one form and an assignment target in the other, and the statement path answered "call" for
+  both while the equation path beside it had always asked. Worth recording because the classifier had
+  **deliberately reproduced** it, with a comment naming the case: B213 built the classifier to match
+  the renderer token for token, so a defect in the baseline became a defect in the thing users see,
+  and the agreement measurement could not tell the two apart. Fixing both is what keeps that
+  measurement meaningful.
 - **B247** (how many findings are showing) is the smallest and repays the most: three filters now
   narrow that table and nothing says what they did.
 - **B248** and **B249** are placement. They belong together because they are the same judgement made
@@ -869,6 +877,7 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           ├──▶ WP6   revision control, independent; B240 is a decision about
           │              whether RevisionControl may depend on anything
           ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
+          │              B253 ✅ B254 ✅ taken early, both reported mid-flight
           │              everything reported from using what WP2 built
           ├──▶ WP12  rules, second pass — B246 first (it fires on every library),
           │              then B245 and B252 together: both change the write path

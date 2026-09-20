@@ -2167,8 +2167,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         else if (context.component_reference() != null)
         {
+            // `statement : component_reference (':=' expression | function_call_args)` — so the
+            // reference is the thing being called in the second form and the thing being assigned to
+            // in the first. Marking both made the variable on the left of every assignment a
+            // function call: `y_dd := ...` in MultiBody's maxWithoutEvent_dd came out red (B254).
+            var isCall = context.expression() is null && functionCallArgs is { Length: > 0 };
+
             var wasFunctionInStatement = _isFunction;
-            _isFunction = true;
+            _isFunction = isCall;
             Visit(context.component_reference());
             _isFunction = wasFunctionInStatement;
 
