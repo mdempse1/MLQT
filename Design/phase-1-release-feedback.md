@@ -801,11 +801,12 @@ already have.
 
 ### WP12 — Rules, second pass
 
-**B245, B246** · 2 items · S–M
+**B246, B245, B252** · 3 items · S–M
 
-Two rule defects found by pointing the checker at a real library, which is the only way either would
-have been found. They are separate from WP3 because that package shipped, and separate from each
-other except in kind.
+Three rule items found by pointing the checker at a real library and then working in it, which is the
+only way any of them would have been found. They are separate from WP3 because that package shipped,
+and separate from each other except in kind — though **two of the three change the write path**, so
+they share WP3's gate and should be taken together rather than a month apart.
 
 - **B246 first, and it is not small in effect.** `MLQT.Structure.UsesUndeclared` reports Modelica's
   own built-ins — `Connections`, `ExternalObject`, `rooted` — and the graphical primitives inside
@@ -815,6 +816,15 @@ other except in kind.
 - **B245** is a change to the **write** path — which children the saver is willing to store as
   separate files — so it carries WP3's gate with it: a full-library save compared before and after,
   and the parity number. Four pairs in MSL are waiting on it, `JFET`/`Jfet` among them.
+- **B252 extends B181 from one boundary to four**: constants, parameters, variables, components,
+  then classes, where today only the last of those is enforced. **The order is the first question,
+  not the code** — some teams write parameters before constants, and connectors group `input`/`output`
+  — so settle whether it is one fixed order or a configured one before building anything. The part
+  that is not obvious is telling a *variable* from a *component*: `Real x` against `Resistor r` is
+  easy, but `SI.Length x` is a variable by every convention and a class by the grammar, so the
+  declared type has to be followed through its alias chain. `MissingUnits` already does that and is
+  the precedent. And the renderer writes all four kinds as one group, so it changes too — which is
+  why this sits beside B245 rather than on its own.
 
 ### WP10 — MCP, whenever
 
@@ -852,7 +862,8 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
           │              everything reported from using what WP2 built
           ├──▶ WP12  rules, second pass — B246 first (it fires on every library),
-          │              then B245, which changes the write path and wants WP3's gate
+          │              then B245 and B252 together: both change the write path
+          │              and share WP3's gate
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7   B191 only if confirmed in scope
