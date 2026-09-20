@@ -594,6 +594,20 @@ reading code that looks expensive is not measuring it.
   re-render. O(batches × findings) on the one thread that has to stay free. Coalesced now: first
   change immediate, the rest collapsed into one trailing announcement, clearing still immediate.
 
+  **A third round, and the lesson is about the measurement rather than the code.** The user then
+  reported dependency analysis taking much longer. It looked like a clear regression — 244s against
+  a stable series of 74–95s — and it was not one: those runs were the *separate* deferred path and
+  this was the **combined** one, in which style checking is interleaved with dependency analysis
+  rather than following it. Like-for-like, combined runs at the same scale took 289.0s and 274.3s in
+  August, so today's was the fastest of the three; end to end the combined path finished at 321.1s
+  against the separate path's 353.4s on the same library the same afternoon. **The faster path
+  reports itself as the slower one** because the step is labelled "Analysing dependencies" while it
+  does both — filed as B257.
+
+  **Two comparisons, one of them wrong, and the wrong one looked more convincing.** A series of
+  fifteen consistent numbers is exactly what makes an outlier persuasive; the outlier was a
+  different operation. Check what the run actually did before trusting what it took.
+
   **One of the costs was introduced the same morning, by B247.** Adding the filtered count to the
   findings heading put another full pass — with a string split per element — on every render. It is
   now taken only when a filter is set. Worth stating plainly: a per-render cost is invisible in the
