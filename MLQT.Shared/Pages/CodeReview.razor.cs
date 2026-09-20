@@ -1652,15 +1652,62 @@ document.head.appendChild(style);
         get
         {
             var all = CodeReviewService.LogMessages;
-            if (!BaselineStatus.HasBaseline)
-                return $"{all.Count} Findings to review";
 
-            var snapshot = BaselineStatus.Snapshot;
-            var changed = all.Count(snapshot.IsChangedFromBaseline);
-            return ShowChangesOnly
-                ? $"{changed} changed of {all.Count} findings"
-                : $"{all.Count} Findings to review ({changed} changed vs baseline)";
+            // The same predicate the table filters by, so the number in the heading is the number of
+            // rows and cannot drift from it (B247). One more pass over the findings than before —
+            // affordable because the table already makes two, ordering them and then filtering them.
+            var shown = all.Count(FilterFunc1);
+
+            return FindingsHeadingText(
+                shown,
+                all.Count,
+                BaselineStatus.HasBaseline ? all.Count(BaselineStatus.Snapshot.IsChangedFromBaseline) : null,
+                ShowChangesOnly);
         }
+    }
+
+    /// <summary>
+    /// What the findings table is showing, and out of how many when those differ.
+    ///
+    /// <para>B247: four things narrow that list — the class scope, the rule, the search box and the
+    /// baseline toggle — and the heading counted none of them. It reported the whole ledger however
+    /// much of it was on screen, so <b>a filter that matched nothing and a filter that matched three
+    /// looked the same</b>: a table with rows scrolled out of sight and a number above it that had
+    /// not moved.</para>
+    ///
+    /// <para>Pure, and separate from the component, because the interesting part is which of six
+    /// wordings applies. Counting is the easy half.</para>
+    /// </summary>
+    /// <param name="shown">Findings surviving every filter — the row count.</param>
+    /// <param name="total">Findings held, before any of them.</param>
+    /// <param name="changed">
+    /// Findings this working copy changed, or null when no repository has a baseline. Reported
+    /// alongside rather than as the total, because it is a property of the findings rather than
+    /// something the user switched on — except when they did, which is <paramref name="showChangesOnly"/>.
+    /// </param>
+    /// <param name="showChangesOnly">Whether the baseline toggle is the reason some are hidden.</param>
+    internal static string FindingsHeadingText(int shown, int total, int? changed, bool showChangesOnly)
+    {
+        if (changed is not { } changedCount)
+        {
+            return shown == total
+                ? $"{total} Findings to review"
+                : $"{shown} of {total} findings";
+        }
+
+        if (showChangesOnly)
+        {
+            // The toggle's own count is the honest denominator here: with it on, the findings it
+            // left are what the other filters then narrowed, and saying "of {total}" would credit
+            // the search box with hiding everything the toggle did.
+            return shown == changedCount
+                ? $"{changedCount} changed of {total} findings"
+                : $"{shown} of {changedCount} changed findings";
+        }
+
+        return shown == total
+            ? $"{total} Findings to review ({changedCount} changed vs baseline)"
+            : $"{shown} of {total} findings ({changedCount} changed vs baseline)";
     }
 
     private string ChangesOnlyTooltip => BaselineStatus.HasBaseline

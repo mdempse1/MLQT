@@ -105,10 +105,22 @@ The findings table at the bottom shows all detected problems across your loaded 
 
 ### Filtering Findings
 
-The findings table provides two filtering mechanisms:
+Four controls narrow the findings table, and they combine — each one applies on top of the others:
 
 - **"Only this model" toggle** — When enabled, the table only shows findings for the currently selected model. When disabled (default), findings from all models are shown.
-- **Search field** — Type text to filter findings by model name, description, details, or severity. Multiple search terms (space-separated) are matched independently.
+- **Search field** — Type text to filter findings by model name, description, details, or severity. **Every space-separated term must match**, so a second word narrows the list rather than widening it. Terms may match different fields, so a partial class name and a keyword work together.
+- **Rule list** — Narrows to one rule. Only the rules the current findings actually use are offered, so the list is never longer than it needs to be. A rule's name is not in its findings' text, so this is something the search box cannot do.
+- **"Changes vs baseline" switch** — Hides accepted debt; see [Filtering to what you have changed](#filtering-to-what-you-have-changed) below.
+
+**The heading always says what you are looking at.** With nothing filtered it counts the findings
+held; once anything narrows the list it names both numbers, so a filter that matched nothing is
+never mistaken for a table that failed to load:
+
+```
+40 Findings to review        ← nothing narrowed
+3 of 40 findings             ← something did
+0 of 40 findings             ← the filter matched nothing
+```
 
 ### Exporting the Finding List
 
@@ -247,8 +259,14 @@ With the switch on, only `new` and `touched` are listed; `accepted` is hidden. T
 numbers, so the standing debt is never invisible:
 
 ```
-132 Findings to review (7 changed vs baseline)
+132 Findings to review (7 changed vs baseline)   ← switch off
+7 changed of 132 findings                        ← switch on
+2 of 7 changed findings                          ← switch on, and a search as well
 ```
+
+With the switch on, the heading counts against the changed findings rather than the whole ledger —
+a search that leaves 2 of the 7 says so, instead of crediting itself with hiding the 125 the switch
+hid.
 
 **"Touched" means pending commit, not a diff between commits.** A file counts as touched when the
 working copy has it modified, added, renamed, untracked or conflicted — the question the app answers

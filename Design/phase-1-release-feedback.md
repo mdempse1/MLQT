@@ -791,7 +791,7 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B250 ✅, B253 ✅, B254 ✅, B247, B248, B249, B233** · 7 items · S each · all from using it
+**B250 ✅, B253 ✅, B254 ✅, B247 ✅, B248, B249, B233** · 7 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
@@ -834,8 +834,23 @@ already have.
   the renderer token for token, so a defect in the baseline became a defect in the thing users see,
   and the agreement measurement could not tell the two apart. Fixing both is what keeps that
   measurement meaningful.
-- **B247** (how many findings are showing) is the smallest and repays the most: three filters now
+- **B247 ✅** (how many findings are showing) is the smallest and repays the most: three filters now
   narrow that table and nothing says what they did.
+
+  **✅ Done 2026-09-20. Four filters, not three** — the baseline toggle is one too, and it was the
+  only one the heading already accounted for. Stated precisely, the defect is that the heading was
+  computed from one set of findings while the table was filtered from another, so it now counts
+  with `FilterFunc1`, the same predicate the table uses, and cannot drift from the row count.
+
+  **Two things worth carrying forward.** The wording work went into a pure `FindingsHeadingText`
+  with its own tests, because the interesting part is which of six sentences applies rather than
+  the arithmetic — but a pure function being right about numbers it was handed says nothing about
+  whether it was handed the right ones, which is exactly the fault. That needed three journey
+  tests, verified by putting the old count back and watching all three fail. And the docs were
+  stale on two counts beside this one: `code-review.md` described **two** filters where there are
+  four, and said search terms are "matched independently" when B187 made them AND. A page that
+  grows a control per work package grows a documentation gap per work package unless somebody
+  looks.
 - **B248** and **B249** are placement. They belong together because they are the same judgement made
   twice — a control's parts scattered along a toolbar — and because moving the navigation arrows for
   B249 is what makes its tooltip true.
