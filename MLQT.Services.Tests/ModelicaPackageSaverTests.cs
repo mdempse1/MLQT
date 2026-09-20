@@ -192,18 +192,58 @@ public class ModelicaPackageSaverTests : IDisposable
         var written = ModelicaFileEncoding.ReadAllTextOnly(
             result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
 
-        // The body is untouched, and the file ends with a newline in its own style — which for this
-        // fixture is CRLF, because the raw string literal above carries the endings of the test file
-        // it is written in. Comparing with the endings normalised keeps this test about the
-        // exclusion rather than about how the test file happens to be stored (B251).
+        // The body is untouched, and the file ends with a newline in its own style. Comparing with
+        // the endings normalised keeps this test about the exclusion rather than about how the test
+        // file happens to be stored (B251).
         Assert.Equal(Lf(TwoSections) + "\n", Lf(WithinClause.Strip(written)));
 
         // ...and uniformly: a file with one line ending among the others is what B251 was about.
-        Assert.DoesNotContain('\n', written.Replace("\r\n", ""));
+        //
+        // **Which ending is not named here, and the first version of this named CRLF.** The
+        // fixture's endings are the endings of this source file, so they are CRLF on a Windows
+        // checkout and LF on the Linux runner, where `core.autocrlf` is off. The assertion passed
+        // on every developer machine and failed in CI, which is the worst way round: a test that
+        // only holds where it was written.
+        //
+        // Uniformity is the whole of what B251 claims — the file comes back in the endings it was
+        // handed rather than the platform's. Which one that is on any given checkout is not this
+        // test's business, and naming it is how this got tied to one.
+        AssertOneLineEndingThroughout(written);
     }
 
     /// <summary>Line endings normalised, so a comparison is about the text and not about them.</summary>
     private static string Lf(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>
+    /// Every line in <paramref name="text"/> ends the same way — all CRLF or all LF, with no lone
+    /// carriage return anywhere. Deliberately says nothing about <em>which</em>: that depends on how
+    /// the checkout stored this file, and a test that names one only holds on the platform it was
+    /// written on.
+    /// </summary>
+    private static void AssertOneLineEndingThroughout(string text)
+    {
+        var crlf = 0;
+        var bareLf = 0;
+        var bareCr = 0;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+            {
+                if (i > 0 && text[i - 1] == '\r') crlf++;
+                else bareLf++;
+            }
+            else if (text[i] == '\r' && (i + 1 == text.Length || text[i + 1] != '\n'))
+            {
+                bareCr++;
+            }
+        }
+
+        Assert.True(crlf == 0 || bareLf == 0,
+            $"the file mixes line endings: {crlf} CRLF and {bareLf} bare LF");
+        Assert.True(bareCr == 0, $"the file has {bareCr} lone carriage returns");
+        Assert.True(crlf + bareLf > 0, "the file has no line endings at all, so this proves nothing");
+    }
 
     [Fact]
     public void SaveLibraryToDirectoryWithResult_DoesReformatAModelThatIsNotExcluded()

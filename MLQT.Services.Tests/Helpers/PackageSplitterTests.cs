@@ -203,22 +203,36 @@ public class PackageSplitterTests : IDisposable
         // file it came from is still there, so the library now defines every one of those classes
         // twice. It happens when something else holds the file open — another editor, a virus
         // scanner — and the one thing that must not happen is reporting success.
+        //
+        // **The obstruction is a directory standing where the file was, not an open handle.** The
+        // first version held the file with `FileShare.None`, which passed here and failed on the
+        // Linux runner — a test reporting success exactly where the product would have.
+        //
+        // The distinction is worth keeping, because four other tests in this repository hold a file
+        // that way and are right to: .NET implements `FileShare` on Unix with an advisory lock that
+        // other .NET `FileStream`s honour, so **blocking a read works on both platforms**. Deleting
+        // is not a read. `unlink` ignores advisory locks entirely, so the delete simply succeeded.
+        //
+        // A directory in the file's place makes `File.Delete` throw everywhere, and the splitter
+        // takes the path from the graph rather than from disk, so nothing before the delete notices
+        // the swap. The cause does not matter to the claim; that the failure is reported does.
         var (service, lib) = await LibraryWithASingleFilePackage();
         var arrived = Path.Combine(lib, "Arrived.mo");
 
-        using (File.Open(arrived, FileMode.Open, FileAccess.Read, FileShare.None))
-        {
-            var result = Split(service, "Lib.Arrived");
+        File.Delete(arrived);
+        Directory.CreateDirectory(arrived);
+        File.WriteAllText(Path.Combine(arrived, "in the way"), "");
 
-            Assert.False(result.Succeeded);
-            Assert.Contains("twice", result.Error!);
+        var result = Split(service, "Lib.Arrived");
 
-            // ...and it says so having done the write, not instead of it, so the message describes
-            // what is actually on disk.
-            Assert.NotEmpty(result.WrittenFiles);
-            Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
-            Assert.True(File.Exists(arrived));
-        }
+        Assert.False(result.Succeeded);
+        Assert.Contains("twice", result.Error!);
+
+        // ...and it says so having done the write, not instead of it, so the message describes
+        // what is actually on disk.
+        Assert.NotEmpty(result.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.True(Path.Exists(arrived), "what could not be deleted is still there");
     }
 
     [Fact]
