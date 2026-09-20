@@ -81,7 +81,10 @@ public class StyleSettingsCoverageTests
         // round-trip through a single property would notice.
         foreach (var ruleId in StyleSettingsInput.SettableRuleIds)
         {
-            var settings = new StyleCheckingSettings();
+            // From nothing at all, so the only rule on is the one under test — a fresh object
+            // carries the rule that is on by default, which would fail the "no others" check for
+            // every id except itself.
+            var settings = StyleCheckingSettings.NothingEnabled();
             settings.SetRuleEnabled(ruleId, true);
 
             var input = StyleSettingsInput.From(settings);

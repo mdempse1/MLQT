@@ -156,7 +156,10 @@ public class FindingsFoundationTests
 
         Assert.False(s.ImportStatementsFirst);
         Assert.Equal(RuleSeverity.Off, s.SeverityFor(RuleIds.ImportStatementsFirst));
-        Assert.False(s.HasAnyStyleRuleEnabled);
+
+        // Only the rule that is on by default, which this file says nothing about either way.
+        Assert.True(s.HasAnyStyleRuleEnabled);
+        Assert.True(s.IsRuleEnabled(RuleIds.SingleFilePackage));
 
         var (ruleId, reason) = Assert.Single(s.IgnoredRuleKeys());
         Assert.Equal(RuleIds.ImportStatementsFirst, ruleId);

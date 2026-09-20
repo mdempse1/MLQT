@@ -84,12 +84,43 @@ public class CheckPipelineTests : IDisposable
     public void ARunWithNoRulesEnabled_SaysSoRatherThanReportingACleanLibrary()
     {
         var lib = Library(NewDirectory());
-        Write(lib, ".mlqt/settings.json", "{ }");
+        Write(lib, ".mlqt/settings.json",
+            """{ "RuleSeverities": { "MLQT.Structure.SingleFilePackage": "Off" } }""");
 
         var (code, _, stderr) = Run("check", lib);
 
         Assert.Equal(ExitCodes.Ok, code);
         Assert.Contains("no style rules are enabled", stderr);
+    }
+
+    [Fact]
+    public void ARunWithOnlyTheDefaultRules_SaysThatToo()
+    {
+        // An empty settings file no longer means an empty run: one rule is on without being asked
+        // for. One rule's worth of findings reads like a clean bill of health, so the note has to
+        // distinguish "nothing runs" from "almost nothing runs".
+        var lib = Library(NewDirectory());
+        Write(lib, ".mlqt/settings.json", "{ }");
+
+        var (code, _, stderr) = Run("check", lib);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.Contains("only the rules that are on by default", stderr);
+        Assert.DoesNotContain("no style rules are enabled", stderr);
+    }
+
+    [Fact]
+    public void ARunWithRulesOfItsOwn_SaysNothingAboutDefaults()
+    {
+        // The control: a configured library must not be told its report is thin.
+        var lib = Library(NewDirectory());
+        Write(lib, ".mlqt/settings.json",
+            """{ "RuleSeverities": { "MLQT.Doc.ClassDescription": "Warning" } }""");
+
+        var (_, _, stderr) = Run("check", lib);
+
+        Assert.DoesNotContain("only the rules that are on by default", stderr);
+        Assert.DoesNotContain("no style rules are enabled", stderr);
     }
 
     [Fact]

@@ -161,8 +161,15 @@ internal static class CheckPipeline
             return LoadResult.Failed(ExitCodes.Error);
         }
 
+        // Three states, not two. A library with no settings at all is no longer silent — one rule is
+        // on by default — and a report that covers a single structural rule looks far more thorough
+        // than it is. Saying which of the three you are in is the whole point of the note.
         if (!settings.HasAnyStyleRuleEnabled)
             stderr.WriteLine("note: no style rules are enabled; no findings will be produced.");
+        else if (!settings.HasAnyRuleEnabledBeyondTheDefaults)
+            stderr.WriteLine(
+                "note: only the rules that are on by default are enabled; nothing else has been "
+                + "configured for this library. See settings-reference.md to choose the rules you want.");
 
         // A settings file that names a rule it cannot set is a gate configured by a spelling mistake.
         // It loads without complaint either way, so the only thing standing between a typo and a rule

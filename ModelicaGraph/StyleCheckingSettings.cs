@@ -40,6 +40,23 @@ public class StyleCheckingSettings
     public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Settings with <b>every</b> rule off, including any that is on by default.
+    ///
+    /// <para><c>new StyleCheckingSettings()</c> used to mean this and no longer does: a rule marked
+    /// <see cref="RuleDefinition.EnabledByDefault"/> is on in a fresh object, which is the whole
+    /// point of the flag. Anything that means "check nothing" — a caller asking for no rules, or a
+    /// test whose subject is what happens when none are configured — has to say so, and this is
+    /// where it says it.</para>
+    /// </summary>
+    public static StyleCheckingSettings NothingEnabled()
+    {
+        var settings = new StyleCheckingSettings();
+        foreach (var rule in RuleCatalog.Configurable.Where(d => d.EnabledByDefault))
+            settings.SetRuleEnabled(rule.Id, false);
+        return settings;
+    }
+
+    /// <summary>
     /// The layout the formatter should write with, for these settings.
     ///
     /// <para>The one place the rule switches are translated into renderer options, so the app, the
@@ -78,7 +95,16 @@ public class StyleCheckingSettings
         if (RuleCatalog.RequiredRuleFor(ruleId) is { } prerequisite && !IsRuleEnabled(prerequisite))
             return RuleSeverity.Off;
 
+        // Absent means "not configured", which is off for almost every rule — and on for one that
+        // reports a library drifting away from the layout MLQT maintains (see
+        // RuleDefinition.EnabledByDefault). A rule that is on by default is turned off by storing
+        // Off, not by removing the key, so an absent key can be read as "never asked" either way.
         if (!RuleSeverities.TryGetValue(ruleId, out var stored))
+            return RuleCatalog.IsEnabledByDefault(ruleId)
+                ? RuleCatalog.DefaultSeverityFor(ruleId)
+                : RuleSeverity.Off;
+
+        if (stored == RuleSeverity.Off)
             return RuleSeverity.Off;
 
         // A layout rule the formatter maintains is not judged at a level somebody typed: it is a
@@ -192,10 +218,18 @@ public class StyleCheckingSettings
     /// settings off, when it had done nothing of the kind and ticking the prerequisite back on would
     /// bring them all straight back. Showing what is configured, greyed out, is the honest version.</para>
     /// </summary>
-    public bool IsRuleSwitchedOn(string ruleId) =>
-        RuleCatalog.GovernorOf(ruleId) is { } governor
-            ? IsRuleSwitchedOn(governor)
-            : RuleSeverities.ContainsKey(ruleId);
+    public bool IsRuleSwitchedOn(string ruleId)
+    {
+        if (RuleCatalog.GovernorOf(ruleId) is { } governor)
+            return IsRuleSwitchedOn(governor);
+
+        // An explicit Off is a repository saying no, which only a rule that is on by default ever
+        // has to store — but reading it here rather than treating any key as "on" keeps the two
+        // answers from disagreeing.
+        return RuleSeverities.TryGetValue(ruleId, out var stored)
+            ? stored != RuleSeverity.Off
+            : RuleCatalog.IsEnabledByDefault(ruleId);
+    }
 
     /// <summary>Enable a rule at its catalog default severity, or disable it. Public so a data-driven
     /// settings UI can bind a toggle to a rule id.</summary>
@@ -205,13 +239,31 @@ public class StyleCheckingSettings
         {
             // Don't overwrite an explicit severity (e.g. Error) — only seed the default when absent.
             // This keeps bool/map reconciliation order-independent during deserialization.
-            if (!RuleSeverities.ContainsKey(ruleId))
+            //
+            // A stored Off counts as absent here. It is how a rule that is on by default records
+            // being switched off, and without this, switching such a rule back on would find a key
+            // already there and leave it Off — the same shape as B238, seen from the other side.
+            if (!RuleSeverities.TryGetValue(ruleId, out var existing) || existing == RuleSeverity.Off)
                 RuleSeverities[ruleId] = RuleCatalog.DefaultSeverityFor(ruleId);
         }
         else
         {
-            RuleSeverities.Remove(ruleId);
+            StoreOffOrRemove(ruleId);
         }
+    }
+
+    /// <summary>
+    /// Records that a rule is off. For a rule that is off until someone turns it on, that is simply
+    /// the absence of a key. For one that is <em>on</em> until someone turns it off, the absence of a
+    /// key means the opposite, so the Off has to be written down — otherwise switching it off would
+    /// not survive being saved and read back, which is the defect B238 fixed one layer along.
+    /// </summary>
+    private void StoreOffOrRemove(string ruleId)
+    {
+        if (RuleCatalog.IsEnabledByDefault(ruleId))
+            RuleSeverities[ruleId] = RuleSeverity.Off;
+        else
+            RuleSeverities.Remove(ruleId);
     }
 
     /// <summary>Set an explicit severity for a rule. <see cref="RuleSeverity.Off"/> disables it
@@ -220,7 +272,7 @@ public class StyleCheckingSettings
     public void SetRuleSeverity(string ruleId, RuleSeverity severity)
     {
         if (severity == RuleSeverity.Off)
-            RuleSeverities.Remove(ruleId);
+            StoreOffOrRemove(ruleId);
         else
             RuleSeverities[ruleId] = severity;
     }
@@ -505,6 +557,13 @@ public class StyleCheckingSettings
         get => IsRuleEnabled(RuleIds.PackageOrder);
         set => SetRuleEnabled(RuleIds.PackageOrder, value);
     }
+    /// <summary>
+    /// Not serialized, unlike the other facades: a bool cannot say "not configured", and for a rule
+    /// that is on by default that is the difference between a file saying nothing and a file saying
+    /// yes. Writing it out added a key to every settings file that was merely read and written back.
+    /// The severity map is the only store for this rule, which is what it should be.
+    /// </summary>
+    [JsonIgnore]
     public bool CheckSingleFilePackage
     {
         get => IsRuleEnabled(RuleIds.SingleFilePackage);
@@ -570,7 +629,20 @@ public class StyleCheckingSettings
     /// in the map and does nothing, and a settings file holding only those would otherwise announce
     /// that rules are enabled and then report nothing, which is the least debuggable outcome there is.
     /// </summary>
-    public bool HasAnyStyleRuleEnabled => RuleSeverities.Keys.Any(IsRuleEnabled);
+    /// <summary>
+    /// Whether anything is enabled beyond the rules that are on without being asked for.
+    ///
+    /// <para>The question a tool asks before telling a user their report is thinner than it looks:
+    /// a library nobody has configured is not silent any more, and one rule's worth of findings
+    /// reads like a clean bill of health.</para>
+    /// </summary>
+    public bool HasAnyRuleEnabledBeyondTheDefaults =>
+        RuleCatalog.Configurable.Any(d => !d.EnabledByDefault && IsRuleEnabled(d.Id));
+
+    public bool HasAnyStyleRuleEnabled =>
+        RuleSeverities.Keys.Any(IsRuleEnabled)
+        // ...and the rules that are on without a key, which no repository has to mention.
+        || RuleCatalog.Configurable.Any(d => d.EnabledByDefault && IsRuleEnabled(d.Id));
 
     /// <summary>
     /// Stamps each finding with the severity these settings resolve for its rule, in place.

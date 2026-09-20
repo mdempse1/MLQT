@@ -351,7 +351,7 @@ end TestModel;");
         service.OnProgressChanged += (allComplete) => completionSignal = allComplete;
 
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(), // all rules disabled
+            StyleCheckingSettings.NothingEnabled(), // all rules disabled, including the default-on one
             ("TestModel", "model TestModel end TestModel;"));
 
         await service.StartBackgroundCheckingAsync(repo);
@@ -371,7 +371,7 @@ end TestModel;");
         service.OnProgressChanged += (allComplete) => completionSignal = allComplete;
 
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(), // all rules disabled
+            StyleCheckingSettings.NothingEnabled(), // all rules disabled, including the default-on one
             ("TestModel", "model TestModel end TestModel;"));
 
         service.StartBackgroundChecking(repo);
@@ -669,7 +669,7 @@ epos\Alpha", new[] { "en_GB" });
         // repository, so measuring its classes would be a tree walk each for a report nobody sees.
         var service = CreateService();
         var repo = await CreateRepositoryWithModelsAsync(
-            new StyleCheckingSettings(),   // nothing enabled
+            StyleCheckingSettings.NothingEnabled(),   // nothing enabled
             ("A", "model A \"a\"\n  Real x;\nequation\n  x = 1;\nend A;"));
 
         var node = _libraryDataService.CombinedGraph.ModelNodes.First(m => m.Id == "A");

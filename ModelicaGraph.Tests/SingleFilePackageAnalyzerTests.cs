@@ -129,12 +129,28 @@ public class SingleFilePackageAnalyzerTests
     }
 
     [Fact]
-    public void TheRuleIsOffUnlessItIsSwitchedOn()
+    public void TheRuleIsOnUnlessItIsSwitchedOff()
     {
-        // Off by default like every rule, and the reason this is a rule at all: single-file storage
-        // is a repository's choice, not a defect.
+        // The one rule that does not wait to be discovered. A library drifts away from the
+        // one-class-per-file layout without anyone doing anything — another tool saves a new package
+        // as a single file, and the incremental formatter, which never moves a class between files,
+        // reformats it in place and leaves it that way. A user who has not heard of this rule is
+        // exactly the user who needs it.
         var graph = Build([("A", "P.mo", true)]);
         var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings(), graph.ModelNodes.ToList());
+
+        Assert.Single(GraphAnalysisRunner.Run(ctx).Where(f => f.RuleId == RuleIds.SingleFilePackage));
+    }
+
+    [Fact]
+    public void ARepositoryCanStillSwitchItOff()
+    {
+        // Single-file storage is a repository's choice in the end — some libraries are deliberately
+        // kept that way. The default decides who has to know the rule exists, not who decides.
+        var graph = Build([("A", "P.mo", true)]);
+        var settings = new StyleCheckingSettings();
+        settings.SetRuleEnabled(RuleIds.SingleFilePackage, false);
+        var ctx = new GraphAnalysisContext(graph, settings, graph.ModelNodes.ToList());
 
         Assert.Empty(GraphAnalysisRunner.Run(ctx).Where(f => f.RuleId == RuleIds.SingleFilePackage));
     }

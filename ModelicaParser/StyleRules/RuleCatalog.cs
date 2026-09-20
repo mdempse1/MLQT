@@ -42,7 +42,8 @@ public sealed record RuleDefinition(
     string Description,
     string? GovernedBy = null,
     bool SeverityFollowsFormatter = false,
-    string? RequiresRule = null);
+    string? RequiresRule = null,
+    bool EnabledByDefault = false);
 
 /// <summary>
 /// Catalog of the built-in rules. This is the extensibility seam: the severity map, suppression
@@ -51,7 +52,10 @@ public sealed record RuleDefinition(
 ///
 /// Note: <see cref="RuleDefinition.DefaultSeverity"/> is the severity a rule carries WHEN ENABLED —
 /// it is not whether the rule is enabled by default. Enablement default is "off" (a rule id absent
-/// from <c>StyleCheckingSettings.RuleSeverities</c> is disabled), matching the historical booleans.
+/// from <c>StyleCheckingSettings.RuleSeverities</c> is disabled), matching the historical booleans,
+/// <b>except</b> where <see cref="RuleDefinition.EnabledByDefault"/> says otherwise. A rule that is
+/// on by default has to be turned off explicitly, so its <c>Off</c> is stored rather than removed —
+/// see <c>StyleCheckingSettings.SetRuleSeverity</c>.
 /// </summary>
 public static class RuleCatalog
 {
@@ -81,6 +85,13 @@ public static class RuleCatalog
     /// </summary>
     public static string? RequiredRuleFor(string ruleId) =>
         _builtIn.TryGetValue(ruleId, out var def) ? def.RequiresRule : null;
+
+    /// <summary>
+    /// True when the rule is on unless a repository turns it off, rather than off until one turns it
+    /// on. See <see cref="RuleDefinition.EnabledByDefault"/>.
+    /// </summary>
+    public static bool IsEnabledByDefault(string ruleId) =>
+        _builtIn.TryGetValue(ruleId, out var def) && def.EnabledByDefault;
 
     /// <summary>
     /// True if the rule has a setting of its own — i.e. it is not a diagnostic and not governed by
@@ -137,7 +148,13 @@ public static class RuleCatalog
             new RuleDefinition(RuleIds.MissingUnit, "Quantity declares a unit", "Units", RuleSeverity.Warning, "A numeric quantity should declare a unit, or use a type that fixes one. A plain Real is always judged; any other type is followed through its alias chain, so an SI type passes and an alias of Real that fixes nothing does not."),
             new RuleDefinition(RuleIds.UnusedImport, "No unused imports", "Unused", RuleSeverity.Warning, "An import must be referenced in the class that declares it, or in a class nested inside it."),
             new RuleDefinition(RuleIds.PackageOrder, "package.order is consistent", "Structure", RuleSeverity.Warning, "package.order entries must match the package's classes/members, and every child class must be listed."),
-            new RuleDefinition(RuleIds.SingleFilePackage, "Packages are stored as directories", "Structure", RuleSeverity.Warning, "A package whose classes could each be stored in their own file must be a directory rather than a single .mo file."),
+            // The one rule that is on unless a repository turns it off. Every other rule waits to be
+            // discovered; this one reports a library drifting away from the layout MLQT maintains,
+            // which happens without anyone doing anything — another tool saves a new package as a
+            // single file and the incremental formatter, which never moves a class between files,
+            // leaves it that way. A user who has not heard of the rule is exactly the user who needs
+            // it, so the default is the wrong place to ask them to opt in.
+            new RuleDefinition(RuleIds.SingleFilePackage, "Packages are stored as directories", "Structure", RuleSeverity.Warning, "A package whose classes could each be stored in their own file must be a directory rather than a single .mo file.", EnabledByDefault: true),
             new RuleDefinition(RuleIds.UsesUndeclared, "Referenced libraries are declared", "Structure", RuleSeverity.Warning, "A library referenced by the code must be declared in the top-level uses(...) annotation."),
             new RuleDefinition(RuleIds.UsesDeclaredUnused, "No unused uses() dependencies", "Structure", RuleSeverity.Warning, "A library declared in uses(...) must actually be referenced by the code."),
             new RuleDefinition(RuleIds.UnusedClass, "No unused protected classes", "Unused", RuleSeverity.Warning, "A protected nested class that nothing references is dead code. Classes with an experiment(...) annotation are exempt — they are simulation entry points."),

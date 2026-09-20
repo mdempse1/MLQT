@@ -417,7 +417,8 @@
 
             <MudText Typo="Typo.subtitle2" Class="mt-4">Static analysis</MudText>
             <MudText Typo="Typo.body1" Class="mb-1">
-                Structural checks (all off by default). Pick a severity per rule — <b>Error</b> fails the CI
+                Structural checks, all off by default except <b>Packages are stored as directories</b>,
+                which reports a package that another tool saved as a single file. Pick a severity per rule — <b>Error</b> fails the CI
                 quality gate, <b>Warning</b>/<b>Info</b> are reported only. The uses and unused-class checks
                 require dependency analysis to have run; they appear in Code Review, and in
                 <code>mlqt check</code> / the MCP server.

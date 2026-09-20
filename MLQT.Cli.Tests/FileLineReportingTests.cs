@@ -31,13 +31,17 @@ public class FileLineReportingTests
         end Fix;
         """;
 
+    // SingleFilePackage is switched off: `Fix` holds its classes inline, so that rule - which is on
+    // by default - would report it, and these tests are about where a line lands rather than about
+    // how the package is stored.
     private const string Settings =
         """
         {
           "RuleSeverities": {
             "MLQT.Doc.ClassDescription": "Warning",
             "MLQT.Doc.ParameterDescription": "Warning",
-            "MLQT.Doc.ClassDocumentationRevisions": "Warning"
+            "MLQT.Doc.ClassDocumentationRevisions": "Warning",
+            "MLQT.Structure.SingleFilePackage": "Off"
           }
         }
         """;

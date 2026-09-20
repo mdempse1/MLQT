@@ -46,11 +46,21 @@ package P ""P package""
 end P;
 ";
 
-    private static StyleCheckingSettings Settings() => new()
+    /// <summary>
+    /// The two per-class rules this comparison is about, and nothing else.
+    ///
+    /// <para>Built from <see cref="StyleCheckingSettings.NothingEnabled"/> rather than a fresh
+    /// object, which now has <c>MLQT.Structure.SingleFilePackage</c> on. That is a graph analysis:
+    /// the facade would run it and the worker driven directly below would not, so the two counts
+    /// would differ for a reason that has nothing to do with the parity being tested.</para>
+    /// </summary>
+    private static StyleCheckingSettings Settings()
     {
-        ClassHasDescription = true,
-        ParameterHasDescription = true,
-    };
+        var settings = StyleCheckingSettings.NothingEnabled();
+        settings.ClassHasDescription = true;
+        settings.ParameterHasDescription = true;
+        return settings;
+    }
 
     private static (DirectedGraph graph, List<ModelNode> models) LoadTrimmed()
     {
@@ -249,7 +259,7 @@ end Q;
         // No style rules at all — a check that returned nothing here would be reporting a clean bill
         // of health on code it could not read.
         var findings = LibraryCheckSession.Check(
-            data.CombinedGraph, models, new StyleCheckingSettings(),
+            data.CombinedGraph, models, StyleCheckingSettings.NothingEnabled(),
             new CustomDictionaryService(), new DictionaryManagerService());
 
         Assert.NotEmpty(findings);

@@ -154,6 +154,27 @@ Only on the **full** library save: the [Format All Files](#format-all-files-butt
 
 The incremental path — at startup, after a VCS operation, and after a refresh — rewrites the files a change touched **in place**. It never moves a class from one file to another, so day-to-day work does not quietly restructure your repository.
 
+### A package that arrives from another tool
+
+This is the case the two paragraphs above leave open, and it is a common one. You create a package in
+Dymola or another editor, and it saves the whole thing as a single `.mo` file inside your repository.
+
+MLQT **will not restructure it on its own**. The next time you open the project the file is
+VCS-modified, so the incremental path reformats it in place — which means MLQT visibly touches the
+file and still leaves it as one file. Nothing moves it to a directory until you run
+[Format All Files](#format-all-files-button), or change a formatting setting and let the full
+reformat run.
+
+What you get instead is a finding. **`MLQT.Structure.SingleFilePackage` is on by default**, at
+Warning, precisely so this does not pass unnoticed:
+
+```
+package Pumps is stored as a single file; its 4 classes could each have a file of their own
+```
+
+See [settings-reference.md](settings-reference.md#where-the-rules-live) for turning the rule off if
+your repository keeps packages single-file on purpose.
+
 A file that version control reports as newly **Added** is never removed by the tidy-up that follows a save, so a class you have created but not yet committed cannot be lost to it.
 
 ## How files end

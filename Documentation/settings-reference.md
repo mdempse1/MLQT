@@ -31,8 +31,20 @@ are set under **Settings > Manage Repositories** and stored in that repository's
 `.mlqt/settings.json`, so they travel with the code and every tool that reads it (the app, the `mlqt`
 CLI, the MCP server) applies the same ones.
 
-A newly added repository starts with every rule **Off**, and a library loaded outside any repository
-— a reference library, say — has no rules at all and is never reported on.
+A newly added repository starts with every rule **Off** except one, and a library loaded outside any
+repository — a reference library, say — has no rules at all and is never reported on.
+
+**The exception is [`MLQT.Structure.SingleFilePackage`](#static-analysis-rules), which is on at
+Warning unless you turn it off.** Every other rule waits to be discovered, which is right for a
+matter of taste. This one reports a library drifting away from the layout MLQT maintains, and the
+drift happens without anyone doing anything: another tool saves a new package as a single `.mo`
+file, MLQT's incremental formatting tidies it in place — it never moves a class between files — and
+nothing says the package is now stored differently from the rest of the library. A user who has not
+heard of the rule is exactly the user who needs it, so it is not something to opt into.
+
+Switch it off in the usual way if your repository keeps libraries single-file on purpose. That choice
+is written into `.mlqt/settings.json` as `"MLQT.Structure.SingleFilePackage": "Off"` rather than by
+removing the entry, because for this rule an absent entry means *on*.
 
 ---
 
@@ -266,7 +278,7 @@ enable it, and you can pick any level you like in place of the one shown.
 | `MLQT.Units.MissingUnit` | Warning | A numeric quantity with no `unit` attribute, where its type does not fix one either. A plain `Real` is always judged; any other type is followed through its alias chain, so `Modelica.Units.SI.Length` passes and a home-grown `type Fraction = Real` is reported. Connectors and non-numeric types are left alone. Presence only, not dimensional analysis. | GUI, CLI, MCP |
 | `MLQT.Unused.Import` | Warning | An `import` whose name is referenced neither in the class that declares it nor in any class nested inside it. § | GUI, CLI, MCP |
 | `MLQT.Structure.PackageOrder` | Warning | `package.order` entries that name no class/member (stale), and child classes not listed (missing). | GUI, CLI, MCP |
-| `MLQT.Structure.SingleFilePackage` | Warning | A package held entirely in one `.mo` file whose classes could each have a file of their own. Judged on whether they *could* be split: a package whose children must be inline (`replaceable`, `redeclare`, `inner`, `outer`) is correctly one file and is not reported, and neither is a package someone has already begun splitting. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
+| `MLQT.Structure.SingleFilePackage` | Warning **(on by default)** | A package held entirely in one `.mo` file whose classes could each have a file of their own. Judged on whether they *could* be split: a package whose children must be inline (`replaceable`, `redeclare`, `inner`, `outer`) is correctly one file and is not reported, and neither is a package someone has already begun splitting. See [One File Per Class](code-formatting.md#one-file-per-class). | GUI, CLI, MCP |
 | `MLQT.Structure.UsesUndeclared` | Warning | A library referenced by the code but missing from the top-level `uses(...)`. † | GUI, CLI, MCP |
 | `MLQT.Structure.UsesDeclaredUnused` | Warning | A library declared in `uses(...)` that (while loaded) nothing references. † | GUI, CLI, MCP |
 | `MLQT.Unused.Class` | Warning | A protected nested class that nothing references (dead code). ‡ † | GUI, CLI, MCP |

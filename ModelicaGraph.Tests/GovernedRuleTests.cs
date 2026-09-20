@@ -335,7 +335,8 @@ public class GovernedRuleTests
     {
         // Otherwise a run announces that rules are enabled and then reports nothing, which is the
         // least debuggable outcome available.
-        var settings = new StyleCheckingSettings { ImportStatementsFirst = true };
+        var settings = StyleCheckingSettings.NothingEnabled();
+        settings.ImportStatementsFirst = true;
 
         Assert.False(settings.HasAnyStyleRuleEnabled);
     }
