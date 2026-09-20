@@ -505,6 +505,26 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;
 B128 established both. B174 says explicitly not to theorise first.
 
+**The measurement was taken on 2026-09-20 and it moves this package's ordering.** Per class of real
+library, from the log: MSL 27.7ms, Claytex **314.4ms** — and MSL checked *inside* the Claytex
+session cost 24.7ms, unchanged, so it is not the size of the graph. Reproduced with the CLI on
+libraries in reach: with the same five rules on, **`rule:MissingUnits` is 82% of the whole check on
+Buildings and 94% on MSL**, at 63.6 and 65.5 ms/class — within 3% of each other, so it is not a
+property of one library either. **Parse is 6–17%.**
+
+Two consequences:
+
+- **B235 is not the answer to B174**, which this package had explicitly left open as a question. A
+  quadratic parse on comment runs is real and worth fixing, but parse is a sixth of the time at
+  most. B235 stays; it stops being the first thing to reach for.
+- **The first thing to reach for is `MissingUnits` and the unit resolution under it**, which the
+  Claytex log shows dragging the coverage measurement with it — 51% of that run, against 22% on the
+  same day for MSL with the rule off. One root cause, two symptoms.
+
+One change made on the strength of that (below), and **two hypotheses tested and rejected before
+it** — recorded because this is B253's lesson arriving again in the same package it was learned in:
+reading code that looks expensive is not measuring it.
+
 - **B235 arrived from WP2 with its measurement already done**, which is the one item here that
   starts past this package's gate rather than at it: a run of comments inside an `equation` section
   makes the parse quadratic (69 s for 4,000 of them, against 367 ms for a *larger* class without
@@ -518,6 +538,18 @@ B128 established both. B174 says explicitly not to theorise first.
   grammar, so it changes `ModelicaParser` — the assembly at a >95% coverage bar that the GUI, the
   CLI, the MCP server and every rule sit on. The gate is finding-count parity (MSL = 34329) on top of
   the usual suites, the same one B216 carries.
+- **The change, and what is left.** `StyleChecking.CreateUnitLookup` memoised the *answer* and not
+  the *question*: `unitCache` is keyed by the id of the class a type resolved **to**, so it holds
+  nothing for a type that does not resolve — and resolving is the expensive half, walking the
+  class's imports, then every enclosing scope, then the whole extends chain. Memoising `(class,
+  type)` took `MissingUnits` from 425.1s to 295.4s on MSL and 477.8s to 310.6s on Buildings, with
+  all 5,250 and 3,285 findings identical.
+
+  **Rejected on the way, both by measurement:** caching `TypeResolver.CollectAncestors` per class
+  made **no measurable difference at all**, and the theory that a short name resolved through an
+  extends chain is dearer than a qualified one measured the *other way round* in a synthetic library
+  (99ms against 268ms). **~45ms/class is still unexplained**, and the next step is a profiler rather
+  than a third guess.
 - **B190** — confirm the freeze still happens before investigating it. It predates several fixes.
 - **B184** is the largest available win on CI check time and the most delicate change in the phase.
   `ChangedModelResolver.Resolve` currently runs **after** `load.Findings` is fully computed
