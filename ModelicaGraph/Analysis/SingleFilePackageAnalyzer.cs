@@ -17,6 +17,12 @@ namespace ModelicaGraph.Analysis;
 /// incremental formatter rewrites it in place because it never moves a class between files — so a
 /// user who has not heard of the rule is exactly the user who needs it.</para>
 ///
+/// <para><b>It reports the class that owns the file, once per file.</b> A package nested inside
+/// another class's file has no file of its own and cannot be given a directory until its parent has
+/// one, so a finding about it is advice nobody can take — and the fix offered on it wrote the
+/// package somewhere else entirely and deleted the file it came from (B243). On the Modelica
+/// Standard Library the difference is 302 findings over 71 files against 65, one per file.</para>
+///
 /// <para><b>The judgement is "could this be split", not "is this big".</b> A class that cannot be
 /// stored standalone — <c>replaceable</c>, <c>redeclare</c>, <c>inner</c>, <c>outer</c> — has to live
 /// inside its parent's file, so a package made only of those is correctly a single file and must not
@@ -39,7 +45,7 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
 
         foreach (var package in context.Models)
         {
-            var splittable = SplittableChildren(package, childrenByParent);
+            var splittable = SplittableChildren(package, childrenByParent, context.Graph.GetNode<ModelNode>);
             if (splittable.Count == 0)
                 continue;
 
@@ -70,9 +76,20 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
     /// keeps producing. Empty means there is nothing to report and nothing to do.</para>
     /// </summary>
     public static IReadOnlyList<ModelNode> SplittableChildren(
-        ModelNode package, IReadOnlyDictionary<string, List<ModelNode>> childrenByParent)
+        ModelNode package, IReadOnlyDictionary<string, List<ModelNode>> childrenByParent,
+        Func<string, ModelNode?> byId)
     {
         if (package.ClassType != "package")
+            return [];
+
+        // Only the class that owns the file (B243). A package nested inside another class's file is
+        // not "stored as a single file" — it has no file — and it cannot be given a directory
+        // without its parent becoming one first, so a finding about it is advice nobody can take.
+        //
+        // Reporting them was also 302 findings over 71 files on the Modelica Standard Library:
+        // Spice3.mo alone produced 23, one for every package nested in it, for the one thing that is
+        // actually true of it. One file, one finding.
+        if (!OwnsItsFile(package, byId))
             return [];
 
         if (!childrenByParent.TryGetValue(package.Id, out var children) || children.Count == 0)
@@ -89,6 +106,22 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
         // different situation and neither the rule's business nor the fix's. The comparison is on
         // the file, not on the path: two classes in the same file share a file id.
         return splittable.Any(c => !SharesFileWith(c, package)) ? [] : splittable;
+    }
+
+    /// <summary>
+    /// Whether this class is the topmost one stored in its file — the one the file is "for".
+    ///
+    /// <para>The same question <c>IncrementalFormatter</c> asks to find a file's owner: its parent
+    /// is nothing, or its parent lives somewhere else.</para>
+    /// </summary>
+    private static bool OwnsItsFile(ModelNode model, Func<string, ModelNode?> byId)
+    {
+        if (string.IsNullOrEmpty(model.ParentModelName))
+            return true;
+
+        var parent = byId(model.ParentModelName);
+        return parent is null
+            || !string.Equals(parent.ContainingFileId, model.ContainingFileId, StringComparison.Ordinal);
     }
 
     /// <summary>Every model's direct children, keyed by parent id — the index the check needs.</summary>

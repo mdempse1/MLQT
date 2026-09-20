@@ -42,7 +42,9 @@ public static class PackageSplitter
     /// </summary>
     public static bool CanSplit(DirectedGraph graph, ModelNode package) =>
         SingleFilePackageAnalyzer.SplittableChildren(
-            package, SingleFilePackageAnalyzer.ChildrenByParent(graph)).Count > 0;
+            package,
+            SingleFilePackageAnalyzer.ChildrenByParent(graph),
+            graph.GetNode<ModelNode>).Count > 0;
 
     /// <summary>
     /// Writes <paramref name="package"/> as a directory beside the file it currently occupies, and
@@ -110,6 +112,24 @@ public static class PackageSplitter
         var removed = new List<string>();
         if (!saved.WrittenFiles.Any(f => PathsEqual(f, currentFile)))
         {
+            // Nothing is deleted while it still holds something (B243). The package owns its file,
+            // so everything in it should have moved — but "should" is what this checks, because the
+            // cost of being wrong is a file of somebody else's classes deleted from their working
+            // copy. That is what happened: a package nested inside another class's file was split,
+            // the save wrote it somewhere else entirely, and this deleted the file it came from
+            // along with the twenty-two other packages in it.
+            var stranded = StillLivingIn(graph, currentFile, modelIds);
+            if (stranded is not null)
+            {
+                Error(nameof(PackageSplitter),
+                    $"Refusing to delete {currentFile} after splitting {package.Id}: it still holds {stranded}");
+                return new SplitResult([.. saved.WrittenFiles], removed,
+                    $"{package.Definition.Name} was written to its new directory, but "
+                    + $"{Path.GetFileName(currentFile)} was left alone because it also holds "
+                    + $"{stranded}. Nothing was deleted; remove the duplicate by hand once you have "
+                    + "checked it.");
+            }
+
             try
             {
                 File.Delete(currentFile);
@@ -131,6 +151,34 @@ public static class PackageSplitter
             $"Split {package.Id} into {saved.WrittenFiles.Count} file(s) under {parentDirectory}");
 
         return new SplitResult([.. saved.WrittenFiles], removed, Error: null);
+    }
+
+    /// <summary>
+    /// A class still stored in <paramref name="filePath"/> that is not part of what was just
+    /// written, described for a message — or null when the file holds nothing else.
+    /// </summary>
+    internal static string? StillLivingIn(DirectedGraph graph, string filePath, HashSet<string> moved)
+    {
+        var fileId = graph.FileNodes.FirstOrDefault(f => PathsEqual(f.FilePath, filePath))?.Id;
+        if (string.IsNullOrEmpty(fileId))
+            return null;
+
+        // By the models' own ContainingFileId rather than the file node's contained-ids edge: it is
+        // the same question asked of the side that is always set, and a guard that depends on an
+        // edge being populated is a guard that can quietly answer "nothing here".
+        var others = graph.ModelNodes
+            .Where(m => string.Equals(m.ContainingFileId, fileId, StringComparison.Ordinal))
+            .Where(m => !moved.Contains(m.Id))
+            .Select(m => m.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        if (others.Count == 0)
+            return null;
+
+        return others.Count == 1
+            ? others[0]
+            : $"{others[0]} and {others.Count - 1} other class(es)";
     }
 
     /// <summary>
