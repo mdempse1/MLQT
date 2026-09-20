@@ -76,12 +76,13 @@
             <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="@BackTooltip" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Primary" Size="Size.Small"
-                                Disabled="@(!NavState.CanGoBack)" OnClick="GoBack"
+                                Disabled="@(!NavState.CanGoBack)" OnClick="GoBack" Variant="Variant.Outlined"
                                 aria-label="Back to the previous class" />
                 </MudTooltip>
                 <MudTooltip Text="Forward" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Primary" Size="Size.Small"
-                                Disabled="@(!NavState.CanGoForward)" OnClick="GoForward" aria-label="Forward" />
+                                Disabled="@(!NavState.CanGoForward)" OnClick="GoForward"  Variant="Variant.Outlined"
+                                aria-label="Forward" />
                 </MudTooltip>
                 <MudTooltip Text="@UsedClassesTooltip" Arrow="true" Placement="Placement.Bottom">
                     <MudMenu Icon="@Icons.Material.Filled.CallMade" Color="Color.Primary" Size="Size.Small"
@@ -89,7 +90,7 @@
                              Disabled="@(UsedClasses.Count == 0)" aria-label="Go to a class this one uses">
                         @foreach (var used in UsedClasses)
                         {
-                            <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))">@used.Id</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))"><MudText Typo="Typo.body1">@used.Id</MudText></MudMenuItem>
                         }
                     </MudMenu>
                 </MudTooltip>
@@ -124,12 +125,12 @@
                 <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                     <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
-                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)"
+                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)" Variant="Variant.Outlined"
                             OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
                     </MudTooltip>
                     <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
-                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)"
+                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)" Variant="Variant.Outlined"
                             OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
                     </MudTooltip>
                 </MudButtonGroup>
