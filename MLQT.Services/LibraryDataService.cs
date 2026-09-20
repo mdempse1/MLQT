@@ -858,8 +858,24 @@ public class LibraryDataService : ILibraryDataService
         }
     }
 
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
+    /// <summary>
+    /// The classes a tree shows at its root, ready to display.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Actually asynchronous, which the name had been promising without keeping.</b> It
+    /// returned a completed task, so a caller awaiting it ran the whole thing on its own thread —
+    /// and the caller is a Blazor component, whose thread the desktop host also uses for its window
+    /// message pump. Preparing a class for display renders its icon, which resolves and parses its
+    /// base classes, so the first refresh after a load spent about a second there: measured at
+    /// 1,477ms of a 1,522ms tree refresh, and still around 1,040ms once the icons were cached and
+    /// only rendered once (B258).</para>
+    ///
+    /// <para><b>And the preparing happens outside the lock.</b> Deciding which library owns a class
+    /// needs it; rendering that class's icon does not, and holding it through work that reaches into
+    /// the graph and parses other classes is what made an unrelated caller's
+    /// <see cref="GetAllModels"/> wait 872ms.</para>
+    /// </remarks>
+    public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync() => Task.Run(() =>
     {
         // Keyed by model id, because two libraries claiming the same top-level class are claiming
         // the *same node object*. Adding it once per claiming library put the library in the tree
@@ -886,17 +902,17 @@ public class LibraryDataService : ILibraryDataService
                     byModelId[modelId] = (model, library);
                 }
             }
-
-            var items = new List<ModelNode>(byModelId.Count);
-            foreach (var (node, library) in byModelId.Values)
-            {
-                PrepareModelForDisplay(node, library);
-                items.Add(node);
-            }
-
-            return Task.FromResult<IReadOnlyList<ModelNode>>(items);
         }
-    }
+
+        var items = new List<ModelNode>(byModelId.Count);
+        foreach (var (node, library) in byModelId.Values)
+        {
+            PrepareModelForDisplay(node, library);
+            items.Add(node);
+        }
+
+        return (IReadOnlyList<ModelNode>)items;
+    });
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetChildModelsAsync(ModelNode? parentNode)
@@ -906,45 +922,52 @@ public class LibraryDataService : ILibraryDataService
             return GetTopLevelModelsAsync();
         }
 
-        var items = new List<ModelNode>();
-
-        lock (_lock)
+        // Off the caller's thread for the same reason as GetTopLevelModelsAsync: expanding a node
+        // prepares each child for display, which renders its icon the first time (B258). A package
+        // of two hundred classes would otherwise render two hundred icons on the dispatcher while
+        // the user waits for the node to open.
+        return Task.Run<IReadOnlyList<ModelNode>>(() =>
         {
-            var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
-            if (parentModel == null)
-                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            List<ModelNode> children;
+            LoadedLibrary owner;
 
-            // The library for this parent is the one that owns it, not merely the first that claims
-            // it. Both copies of a doubly-loaded library list the same parent, but their child lists
-            // differ: the encrypted one knows only what its documentation named, the source one knows
-            // what is actually there. Taking the first claimant meant expanding a package could show
-            // the wrong set of children entirely.
-            var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
-            var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
-            if (library == null)
-                return Task.FromResult<IReadOnlyList<ModelNode>>(items);
-
-            if (library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
+            lock (_lock)
             {
-                var childModels = childIds
-                    .Where(id => library.ModelIds.Contains(id))
-                    .Select(id => _combinedGraph.GetNode<ModelNode>(id))
-                    .Where(m => m != null)
-                    .Cast<ModelNode>()
-                    .ToList();
+                var parentModel = _combinedGraph.GetNode<ModelNode>(parentNode.Id);
+                if (parentModel == null)
+                    return [];
 
-                // Sort by package.order if available
-                childModels = SortByPackageOrder(childModels, parentModel);
+                // The library for this parent is the one that owns it, not merely the first that
+                // claims it. Both copies of a doubly-loaded library list the same parent, but their
+                // child lists differ: the encrypted one knows only what its documentation named, the
+                // source one knows what is actually there. Taking the first claimant meant expanding
+                // a package could show the wrong set of children entirely.
+                var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
+                var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
+                if (library == null)
+                    return [];
 
-                foreach (var child in childModels)
-                {
-                    PrepareModelForDisplay(child, library);
-                    items.Add(child);
-                }
+                if (!library.ChildrenByParent.TryGetValue(parentModel.Id, out var childIds))
+                    return [];
+
+                children = SortByPackageOrder(
+                    childIds
+                        .Where(id => library.ModelIds.Contains(id))
+                        .Select(id => _combinedGraph.GetNode<ModelNode>(id))
+                        .Where(m => m != null)
+                        .Cast<ModelNode>()
+                        .ToList(),
+                    parentModel);
+                owner = library;
             }
-        }
 
-        return Task.FromResult<IReadOnlyList<ModelNode>>(items);
+            // Outside the lock: rendering an icon reaches into the graph and parses other classes,
+            // and holding the service's lock through that is what made an unrelated caller wait.
+            foreach (var child in children)
+                PrepareModelForDisplay(child, owner);
+
+            return children;
+        });
     }
 
     /// <inheritdoc/>
@@ -1089,7 +1112,11 @@ public class LibraryDataService : ILibraryDataService
             return;
         }
 
-        model.Definition.IconRendered = true;
+        // **The flag is set after the render, not before.** Two trees can prepare the same class at
+        // once now that this runs outside the lock, and claiming it first would let the second see
+        // "already rendered" with the SVG still null — a class silently missing its icon until
+        // something rebuilt the tree again. Rendering it twice costs a little and is always right.
+        string? iconSvg = null;
 
         // Try to extract Modelica Icon annotation and render as SVG (with inheritance support)
         try
@@ -1101,7 +1128,7 @@ public class LibraryDataService : ILibraryDataService
             var dotIdx = model.Id.LastIndexOf('.');
             var initialPackageContext = dotIdx > 0 ? model.Id[..dotIdx] : null;
 
-            model.IconSvg = model.Definition.ParsedCode != null
+            iconSvg = model.Definition.ParsedCode != null
                 ? IconSvgRenderer.ExtractAndRenderIconWithInheritance(
                     model.Definition.ParsedCode,
                     baseClassName => ResolveBaseClass(baseClassName, model),
@@ -1121,6 +1148,8 @@ public class LibraryDataService : ILibraryDataService
             Debug("LibraryDataService", $"Icon extraction failed for model {model.Id}: {ex.Message}");
         }
 
+        model.IconSvg = iconSvg;
+        model.Definition.IconRendered = true;
         model.LibraryId = library.Id;
     }
 

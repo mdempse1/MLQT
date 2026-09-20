@@ -102,4 +102,47 @@ public class DescendantParserErrorsTests : IDisposable
 
         Assert.Empty(service.ModelsWithDescendantParserErrors());
     }
+
+    [Fact]
+    public async Task PreparingTheSameLibraryFromSeveralThreadsNeverShowsAHalfRenderedIcon()
+    {
+        // Concurrent preparation is possible now that this runs off the dispatcher, and this checks
+        // the outcome: every class comes back both marked as rendered and carrying its icon.
+        //
+        // **It is not a race detector, and was tried as one.** Setting the flag before rendering —
+        // which would let a second thread see "already rendered" with no SVG — passes this every
+        // time, because the window between the two writes is far too narrow to hit on demand. The
+        // ordering in `PrepareModelForDisplay` is reasoned rather than pinned; what is pinned is
+        // that eight simultaneous callers all get a usable answer.
+        var service = new LibraryDataService();
+        var file = Path.Combine(_dir, "Icons.mo");
+        await File.WriteAllTextAsync(file, """
+            package Icons "with icons"
+              model A "a"
+                annotation (Icon(graphics={Rectangle(extent={{-10,-10},{10,10}})}));
+              end A;
+              model B "b"
+                annotation (Icon(graphics={Ellipse(extent={{-10,-10},{10,10}})}));
+              end B;
+            end Icons;
+            """.Replace("\r\n", "\n"));
+        await service.AddLibraryFromFileAsync(file, await File.ReadAllTextAsync(file));
+
+        // Eight concurrent refreshes, as several open trees would do.
+        var root = (await service.GetTopLevelModelsAsync())[0];
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => service.GetChildModelsAsync(root)));
+
+        foreach (var batch in results)
+        {
+            Assert.Equal(2, batch.Count);
+            foreach (var model in batch)
+            {
+                Assert.True(model.Definition.IconRendered);
+                Assert.False(string.IsNullOrEmpty(model.IconSvg),
+                    $"{model.Id} was marked rendered with no icon, which is the race the flag "
+                    + "ordering exists to prevent");
+            }
+        }
+    }
 }
