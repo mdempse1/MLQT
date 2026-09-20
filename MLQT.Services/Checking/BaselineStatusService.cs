@@ -144,7 +144,18 @@ public sealed class BaselineStatusService : IBaselineStatusService
         if (now - last >= RefreshThrottle.TotalMilliseconds)
         {
             Interlocked.Exchange(ref _lastRefreshTicks, now);
-            Refresh();
+
+            // Off the caller's thread, like the trailing refresh below (B253). This is raised by
+            // file activity — including MLQT's own writes — and Refresh() asks every repository for
+            // its working-copy status, which on a library the size of MSL is a scan of thousands of
+            // files. Run here, it was charged to whoever wrote the file: the Exclude from
+            // formatting button took eleven seconds on its first use after an idle spell and a
+            // sixth of a second on the next two, because the second and third clicks fell inside
+            // the throttle window and took the queued path instead.
+            //
+            // Nothing needs the snapshot to be current when this returns. OnChanged is how a view
+            // learns it moved, and it fires either way.
+            _ = Task.Run(Refresh);
             return;
         }
 

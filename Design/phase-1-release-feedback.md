@@ -789,11 +789,15 @@ already have.
 - **B250 first** — a page that scrolls as a whole, taking the class name with it, is the one of these
   that makes the page harder to use rather than merely rougher. It is the double-scrollbar shape one
   level out, and `ResizablePanesJourney` is already driving the splitter that provokes it.
-- **B253 ✅** — done, and worth reading as a method rather than a fix. The first explanation was a
-  redundant whole-working-copy VCS query on the UI thread; removing it was right and was not the
-  cause. Timing the button per step then said the whole eleven seconds was one JS interop call
-  reading the scroll position, which is now bounded at 250ms. **Two guesses, one measurement, and
-  the measurement was cheaper than either guess.**
+- **B253 ✅** — done, and worth reading as a method rather than as a fix. **Three explanations, two
+  of them wrong**, and each wrong one was arrived at by reading code that looked expensive rather
+  than by measuring: a redundant VCS query on the UI thread, then the scroll-position interop. Both
+  changes were worth keeping and neither was the cause. What found it was timing the step and then
+  following the gap: the eleven seconds was `BaselineStatusService` refreshing **synchronously** on
+  whoever raised the file-activity event, which MLQT's own writes do. The throttle's leading edge
+  ran inline while everything inside the window was queued — which is exactly the reported "slow
+  once, then fast twice" and is a shape worth recognising again: **an intermittent cost that tracks
+  an idle period is a throttle or a cache, not the work in front of you.**
 - **B247** (how many findings are showing) is the smallest and repays the most: three filters now
   narrow that table and nothing says what they did.
 - **B248** and **B249** are placement. They belong together because they are the same judgement made
