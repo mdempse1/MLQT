@@ -75,6 +75,11 @@ public class LibraryDataService : ILibraryDataService
 
     private void RaiseTreeDataChanged()
     {
+        // Dropped whether or not the announcement is suppressed: a bulk load is exactly when the
+        // answer goes stale, and the one announcement at the end of it must not be served a set
+        // built before the libraries arrived.
+        _descendantParserErrors = null;
+
         if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
     }
@@ -972,6 +977,34 @@ public class LibraryDataService : ILibraryDataService
             var allModelIds = _libraries.SelectMany(l => l.ModelIds).ToHashSet();
             return _combinedGraph.ModelNodes.Where(m => allModelIds.Contains(m.Id)).ToList();
         }
+    }
+
+    private IReadOnlySet<string>? _descendantParserErrors;
+
+    /// <inheritdoc/>
+    public IReadOnlySet<string> ModelsWithDescendantParserErrors()
+    {
+        if (_descendantParserErrors is { } cached)
+            return cached;
+
+        var descendants = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var model in GetAllModels())
+        {
+            if (!model.HasParserErrors)
+                continue;
+
+            // Every package above it, so the warning is visible from the root without expanding.
+            var lastDot = model.Id.LastIndexOf('.');
+            while (lastDot > 0)
+            {
+                var parentId = model.Id[..lastDot];
+                descendants.Add(parentId);
+                lastDot = parentId.LastIndexOf('.');
+            }
+        }
+
+        _descendantParserErrors = descendants;
+        return descendants;
     }
 
     /// <summary>

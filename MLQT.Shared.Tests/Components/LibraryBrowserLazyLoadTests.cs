@@ -56,6 +56,12 @@ public class LibraryBrowserLazyLoadTests : MlqtComponentTestBase
         library.Setup(l => l.ModelHasChildren(It.IsAny<string>()))
                .Returns<string>(id => id != _grandchild.Id);
 
+        // The tree asks for this on every refresh. Moq would otherwise hand back null for a
+        // reference type, which is not something the interface allows and not what the real service
+        // does — the fixture says so rather than the component defending against it.
+        library.Setup(l => l.ModelsWithDescendantParserErrors())
+               .Returns(new HashSet<string>(StringComparer.Ordinal));
+
         Services.AddSingleton(library.Object);
         Services.AddSingleton(new Mock<IRepositoryService>().Object);
         Services.AddSingleton(new Mock<IFileMonitoringService>().Object);

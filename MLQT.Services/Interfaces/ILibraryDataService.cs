@@ -184,6 +184,19 @@ public interface ILibraryDataService
     IEnumerable<ModelNode> GetAllModels();
 
     /// <summary>
+    /// Every package that contains, at any depth, a class that failed to parse — so a tree can show
+    /// the warning on the ancestors and lead the user down to it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Computed here, once, rather than by each tree.</b> The answer does not depend on
+    /// which repository is asking, but each library browser used to walk every model in the project
+    /// to work it out: 69,141 of them, on the dispatcher, once per repository per refresh. Measured
+    /// at <b>872ms</b> for one of those walks while a load still held the lock (B258).</para>
+    /// <para>Recomputed when the libraries change, which is exactly when the trees rebuild.</para>
+    /// </remarks>
+    IReadOnlySet<string> ModelsWithDescendantParserErrors();
+
+    /// <summary>
     /// Gets the combined graph containing all models from all libraries.
     /// Useful for cross-library dependency analysis.
     /// </summary>

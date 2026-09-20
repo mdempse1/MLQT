@@ -72,7 +72,9 @@ public partial class LibraryBrowser : IDisposable
     /// error indicator up parent packages so the user can navigate down to find the problem
     /// model without having to expand every branch.
     /// </summary>
-    private HashSet<string> _modelsWithDescendantParserErrors = new();
+    // Shared with every other tree — the set is a property of the project, not of this repository,
+    // and the service works it out once (B258).
+    private IReadOnlySet<string> _modelsWithDescendantParserErrors = new HashSet<string>();
 
     //Menu icons - https://www.svgrepo.com/vectors/git
     const string _rebaseIcon = @"<svg width=""24"" height=""24"" viewBox=""0 -960 960 960"" fill=""currentColor"">
@@ -416,23 +418,7 @@ public partial class LibraryBrowser : IDisposable
     /// with "<packageId>." has parser errors.
     /// </summary>
     private void RefreshDescendantParserErrors()
-    {
-        var descendants = new HashSet<string>();
-        foreach (var model in LibraryDataService.GetAllModels())
-        {
-            if (!model.HasParserErrors)
-                continue;
-
-            var lastDot = model.Id.LastIndexOf('.');
-            while (lastDot > 0)
-            {
-                var parentId = model.Id.Substring(0, lastDot);
-                descendants.Add(parentId);
-                lastDot = parentId.LastIndexOf('.');
-            }
-        }
-        _modelsWithDescendantParserErrors = descendants;
-    }
+        => _modelsWithDescendantParserErrors = LibraryDataService.ModelsWithDescendantParserErrors();
 
     /// <summary>
     /// Builds the hover tooltip for a tree node's parser-error indicator.
