@@ -110,10 +110,23 @@ public partial class MetricsDashboard : IDisposable
     private bool AnalysisComplete => NavState.HasDependencyAnalysisRun && NavState.HasStyleCheckingRun;
 
     // Findings arrive asynchronously from the background analysis; recount when they change.
-    private void OnFindingsChanged()
+    // Raised on whoever changed the findings, which since B190 is a check's worker thread rather
+    // than the dispatcher — so the recount goes inside, with the render it feeds.
+    private async void OnFindingsChanged()
     {
-        RecountFindings();
-        InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                RecountFindings();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // Torn down between the announcement and this reaching the dispatcher — see the same
+            // guard on CodeReview.
+        }
     }
 
     // Style checking reports completion (done == true) once every repository has been checked.

@@ -1323,8 +1323,22 @@ public partial class MainLayout : IDisposable
 
     // Route background style-checking findings into the persistent CodeReviewService. Lives in the
     // layout (always mounted) so delivery never depends on which tab is currently open.
+    /// <summary>
+    /// Findings from the background check, handed straight to the service on the worker's own
+    /// thread.
+    ///
+    /// <para><b>This used to go through <c>InvokeAsync</c>, and that was the freeze.</b> The store
+    /// is already thread-safe — it locks around its list — so marshalling only bought one queued
+    /// work item per class with findings, on the one thread that has to stay free. For Claytex,
+    /// 21,673 classes checked: the log shows the workers finishing at 17:20:28 and the run being
+    /// declared complete at 17:21:40, **72 seconds later**, which is the dispatcher draining that
+    /// queue while the window ignored clicks (B190).</para>
+    ///
+    /// <para>Nothing needs the UI thread here. What does need it — the re-render — is raised by the
+    /// store, coalesced, and marshalled by whichever component is listening.</para>
+    /// </summary>
     private void OnStyleFindingsFound(List<LogMessage> findings)
-        => InvokeAsync(() => CodeReviewService.AddLogMessages(findings));
+        => CodeReviewService.AddLogMessages(findings);
 
     /// <summary>
     /// Re-derives the Parser-sourced findings for <paramref name="modelIds"/> (all models when null)

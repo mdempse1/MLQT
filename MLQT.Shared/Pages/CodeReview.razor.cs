@@ -221,10 +221,30 @@ public partial class CodeReview : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The findings list changed. Raised on whichever thread changed it — a check's workers deliver
+    /// findings directly now — so everything this touches has to happen on the dispatcher, not just
+    /// the render: <c>RecomputeMisspelledWords</c> writes component state and used to run on the
+    /// caller (B190).
+    /// </summary>
     private async void OnLogMessagesChanged()
     {
-        RecomputeMisspelledWords();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                RecomputeMisspelledWords();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // The page was torn down between the change being announced and this reaching the
+            // dispatcher. That window opened when findings started arriving on a worker's thread
+            // rather than the dispatcher's, and the event can now outrun a tab switch. There is
+            // nothing to render and nothing to report; the unsubscribe in Dispose is what normally
+            // prevents this, and it cannot close the gap entirely.
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
