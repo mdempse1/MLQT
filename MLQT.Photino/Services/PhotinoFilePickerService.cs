@@ -33,7 +33,11 @@ internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : 
         if (path is null)
             return Task.FromResult<FilePickerResult?>(null);
 
-        var content = ReadOrNull(path);
+        // Through ModelicaFileEncoding, not File.ReadAllText: this method returns Modelica source,
+        // and the population is mixed — an older library stores curly quotes and accented characters
+        // as single Windows-1252 bytes, which a UTF-8 decode turns into replacement characters. The
+        // funnel detects the encoding per file and cannot fail (B239).
+        var content = ReadModelicaOrNull(path);
         if (content is null)
             return Task.FromResult<FilePickerResult?>(null);
 
@@ -89,6 +93,23 @@ internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : 
         try
         {
             return File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            MLQT.Services.LoggingService.Error(nameof(PhotinoFilePickerService), $"Could not read {path}", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The same, for a file that holds Modelica source: its encoding is detected per file rather
+    /// than assumed, which is the whole of why <c>ModelicaFileEncoding</c> exists.
+    /// </summary>
+    private static string? ReadModelicaOrNull(string path)
+    {
+        try
+        {
+            return ModelicaParser.Helpers.ModelicaFileEncoding.ReadAllTextOnly(path);
         }
         catch (Exception ex)
         {
