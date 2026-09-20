@@ -268,7 +268,16 @@ public class ModelNode : GraphNode
     /// <summary>
     /// SVG markup for the Modelica icon annotation, if available.
     /// </summary>
-    public string? IconSvg { get; set; }
+    /// <remarks>
+    /// Kept on the definition, because it is derived from the class's code and has to be discarded
+    /// when that changes — the same rule as the parse tree, the coverage facts and the suppressions.
+    /// This stays as the name everything already uses.
+    /// </remarks>
+    public string? IconSvg
+    {
+        get => Definition.IconSvg;
+        set => Definition.IconSvg = value;
+    }
 
     /// <summary>
     /// Gets whether this node has a custom Modelica icon.

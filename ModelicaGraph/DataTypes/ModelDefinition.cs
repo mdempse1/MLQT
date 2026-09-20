@@ -19,8 +19,8 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/> and <see cref="Suppressions"/> all describe code that is no longer
-    /// here.</para>
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/> and <see cref="IconSvg"/> all describe
+    /// code that is no longer here.</para>
     ///
     /// <para>The tree is on that list, and the comment here used to say it was not — that
     /// <see cref="EnsureParsed"/> handled its own staleness. It does not: it returns
@@ -39,6 +39,8 @@ public class ModelDefinition
             ParsedCode = null;
             Coverage = null;
             Suppressions = null;
+            IconSvg = null;
+            IconRendered = false;
         }
     }
 
@@ -61,6 +63,26 @@ public class ModelDefinition
     /// walk and the shared-empty convention live.</para>
     /// </summary>
     public ModelicaParser.StyleRules.SuppressionSet? Suppressions { get; set; }
+
+    /// <summary>
+    /// The class's icon as SVG, once something has rendered it, and whether that has been tried.
+    ///
+    /// <para><b>Here rather than on the node because it is derived from the code</b>, like
+    /// <see cref="Coverage"/> and <see cref="Suppressions"/> — which means it goes stale exactly
+    /// when they do, and this is the one place that knows. It lived on <c>ModelNode</c>, outside
+    /// that invalidation, so nothing could safely keep it and the library browser re-rendered every
+    /// top-level icon on every tree refresh: resolving each class's base classes, parsing them to do
+    /// it, on the dispatcher. Measured on a real project, one refresh of one repository's tree cost
+    /// **1,477ms of its 1,522ms** in exactly that (B258).</para>
+    ///
+    /// <para><see cref="IconRendered"/> is separate from the SVG being null because <em>most classes
+    /// have no icon</em>, and "asked, and there is none" has to be as cheap to remember as an
+    /// answer.</para>
+    /// </summary>
+    public string? IconSvg { get; set; }
+
+    /// <inheritdoc cref="IconSvg"/>
+    public bool IconRendered { get; set; }
 
     /// <summary>
     /// Antlr4 code context for the class definition.

@@ -1044,6 +1044,20 @@ public class LibraryDataService : ILibraryDataService
     /// </summary>
     private void PrepareModelForDisplay(ModelNode model, LoadedLibrary library)
     {
+        // Rendered once per class, not once per tree refresh. Extracting an icon resolves the
+        // class's base classes and parses them to do it, and the tree is rebuilt on every change to
+        // it — so this ran on the dispatcher, for every top-level class, every time. Measured on a
+        // real project: 1,477ms of a 1,522ms refresh, repeatedly, which is the startup stutter
+        // (B258). The answer is kept on the definition and discarded with the rest of the derived
+        // state when the class's code changes.
+        if (model.Definition.IconRendered)
+        {
+            model.LibraryId = library.Id;
+            return;
+        }
+
+        model.Definition.IconRendered = true;
+
         // Try to extract Modelica Icon annotation and render as SVG (with inheritance support)
         try
         {
