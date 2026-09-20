@@ -791,7 +791,7 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B250 ✅, B253 ✅, B254 ✅, B247 ✅, B248 ✅, B249 ✅, B233** · 7 items · S each · all from using it
+**B250 ✅, B253 ✅, B254 ✅, B247 ✅, B248 ✅, B249 ✅, B233 ✅** · **complete 2026-09-20** · 7 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
@@ -874,10 +874,30 @@ already have.
   menu up beside the class name — if it turns out to bite. **A documented decision is a reason to
   ask, not a reason to refuse**, and writing the cost down where the next reader will find it is
   what makes reversing it cheap.
-- **B233** was outside the phase until 2026-09-20, on the grounds that nobody had said the inline
+- **B233 ✅** was outside the phase until 2026-09-20, on the grounds that nobody had said the inline
   annotations mattered. Somebody has: a `connect(...)` equation carries its annotation on the same
   line, so hiding annotations does nothing to an equation section, which is where the noise is. The
   measurement it asks for is still the first step, but it is now a measurement over equation lines.
+
+  **✅ Done 2026-09-20, and taking the measurement first changed the work.** Over 8,367 files:
+  31.6% of non-blank equation-section lines carry an annotation and **62% of those were left
+  visible**. That is what made this worth an M rather than a ⭐ — and it is now 0%, with 100% of
+  116,644 annotations hidden against 65.9% before.
+
+  **The implementation is not the one the row predicted**, and that is the reusable part. The row
+  assumed markup had to be spliced, which needs the classifier to say where each token's markup
+  begins. But *removing an annotation from Modelica leaves Modelica*, so the text can be cut and the
+  caller simply colours what comes back — one more parse, and no second representation of where a
+  token starts. Worth remembering the next time something wants to modify what is displayed: ask
+  whether the change can be made upstream of the colouring rather than in it.
+
+  **And the corpus found a defect no small test would have.** The continuation lines of a
+  multi-line annotation were reported as elided but left in the returned text, so a caller that
+  parsed it got the orphaned tail of an annotation whose head had gone: **3,199 of 8,367 files
+  stopped parsing**, which in the viewer is a silent drop from parse-tree colouring to lexer-only.
+  Every unit test passed. The check that found it was added because "100% hidden" is trivially
+  achievable by destroying the text — **a number that can only go one way needs a second number
+  beside it that can go the other.**
 
 ### WP12 — Rules, second pass
 

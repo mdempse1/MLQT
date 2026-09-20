@@ -1024,6 +1024,21 @@ public partial class CodeReview : IAsyncDisposable
         else
             stream = ModelicaTokenClassifier.TokensOnly(source);
 
+        // Annotations come out of the text before it is coloured, because the ones that matter share
+        // a line with code and cannot be taken out by dropping whole lines (B233). Line numbers
+        // survive it, so the elision below still maps a finding to where it lives in the file — what
+        // ran across lines is joined onto its first and the rest come back as lines to drop.
+        //
+        // The cost is one more parse when annotations are hidden. Colouring is driven by the tree,
+        // and the tree has to describe the text on screen or the two disagree about where a token
+        // begins — which is the whole of what ModelicaTokenClassifier guarantees.
+        var annotationElision = SourceElision.None;
+        if (!showAnnotations && tree is not null)
+        {
+            (source, annotationElision) = ElisionFinder.WithoutAnnotations(tree, source);
+            (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+        }
+
         var lines = showHighlighted
             ? ModelicaTokenClassifier.Highlight(tree, stream, source)
             : ModelicaTokenClassifier.Plain(source);
@@ -1032,7 +1047,7 @@ public partial class CodeReview : IAsyncDisposable
         // already hidden the annotations inside them — Merge is what keeps those from colliding.
         var elision = SourceElision.Merge(
             hideClassDefinitions ? ElisionFinder.NestedClasses(tree, source, ClassMarker(showHighlighted)) : null,
-            showAnnotations ? null : ElisionFinder.Annotations(tree, source, AnnotationMarker(showHighlighted)));
+            annotationElision);
 
         var display = elision.Apply(lines);
 
@@ -1050,10 +1065,14 @@ public partial class CodeReview : IAsyncDisposable
         ? $"  <COMMENT>// {name} …</COMMENT>"
         : $"  // {name} …";
 
-    /// <summary>What stands in for a hidden annotation.</summary>
-    private static Func<string, string?> AnnotationMarker(bool showHighlighted) => _ => showHighlighted
-        ? "  <COMMENT>// annotation …</COMMENT>"
-        : "  // annotation …";
+    // Nothing stands in for a hidden annotation any more. There used to be a `// annotation …`
+    // marker, so the reader could see that something was hidden rather than silently reading a
+    // class missing parts — but it cost a line per annotation and was noisier than the thing it
+    // hid, which is what the user said when asking for B233. The toolbar's Bookmark button is
+    // filled while annotations are hidden, and that is the signal.
+    //
+    // A hidden nested class still leaves one, and that is not the same decision: it carries the
+    // class's *name*, so the package still reads as a list of what it contains.
 
     /// <summary>
     /// Formats element prefix keywords (e.g., "redeclare", "inner replaceable") as a

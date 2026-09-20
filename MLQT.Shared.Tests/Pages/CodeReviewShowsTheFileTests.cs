@@ -204,9 +204,63 @@ public class CodeReviewShowsTheFileTests
         var shown = CodeReview.Show(model, graph, showHighlighted: true, showAnnotations: false,
             hideClassDefinitions: false);
 
+        // No marker. There used to be a `// annotation …` line here so the reader could see that
+        // something was hidden, and it cost a line per annotation — noisier than the thing it hid,
+        // which is what was asked for in B233. The toolbar button shows the toggle is on.
         Assert.Equal(
-            ["model M \"m\"", "  Real x;", "  // annotation …", "end M;"],
+            ["model M \"m\"", "  Real x;", "end M;"],
             shown.Lines.Select(Text));
+    }
+
+    [Fact]
+    public void HidingAnnotationsAlsoTakesOutTheOnesSharingALineWithCode()
+    {
+        // The case B233 was reported for, and the common one: a `connect` writes its annotation on
+        // the same line, so hiding annotations used to change nothing at all in an equation section
+        // — measured, 62% of the annotation-bearing equation lines in MSL and Buildings stayed.
+        var source = Lf("""
+            model M "m"
+              Real x annotation (Dialog(group="g"));
+            equation
+              connect(a.p, b.n) annotation (Line(points={{-10,0},{10,0}}));
+            end M;
+            """);
+        var (model, graph) = Load(source);
+
+        var shown = CodeReview.Show(model, graph, showHighlighted: true, showAnnotations: false,
+            hideClassDefinitions: false);
+
+        Assert.Equal(
+            ["model M \"m\"", "  Real x;", "equation", "  connect(a.p, b.n);", "end M;"],
+            shown.Lines.Select(Text));
+    }
+
+    [Fact]
+    public void AnInlineAnnotationRunningAcrossLinesTakesItsOwnLinesWithIt()
+    {
+        // The awkward shape: it starts beside code and ends beside a semicolon, so it is neither
+        // whole-line nor confined to one. What is left of the first line is joined to what is left
+        // of the last, and the lines between are dropped — which keeps every surviving line at the
+        // number it had, so a finding still points at the right place.
+        var source = Lf("""
+            model M "m"
+            equation
+              connect(a.p, b.n) annotation (Line(
+                points={{-10,0},{10,0}},
+                color={0,0,255}));
+            end M;
+            """);
+        var (model, graph) = Load(source);
+
+        var shown = CodeReview.Show(model, graph, showHighlighted: true, showAnnotations: false,
+            hideClassDefinitions: false);
+
+        Assert.Equal(
+            ["model M \"m\"", "equation", "  connect(a.p, b.n);", "end M;"],
+            shown.Lines.Select(Text));
+
+        // `end M;` is line 6 of the file and line 4 on screen.
+        Assert.Equal(6, shown.Elision.ToSourceLine(4));
     }
 
     [Fact]
