@@ -274,10 +274,19 @@ public static class StyleChecking
         // well as the type because the same name means different things in different scopes.
         var byRequest = new ConcurrentDictionary<(string ModelId, string TypeName), (bool, bool)>();
 
+        // And the class's extends chain, which is where the time actually went. Collecting it reads
+        // each ancestor's interface, parsing it if nobody is holding its tree — so a class with
+        // twenty unresolved type names re-parsed its whole ancestry twenty times. Measured over MSL:
+        // 295.4s of thread-time in the rule before this, 129.7s after, findings identical.
+        //
+        // Scoped to the lookup, and so to the run that built it: the graph is reloaded after a
+        // formatting pass or a VCS operation, and a chain remembered across that would be stale.
+        var ancestors = new TypeResolver.AncestorCache();
+
         return (modelId, typeName) => byRequest.GetOrAdd((modelId, typeName), key =>
         {
             var imports = importsByModel.GetOrAdd(key.ModelId, id => ImportsOf(graph, id));
-            return UnitResolver.Resolve(graph, key.ModelId, key.TypeName, imports, unitCache);
+            return UnitResolver.Resolve(graph, key.ModelId, key.TypeName, imports, unitCache, ancestors);
         });
     }
 

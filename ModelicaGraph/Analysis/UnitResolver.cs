@@ -21,7 +21,8 @@ public static class UnitResolver
     /// </summary>
     public static (bool IsRealDerived, bool HasUnit) Resolve(
         DirectedGraph graph, string ownerId, string? typeText,
-        IReadOnlyList<string>? imports, IDictionary<string, (bool, bool)>? cache = null)
+        IReadOnlyList<string>? imports, IDictionary<string, (bool, bool)>? cache = null,
+        TypeResolver.AncestorCache? ancestors = null)
     {
         var name = (typeText ?? string.Empty).TrimStart('.').Trim();
         if (name.Length == 0)
@@ -31,12 +32,15 @@ public static class UnitResolver
         if (TypeResolver.IsPredefined(name))
             return (false, false);   // Integer/Boolean/String/Complex/Clock — not a Real quantity
 
-        var node = TypeResolver.ResolveWithInheritance(graph, ownerId, typeText, imports);
-        return node is null ? (false, false) : ResolveNode(graph, node, cache, new HashSet<string>(StringComparer.Ordinal), 0);
+        var node = TypeResolver.ResolveWithInheritance(graph, ownerId, typeText, imports, ancestors);
+        return node is null
+            ? (false, false)
+            : ResolveNode(graph, node, cache, new HashSet<string>(StringComparer.Ordinal), 0, ancestors);
     }
 
     private static (bool, bool) ResolveNode(
-        DirectedGraph graph, ModelNode node, IDictionary<string, (bool, bool)>? cache, HashSet<string> visited, int depth)
+        DirectedGraph graph, ModelNode node, IDictionary<string, (bool, bool)>? cache, HashSet<string> visited,
+        int depth, TypeResolver.AncestorCache? ancestors)
     {
         if (cache is not null && cache.TryGetValue(node.Id, out var cached))
             return cached;
@@ -67,10 +71,10 @@ public static class UnitResolver
             else if (baseName.Length > 0 && !TypeResolver.IsPredefined(baseName))
             {
                 // A named base (e.g. another SI type) — resolve it in this alias's own scope and chain.
-                var baseNode = TypeResolver.ResolveWithInheritance(graph, node.Id, baseType, imports: null);
+                var baseNode = TypeResolver.ResolveWithInheritance(graph, node.Id, baseType, imports: null, ancestors);
                 if (baseNode is not null)
                 {
-                    var (baseIsReal, baseHasUnit) = ResolveNode(graph, baseNode, cache, visited, depth + 1);
+                    var (baseIsReal, baseHasUnit) = ResolveNode(graph, baseNode, cache, visited, depth + 1, ancestors);
                     result = (baseIsReal, baseIsReal && (hasUnit || baseHasUnit));
                 }
             }

@@ -62,21 +62,51 @@ public static class TypeResolver
         return null;
     }
 
+    /// <summary>The ancestors of a class, as <see cref="ResolveWithInheritance"/> caches them.</summary>
+    public sealed class AncestorCache
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary
+            <string, List<(string Id, IReadOnlyList<string> Imports)>> _byClass = new(StringComparer.Ordinal);
+
+        internal List<(string Id, IReadOnlyList<string> Imports)> GetOrAdd(
+            string classId, Func<string, List<(string Id, IReadOnlyList<string> Imports)>> collect)
+            => _byClass.GetOrAdd(classId, collect);
+    }
+
     /// <summary>
     /// Like <see cref="Resolve"/> but also resolves names inherited into scope through <c>extends</c>:
     /// after trying the class's own scope, it tries each ancestor's scope (its package hierarchy, its
     /// imports and its nested classes). Used so an inherited type name is not wrongly reported as
     /// unresolved.
     /// </summary>
+    /// <param name="ancestors">
+    /// Somewhere to remember each class's extends chain for the duration of a run, or null to walk it
+    /// afresh every time. <b>Pass one for anything that resolves more than a handful of names.</b>
+    /// Collecting the chain reads each ancestor's interface, which parses it if nobody else is
+    /// holding its tree — so without this, a class with twenty unresolved type names re-parses its
+    /// whole ancestry twenty times. Measured over the Modelica Standard Library with
+    /// <c>MissingUnits</c> on, that walk was <b>82% of the rule's time</b> and the rule was 91% of
+    /// the check; caching it took the rule from 295.4s to 129.7s of thread-time with all 5,250
+    /// findings identical (B174).
+    ///
+    /// <para>It is a parameter rather than something kept on the graph because it is only valid
+    /// while the classes it describes are unchanged — the lifetime of a check, not of the graph,
+    /// which is reloaded after a formatting pass or a VCS operation.</para>
+    /// </param>
     public static ModelNode? ResolveWithInheritance(
-        DirectedGraph graph, string classId, string? typeText, IReadOnlyList<string>? imports)
+        DirectedGraph graph, string classId, string? typeText, IReadOnlyList<string>? imports,
+        AncestorCache? ancestors = null)
     {
         if (Resolve(graph, classId, typeText, imports) is { } direct)
             return direct;
         if (string.IsNullOrWhiteSpace(typeText) || IsPredefined(typeText))
             return null;
 
-        foreach (var (ancestorId, ancestorImports) in CollectAncestors(graph, classId))
+        var chain = ancestors is null
+            ? CollectAncestors(graph, classId)
+            : ancestors.GetOrAdd(classId, id => CollectAncestors(graph, id));
+
+        foreach (var (ancestorId, ancestorImports) in chain)
             if (Resolve(graph, ancestorId, typeText, ancestorImports) is { } viaAncestor)
                 return viaAncestor;
         return null;

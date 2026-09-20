@@ -545,11 +545,28 @@ reading code that looks expensive is not measuring it.
   type)` took `MissingUnits` from 425.1s to 295.4s on MSL and 477.8s to 310.6s on Buildings, with
   all 5,250 and 3,285 findings identical.
 
-  **Rejected on the way, both by measurement:** caching `TypeResolver.CollectAncestors` per class
-  made **no measurable difference at all**, and the theory that a short name resolved through an
-  extends chain is dearer than a qualified one measured the *other way round* in a synthetic library
-  (99ms against 268ms). **~45ms/class is still unexplained**, and the next step is a profiler rather
-  than a third guess.
+  **Then the profiler, which found the rest of it — and found that one of the rejections was wrong.**
+  `dotnet-trace` over the same run: of real CPU, ~43% is ANTLR ATN prediction, so the check is
+  *parsing*, and 76% of all non-idle samples have `MissingUnits` on the stack. Printing every frame
+  between the two gives the answer in one line — `MissingUnits.VisitComponent_declaration →
+  ResolveWithInheritance → CollectAncestors → Walk → EnsureParsed`, **82% of the rule's time**.
+  Collecting a class's extends chain reads each ancestor's interface, which parses it when nobody
+  holds its tree, and nothing remembered the chain.
+
+  `TypeResolver.AncestorCache` now holds it for the run. **Measured end to end**: `MissingUnits`
+  425.1s → 128.7s on MSL and 477.8s → 132.1s on Buildings; whole check 450.9s → 159.5s and 579.4s →
+  238.1s; all 5,250 and 3,285 findings identical.
+
+  **The hour this cost is the part to remember.** That same cache was tried early, measured as "no
+  change at all", and written off — because the binary under test had not been rebuilt. Measured
+  properly it was a 56% cut. **Check the change is in the assembly before believing a negative
+  result**, and prefer a stack to a guess: the profiling recipe is now in CLAUDE.md.
+
+  The other rejection stands: a short name resolved through an extends chain is not inherently
+  dearer than a qualified one — a synthetic library measured it the other way round.
+
+  **Parse is now the largest remaining phase on Buildings, at 43%**, which is where B235 stops being
+  premature and becomes the next thing to take.
 - **B190** — confirm the freeze still happens before investigating it. It predates several fixes.
 - **B184** is the largest available win on CI check time and the most delicate change in the phase.
   `ChangedModelResolver.Resolve` currently runs **after** `load.Findings` is fully computed

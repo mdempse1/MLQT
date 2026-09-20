@@ -584,6 +584,44 @@ Several libraries are separated by `;`. With the variable unset the test returns
 ordinary run is unaffected — which is the trap, not a convenience: a green suite says nothing about
 fidelity unless this has been run.
 
+### "Where is the time actually going?" — `dotnet-trace`
+
+`mlqt check --timings` says which *phase* a run spent its time in, and the application log keeps the
+same breakdown for every check the GUI runs. That is the first question and usually enough. When it
+is not — when a phase is 91% of the run and nothing in it looks expensive — the answer is a sampling
+profiler, not a third guess.
+
+```bash
+dotnet tool install --global dotnet-trace          # once
+
+dotnet-trace collect --format nettrace --output run.nettrace \
+  --providers Microsoft-DotNETCore-SampleProfiler \
+  -- MLQT.Cli/bin/Release/net10.0/mlqt.exe check <library> --config <settings>
+
+dotnet-trace report run.nettrace topN -n 25        # the flat answer
+dotnet-trace convert run.nettrace --format Speedscope   # ...for anything else
+```
+
+**`topN` is rarely the answer on its own**, because the top of it is thread-pool idle
+(`PollGCWorker`, `LowLevelLifoSemaphore`, `GetQueuedCompletionStatus`) and the rest is whatever
+library the work happens to be inside — for MLQT that is always ANTLR, which says nothing about
+*which* of MLQT's callers asked for a parse. The useful question is a stack question: convert to
+Speedscope, whose profiles are an evented open/close stream per thread, walk it keeping a stack, and
+attribute each sample to the frame you care about. Three that earned their keep on B174:
+
+- **self time per leaf**, excluding idle frames and the converter's `CPU_TIME` /
+  `UNMANAGED_CODE_TIME` pseudo-leaves — skip those and take the frame below or everything reads 50%
+- **which of our frames entered the parser**, i.e. the nearest MLQT frame above the first ANTLR one
+- **the path between two frames** — the one that found B174, by printing every frame between
+  `MissingUnits` and the parse underneath it
+
+**A 19-second run traces to about 9 MB**, so there is no need to shrink the input first.
+
+**Rebuild before you believe a negative result.** B174 cost an hour to a cached experiment that
+reported no improvement because the binary under test had not been rebuilt; the same change measured
+properly was a 56% cut. If an experiment says a change did nothing, check that the change is in the
+assembly before concluding anything about the change.
+
 ### "Do the tests actually check anything?" — `build/run-mutation.ps1`
 
 Coverage says a line ran. **Mutation testing says it was checked**: Stryker changes the code in small
