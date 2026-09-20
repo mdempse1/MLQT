@@ -184,7 +184,7 @@ and de-emphasised values — but the UI uses a hierarchy above that, and a compo
 | `ModelicaParser/Helpers/ModelicaParserHelper.cs` | Parser utilities |
 | `ModelicaParser/StyleRules/VisitorWithModelNameTracking.cs` | Base class for all style rule visitors |
 | `ModelicaParser/DataTypes/Finding.cs` | The structured finding every rule and analysis emits — rule id, severity, element identity, reformat-stable fingerprint |
-| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry: the id constants, and each rule's title, category, default severity, governor and prerequisite |
+| `ModelicaParser/StyleRules/RuleIds.cs` / `RuleCatalog.cs` | The rule registry: the id constants, and each rule's title, category, default severity, governor, prerequisite and whether it is on by default. **A new rule needs no registering anywhere else that lists rules** — the settings dialog's Static analysis section and the Code Review rule filter are both derived, and three guards hold that chain: `EveryRuleId_IsRegistered` (id → catalogue), `RuleSettingsLayout.UnreachableRules()` (catalogue → dialog) and `CodeReviewRuleFilterTests` (catalogue → filter, by title) |
 | `ModelicaGraph/DirectedGraph.cs` | Main graph structure |
 | `ModelicaGraph/GraphBuilder.cs` | Loads libraries, analyzes dependencies |
 | `ModelicaGraph/StyleChecking.cs` | Orchestrates all per-class style rule checks |

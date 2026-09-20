@@ -1383,8 +1383,20 @@ document.head.appendChild(style);
     /// the control something to search rather than something to pick from. A rule the catalogue does
     /// not know — an external tool's output — falls back to its id.</para>
     /// </summary>
-    private IEnumerable<(string Id, string Title)> RulesInFindings =>
-        CodeReviewService.LogMessages
+    private IEnumerable<(string Id, string Title)> RulesInFindings => RulesIn(CodeReviewService.LogMessages);
+
+    /// <summary>
+    /// The same, over a given set of findings, so it can be tested.
+    ///
+    /// <para><b>No list to maintain, which is the point.</b> A rule added to MLQT appears here the
+    /// first time it produces a finding, with the title the catalogue gives it — there is no
+    /// registration step to forget. What a test can still hold is that the title comes from the
+    /// catalogue at all: drop that lookup and the filter goes on working while offering
+    /// <c>MLQT.Structure.SingleFilePackage</c> where it used to say "Packages are stored as
+    /// directories", and nothing would fail.</para>
+    /// </summary>
+    internal static IEnumerable<(string Id, string Title)> RulesIn(IEnumerable<LogMessage> findings) =>
+        findings
             .Select(m => m.RuleId)
             .Where(id => !string.IsNullOrEmpty(id))
             .Distinct(StringComparer.Ordinal)
