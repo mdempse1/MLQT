@@ -66,6 +66,24 @@ Once a tool is configured, its check button appears in the **Code Review** tab t
 
 ### Understanding Check Results
 
+**Every check reports what the tool said**, whether or not it found anything. When it finishes, a
+dialog names the tool and says how it went:
+
+```
+Dymola checked 27 classes with no problems reported.
+OpenModelica reported problems with 3 of 27 classes.
+Dymola check stopped after 5 classes.
+```
+
+Where something failed, the dialog quotes the tool's own message for each class rather than
+paraphrasing it — a summary saying "check failed" only sends you to the tool to find out why. Those
+same failures are added to the findings table, so they are still there after the dialog is closed.
+
+Before this, a check that passed produced nothing at all: no window, no dialog, no finding. The only
+sign an OpenModelica check had run was that you had pressed the button, and the only sign for Dymola
+was that Dymola's own window appeared — which made the answer depend on a vendor window MLQT does
+not control.
+
 Errors from external tools appear in the Code Review findings table with:
 - **Model**: The fully qualified name of the model that failed
 - **Description**: "Check Failed" or a summary of the error
@@ -78,6 +96,13 @@ These errors represent findings that a simulation tool found when trying to load
 - Type mismatches in connections
 - Invalid modifications or parameter bindings
 - Syntax that the tool doesn't support
+
+### Closing Dymola between checks
+
+You can close Dymola's window and check again. MLQT asks whether the session it has is still
+answering before reusing it, and starts a new one when it is not — so the second check works like
+the first. The probe is a two-second ping rather than a command, so a dead session is noticed
+quickly rather than after the command timeout.
 
 ### Dymola vs OpenModelica Results
 

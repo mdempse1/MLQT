@@ -402,6 +402,48 @@
     </DialogActions>
 </MudDialog>
 
+@* What the external tool said, whatever it said (B170). Before this, a check that passed produced
+   nothing at all - no window, no dialog, no finding - so the only evidence an OpenModelica check had
+   run was that the button had been pressed, and the only evidence for Dymola was that Dymola's own
+   window happened to appear. That made the answer depend on a vendor window MLQT does not control. *@
+<MudDialog @bind-Visible="_checkResultDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@_checkingToolName check</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudAlert Severity="@(FailedChecks.Any() ? Severity.Warning : Severity.Success)" Dense="true">
+            @CheckOutcomeSummary(_checkingToolName, PassedCheckCount, FailedChecks.Count(), _checkWasCancelled)
+        </MudAlert>
+
+        @if (FailedChecks.Any())
+        {
+            @* The tool's own words, not a paraphrase. A summary that says "check failed" sends the
+               user to the tool to find out why; the message is the whole value of running it. *@
+            <MudPaper Elevation="0" MaxHeight="320px" Style="overflow-y: auto;" Class="mt-2">
+                @foreach (var failure in FailedChecks)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">@failure.ModelId</MudText>
+                    @if (!string.IsNullOrWhiteSpace(failure.Summary))
+                    {
+                        <MudText Typo="Typo.body1">@failure.Summary</MudText>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(failure.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.body2" Class="pre-wrap">@failure.ErrorMessage</MudText>
+                    }
+                }
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mt-2">
+                Each of these is also in the findings table, so it is still there after this closes.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@(() => _checkResultDialog = false)" Class="px-10">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
 <MudDialog @bind-Visible="_findingDetailsVisible" Options="_dialogOptions">
     <TitleContent>
         <MudText Typo="Typo.subtitle2">Finding in @_currentFinding!.ModelName</MudText>

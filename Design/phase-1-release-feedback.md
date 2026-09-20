@@ -635,7 +635,7 @@ reading code that looks expensive is not measuring it.
 
 ### WP5 — External tools
 
-**B170 then B171** · 2 items · strict order
+**B170 ✅ then B171 ✅** · 2 items · strict order · **complete 2026-09-20**
 
 B170 first: MLQT needs a result dialog of its own, reporting what the tool said, for both Dymola and
 OpenModelica. B171's fix — notice a dead session and start a new one — needs somewhere to say so when

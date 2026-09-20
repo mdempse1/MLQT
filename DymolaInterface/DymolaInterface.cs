@@ -209,6 +209,32 @@ public class DymolaInterface : IDisposable
     public bool IsOfflineMode() => _isOffline;
     public void SetOfflineMode(bool enable) => _isOffline = enable;
 
+    /// <summary>
+    /// Whether this session can still be used — cheaply, and without waiting on the 300-second
+    /// command timeout.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Asked before handing a cached instance back.</b> Closing Dymola's window ends the
+    /// process and its JSON-RPC server, but the object holding the connection knows nothing about
+    /// it: <see cref="IsOfflineMode"/> is a flag set at construction, not a probe. So the first
+    /// check worked, the window was closed, and every check after it failed against a session that
+    /// had gone (B171).</para>
+    /// <para>Two questions, cheapest first. A process we started that has exited is dead and needs
+    /// no network call to say so; anything else is asked over the wire with a two-second timeout,
+    /// which is what <see cref="PingAsync"/> exists for. A session Dymola was already running when
+    /// MLQT started has no process handle here, and the ping is the whole answer for it.</para>
+    /// </remarks>
+    public async Task<bool> IsAliveAsync()
+    {
+        if (_disposed || _isOffline)
+            return false;
+
+        if (_dymolaProcess is { HasExited: true })
+            return false;
+
+        return await PingAsync(_portNumber, _hostname);
+    }
+
     public void Dispose()
     {
         if (_disposed) return;

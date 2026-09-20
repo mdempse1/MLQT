@@ -1147,6 +1147,10 @@ public partial class CodeReview : IAsyncDisposable
     {
         await InvokeAsync(() =>
         {
+            // Kept whatever the outcome, so the dialog at the end can report what the tool said
+            // about every class rather than only the ones that failed (B170).
+            _checkResults.Add(result);
+
             if (!result.Success)
             {
                 var finding = new LogMessage(
@@ -1168,8 +1172,45 @@ public partial class CodeReview : IAsyncDisposable
             _checkProgressDialog = false;
             _checkCancellationTokenSource?.Dispose();
             _checkCancellationTokenSource = null;
+            _checkWasCancelled = progress.WasCancelled;
+
+            // Say what happened, always. A check that passed used to produce nothing at all: no
+            // window, no dialog, no finding — so the only evidence an OpenModelica check had run was
+            // that the button had been pressed, and the only evidence for Dymola was that Dymola's
+            // own window appeared. That also made the answer depend on a vendor window being
+            // visible, which is not something MLQT controls (B170).
+            _checkResultDialog = true;
             StateHasChanged();
         });
+    }
+
+    /// <summary>What the tool said about each class, for the dialog that reports it.</summary>
+    private readonly List<ModelCheckResult> _checkResults = new();
+
+    private bool _checkResultDialog;
+    private bool _checkWasCancelled;
+
+    private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => !r.Success);
+
+    private int PassedCheckCount => _checkResults.Count(r => r.Success);
+
+    /// <summary>
+    /// The headline: what was checked and how it went, in one sentence a user can act on.
+    /// </summary>
+    internal static string CheckOutcomeSummary(string tool, int passed, int failed, bool cancelled)
+    {
+        static string Classes(int n) => n == 1 ? "1 class" : $"{n} classes";
+
+        var checkedCount = passed + failed;
+        if (cancelled)
+            return $"{tool} check stopped after {Classes(checkedCount)}.";
+        if (checkedCount == 0)
+            return $"{tool} checked nothing.";
+        if (failed == 0)
+            return $"{tool} checked {Classes(checkedCount)} with no problems reported.";
+        if (passed == 0)
+            return $"{tool} reported a problem with {(failed == 1 ? "it" : $"all {failed}")}.";
+        return $"{tool} reported problems with {failed} of {Classes(checkedCount)}.";
     }
 
     #endregion
@@ -1181,6 +1222,8 @@ public partial class CodeReview : IAsyncDisposable
 
         _checkingToolName = DymolaCheckingService.ToolName;
         _checkCancellationTokenSource = new CancellationTokenSource();
+        _checkResults.Clear();
+        _checkWasCancelled = false;
 
         // Show progress dialog for packages
         if (_currentModelNode.ClassType == "package")
@@ -1202,6 +1245,8 @@ public partial class CodeReview : IAsyncDisposable
 
         _checkingToolName = OpenModelicaCheckingService.ToolName;
         _checkCancellationTokenSource = new CancellationTokenSource();
+        _checkResults.Clear();
+        _checkWasCancelled = false;
 
         // Show progress dialog for packages
         if (_currentModelNode.ClassType == "package")

@@ -29,9 +29,22 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
         await _lock.WaitAsync();
         try
         {
+            // A cached session is only worth having if it is still there. Closing Dymola's window
+            // ends its process and its JSON-RPC server, and nothing told this object — so the first
+            // check worked and every one after it failed against a session that had gone (B171).
+            //
+            // Asked here rather than at the call sites because this is the one place that decides
+            // whether to reuse or create, and a liveness test anywhere else would be a second
+            // answer to the same question.
             if (_instance != null)
             {
-                return _instance;
+                if (await _instance.IsAliveAsync())
+                    return _instance;
+
+                // Dropped and rebuilt rather than reconnected: the instance owns an HttpClient and a
+                // process handle that both describe the session that has gone.
+                try { _instance.Dispose(); } catch { /* the session is already gone */ }
+                _instance = null;
             }
 
             // Create instance with settings
