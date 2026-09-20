@@ -68,11 +68,40 @@ public class SingleFilePackageAnalyzerTests
     }
 
     [Fact]
-    public void APackageThatIsPartlySplit_IsNotReported()
+    public void APackageThatIsPartlySplit_IsStillReported()
     {
-        // "Entirely in one file" is the claim. A package someone has begun splitting is a different
-        // situation, and reporting it would be telling them something they are evidently doing.
-        Assert.Empty(Analyze(Build([("A", "A.mo", true), ("B", "P.mo", true)])));
+        // The first reading of this rule was "entirely in one file, or say nothing", on the grounds
+        // that a package someone had begun splitting was a different situation. A real library shows
+        // how wrong that is (B243): MSL's Spice3.Internal has thirteen classes in their own files
+        // and eight more still written into package.mo. Half-way through is the ordinary shape of
+        // this drift, and silence is how a class stays put for years.
+        var findings = Analyze(Build([("A", "A.mo", true), ("B", "P.mo", true)]));
+
+        var finding = Assert.Single(findings);
+        Assert.Contains("'B'", finding.Message);
+        Assert.DoesNotContain("'A'", finding.Message);
+    }
+
+    [Fact]
+    public void ChildrenWhoseNamesDifferOnlyInCase_AreNotReported()
+    {
+        // Why MSL's Spice3.Internal.JFET is still in package.mo, which took a while to work out.
+        // It has a sibling package called Jfet, and ModelicaPackageSaver will not write two children
+        // whose names differ only in case as separate entries — so the formatter deliberately keeps
+        // both inline. Reporting them would be a finding whose fix moves nothing.
+        //
+        // That rule is coarser than it needs to be, since a package becomes a directory and a model
+        // becomes a .mo file and those two cannot collide. Backlog B244.
+        var findings = Analyze(Build([("Jfet", "P.mo", true), ("JFET", "P.mo", true)]));
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void AChildCalledPackage_IsNotReported()
+    {
+        // It would be written as package.mo, which is the file its parent already occupies.
+        Assert.Empty(Analyze(Build([("package", "P.mo", true)])));
     }
 
     [Fact]

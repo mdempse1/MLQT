@@ -40,6 +40,26 @@ public class StyleCheckingSettings
     public SortedDictionary<string, RuleSeverity> RuleSeverities { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Writes down what is currently implicit: every rule that is on by default and has no entry
+    /// gets one, at the severity it is running with.
+    ///
+    /// <para><b>Called before a repository's settings are saved</b>, because that file is committed
+    /// and read by people and by CI. A rule that is on because MLQT says so and is nowhere in the
+    /// file is a gate nobody reviewing the repository can see, and it moves under them if a later
+    /// version changes its mind about the default. Recording it makes the repository's own answer
+    /// explicit and stops it changing by upgrade (B244).</para>
+    ///
+    /// <para>It only ever adds. A rule switched off is already written as <c>Off</c>, and an
+    /// explicit severity is left exactly as it is.</para>
+    /// </summary>
+    public void RecordDefaults()
+    {
+        foreach (var rule in RuleCatalog.Configurable.Where(d => d.EnabledByDefault))
+            if (!RuleSeverities.ContainsKey(rule.Id))
+                RuleSeverities[rule.Id] = SeverityFor(rule.Id);
+    }
+
+    /// <summary>
     /// Settings with <b>every</b> rule off, including any that is on by default.
     ///
     /// <para><c>new StyleCheckingSettings()</c> used to mean this and no longer does: a rule marked

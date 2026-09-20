@@ -55,8 +55,8 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
                 ModelId = package.Id,
                 ElementPath = package.Definition.Name,
                 Message = splittable.Count == 1
-                    ? $"package {package.Definition.Name} is stored as a single file; its class '{splittable[0].Definition.Name}' could have a file of its own"
-                    : $"package {package.Definition.Name} is stored as a single file; its {splittable.Count} classes could each have a file of their own",
+                    ? $"package {package.Definition.Name} keeps '{splittable[0].Definition.Name}' inline; it could be stored in its own file"
+                    : $"package {package.Definition.Name} keeps {splittable.Count} classes inline; they could each be stored in their own file",
                 // The package as a whole. Finding lines are class-relative (see Finding.LineNumber),
                 // and the thing being reported is where the file boundary is, not a line in it.
                 LineNumber = 1
@@ -79,7 +79,11 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
         ModelNode package, IReadOnlyDictionary<string, List<ModelNode>> childrenByParent,
         Func<string, ModelNode?> byId)
     {
-        if (package.ClassType != "package")
+        // A class whose source could not be read at all is not something to report on, and it must
+        // not take the analysis down with it: this rule runs in every check because it is on by
+        // default, so one broken node would cost the whole library its findings rather than costing
+        // that class its own (B244).
+        if (package.ClassType != "package" || package.Definition is null)
             return [];
 
         // Only the class that owns the file (B243). A package nested inside another class's file is
@@ -95,17 +99,27 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
         if (!childrenByParent.TryGetValue(package.Id, out var children) || children.Count == 0)
             return [];
 
-        // Nothing to split: every child has to be inline whatever the repository's convention —
-        // replaceable, redeclare, inner and outer classes cannot be pulled out into a file of their
-        // own, so a package made only of those is correctly a single file.
-        var splittable = children.Where(c => c.CanBeStoredStandalone).ToList();
-        if (splittable.Count == 0)
-            return [];
+        // A class that cannot be stored standalone — replaceable, redeclare, inner, outer — has to
+        // live in its parent's file whatever the repository's convention, and so does one whose name
+        // is not unique among its siblings once case is ignored: two of them cannot both be a file
+        // on a case-insensitive filesystem. Same rule ModelicaPackageSaver writes by.
+        var nameCounts = children
+            .GroupBy(c => c.Definition.Name.ToLowerInvariant(), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-        // "Entirely in one file" — a package that has already been split, even partly, is a
-        // different situation and neither the rule's business nor the fix's. The comparison is on
-        // the file, not on the path: two classes in the same file share a file id.
-        return splittable.Any(c => !SharesFileWith(c, package)) ? [] : splittable;
+        // Every child that could have a file and does not — <b>not</b> "all of them, or none"
+        // (B243). That was the first reading, and a real library shows how wrong it is: MSL's
+        // Spice3.Internal has thirteen classes in their own files and eight more, JFET among them,
+        // still written into package.mo. A package half-way through being split is the ordinary
+        // shape of this drift, not an exception to it, and saying nothing about it is how a class
+        // stays put for years. The comparison is on the file, not the path: two classes in the same
+        // file share a file id.
+        return children
+            .Where(c => c.CanBeStoredStandalone)
+            .Where(c => nameCounts[c.Definition.Name.ToLowerInvariant()] == 1)
+            .Where(c => !string.Equals(c.Definition.Name, "package", StringComparison.OrdinalIgnoreCase))
+            .Where(c => SharesFileWith(c, package))
+            .ToList();
     }
 
     /// <summary>
@@ -127,7 +141,8 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
     /// <summary>Every model's direct children, keyed by parent id — the index the check needs.</summary>
     public static Dictionary<string, List<ModelNode>> ChildrenByParent(DirectedGraph graph) =>
         graph.ModelNodes
-            .Where(m => m is not null && !m.IsParseFailurePlaceholder && !string.IsNullOrEmpty(m.ParentModelName))
+            .Where(m => m is not null && m.Definition is not null
+                     && !m.IsParseFailurePlaceholder && !string.IsNullOrEmpty(m.ParentModelName))
             .GroupBy(m => m.ParentModelName!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 

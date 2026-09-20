@@ -127,6 +127,63 @@ public class DefaultOnRuleTests
     }
 
     [Fact]
+    public void RecordDefaults_WritesDownWhatWasImplicit()
+    {
+        // A settings file written before the rule existed does not mention it. The rule runs anyway,
+        // which is the intent — but the file then hides a gate from everyone reading the repository,
+        // and a user who opens the settings dialog, sees Warning and presses Apply is entitled to
+        // find it in the file afterwards (B244).
+        var settings = new StyleCheckingSettings();
+        Assert.False(settings.RuleSeverities.ContainsKey(Rule));
+
+        settings.RecordDefaults();
+
+        Assert.Equal(RuleSeverity.Warning, settings.RuleSeverities[Rule]);
+    }
+
+    [Fact]
+    public void RecordDefaults_LeavesADecisionAlone()
+    {
+        // It only ever adds. Turning the rule off, or setting it to Error, is the repository's
+        // answer and recording defaults must not overwrite it.
+        var off = new StyleCheckingSettings();
+        off.SetRuleEnabled(Rule, false);
+        off.RecordDefaults();
+        Assert.Equal(RuleSeverity.Off, off.RuleSeverities[Rule]);
+
+        var error = new StyleCheckingSettings();
+        error.SetRuleSeverity(Rule, RuleSeverity.Error);
+        error.RecordDefaults();
+        Assert.Equal(RuleSeverity.Error, error.RuleSeverities[Rule]);
+    }
+
+    [Fact]
+    public void RecordDefaults_TouchesNothingElse()
+    {
+        // Only the rules that are on without being asked for. A rule that is off by default stays
+        // absent, or every settings file would grow an entry for all forty of them.
+        var settings = new StyleCheckingSettings();
+
+        settings.RecordDefaults();
+
+        Assert.Equal([Rule], settings.RuleSeverities.Keys);
+    }
+
+    [Fact]
+    public void ASettingsFileWrittenBeforeTheRuleExisted_GainsItOnSave()
+    {
+        // End to end through the serializer, which is what the repository actually writes.
+        const string Legacy = """{ "RuleSeverities": { "MLQT.Doc.ClassDescription": "Warning" } }""";
+        var settings = JsonSerializer.Deserialize<StyleCheckingSettings>(Legacy)!;
+
+        settings.RecordDefaults();
+        var json = JsonSerializer.Serialize(settings);
+
+        Assert.Contains(Rule, json, StringComparison.Ordinal);
+        Assert.Contains(RuleIds.ClassDescription, json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ARepositoryWithNoSettingsStillCountsAsHavingARuleEnabled()
     {
         // HasAnyStyleRuleEnabled short-circuits the per-class checker, and it used to read the map's

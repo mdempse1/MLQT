@@ -620,6 +620,13 @@ public class RepositoryService : IRepositoryService
                 try
                 {
                     var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
+
+                    // A rule that is on by default is on whether or not the file mentions it, and a
+                    // file that does not mention it hides a gate from everyone reading the
+                    // repository. Writing it down here is what makes a saved settings file the whole
+                    // answer for that repository (B244).
+                    repo.StyleSettings?.RecordDefaults();
+
                     var json = JsonSerializer.Serialize(repo.StyleSettings, new JsonSerializerOptions { WriteIndented = true });
                     var settingsDir = Path.GetDirectoryName(settingsPath);
                     if (settingsDir != null && !Directory.Exists(settingsDir))
