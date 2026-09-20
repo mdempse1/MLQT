@@ -403,12 +403,20 @@ public partial class LibraryBrowser : IDisposable
         var expansionMs = step.ElapsedMilliseconds;
 
         // Only when it is worth reading. A tree refresh that costs nothing happens constantly.
+        //
+        // **"top level" is no longer time on this thread**, and the distinction matters because a
+        // number here used to mean a blocked window. `GetTopLevelModelsAsync` runs on the pool now
+        // and queues behind any other tree doing the same, so this figure is wall clock — waiting
+        // included — while the dispatcher is free. Every other step is still measured here, on the
+        // dispatcher, and those are the ones to worry about (B258).
         if (total.ElapsedMilliseconds >= 50)
         {
+            var onThisThread = annotateMs + parserErrorsMs + expansionMs;
             LoggingService.Debug(nameof(LibraryBrowser),
                 $"Tree refresh for '{Repository?.Name ?? "all"}' took {total.ElapsedMilliseconds}ms "
-                + $"(top level {topLevelMs}ms, annotate {annotateMs}ms, "
-                + $"parser errors {parserErrorsMs}ms, expansion {expansionMs}ms)");
+                + $"({onThisThread}ms of it on the UI thread: annotate {annotateMs}ms, "
+                + $"parser errors {parserErrorsMs}ms, expansion {expansionMs}ms; "
+                + $"top level {topLevelMs}ms awaited off it)");
         }
     }
 

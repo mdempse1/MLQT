@@ -875,44 +875,65 @@ public class LibraryDataService : ILibraryDataService
     /// the graph and parses other classes is what made an unrelated caller's
     /// <see cref="GetAllModels"/> wait 872ms.</para>
     /// </remarks>
-    public Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync() => Task.Run(() =>
+    public async Task<IReadOnlyList<ModelNode>> GetTopLevelModelsAsync()
     {
-        // Keyed by model id, because two libraries claiming the same top-level class are claiming
-        // the *same node object*. Adding it once per claiming library put the library in the tree
-        // twice, and — since preparing it for display stamps the library id onto the shared node —
-        // both copies ended up attributed to whichever library was processed last. That is why a
-        // library appeared twice under one repository and not at all under the other, and why which
-        // repository it landed in varied from one library to the next.
-        var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
-
-        lock (_lock)
+        // One preparer at a time. Every open tree asks for *all* top-level classes and filters to
+        // its own repository afterwards, so four repositories meant four passes over the same
+        // hundred-odd libraries — and because they run at the same moment, none of them finds the
+        // icons the others are rendering. Measured: four trees finishing on the same millisecond,
+        // each reporting ~1,420ms (B258). Queued instead, the first pass does the work and the rest
+        // find it done, which is the same wall clock for a quarter of the effort.
+        await _preparingTopLevel.WaitAsync();
+        try
         {
-            foreach (var library in _libraries)
+            return await Task.Run(() =>
             {
-                foreach (var modelId in library.TopLevelModelIds)
+                // Keyed by model id, because two libraries claiming the same top-level class are
+                // claiming the *same node object*. Adding it once per claiming library put the
+                // library in the tree twice, and — since preparing it for display stamps the
+                // library id onto the shared node — both copies ended up attributed to whichever
+                // library was processed last. That is why a library appeared twice under one
+                // repository and not at all under the other, and why which repository it landed in
+                // varied from one library to the next.
+                var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
+
+                lock (_lock)
                 {
-                    var model = _combinedGraph.GetNode<ModelNode>(modelId);
-                    if (model == null)
-                        continue;
+                    foreach (var library in _libraries)
+                    {
+                        foreach (var modelId in library.TopLevelModelIds)
+                        {
+                            var model = _combinedGraph.GetNode<ModelNode>(modelId);
+                            if (model == null)
+                                continue;
 
-                    // First claim wins unless a later library is the one that actually owns the node.
-                    if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
-                        continue;
+                            // First claim wins unless a later library is the one that actually owns the node.
+                            if (byModelId.TryGetValue(modelId, out var claimed) && !Owns(library, model))
+                                continue;
 
-                    byModelId[modelId] = (model, library);
+                            byModelId[modelId] = (model, library);
+                        }
+                    }
                 }
-            }
-        }
 
-        var items = new List<ModelNode>(byModelId.Count);
-        foreach (var (node, library) in byModelId.Values)
+                    var items = new List<ModelNode>(byModelId.Count);
+                    foreach (var (node, library) in byModelId.Values)
+                    {
+                        PrepareModelForDisplay(node, library);
+                        items.Add(node);
+                    }
+
+            return (IReadOnlyList<ModelNode>)items;
+            });
+        }
+        finally
         {
-            PrepareModelForDisplay(node, library);
-            items.Add(node);
+            _preparingTopLevel.Release();
         }
+    }
 
-        return (IReadOnlyList<ModelNode>)items;
-    });
+    // See GetTopLevelModelsAsync: concurrent trees would otherwise each render the same icons.
+    private readonly SemaphoreSlim _preparingTopLevel = new(1, 1);
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<ModelNode>> GetChildModelsAsync(ModelNode? parentNode)
