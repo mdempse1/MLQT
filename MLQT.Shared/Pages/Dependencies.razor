@@ -81,6 +81,26 @@
                     }
                 </MudStack>
 
+                @* The plot is skipped above a size where it shows nothing (B199). Measured, generation is
+                   not the problem below about a thousand nodes - 377ms at 250, 539ms at 1,000 - but
+                   legibility is: in a 400px panel, five hundred nodes are a couple of pixels each, so
+                   the cost buys a picture nobody can read. The list below it says the same thing and
+                   stays useful, and anyone who wants the plot can still ask for it. *@
+                @if (!ShouldPlot(_graphNodes.Count, _plotAnyway))
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3 mb-2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudText Typo="Typo.body1">
+                                @_graphNodes.Count classes is too many to plot legibly, so the list below
+                                is shown on its own.
+                            </MudText>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       OnClick="@(() => _plotAnyway = true)">Draw it anyway</MudButton>
+                        </MudStack>
+                    </MudAlert>
+                }
+                else
+                {
                 @* Network Graph Visualization using Cytoscape.js *@
                 <MudPaper Elevation="3" Class="pa-2" Style="background-color: var(--mud-palette-background); position: relative;">
                     <CytoscapeGraph @ref="_cytoscapeGraph"
@@ -117,6 +137,7 @@
                         }
                     }
                 </MudPaper>
+                }
 
                 @* List of impacted models *@
                 <MudTable T="ImpactDetail"

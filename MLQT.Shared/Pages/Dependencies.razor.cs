@@ -18,6 +18,32 @@ public partial class Dependencies : IAsyncDisposable
 
     // Graph component data (generic, not domain-specific)
     private CytoscapeGraph? _cytoscapeGraph;
+    /// <summary>
+    /// The largest graph worth plotting, above which the list is shown alone (B199).
+    ///
+    /// <para><b>Chosen for legibility, not for speed.</b> Measured in a real browser, generating the
+    /// plot costs 377ms at 250 nodes, 539ms at 1,000 and 2,149ms at 2,000 for a force-directed
+    /// layout — noticeable at the top end, but not what makes the picture useless. In a 400px panel
+    /// five hundred nodes are a couple of pixels each, so past that the cost buys something nobody
+    /// can read. The list below says the same thing and stays useful at any size.</para>
+    /// </summary>
+    internal const int PlotNodeLimit = 500;
+
+    /// <summary>Set by the user asking for the plot anyway; reset whenever the selection changes.</summary>
+    private bool _plotAnyway;
+
+    /// <summary>
+    /// Whether to draw the plot for a graph of <paramref name="nodeCount"/> nodes.
+    /// </summary>
+    /// <remarks>
+    /// A method so it can be tested, because the page itself cannot be: its initialisation runs the
+    /// analysis twice and asynchronously, so a rendered assertion is a race rather than a test.
+    /// <b>That leaves the markup that calls this uncovered</b> — the condition is one line in
+    /// <c>Dependencies.razor</c> and nothing fails if it is deleted.
+    /// </remarks>
+    internal static bool ShouldPlot(int nodeCount, bool askedForItAnyway) =>
+        askedForItAnyway || nodeCount <= PlotNodeLimit;
+
     private List<DiagramNode> _graphNodes = new();
     private List<DiagramEdge> _graphEdges = new();
     private string _selectedLayout = "cose";
@@ -99,6 +125,10 @@ public partial class Dependencies : IAsyncDisposable
         _graphNodes.Clear();
         _graphEdges.Clear();
         _searchString = string.Empty;
+
+        // A new selection is a new question, so an override asked for about the previous one does
+        // not carry into it — otherwise one "draw it anyway" turns the limit off for the session.
+        _plotAnyway = false;
 
         if (NavState.SelectedModelIDs.Count == 0)
         {

@@ -499,7 +499,7 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 
 ### WP4 — Performance, measured before it is touched
 
-**B190 ✅, B174 ✅, B184 ✅, B199, B235 ✅** · 5 items · M–L
+**B190 ✅, B174 ✅, B184 ✅, B199 ✅, B235 ✅** · 5 items · M–L · **complete 2026-09-20**
 
 **No change in this package without a measurement first.** The log at `%LocalAppData%/MLQT/*.log`
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;
@@ -623,8 +623,15 @@ reading code that looks expensive is not measuring it.
     the summary, `--min-coverage` and `--metrics` output. **Decide explicitly what a `--changed-from`
     run reports versus what it gates on**, and write that into `cli.md`, before touching the
     sequencing.
-- **B199** — a node-count threshold above which the plot is skipped in favour of the list, with an
-  override for a user who wants it anyway.
+- **B199 ✅** — a node-count threshold above which the plot is skipped in favour of the list, with
+  an override for a user who wants it anyway.
+
+  **✅ Done, and the threshold is measured.** A layout settles in 377ms at 250 nodes and 2,149ms at
+  2,000 — so cost bites only at the top end, and it is **legibility** that fails first: in a 400px
+  panel, five hundred nodes are a couple of pixels each. 500 it is. **The test is weaker than the
+  rest of this package**: a rendered assertion was attempted and abandoned because the page runs its
+  analysis twice, asynchronously, during initialisation, so the one line of markup that consults the
+  limit is uncovered. Recorded in the row rather than glossed.
 
 ### WP5 — External tools
 
