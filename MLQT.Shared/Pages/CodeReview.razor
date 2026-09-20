@@ -12,92 +12,128 @@
 <MudPaper Elevation="0" Class="mt-1 mlqt-page-fill">
     <MudStack Row="false" Style="gap:0px !important;">
         <MudStack Row="true">
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="View just this version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Article" Color="Color.Primary" Size="Size.Medium" 
+                    <MudIconButton Icon="@Icons.Material.Filled.Article" Color="Color.Primary" Size="Size.Small" 
                                 Variant="@(!_isDiffMode ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(false, _diffViewMode))"  />
                 </MudTooltip>
                 <MudTooltip Text="Side-by-side diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Compare" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.Compare" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySide ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySide))"  />
                 </MudTooltip>
                 <MudTooltip Text="Unified diff with HEAD version" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.Difference" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.Difference" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.Unified ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.Unified))"  />
                 </MudTooltip>
                 <MudTooltip Text="View both versions" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.VerticalSplit" Color="Color.Primary" Size="Size.Medium" Disabled="@(!_isModelModified)"
+                    <MudIconButton Icon="@Icons.Material.Filled.VerticalSplit" Color="Color.Primary" Size="Size.Small" Disabled="@(!_isModelModified)"
                                 Variant="@(_isDiffMode && _diffViewMode == DiffViewMode.SideBySideFull ? Variant.Filled : Variant.Outlined)" 
                                 OnClick="@(() => SetViewMode(true, DiffViewMode.SideBySideFull))"  />
                 </MudTooltip>
             </MudButtonGroup>
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="Show/Hide Annotations" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Variant="@(_showAnnotations ? Variant.Filled : Variant.Outlined)"
-                                OnClick="ToggleAnnotations" Size="Size.Medium" />
+                                OnClick="ToggleAnnotations" Size="Size.Small" />
                 </MudTooltip>
                 <MudTooltip Text="@(_isExcludedFromFormatting ? "Include in auto-formatting" : "Exclude from auto-formatting")" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.FormatClear" Color="@(_isExcludedFromFormatting ? Color.Warning : Color.Primary)"
                                 Variant="@(_isExcludedFromFormatting ? Variant.Filled : Variant.Outlined)"
-                                OnClick="ToggleFormattingExclusionAsync" Size="Size.Medium"
+                                OnClick="ToggleFormattingExclusionAsync" Size="Size.Small"
                                 Disabled="@(_currentModelNode == null || string.IsNullOrEmpty(_currentRepositoryId))" />
                 </MudTooltip>
             </MudButtonGroup>
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                 <MudTooltip Text="Run Style Checking on ALL classes" Arrow="true" Placement="Placement.Bottom">
                     <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Primary" Variant="Variant.Outlined" 
-                                OnClick="RunStyleCheckingAsync" Size="Size.Medium" />
+                                OnClick="RunStyleCheckingAsync" Size="Size.Small" />
                 </MudTooltip>
                 @if (!string.IsNullOrEmpty(_settings.Dymola.DymolaPath)) {
                     <MudTooltip Text="Check this class using Dymola" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
-                                    OnClick="CheckInDymola" Size="Size.Medium" />
+                                    OnClick="CheckInDymola" Size="Size.Small" />
                     </MudTooltip>
                 }
                 @if (!string.IsNullOrEmpty(_settings.OpenModelica.OmcPath)) {
                     <MudTooltip Text="Check this class using OpenModelica" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
-                                    OnClick="CheckInOpenModelica" Size="Size.Medium" />
+                                    OnClick="CheckInOpenModelica" Size="Size.Small" />
                     </MudTooltip>
                 }    
             </MudButtonGroup>
-            @* Into a class this one uses, with the back arrow beside the class name to return
-               (B197). Checking what a base class calls something meant finding it by hand. *@
-            <MudTooltip Text="@UsedClassesTooltip" Arrow="true" Placement="Placement.Bottom">
-                <MudMenu Icon="@Icons.Material.Filled.CallMade" Color="Color.Primary" Size="Size.Medium"
-                         Variant="Variant.Outlined" Dense="true" MaxHeight="400"
-                         Disabled="@(UsedClasses.Count == 0)" aria-label="Go to a class this one uses">
-                    @foreach (var used in UsedClasses)
-                    {
-                        <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))">@used.Id</MudMenuItem>
-                    }
-                </MudMenu>
-            </MudTooltip>
+            @* One navigation control, not three (B249). Into a class this one uses, and back out of
+               it — the arrows sit here rather than beside the class name so that the button's
+               tooltip names something the user can see, which is what was asked for.
+
+               **They are on this page only**, which B197 had decided against on purpose: every tab
+               moves the selection and the history is one history, so on Dependencies, External
+               Resources, Metrics and Settings there is now no way back. That is the cost of the
+               grouping and it was chosen knowingly; if it bites, the other direction is to move
+               this menu up beside the class name instead of bringing the arrows down. *@
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
+                <MudTooltip Text="@BackTooltip" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Primary" Size="Size.Small"
+                                Disabled="@(!NavState.CanGoBack)" OnClick="GoBack"
+                                aria-label="Back to the previous class" />
+                </MudTooltip>
+                <MudTooltip Text="Forward" Arrow="true" Placement="Placement.Bottom">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Primary" Size="Size.Small"
+                                Disabled="@(!NavState.CanGoForward)" OnClick="GoForward" aria-label="Forward" />
+                </MudTooltip>
+                <MudTooltip Text="@UsedClassesTooltip" Arrow="true" Placement="Placement.Bottom">
+                    <MudMenu Icon="@Icons.Material.Filled.CallMade" Color="Color.Primary" Size="Size.Small"
+                             Variant="Variant.Outlined" Dense="true" MaxHeight="400"
+                             Disabled="@(UsedClasses.Count == 0)" aria-label="Go to a class this one uses">
+                        @foreach (var used in UsedClasses)
+                        {
+                            <MudMenuItem OnClick="@(() => GoToUsedClass(used.Id))">@used.Id</MudMenuItem>
+                        }
+                    </MudMenu>
+                </MudTooltip>
+            </MudButtonGroup>
             <MudSpacer />
             @* Searching the class on screen (B176). Locating a parameter in a long class meant
                scrolling and reading; this finds it, counts the hits and steps through them. The
-               buttons wrap at both ends, so the last match steps to the first rather than stopping. *@
-            <MudTextField T="string" Value="@_codeSearch" ValueChanged="OnCodeSearchChanged"
-                Immediate="true" Placeholder="Find in code" Adornment="Adornment.Start"
-                AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
-                Class="mt-0" Style="max-width: 220px;" Typo="Typo.body1"
-                Disabled="@(_highlightedCode is null or { Count: 0 })" />
-            <MudText Typo="Typo.caption" Class="align-self-center" Style="min-width: 84px;">@CodeSearchStatus</MudText>
-            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Medium" OverrideStyles="false">
-                <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
-                        Size="Size.Medium" Disabled="@(_codeMatches.Count == 0)"
-                        OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
-                </MudTooltip>
-                <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
-                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
-                        Size="Size.Medium" Disabled="@(_codeMatches.Count == 0)"
-                        OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
-                </MudTooltip>
-            </MudButtonGroup>
+               buttons wrap at both ends, so the last match steps to the first rather than stopping.
+
+               One control, read as one (B248). The field, its count and its arrows sit in a stack
+               of their own with no gap, because they were being read as three separate controls
+               scattered along the toolbar. **The count was what separated them**: `min-width: 84px`
+               held that space open whether or not there was a count to put in it, so the usual
+               state of the toolbar — nothing searched for — was a 220px box, 84px of nothing, and
+               a pair of arrows. It now takes the room it needs when it has something to say. *@
+            @* No AlignItems here on purpose. Centring the children stops them stretching, and the
+               row's buttons are sized by stretching to it — so the two arrows came out 22px against
+               27px everywhere else, which is the defect B249 is about reintroduced by the fix for
+               B248. The caption centres itself. *@
+            <MudStack Row="true" Spacing="0" Class="mlqt-code-search">
+                <MudTextField T="string" Value="@_codeSearch" ValueChanged="OnCodeSearchChanged"
+                    Immediate="true" Placeholder="Find in code" Adornment="Adornment.Start"
+                    AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                    Class="mt-0" Style="max-width: 220px;" Typo="Typo.body1"
+                    Disabled="@(_highlightedCode is null or { Count: 0 })" />
+                @* Always rendered, and sized by what is in it. `min-width: 84px` held that space
+                   open whether or not there was a count to put in it, which is what separated the
+                   field from its arrows. An empty element takes no width, and app.css gives it
+                   margins only when it is not empty — so there is no condition here to get wrong
+                   and nothing to re-render when the count appears. *@
+                <MudText Typo="Typo.caption" Class="align-self-center mlqt-match-count">@CodeSearchStatus</MudText>
+                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
+                    <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
+                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)"
+                            OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
+                    </MudTooltip>
+                    <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
+                        <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
+                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)"
+                            OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
+                    </MudTooltip>
+                </MudButtonGroup>
+            </MudStack>
         </MudStack>
         @* A recovered class explains itself in the comment at the top of its own source. An alert
            here as well cost the page enough vertical space to push the findings table below the fold,

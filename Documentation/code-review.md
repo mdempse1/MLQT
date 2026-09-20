@@ -56,6 +56,27 @@ The diff view:
 | **Check using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools. |
 | **Check using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools. |
 
+### Moving between classes
+
+Three controls sit together on the toolbar, because they are one job:
+
+| Button | Icon | Description |
+|--------|------|-------------|
+| **Go to a class this one uses** | CallMade (↗) | Lists the classes the current one depends on; pick one to open it. Needs dependency analysis to have run — until it has, the button says so. |
+| **Back** | ArrowBack (←) | Returns to the class you came from. The tooltip names it, so you know before you press it. |
+| **Forward** | ArrowForward (→) | Undoes a **Back**. |
+
+**The history is shared across every tab** — selecting a class anywhere records it — but the arrows
+themselves are on the Code Review toolbar, so that is where you go back from.
+
+### Finding text in the class on screen
+
+The **Find in code** box at the right of the toolbar searches the class you are looking at, rather
+than the findings list. The count beside it says which match you are on and how many there are, and
+the arrows step through them, wrapping at both ends so the last match steps back to the first.
+
+The box is disabled until a class is open, and the count appears only once you have typed something.
+
 ### External Tool Checking
 
 When you click the Dymola or OpenModelica button:

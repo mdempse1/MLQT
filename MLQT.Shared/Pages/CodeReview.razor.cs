@@ -1472,7 +1472,18 @@ document.head.appendChild(style);
             ? "Run dependency analysis to see what this class uses"
             : UsedClasses.Count == 0
                 ? "This class uses nothing else"
-                : "Go to a class this one uses — the back arrow returns";
+                : "Go to a class this one uses — the back arrow beside this returns";
+
+    /// <summary>
+    /// Names the class the back button would return to, so the user knows before pressing it. A
+    /// plain "Back" says nothing after three or four moves, which is when it is actually wanted.
+    /// </summary>
+    private string BackTooltip =>
+        NavState.Back.Count == 0 ? "Back" : $"Back to {NavState.Back[0]}";
+
+    private void GoBack() => NavState.GoBack();
+
+    private void GoForward() => NavState.GoForward();
 
     /// <summary>
     /// Opens a class this one uses. Goes through <c>ChangeModelID</c> like every other way of
@@ -1561,9 +1572,21 @@ document.head.appendChild(style);
         }
     }
 
-    private string CodeSearchStatus => _codeSearch.Length == 0
-        ? ""
-        : _codeMatches.Count == 0 ? "no matches" : $"{_codeMatchIndex + 1} of {_codeMatches.Count}";
+    /// <summary>
+    /// What to show beside the find-in-code box: which match of how many, or that there are none.
+    ///
+    /// <para><b>Empty is a state, not a missing value.</b> The element that shows this is always
+    /// rendered and sizes to its content, so an empty string is what keeps the arrows against the
+    /// field when nothing has been searched for (B248). It used to hold 84px open regardless.</para>
+    /// </summary>
+    private string CodeSearchStatus =>
+        CodeSearchStatusText(_codeSearch, _codeMatches.Count, _codeMatchIndex);
+
+    /// <inheritdoc cref="CodeSearchStatus"/>
+    internal static string CodeSearchStatusText(string search, int matchCount, int matchIndex) =>
+        search.Length == 0
+            ? ""
+            : matchCount == 0 ? "no matches" : $"{matchIndex + 1} of {matchCount}";
 
     #endregion
 

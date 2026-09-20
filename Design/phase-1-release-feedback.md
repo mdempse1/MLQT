@@ -791,7 +791,7 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B250 ✅, B253 ✅, B254 ✅, B247 ✅, B248, B249, B233** · 7 items · S each · all from using it
+**B250 ✅, B253 ✅, B254 ✅, B247 ✅, B248 ✅, B249 ✅, B233** · 7 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
@@ -851,9 +851,29 @@ already have.
   four, and said search terms are "matched independently" when B187 made them AND. A page that
   grows a control per work package grows a documentation gap per work package unless somebody
   looks.
-- **B248** and **B249** are placement. They belong together because they are the same judgement made
-  twice — a control's parts scattered along a toolbar — and because moving the navigation arrows for
-  B249 is what makes its tooltip true.
+- **B248 ✅** and **B249 ✅** are placement. They belong together because they are the same judgement
+  made twice — a control's parts scattered along a toolbar — and because moving the navigation
+  arrows for B249 is what makes its tooltip true.
+
+  **✅ Done 2026-09-20, and taking them together earned its keep within the hour.** The fix for B248
+  put the find-in-code field, its count and its arrows in a stack of their own with
+  `AlignItems.Center` — which stops flex children stretching, and the toolbar's buttons are sized by
+  stretching to the row, so those two arrows came out 22px against 27px everywhere else. That is
+  **B249 reintroduced by the fix for B248**, and B249's own test is what caught it.
+
+  **The measurement contradicted B249's row**, which is the second time in this package: "Go to
+  class" was 32px where its neighbours were 44 — shorter, not larger — and the mismatch was specific
+  to `Size.Medium` on a `MudMenu`, which renders 32 where a `MudIconButton` renders 44. The user
+  chose to shrink the whole toolbar to `Size.Small`, which is CLAUDE.md's house style and what the
+  rest of the application already uses.
+
+  **Moving the arrows overturns B197, and costs something real.** The history is one history and
+  every tab moves the selection, so Dependencies, External Resources, Metrics and Settings now offer
+  no way back. That was raised before it was done and chosen knowingly; both `CurrentModelDisplay`
+  and the toolbar carry a note saying so and naming the other direction — bringing the used-classes
+  menu up beside the class name — if it turns out to bite. **A documented decision is a reason to
+  ask, not a reason to refuse**, and writing the cost down where the next reader will find it is
+  what makes reversing it cheap.
 - **B233** was outside the phase until 2026-09-20, on the grounds that nobody had said the inline
   annotations mattered. Somebody has: a `connect(...)` equation carries its annotation on the same
   line, so hiding annotations does nothing to an equation section, which is where the noise is. The

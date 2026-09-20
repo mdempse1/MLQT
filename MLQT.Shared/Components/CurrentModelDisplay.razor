@@ -1,15 +1,13 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-    @* The way back through the classes visited (B197). Beside the name of the class they act on,
-       rather than on one page's toolbar, because every tab moves the selection and the history is
-       one history. *@
-    <MudTooltip Text="@BackTooltip" Placement="Placement.Bottom">
-        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" Color="Color.Primary"
-                       Disabled="@(!NavState.CanGoBack)" OnClick="GoBack" aria-label="Back to the previous class" />
-    </MudTooltip>
-    <MudTooltip Text="Forward" Placement="Placement.Bottom">
-        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small" Color="Color.Primary"
-                       Disabled="@(!NavState.CanGoForward)" OnClick="GoForward" aria-label="Forward" />
-    </MudTooltip>
+    @* The back and forward arrows used to be here (B197), beside the name of the class they act on,
+       because every tab moves the selection and the history is one history. They moved to the Code
+       Review toolbar for B249, so that the "go to a class this one uses" button's tooltip names an
+       arrow the user can actually see.
+
+       **What that costs, stated plainly**: the other four tabs move the selection and no longer
+       offer a way back. The history itself is still shared — `AppState` owns it — so returning to
+       Code Review finds it intact. If that turns out to be the wrong trade, the other direction is
+       to bring the used-classes menu up here rather than send the arrows down. *@
     <MudTextField @bind-Value="_currentModelName" Label="Current class:" Variant="Variant.Outlined" ReadOnly="true" Margin="Margin.Dense" Typo="Typo.body1" ShrinkLabel="true"/>
     @if (!string.IsNullOrEmpty(_currentModelFileName))
     {

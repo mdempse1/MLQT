@@ -74,6 +74,90 @@ public class CodeReviewToolbarJourney(TestHostFixture host) : IDisposable
         await page.WaitForTimeoutAsync(600);
     }
 
+    /// <summary>
+    /// B249 — one size across the toolbar. Measured, "Go to class" was 32px tall where everything
+    /// beside it was 44, which is what "a different size from the rest" turned out to mean; the
+    /// whole row then went to <c>Size.Small</c>, which is what CLAUDE.md asks for and what the rest
+    /// of the application already uses.
+    ///
+    /// <para>Asserted as agreement rather than as a number. A test naming 34px would fail on a
+    /// MudBlazor upgrade that changed nothing anyone could see, and would say nothing about the
+    /// defect, which was one control disagreeing with its neighbours.</para>
+    /// </summary>
+    [Fact]
+    public async Task EveryToolbarButtonIsTheSameHeight()
+    {
+        var page = await OpenWithFindingsAsync();
+
+        var heights = await page.EvaluateAsync<int[]>(
+            @"() => [...document.querySelectorAll('.mlqt-page-fill > .d-flex > .d-flex button')]
+                     .map(b => Math.round(b.getBoundingClientRect().height))");
+
+        Assert.True(heights.Length >= 10, $"expected the whole toolbar; found {heights.Length} buttons");
+
+        var labels = await page.EvaluateAsync<string[]>(
+            @"() => [...document.querySelectorAll('.mlqt-page-fill > .d-flex > .d-flex button')]
+                     .map(b => `${b.getAttribute('aria-label') || b.className.split(' ').slice(0,3).join('.')}`
+                               + `=${Math.round(b.getBoundingClientRect().height)}`)");
+
+        Assert.True(heights.Distinct().Count() == 1,
+            "the toolbar has more than one button height: " + string.Join(", ", labels));
+    }
+
+    /// <summary>
+    /// B249 — the navigation arrows are on the toolbar, beside the button whose tooltip names them.
+    ///
+    /// <para>This overturns B197, which put them beside the class name because the history is one
+    /// history and every tab moves the selection. Asserted here so that the decision is written
+    /// down somewhere that fails if it is quietly reverted, in either direction.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheBackArrowIsBesideTheButtonThatNamesIt()
+    {
+        var page = await OpenWithFindingsAsync();
+
+        var back = page.GetByLabel("Back to the previous class").First;
+        var uses = page.GetByLabel("Go to a class this one uses").First;
+
+        await Assertions.Expect(back).ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        var backBox = await back.BoundingBoxAsync();
+        var usesBox = await uses.BoundingBoxAsync();
+        Assert.NotNull(backBox);
+        Assert.NotNull(usesBox);
+
+        // Same row, and close enough together to read as one control. The button group puts them
+        // edge to edge, so anything beyond a couple of buttons' width means they have drifted apart
+        // again — which is the complaint, not the pixel count.
+        Assert.Equal(backBox!.Y, usesBox!.Y, tolerance: 2);
+        Assert.True(usesBox.X - backBox.X < 160,
+            $"the arrows and the used-classes button should read as one control: {backBox.X} vs {usesBox.X}");
+    }
+
+    /// <summary>
+    /// B248 — the find-in-code field, its match count and its arrows are one control.
+    ///
+    /// <para>What separated them was the count: it reserved 84px whether or not it had anything to
+    /// say, so the toolbar's resting state — nothing searched for — was a box, a gap, and a pair of
+    /// arrows that looked unrelated to either.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheCodeSearchFieldItsCountAndItsArrowsSitTogether()
+    {
+        var page = await OpenWithFindingsAsync();
+
+        var gap = await page.EvaluateAsync<int>(@"() => {
+            const field = document.querySelector('.mlqt-code-search input[placeholder=""Find in code""]');
+            const prev = document.querySelector('.mlqt-code-search [aria-label=""Previous match""]');
+            const f = field.closest('.mud-input-control').getBoundingClientRect();
+            return Math.round(prev.getBoundingClientRect().left - f.right);
+        }");
+
+        // With nothing searched for there is no count to show, so the arrows follow the field
+        // directly. Before, 84px of reserved-and-empty space sat between them.
+        Assert.True(gap < 24, $"the arrows sit {gap}px from the field, which reads as a separate control");
+    }
+
     [Fact]
     public async Task TheHeadingCountsWhatTheSearchLeft()
     {

@@ -188,6 +188,20 @@ body * {
     min-height: 0;
 }
 
+/* ── The find-in-code match count ────────────────────────────────────────────────
+   Part of the control it belongs to, and nothing when there is nothing to say.
+
+   It used to reserve `min-width: 84px` whether or not it held a count, so the toolbar's resting
+   state — nothing searched for — was a 220px field, 84px of nothing, and a pair of arrows that
+   read as a separate control from either (B248). Sizing to its content closes that, and `:empty`
+   keeps the margins off until there is something between them. A conditional in the markup would
+   do the same and give something else to get wrong. */
+
+.mlqt-match-count:not(:empty) {
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
 /* ── The findings pane on the Code Review page ───────────────────────────────────
    One scrollbar, on the rows, and not a second one around the whole thing.
 
