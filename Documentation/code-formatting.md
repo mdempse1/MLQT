@@ -187,7 +187,22 @@ your repository keeps packages single-file on purpose.
 
 A file that version control reports as newly **Added** is never removed by the tidy-up that follows a save, so a class you have created but not yet committed cannot be lost to it.
 
-## How files end
+## Line endings and how files end
+
+**A file is written back with the line endings it already had.** A Windows checkout is CRLF, a Linux
+one is LF, and formatting either leaves it as it was — the same rule MLQT applies to a file's
+character encoding, and for the same reason: how your files are stored is your repository's business,
+not the formatter's.
+
+This was not always true, and the symptom was confusing enough to be worth naming. Formatting used to
+write LF whatever the file was, so on Windows **every file in the library showed as modified while
+`git diff` reported no differences at all**. Both were right: with `core.autocrlf=true` git converts
+CRLF away before comparing, so the command line saw nothing, while MLQT compares the bytes and saw
+every file change. If you are upgrading from a version before this was fixed and your working copy is
+full of files with no visible differences, discard them — a fresh format will leave the library
+alone.
+
+### How files end
 
 Every `.mo` and `package.order` file MLQT writes ends with a newline, whichever path wrote it. This matters more than it sounds: the two paths used to disagree, so a library formatted incrementally and later put through **Format All Files** came back with every file modified and nothing changed in any of them — a commit of thousands of empty diffs with any real change buried inside it.
 

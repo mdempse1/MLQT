@@ -159,6 +159,37 @@ public class FinalNewlineTests : IDisposable
     }
 
     [Fact]
+    public async Task ACrlfLibraryIsUnchangedByFormattingIt()
+    {
+        // B251's property, at the level a user meets it. A library checked out on Windows is CRLF
+        // throughout, and formatting it used to rewrite every line of every file as LF — invisible
+        // to `git diff`, which cleans CRLF away before comparing, and reported by MLQT's own status,
+        // which compares the bytes. Measured over the Modelica Standard Library: 5,682 files, and
+        // the only one that changed was a file with no final newline, which gained one (B236).
+        // Built with char codes so this test does not depend on how this source file is stored.
+        var lf = new string([(char)10]);
+        var crlf = new string([(char)13, (char)10]);
+
+        var lib = WriteLibrary("crlf");
+        foreach (var file in Directory.GetFiles(lib))
+            File.WriteAllText(file, File.ReadAllText(file).Replace(lf, crlf));
+
+        // Formatted once to settle - the first save adds the within clause, which is a real change
+        // to this fixture and not the property under test - then formatted again and compared.
+        // "An already formatted library does not change" is what a user has, and what broke.
+        await FullSaveAsync(lib);
+        var before = Directory.GetFiles(lib).ToDictionary(f => f, File.ReadAllBytes);
+
+        await FullSaveAsync(lib);
+
+        foreach (var (path, bytes) in before)
+            Assert.Equal(bytes, File.ReadAllBytes(path));
+
+        // ...and it really is CRLF, so the comparison above means something.
+        Assert.Contains(crlf, File.ReadAllText(Path.Combine(lib, "M.mo")));
+    }
+
+    [Fact]
     public void AnEmptyFile_StaysEmpty()
     {
         // package.order for a package with no children is written as empty, and a file holding one

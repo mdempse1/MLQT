@@ -192,9 +192,18 @@ public class ModelicaPackageSaverTests : IDisposable
         var written = ModelicaFileEncoding.ReadAllTextOnly(
             result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));
 
-        // The trailing newline is the file's, not the class's — see the test above.
-        Assert.Equal(TwoSections + "\n", WithinClause.Strip(written));
+        // The body is untouched, and the file ends with a newline in its own style — which for this
+        // fixture is CRLF, because the raw string literal above carries the endings of the test file
+        // it is written in. Comparing with the endings normalised keeps this test about the
+        // exclusion rather than about how the test file happens to be stored (B251).
+        Assert.Equal(Lf(TwoSections) + "\n", Lf(WithinClause.Strip(written)));
+
+        // ...and uniformly: a file with one line ending among the others is what B251 was about.
+        Assert.DoesNotContain('\n', written.Replace("\r\n", ""));
     }
+
+    /// <summary>Line endings normalised, so a comparison is about the text and not about them.</summary>
+    private static string Lf(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
 
     [Fact]
     public void SaveLibraryToDirectoryWithResult_DoesReformatAModelThatIsNotExcluded()
