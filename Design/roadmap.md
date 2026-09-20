@@ -72,7 +72,7 @@ with first and separately** — `nightly-webkit.yml` was triggered by hand on 20
 run at all, and passed with 57 WebKit journeys executed and none skipped.
 
 **The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
-into work packages by shared root cause rather than by area (WP0–WP12; WP0, WP1, WP2, WP3 and WP8 are done), and records the eleven root causes established while planning — two of which change what the
+into work packages by shared root cause rather than by area (WP0–WP12; WP0, WP1, WP2, WP3, WP8 and WP11 are done), and records the eleven root causes established while planning — two of which change what the
 fix is.
 
 The phase has grown since: **B204–B212** while fixing and confirming the first set, **B213–B218**
@@ -82,9 +82,10 @@ had just shipped, which is the more useful half.
 
 **B233 was outside the phase until 2026-09-20**, when using the feature showed the case it leaves
 behind is the common one: a `connect(...)` equation carries its annotation on the same line, so
-hiding annotations changes nothing in an equation section. It is now in WP11. What follows is the
-reasoning that put it outside, which still describes the work — only the measurement has moved from
-"what fraction of annotations" to "what fraction of equation lines".
+hiding annotations changes nothing in an equation section. **✅ Shipped the same day in WP11**, and
+the measurement that decided it is worth keeping: over 8,367 files, 31.6% of non-blank
+equation-section lines carry an annotation and 62% of those were left on screen. What follows is the
+reasoning that put it outside the phase, which the numbers overturned.
 
 **B233** — an annotation sharing a line with real
 code survives "hide annotations", because `ElisionFinder` removes a construct as a unit or not at
