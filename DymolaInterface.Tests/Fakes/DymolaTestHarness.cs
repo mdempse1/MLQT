@@ -36,7 +36,10 @@ public sealed class DymolaTestHarness : IDisposable
         var existing = (HttpClient?)clientField.GetValue(Dymola);
         existing?.Dispose();
 
-        clientField.SetValue(Dymola, new HttpClient(Handler) { Timeout = TimeSpan.FromSeconds(30) });
+        // No client-wide limit, matching the client the constructor builds. A cap here would
+        // silently bound every test below it, so the suite could not express a command that
+        // runs longer than the cap - the very thing CommandTimeout exists to allow.
+        clientField.SetValue(Dymola, new HttpClient(Handler) { Timeout = Timeout.InfiniteTimeSpan });
         offlineField.SetValue(Dymola, false);
 
         // Clear any captures from the initial constructor ping (there won't be

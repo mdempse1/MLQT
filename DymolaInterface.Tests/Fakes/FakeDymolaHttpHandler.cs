@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -36,6 +37,13 @@ public sealed class FakeDymolaHttpHandler : HttpMessageHandler
     /// </summary>
     public TimeSpan ResponseDelay { get; set; } = TimeSpan.Zero;
 
+    /// <summary>
+    /// Answer with this id instead of the request's own, standing in for the late reply to a
+    /// command the caller already gave up on. Null - the default - echoes the request's id,
+    /// which is what a real Dymola does.
+    /// </summary>
+    public int? ResponseIdOverride { get; set; }
+
     public IReadOnlyList<CapturedRequest> Requests => _requests;
 
     public CapturedRequest LastRequest => _requests[^1];
@@ -71,8 +79,43 @@ public sealed class FakeDymolaHttpHandler : HttpMessageHandler
 
         return new HttpResponseMessage(StatusCode)
         {
-            Content = new StringContent(ResponseBody, Encoding.UTF8, "application/json"),
+            Content = new StringContent(WithId(ResponseBody, ResponseIdOverride ?? id), Encoding.UTF8, "application/json"),
         };
+    }
+
+    /// <summary>
+    /// Stamp the answer with <paramref name="id"/>, as Dymola does: the canned bodies tests set
+    /// carry a fixed id, and the interface discards a reply whose id is not the one it sent.
+    /// A body that is not a JSON object is passed through untouched.
+    /// </summary>
+    private static string WithId(string body, int id)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return body;
+
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in doc.RootElement.EnumerateObject())
+                {
+                    if (property.NameEquals("id"))
+                        continue;
+                    property.WriteTo(writer);
+                }
+                writer.WriteNumber("id", id);
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(buffer.WrittenSpan);
+        }
+        catch (JsonException)
+        {
+            return body;
+        }
     }
 }
 

@@ -144,7 +144,10 @@ await dymola.SetVariableAsync("myVariable", 42.0);
 - `IsOfflineMode()` - Check if in offline mode
 - `SetOfflineMode(bool)` - Enable/disable offline mode
 - `ProcessId` - OS process id of the Dymola this interface started; `null` when it attached to one started elsewhere, after `Detach()`, or once that process has exited
-- `CommandTimeout` - How long one command may run before the call gives up (default `DefaultCommandTimeout`, five minutes); read afresh for every command, so it can be raised around a single long simulation and restored afterwards
+- `OwnsProcess` - True while this interface owns a still-running Dymola that it started itself
+- `Detach()` - Give up ownership without stopping Dymola, so disposing the interface leaves it running
+- `CommandTimeout` - Default limit for one command before the call gives up (default `DefaultCommandTimeout`, five minutes; at most `MaxCommandTimeout`, or `Timeout.InfiniteTimeSpan` for no limit), read afresh for every command
+- Per-call `timeout` - `SimulateModelAsync`, `TranslateModelAsync`, `TranslateModelFMUAsync`, `CheckModelAsync`, `LinearizeModelAsync`, `RunScriptAsync` and `ExecuteCommandAsync` take an optional `TimeSpan?` that replaces `CommandTimeout` for that call alone. Prefer it wherever one interface is shared: the property is a plain field, so two callers raising and restoring it race
 
 ### Model Operations
 - `CheckModelAsync(problem, simulate, constraint)` - Check a model
