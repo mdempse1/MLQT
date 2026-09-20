@@ -779,7 +779,7 @@ is mistaken for its enforcement.
 
 ### WP11 — Code Review, second pass
 
-**B233, B247, B248, B249, B250** · 5 items · S each · all from using it
+**B250, B253, B247, B248, B249, B233** · 6 items · S each · all from using it
 
 Everything here was reported by someone working in the page rather than found by reading it, which is
 why they are together: WP2 rebuilt what the Code Review page *shows*, and this is what a fortnight of
@@ -789,6 +789,10 @@ already have.
 - **B250 first** — a page that scrolls as a whole, taking the class name with it, is the one of these
   that makes the page harder to use rather than merely rougher. It is the double-scrollbar shape one
   level out, and `ResizablePanesJourney` is already driving the splitter that provokes it.
+- **B253** next, and it is half done: the toggle was running a whole-working-copy VCS query on the
+  UI thread, which is removed, but the log shows a gap the removal may not account for — so the
+  button is timed per step and the next click says where the rest of it is. **Read the log before
+  changing anything else there.**
 - **B247** (how many findings are showing) is the smallest and repays the most: three filters now
   narrow that table and nothing says what they did.
 - **B248** and **B249** are placement. They belong together because they are the same judgement made

@@ -488,16 +488,31 @@ public partial class CodeReview : IAsyncDisposable
 
         var modelId = _currentModelNode.Id;
         _togglingExclusion = true;
+
+        // Timed per step, because the first attempt at explaining why this button took ten
+        // seconds was a guess. The log already carries the write and the reload, and they were
+        // under a millisecond; what was missing was everything after them (B253).
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = 0L;
+        void Step(string what)
+        {
+            LoggingService.Debug("CodeReview",
+                $"  exclusion {what}: {sw.ElapsedMilliseconds - last}ms (total {sw.ElapsedMilliseconds}ms)");
+            last = sw.ElapsedMilliseconds;
+        }
+
         try
         {
             if (_isExcludedFromFormatting)
             {
                 if (!await WriteFormattingOptOutAsync(target, add: false))
                     return;
+                Step("remove annotation");
 
                 // The list entry too: a class excluded before B175, or one carrying both.
                 repository.StyleSettings.FormattingExcludedModels.Remove(modelId);
                 await RepositoryService.SaveRepositorySettingsAsync();
+                Step("save settings");
             }
             else
             {
@@ -507,7 +522,9 @@ public partial class CodeReview : IAsyncDisposable
                 if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
                 {
                     await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+                    Step("revert");
                     await LibraryDataService.ReloadFileAsync(target.FilePath);
+                    Step("reload after revert");
                     _currentModelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
 
                     // The reverted file is what the annotation has to be spliced into.
@@ -518,15 +535,27 @@ public partial class CodeReview : IAsyncDisposable
 
                 if (!await WriteFormattingOptOutAsync(target, add: true))
                     return;
+                Step("write annotation");
             }
 
             // Re-fetched because saving the file reloads it, which replaces the node.
             var reloaded = LibraryDataService.GetModelById(modelId) ?? target.Node;
             _currentModelNode = reloaded;
             _isExcludedFromFormatting = FormattingExclusion.Excludes(reloaded, repository.StyleSettings);
+            Step("re-read exclusion state");
 
-            CheckModelVcsStatus();
+            // Not CheckModelVcsStatus() directly: it asks the VCS for the whole working copy, and
+            // the write above has just invalidated the cached answer — so on a library the size of
+            // MSL it is a scan of thousands of files, and calling it here ran that on the UI thread.
+            // The button took about ten seconds to come back on a 172-line file, of which the write
+            // and the reload were under a millisecond (B253).
+            //
+            // OnModelSelected runs the same check in the background, as every other path on this
+            // page does, and updates the toolbar when it finishes. The exclusion state is already
+            // set above, so the button itself flips immediately.
             OnModelSelected();
+
+            Step("re-render kicked off");
 
             Snackbar.Add(
                 _isExcludedFromFormatting
