@@ -350,12 +350,25 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
-    /// Refreshes the top-level tree items from the LibraryDataService.
-    /// Preserves the expansion state of previously expanded nodes.
+    /// Refreshes the top-level tree items from the LibraryDataService, preserving the expansion
+    /// state of previously expanded nodes — and times each step.
+    ///
+    /// <para><b>The timing is here because reading did not settle it.</b> Startup stutter was
+    /// reported against this path and three plausible causes turned out to be already fixed — the
+    /// bulk-load notifications are suppressed to one, the working-copy query is off-thread, and the
+    /// tree itself is only top-level. Everything below runs on the dispatcher, which is also the
+    /// desktop host's window message pump, so what is wanted is the one that costs tens of
+    /// milliseconds and not a fourth guess. B253 was found this way: time the steps and let the next
+    /// run say which.</para>
     /// </summary>
     private async Task RefreshTreeItems()
     {
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        var step = System.Diagnostics.Stopwatch.StartNew();
+
         var allItems = ToTreeItems(await LibraryDataService.GetTopLevelModelsAsync());
+        var topLevelMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         if (Repository != null)
         {
@@ -372,15 +385,29 @@ public partial class LibraryBrowser : IDisposable
 
         // Annotate items with VCS status indicators
         AnnotateVcsStatus(TreeItems);
+        var annotateMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         // Compute which parent packages contain descendants with parser errors so the
         // warning icon bubbles up the tree and the user can find the problem model.
         RefreshDescendantParserErrors();
+        var parserErrorsMs = step.ElapsedMilliseconds;
+        step.Restart();
 
         // Restore expansion state for previously expanded nodes, materialising their children so the
         // rebuilt tree renders a consistent expanded state (icon + children) rather than an "expanded"
         // node with null children that MudTreeView won't auto-load after a programmatic rebuild.
         await RestoreExpansionStateAsync(TreeItems);
+        var expansionMs = step.ElapsedMilliseconds;
+
+        // Only when it is worth reading. A tree refresh that costs nothing happens constantly.
+        if (total.ElapsedMilliseconds >= 50)
+        {
+            LoggingService.Debug(nameof(LibraryBrowser),
+                $"Tree refresh for '{Repository?.Name ?? "all"}' took {total.ElapsedMilliseconds}ms "
+                + $"(top level {topLevelMs}ms, annotate {annotateMs}ms, "
+                + $"parser errors {parserErrorsMs}ms, expansion {expansionMs}ms)");
+        }
     }
 
     /// <summary>
