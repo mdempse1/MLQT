@@ -2000,6 +2000,13 @@ document.head.appendChild(style);
     }
 
     /// <summary>
+    /// How long the scroll position is worth waiting for. Remembering where the user was looking is
+    /// a courtesy; making them wait for it is not, and this call has been measured taking eleven
+    /// seconds while the file write it follows took under a millisecond (B253). Past this, the
+    /// re-render lands at the top and the edit completes.
+    /// </summary>
+    private static readonly TimeSpan ScrollCaptureBudget = TimeSpan.FromMilliseconds(250);
+    /// <summary>
     /// Remembers where the user is looking, so the re-render that follows an edit to the open file
     /// puts them back rather than at the top of the class.
     ///
@@ -2012,18 +2019,31 @@ document.head.appendChild(style);
     /// moving what is above it: a correction swaps one word, and an <c>__MLQT</c> annotation is
     /// written at the end of the class.</para>
     /// </summary>
+
     private async Task CaptureScrollForReloadAsync()
     {
+        var timer = new CancellationTokenSource(ScrollCaptureBudget);
+        var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var offsets = await JSRuntime.InvokeAsync<double[]>("spellCheck.getScroll", ".code-viewer");
+            var offsets = await JSRuntime.InvokeAsync<double[]>(
+                "spellCheck.getScroll", timer.Token, ".code-viewer");
             _pendingScroll = offsets is { Length: >= 2 } ? (offsets[0], offsets[1]) : null;
             _scrollBaselineCode = _highlightedCode;
         }
         catch (Exception)
         {
-            // No view to read (not rendered yet, or torn down) — land wherever the re-render lands.
+            // No view to read (not rendered yet, or torn down), or it did not answer in time — land
+            // wherever the re-render lands.
             _pendingScroll = null;
+        }
+        finally
+        {
+            timer.Dispose();
+            if (started.ElapsedMilliseconds > 50)
+                LoggingService.Debug("CodeReview",
+                    $"  scroll capture took {started.ElapsedMilliseconds}ms"
+                    + (_pendingScroll is null ? " and gave up" : ""));
         }
     }
 
