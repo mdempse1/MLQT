@@ -499,7 +499,7 @@ new id needs its catalogue row, its layout row and its guard assertion in the sa
 
 ### WP4 — Performance, measured before it is touched
 
-**B190, B174 ✅, B184, B199, B235 ✅** · 5 items · M–L
+**B190 ✅, B174 ✅, B184, B199, B235 ✅** · 5 items · M–L
 
 **No change in this package without a measurement first.** The log at `%LocalAppData%/MLQT/*.log`
 holds weeks of timestamped phase durations and `mlqt check --timings` prints the per-phase breakdown;
@@ -581,7 +581,24 @@ reading code that looks expensive is not measuring it.
 
   **Parse is now the largest remaining phase on Buildings, at 43%**, which is where B235 stops being
   premature and becomes the next thing to take.
-- **B190** — confirm the freeze still happens before investigating it. It predates several fixes.
+- **B190 ✅** — confirm the freeze still happens before investigating it. It predates several fixes.
+
+  **✅ And it does not**, which is the whole value of asking first. The user ran it and reported
+  something narrower and far more diagnosable: during style checking the window stops following the
+  mouse and jumps to where it was dropped. On Windows that is a message pump that is not running,
+  and the desktop host runs its pump on the thread Blazor renders on.
+
+  **What was on that thread**: a check delivers findings a class at a time — 1,397 batches for MSL
+  on five rules, median size two — and every batch raised `OnLogMessagesChanged`, each raise
+  costing a copy of the whole findings list, a sort of it, a scan for misspellings and a full
+  re-render. O(batches × findings) on the one thread that has to stay free. Coalesced now: first
+  change immediate, the rest collapsed into one trailing announcement, clearing still immediate.
+
+  **One of the costs was introduced the same morning, by B247.** Adding the filtered count to the
+  findings heading put another full pass — with a string split per element — on every render. It is
+  now taken only when a filter is set. Worth stating plainly: a per-render cost is invisible in the
+  work package that adds it and expensive in the one that measures it, and this package is where
+  that shows up.
 - **B184** is the largest available win on CI check time and the most delicate change in the phase.
   `ChangedModelResolver.Resolve` currently runs **after** `load.Findings` is fully computed
   (`MLQT.Cli/CheckRunner.cs:129`), so resolution has to move ahead of the check. Two traps found

@@ -1696,9 +1696,19 @@ document.head.appendChild(style);
             var all = CodeReviewService.LogMessages;
 
             // The same predicate the table filters by, so the number in the heading is the number of
-            // rows and cannot drift from it (B247). One more pass over the findings than before —
-            // affordable because the table already makes two, ordering them and then filtering them.
-            var shown = all.Count(FilterFunc1);
+            // rows and cannot drift from it (B247).
+            //
+            // **Only walked when something is actually narrowing the list.** This runs on every
+            // render, and a check re-renders this page for each batch of findings it produces, so an
+            // unconditional pass over tens of thousands of findings is a cost paid thousands of
+            // times for a number that has not moved (B190). With no filter set the answer is the
+            // count itself.
+            var filtered = ShowChangesOnly
+                || _searchString.Length > 0
+                || _ruleFilter is { Length: > 0 }
+                || (FindingsScopeAllModels && NavState.ModelID.Length > 0);
+
+            var shown = filtered ? all.Count(FilterFunc1) : all.Count;
 
             return FindingsHeadingText(
                 shown,
