@@ -997,7 +997,7 @@ complete because the measurement agreed.
 
 ### WP9 — The test debt deliberately left
 
-**B267 ✅, B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
+**B267 ✅, B228 ✅, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
 and **B237** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
 out of order because of that, four weeks before the date it would have fired on
 
@@ -1022,10 +1022,17 @@ single-project path and uses the suite it was started from: *Analyzing 1 test pr
 tests rather than 5,790, and a score in 2m32s where it had been aborting after 3m30s. **The rest
 of this package is now checkable**, which is what it was holding up.
 
-**B228 next, because it is small and finishable.** Four survivors in `ModelicaFileEncoding`, of
+**B228 ✅, and it was small and finishable.** Four survivors in `ModelicaFileEncoding`, of
 which the real one drops a byte-order mark from a file MLQT was asked to preserve. An afternoon,
 and it settles whether the encoding round trip — which CLAUDE.md singles out as progressive
 corruption when it goes wrong — holds under its own tests rather than under inspection.
+
+**The first thing it settled was that the row was out of date**, which is what re-reading the
+survivors with B267's fixed tool showed: two of the four named were already dead or misread, and
+the real gap was one line further in. `DominantNewline`'s counting loop had **no coverage at
+all** - nothing tested `ForFile` directly, only through the encoding tests, which never vary the
+line endings. 36 survivors before, 26 after. **Read the survivors, not the row about them**: a
+backlog entry written from an audit is a snapshot, and the tool is the source.
 
 **B229 then, because it is the largest gap and the reason is structural.** 11% of covered mutants
 killed in each of the two external-tool services, and they are the only code in the solution whose
