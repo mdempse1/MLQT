@@ -30,10 +30,17 @@ public static class DictionaryScope
     public static Repository? RepositoryForModel(
         ILibraryDataService libraries, IRepositoryService repositories, string modelId)
     {
-        // A class can be in more than one loaded library — a library checked out in a repository and
-        // the vendor's copy of the same library loaded for reference. Take the first that resolves to
-        // a repository rather than the first that contains the id: whichever happens to be loaded
-        // first should not decide whether the user can accept a word.
+        // A class can be in more than one loaded library — one checked out in a repository and the
+        // vendor's copy of the same library loaded for reference — so which one owns it is
+        // ILibraryDataService's question, not a search of every library's ModelIds. This used to
+        // take the first that resolved to a repository, which is only half of it: both of them do,
+        // and whichever load finished first decided whether the user could accept a word.
+        var owner = libraries.GetOwningLibrary(modelId);
+        if (owner is not null && RepositoryFor(repositories, owner) is { } owned)
+            return owned;
+
+        // Nothing owns it, or its owner has no repository - a library loaded from a bare directory.
+        // Fall back to any other library that claims the class and does have one.
         foreach (var library in libraries.Libraries)
         {
             if (!library.ModelIds.Contains(modelId))

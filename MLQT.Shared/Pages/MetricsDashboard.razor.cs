@@ -421,7 +421,8 @@ public partial class MetricsDashboard : IDisposable
     /// </summary>
     private Repository? OwningRepository(string scope)
     {
-        var repositoryId = MetricsStorage.OwningRepositoryId(scope, LibraryDataService.Libraries);
+        var repositoryId = MetricsStorage.OwningRepositoryId(
+            scope, LibraryDataService.Libraries, LibraryDataService.GetOwningLibrary);
 
         return repositoryId is null
             ? null

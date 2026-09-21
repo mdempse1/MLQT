@@ -30,6 +30,8 @@ All services follow the pattern:
 | `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
 | `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
 | `ModelChangeClassifier` | `IModelChangeClassifier` | What kind of change each model in a working copy carries — one that can affect simulation, or one that cannot |
+
+`LibraryDataService.GetOwningLibrary` is the **only** way to ask which library a class belongs to. A class can be claimed by two loaded libraries — a checkout and a tool's encrypted build of the same library — and `Helpers/LibraryOwnership.cs` decides between them the way the graph did (B268).
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |

@@ -648,9 +648,12 @@ public partial class CodeReview : IAsyncDisposable
         if (fileNode == null)
             return;
 
-        // Find the library and repository for this model
-        var library = LibraryDataService.Libraries
-            .FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
+        // Find the library and repository for this model. GetOwningLibrary, not a search of every
+        // library's ModelIds: a class checked out as source and also shipped in a tool's library
+        // folder is claimed by both entries, and the first of them is whichever load happened to
+        // finish first. Picking the vendor's read-only copy left this deciding the user's own
+        // class was not under version control, and disabling all three diff views for it.
+        var library = LibraryDataService.GetOwningLibrary(_currentModelNode.Id);
         if (library == null || string.IsNullOrEmpty(library.RepositoryId))
             return;
 

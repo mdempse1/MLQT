@@ -81,18 +81,26 @@ public static class MetricsStorage
     /// </summary>
     /// <param name="scope">A class id, or empty for "all libraries".</param>
     /// <param name="libraries">Every loaded library.</param>
+    /// <param name="owningLibrary">
+    /// Which library owns a class — <c>ILibraryDataService.GetOwningLibrary</c>. Passed in rather
+    /// than worked out here, because a class checked out as source and also shipped in a tool's
+    /// library folder is claimed by <b>both</b> entries and only the graph knows which copy
+    /// survived. Searching the list for the first claimant attributes a snapshot to whichever load
+    /// finished first, which is a race.
+    /// </param>
     /// <remarks>
     /// The empty scope resolves only when exactly one repository is loaded. With several it spans
     /// them all, and there is no one repository whose revision a snapshot could honestly claim to
     /// describe — so it is written per library instead.
     /// </remarks>
-    public static string? OwningRepositoryId(string? scope, IEnumerable<LoadedLibrary> libraries)
+    public static string? OwningRepositoryId(
+        string? scope, IEnumerable<LoadedLibrary> libraries, Func<string, LoadedLibrary?> owningLibrary)
     {
         var loaded = libraries as IReadOnlyList<LoadedLibrary> ?? libraries.ToList();
 
         if (!string.IsNullOrEmpty(scope))
         {
-            var owner = loaded.FirstOrDefault(l => l.ModelIds.Contains(scope))?.RepositoryId;
+            var owner = owningLibrary(scope)?.RepositoryId;
             return string.IsNullOrEmpty(owner) ? null : owner;
         }
 

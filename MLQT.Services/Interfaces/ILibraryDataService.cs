@@ -34,6 +34,37 @@ public interface ILibraryDataService
     int TotalModelCount { get; }
 
     /// <summary>
+    /// Which loaded library a class belongs to — the one whose copy of it is the one in the graph.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Not <c>Libraries.FirstOrDefault(l =&gt; l.ModelIds.Contains(id))</c>, which is what
+    /// five callers used to do.</b> As <see cref="TotalModelCount"/> records, the same library is
+    /// routinely loaded twice — a tool's library folder ships the encrypted build of a library the
+    /// user also has checked out as source — and <b>both entries can list the same id</b>. Only one
+    /// copy survives in the graph, and <c>DirectedGraph.AddNode</c> decides which: readable source
+    /// always beats a class reconstructed from vendor documentation. The library index is not told,
+    /// so the encrypted entry goes on claiming a class it no longer provides.</para>
+    ///
+    /// <para><b>What that cost.</b> <c>FirstOrDefault</c> returns whichever library was added first,
+    /// which is a race between two parallel loads, so a class could resolve to the vendor's
+    /// read-only copy in <c>Program Files</c> instead of to the user's working copy. Everything
+    /// that asks "which repository is this class in?" then got the wrong answer — the Code Review
+    /// page decided the class was not under version control and disabled all three diff views,
+    /// while the library browser, which goes from the changed <i>file</i> to its models, marked the
+    /// same class as changed. The two disagreed about the same edit, for a subset of classes that
+    /// changed from run to run.</para>
+    ///
+    /// <para><b>The rule is the graph's own.</b> Whichever way <c>AddNode</c> resolved the
+    /// collision, the owning library is the one that could have supplied that node: an encrypted
+    /// library owns a stub, and anything else owns readable source. Where only one library claims
+    /// the class — overwhelmingly the common case — that one is the answer and the node is not
+    /// consulted.</para>
+    /// </remarks>
+    /// <param name="modelId">The class's full Modelica name.</param>
+    /// <returns>The owning library, or null when no loaded library claims the class.</returns>
+    LoadedLibrary? GetOwningLibrary(string modelId);
+
+    /// <summary>
     /// Gets the name and root path of each loaded library, as needed by
     /// <c>GraphBuilder</c> to resolve <c>modelica://</c> URIs.
     /// </summary>

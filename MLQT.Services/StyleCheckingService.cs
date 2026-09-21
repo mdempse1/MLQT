@@ -859,7 +859,7 @@ public class StyleCheckingService : IStyleCheckingService
         var modelsByRepo = new Dictionary<string, List<string>>();
         foreach (var modelId in modelIdList)
         {
-            var library = _libraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(modelId));
+            var library = _libraryDataService.GetOwningLibrary(modelId);
             var repoId = library?.RepositoryId ?? "";
             if (!modelsByRepo.TryGetValue(repoId, out var list))
             {

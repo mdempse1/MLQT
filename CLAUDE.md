@@ -80,7 +80,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 
 | Service | Purpose |
 |---------|---------|
-| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run |
+| **ILibraryDataService** | Manages loaded Modelica libraries, combined graph, server-side tree data. `EnsureDependenciesAnalyzedAsync()` is the one way to run dependency analysis — idempotent, and concurrent callers share a single run. `GetOwningLibrary(modelId)` is the **only** way to ask which library a class belongs to: a class is routinely claimed by two loaded libraries — a checkout and a tool's encrypted build of the same library — and only the graph knows which copy survived. `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))` returns whichever load finished first, which is a race (B268) |
 | **IRepositoryService** | Git/SVN repository management, library discovery, VCS operations |
 | **IFileMonitoringService** | FileSystemWatcher-based change detection with debouncing |
 | **ICodeReviewService** | Log messages and findings from parsing/style checking |

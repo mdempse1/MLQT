@@ -421,7 +421,7 @@ public sealed class StyleTools
 
     private StyleCheckingSettings RepoSettingsForClass(string classId)
     {
-        var library = _libraries.Libraries.FirstOrDefault(l => l.ModelIds.Contains(classId));
+        var library = _libraries.GetOwningLibrary(classId);
         return library is not null ? RepoSettingsForLibrary(library) : new StyleCheckingSettings();
     }
 

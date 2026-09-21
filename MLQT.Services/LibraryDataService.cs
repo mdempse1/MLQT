@@ -1014,6 +1014,18 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public LoadedLibrary? GetOwningLibrary(string modelId)
+    {
+        LoadedLibrary[] snapshot;
+        lock (_lock)
+        {
+            snapshot = _libraries.ToArray();
+        }
+
+        return LibraryOwnership.Owner(snapshot, modelId, GetModelById);
+    }
+
+    /// <inheritdoc/>
     public IEnumerable<ModelNode> GetAllModels()
     {
         lock (_lock)

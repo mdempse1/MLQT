@@ -782,6 +782,21 @@ replaced.
 **The marker was written out twice** — once per tree template, repository mode and library-only mode
 — which is the shape B200 came from. It is now one decision in `ChangeMarker`, asked by both.
 
+**A class can belong to two loaded libraries, and five callers assumed it could not.** Reported
+against `Suspensions.HalfCar.Steering.Experiments.RackAndPinionKinematics`: the browser marked it as
+a cosmetic change and the Code Review page opened it with all three diff views disabled. The two
+resolve a class differently — the browser goes from the changed *file* to the models in it, Code
+Review went from the model to `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))` — and the
+project had the same library twice, checked out as source and shipped encrypted in Dymola's library
+folder. **Both entries list the id**; `AddNode` had already resolved the class in favour of source
+but the index was never told, so the first claimant was whichever of two parallel loads finished
+first. It was the vendor's copy, whose repository is a read-only folder under `Program Files`, so
+the class read as not under version control. The log settled it in one line: *737 classes recovered
+from documentation; 650 left to the source already loaded for them* — a race, which is why a handful
+of classes were affected rather than a library, and why the set moved between runs.
+`LibraryOwnership.Owner` is now the one answer, and it asks the graph which copy survived rather
+than asking the list who claims it. The index is still untrue, which is **B268**.
+
 **None of it applies to a reference-only repository**, reported by the user as soon as the filter
 shipped. The reasoning is the one already written down for that setting — MLQT never formats,
 checks, commits or writes to one — and there is a second half that makes it more than tidiness: a
