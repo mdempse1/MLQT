@@ -997,7 +997,7 @@ complete because the measurement agreed.
 
 ### WP9 — The test debt deliberately left
 
-**B267 ✅, B228 ✅, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus
+**B267 ✅, B228 ✅, B229 ✅, B227** · opened by WP8's audit, and held back from it on purpose · plus
 **B234 ✅** and **B237 ✅** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
 out of order because of that, four weeks before the date it would have fired on
 
@@ -1052,11 +1052,17 @@ whether a user can get there.
 **The suite is faster for it**: 75 tests in 59s where 71 took 2m05s. The leaked circuits were
 costing time as well as reliability, which nothing had attributed to them.
 
-**B229 then, because it is the largest gap and the reason is structural.** 11% of covered mutants
-killed in each of the two external-tool services, and they are the only code in the solution whose
-suites no CI job runs. Nothing outside one machine exercises them. That is a decision the project
-made knowingly — a live Dymola cannot be a runner dependency — and the audit has now priced it.
-The work is a live-tool session, not a CI change.
+**B229 then, because it is the largest gap and the reason is structural.** ✅ — and the structure
+was not the one named here. The paragraph said these services' suites no CI job runs; in fact
+`MLQT.Services.Tests` runs on every push, and it is `DymolaInterface.Tests` and
+`OpenModelicaInterface.Tests` that need a tool. What kept the services untested was that both
+factories returned the **concrete session class**, whose every method ends in a round trip to a
+running tool — so nothing past the first call was reachable, with or without a machine that had one.
+Extracting an interface for the handful of calls the services make took 11% to 73.6%/73.5% and 176
+uncovered mutants to 13, and the tests found a real defect in both tools on the way (B272). **The
+third premise in this package to be wrong in the same direction**, after B228 and B234: each
+described the obstacle as something no automated run could reach, and each turned out to be
+something nobody had looked at.
 
 **B227 last, and only with a sampling plan.** 361 survivors in `ModelicaRenderer` at an 85% kill
 rate: the best-tested large thing here and still the biggest absolute count anywhere. Read in groups
@@ -1431,8 +1437,10 @@ at least a candidate, not in the margin of a plan.
 WP9 follows WP8 because it is WP8's leftovers, not because anything blocks it: it needs no other
 package and can be taken whenever there is appetite for it. **It is the one package with no deadline**
 — nothing in it can corrupt a repository or lose a commit, which was the line WP8 used to decide what
-had to be fixed the same day. Take B228 on a quiet afternoon, B229 when there is a machine with
-Dymola and `omc` on it, and B227 only when there is time to do it properly.
+had to be fixed the same day. Take B228 on a quiet afternoon and B227 only when there is time to do it properly — and note that
+B229 **did not** need the machine with Dymola and `omc` on it that this sentence promised. What
+stopped those two services being tested was the concrete session class in the factory's return
+type, not the absence of the tool; the suite that tests them runs in CI on every push.
 
 ## Ground rules for the phase
 

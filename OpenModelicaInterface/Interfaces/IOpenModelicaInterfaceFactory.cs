@@ -8,7 +8,7 @@ public interface IOpenModelicaInterfaceFactory
     /// <summary>
     /// Gets or creates a singleton OpenModelica interface instance.
     /// </summary>
-    Task<OpenModelicaInterface> GetOrCreateAsync();
+    Task<IOpenModelicaInterface> GetOrCreateAsync();
 
     /// <summary>
     /// Gets whether the OpenModelica interface is currently connected.

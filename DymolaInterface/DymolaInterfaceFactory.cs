@@ -24,7 +24,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// <summary>
     /// Gets or creates the singleton DymolaInterface instance with settings from SettingsService.
     /// </summary>
-    public async Task<DymolaInterface> GetOrCreateAsync()
+    public async Task<IDymolaInterface> GetOrCreateAsync()
     {
         await _lock.WaitAsync();
         try

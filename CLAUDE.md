@@ -93,8 +93,7 @@ Services that could be used outside Blazor are in `MLQT.Services/` with interfac
 | **ICustomDictionaryService** | Accepted spellings per repository (`<repo>/.mlqt/dictionary.txt`, committed with the code so the app and CLI accept the same words). `DictionaryScope` decides which repository's list applies to a class |
 | **IDictionaryManagerService** | Hunspell dictionary management (bundled + imported at `%LocalAppData%/MLQT/Dictionaries/`) |
 | **IModelCheckingService** | Interface for external tool checking (Dymola, OpenModelica) |
-| **DymolaCheckingService** | Model checking via Dymola HTTP JSON-RPC |
-| **OpenModelicaCheckingService** | Model checking via OpenModelica ZeroMQ |
+| **DymolaCheckingService** / **OpenModelicaCheckingService** | Model checking via Dymola's HTTP JSON-RPC and omc's ZeroMQ. The same shape twice, so what they promise is asserted **once**, in `MLQT.Services.Tests/ModelCheckingServiceContract.cs`, and run against both — the copy in each of them that was not shared is exactly where a promise went unkept on one path (B229/B272). `CheckSingleModelAsync` is the only place a check happens; `CheckModelAsync` opens the library and calls it. Both take their session from a factory that returns **`IDymolaInterface`/`IOpenModelicaInterface`**, not the concrete class: the concrete one's every method is a round trip to a running tool, so with it in that signature none of this could be tested without one installed |
 | **LoggingService** | Static NLog-based logging (`%LocalAppData%/MLQT/`, `~/.local/share/MLQT/` on Linux). **File only** — the console target is off unless `MLQT_LOG_CONSOLE` is set, so the log file is the single place to look |
 
 ### The shared check pipeline (`MLQT.Services/Checking/`)

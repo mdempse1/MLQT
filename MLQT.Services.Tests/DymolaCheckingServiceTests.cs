@@ -273,7 +273,7 @@ public class DymolaCheckingServiceTests
 
         // Holds the first check inside the factory until the test lets go, so "already running" is
         // true for as long as the second call needs it to be.
-        async Task<DymolaInterface.DymolaInterface> BlockThenFail()
+        async Task<IDymolaInterface> BlockThenFail()
         {
             Interlocked.Increment(ref callCount);
             await gate.Task;

@@ -17,7 +17,7 @@ namespace MLQT.Services;
 public class OpenModelicaCheckingService : IModelCheckingService
 {
     private readonly IOpenModelicaInterfaceFactory _omcFactory;
-    private OpenModelicaInterface.OpenModelicaInterface? _omc;
+    private IOpenModelicaInterface? _omc;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _isRunning;
     private ModelCheckProgress _currentProgress = new();
@@ -33,6 +33,12 @@ public class OpenModelicaCheckingService : IModelCheckingService
     public bool IsRunning => _isRunning;
     public ModelCheckProgress CurrentProgress => _currentProgress;
     public string ToolName => "OpenModelica";
+
+    /// <summary>
+    /// The one failure that is not the user's model. Singled out by its text so the result can say
+    /// "buy a licence" rather than "your model is broken".
+    /// </summary>
+    private const string DemoLicenceLimit = "Error: the model is too complex for the current license";
 
     public OpenModelicaCheckingService(IOpenModelicaInterfaceFactory omcFactory)
     {
@@ -100,17 +106,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
     public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
     {
-        var result = new ModelCheckResult
-        {
-            ModelId = modelNode.Id
-        };
-
         try
         {
-            if (_omc == null)
-            {
-                _omc = await _omcFactory.GetOrCreateAsync();
-            }
+            _omc ??= await _omcFactory.GetOrCreateAsync();
 
             // The library's own package.mo, not the class's file. OpenModelica will not load a
             // class out of the middle of a package: handed Integrator.mo it sees a class called
@@ -123,66 +121,23 @@ public class OpenModelicaCheckingService : IModelCheckingService
                 var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
-                    result.Success = false;
-                    result.Summary = "Failed to load library";
-                    result.ErrorMessage = loadError;
-                    return result;
+                    return new ModelCheckResult
+                    {
+                        ModelId = modelNode.Id,
+                        Success = false,
+                        Summary = "Failed to load library",
+                        ErrorMessage = loadError
+                    };
                 }
-            }
-
-            // Drained first, so what comes back afterwards belongs to *this* check. `getErrorString`
-            // returns the accumulated messages and empties the buffer, so reading it here discards
-            // anything left by an earlier command — without which a model that checked cleanly could
-            // be shown the error from one checked before it. (B116 is open against omc 1.26's
-            // behaviour here, which is why this discards rather than relying on it.)
-            _ = await SafeErrorStringAsync();
-
-            var checkResult = await _omc.CheckModelAsync(modelNode.Id);
-            if (checkResult)
-            {
-                result.Success = true;
-
-                // Checked is not the same as had nothing to say: omc reports warnings through the
-                // same error string, and a model that passes with six of them returns true. Read on
-                // success as well, so the result dialog can show what the tool actually said (B170).
-                result.Log = await SafeErrorStringAsync();
-            }
-            else
-            {
-                var error = await _omc.GetErrorStringAsync();
-                result.Success = false;
-                result.Log = error;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "OpenModelica Check Failed";
-                }
-                result.ErrorMessage = error;
             }
         }
         catch (Exception ex)
         {
-            Error("OpenModelicaCheckingService", $"Error checking model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "OpenModelica Check Failed";
-            try
-            {
-                result.ErrorMessage = _omc != null
-                    ? await _omc.GetErrorStringAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("OpenModelicaCheckingService", $"Failed to get OpenModelica error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
+            Error("OpenModelicaCheckingService", $"Error preparing to check model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
         }
 
-        return result;
+        return await CheckSingleModelAsync(modelNode);
     }
 
     public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)
@@ -351,6 +306,19 @@ public class OpenModelicaCheckingService : IModelCheckingService
         }
     }
 
+    /// <summary>
+    /// Checks one class in a session that is already open, and is <b>the only place a check
+    /// happens</b> — <see cref="CheckModelAsync"/> opens the library and then calls this.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>It was not always the only place (B229).</b> The two paths each had their own copy
+    /// of this, and the copy the package path used had neither the drain-the-log-first step nor the
+    /// read-the-log-on-success step. So the warnings B170 exists to surface were shown when the
+    /// user checked one class and lost when they checked the package containing it, and the error
+    /// reported against a class could be the one the class before it produced. Neither is visible
+    /// from either path on its own, which is why the tests for this are a contract run against both
+    /// tools rather than a test per service.</para>
+    /// </remarks>
     private async Task<ModelCheckResult> CheckSingleModelAsync(ModelNode modelNode)
     {
         var result = new ModelCheckResult
@@ -360,43 +328,66 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
         try
         {
+            // Drained first, so what comes back afterwards belongs to *this* check. `getErrorString`
+            // returns the accumulated messages and empties the buffer, so reading it here discards
+            // anything left by an earlier command — without which a model that checked cleanly could
+            // be shown the error from one checked before it. (B116 is open against omc 1.26's
+            // behaviour here, which is why this discards rather than relying on it.)
+            _ = await SafeErrorStringAsync();
+
             var checkResult = await _omc!.CheckModelAsync(modelNode.Id);
             if (checkResult)
             {
                 result.Success = true;
+
+                // Checked is not the same as had nothing to say: omc reports warnings through the
+                // same error string, and a model that passes with six of them returns true. Read on
+                // success as well, so the result dialog can show what the tool actually said (B170).
+                result.Log = await SafeErrorStringAsync();
             }
             else
             {
                 var error = await _omc.GetErrorStringAsync();
                 result.Success = false;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "OpenModelica Check Failed";
-                }
+                result.Log = error;
+                result.Summary = error.Contains(DemoLicenceLimit)
+                    ? "Model too complex for demo license"
+                    : $"{ToolName} Check Failed";
                 result.ErrorMessage = error;
             }
         }
         catch (Exception ex)
         {
-            Error("OpenModelicaCheckingService", $"Error checking single model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "OpenModelica Check Failed";
-            try
-            {
-                result.ErrorMessage = _omc != null
-                    ? await _omc.GetErrorStringAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("OpenModelicaCheckingService", $"Failed to get OpenModelica error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
+            Error("OpenModelicaCheckingService", $"Error checking model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The result for a check that threw: the tool's own account of what went wrong where it can
+    /// still be asked for one, and the exception's where it cannot.
+    /// </summary>
+    private async Task<ModelCheckResult> FailedResultAsync(string modelId, Exception failure)
+    {
+        var result = new ModelCheckResult
+        {
+            ModelId = modelId,
+            Success = false,
+            Summary = $"{ToolName} Check Failed"
+        };
+
+        try
+        {
+            result.ErrorMessage = _omc != null
+                ? await _omc.GetErrorStringAsync()
+                : failure.Message;
+        }
+        catch (Exception innerEx)
+        {
+            Warn("OpenModelicaCheckingService", $"Failed to get OpenModelica error message: {innerEx.Message}");
+            result.ErrorMessage = failure.Message;
         }
 
         return result;

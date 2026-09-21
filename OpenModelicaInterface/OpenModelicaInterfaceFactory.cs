@@ -20,7 +20,7 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
 
     public bool IsConnected => _instance?.IsConnected ?? false;
 
-    public async Task<OpenModelicaInterface> GetOrCreateAsync()
+    public async Task<IOpenModelicaInterface> GetOrCreateAsync()
     {
         await _lock.WaitAsync();
         try

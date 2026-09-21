@@ -64,12 +64,39 @@ var simResult = await dymola.SimulateModelAsync(
 | `DymolaSettings` | Configuration (port, path, timeout) |
 | `DymolaFactory` | Factory for creating configured instances |
 | `DymolaCheckingService` | `IModelCheckingService` implementation |
+| `IDymolaInterface` | The five session calls the checking service makes — **what the factory returns** |
 
 ### Key Files
 - `DymolaInterface/DymolaInterface.cs` - Main implementation
 - `DymolaInterface/DymolaSettings.cs` - Configuration
 - `DymolaInterface/DymolaFactory.cs` - Factory pattern
 - `MLQT.Services/DymolaCheckingService.cs` - Editor integration
+
+## The two checking services
+
+`DymolaCheckingService` and `OpenModelicaCheckingService` are the same shape twice: open the
+library's root file, check a class or every class in a package, and turn what the tool said into
+`ModelCheckResult`s. Two things about them are not obvious from reading either one.
+
+**The factories return an interface, not the session class.** `IDymolaInterfaceFactory` and
+`IOpenModelicaInterfaceFactory` hand back `IDymolaInterface` / `IOpenModelicaInterface` — each a
+handful of members, exactly what the checking service calls. They exist so the services can be
+tested at all: every method of the concrete session ends in a round trip to a running tool, so with
+the concrete type in that signature nothing past the first call was reachable without Dymola or omc
+installed, and no automated run has either. Mutation testing priced that at an 11% kill rate with
+177 of the two services' mutants covered by no test whatsoever (B229). A member belongs on one of
+these interfaces when a caller outside the tool's own assembly needs it, not because the session
+offers it.
+
+**`CheckSingleModelAsync` is the only place a check happens.** `CheckModelAsync` opens the library
+and then calls it. That was not true until B229: each path had its own copy, and the package path's
+copy neither drained the log first nor read it back on success — so a class checked on its own
+showed its warnings and the same class checked as part of its package did not, and an error could be
+reported against the class after the one that produced it. `MLQT.Services.Tests/
+ModelCheckingServiceContract.cs` asserts the shared promises once and runs them against both tools;
+`ToolHarness.cs` holds the fake sessions, which model each tool's **log buffer** rather than
+returning fixed strings, because most of these promises are about which check's output a result
+carries.
 
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
@@ -192,6 +219,7 @@ using var omc = await factory.CreateAndStartAsync();
 | `OpenModelicaFactory` | Factory with auto-detection |
 | `SimulationResult` | Simulation results (Success, ResultFile, Messages) |
 | `OpenModelicaCheckingService` | `IModelCheckingService` implementation |
+| `IOpenModelicaInterface` | The four session calls the checking service makes — **what the factory returns** |
 
 ### Installation Requirements
 - .NET 9.0 or later

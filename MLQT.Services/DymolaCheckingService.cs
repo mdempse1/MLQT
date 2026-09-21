@@ -16,7 +16,7 @@ namespace MLQT.Services;
 public class DymolaCheckingService : IModelCheckingService
 {
     private readonly IDymolaInterfaceFactory _dymolaFactory;
-    private DymolaInterface.DymolaInterface? _dymola;
+    private IDymolaInterface? _dymola;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _isRunning;
     private ModelCheckProgress _currentProgress = new();
@@ -32,6 +32,12 @@ public class DymolaCheckingService : IModelCheckingService
     public bool IsRunning => _isRunning;
     public ModelCheckProgress CurrentProgress => _currentProgress;
     public string ToolName => "Dymola";
+
+    /// <summary>
+    /// The one failure that is not the user's model. Singled out by its text so the result can say
+    /// "buy a licence" rather than "your model is broken".
+    /// </summary>
+    private const string DemoLicenceLimit = "Error: the model is too complex for the current license";
 
     public DymolaCheckingService(IDymolaInterfaceFactory dymolaFactory)
     {
@@ -115,17 +121,9 @@ public class DymolaCheckingService : IModelCheckingService
 
     public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
     {
-        var result = new ModelCheckResult
-        {
-            ModelId = modelNode.Id
-        };
-
         try
         {
-            if (_dymola == null)
-            {
-                _dymola = await _dymolaFactory.GetOrCreateAsync();
-            }
+            _dymola ??= await _dymolaFactory.GetOrCreateAsync();
 
             // The library's own package.mo, not the class's file. Dymola would find the enclosing
             // package itself from the class's file, but OpenModelica will not — and the two tools
@@ -137,65 +135,23 @@ public class DymolaCheckingService : IModelCheckingService
                 var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
-                    result.Success = false;
-                    result.Summary = "Failed to load library";
-                    result.ErrorMessage = loadError;
-                    return result;
+                    return new ModelCheckResult
+                    {
+                        ModelId = modelNode.Id,
+                        Success = false,
+                        Summary = "Failed to load library",
+                        ErrorMessage = loadError
+                    };
                 }
-            }
-
-            // Cleared first so that what comes back afterwards belongs to *this* check. Dymola's log
-            // accumulates, so without this a model that checked cleanly could be shown the error
-            // from something checked before it — a wrong answer, and a worse one than no log at all.
-            await SafeClearLogAsync();
-
-            var checkResult = await _dymola.CheckModelAsync(modelNode.Id, false, false);
-            if (checkResult)
-            {
-                result.Success = true;
-
-                // `checkModel` returning true means it checked, not that it had nothing to say: a
-                // model that is fine and one that is fine apart from six warnings both return true,
-                // and getLastError() is where the difference is. Asked on success as well so the
-                // result dialog can show what Dymola actually reported (B170).
-                result.Log = await SafeLastErrorAsync();
-            }
-            else
-            {
-                var error = await _dymola.GetLastErrorAsync();
-                result.Success = false;
-                result.Log = error;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "Dymola Check Failed";
-                }
-                result.ErrorMessage = error;
             }
         }
         catch (Exception ex)
         {
-            Error("DymolaCheckingService", $"Error checking model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "Dymola Check Failed";
-            try
-            {
-                result.ErrorMessage = _dymola != null
-                    ? await _dymola.GetLastErrorAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("DymolaCheckingService", $"Failed to get Dymola error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
+            Error("DymolaCheckingService", $"Error preparing to check model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
         }
 
-        return result;
+        return await CheckSingleModelAsync(modelNode);
     }
 
     public Task StartCheckingAsync(ModelNode modelNode, DirectedGraph graph, CancellationToken cancellationToken = default)
@@ -364,6 +320,19 @@ public class DymolaCheckingService : IModelCheckingService
         }
     }
 
+    /// <summary>
+    /// Checks one class in a session that is already open, and is <b>the only place a check
+    /// happens</b> — <see cref="CheckModelAsync"/> opens the library and then calls this.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>It was not always the only place (B229).</b> The two paths each had their own copy
+    /// of this, and the copy the package path used had neither the clear-the-log-first step nor the
+    /// read-the-log-on-success step. So the warnings B170 exists to surface were shown when the
+    /// user checked one class and lost when they checked the package containing it, and the error
+    /// reported against a class could be the one the class before it produced. Neither is visible
+    /// from either path on its own, which is why the tests for this are a contract run against both
+    /// tools rather than a test per service.</para>
+    /// </remarks>
     private async Task<ModelCheckResult> CheckSingleModelAsync(ModelNode modelNode)
     {
         var result = new ModelCheckResult
@@ -373,43 +342,65 @@ public class DymolaCheckingService : IModelCheckingService
 
         try
         {
+            // Cleared first so that what comes back afterwards belongs to *this* check. Dymola's log
+            // accumulates, so without this a model that checked cleanly could be shown the error
+            // from something checked before it — a wrong answer, and a worse one than no log at all.
+            await SafeClearLogAsync();
+
             var checkResult = await _dymola!.CheckModelAsync(modelNode.Id, false, false);
             if (checkResult)
             {
                 result.Success = true;
+
+                // `checkModel` returning true means it checked, not that it had nothing to say: a
+                // model that is fine and one that is fine apart from six warnings both return true,
+                // and getLastError() is where the difference is. Asked on success as well so the
+                // result dialog can show what Dymola actually reported (B170).
+                result.Log = await SafeLastErrorAsync();
             }
             else
             {
                 var error = await _dymola.GetLastErrorAsync();
                 result.Success = false;
-
-                if (error.Contains("Error: the model is too complex for the current license"))
-                {
-                    result.Summary = "Model too complex for demo license";
-                }
-                else
-                {
-                    result.Summary = "Dymola Check Failed";
-                }
+                result.Log = error;
+                result.Summary = error.Contains(DemoLicenceLimit)
+                    ? "Model too complex for demo license"
+                    : $"{ToolName} Check Failed";
                 result.ErrorMessage = error;
             }
         }
         catch (Exception ex)
         {
-            Error("DymolaCheckingService", $"Error checking single model: {modelNode.Id}", ex);
-            result.Success = false;
-            result.Summary = "Dymola Check Failed";
-            try
-            {
-                result.ErrorMessage = _dymola != null
-                    ? await _dymola.GetLastErrorAsync()
-                    : ex.Message;
-            }
-            catch (Exception innerEx)
-            {
-                Warn("DymolaCheckingService", $"Failed to get Dymola error message: {innerEx.Message}");
-                result.ErrorMessage = ex.Message;
-            }
+            Error("DymolaCheckingService", $"Error checking model: {modelNode.Id}", ex);
+            return await FailedResultAsync(modelNode.Id, ex);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The result for a check that threw: Dymola's own account of what went wrong where it can
+    /// still be asked for one, and the exception's where it cannot.
+    /// </summary>
+    private async Task<ModelCheckResult> FailedResultAsync(string modelId, Exception failure)
+    {
+        var result = new ModelCheckResult
+        {
+            ModelId = modelId,
+            Success = false,
+            Summary = $"{ToolName} Check Failed"
+        };
+
+        try
+        {
+            result.ErrorMessage = _dymola != null
+                ? await _dymola.GetLastErrorAsync()
+                : failure.Message;
+        }
+        catch (Exception innerEx)
+        {
+            Warn("DymolaCheckingService", $"Failed to get Dymola error message: {innerEx.Message}");
+            result.ErrorMessage = failure.Message;
         }
 
         return result;

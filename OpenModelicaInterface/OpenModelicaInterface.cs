@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using NetMQ;
+using OpenModelicaInterface.Interfaces;
 using NetMQ.Sockets;
 
 namespace OpenModelicaInterface;
@@ -11,7 +12,7 @@ namespace OpenModelicaInterface;
 /// This class provides a C# wrapper around OMC's scripting API.
 /// Based on OMPython's approach using ZMQ REQ-REP pattern.
 /// </summary>
-public class OpenModelicaInterface : IDisposable
+public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
 {
     private readonly string _omcPath;
     private Process? _omcProcess;

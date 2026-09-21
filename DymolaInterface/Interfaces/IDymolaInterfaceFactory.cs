@@ -8,7 +8,7 @@ public interface IDymolaInterfaceFactory
     /// <summary>
     /// Gets or creates the singleton DymolaInterface instance.
     /// </summary>
-    Task<DymolaInterface> GetOrCreateAsync();
+    Task<IDymolaInterface> GetOrCreateAsync();
 
     /// <summary>
     /// Checks if an instance exists and is connected.

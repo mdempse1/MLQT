@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DymolaInterface.Interfaces;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -34,7 +35,7 @@ public sealed class NamedArgument
 /// C# client for Dymola's JSON-RPC scripting API. Mirrors the JavaScript interface
 /// shipped with Dymola (<c>Modelica/Library/javascript_interface/dymola_interface.js</c>).
 /// </summary>
-public class DymolaInterface : IDisposable
+public class DymolaInterface : IDymolaInterface, IDisposable
 {
     private readonly string _dymolaPath;
     private readonly int _portNumber;
