@@ -49,7 +49,7 @@ public class LibraryBrowserChangeKindTests
     public void APackageReportsTheStrongestChangeBelowIt()
     {
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified("Lib.Pack.A", "Lib.Pack.B"),
+            Modified("Lib.Pack.A", "Lib.Pack.B").Keys,
             Kinds(("Lib.Pack.A", ClassChangeKind.Cosmetic), ("Lib.Pack.B", ClassChangeKind.AffectsSimulation)),
             Lookup);
 
@@ -61,7 +61,7 @@ public class LibraryBrowserChangeKindTests
     public void APackageWithOnlyCosmeticChangesBelowItSaysSo()
     {
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified("Lib.Pack.A"), Kinds(("Lib.Pack.A", ClassChangeKind.Cosmetic)), Lookup);
+            Modified("Lib.Pack.A").Keys, Kinds(("Lib.Pack.A", ClassChangeKind.Cosmetic)), Lookup);
 
         Assert.Equal(ClassChangeKind.Cosmetic, descendants["Lib.Pack"]);
     }
@@ -74,7 +74,7 @@ public class LibraryBrowserChangeKindTests
     public void AnUnchangedClassContributesNothingToItsPackages()
     {
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified("Lib.Pack.A", "Lib.Pack.B"),
+            Modified("Lib.Pack.A", "Lib.Pack.B").Keys,
             Kinds(("Lib.Pack.A", ClassChangeKind.Unchanged), ("Lib.Pack.B", ClassChangeKind.Unchanged)),
             Lookup);
 
@@ -90,7 +90,7 @@ public class LibraryBrowserChangeKindTests
     public void AnUnclassifiedChangeStillReachesItsPackages()
     {
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified("Lib.Pack.A"), new Dictionary<string, ClassChangeKind>(), Lookup);
+            Modified("Lib.Pack.A").Keys, new Dictionary<string, ClassChangeKind>(), Lookup);
 
         Assert.Equal(ClassChangeKind.Unknown, descendants["Lib.Pack"]);
     }
@@ -99,7 +99,7 @@ public class LibraryBrowserChangeKindTests
     public void ATopLevelClassHasNoPackageToReportTo()
     {
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified("Lib"), Kinds(("Lib", ClassChangeKind.AffectsSimulation)), Lookup);
+            Modified("Lib").Keys, Kinds(("Lib", ClassChangeKind.AffectsSimulation)), Lookup);
 
         Assert.Empty(descendants);
     }
@@ -117,7 +117,7 @@ public class LibraryBrowserChangeKindTests
         ModelNode? lookup(string id) => id == quoted.Id ? quoted : Lookup(id);
 
         var descendants = LibraryBrowser.DescendantKinds(
-            Modified(quoted.Id), Kinds((quoted.Id, ClassChangeKind.AffectsSimulation)), lookup);
+            Modified(quoted.Id).Keys, Kinds((quoted.Id, ClassChangeKind.AffectsSimulation)), lookup);
 
         Assert.Equal(["Lib", "Lib.Pack"], descendants.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
     }

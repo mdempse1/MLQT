@@ -228,7 +228,7 @@ else if (Repository != null)
                     <MudTooltip Text="Show changed models that impact simulation">
                         <MudChip T="ChangeFilter" Value="@ChangeFilter.AffectsSimulation" SelectedColor="Color.Warning">Simulation (@CountFor(ChangeFilter.AffectsSimulation))</MudChip>
                     </MudTooltip>
-                    <MudTooltip Text="Show changed models with documentation and graphical changes">
+                    <MudTooltip Text="Show changed models whose only changes are documentation or graphical">
                         <MudChip T="ChangeFilter" Value="@ChangeFilter.Cosmetic" SelectedColor="Color.Info">Cosmetic (@CountFor(ChangeFilter.Cosmetic))</MudChip>
                     </MudTooltip>
                 </MudChipSet>

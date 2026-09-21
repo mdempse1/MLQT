@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using MLQT.Shared.Components;
+using MLQT.Shared.Helpers;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using ModelicaParser.Comparison;
@@ -118,19 +119,24 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     /// The packages come back from <c>GetModelById</c> because that is where the browser climbs
     /// from — containment as the graph records it, not the dotted id split up.
     /// </remarks>
-    private IRenderedComponent<LibraryBrowser> RenderNestedBrowser(ClassChangeKind kind)
+    private IRenderedComponent<LibraryBrowser> RenderNestedBrowser(ClassChangeKind kind) =>
+        RenderNestedBrowser(("MyLib.Components.Resistor", kind));
+
+    private IRenderedComponent<LibraryBrowser> RenderNestedBrowser(
+        params (string Id, ClassChangeKind Kind)[] changed)
     {
-        var library = new[]
+        var library = new List<ModelNode>
         {
             Nested("MyLib", "MyLib", parent: null),
             Nested("MyLib.Components", "Components", parent: "MyLib"),
-            Nested("MyLib.Components.Resistor", "Resistor", parent: "MyLib.Components"),
-        }.ToDictionary(m => m.Id, StringComparer.Ordinal);
+        };
+        library.AddRange(changed.Select(c => Nested(c.Id, c.Id[(c.Id.LastIndexOf('.') + 1)..], "MyLib.Components")));
+        var byId = library.ToDictionary(m => m.Id, StringComparer.Ordinal);
 
         var graph = new DirectedGraph();
         var fileId = GraphBuilder.GenerateFileId(FilePath);
         graph.AddNode(new FileNode(fileId, FilePath));
-        foreach (var model in library.Values)
+        foreach (var model in library)
         {
             graph.AddNode(model);
             graph.AddFileContainsModel(fileId, model.Id);
@@ -138,10 +144,10 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
 
         var libraryService = new Mock<ILibraryDataService>();
         libraryService.SetupGet(l => l.CombinedGraph).Returns(graph);
-        libraryService.Setup(l => l.GetTopLevelModelsAsync()).ReturnsAsync([library["MyLib"]]);
+        libraryService.Setup(l => l.GetTopLevelModelsAsync()).ReturnsAsync([byId["MyLib"]]);
         libraryService.Setup(l => l.GetChildModelsAsync(It.IsAny<ModelNode>())).ReturnsAsync(new List<ModelNode>());
         libraryService.Setup(l => l.GetModelById(It.IsAny<string>()))
-                      .Returns<string>(id => library.GetValueOrDefault(id));
+                      .Returns<string>(id => byId.GetValueOrDefault(id));
         libraryService.Setup(l => l.ModelsWithDescendantParserErrors())
                       .Returns(new HashSet<string>(StringComparer.Ordinal));
 
@@ -156,8 +162,8 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             {
                 ["MyLib"] = ClassChangeKind.Unchanged,
                 ["MyLib.Components"] = ClassChangeKind.Unchanged,
-                ["MyLib.Components.Resistor"] = kind,
-            });
+            }.Concat(changed.Select(c => KeyValuePair.Create(c.Id, c.Kind)))
+             .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal));
 
         Services.AddSingleton(libraryService.Object);
         Services.AddSingleton(repositories.Object);
@@ -528,5 +534,37 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
 
         browser.WaitForAssertion(() =>
             Assert.All(browser.Instance.ActiveTreeItems, item => Assert.False(item.Expanded)));
+    }
+    /// <summary>
+    /// The dot on a package says what is below it <i>in the view being looked at</i>. A package
+    /// that also holds a simulation change the Cosmetic filter excluded must not carry that
+    /// change's colour there — it would be true of the repository and a contradiction of the
+    /// filter.
+    /// </summary>
+    [Fact]
+    public void ThePackageDotFollowsTheFilter()
+    {
+        var browser = RenderNestedBrowser(
+            ("MyLib.Components.Resistor", ClassChangeKind.AffectsSimulation),
+            ("MyLib.Components.Capacitor", ClassChangeKind.Cosmetic));
+
+        Filter(browser, LibraryBrowser.ChangeFilter.Cosmetic);
+
+        browser.WaitForAssertion(() => Assert.Equal(
+            ChangeMarker.For(null, ClassChangeKind.Unchanged, ClassChangeKind.Cosmetic),
+            browser.Instance.MarkerFor(browser.Instance.ActiveTreeItems[0].Value)));
+    }
+
+    /// <summary>The control: unfiltered, the same package reports the strongest change under it.</summary>
+    [Fact]
+    public void ThePackageDotReportsEverythingWhenNothingIsFiltered()
+    {
+        var browser = RenderNestedBrowser(
+            ("MyLib.Components.Resistor", ClassChangeKind.AffectsSimulation),
+            ("MyLib.Components.Capacitor", ClassChangeKind.Cosmetic));
+
+        browser.WaitForAssertion(() => Assert.Equal(
+            ChangeMarker.For(null, ClassChangeKind.Unchanged, ClassChangeKind.AffectsSimulation),
+            browser.Instance.MarkerFor(browser.Instance.ActiveTreeItems[0].Value)));
     }
 }

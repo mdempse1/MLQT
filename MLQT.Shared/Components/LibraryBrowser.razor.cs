@@ -150,6 +150,7 @@ public partial class LibraryBrowser : IDisposable
             _modelVcsStatus.Clear();
             _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
             _descendantChangeKinds.Clear();
+            _filteredDescendantKinds.Clear();
             _changeFilter = ChangeFilter.None;
             _filteredTreeItems = new List<TreeItemData<ModelNode>>();
             return;
@@ -192,7 +193,7 @@ public partial class LibraryBrowser : IDisposable
 
             var changeKinds = ModelChangeClassifier.Classify(repository, changes);
             return (true, status, changeKinds,
-                DescendantKinds(status, changeKinds, LibraryDataService.GetModelById));
+                DescendantKinds(status.Keys, changeKinds, LibraryDataService.GetModelById));
         });
 
         _hasUncommittedChanges = hasChanges;
@@ -232,13 +233,13 @@ public partial class LibraryBrowser : IDisposable
     /// everything before B191, and is still the right answer when nothing better is known.</para>
     /// </remarks>
     internal static Dictionary<string, ClassChangeKind> DescendantKinds(
-        IReadOnlyDictionary<string, VcsFileStatus> status,
+        IEnumerable<string> modelIds,
         IReadOnlyDictionary<string, ClassChangeKind> kinds,
         Func<string, ModelNode?> lookup)
     {
         var descendants = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
 
-        foreach (var modelId in status.Keys)
+        foreach (var modelId in modelIds)
         {
             // A class that is in a changed file but was not itself changed contributes nothing to
             // its ancestors - otherwise every package above a modified package.mo would claim a
@@ -290,6 +291,20 @@ public partial class LibraryBrowser : IDisposable
     /// how a tree loses its expansion state.
     /// </remarks>
     private List<TreeItemData<ModelNode>> _filteredTreeItems = new();
+
+    /// <summary>
+    /// The descendant rollup over the classes the filter selected, rather than over every change.
+    /// </summary>
+    /// <remarks>
+    /// A package in the Cosmetic view would otherwise carry the orange dot it earns from a
+    /// simulation change the filter has just excluded — true of the repository, and a contradiction
+    /// of the view the user is looking through.
+    /// </remarks>
+    private Dictionary<string, ClassChangeKind> _filteredDescendantKinds = new();
+
+    /// <summary>The rollup that matches what is on screen.</summary>
+    private IReadOnlyDictionary<string, ClassChangeKind> ActiveDescendantKinds =>
+        _changeFilter == ChangeFilter.None ? _descendantChangeKinds : _filteredDescendantKinds;
 
     internal List<TreeItemData<ModelNode>> ActiveTreeItems =>
         _changeFilter == ChangeFilter.None ? TreeItems : _filteredTreeItems;
@@ -445,10 +460,20 @@ public partial class LibraryBrowser : IDisposable
     /// <summary>
     /// Rebuilds the filtered tree from the current filter and the current set of changes.
     /// </summary>
-    private void RefreshFilteredTree() =>
-        _filteredTreeItems = _changeFilter == ChangeFilter.None
-            ? new List<TreeItemData<ModelNode>>()
-            : BuildFilteredTree(FilteredModels(), LibraryDataService.GetModelById, _expandedNodeIds);
+    private void RefreshFilteredTree()
+    {
+        if (_changeFilter == ChangeFilter.None)
+        {
+            _filteredTreeItems = new List<TreeItemData<ModelNode>>();
+            _filteredDescendantKinds = new Dictionary<string, ClassChangeKind>();
+            return;
+        }
+
+        var matches = FilteredModels();
+        _filteredTreeItems = BuildFilteredTree(matches, LibraryDataService.GetModelById, _expandedNodeIds);
+        _filteredDescendantKinds = DescendantKinds(
+            matches.Select(m => m.Id), _modelChangeKinds, LibraryDataService.GetModelById);
+    }
 
     internal void OnChangeFilterChanged(ChangeFilter filter)
     {
@@ -467,7 +492,7 @@ public partial class LibraryBrowser : IDisposable
 
         var status = _modelVcsStatus.TryGetValue(id, out var fileStatus) ? fileStatus : (VcsFileStatus?)null;
         var kind = _modelChangeKinds.TryGetValue(id, out var own) ? own : ClassChangeKind.Unknown;
-        var descendants = _descendantChangeKinds.TryGetValue(id, out var below) ? below : ClassChangeKind.Unchanged;
+        var descendants = ActiveDescendantKinds.TryGetValue(id, out var below) ? below : ClassChangeKind.Unchanged;
 
         return ChangeMarker.For(status, kind, descendants);
     }
