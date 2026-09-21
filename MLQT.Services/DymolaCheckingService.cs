@@ -5,6 +5,7 @@ using ModelicaGraph.DataTypes;
 using DymolaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using DymolaInterface;
+using MLQT.Services.Helpers;
 
 namespace MLQT.Services;
 
@@ -126,11 +127,14 @@ public class DymolaCheckingService : IModelCheckingService
                 _dymola = await _dymolaFactory.GetOrCreateAsync();
             }
 
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
+            // The library's own package.mo, not the class's file. Dymola would find the enclosing
+            // package itself from the class's file, but OpenModelica will not — and the two tools
+            // answering "which file do I open?" differently is how one of them came to be broken
+            // for a release while the other worked (B170).
+            var rootFile = LibraryRootFile.For(graph, modelNode);
+            if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
+                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
                     result.Success = false;
@@ -230,11 +234,14 @@ public class DymolaCheckingService : IModelCheckingService
         {
             _dymola = await _dymolaFactory.GetOrCreateAsync();
 
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
+            // The library's own package.mo, not the class's file. Dymola would find the enclosing
+            // package itself from the class's file, but OpenModelica will not — and the two tools
+            // answering "which file do I open?" differently is how one of them came to be broken
+            // for a release while the other worked (B170).
+            var rootFile = LibraryRootFile.For(graph, modelNode);
+            if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
+                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
                     var errorResult = new ModelCheckResult

@@ -64,6 +64,23 @@ Once a tool is configured, its check button appears in the **Code Review** tab t
 
 ![Screenshot: The check progress dialog showing "Dymola Check Progress - 7 checked out of 15" with a progress bar, the current model name, and the Stop button.](Images/code-review-4.png)
 
+### Which file the tool is asked to open
+
+MLQT opens the **library's own top-level `package.mo`** and then asks the tool about the class by
+its full name. Checking `Modelica.Blocks.Continuous.Integrator` in a checkout of the Modelica
+Standard Library therefore loads `MSL\Modelica\package.mo`, not
+`MSL\Modelica\Blocks\Continuous\Integrator.mo`.
+
+That is not an optimisation, it is what OpenModelica requires. A class stored in its own file is
+only `Modelica.Blocks.Continuous.Integrator` because of the packages above it; handed that file on
+its own, OpenModelica sees a class called `Integrator` with nothing to resolve its `within` clause
+against, and refuses to load it. Dymola accepts the same file and finds the enclosing package
+itself, which is why the same code worked for one tool and not the other. Both are now given the
+same file, because two tools answering "which file do I open?" differently is how one of them
+came to be broken while the other worked.
+
+A library that is a single `.mo` file, or a class with no package above it, is its own answer.
+
 ### Understanding Check Results
 
 **Every check reports what the tool said**, whether or not it found anything. When it finishes, a

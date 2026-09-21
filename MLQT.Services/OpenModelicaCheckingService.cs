@@ -5,6 +5,7 @@ using ModelicaGraph.DataTypes;
 using OpenModelicaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using OpenModelicaInterface;
+using MLQT.Services.Helpers;
 
 
 namespace MLQT.Services;
@@ -111,11 +112,15 @@ public class OpenModelicaCheckingService : IModelCheckingService
                 _omc = await _omcFactory.GetOrCreateAsync();
             }
 
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
+            // The library's own package.mo, not the class's file. OpenModelica will not load a
+            // class out of the middle of a package: handed Integrator.mo it sees a class called
+            // Integrator with nothing to resolve its `within` against, and refuses. Dymola accepts
+            // the file and finds the enclosing package itself, which is why the same code worked
+            // for one tool and not the other (B170).
+            var rootFile = LibraryRootFile.For(graph, modelNode);
+            if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
+                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
                     result.Success = false;
@@ -216,11 +221,15 @@ public class OpenModelicaCheckingService : IModelCheckingService
         {
             _omc = await _omcFactory.GetOrCreateAsync();
 
-            // Ensure library is loaded
-            var fileNode = modelNode.ContainingFileId != null ? graph.GetNode<FileNode>(modelNode.ContainingFileId) : null;
-            if (fileNode != null)
+            // The library's own package.mo, not the class's file. OpenModelica will not load a
+            // class out of the middle of a package: handed Integrator.mo it sees a class called
+            // Integrator with nothing to resolve its `within` against, and refuses. Dymola accepts
+            // the file and finds the enclosing package itself, which is why the same code worked
+            // for one tool and not the other (B170).
+            var rootFile = LibraryRootFile.For(graph, modelNode);
+            if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(fileNode.FilePath);
+                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
                     var errorResult = new ModelCheckResult
