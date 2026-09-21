@@ -997,7 +997,7 @@ complete because the measurement agreed.
 
 ### WP9 — The test debt deliberately left
 
-**B267, B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
+**B267 ✅, B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
 and **B237** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
 out of order because of that, four weeks before the date it would have fired on
 
@@ -1014,6 +1014,13 @@ browser journeys, and aborts on their failure. Found doing WP7, where the guards
 hand instead. **This is a prerequisite, not a peer**: B227 and B228 are lists of surviving mutants,
 and every closure in B219-B226 was recorded as *"mutant confirmed dead"* — which is a claim the tool
 has to be able to make. Do it first, or the rest of this package cannot be checked, only argued.
+
+**Done, and the fix was not either of the two things the row proposed.** A solution cannot be
+taken away by argument, only by not standing where it can be found - Stryker walks up from its
+working directory. Running it from the test project's own directory finds no solution, takes the
+single-project path and uses the suite it was started from: *Analyzing 1 test project(s)*, 2,078
+tests rather than 5,790, and a score in 2m32s where it had been aborting after 3m30s. **The rest
+of this package is now checkable**, which is what it was holding up.
 
 **B228 next, because it is small and finishable.** Four survivors in `ModelicaFileEncoding`, of
 which the real one drops a byte-order mark from a file MLQT was asked to preserve. An afternoon,

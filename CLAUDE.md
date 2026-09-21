@@ -680,7 +680,17 @@ without mutating anything.
 are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
 the score.
 
-Two things about it are not discoverable and cost an afternoon between them:
+Three things about it are not discoverable and cost an afternoon between them:
+
+- **Where it is run from decides which suites it runs.** Stryker walks up looking for a solution,
+  and from the repository root it finds `MLQT.slnx` and switches to solution mode — where it works
+  out the test projects itself, every one that transitively references the mutated assembly, and
+  **`--test-project` is ignored**. For `ModelicaParser` that is all of them, `MLQT.Journeys`
+  included: 5,790 tests, the journeys erroring while sharing one host with six other suites, and
+  Stryker aborting with "Initial testrun has more than 50% failing tests" before mutating anything.
+  The script now runs from the test project's own directory, where no solution is found and the
+  suite it was started from is the one used — 2,078 tests for the same run (B267). **A solution
+  cannot be taken away by argument, only by not standing where it can be found.**
 
 - **`--test-runner mtp` is required.** Every test project here is xUnit v3, which *is*
   Microsoft.Testing.Platform, and Stryker defaults to VSTest. Without it Stryker fails with "not yet

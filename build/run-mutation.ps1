@@ -215,17 +215,41 @@ function Write-ConsolidatedReport([string] $root) {
 }
 
 # Mutates one project. Returns Stryker's exit code.
+#
+# **Run from the test project's directory, and that is the whole of B267.** Stryker walks up from
+# wherever it starts looking for a solution, and from the repository root it finds MLQT.slnx and
+# switches to solution mode. There it works out the test projects for itself - every test project
+# that transitively references the mutated assembly - and `--test-project` is ignored. For
+# ModelicaParser that is all of them, MLQT.Journeys included, so the initial test run was 5,790
+# tests, the journeys errored sharing one host with six other suites, and Stryker aborted with
+# "Initial testrun has more than 50% failing tests" before mutating anything. Every per-file run
+# over ModelicaParser, MLQT.Services or MLQT.Shared was unavailable, which is the tool CLAUDE.md
+# names as the answer to "do the tests actually check anything?".
+#
+# Started inside ModelicaParser.Tests it finds no solution, takes the single-project path, and uses
+# the suite it was started from: 2,078 tests rather than 5,790. Measured, not assumed - that is the
+# number the probe reported before this was changed.
+#
+# `--test-project` is gone rather than kept "in case": it did nothing in the case that mattered, and
+# a flag that appears to select the suite while the working directory actually selects it is worse
+# than no flag. The output path is made absolute first, because it would otherwise resolve against
+# the test project rather than where the caller stood.
 function Invoke-Stryker([string] $project, [string] $testProject, [string[]] $mutate, [string] $outputDirectory) {
-    $testProjectFile = Join-Path $repoRoot "$testProject/$testProject.csproj"
+    $testProjectDirectory = Join-Path $repoRoot $testProject
+    if (-not (Test-Path $testProjectDirectory)) {
+        Write-Host "no such test project: $testProjectDirectory" -ForegroundColor Red
+        return 1
+    }
+
+    $absoluteOutput = [System.IO.Path]::GetFullPath($outputDirectory)
 
     $arguments = @(
         '--project', "$project.csproj"
-        '--test-project', $testProjectFile
         '--test-runner', 'mtp'
         '--configuration', $Configuration
         '--reporter', 'json'
         '--reporter', 'cleartext'
-        '--output', $outputDirectory
+        '--output', $absoluteOutput
     )
     foreach ($pattern in $mutate) { $arguments += @('--mutate', $pattern) }
     if ($Concurrency -gt 0) { $arguments += @('--concurrency', "$Concurrency") }
@@ -233,8 +257,14 @@ function Invoke-Stryker([string] $project, [string] $testProject, [string[]] $mu
     # Out-Host, not the pipeline: Stryker's progress is the only sign of life during a run that can
     # last an hour, so it has to reach the console - but it must not be mixed into what this function
     # returns, which is the exit code alone.
-    & dotnet-stryker @arguments | Out-Host
-    return $LASTEXITCODE
+    Push-Location $testProjectDirectory
+    try {
+        & dotnet-stryker @arguments | Out-Host
+        return $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 try {
