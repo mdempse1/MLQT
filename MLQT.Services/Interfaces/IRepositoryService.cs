@@ -72,6 +72,23 @@ public interface IRepositoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Moves a repository within the project's ordering, by <paramref name="delta"/> places.
+    /// </summary>
+    /// <remarks>
+    /// <para>The list order <i>is</i> the order everything shows repositories in — the library
+    /// browser renders <see cref="Repositories"/> straight through, and
+    /// <see cref="SaveRepositorySettingsAsync"/> writes the active project's entries from it. So a
+    /// move here is the whole feature, and nothing else needs a sort key (B188).</para>
+    ///
+    /// <para>Out of range is a refusal, not a clamp: the caller's buttons are disabled at the ends,
+    /// and a silent no-op that reports success is indistinguishable from a move that happened.</para>
+    /// </remarks>
+    /// <param name="repositoryId">The repository to move.</param>
+    /// <param name="delta">Places to move it — negative towards the top of the list.</param>
+    /// <returns>True when the repository moved; false when it is unknown, or the move would leave the list.</returns>
+    bool MoveRepository(string repositoryId, int delta);
+
+    /// <summary>
     /// Removes a repository and optionally its loaded libraries.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

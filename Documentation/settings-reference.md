@@ -69,6 +69,19 @@ See [encrypted-libraries.md](encrypted-libraries.md) for what is recovered from 
 
 ## Repository Settings
 
+### The order repositories appear in
+
+Repositories are listed — in the library browser, and in **Settings > Manage Repositories** — in the
+order you put them in, not the order you happened to add them. Use the **up** and **down** arrows in
+the Order column of the active project's repository table to move one. The arrows are greyed out at
+the ends of the list.
+
+The new order is saved as soon as you click, and it is the order the next session starts in. The
+Manage Repositories tab has no Save button because every change made there writes itself out, this
+one included.
+
+Only the active project's repositories can be reordered. Load a project to change its order.
+
 ### Reference-only repositories
 
 Some repositories hold code you depend on but do not maintain: a tool's library folder, or another

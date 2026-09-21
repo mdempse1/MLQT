@@ -71,11 +71,27 @@
                         OnRowClick="OnRepoRowClick" RowClass="cursor-pointer"
                         Style="background: transparent;" Class="mb-0">
                         <HeaderContent>
+                            <MudTh Style="width: 1%; white-space: nowrap;">Order</MudTh>
                             <MudTh>Repository Name</MudTh>
                             <MudTh>VCS Type</MudTh>
                             <MudTh>Local Path</MudTh>
                         </HeaderContent>
                         <RowTemplate>
+                            @* ClickPropagation is stated rather than left to its default, because the
+                               row's own click opens the edit dialog and reordering a repository is not
+                               a request to edit it. *@
+                            <MudTd DataLabel="Order" Style="white-space: nowrap;">
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                                    ClickPropagation="false"
+                                    Disabled="@(!CanMove(context, -1))"
+                                    aria-label="@($"Move {context.Name} up")"
+                                    OnClick="@(() => MoveRepositoryAsync(context, -1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                                    ClickPropagation="false"
+                                    Disabled="@(!CanMove(context, 1))"
+                                    aria-label="@($"Move {context.Name} down")"
+                                    OnClick="@(() => MoveRepositoryAsync(context, 1))" />
+                            </MudTd>
                             <MudTd DataLabel="Repository Name"><MudText Typo="Typo.body1">@context.Name</MudText></MudTd>
                             <MudTd DataLabel="VCS Type"><MudText Typo="Typo.body1">@context.VcsType</MudText></MudTd>
                             <MudTd DataLabel="Local Path"><MudText Typo="Typo.body1">@context.LocalPath</MudText></MudTd>

@@ -29,11 +29,20 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
-    private List<Repository> _repositories = new();
+    /// <summary>
+    /// The active project's repositories, in the order they are shown and saved in (B188).
+    /// Internal so the reorder guards can be tested without rendering the panel.
+    /// </summary>
+    internal List<Repository> _repositories = new();
     private Repository _selectedItem = null!;
     private Repository _backupItem = null!;
     private StyleCheckingSettings SelectedSettings => _selectedItem.StyleSettings ??= new StyleCheckingSettings();
-    private bool _editRepository = false;
+    /// <summary>
+    /// Whether the edit dialog is open. Internal because the reorder arrows sit inside a row whose
+    /// own click opens it, and "the arrow did not also open the dialog" is only answerable here —
+    /// the dialog renders into the provider's portal, not into this component's markup.
+    /// </summary>
+    internal bool _editRepository = false;
     private readonly DialogOptions _dialogOptions = new() { FullWidth = false };
     private List<DictionaryInfo> _availableDictionaries = new();
     private string _newRepoExceptionName = "";
@@ -244,6 +253,42 @@ public partial class SettingsRepositories : IDisposable
     }
 
     // ========== Repository Management ==========
+
+    /// <summary>
+    /// Moves a repository up or down the project's list, and persists the new order.
+    /// </summary>
+    /// <remarks>
+    /// <para>Saved immediately rather than on a Save button, because this tab has none — the
+    /// Settings page hides its action buttons for the Manage Repositories panel, and every other
+    /// change made here writes itself out the same way. An order that survived until the window
+    /// closed and then reverted would be worse than no ordering at all (B188).</para>
+    /// </remarks>
+    /// <summary>
+    /// Whether <see cref="MoveRepositoryAsync"/> would move this repository — the arrow buttons'
+    /// enabled state, and the same range the service enforces.
+    /// </summary>
+    /// <remarks>
+    /// In the code-behind rather than inline in the markup so it can be asserted on without
+    /// rendering the panel, and so both arrows ask one question rather than two expressions that
+    /// can drift apart.
+    /// </remarks>
+    internal bool CanMove(Repository repository, int delta)
+    {
+        var index = _repositories.IndexOf(repository);
+        if (index < 0)
+            return false;
+
+        var target = index + delta;
+        return delta != 0 && target >= 0 && target < _repositories.Count;
+    }
+
+    internal async Task MoveRepositoryAsync(Repository repository, int delta)
+    {
+        if (!RepositoryService.MoveRepository(repository.Id, delta))
+            return;
+
+        await RepositoryService.SaveRepositorySettingsAsync();
+    }
 
     private void OnRepoRowClick(TableRowClickEventArgs<Repository> args)
     {

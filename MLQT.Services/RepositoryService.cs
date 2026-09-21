@@ -507,6 +507,33 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc />
+    public bool MoveRepository(string repositoryId, int delta)
+    {
+        if (delta == 0)
+            return false;
+
+        lock (_lock)
+        {
+            var index = _repositories.FindIndex(r => r.Id == repositoryId);
+            if (index < 0)
+                return false;
+
+            var target = index + delta;
+            if (target < 0 || target >= _repositories.Count)
+                return false;
+
+            var repository = _repositories[index];
+            _repositories.RemoveAt(index);
+            _repositories.Insert(target, repository);
+
+            Info("RepositoryService", $"Moved repository '{repository.Name}' from position {index + 1} to {target + 1}");
+        }
+
+        OnRepositoriesChanged?.Invoke();
+        return true;
+    }
+
     public void RemoveRepository(string repositoryId, bool unloadLibraries = true)
     {
         Repository? repository;
