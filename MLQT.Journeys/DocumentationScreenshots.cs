@@ -316,9 +316,21 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
         await page.Mouse.MoveAsync(Width / 2, Height - 4);
         await page.WaitForTimeoutAsync(800);
 
-        // The tree itself, with the M chip on the class the fixture leaves uncommitted and the dot
+        // The tree itself, with the chip on the class the fixture leaves uncommitted and the dot
         // that carries it up to the package.
+        //
+        // The fixture's edit is a re-layout of Modified.mo and nothing else - same declarations,
+        // same equation, same annotation - so since B191 this is the **cosmetic** marker rather
+        // than the plain modified one. That is the picture worth having here: it is the
+        // distinction the section is about, and the caption in library-browser.md says so.
         await ShotOfAsync(page.Locator(".mud-treeview").First, "library-browser-2");
+
+        // The filter above the tree. It appears only for a repository with uncommitted changes,
+        // which is what the fixture's one edit is for, and each chip carries the number behind it.
+        var changeFilter = page.Locator(".mlqt-change-filter").First;
+        Assert.True(await changeFilter.CountAsync() > 0,
+            "the change filter is not on screen; does the fixture still leave an uncommitted edit?");
+        await ShotAroundAsync(page, changeFilter, "library-browser-6");
 
         // The whole left panel, which is what a user sees once a repository is in: the repository as
         // an expansion header, its VCS row, and the packages below it.

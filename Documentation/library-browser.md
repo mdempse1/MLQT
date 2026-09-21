@@ -12,7 +12,7 @@ In repository view, libraries are grouped under their parent repository. Each re
 
 This is the default view and is the one you'll use most often, as it provides access to all version control operations.
 
-![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, and the Modelica package tree below that.](Images/code-review-1.png)
+![Screenshot: The left panel in repository view. The repository is an expansion panel headed by its Git icon and name, with the branch name, the short commit id and the VCS operation buttons beneath it, then the row of change-filter chips, and the Modelica package tree below that.](Images/code-review-1.png)
 
 ### Library View
 
@@ -62,7 +62,7 @@ Models whose files have uncommitted changes display a small colored chip next to
 | **N** | Green | **Untracked** — A new file not yet added to version control |
 | **!** | Red | **Conflicted** — A file with merge conflicts that need resolution |
 
-![Screenshot: The tree with VCS status on it - an orange "M" chip beside the modified class, and the orange dot on the package above it that says a change is somewhere inside.](Images/library-browser-2.png)
+![Screenshot: The tree with VCS status on it - a "G" chip beside the changed class, because the change to it is a re-layout and nothing else, and a dot in the same colour on the package above it, saying a cosmetic change is somewhere inside.](Images/library-browser-2.png)
 
 ### What Kind of Change It Is
 
@@ -94,6 +94,8 @@ A class is one or the other, never both. If you changed an equation **and** move
 **It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. It stays open exactly as far as you had it open, and no further: a filter is a question, not a rearrangement. A class is a leaf there whatever it holds in the full tree, because the children it has are ones the filter did not select.
 
 Click a class to open it, exactly as in the unfiltered tree. Click **All** — or the selected chip again — to go back; the full tree returns expanded as you left it, including anything you opened while the filter was on.
+
+![Screenshot: The row of filter chips above the tree - All, Changed, Simulation and Cosmetic - each of the last three carrying the number of classes behind it in brackets.](Images/library-browser-6.png)
 
 **None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.
 
