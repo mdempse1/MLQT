@@ -1271,12 +1271,36 @@ repository, which does not help when both have one. Each was fixed where it hurt
 in place. The third occurrence was this one, and the next caller to write
 `Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))` gets it back with no test objecting.
 
-**Two candidate fixes, and the choice is the work.** Have the load that wins a collision withdraw
+**Three candidate fixes, and the choice is the work.** Have the load that wins a collision withdraw
 the id from the loser's index — cheap, but it means a load reaching into another library's state,
 and the collision is decided inside `DirectedGraph`, which knows nothing about libraries. Or stop
 `ModelIds` being a claim at all and derive membership from the graph, which makes the question
 unanswerable incorrectly but puts a lookup on paths that currently do a set test. **Measure the
 second before choosing it**: `ModelIds` is read per class in the check pipeline.
+
+**The third arrived from reading `MainLayout` while fixing B269, and it removes the race rather
+than tolerating it.** Reference material reaches the graph by two routes, and only one of them is
+ordered:
+
+- the **`ReferenceLibraries` setting**, loaded by `LoadReferenceLibrariesAsync` *after* the
+  project's own repositories. The comment above that call already states the rule — *"a tool's
+  library folder ships encrypted builds of libraries the user may have checked out as source, and
+  the source copy must win"*;
+- a **reference-only repository configured in the project**, which is just one of the repositories
+  `LoadRepositorySettingsAsync` loads, in the same parallel pass as the user's own checkout, with no
+  ordering at all.
+
+The reported project used the second: four repositories, two of them under
+`C:\Program Files\Dymola 2026x Refresh 1\Modelica`. The encrypted `Suspensions` finished at
+17:06:27 and the source `Suspensions` at 17:06:37, so 737 classes were stubbed before their source
+arrived. **The ordering rule is therefore narrower than its own comment claims.** Making the second
+route obey it — reference-only repositories last, as the setting's libraries already are — means no
+class is ever stubbed before its source lands, and both indexes come out true. That is a different
+kind of fix from the other two: they make a wrong index readable, this one stops it being wrong.
+
+**It is not obviously free.** Loading the project's repositories sequentially by kind gives up some
+of the parallelism that load has, and `LoadReferenceLibrariesAsync` is already a serial loop.
+Measure the startup cost before committing to it, the same way WP13 is told to.
 
 **A guard is worth more than either.** Whatever is decided, the thing that stops the fourth
 occurrence is a test that fails when a resolution goes back to searching the list — the shape

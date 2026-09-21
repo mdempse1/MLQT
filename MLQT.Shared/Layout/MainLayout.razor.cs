@@ -284,6 +284,14 @@ public partial class MainLayout : IDisposable
                 // references first meant the encrypted build got there first, and for a nested class —
                 // which, like a stub, cannot be stored standalone — the graph had no rule that
                 // preferred the real source.
+                //
+                // This rule is narrower than it looks, and B268 is what that costs. It covers the
+                // ReferenceLibraries *setting* and nothing else. A reference-only **repository**
+                // configured in the project is loaded by LoadRepositorySettingsAsync above, in the
+                // same parallel pass as the user's own checkout, so its encrypted build can and does
+                // reach the graph first — 737 classes of one library, in the session B268 was found
+                // in. AddNode then resolves each of those in favour of the source that arrives
+                // later, and nothing tells the encrypted library's index.
                 await LoadReferenceLibrariesAsync();
             }
             finally
