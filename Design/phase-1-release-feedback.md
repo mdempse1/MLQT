@@ -635,7 +635,16 @@ reading code that looks expensive is not measuring it.
 
 ### WP5 — External tools
 
-**B170 ✅ then B171 ✅** · 2 items · strict order · **complete 2026-09-20**
+**B170 ✅ then B171 ✅, then B259 ✅ and B260 ✅** · 4 items · **complete 2026-09-21**
+
+**Two of the four came from using what the first two shipped**, on the day after they shipped, and
+they are the reason this package is worth reading. Neither suite here runs in CI, so every one of
+these was found by a person pressing the button: a clean Dymola check reporting that it had checked
+nothing; OpenModelica refusing to open a class at all, because it was handed the class's own file
+rather than the library's `package.mo`; several seconds of nothing at all after the button was
+pressed; and a headless `omc` left running after MLQT closed. Three of those existed before B170 and
+one was introduced by it. **A package with no automated coverage is not finished when its tests pass**
+— it is finished when somebody has used it.
 
 B170 first: MLQT needs a result dialog of its own, reporting what the tool said, for both Dymola and
 OpenModelica. B171's fix — notice a dead session and start a new one — needs somewhere to say so when
