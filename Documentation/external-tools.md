@@ -79,6 +79,13 @@ Where something failed, the dialog quotes the tool's own message for each class 
 paraphrasing it — a summary saying "check failed" only sends you to the tool to find out why. Those
 same failures are added to the findings table, so they are still there after the dialog is closed.
 
+**A clean check can still have something to say.** Dymola's `checkModel` returns true for a model
+that is fine and for one that is fine apart from six warnings, so MLQT reads the tool's log either
+way and shows it when it is not empty. To keep that log attributable to the check you just ran,
+MLQT **clears Dymola's log immediately before checking** — otherwise a model that checked cleanly
+could be shown the error left behind by one checked before it. OpenModelica's `getErrorString`
+empties itself as it is read, so the same is achieved there by reading and discarding first.
+
 Before this, a check that passed produced nothing at all: no window, no dialog, no finding. The only
 sign an OpenModelica check had run was that you had pressed the button, and the only sign for Dymola
 was that Dymola's own window appeared — which made the answer depend on a vendor window MLQT does

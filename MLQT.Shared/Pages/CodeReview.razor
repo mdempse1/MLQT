@@ -415,27 +415,38 @@
             @CheckOutcomeSummary(_checkingToolName, PassedCheckCount, FailedChecks.Count(), _checkWasCancelled)
         </MudAlert>
 
-        @if (FailedChecks.Any())
+        @* The tool's own words, not a paraphrase. A summary that says "check failed" sends the user
+           to the tool to find out why; the message is the whole value of running it.
+
+           Shown for a clean check as well, when there is something to show: `checkModel` returns
+           true for a model that is fine and for one that is fine apart from six warnings, and the
+           tool's log is where the difference is. *@
+        @if (ReportedChecks.Any())
         {
-            @* The tool's own words, not a paraphrase. A summary that says "check failed" sends the
-               user to the tool to find out why; the message is the whole value of running it. *@
             <MudPaper Elevation="0" MaxHeight="320px" Style="overflow-y: auto;" Class="mt-2">
-                @foreach (var failure in FailedChecks)
+                @foreach (var check in ReportedChecks)
                 {
-                    <MudText Typo="Typo.subtitle2" Class="mt-2">@failure.ModelId</MudText>
-                    @if (!string.IsNullOrWhiteSpace(failure.Summary))
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">@check.ModelId</MudText>
+                    @if (!string.IsNullOrWhiteSpace(check.Summary))
                     {
-                        <MudText Typo="Typo.body1">@failure.Summary</MudText>
+                        <MudText Typo="Typo.body1">@check.Summary</MudText>
                     }
-                    @if (!string.IsNullOrWhiteSpace(failure.ErrorMessage))
+                    @if (!string.IsNullOrWhiteSpace(check.Log))
                     {
-                        <MudText Typo="Typo.body2" Class="pre-wrap">@failure.ErrorMessage</MudText>
+                        <MudText Typo="Typo.body2" Class="pre-wrap">@check.Log</MudText>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(check.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.body2" Class="pre-wrap">@check.ErrorMessage</MudText>
                     }
                 }
             </MudPaper>
-            <MudText Typo="Typo.caption" Class="mt-2">
-                Each of these is also in the findings table, so it is still there after this closes.
-            </MudText>
+            @if (FailedChecks.Any())
+            {
+                <MudText Typo="Typo.caption" Class="mt-2">
+                    Each failure is also in the findings table, so it is still there after this closes.
+                </MudText>
+            }
         }
     </DialogContent>
     <DialogActions>

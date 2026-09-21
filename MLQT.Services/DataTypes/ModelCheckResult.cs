@@ -24,4 +24,15 @@ public class ModelCheckResult
     /// Summary of the result for display.
     /// </summary>
     public string? Summary { get; set; }
+
+    /// <summary>
+    /// What the tool logged while checking, whether or not it found a problem.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="ErrorMessage"/> because <b>a successful check still has something to
+    /// say</b>. Dymola's <c>checkModel</c> returns true for a model that is fine and for one that is
+    /// fine apart from six warnings; <c>getLastError()</c> is where the difference is. Putting that
+    /// in a field called ErrorMessage would make every warning look like a failure (B170).
+    /// </remarks>
+    public string? Log { get; set; }
 }

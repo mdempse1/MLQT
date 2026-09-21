@@ -76,6 +76,42 @@ public class DymolaCheckingService : IModelCheckingService
         }
     }
 
+    /// <summary>
+    /// Dymola's log for the last command, or null when it cannot be read. Never throws: this is
+    /// asked on the success path too, and losing a clean result because the log could not be
+    /// fetched would be a worse answer than a result with no log on it.
+    /// </summary>
+    /// <summary>
+    /// Empties Dymola's log so the next read belongs to the command that follows it. Never throws:
+    /// failing to clear is not a reason to fail the check.
+    /// </summary>
+    private async Task SafeClearLogAsync()
+    {
+        try
+        {
+            if (_dymola is not null)
+                await _dymola.ClearLogAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug("DymolaCheckingService", $"Could not clear Dymola's log: {ex.Message}");
+        }
+    }
+
+    private async Task<string?> SafeLastErrorAsync()
+    {
+        try
+        {
+            var log = _dymola is null ? null : await _dymola.GetLastErrorAsync();
+            return string.IsNullOrWhiteSpace(log) ? null : log;
+        }
+        catch (Exception ex)
+        {
+            Debug("DymolaCheckingService", $"Could not read Dymola's log: {ex.Message}");
+            return null;
+        }
+    }
+
     public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
     {
         var result = new ModelCheckResult
@@ -104,15 +140,27 @@ public class DymolaCheckingService : IModelCheckingService
                 }
             }
 
+            // Cleared first so that what comes back afterwards belongs to *this* check. Dymola's log
+            // accumulates, so without this a model that checked cleanly could be shown the error
+            // from something checked before it — a wrong answer, and a worse one than no log at all.
+            await SafeClearLogAsync();
+
             var checkResult = await _dymola.CheckModelAsync(modelNode.Id, false, false);
             if (checkResult)
             {
                 result.Success = true;
+
+                // `checkModel` returning true means it checked, not that it had nothing to say: a
+                // model that is fine and one that is fine apart from six warnings both return true,
+                // and getLastError() is where the difference is. Asked on success as well so the
+                // result dialog can show what Dymola actually reported (B170).
+                result.Log = await SafeLastErrorAsync();
             }
             else
             {
                 var error = await _dymola.GetLastErrorAsync();
                 result.Success = false;
+                result.Log = error;
 
                 if (error.Contains("Error: the model is too complex for the current license"))
                 {
@@ -253,11 +301,11 @@ public class DymolaCheckingService : IModelCheckingService
 
                 var result = await CheckSingleModelAsync(model);
 
-                // Only fire OnModelChecked for failures to reduce UI updates
-                if (!result.Success)
-                {
-                    OnModelChecked?.Invoke(result);
-                }
+                // Every result, not only the failures. Reporting just the failures kept the UI quiet
+                // — and left a clean run with nothing at all to show, so the dialog that reports
+                // what the tool said correctly concluded it had checked nothing (B170). The
+                // subscriber batches its own re-renders, so the saving was not one worth having.
+                OnModelChecked?.Invoke(result);
 
                 _currentProgress.ModelsChecked++;
 

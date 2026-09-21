@@ -78,6 +78,25 @@ public class OpenModelicaCheckingService : IModelCheckingService
         }
     }
 
+    /// <summary>
+    /// The tool's accumulated messages, or null when they cannot be read. Never throws: this is
+    /// asked on the success path too, and losing a clean result because the log could not be
+    /// fetched would be a worse answer than a result with no log on it.
+    /// </summary>
+    private async Task<string?> SafeErrorStringAsync()
+    {
+        try
+        {
+            var log = _omc is null ? null : await _omc.GetErrorStringAsync();
+            return string.IsNullOrWhiteSpace(log) ? null : log;
+        }
+        catch (Exception ex)
+        {
+            Debug("OpenModelicaCheckingService", $"Could not read the OpenModelica log: {ex.Message}");
+            return null;
+        }
+    }
+
     public async Task<ModelCheckResult> CheckModelAsync(ModelNode modelNode, DirectedGraph graph)
     {
         var result = new ModelCheckResult
@@ -106,15 +125,28 @@ public class OpenModelicaCheckingService : IModelCheckingService
                 }
             }
 
+            // Drained first, so what comes back afterwards belongs to *this* check. `getErrorString`
+            // returns the accumulated messages and empties the buffer, so reading it here discards
+            // anything left by an earlier command — without which a model that checked cleanly could
+            // be shown the error from one checked before it. (B116 is open against omc 1.26's
+            // behaviour here, which is why this discards rather than relying on it.)
+            _ = await SafeErrorStringAsync();
+
             var checkResult = await _omc.CheckModelAsync(modelNode.Id);
             if (checkResult)
             {
                 result.Success = true;
+
+                // Checked is not the same as had nothing to say: omc reports warnings through the
+                // same error string, and a model that passes with six of them returns true. Read on
+                // success as well, so the result dialog can show what the tool actually said (B170).
+                result.Log = await SafeErrorStringAsync();
             }
             else
             {
                 var error = await _omc.GetErrorStringAsync();
                 result.Success = false;
+                result.Log = error;
 
                 if (error.Contains("Error: the model is too complex for the current license"))
                 {
@@ -255,11 +287,10 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
                 var result = await CheckSingleModelAsync(model);
 
-                // Only fire OnModelChecked for failures to reduce UI updates
-                if (!result.Success)
-                {
-                    OnModelChecked?.Invoke(result);
-                }
+                // Every result, not only the failures — a clean run otherwise had nothing at all
+                // to show, so the dialog reporting what the tool said correctly concluded it had
+                // checked nothing (B170).
+                OnModelChecked?.Invoke(result);
 
                 _currentProgress.ModelsChecked++;
 

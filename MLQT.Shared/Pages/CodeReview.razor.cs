@@ -1192,6 +1192,17 @@ public partial class CodeReview : IAsyncDisposable
 
     private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => !r.Success);
 
+    /// <summary>
+    /// The results worth listing under the headline: every failure, and any clean check the tool
+    /// still had something to say about.
+    ///
+    /// <para>A package of two hundred classes that all passed silently has nothing to list, and the
+    /// sentence above is the whole answer. One that passed with warnings has the warnings, which is
+    /// what <c>checkModel</c> returning true hides.</para>
+    /// </summary>
+    private IEnumerable<ModelCheckResult> ReportedChecks =>
+        _checkResults.Where(r => !r.Success || !string.IsNullOrWhiteSpace(r.Log));
+
     private int PassedCheckCount => _checkResults.Count(r => r.Success);
 
     /// <summary>
