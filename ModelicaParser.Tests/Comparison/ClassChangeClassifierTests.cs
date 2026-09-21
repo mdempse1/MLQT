@@ -9,7 +9,7 @@ namespace ModelicaParser.Tests;
 /// </summary>
 public class ClassChangeClassifierTests
 {
-    private const string Original = """
+    private static readonly string Original = Lf("""
         within MyLib;
         model Resistor "An ideal resistor"
           parameter Real R = 100 "Resistance";
@@ -20,7 +20,25 @@ public class ClassChangeClassifierTests
           annotation (Icon(graphics={Rectangle(extent={{-70,30},{70,-30}})}),
             Documentation(info="<html>A resistor.</html>"));
         end Resistor;
-        """;
+        """);
+
+    /// <summary>
+    /// The fixtures are raw string literals, so their line endings are whatever the <i>test file</i>
+    /// carries - CRLF on a Windows checkout, LF on a runner with <c>core.autocrlf</c> off. Every one
+    /// of them goes through here.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>B255 again, and caught the same way: on CI.</b> Two tests edited a fixture by
+    /// searching it for a line ending, which cannot match a literal that arrived with the other
+    /// kind - so the edit silently did nothing, the two versions were identical, and the
+    /// classification came back <c>Unchanged</c>. They passed on Windows and failed on Linux.</para>
+    ///
+    /// <para><b>The product was right on both.</b> <c>ClassSignatures.Of</c> preprocesses its input,
+    /// so a classification does not depend on line endings at all - which
+    /// <see cref="TheAnswerIsTheSameWhicheverLineEndingsTheFileHas"/> now says outright, rather than
+    /// leaving it as something the fixtures happened to rely on.</para>
+    /// </remarks>
+    private static string Lf(string source) => source.Replace("\r\n", "\n");
 
     private static ClassChangeKind Classify(string committed, string working)
     {
@@ -34,6 +52,26 @@ public class ClassChangeClassifierTests
     public void AnIdenticalClassIsUnchanged()
     {
         Assert.Equal(ClassChangeKind.Unchanged, Classify(Original, Original));
+    }
+
+    /// <summary>
+    /// A classification does not depend on the line endings of either version. Modelica files in
+    /// the wild carry both, a working copy can differ from what was committed by nothing else, and
+    /// a diff that reported that as a change to what is simulated would be useless.
+    /// </summary>
+    [Fact]
+    public void TheAnswerIsTheSameWhicheverLineEndingsTheFileHas()
+    {
+        static string Crlf(string source) => source.Replace("\n", "\r\n");
+
+        var edited = Original.Replace("R = 100", "R = 220");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, edited));
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Crlf(Original), edited));
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, Crlf(edited)));
+
+        // And re-saving a file with the other endings and nothing else is no change at all.
+        Assert.Equal(ClassChangeKind.Unchanged, Classify(Original, Crlf(Original)));
     }
 
     // ---------------------------------------------------------------- cosmetic
@@ -67,7 +105,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AddingACommentIsCosmetic()
     {
-        var commented = Original.Replace("  Real v;", "  // the voltage across it\r\n  Real v;");
+        var commented = Original.Replace("  Real v;", "  // the voltage across it\n  Real v;");
 
         Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, commented));
     }
@@ -125,7 +163,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AddingADeclarationAffectsSimulation()
     {
-        var changed = Original.Replace("  Real i;", "  Real i;\r\n  Real p;");
+        var changed = Original.Replace("  Real i;", "  Real i;\n  Real p;");
 
         Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
     }
@@ -133,7 +171,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void RemovingAnEquationAffectsSimulation()
     {
-        var changed = Original.Replace("  v = R * i;\r\n", "");
+        var changed = Original.Replace("  v = R * i;\n", "");
 
         Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
     }
@@ -212,7 +250,7 @@ public class ClassChangeClassifierTests
     {
         Assert.Equal(
             ClassChangeKind.AffectsSimulation,
-            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\r\n  annotation (Evaluate=true);")));
+            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\n  annotation (Evaluate=true);")));
     }
 
     /// <summary>
@@ -226,7 +264,7 @@ public class ClassChangeClassifierTests
             ClassChangeKind.Cosmetic,
             ClassifyWrapped(
                 Wrap("  Real x;"),
-                Wrap("  Real x;\r\n  annotation (Icon(graphics={Line(points={{0,0},{1,1}})}));")));
+                Wrap("  Real x;\n  annotation (Icon(graphics={Line(points={{0,0},{1,1}})}));")));
     }
 
     // ---------------------------------------------------------------- where annotations attach
@@ -239,8 +277,8 @@ public class ClassChangeClassifierTests
     [Fact]
     public void GainingOnlyAGraphicalAnnotationOnAnEquationSectionIsCosmetic()
     {
-        var before = Wrap("  Real x;\r\nequation\r\n  x = 1;");
-        var after = Wrap("  Real x;\r\nequation\r\n  x = 1;\r\n  annotation (Diagram(coordinateSystem(extent={{-1,-1},{1,1}})));");
+        var before = Wrap("  Real x;\nequation\n  x = 1;");
+        var after = Wrap("  Real x;\nequation\n  x = 1;\n  annotation (Diagram(coordinateSystem(extent={{-1,-1},{1,1}})));");
 
         Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrapped(before, after));
     }
@@ -299,7 +337,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AShortClassDefinitionIsCompared()
     {
-        var before = "within MyLib;\r\ntype Voltage = Real(unit=\"V\", min=0) \"Electrical potential\";\r\n";
+        var before = "within MyLib;\ntype Voltage = Real(unit=\"V\", min=0) \"Electrical potential\";\n";
         var reworded = before.Replace("\"Electrical potential\"", "\"A voltage\"");
         var changed = before.Replace("min=0", "min=-1");
 
@@ -314,8 +352,8 @@ public class ClassChangeClassifierTests
     [Fact]
     public void ADerClassDefinitionIsCompared()
     {
-        var before = "within MyLib;\r\nfunction dArea = der(Area, r);\r\n";
-        var changed = "within MyLib;\r\nfunction dArea = der(Area, h);\r\n";
+        var before = "within MyLib;\nfunction dArea = der(Area, r);\n";
+        var changed = "within MyLib;\nfunction dArea = der(Area, h);\n";
 
         var kinds = ClassChangeClassifier.Compare(before, changed);
 
@@ -325,7 +363,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AClassDefinedByExtendingAnotherIsCompared()
     {
-        var before = "within MyLib;\r\nmodel extends Base(R=1)\r\n  Real x;\r\nend Base;\r\n";
+        var before = "within MyLib;\nmodel extends Base(R=1)\n  Real x;\nend Base;\n";
         var changed = before.Replace("R=1", "R=2");
 
         var kinds = ClassChangeClassifier.Compare(before, changed);
@@ -342,7 +380,7 @@ public class ClassChangeClassifierTests
     {
         Assert.Equal(
             ClassChangeKind.Cosmetic,
-            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\r\n  annotation ();")));
+            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\n  annotation ();")));
     }
 
     // ---------------------------------------------------------------- added and unknown
@@ -358,7 +396,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AClassAddedToAnExistingFileIsAdded()
     {
-        var withAnother = Original + "\r\n\r\nmodel Capacitor\r\n  Real v;\r\nend Capacitor;\r\n";
+        var withAnother = Original + "\n\nmodel Capacitor\n  Real v;\nend Capacitor;\n";
 
         var kinds = ClassChangeClassifier.Compare(Original, withAnother);
 
@@ -373,18 +411,19 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AClassRemovedFromTheFileIsNotReported()
     {
-        var withAnother = Original + "\r\n\r\nmodel Capacitor\r\n  Real v;\r\nend Capacitor;\r\n";
+        var withAnother = Original + "\n\nmodel Capacitor\n  Real v;\nend Capacitor;\n";
 
         var kinds = ClassChangeClassifier.Compare(withAnother, Original);
 
         Assert.DoesNotContain("MyLib.Capacitor", kinds);
     }
 
-    [Theory]
-    [InlineData("model Broken\r\n  Real x\r\nend Broken;", Original)]
-    public void AVersionThatWillNotParseIsUnknown(string committed, string working)
+    // A Fact rather than a Theory carrying one case: the fixtures are normalised at the source
+    // now, so they are not compile-time constants and cannot go in an InlineData.
+    [Fact]
+    public void AVersionThatWillNotParseIsUnknown()
     {
-        var kinds = ClassChangeClassifier.Compare(committed, working);
+        var kinds = ClassChangeClassifier.Compare("model Broken\n  Real x\nend Broken;", Original);
 
         Assert.All(kinds.Values, kind => Assert.Equal(ClassChangeKind.Unknown, kind));
     }
@@ -392,14 +431,14 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AWorkingCopyThatWillNotParseReportsNothing()
     {
-        var kinds = ClassChangeClassifier.Compare(Original, "model Broken\r\n  Real x\r\nend Broken;");
+        var kinds = ClassChangeClassifier.Compare(Original, "model Broken\n  Real x\nend Broken;");
 
         Assert.Empty(kinds);
     }
 
     // ---------------------------------------------------------------- nesting
 
-    private const string Package = """
+    private static readonly string Package = Lf("""
         within MyLib;
         package Components "Some components"
 
@@ -412,7 +451,7 @@ public class ClassChangeClassifierTests
           end Capacitor;
 
         end Components;
-        """;
+        """);
 
     /// <summary>
     /// The reason both halves of a signature exclude nested classes: editing one class in a package
@@ -435,7 +474,7 @@ public class ClassChangeClassifierTests
     {
         var edited = Package.Replace(
             "end Components;",
-            "  model Inductor\r\n    parameter Real L = 1;\r\n  end Inductor;\r\n\r\nend Components;");
+            "  model Inductor\n    parameter Real L = 1;\n  end Inductor;\n\nend Components;");
 
         var kinds = ClassChangeClassifier.Compare(Package, edited);
 
@@ -460,7 +499,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void ReindentingAPackageIsCosmeticForThePackageOnly()
     {
-        var edited = Package.Replace("\r\n  model Resistor", "\r\n\r\n  model Resistor");
+        var edited = Package.Replace("\n  model Resistor", "\n\n  model Resistor");
 
         var kinds = ClassChangeClassifier.Compare(Package, edited);
 
@@ -483,7 +522,7 @@ public class ClassChangeClassifierTests
     [Fact]
     public void AFileWithNoWithinClauseKeysOnTheClassNameAlone()
     {
-        var kinds = ClassChangeClassifier.Compare(null, "model Top\r\n  Real x;\r\nend Top;");
+        var kinds = ClassChangeClassifier.Compare(null, "model Top\n  Real x;\nend Top;");
 
         Assert.Equal(["Top"], kinds.Keys.ToArray());
     }
@@ -491,10 +530,10 @@ public class ClassChangeClassifierTests
     // ---------------------------------------------------------------- helpers
 
     private static string Wrap(string body) =>
-        $"within MyLib;\r\nmodel Thing\r\n{body}\r\nend Thing;\r\n";
+        $"within MyLib;\nmodel Thing\n{body}\nend Thing;\n";
 
     private static string WrapFunction(string body) =>
-        $"within MyLib;\r\nfunction F\r\n  input Real x;\r\n  output Real y;\r\n{body}\r\nend F;\r\n";
+        $"within MyLib;\nfunction F\n  input Real x;\n  output Real y;\n{body}\nend F;\n";
 
     private static ClassChangeKind ClassifyWrappedFunction(string committed, string working)
     {

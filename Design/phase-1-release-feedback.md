@@ -801,6 +801,22 @@ would bite is the last row**, and it is one file: changing a 6.7 MB `package.mo`
 of classification. Left as it is, and recorded rather than guessed at. Only the kinds are cached,
 not the signatures, so the strings that comparison builds are dropped with the call that made them.
 
+**Two of the tests were only true on Windows, and CI is where that showed** — B255's shape, in a
+package that had B255 in front of it. `ClassChangeClassifierTests` edits a fixture by searching it,
+and two of those searches carried `\r\n`: a raw string literal's endings are the *test file's*, so
+on a runner with `core.autocrlf` off the edit matched nothing, the two versions were identical, and
+the classification came back `Unchanged`. `LibraryBrowserChangeMarkerTests` wrote its paths as
+`@"C:\repo\MyLib\Components.mo"`, which on Linux is one segment, so the file id the fixture built
+and the one the browser built from `Path.Combine(VcsRootPath, change.Path)` were different and no
+model was ever found in the changed file. **The product was right on both platforms in both cases.**
+
+The fixtures are normalised where they are declared and the paths are built with `Path.Combine`, so
+neither test can depend on the checkout again — and the property the fixtures had been leaning on,
+that a classification is the same whichever endings a file has, is now a test rather than an
+accident. **Verified by simulating the runner**: converting the test file to LF reproduces CI's
+message exactly, which is worth saying because B255 records an attempt at the same simulation that
+did *not* reproduce and led to a fix being made unconditional instead.
+
 **A class can belong to two loaded libraries, and five callers assumed it could not.** Reported
 against `Suspensions.HalfCar.Steering.Experiments.RackAndPinionKinematics`: the browser marked it as
 a cosmetic change and the Code Review page opened it with all three diff views disabled. The two

@@ -489,6 +489,19 @@ excluded six classes needing no svn at all, hid 281 of the suite's 673 tests fro
 run, and hid a failing one among them (B266). **Classify a test by what it needs, never by what it is
 called.**
 
+**A raw string literal's line endings are the checkout's, and a fixture must never be searched for
+one.** `"""..."""` carries whatever the *.cs file* carries — CRLF on a Windows checkout, LF on a
+runner with `core.autocrlf` off — so `fixture.Replace("x;\r\n", "")` matches on one platform and
+silently does nothing on the other, leaving a test that asserts against an edit that was never made.
+Normalise the fixture where it is declared and search for `\n`. The same rule in the other
+direction: **never write a path as `@"C:\repo\..."`** — on Linux a backslash is an ordinary
+character, so such a path is one segment and every `Path.Combine` against it disagrees. Build test
+paths with `Path.Combine` from `Path.GetTempPath()`, and give a VCS a forward-slashed relative path,
+which is what Git reports on both. Both of these have shipped green on Windows and failed on the
+Linux job — see B255, and again in WP7. **Neither is worth a guard test**: the shapes are
+indistinguishable from the forty-odd files that use a drive-letter string as test data or search
+text they built with CRLF themselves, so the check would be noise.
+
 **A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
 suites by category on the grounds that the machine might not have the tool, and immediately excused a
 real one — OpenModelica *is* installed on the main development machine, and

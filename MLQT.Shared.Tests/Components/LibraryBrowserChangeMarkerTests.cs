@@ -27,14 +27,32 @@ namespace MLQT.Shared.Tests.Components;
 /// </remarks>
 public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
 {
-    private const string FilePath = @"C:\repo\MyLib\Components.mo";
+    /// <summary>
+    /// The repository root, and the changed file inside it.
+    /// </summary>
+    /// <remarks>
+    /// <para>Built with <see cref="Path.Combine"/> from the temp directory rather than written out
+    /// as <c>C:\repo\MyLib\Components.mo</c>. On Linux a backslash is an ordinary character, so the
+    /// hard-coded path made <c>GraphBuilder.GenerateFileId</c> and the browser's own
+    /// <c>Path.Combine(VcsRootPath, change.Path)</c> disagree, no models were found in the changed
+    /// file, and every assertion here failed — on the runner only (B255's shape).</para>
+    ///
+    /// <para><c>ChangePath</c> keeps its forward slashes, because that is what Git reports on both
+    /// platforms and what the browser is written to normalise.</para>
+    /// </remarks>
+    private static readonly string RepositoryRoot =
+        Path.Combine(Path.GetTempPath(), "mlqt-b191-marker-tests");
+
+    private static readonly string FilePath = Path.Combine(RepositoryRoot, "MyLib", "Components.mo");
+
+    private const string ChangePath = "MyLib/Components.mo";
 
     private readonly Repository _repository = new()
     {
         Id = "repo-1",
         Name = "MyLib",
-        LocalPath = @"C:\repo",
-        VcsRootPath = @"C:\repo",
+        LocalPath = RepositoryRoot,
+        VcsRootPath = RepositoryRoot,
         VcsType = RepositoryVcsType.Git,
         CurrentRevision = "abc1234",
         CurrentBranch = "main",
@@ -90,7 +108,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         library.Setup(l => l.ModelsWithDescendantParserErrors())
                .Returns(new HashSet<string>(StringComparer.Ordinal));
 
-        _changes.Add(new VcsWorkingCopyFile { Path = @"MyLib\Components.mo", Status = VcsFileStatus.Modified });
+        _changes.Add(new VcsWorkingCopyFile { Path = ChangePath, Status = VcsFileStatus.Modified });
         var repositories = new Mock<IRepositoryService>();
         repositories.Setup(r => r.GetWorkingCopyChanges("repo-1")).Returns(_changes);
 
@@ -151,7 +169,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         libraryService.Setup(l => l.ModelsWithDescendantParserErrors())
                       .Returns(new HashSet<string>(StringComparer.Ordinal));
 
-        _changes.Add(new VcsWorkingCopyFile { Path = @"MyLib\Components.mo", Status = VcsFileStatus.Modified });
+        _changes.Add(new VcsWorkingCopyFile { Path = ChangePath, Status = VcsFileStatus.Modified });
         var repositories = new Mock<IRepositoryService>();
         repositories.Setup(r => r.GetWorkingCopyChanges("repo-1")).Returns(_changes);
 
