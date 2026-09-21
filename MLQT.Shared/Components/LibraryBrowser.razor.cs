@@ -744,7 +744,12 @@ public partial class LibraryBrowser : IDisposable
         {
             { x => x.RepositoryId, Repository.Id }
         };
-        var options = new DialogOptions { CloseOnEscapeKey = true };
+        // Small, not the provider's Large default: the dialog is a list and a sentence, and
+        // MudDialog grows to fit its content up to the cap - so selecting a tag, which adds a
+        // paragraph explaining detached HEAD, stretched it to most of the screen the moment
+        // the user clicked (B193). The content has a width of its own, so this is the belt to
+        // that brace.
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small };
         var dialog = await DialogService.ShowAsync<SwitchBranchDialog>("Switch Branch", parameters, options);
         var result = await dialog.Result;
 

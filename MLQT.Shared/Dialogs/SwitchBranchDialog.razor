@@ -7,7 +7,11 @@
         <MudText Typo="Typo.h6">Switch Branch</MudText>
     </TitleContent>
     <DialogContent>
-        <MudStack Spacing="3" Style="min-width: 400px;">
+        @* A width of its own, so the dialog does not resize as its contents change. It used to
+           be a min-width only, and MudDialog sizes to content: selecting a tag added the
+           paragraph about detached HEAD and the dialog jumped to the width of the screen
+           under the click that caused it. max-width keeps it honest on a narrow window. *@
+        <MudStack Spacing="3" Style="width: 460px; max-width: 100%;">
             @if (_hasChanges)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true">
