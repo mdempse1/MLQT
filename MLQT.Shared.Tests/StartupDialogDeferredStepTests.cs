@@ -110,4 +110,56 @@ public class StartupDialogDeferredStepTests
 
         return null;
     }
+
+    /// <summary>The code-behind's text, found the same way as the markup's.</summary>
+    private static string CodeBehindSource()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "MLQT.Shared", "Layout", "MainLayout.razor.cs");
+            if (File.Exists(candidate))
+                return File.ReadAllText(candidate);
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException("MainLayout.razor.cs was not found above the test binary");
+    }
+
+    // ---------------------------------------------------------------- startup after a reload
+
+    /// <summary>
+    /// Blazor's error banner offers "Reload" for any unhandled exception, and in a webview host
+    /// that rebuilds the component tree while the services stay exactly where they were. Startup
+    /// therefore ran a second time against a process that already had a project open: the user was
+    /// asked to select a project while the previous one's packages were still in the library
+    /// browser behind the dialog, and answering would have loaded a second copy of everything into
+    /// one graph. Reported alongside the diff-viewer crash that produced the banner.
+    /// </summary>
+    [Fact]
+    public void AReloadWithAProjectOpenDoesNotRunStartupAgain()
+    {
+        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 1));
+        Assert.True(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 4));
+    }
+
+    /// <summary>
+    /// The first run of a process, and a reload of a session with nothing open, are the same
+    /// answer: there is nothing to load twice, and startup is what puts something there.
+    /// </summary>
+    [Fact]
+    public void WithNothingLoadedStartupStillRuns()
+    {
+        Assert.False(MainLayout.StartupAlreadyRan(loadedRepositoryCount: 0));
+    }
+
+    /// <summary>
+    /// The question is asked of the service that survives a reload, not of a flag on the component
+    /// that does not — the wiring is the part a static predicate cannot hold.
+    /// </summary>
+    [Fact]
+    public void TheGuardAsksTheRepositoryServiceHowMuchIsLoaded()
+    {
+        Assert.Contains("StartupAlreadyRan(RepositoryService.Repositories.Count)", CodeBehindSource());
+    }
 }

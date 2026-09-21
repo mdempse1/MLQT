@@ -123,6 +123,29 @@ public partial class MainLayout : IDisposable
     }
 
 
+    /// <summary>
+    /// Whether the startup sequence has already run in this process, so a fresh
+    /// <see cref="MainLayout"/> must not run it again.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A reload restarts the UI, not the application.</b> Blazor's own error banner offers
+    /// "Reload" for any unhandled exception, and in a webview host that re-creates the component
+    /// tree while the services stay exactly where they were — they are singletons registered by
+    /// <c>AddMlqtCore</c> in the host's <c>Program.cs</c>. So <see cref="RunStartUpAsync"/> ran a
+    /// second time against a process that already had a project open: the user was asked to select
+    /// a project while the previous one's packages were still in the library browser behind the
+    /// dialog, and answering would have loaded a second copy of everything into one graph.</para>
+    ///
+    /// <para><b>Loaded repositories is the right question</b>, rather than a flag this component
+    /// sets. A flag would live on the component, and the component is the thing that was just
+    /// replaced. The repositories are in the service that survived, which is the same place the
+    /// browser behind the dialog was reading from — so this asks what the user can already see.</para>
+    ///
+    /// <para>Zero is a genuine first run <i>or</i> a reload of a session that had nothing open, and
+    /// re-running startup is the right answer to both: there is nothing to load twice.</para>
+    /// </remarks>
+    internal static bool StartupAlreadyRan(int loadedRepositoryCount) => loadedRepositoryCount > 0;
+
     private async Task RunStartUpAsync()
     {
         LogProcessStart("MainLayout", "Application startup sequence");
@@ -130,6 +153,20 @@ public partial class MainLayout : IDisposable
         {
             // Configure snackbar position
             Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomRight;
+
+            // Nothing below this runs twice in one process. See StartupAlreadyRan: a reload rebuilds
+            // the component tree and leaves the services standing, so without this the user is asked
+            // to choose a project while the one they have open is still in the browser behind the
+            // dialog.
+            if (StartupAlreadyRan(RepositoryService.Repositories.Count))
+            {
+                _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+                await InvokeAsync(StateHasChanged);
+                Info("MainLayout",
+                    "The UI was reloaded and the project is still open; skipping the startup sequence");
+                LogProcessEnd("MainLayout", "Application startup sequence");
+                return;
+            }
 
             Thread.Sleep(200);
 

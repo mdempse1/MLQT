@@ -56,7 +56,15 @@ window.diffViewer = (function () {
 
     function initSyncScroll(leftEl, rightEl) {
         dispose();
-        if (!leftEl || !rightEl) return;
+
+        // Not just "did we get something": an unassigned Blazor ElementReference arrives here as a
+        // plain object, which is truthy and has no addEventListener. Calling it anyway threw back
+        // into OnAfterRenderAsync, where an exception takes the whole app down and leaves the user
+        // a red banner offering only Reload. The caller no longer asks when the panes are not
+        // rendered; this is the boundary saying so as well.
+        if (!leftEl || !rightEl
+            || typeof leftEl.addEventListener !== 'function'
+            || typeof rightEl.addEventListener !== 'function') return;
 
         _leftHandler = () => follow(leftEl, rightEl);
         _rightHandler = () => follow(rightEl, leftEl);

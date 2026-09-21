@@ -105,16 +105,49 @@ public partial class DiffViewer : IAsyncDisposable
         ComputeDiff();
     }
 
+    /// <summary>
+    /// Whether the two scrollable panes are on screen — which is not the same question as whether
+    /// the view mode asks for them.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The markup and <see cref="OnAfterRenderAsync"/> have to agree about this, and they
+    /// did not.</b> A file too big for the diff, or one with nothing in either version, renders a
+    /// message instead of the panes — so <c>@ref</c> never runs and both references stay default.
+    /// A default <see cref="ElementReference"/> still serialises to an object, so it arrives in
+    /// JavaScript as something truthy that is not an element, past the <c>if (!leftEl)</c> guard
+    /// there, and <c>leftEl.addEventListener is not a function</c> comes back out of
+    /// <c>OnAfterRenderAsync</c> as an unhandled exception. That is the whole of the red "An
+    /// unhandled error has occurred" banner a user got for opening a large FMU model in diff mode.</para>
+    ///
+    /// <para>Both the markup's last branch and the interop call now ask this one property, so the
+    /// two cannot come apart again.</para>
+    /// </remarks>
+    internal bool ShowsPanes =>
+        string.IsNullOrEmpty(_errorMessage)
+        && !(string.IsNullOrEmpty(OriginalContent) && string.IsNullOrEmpty(ModifiedContent))
+        && ViewMode is DiffViewMode.SideBySide or DiffViewMode.SideBySideFull;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (ViewMode == DiffViewMode.SideBySide || ViewMode == DiffViewMode.SideBySideFull)
+        // Wiring the panes together is a convenience. Losing the window is not, and an exception out
+        // of OnAfterRenderAsync takes the whole app down with a banner whose only offer is Reload.
+        try
         {
-            await JS.InvokeVoidAsync("diffViewer.initSyncScroll", _leftPaneRef, _rightPaneRef);
-            _scrollSyncActive = true;
+            if (ShowsPanes)
+            {
+                await JS.InvokeVoidAsync("diffViewer.initSyncScroll", _leftPaneRef, _rightPaneRef);
+                _scrollSyncActive = true;
+            }
+            else if (_scrollSyncActive)
+            {
+                await JS.InvokeVoidAsync("diffViewer.dispose");
+                _scrollSyncActive = false;
+            }
         }
-        else if (_scrollSyncActive)
+        catch (JSException ex)
         {
-            await JS.InvokeVoidAsync("diffViewer.dispose");
+            // The panes still scroll; they just stop following each other.
+            LoggingService.Warn("DiffViewer", $"Could not synchronise the diff panes' scrolling: {ex.Message}");
             _scrollSyncActive = false;
         }
     }

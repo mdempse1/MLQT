@@ -40,7 +40,7 @@
             <MudText Typo="Typo.body2" Color="Color.Secondary">No content to display</MudText>
         </div>
     }
-    else if (ViewMode == DiffViewMode.Unified)
+    else if (!ShowsPanes)
     {
         <div class="diff-unified">
             @foreach (var line in _unifiedLines)
