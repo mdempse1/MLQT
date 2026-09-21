@@ -997,7 +997,7 @@ complete because the measurement agreed.
 
 ### WP9 — The test debt deliberately left
 
-**B267 ✅, B228 ✅, B229 ✅, B227** · opened by WP8's audit, and held back from it on purpose · plus
+**B267 ✅, B228 ✅, B229 ✅, B227 ✅** · opened by WP8's audit, and held back from it on purpose · plus
 **B234 ✅** and **B237 ✅** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
 out of order because of that, four weeks before the date it would have fired on
 
@@ -1064,7 +1064,15 @@ third premise in this package to be wrong in the same direction**, after B228 an
 described the obstacle as something no automated run could reach, and each turned out to be
 something nobody had looked at.
 
-**B227 last, and only with a sampling plan.** 361 survivors in `ModelicaRenderer` at an 85% kill
+**B227 last, and only with a sampling plan.** ✅ — and the sampling plan was the whole of it.
+`build/survivor-map.py` groups a report's survivors by method, and the map said the four largest
+groups held 84 of 272. Two had a specification to test against and were taken; the largest did
+not and was left, deliberately, for the reason the paragraph below gives. The score moved 85.38%
+to 86.01%, which is the honest size of what was there to find. Two real defects came out of it
+(B273, and six dead arguments), and the reason the file-shape group was unguarded turned out to
+be the harness deleting the line before asserting rather than anybody forgetting.
+
+The original plan, for the record: 361 survivors in `ModelicaRenderer` at an 85% kill
 rate: the best-tested large thing here and still the biggest absolute count anywhere. Read in groups
 — indentation state, section ordering, annotation placement, line breaking — and decide per group
 whether the behaviour is specified anywhere at all. **The failure mode is specific and likely**:

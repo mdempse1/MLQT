@@ -676,6 +676,23 @@ run it again to continue. Each project's result is printed as it finishes, and t
 file, with the line each one changed. `-Summarise` rebuilds that file from whatever is on disk
 without mutating anything.
 
+**Read a large survivor list by group, never end to end** — `build/survivor-map.py` takes a
+Stryker report and prints one line per method, so the question becomes *which decisions are
+unguarded?* rather than *what are these 272 mutants?*:
+
+```bash
+python build/survivor-map.py $TEMP/mlqt-run/reports/mutation-report.json --file ModelicaRenderer
+python build/survivor-map.py <report> --file ModelicaRenderer --method VisitComposition   # then read one
+python build/survivor-map.py <report> --file Foo --status NoCoverage                      # the other list
+```
+
+It exists because B227 was 272 survivors in one 3,500-line file, and reading that many in order is
+how such a pass produces tests that assert the code's **current output** instead of its contract.
+Grouped, the answer came out as: two groups had something written down to test against, the largest
+group had only thresholds nobody had chosen, and the reason one group was unguarded at all was that
+the test harness deleted the line before asserting. **Judge a group as a whole, and leave the ones
+with no specification alone** — or write the specification down first.
+
 **It reports, it does not gate** — some survivors are equivalent mutants no test can kill, and some
 are in code nobody should test (an entry in a literal list of C header names). Read the survivors, not
 the score.

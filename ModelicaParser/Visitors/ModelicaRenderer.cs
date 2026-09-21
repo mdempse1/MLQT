@@ -427,9 +427,16 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 else if (child is ITerminalNode terminal && terminal.GetText() == "within")
                 {
                     Write(Keyword("within"));
-                    Space();
+
+                    // The space belongs to the name, not to the keyword. A top-level file has no
+                    // name, and writing it anyway produced `within ;` - valid Modelica, but a
+                    // different spelling from the `within;` WithinClause.Ensure writes, which is
+                    // the one place CLAUDE.md says adds this clause. Every save re-renders the
+                    // whole file, so the difference reached every top-level package.mo MLQT
+                    // touched (B227).
                     if (i + 1 < children.Count && children[i + 1] is modelicaParser.NameContext nameCtx)
                     {
+                        Space();
                         Visit(nameCtx);
                         i++;
                     }
@@ -655,6 +662,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         [NotNull] modelicaParser.CompositionContext context, 
         CodeSection section, 
         Element elements,
+        // Only ever read for CodeSection.Protected - the public branch writes no marker at all,
+        // because public is Modelica's default section and MLQT does not announce it. It used to
+        // be passed as `true` at six public call sites, where it did nothing and read as though it
+        // did; those now leave it alone (B227).
         bool alreadyWrittenSectionMarker = false)
     {
         var elementList = context.element_list();
@@ -808,23 +819,27 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
                 if (_importsFirst) {
                     //Collect all imports at the top of the class
-                    WriteComposition(context, CodeSection.Public, Element.Imports, true);
-                    WriteComposition(context, CodeSection.Protected, Element.Imports, true);
+                    WriteComposition(context, CodeSection.Public, Element.Imports);
+                    // True, and it matters here: this lifts the protected imports to the top of the
+                    // file, above where the protected keyword will go, so the section must not be
+                    // announced around them. The public calls below pass nothing because the flag
+                    // is never read for a public section.
+                    WriteComposition(context, CodeSection.Protected, Element.Imports, alreadyWrittenSectionMarker: true);
 
                     //Public section
-                    WriteComposition(context, CodeSection.Public, Element.Extends, true);
+                    WriteComposition(context, CodeSection.Public, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        WriteComposition(context, CodeSection.Public, Element.Components, true);
+                        WriteComposition(context, CodeSection.Public, Element.Components);
                         _writeFinalComments = true;
-                        WriteComposition(context, CodeSection.Public, Element.Classes, true);
+                        WriteComposition(context, CodeSection.Public, Element.Classes);
                     }
                     else {
                         _writeFinalComments = true;
-                        WriteComposition(context, CodeSection.Public, Element.ClassAndComponents, true);
+                        WriteComposition(context, CodeSection.Public, Element.ClassAndComponents);
                     }
                 }
                 else 
-                    WriteComposition(context, CodeSection.Public, Element.Any, true);
+                    WriteComposition(context, CodeSection.Public, Element.Any);
 
                 //Protected section
                 _writeFinalComments = false;
