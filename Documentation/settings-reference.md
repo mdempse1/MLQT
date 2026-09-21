@@ -94,7 +94,9 @@ alone otherwise:
   percentages;
 - it is not formatted;
 - nothing is written into it — no `.mlqt` directory, and so no settings, baseline or accepted
-  spellings kept beside it.
+  spellings kept beside it;
+- the library browser shows no change markers for it and offers no change filter over it, since
+  nothing in MLQT is going to change anything in it.
 
 A folder MLQT cannot write into is offered as reference-only automatically when you add it, since it
 could never keep those files anyway. The tick is only ever suggested: you can untick it, and marking

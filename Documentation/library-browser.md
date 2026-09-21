@@ -91,6 +91,8 @@ Above the tree, a **Show** list appears whenever the repository has uncommitted 
 
 Clicking an entry opens that class exactly as clicking it in the tree would. Choose **All models** to go back; the tree comes back expanded as you left it.
 
+**None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.
+
 ### Descendant Change Indicator
 
 Parent packages that contain modified files (but are not themselves directly modified) show a small **dot** next to their name. This lets you quickly spot which branches of the tree contain changes without expanding every node.

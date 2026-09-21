@@ -763,6 +763,16 @@ changes included — a filter that hid those would hide exactly what it was aske
 **The marker was written out twice** — once per tree template, repository mode and library-only mode
 — which is the shape B200 came from. It is now one decision in `ChangeMarker`, asked by both.
 
+**None of it applies to a reference-only repository**, reported by the user as soon as the filter
+shipped. The reasoning is the one already written down for that setting — MLQT never formats,
+checks, commits or writes to one — and there is a second half that makes it more than tidiness: a
+reference repository is **not file-monitored either**, so a marker on one would only ever be
+refreshed by loading the project. A stale marker is worse than none. The whole pass is skipped at
+`CheckForUncommittedChangesAsync`, which also takes the working-copy query and the per-file
+committed-version reads off the startup path for every vendor checkout in a project. This is the
+same shape as B200 and as the commit/revert buttons before it: **a promise made in one place and
+not carried into a feature added later.**
+
 **Verified by mutation by hand, because the tool would not run.** The phase's ground rule is
 verify-by-mutation for UI work, and `build/run-mutation.ps1` refuses to start on this solution —
 recorded as **B267**. So the four decisions worth holding were mutated by hand instead and each was

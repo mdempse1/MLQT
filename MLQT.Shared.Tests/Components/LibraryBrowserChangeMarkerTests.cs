@@ -55,6 +55,16 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     /// </summary>
     private IRenderedComponent<LibraryBrowser> RenderBrowser(
         IReadOnlyDictionary<string, ClassChangeKind> kinds, params string[] modelIds)
+        => RenderBrowserWithMocks(kinds, modelIds).Browser;
+
+    /// <summary>
+    /// The same arrangement, handing back the two stand-ins as well — for the tests that assert on
+    /// what was and was not asked of them rather than on what came out.
+    /// </summary>
+    private (IRenderedComponent<LibraryBrowser> Browser,
+             Mock<IRepositoryService> Repositories,
+             Mock<IModelChangeClassifier> Classifier) RenderBrowserWithMocks(
+        IReadOnlyDictionary<string, ClassChangeKind> kinds, params string[] modelIds)
     {
         var graph = new DirectedGraph();
         var fileId = GraphBuilder.GenerateFileId(FilePath);
@@ -94,18 +104,22 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
 
         RenderProviders();
-        return Render<LibraryBrowser>(p => p
+        var browser = Render<LibraryBrowser>(p => p
             .Add(c => c.LibraryOnly, false)
             .Add(c => c.Repository, _repository));
+        return (browser, repositories, classifier);
     }
 
     private static IReadOnlyDictionary<string, ClassChangeKind> Kinds(
         params (string Id, ClassChangeKind Kind)[] entries) =>
         entries.ToDictionary(e => e.Id, e => e.Kind, StringComparer.Ordinal);
 
-    /// <summary>The chip letters the tree is showing, in document order.</summary>
+    /// <summary>
+    /// The chip letters the tree is showing, in document order. Scoped to the tree because the
+    /// repository header has a chip of its own — the "Reference only" label.
+    /// </summary>
     private static string[] Chips(IRenderedComponent<LibraryBrowser> browser) =>
-        browser.FindAll(".mud-chip").Select(e => e.TextContent.Trim()).ToArray();
+        browser.FindAll(".mud-treeview .mud-chip").Select(e => e.TextContent.Trim()).ToArray();
 
     /// <summary>
     /// The class names the filtered list is showing.
@@ -283,5 +297,76 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             Assert.Empty(Listed(browser));
             Assert.NotEmpty(browser.FindAll(".mud-treeview"));
         });
+    }
+
+    // ---------------------------------------------------------------- reference-only repositories
+
+    /// <summary>
+    /// A repository the user marked reference only is never formatted, checked, committed or
+    /// written to, so there is nothing for a change marker or the change filter to be about. It is
+    /// also not file-monitored, so anything shown would only refresh on a project load — a stale
+    /// marker rather than a useful one.
+    /// </summary>
+    /// <remarks>
+    /// The changed file and its classification are set up exactly as for the tests above, so this
+    /// fails against a browser that shows them; <see cref="TheSameRepositoryShowsItAllOnceItIsNoLongerReferenceOnly"/>
+    /// is the control that the fixture would otherwise have produced them.
+    /// </remarks>
+    [Fact]
+    public void AReferenceOnlyRepositoryOffersNoChangeFilter()
+    {
+        _repository.IsReferenceOnly = true;
+
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Contains("Reference only", browser.Markup));
+        Assert.Empty(browser.FindAll(".mlqt-change-filter"));
+    }
+
+    [Fact]
+    public void AReferenceOnlyRepositoryMarksNothingAsChanged()
+    {
+        _repository.IsReferenceOnly = true;
+
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Contains("Reference only", browser.Markup));
+        Assert.Empty(Chips(browser));
+    }
+
+    /// <summary>
+    /// Nothing is read from the version control system for one, either. This is the part that is
+    /// worth having beyond the markup: a project with several vendor checkouts in it pays a
+    /// working-copy query and a committed-version read per changed file for each of them, at
+    /// startup and after every refresh, for an answer nothing is allowed to act on.
+    /// </summary>
+    [Fact]
+    public void AReferenceOnlyRepositoryIsNotAskedForItsWorkingCopyAtAll()
+    {
+        _repository.IsReferenceOnly = true;
+
+        var (browser, repositories, classifier) = RenderBrowserWithMocks(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Contains("Reference only", browser.Markup));
+        repositories.Verify(r => r.GetWorkingCopyChanges(It.IsAny<string>()), Times.Never);
+        classifier.Verify(
+            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.Never);
+    }
+
+    /// <summary>The control: the same fixture, not reference only, produces all of it.</summary>
+    [Fact]
+    public void TheSameRepositoryShowsItAllOnceItIsNoLongerReferenceOnly()
+    {
+        var (browser, repositories, classifier) = RenderBrowserWithMocks(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Single(browser.FindAll(".mlqt-change-filter")));
+        Assert.Equal(["M"], Chips(browser));
+        repositories.Verify(r => r.GetWorkingCopyChanges("repo-1"), Times.AtLeastOnce);
+        classifier.Verify(
+            c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.AtLeastOnce);
     }
 }

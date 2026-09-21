@@ -133,14 +133,24 @@ public partial class LibraryBrowser : IDisposable
     /// Checks if the repository has uncommitted changes, updates the _hasUncommittedChanges field,
     /// and builds the model-to-VCS-status and model-to-change-kind mappings for tree annotations.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Not for a reference-only repository.</b> Nothing in MLQT writes to one — no
+    /// formatting, no checking, no commit and no revert — so there is nothing for a change marker
+    /// or the change filter to be about. Worse than useless, in fact: a reference repository is not
+    /// file-monitored either, so anything shown here would only ever be refreshed by loading the
+    /// project, and a stale marker is worse than none. Skipping it also takes the working-copy
+    /// query and the per-file committed-version reads off the startup path for every vendor
+    /// checkout in a project.</para>
+    /// </remarks>
     private async Task CheckForUncommittedChangesAsync()
     {
-        if (Repository == null || Repository.VcsType == RepositoryVcsType.Local)
+        if (Repository == null || Repository.VcsType == RepositoryVcsType.Local || Repository.IsReferenceOnly)
         {
             _hasUncommittedChanges = false;
             _modelVcsStatus.Clear();
             _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
             _descendantChangeKinds.Clear();
+            _changeFilter = ChangeFilter.None;
             return;
         }
 
@@ -190,7 +200,8 @@ public partial class LibraryBrowser : IDisposable
 
         // A filter with nothing left to filter is withdrawn along with its control, or committing
         // while "Affects simulation" is selected leaves the tree hidden behind an empty list and no
-        // visible way back to it.
+        // visible way back to it. The same applies above, where a repository just marked reference
+        // only takes its changes - and its filter - out of the browser mid-session.
         if (!hasChanges)
             _changeFilter = ChangeFilter.None;
     }
