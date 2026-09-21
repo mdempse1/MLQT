@@ -1034,6 +1034,16 @@ all** - nothing tested `ForFile` directly, only through the encoding tests, whic
 line endings. 36 survivors before, 26 after. **Read the survivors, not the row about them**: a
 backlog entry written from an audit is a snapshot, and the tool is the source.
 
+**B237 is half done, and the half that is left is not a test problem.** The shared host had a cause
+nobody had named: every journey's fixture library is called `Lib`, so they all produce the same
+class ids, and nothing ever took one back out of the shared service — so a class resolved to the
+first journey's node, whose file had been deleted with its fixture. `ResetLibrariesAsync` fixes
+that and all 71 journeys pass with it. The journey was then written again and **still** passes
+alone and fails beside its siblings, so it is not committed: a test that depends on what ran before
+it is worse than no test. What is left is `CodeReview.OnModelSelected` calling `StateHasChanged`
+off the dispatcher and killing the circuit — **B271**, a product defect found by the journey this
+item exists to make possible, which is the argument for the journey rather than against it.
+
 **B229 then, because it is the largest gap and the reason is structural.** 11% of covered mutants
 killed in each of the two external-tool services, and they are the only code in the solution whose
 suites no CI job runs. Nothing outside one machine exercises them. That is a decision the project

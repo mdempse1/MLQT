@@ -31,6 +31,9 @@ public class ResizablePanesJourney(TestHostFixture host) : IDisposable
     private async Task<IPage> OpenAsync(int tabIndex, bool withResources = false, bool withFindings = false)
     {
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
+        // Every journey's library is called Lib, so they share class ids. Start from an empty
+        // graph or this one resolves to the previous journey's deleted files (B237).
+        await host.ResetLibrariesAsync();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
 
         if (withFindings)

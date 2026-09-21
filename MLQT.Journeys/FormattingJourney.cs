@@ -32,6 +32,9 @@ public class FormattingJourney(TestHostFixture host) : IDisposable
         var pipeline = host.Services.GetRequiredService<IFormattingPipeline>();
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
 
+        // Every journey's library is called Lib, so they share class ids. Start from an empty
+        // graph or this one resolves to the previous journey's deleted files (B237).
+        await host.ResetLibrariesAsync();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
 
         // Stated as a precondition rather than left implicit: the formatter only touches files the
@@ -62,6 +65,9 @@ public class FormattingJourney(TestHostFixture host) : IDisposable
         var pipeline = host.Services.GetRequiredService<IFormattingPipeline>();
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
 
+        // Every journey's library is called Lib, so they share class ids. Start from an empty
+        // graph or this one resolves to the previous journey's deleted files (B237).
+        await host.ResetLibrariesAsync();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
         pipeline.ClearWrittenFileTimestamps();
 
@@ -81,6 +87,9 @@ public class FormattingJourney(TestHostFixture host) : IDisposable
         var pipeline = host.Services.GetRequiredService<IFormattingPipeline>();
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
 
+        // Every journey's library is called Lib, so they share class ids. Start from an empty
+        // graph or this one resolves to the previous journey's deleted files (B237).
+        await host.ResetLibrariesAsync();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
         var before = Directory.GetFiles(_library.LibraryPath)
                               .ToDictionary(f => f, File.ReadAllText);

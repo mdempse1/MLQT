@@ -29,6 +29,9 @@ public class CodeReviewToolbarJourney(TestHostFixture host) : IDisposable
     private async Task<IPage> OpenWithFindingsAsync()
     {
         var libraries = host.Services.GetRequiredService<ILibraryDataService>();
+        // Every journey's library is called Lib, so they share class ids. Start from an empty
+        // graph or this one resolves to the previous journey's deleted files (B237).
+        await host.ResetLibrariesAsync();
         await libraries.AddLibraryFromDirectoryAsync(_library.LibraryPath);
 
         var review = host.Services.GetRequiredService<ICodeReviewService>();

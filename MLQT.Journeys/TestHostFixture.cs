@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
+using MLQT.Services.Interfaces;
 using MLQT.TestHost;
 
 namespace MLQT.Journeys;
@@ -130,6 +131,34 @@ public sealed class TestHostFixture : IAsyncLifetime
         page.PageError += (_, error) => Console.WriteLine($"[browser error] {error}");
 
         return page;
+    }
+
+    /// <summary>
+    /// Unloads every library a previous journey left behind, so this one starts on an empty graph.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The journeys share one host, and nothing used to take a library out of it (B237).</b>
+    /// Each journey builds its own <c>LibraryFixture</c> under a fresh temp path, and every one of
+    /// them is called <c>Lib</c> — so they all produce the same class ids. <c>LibraryFixture.Dispose</c>
+    /// deletes the directory and leaves the library registered, and
+    /// <c>DirectedGraph.AddNode</c> keeps the copy that arrived first. After the first journey,
+    /// <c>Lib.Modified</c> therefore resolves to a node whose file has been deleted.</para>
+    ///
+    /// <para>That is why a journey needing a class open passes on its own and fails in a full run:
+    /// the code viewer has nothing to read. It cost B237 its journey, and
+    /// <c>ResizablePanesJourney</c> would have met it the moment it needed a class.</para>
+    ///
+    /// <para><b>Called at the start of a journey rather than at the end</b>, because a journey that
+    /// fails half way through does not get to clean up, and the next one would inherit exactly the
+    /// state this exists to prevent.</para>
+    /// </remarks>
+    public async Task ResetLibrariesAsync()
+    {
+        var libraries = Services.GetRequiredService<ILibraryDataService>();
+        foreach (var library in libraries.Libraries.ToList())
+            libraries.RemoveLibrary(library.Id);
+
+        await WaitForIdleAsync();
     }
 
     /// <summary>Blocks until MLQT's analysis pipeline has gone quiet. See PipelineQuiescence.</summary>
