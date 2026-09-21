@@ -258,6 +258,53 @@ public class SvnIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// A Windows-1252 file comes back out of a revision as the bytes that went in (B264).
+    /// </summary>
+    /// <remarks>
+    /// <c>svn cat</c> used to be read through <c>StandardOutputEncoding = UTF8</c>, so an accented
+    /// library's characters were replacement characters before MLQT saw them - on both sides of a
+    /// diff of itself, since both sides come from here.
+    /// </remarks>
+    [Fact]
+    public void GetFileBytesAtRevision_KeepsAWindows1252FilesBytes()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var latin1 = System.Text.CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+        const string accented = "model Café \"Température de l'eau\"\nend Café;\n";
+
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "Accented.mo");
+        var stored = latin1.GetBytes(accented);
+        File.WriteAllBytes(file, stored);
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add an accented file\"");
+
+        // Every route to the content, because they are separate code paths and only one of them is
+        // the one the history diff takes. "HEAD" reads the working copy's BASE; a revision number
+        // reads it pegged; and with the file gone from disk it is fetched from the server by URL.
+        // The server's HEAD, not the working copy's: the commit above went through the svn CLI, so
+        // the working copy is left at a mixed revision and its own number predates the file.
+        var revision = _svn.GetCurrentRevision(_trunkUrl);
+        Assert.NotNull(revision);
+
+        var atBase = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", "HEAD");
+        var atRevision = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", revision);
+
+        File.Delete(file);
+        var fromServer = _svn.GetFileBytesAtRevision(workingDir, "Accented.mo", revision);
+
+        Assert.Equal(stored, atBase);
+        Assert.Equal(stored, atRevision);
+        Assert.Equal(stored, fromServer);
+        Assert.Equal(accented, latin1.GetString(atRevision!));
+
+        // What they used to return, and why it was wrong.
+        Assert.Contains('�', System.Text.Encoding.UTF8.GetString(atRevision!));
+    }
+
+    /// <summary>
     /// Committing a file that already matches the repository says so, rather than reporting a
     /// failure for a command that succeeded (B266).
     /// </summary>

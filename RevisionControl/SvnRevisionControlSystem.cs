@@ -1044,7 +1044,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         return (number - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
+    public byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
         {
@@ -1060,14 +1060,17 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 || revision.Equals("HEAD", OIC)
                 || !long.TryParse(revision, out _);
 
+            // RunForBytes, not Run: `svn cat` writes a file, and a file's encoding is its own
+            // business - decoding it as UTF-8 loses a Windows-1252 library's accented characters
+            // before any caller can say otherwise (B264).
             if (useBase)
-                return SvnCli.Run("cat", "-r", "BASE", fullPath) is { Success: true } b ? b.StdOut : null;
+                return SvnCli.RunForBytes("cat", "-r", "BASE", fullPath) is { Success: true } b ? b.StdOut : null;
 
             if (File.Exists(fullPath))
             {
                 // Peg at HEAD to identify the file, operate at the requested revision so SVN
                 // follows copy history (e.g. a branch created from trunk).
-                var local = SvnCli.Run("cat", "-r", revision!, $"{fullPath}@HEAD");
+                var local = SvnCli.RunForBytes("cat", "-r", revision!, $"{fullPath}@HEAD");
                 if (local.Success)
                     return local.StdOut;
             }
@@ -1080,7 +1083,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // caller named is a server revision in any case (B265).
             foreach (var url in ContentUrlCandidates(repositoryPath, filePath))
             {
-                var remote = SvnCli.Run("cat", "-r", revision!, url);
+                var remote = SvnCli.RunForBytes("cat", "-r", revision!, url);
                 if (remote.Success)
                     return remote.StdOut;
             }
@@ -1089,7 +1092,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("GetFileContentAtRevision", ex);
+            RevisionControlLogger.Error("GetFileBytesAtRevision", ex);
             return null;
         }
     }

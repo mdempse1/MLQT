@@ -1031,6 +1031,46 @@ public class RepositoryServiceTests
         }
     }
 
+    /// <summary>
+    /// A Windows-1252 file read out of history comes back as its characters, not as replacement
+    /// characters (B264).
+    /// </summary>
+    /// <remarks>
+    /// The VCS layer returns the bytes that were stored; this is the boundary where MLQT decides
+    /// what they mean, through the same funnel a file on disk goes through. Before it, the diff of
+    /// an accented library against itself was mojibake on both sides.
+    /// </remarks>
+    [Fact]
+    public async Task GetFileContentAtRevision_WithAWindows1252File_KeepsItsCharacters()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var latin1 = System.Text.CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+        const string source = "package Café \"Température\" end Café;";
+
+        var tempDir = CreateTempGitRepo("placeholder");
+        if (tempDir == null) return;
+
+        try
+        {
+            File.WriteAllBytes(Path.Combine(tempDir, "package.mo"), latin1.GetBytes(source));
+            RunGit(tempDir, "add .");
+            RunGit(tempDir, "commit -m \"accented\"");
+
+            var service = CreateService();
+            var addResult = await service.AddRepositoryAsync(tempDir, startMonitoring: false);
+            if (!addResult.Success) return;
+
+            var content = service.GetFileContentAtRevision(SandboxedId(addResult), "package.mo", "HEAD");
+
+            Assert.Equal(source, content);
+            Assert.DoesNotContain('�', content!);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
     [Fact]
     public async Task GetFileContentAtRevision_WithGitRepo_ReturnsContent()
     {

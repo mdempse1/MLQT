@@ -195,13 +195,23 @@ public interface IRevisionControlSystem
     VcsOperationResult CreateBranch(string repositoryPath, string branchName, bool switchToBranch = true);
 
     /// <summary>
-    /// Gets the content of a file at a specific revision.
+    /// Gets a file's stored bytes at a specific revision.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Bytes, for the same reason as <see cref="GetConflictVersions"/>.</b> This returned a
+    /// string, decoded as UTF-8 by whichever mechanism the system happened to use - a default
+    /// <c>StreamReader</c> over a git blob, <c>StandardOutputEncoding</c> on <c>svn cat</c> - so a
+    /// Windows-1252 Modelica library showed replacement characters on both sides of a diff of itself,
+    /// and the bytes were gone before any caller could say otherwise (B264).</para>
+    ///
+    /// <para>What the bytes mean is the caller's question. <c>MLQT.Services.Helpers.VcsFileText</c> is
+    /// where MLQT answers it, through the same encoding funnel it uses for files on disk.</para>
+    /// </remarks>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
     /// <param name="filePath">Relative path to the file within the repository</param>
     /// <param name="revision">Revision identifier (null or "HEAD" for the last committed version)</param>
-    /// <returns>The file content, or null if the file doesn't exist at that revision</returns>
-    string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null);
+    /// <returns>The file's bytes, or null if the file doesn't exist at that revision</returns>
+    byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null);
 
     /// <summary>
     /// The revision that came immediately before <paramref name="revision"/>, so a commit can be

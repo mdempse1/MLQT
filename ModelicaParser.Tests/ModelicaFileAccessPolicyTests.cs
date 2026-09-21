@@ -83,7 +83,6 @@ public class ModelicaFileAccessPolicyTests
 
         // Streams rather than paths: there is no file here to have an encoding.
         ["ModelicaParser/SpellChecking/SpellChecker.cs"] = (1, "wraps an embedded dictionary resource stream"),
-        ["RevisionControl/GitRevisionControlSystem.cs"] = (1, "wraps a git blob stream"),
 
         // SVN plumbing.
         ["RevisionControl/SvnRevisionControlSystem.cs"] = (3, "writes the svn targets file (a list of paths); "

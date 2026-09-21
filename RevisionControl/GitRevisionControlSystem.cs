@@ -1238,7 +1238,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
     }
 
-    public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
+    public byte[]? GetFileBytesAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
         {
@@ -1270,14 +1270,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return null;
             }
 
-            var blob = (Blob)treeEntry.Target;
-            using var contentStream = blob.GetContentStream();
-            using var reader = new StreamReader(contentStream);
-            return reader.ReadToEnd();
+            // The blob as stored. A StreamReader here decoded it as UTF-8, which is wrong for the
+            // Windows-1252 half of a mixed Modelica library and silently so (B264).
+            return BlobBytes(repo, treeEntry.Target.Id);
         }
         catch (Exception ex)
         {
-            RevisionControlLogger.Error("GetFileContentAtRevision", ex);
+            RevisionControlLogger.Error("GetFileBytesAtRevision", ex);
             return null;
         }
     }

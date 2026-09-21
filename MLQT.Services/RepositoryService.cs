@@ -1461,7 +1461,9 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        return vcs.GetFileContentAtRevision(repository.VcsRootPath, filePath, revision);
+        // Decoded here, through the same funnel a file on disk goes through. The VCS layer hands
+        // back what was stored because it knows nothing about Modelica (B264).
+        return VcsFileText.Decode(vcs.GetFileBytesAtRevision(repository.VcsRootPath, filePath, revision));
     }
 
     public string? GetPreviousRevision(string repositoryId, string revision)

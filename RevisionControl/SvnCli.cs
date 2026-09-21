@@ -39,6 +39,15 @@ internal static class SvnCli
         }
     }
 
+    /// <summary>Result of an svn invocation whose output is a file rather than text (B264).</summary>
+    internal sealed class BytesResult
+    {
+        public required int ExitCode { get; init; }
+        public required byte[] StdOut { get; init; }
+        public required string StdErr { get; init; }
+        public bool Success => ExitCode == 0;
+    }
+
     /// <summary>
     /// Resolves the svn executable or throws. Once SharpSvn was removed, svn became a
     /// hard requirement; shipped builds carry the bundled SlikSVN client, and developer
@@ -55,6 +64,67 @@ internal static class SvnCli
                 "SlikSVN client under the app's svn/ folder, or install svn on your PATH.");
         }
         return exe;
+    }
+
+    /// <summary>
+    /// Runs svn and returns standard output as the bytes svn wrote, not as text.
+    /// </summary>
+    /// <remarks>
+    /// <para>For <c>svn cat</c>, and for nothing else. Every other command writes text svn generates
+    /// itself - XML, status codes, revision numbers - which is UTF-8 by definition, so decoding it is
+    /// right. <c>cat</c> writes a <b>file</b>, and its encoding is the file's own business: a
+    /// Windows-1252 Modelica library decoded as UTF-8 comes back with replacement characters where
+    /// its accented characters were, and by then the bytes are gone (B264).</para>
+    ///
+    /// <para>stderr is still text, because svn wrote it.</para>
+    /// </remarks>
+    internal static BytesResult RunForBytes(params string[] args)
+    {
+        var exe = RequireSvn();
+
+        var psi = new ProcessStartInfo(exe)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var a in args)
+            psi.ArgumentList.Add(a);
+        psi.ArgumentList.Add("--non-interactive");
+
+        Process process;
+        try
+        {
+            process = Process.Start(psi)!;
+        }
+        catch (Win32Exception ex)
+        {
+            throw new SvnCliException("start-svn", -1,
+                $"Failed to start svn executable '{exe}': {ex.Message}");
+        }
+
+        using (process)
+        {
+            // The raw stream, not the reader: reading through StandardOutput would decode, which is
+            // the whole thing this avoids. Both streams are still consumed concurrently, or a file
+            // larger than the pipe buffer deadlocks.
+            using var buffer = new MemoryStream();
+            var stdoutTask = process.StandardOutput.BaseStream.CopyToAsync(buffer);
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
+            process.WaitForExit();
+            stdoutTask.GetAwaiter().GetResult();
+            var stderr = stderrTask.GetAwaiter().GetResult();
+
+            return new BytesResult
+            {
+                ExitCode = process.ExitCode,
+                StdOut = buffer.ToArray(),
+                StdErr = stderr,
+            };
+        }
     }
 
     /// <summary>
