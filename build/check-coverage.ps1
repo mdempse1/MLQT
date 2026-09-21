@@ -29,6 +29,11 @@
     an improvement is only safe from a machine configured like the runner - or after the run that
     produced it has been seen to pass there (B266).
 
+    That paragraph was here and it happened anyway: a re-record from a machine with svn on PATH put
+    SvnCli at 51.5% against the 27.3% CI measures, and the gate failed on the next push. So the
+    script now declines to raise a RevisionControl.Svn* figure when svn is present, and names each
+    one it held back. The warning stays for the cases the hold-back does not cover.
+
     A fourth way it fails, and the reason the baseline has an "excluded" list: a class in the ledger
     that is not in the report at all. That is not the same fact as "it meets the bar now" - it is no
     information - and until B104 the gate said the same sentence for both, so debt could be paid off
@@ -242,12 +247,19 @@ $excludedReasons = @{}
 # one that stopped being measured.
 $previouslyAccepted = @()
 
+# The figure each entry already carries, so -UpdateBaseline can decline to raise one that only this
+# machine can reach. See the svn note in the update block below.
+$previousCoverage = @{}
+
 if (Test-Path $BaselinePath) {
     $existing = Get-Content $BaselinePath -Raw | ConvertFrom-Json
     foreach ($property in $existing.classes.PSObject.Properties) {
         $previouslyAccepted += $property.Name
         if ($property.Value.PSObject.Properties.Name -contains 'reason') {
             $reasons[$property.Name] = [string] $property.Value.reason
+        }
+        if ($property.Value.PSObject.Properties.Name -contains 'coverage') {
+            $previousCoverage[$property.Name] = [double] $property.Value.coverage
         }
     }
     if ($existing.PSObject.Properties.Name -contains 'excluded' -and $existing.excluded) {
@@ -259,10 +271,33 @@ if (Test-Path $BaselinePath) {
 }
 
 if ($UpdateBaseline) {
+    # How much of RevisionControl's svn code is covered depends on whether an svn client is on
+    # PATH, not on which tests ran - the Code Coverage job is windows-latest with none installed,
+    # and a developer's machine that has one covers roughly twice as much. Recording this machine's
+    # figure for those classes writes a floor CI cannot reach, and the gate then fails there on the
+    # next push.
+    #
+    # The header has warned about this since B266 and it happened anyway, which is the argument for
+    # doing something rather than saying something: those entries keep the figure already recorded,
+    # and each one is named. A prose warning in a help block is not read at the moment it matters.
+    $svnPresent = [bool] (Get-Command svn -ErrorAction SilentlyContinue)
+    $svnDependent = 'RevisionControl::RevisionControl.Svn'
+    $heldBack = @()
+
     $entries = [ordered] @{}
     foreach ($item in ($below | Sort-Object Key)) {
+        $coverage = [math]::Round($item.Coverage, 1)
+
+        if ($svnPresent -and $item.Key.StartsWith($svnDependent) -and $previousCoverage.ContainsKey($item.Key)) {
+            $recorded = $previousCoverage[$item.Key]
+            if ($coverage -gt $recorded) {
+                $heldBack += [pscustomobject]@{ Key = $item.Key; Here = $coverage; Kept = $recorded }
+                $coverage = $recorded
+            }
+        }
+
         $entries[$item.Key] = [ordered] @{
-            coverage = [math]::Round($item.Coverage, 1)
+            coverage = $coverage
             lines    = $item.Lines
             bar      = $item.Bar
             reason   = if ($reasons.ContainsKey($item.Key)) { $reasons[$item.Key] } else { $NeedsReason }
@@ -288,6 +323,15 @@ if ($UpdateBaseline) {
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content $BaselinePath -Encoding utf8
     Write-Host "Recorded $($entries.Count) class(es) in $BaselinePath" -ForegroundColor Green
+
+    if ($heldBack) {
+        Write-Host ''
+        Write-Host 'Kept the recorded figure for these - this machine has an svn client and the runner has none:' -ForegroundColor Yellow
+        foreach ($entry in $heldBack) {
+            Write-Host ("  {0,-70} kept {1}%, measured {2}% here" -f $entry.Key, $entry.Kept, $entry.Here) -ForegroundColor Yellow
+        }
+        Write-Host '  Raise them from a CI run that passed, not from here.' -ForegroundColor Yellow
+    }
 
     $unexplained = @($entries.Keys | Where-Object { $entries[$_].reason -eq $NeedsReason }) +
                    @($exclusions.Keys | Where-Object { $exclusions[$_].reason -eq $NeedsReason })

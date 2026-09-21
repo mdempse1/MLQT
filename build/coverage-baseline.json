@@ -63,7 +63,7 @@
                                                                                "coverage":  48.5,
                                                                                "lines":  566,
                                                                                "bar":  80,
-                                                                               "reason":  "The tree building, the lazy-load selection regression, the reference-only labelling and the change markers are covered, all by bUnit tests written for them specifically - B200 added the repository-mode render, which moved this from 22% to 34%, and B191's markers and change filter took it to 48.5%. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
+                                                                               "reason":  "The tree building, the lazy-load selection regression, the reference-only labelling and the change markers are covered, all by bUnit tests written for them specifically - B200 added the repository-mode render, which moved this from 22% to 34%, and B191\u0027s markers and change filter took it to 48.5%. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
                                                                            },
                     "MLQT.Shared::MLQT.Shared.Components.NamingStyleSelect":  {
                                                                                   "coverage":  35.7,
@@ -216,10 +216,10 @@
                                                                                             "reason":  "2 points under the bar, and deliberately. B175 added the removal half of the writer, whose uncovered lines are two `Parse(...) is null` guards: one before the splice and one re-parsing the result. Neither is reachable from these entry points - the parser recovers rather than returning nothing - but the second is the backstop on a method that rewrites a class\u0027s source rather than adding to it, and removing a safety net to move a number is the wrong trade. The rest of the class is the older debt: splice positions for annotation shapes no fixture yet produces."
                                                                                         },
                     "RevisionControl::RevisionControl.SvnCli":  {
-                                                                    "coverage":  51.5,
+                                                                    "coverage":  27.3,
                                                                     "lines":  95,
                                                                     "bar":  80,
-                                                                    "reason":  "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner."
+                                                                    "reason":  "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner. **This figure has to come from a CI run, not from a developer machine.** How much of this class is covered depends on whether an svn client is on PATH, not on which tests ran: the Code Coverage job is windows-latest with no svn installed, and a machine that has one covers roughly twice as much. Re-recording the baseline locally put this at 51.5% and the gate then failed on CI at 27.3%, which is what the warning in check-coverage.ps1 now exists to stop."
                                                                 },
                     "RevisionControl::RevisionControl.SvnRevisionControlSystem":  {
                                                                                       "coverage":  28.7,
@@ -228,10 +228,10 @@
                                                                                       "reason":  "Needs a real SVN working copy and a server; the suite that covers it (SvnOperationsTests) is filtered out of the CI run for that reason. Covered locally against C:\\Projects\\ModelicaEditorTest."
                                                                                   },
                     "RevisionControl::RevisionControl.SvnToolLocator":  {
-                                                                            "coverage":  75,
+                                                                            "coverage":  71.8,
                                                                             "lines":  32,
                                                                             "bar":  80,
-                                                                            "reason":  "Finds an installed svn. There is none on the runner, so every branch that matters is the not-found one."
+                                                                            "reason":  "Finds an installed svn. There is none on the runner, so every branch that matters is the not-found one. **This figure has to come from a CI run, not from a developer machine.** How much of this class is covered depends on whether an svn client is on PATH, not on which tests ran: the Code Coverage job is windows-latest with no svn installed, and a machine that has one covers roughly twice as much. Re-recording the baseline locally put this at 75% and the gate then failed on CI at 71.8%, which is what the warning in check-coverage.ps1 now exists to stop."
                                                                         }
                 },
     "excluded":  {
