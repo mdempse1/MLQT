@@ -397,6 +397,7 @@ forward plan and the working list. **Read both before starting anything substant
 |----------|--------|
 | `Design/roadmap.md` | Candidate work by theme, the locked phase sequencing, and where the project is |
 | `Design/backlog.md` | The working list: every open item, with an id (`B1`–`Bnn`) that is never reused |
+| `Design/release-checklist.md` | **What CI cannot do for you before a release**: the three suites no runner runs, the fidelity corpus (opt-in, so an ordinary run says nothing about it), the nightly WebKit rehearsal, and the `.deb` job that only a tag exercises. Adding to it is a decision that something *cannot* be a gate on every push |
 
 **Backlog ids are permanent.** They are cited from code comments, test summaries, build scripts and
 CI workflows, so a retired id is never given to a new item — new items continue from the highest

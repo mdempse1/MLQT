@@ -148,6 +148,82 @@ public class ModelicaTokenClassifierTests
         AssertRoundTrips(source);
     }
 
+    // ── property 1b: the emit loop, where a crash cannot hide ────────────────────
+
+    /// <summary>
+    /// Emits through the three-argument <see cref="ModelicaTokenClassifier.Highlight(Antlr4.Runtime.Tree.IParseTree?, Antlr4.Runtime.BufferedTokenStream, string)"/>,
+    /// which has no <c>catch</c> — and asserts the output is <b>tagged</b> as well as faithful.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why the round-trip tests above cannot do this job (B234).</b>
+    /// <c>Highlight(string)</c> ends in <c>catch { return Plain(source); }</c>, and <c>Plain</c>
+    /// returns the source as untagged lines — which round-trips perfectly. So a fault that makes
+    /// the emit loop <i>throw</i> is caught, falls back, and every round-trip assertion still
+    /// passes. A test that only strips the tags off cannot tell <c>Highlight</c> from
+    /// <c>Plain</c>.</para>
+    ///
+    /// <para><b>That is why the offset arithmetic survived mutation, and the corpus was never the
+    /// reason.</b> <see cref="RoundTripsOverAWholeLibrary"/> calls the same catching entry point and
+    /// strips, so it would not have killed those mutants either — over 8,367 files or over eight.
+    /// Reaching the guards is easy; noticing that they were reached is what was missing.</para>
+    ///
+    /// <para><b>What still survives in the emit loop, and why it is not worth chasing.</b> Measured
+    /// after these tests: 22 survivors became 19, 84.72% became 86.81%, and what is left there is
+    /// equivalent — read, as CLAUDE.md asks, rather than scored:</para>
+    /// <list type="bullet">
+    /// <item>the <c>StringBuilder</c> capacity arithmetic, which changes no output;</item>
+    /// <item><c>i &lt; stream.Size</c> to <c>&lt;=</c>, unreachable because the EOF <c>break</c>
+    /// fires first — and the <c>break</c> itself, unreachable because the guard below would drop
+    /// EOF anyway. Those two are equivalent <i>because of each other</i>, which is defence in depth
+    /// rather than an accident;</item>
+    /// <item><c>start &gt; cursor</c> to <c>&gt;=</c> and <c>cursor &lt; text.Length</c> to
+    /// <c>&lt;=</c>: when the two are equal the extra call appends a zero-length span.</item>
+    /// </list>
+    /// <para>One is not equivalent and is left: a logical mutation at the guard that drops the
+    /// <c>stop &gt;= text.Length</c> disjunct. Two of that line's three mutants die here; no input
+    /// was found for the third.</para>
+    ///
+    /// </remarks>
+    [Theory]
+    // PreprocessCode appends a ';' when the source has none. That token starts one past the end of
+    // the text being emitted, and the guard has to drop it rather than slice for it.
+    [InlineData("no trailing semicolon", "model M \"m\"\n  Real x = 1;\nend M")]
+    // ...and it trims the end, so the tail it removed is not in any token and has to be put back.
+    [InlineData("trailing blank lines", "model M \"m\"\n  Real x = 1;\nend M;\n\n\n   \n")]
+    [InlineData("trailing spaces", "model M \"m\"\n  Real x = 1;\nend M;   ")]
+    // A character the lexer refuses is in no token at all, so it leaves a gap between one token's
+    // end and the next one's start. WS is hidden rather than skipped, so only a rejected character
+    // does this.
+    [InlineData("a character the lexer rejects", "model M \"m\"\n  Real x = 1; !!!\nend M;")]
+    [InlineData("rejected character at the end", "model M \"m\"\nend M; @@@")]
+    public void TheEmitLoopIsFaithfulAndStillColours(string _, string source)
+    {
+        var (tree, stream) = ModelicaParserHelper.ParseWithTokens(source);
+
+        // No catch on this overload: a mutation that throws fails here instead of falling back.
+        var lines = ModelicaTokenClassifier.Highlight(tree, stream, source);
+
+        Assert.Equal(ModelicaParserHelper.NormalizeLineEndings(source), Strip(lines));
+
+        // The half that Plain would also satisfy. Without it this is a test of Plain.
+        Assert.Contains(lines, line => line.Contains("<KEYWORD>model</KEYWORD>"));
+    }
+
+    /// <summary>
+    /// The control for the assertion above: <see cref="ModelicaTokenClassifier.Plain"/> round-trips
+    /// too, so a test that only round-trips passes against it.
+    /// </summary>
+    [Fact]
+    public void PlainRoundTripsAsWell_WhichIsWhyTheTagsAreAsserted()
+    {
+        const string source = "model M \"m\"\n  Real x = 1;\nend M;\n";
+
+        var plain = ModelicaTokenClassifier.Plain(source);
+
+        Assert.Equal(ModelicaParserHelper.NormalizeLineEndings(source), Strip(plain));
+        Assert.DoesNotContain(plain, line => line.Contains("<KEYWORD>"));
+    }
+
     [Fact]
     public void RoundTripsWithNoParseTreeAtAll()
     {
