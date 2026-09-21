@@ -68,6 +68,16 @@ public class Repository
     public string? CurrentRevision { get; set; }
 
     /// <summary>
+    /// Where HEAD is when <see cref="CurrentBranch"/> is null, so the UI has something true to show.
+    /// </summary>
+    /// <remarks>
+    /// Checking out a Git tag leaves a detached HEAD: there is no branch, and the browser showed a
+    /// blank where the branch name goes. This is the tag, or a short commit id when HEAD is not on
+    /// one. Always null for SVN, which has no such state (B193).
+    /// </remarks>
+    public string? DetachedHeadLabel { get; set; }
+
+    /// <summary>
     /// Current branch name (e.g., "main", "trunk", "branches/release-1.0").
     /// Null if not on a branch (e.g., detached HEAD in Git) or for Local VCS type.
     /// </summary>

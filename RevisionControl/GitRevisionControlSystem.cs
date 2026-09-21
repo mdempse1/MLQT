@@ -933,6 +933,40 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// <summary>
     /// Gets the list of available branches.
     /// </summary>
+    /// <summary>
+    /// The tag HEAD is on, or a short commit id, when HEAD is not on a branch.
+    /// </summary>
+    /// <remarks>
+    /// The tag is preferred because it is what the user chose: switching to <c>v2.0.0</c> and being
+    /// told the repository is at <c>a1b2c3d</c> is a true statement that answers a question nobody
+    /// asked. Where several tags share a commit, the first is as good an answer as any.
+    /// </remarks>
+    public string? GetDetachedHeadLabel(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+
+            if (!repo.Info.IsHeadDetached)
+                return null;
+
+            var head = repo.Head.Tip;
+            if (head == null)
+                return null;
+
+            var tag = repo.Tags.FirstOrDefault(t => (t.PeeledTarget as Commit)?.Sha == head.Sha);
+            return tag?.FriendlyName ?? head.Sha[..Math.Min(7, head.Sha.Length)];
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetDetachedHeadLabel", ex);
+            return null;
+        }
+    }
+
     public List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false)
     {
         var branches = new List<VcsBranchInfo>();
@@ -961,6 +995,29 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     IsCurrent = branch.FriendlyName == currentBranch,
                     IsRemote = branch.IsRemote,
                     LastCommit = branch.Tip?.Sha
+                });
+            }
+
+            // Tags, listed beside the branches. A user switching to "the version we shipped" is doing
+            // the same thing either way, and other Git clients offer both in one place - MLQT offered
+            // neither for Git, while SVN's tags arrived for free as tags/* directories (B193).
+            //
+            // IsCurrent when HEAD is sitting on the tag's commit, which is what checking one out
+            // leaves behind: a detached HEAD, on no branch at all.
+            var headSha = repo.Info.IsHeadDetached ? repo.Head.Tip?.Sha : null;
+
+            foreach (var tag in repo.Tags)
+            {
+                var commit = tag.PeeledTarget as Commit;
+                if (commit == null)
+                    continue;   // a tag on a tree or a blob is not somewhere a working copy can go
+
+                branches.Add(new VcsBranchInfo
+                {
+                    Name = tag.FriendlyName,
+                    IsTag = true,
+                    IsCurrent = headSha != null && commit.Sha == headSha,
+                    LastCommit = commit.Sha
                 });
             }
         }
@@ -1146,9 +1203,18 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                     branch = repo.CreateBranch(branchName, remoteBranch.Tip);
                     repo.Branches.Update(branch, b => b.TrackedBranch = remoteBranch.CanonicalName);
                 }
+                else if (repo.Tags[branchName]?.PeeledTarget is Commit tagged)
+                {
+                    // A tag is not a branch and checking one out cannot pretend otherwise: this
+                    // leaves a detached HEAD, which is what every Git client does and what the
+                    // dialog warns about before it gets here (B193).
+                    Commands.Checkout(repo, tagged);
+                    result.Success = true;
+                    return result;
+                }
                 else
                 {
-                    result.ErrorMessage = $"Branch '{branchName}' not found.";
+                    result.ErrorMessage = $"Branch or tag '{branchName}' not found.";
                     return result;
                 }
             }

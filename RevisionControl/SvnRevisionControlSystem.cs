@@ -1604,6 +1604,12 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     // Git-only operations: no-ops / unsupported for SVN.
     // ===================================================================================
 
+    /// <summary>
+    /// Always null: SVN has no detached state. A working copy switched to a tag is switched to a
+    /// directory like any other, and <c>GetCurrentBranch</c> names it (B193).
+    /// </summary>
+    public string? GetDetachedHeadLabel(string repositoryPath) => null;
+
     /// <summary>SVN commits go directly to the remote server, so push is a no-op.</summary>
     public VcsOperationResult Push(string repositoryPath, string? branchName = null)
         => new() { Success = true };

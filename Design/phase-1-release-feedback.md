@@ -656,7 +656,7 @@ reading past a red line is not.
 
 ### WP6 — Revision control
 
-**B193, B202 ✅, B240 ✅, B264 ✅, B265 ✅, B266 ✅** · 6 items · S–M · **B193 is all that is left**
+**B193 ✅, B202 ✅, B240 ✅, B264 ✅, B265 ✅, B266 ✅** · 6 items · S–M · **complete 2026-09-21**
 
 **Two of the six were found by using what the other two shipped**, on the same day, which is the
 pattern WP5 established and this package repeated. B265 is the one worth remembering: viewing any

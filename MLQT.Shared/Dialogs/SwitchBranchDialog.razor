@@ -15,14 +15,28 @@
                 </MudAlert>
             }
 
-            <MudText Typo="Typo.body1">Select a branch to switch to:</MudText>
+            <MudText Typo="Typo.body1">Select a branch or tag to switch to:</MudText>
 
             <BranchSelector RepositoryId="@RepositoryId"
                             @bind-SelectedBranch="_selectedBranch"
+                            @bind-SelectedIsTag="_selectedIsTag"
                             ExcludeCurrentBranch="true"
                             IncludeRemoteBranches="true"
                             MinHeight="300px"
                             MaxHeight="400px" />
+
+            @* Said before the switch, not after it. A tag is a place in history, not a branch: git
+               leaves HEAD detached there, and a commit made in that state belongs to nothing and is
+               easy to lose. Other clients warn about it and MLQT offered no tags at all (B193). *@
+            @if (_selectedIsTag)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <strong>@_selectedBranch</strong> is a tag. Switching to it puts the repository at
+                    that exact revision with no branch checked out (a detached HEAD), which is what
+                    you want for looking at a released version. To make changes from here, create a
+                    branch afterwards.
+                </MudAlert>
+            }
 
             @if (_isSwitching && !string.IsNullOrEmpty(_statusMessage))
             {

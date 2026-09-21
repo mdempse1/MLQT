@@ -11,6 +11,9 @@ public partial class SwitchBranchDialog
     public string RepositoryId { get; set; } = "";
 
     private string? _selectedBranch;
+
+    /// <summary>Whether the selection is a tag, which switches into a detached HEAD (B193).</summary>
+    private bool _selectedIsTag;
     private bool _isSwitching = false;
     private bool _hasChanges = false;
     private string? _errorMessage;

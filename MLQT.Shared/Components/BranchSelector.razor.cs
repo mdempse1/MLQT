@@ -18,6 +18,13 @@ public partial class BranchSelector
     [Parameter]
     public bool ExcludeCurrentBranch { get; set; } = true;
 
+    /// <summary>Whether the current selection is a tag rather than a branch.</summary>
+    [Parameter]
+    public bool SelectedIsTag { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> SelectedIsTagChanged { get; set; }
+
     [Parameter]
     public bool IncludeRemoteBranches { get; set; } = true;
 
@@ -31,6 +38,9 @@ public partial class BranchSelector
     /// Gets the current branch name of the repository.
     /// </summary>
     public string? CurrentBranch => _currentBranch;
+
+    /// <summary>The display-only folder Git tags are grouped under.</summary>
+    private const string TagFolder = "tags";
 
     private List<VcsBranchInfo> _branches = new();
     private List<TreeItemData<BranchTreeNode>> _treeItems = new();
@@ -103,7 +113,33 @@ public partial class BranchSelector
             // Git patterns: main, master, feature/*, release/*, etc.
             var parts = branch.Name.Split('/', '\\');
 
-            if (parts.Length == 1)
+            if (branch.IsTag)
+            {
+                // Git tags are not paths, so they are grouped under a folder of their own rather
+                // than being given one: "v2.0.0" stays "v2.0.0" everywhere it is used, and only the
+                // display is grouped. SVN's tags arrive as tags/* already and take the path below
+                // (B193).
+                if (!rootNodes.TryGetValue(TagFolder, out var tagFolder))
+                {
+                    tagFolder = new BranchTreeNode
+                    {
+                        DisplayName = TagFolder,
+                        FullPath = TagFolder,
+                        IsFolder = true,
+                    };
+                    rootNodes[TagFolder] = tagFolder;
+                    treeNodes.Add(tagFolder);
+                }
+
+                tagFolder.Children.Add(new BranchTreeNode
+                {
+                    DisplayName = branch.Name,
+                    FullPath = branch.Name,
+                    IsCurrent = branch.IsCurrent,
+                    IsTag = true,
+                });
+            }
+            else if (parts.Length == 1)
             {
                 // Top-level branch (e.g., trunk, main, master)
                 treeNodes.Add(new BranchTreeNode
@@ -201,6 +237,11 @@ public partial class BranchSelector
 
             var branch = node.FullPath;
             await SelectedBranchChanged.InvokeAsync(branch);
+
+            // Checking out a tag leaves a detached HEAD, which the dialog has to warn about
+            // before the user presses Switch rather than after (B193).
+            SelectedIsTag = node.IsTag;
+            await SelectedIsTagChanged.InvokeAsync(node.IsTag);
         }
     }
 
@@ -222,6 +263,7 @@ public partial class BranchSelector
         public bool IsFolder { get; set; }
         public bool IsCurrent { get; set; }
         public bool IsRemote { get; set; }
+        public bool IsTag { get; set; }
         public List<BranchTreeNode> Children { get; set; } = new();
     }
 }

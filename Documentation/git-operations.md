@@ -133,10 +133,28 @@ Opens the **Switch Branch** dialog to check out a different branch.
 
 ### Branch Selector
 
-The dialog shows all available branches:
+The dialog shows all available branches **and tags**:
 - **Local branches** — Branches that exist on your machine
 - **Remote branches** — Branches on the remote that you haven't checked out locally (shown with the remote prefix, e.g., `origin/feature-xyz`)
+- **Tags** — Grouped under a `tags` folder and marked with a **Tag** chip
 - The current branch is excluded from the list
+
+### Switching to a Tag
+
+Select a tag to check out that exact released version — the same thing TortoiseGit and other clients
+offer. The dialog says what will happen before you press Switch, because it is not quite the same as
+switching to a branch:
+
+> `v2.0.0` is a tag. Switching to it puts the repository at that exact revision with no branch
+> checked out (a detached HEAD), which is what you want for looking at a released version. To make
+> changes from here, create a branch afterwards.
+
+Afterwards the repository header says **Detached HEAD at v2.0.0** where it would normally name the
+branch. Committing in that state is possible, but the commits belong to no branch and are easy to
+lose, so create a branch first if you intend to change anything.
+
+SVN repositories have always been able to do this: an SVN tag is a directory, so it appears under
+`tags/` like any other path and switching to it is an ordinary switch with no detached state.
 
 ### Uncommitted Changes Warning
 

@@ -105,7 +105,19 @@ else if (Repository != null)
                     }
                     else
                     {
-                        <MudText Typo="Typo.body1">Detached HEAD</MudText>
+                        @* Where, not just that. A detached HEAD is the ordinary result of switching
+                           to a tag, and "Detached HEAD" on its own leaves the user to work out which
+                           version they are looking at (B193). *@
+                        <MudText Typo="Typo.body1">
+                            @if (!string.IsNullOrEmpty(Repository.DetachedHeadLabel))
+                            {
+                                <span>Detached HEAD at <strong>@Repository.DetachedHeadLabel</strong></span>
+                            }
+                            else
+                            {
+                                <span>Detached HEAD</span>
+                            }
+                        </MudText>
                     }
                     <MudSpacer />
                     @if (!Repository.IsReferenceOnly)

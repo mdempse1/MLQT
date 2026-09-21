@@ -160,6 +160,23 @@ public interface IRevisionControlSystem
     List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false);
 
     /// <summary>
+    /// Where HEAD is when it is not on a branch, for a UI that would otherwise have nothing to show.
+    /// </summary>
+    /// <remarks>
+    /// <para>Checking out a tag or a revision leaves Git with a <b>detached HEAD</b>: there is no
+    /// branch, so <see cref="GetCurrentBranch"/> correctly returns null, and the UI showed a blank
+    /// where the branch name goes. This is what to show instead - the tag HEAD is sitting on, or a
+    /// short commit id when it is not on a tag (B193).</para>
+    ///
+    /// <para>Null when HEAD is on a branch, which is the ordinary case, and always null for SVN: a
+    /// working copy switched to a tag there is switched to a directory like any other, and
+    /// <see cref="GetCurrentBranch"/> already names it.</para>
+    /// </remarks>
+    /// <param name="repositoryPath">Path to the repository or working copy</param>
+    /// <returns>A short description of where HEAD is, or null when it is on a branch</returns>
+    string? GetDetachedHeadLabel(string repositoryPath);
+
+    /// <summary>
     /// Commits changes to the repository.
     /// </summary>
     /// <param name="repositoryPath">Path to the repository or working copy</param>

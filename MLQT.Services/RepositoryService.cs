@@ -1100,6 +1100,11 @@ public class RepositoryService : IRepositoryService
                     ? _svn.GetCurrentBranch(repository.VcsRootPath, repository.StyleSettings?.SvnBranchDirectories)
                     : vcs.GetCurrentBranch(repository.VcsRootPath);
 
+                // Only asked when there is no branch, which is the only time it has an answer.
+                repository.DetachedHeadLabel = repository.CurrentBranch is null
+                    ? vcs.GetDetachedHeadLabel(repository.VcsRootPath)
+                    : null;
+
                 if (repository.CurrentRevision != null)
                 {
                     repository.RevisionDescription = vcs.GetRevisionDescription(
