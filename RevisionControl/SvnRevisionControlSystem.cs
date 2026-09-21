@@ -1060,29 +1060,88 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 || revision.Equals("HEAD", OIC)
                 || !long.TryParse(revision, out _);
 
-            SvnCli.Result result;
             if (useBase)
-            {
-                result = SvnCli.Run("cat", "-r", "BASE", fullPath);
-            }
-            else if (File.Exists(fullPath))
+                return SvnCli.Run("cat", "-r", "BASE", fullPath) is { Success: true } b ? b.StdOut : null;
+
+            if (File.Exists(fullPath))
             {
                 // Peg at HEAD to identify the file, operate at the requested revision so SVN
                 // follows copy history (e.g. a branch created from trunk).
-                result = SvnCli.Run("cat", "-r", revision!, $"{fullPath}@HEAD");
-            }
-            else
-            {
-                result = SvnCli.Run("cat", "-r", revision!, fullPath);
+                var local = SvnCli.Run("cat", "-r", revision!, $"{fullPath}@HEAD");
+                if (local.Success)
+                    return local.StdOut;
             }
 
-            return result.Success ? result.StdOut : null;
+            // The working copy could not answer, and that is ordinary rather than exceptional: the
+            // path may be **repository-root-relative** ("trunk/Modelica/Foo.mo"), which is what
+            // `svn log` reports and what the history view passes back; the working copy may be older
+            // than the revision being looked at, so the file is not there yet; or the file may have
+            // been deleted since. Asking the server by URL answers all three, and the revision the
+            // caller named is a server revision in any case (B265).
+            foreach (var url in ContentUrlCandidates(repositoryPath, filePath))
+            {
+                var remote = SvnCli.Run("cat", "-r", revision!, url);
+                if (remote.Success)
+                    return remote.StdOut;
+            }
+
+            return null;
         }
         catch (Exception ex)
         {
             RevisionControlLogger.Error("GetFileContentAtRevision", ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// The URLs a file path might mean, most likely first.
+    /// </summary>
+    /// <remarks>
+    /// <para>Two path spaces reach this class and they are not distinguishable by looking at them.
+    /// <c>svn log</c> reports <b>repository-root-relative</b> paths - <c>trunk/Modelica/Foo.mo</c> -
+    /// while everything working from the checkout on disk uses <b>working-copy-relative</b> ones -
+    /// <c>Modelica/Foo.mo</c>. A caller cannot reliably convert between them either: doing it by
+    /// stripping a <c>trunk/</c> prefix and testing whether the result exists on disk fails whenever
+    /// the working copy is older than the revision, and fails silently.</para>
+    ///
+    /// <para>So both are tried, against the repository root and against the working copy's own URL.
+    /// One <c>svn cat</c> each, and only when the local route has already failed.</para>
+    /// </remarks>
+    internal static IReadOnlyList<string> ContentUrlCandidates(string repositoryPath, string filePath)
+    {
+        var info = GetInfo(repositoryPath);
+        return info == null ? [] : ContentUrls(info.RepositoryRoot, info.Url, filePath);
+    }
+
+    /// <summary>
+    /// The same two URLs without asking svn anything, so the shape of them can be tested without a
+    /// server — which is most of what there is to get wrong here.
+    /// </summary>
+    internal static IReadOnlyList<string> ContentUrls(
+        string repositoryRoot, string workingCopyUrl, string filePath)
+    {
+        // Forward slashes and escaped spaces: these are URLs, and library directories here are
+        // called things like "VeSyMA - Suspensions".
+        var relative = string.Join('/',
+            filePath.Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(segment => segment.Length > 0)
+                .Select(Uri.EscapeDataString));
+
+        if (relative.Length == 0)
+            return [];
+
+        var fromRoot = $"{repositoryRoot.TrimEnd('/')}/{relative}";
+
+        // The working copy's own URL is the branch it is checked out from, so this is the same file
+        // asked for the other way - and it differs from the first only for a working-copy-relative
+        // path, which is exactly the case the first one gets wrong.
+        var fromWorkingCopy = $"{workingCopyUrl.TrimEnd('/')}/{relative}";
+
+        return string.Equals(fromRoot, fromWorkingCopy, StringComparison.Ordinal)
+            ? [fromRoot]
+            : [fromRoot, fromWorkingCopy];
     }
 
     // ===================================================================================

@@ -35,6 +35,28 @@ public partial class RevisionDiffDialog
     /// </summary>
     private string? _previousRevision;
 
+    /// <summary>
+    /// Whether this is an SVN repository, which changes what an empty diff most likely means.
+    /// </summary>
+    private bool _isSvn;
+
+    /// <summary>
+    /// What to say when the two sides are identical.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A file can be listed as changed by a revision that changed none of its lines</b>, and
+    /// in SVN that is not unusual: a merge records <c>svn:mergeinfo</c> on everything it touched, so
+    /// a merge commit lists every directory and file it came through. The reported case was exactly
+    /// that - r39803 of a real repository, where the file's text is identical at r39802.</para>
+    ///
+    /// <para>Saying only "did not change this file" is true and leaves the user looking at a list
+    /// that says it did, so the reason is worth the sentence (B265).</para>
+    /// </remarks>
+    private string NoChangesMessage => _isSvn
+        ? $"Revision {ShortRevision} changed no lines in this file. In SVN a file is listed as "
+          + "modified when only its properties changed - svn:mergeinfo after a merge, for example."
+        : $"Revision {ShortRevision} changed no lines in this file.";
+
     /// <summary>The left-hand pane's label, which has to say what it is showing.</summary>
     private string PreviousLabel =>
         _previousRevision is null ? "Before" : $"Revision {Shorten(_previousRevision)}";
@@ -80,19 +102,15 @@ public partial class RevisionDiffDialog
                 return;
             }
 
-            // For SVN, changed file paths from the log are repo-root-relative (e.g. "trunk/Models/Foo.mo")
-            // but GetFileContentAtRevision needs paths relative to the working copy root. Try the path
-            // as-is first; if nothing is there, strip the known SVN prefixes. The working copy is still
-            // what says which spelling is right, even though neither side of the diff comes from it.
+            // The path from the log, passed through as it came. This used to try to convert an SVN
+            // log path ("trunk/Modelica/Foo.mo") into a working-copy-relative one by stripping the
+            // prefix and checking whether the result was on disk - and it checked against
+            // LocalPath while the lookup underneath used VcsRootPath, which are not the same
+            // directory when a repository is registered at a library inside the checkout. The strip
+            // then never fired and every SVN history diff failed. Which path space a path is in is
+            // the VCS layer's question and it is answered there now (B265).
             var filePath = FilePath;
-
-            if (repository.VcsType == RepositoryVcsType.SVN
-                && !File.Exists(Path.Combine(repository.LocalPath, filePath)))
-            {
-                var stripped = StripSvnBranchPrefix(filePath);
-                if (stripped != filePath && File.Exists(Path.Combine(repository.LocalPath, stripped)))
-                    filePath = stripped;
-            }
+            _isSvn = repository.VcsType == RepositoryVcsType.SVN;
 
             _previousRevision = await Task.Run(() =>
                 RepositoryService.GetPreviousRevision(RepositoryId, Revision));
@@ -126,29 +144,5 @@ public partial class RevisionDiffDialog
         {
             _isLoading = false;
         }
-    }
-
-    /// <summary>
-    /// Strips standard SVN branch prefixes (trunk/, branches/X/, tags/X/) from a repo-root-relative path.
-    /// </summary>
-    private static string StripSvnBranchPrefix(string path)
-    {
-        if (path.StartsWith("trunk/", StringComparison.OrdinalIgnoreCase))
-            return path[6..];
-
-        string[] prefixes = ["branches/", "tags/", "tickets/", "releases/"];
-        foreach (var prefix in prefixes)
-        {
-            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                // Strip "branches/branchName/" — find the second slash
-                var rest = path[prefix.Length..];
-                var slashIndex = rest.IndexOf('/');
-                if (slashIndex >= 0)
-                    return rest[(slashIndex + 1)..];
-            }
-        }
-
-        return path;
     }
 }

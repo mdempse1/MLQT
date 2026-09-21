@@ -316,7 +316,14 @@ changed**: the file at the revision before it on the left, the file at that revi
 SVN revision numbers are global, so “the revision before” is simply N-1 — the state of the whole
 repository immediately before that commit, whether or not N-1 touched this particular file.
 
-MLQT handles SVN path differences automatically — it strips branch prefixes (`trunk/`, `branches/X/`, `tags/X/`) from server-relative paths to correctly match files in your working copy.
+MLQT handles SVN path differences automatically. The changed-file list gives paths as the server
+records them (`trunk/Modelica/Foo.mo`), and MLQT asks the server for those revisions directly — so
+the diff works for a revision **newer than your working copy**, and for a file that has since been
+deleted or moved.
+
+A file can be listed as changed by a revision that changed none of its lines. In SVN that is
+common: a merge records `svn:mergeinfo` on every directory and file it came through, so a merge
+commit lists a great many paths whose content is untouched. The diff says so when it happens.
 
 ### Checking Out a Revision
 
