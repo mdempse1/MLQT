@@ -1056,6 +1056,47 @@ WP2 has just demonstrated what that costs. None of the three depends on the othe
   first — it is the smallest and it makes the server internally consistent, which the other two
   assume.
 
+### WP13 — Performance, second pass
+
+**B261** · 1 item · M · **the measurement exists; the explanation does not**
+
+WP4 closed with the reported symptom fixed and one number left standing: with the unit-resolution
+work in, **coverage measurement is 69% of a check at 133 ms/class** — larger than any single rule
+and larger than parse. That is a second root cause rather than the tail of the first, which is why it
+is a package and not a line in B174.
+
+**Its gate is WP4's gate**, and for the same reason: B174 rejected two hypotheses by measurement
+before the profiler found the real mechanism, and one of those rejections was itself wrong because
+the binary had not been rebuilt. So re-measure with `--timings` first, record the library and the
+build the figure came from (B261 carries the number without them), and reach for `dotnet-trace`
+before the second guess rather than after it.
+
+**One hypothesis is already visible in the code and is worth stating so nobody re-derives it**:
+`UnitResolver.Resolve` takes an optional `TypeResolver.AncestorCache` and `CoverageMeasurer` passes
+none, so measuring a class re-parses its ancestry the way `MissingUnits` did before B174 — which was
+worth 3x there. It is a hypothesis, not a plan: the same cache was measured as "no change at all"
+once already.
+
+### WP14 — External tools, second pass
+
+**B262, B263** · 2 items · S and M · **B263 is the item; B262 is half of its mechanism**
+
+What the user asked for is one thing: *let me give the tool longer for a model that takes longer*.
+Underneath it the two tools are in different states and neither is right — Dymola is about to have a
+settable `CommandTimeout` with nothing setting it (PR #9), and OpenModelica has carried
+`CommandTimeoutMs` and `StartupTimeoutMs` in its settings since it was written with **nothing reading
+either**, so a long `omc` check has no timeout at all and blocks indefinitely.
+
+**Do B263 as one piece across both tools, not one tool at a time.** This is the shape that produced
+B170's second and third reports inside two days: a question answered for one tool and left alone for
+its sibling, where the sibling's silence looks like agreement. The settings tab, the two interfaces
+and both checking services are one change.
+
+**The Dymola half waits on PR #9 merging; the OpenModelica half does not.** Start there if the review
+is still open — it is the tool with no timeout at all, which is the worse of the two states.
+
+---
+
 ---
 
 ## Sequencing summary
@@ -1083,6 +1124,8 @@ WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the su
         └──▶ WP9   B237 first (it blocks other packages' journeys) ▸ B228 ▸ B229 ▸ B227 ▸ B234
                        needs no other package
 WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
+WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
+WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone
@@ -1094,8 +1137,8 @@ malformed file can still drop classes out of the graph underneath it (B201).
 
 **Every open item in this phase names a package**, bar the two recorded above as needing no work
 (B152, B166), and that is a property worth keeping rather than a tidy-up. It has been re-checked
-after each round of new items, most recently on 2026-09-20 when six arrived at once and made two new
-packages necessary. The two ways an item escaped were "separable at any point" against a package that
+after each round of new items, most recently on 2026-09-21, when three arrived at once and made two new
+packages necessary, as six did on 2026-09-20. The two ways an item escaped were "separable at any point" against a package that
 later closed, and a mention in a step's prose that no item list counted — both of which read as
 *scheduled* right up until the package shipped without them. An item that genuinely belongs nowhere
 belongs on the roadmap, where it is at least a candidate, not in the margin of a plan.

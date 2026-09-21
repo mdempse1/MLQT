@@ -72,7 +72,7 @@ with first and separately** — `nightly-webkit.yml` was triggered by hand on 20
 run at all, and passed with 57 WebKit journeys executed and none skipped.
 
 **The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
-into work packages by shared root cause rather than by area (WP0–WP12; WP0, WP1, WP2, WP3, WP4, WP5, WP8 and WP11 are done), and records the eleven root causes established while planning — two of which change what the
+into work packages by shared root cause rather than by area (WP0–WP14; WP0–WP5, WP8 and WP11 are done, and WP13–WP14 were added on 2026-09-21), and records the eleven root causes established while planning — two of which change what the
 fix is.
 
 The phase has grown since: **B204–B212** while fixing and confirming the first set, **B213–B218**
