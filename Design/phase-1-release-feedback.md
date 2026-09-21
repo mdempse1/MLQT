@@ -782,6 +782,25 @@ replaced.
 **The marker was written out twice** — once per tree template, repository mode and library-only mode
 — which is the shape B200 came from. It is now one decision in `ChangeMarker`, asked by both.
 
+**What the marker costs, because it is new work on the startup path.** Classifying a change reads
+the committed version of each changed file out of the repository and parses both versions, and
+`CheckForUncommittedChangesAsync` runs at startup, after every VCS operation, and on debounced file
+activity. Measured on the reported project's own SVN working copy (17,591 `.mo` files):
+
+| | Per changed file |
+|---|---|
+| `svn info` + `svn cat -r BASE` | **41 ms** — two subprocesses, both local to the working copy |
+| Compare, median file (1.9 KB) | **1.9 ms** |
+| Compare, p90 file (8.5 KB) | **14.7 ms** |
+| Compare, largest file (6.7 MB, 3,932 classes) | **2,230 ms** |
+
+So an ordinary changed file costs about **43–56 ms** and a realistic twenty-file changeset about a
+second, on a background thread, once — the result is cached against the file's size and write time
+and the repository's revision, so only a file that actually moved pays again. **The number that
+would bite is the last row**, and it is one file: changing a 6.7 MB `package.mo` costs two seconds
+of classification. Left as it is, and recorded rather than guessed at. Only the kinds are cached,
+not the signatures, so the strings that comparison builds are dropped with the call that made them.
+
 **A class can belong to two loaded libraries, and five callers assumed it could not.** Reported
 against `Suspensions.HalfCar.Steering.Experiments.RackAndPinionKinematics`: the browser marked it as
 a cosmetic change and the Code Review page opened it with all three diff views disabled. The two
