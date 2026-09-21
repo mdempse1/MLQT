@@ -141,8 +141,21 @@ jobs:
     # No job in this workflow installs a workload. If one ever needs to, something non-portable has
     # reached a project that is supposed to be portable, and that is the finding rather than a reason
     # to install it - PortabilityTests is the test that says so without waiting for a red runner.
+    # Pinned, not `ubuntu-latest` (B256). The floating label migrates to Ubuntu 26 on 19 October
+    # 2026, and **Playwright ships no browser build for 26.04 at all**: `install` refuses outright,
+    # and with PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 Chromium runs but WebKit still will
+    # not launch - its build links libicu74 and libvpx9 against a release carrying libicu78 and no
+    # libvpx9. That was measured for B135 on a developer machine; the date turns it into a CI
+    # problem, and the WebKit half has no workaround. WebKitGTK is what the Linux desktop host runs
+    # on, so losing it means the Linux GUI is rehearsed nowhere.
+    #
+    # The pin is the decision that keeps everything working while the backlog is finished and a
+    # release is made; it is not a fix for Ubuntu 26. **Revisit it** when Playwright ships a 26.04
+    # browser, or by April 2029 when 24.04 leaves standard support - whichever comes first. The one
+    # thing that must not happen quietly is a new job going back to the floating label, which
+    # WorkflowPlatformParityTests now refuses.
     name: Build & Test Libraries (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v6
@@ -237,7 +250,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned - see the note on the first Linux job above (B256).
+          - os: ubuntu-24.04
             label: Linux
           - os: windows-latest
             label: Windows
@@ -316,7 +330,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned - see the note on the first Linux job above (B256).
+          - os: ubuntu-24.04
             label: Linux
             capture: selftest-photino-linux.json
           - os: windows-latest

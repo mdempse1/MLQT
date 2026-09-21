@@ -25,7 +25,9 @@ jobs:
   # halves build an installer they take it from here, so a tag can only mean one thing.
   version:
     name: Version
-    runs-on: ubuntu-latest
+    # Pinned rather than floating: the label moves to Ubuntu 26 on 19 October 2026 and
+    # Playwright ships no browser for it. See build-and-test.yml for the whole reason (B256).
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
       deb: ${{ steps.v.outputs.deb }}
@@ -251,7 +253,9 @@ jobs:
   # ---------------------------------------------------------------------------------------------
   linux-deb:
     name: Build & Publish .deb
-    runs-on: ubuntu-latest
+    # Pinned rather than floating: the label moves to Ubuntu 26 on 19 October 2026 and
+    # Playwright ships no browser for it. See build-and-test.yml for the whole reason (B256).
+    runs-on: ubuntu-24.04
     needs: version
     timeout-minutes: 60
 

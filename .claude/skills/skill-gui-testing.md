@@ -154,9 +154,25 @@ building it **before** a migration rather than during one:
 Playwright ships no browser build for Ubuntu 26.04. `install` refuses outright; the newest platform it
 knows is `ubuntu24.04-x64`. With `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` Chromium runs and
 all journeys pass, but **WebKit will not launch** — its build links `libicu74` and `libvpx9`, and 26.04
-ships `libicu78` and no `libvpx9`. So the WebKit rehearsal is a CI job by necessity, on
-`ubuntu-latest`. `run-all-tests.ps1` applies the override and `TestRunnerScriptTests` holds the
-string-not-version half of it (B135).
+ships `libicu78` and no `libvpx9`. So the WebKit rehearsal is a CI job by necessity.
+`run-all-tests.ps1` applies the override and `TestRunnerScriptTests` holds the string-not-version
+half of it (B135).
+
+**Every CI job is pinned to `ubuntu-24.04`, not `ubuntu-latest` (B256).** The floating label
+migrated to Ubuntu 26 on 19 October 2026, which would have taken the WebKit rehearsal with it and
+left the Linux GUI rehearsed nowhere — the override keeps Chromium and cannot bring WebKit back.
+Six jobs across the three workflows, and `WorkflowPlatformParityTests.NoJobRunsOnTheFloatingUbuntuLabel`
+refuses a new one that goes back to the label. **The pin is not a fix**: revisit it when Playwright
+ships a 26.04 browser, or by April 2029 when 24.04 leaves standard support, whichever comes first.
+
+The `.deb` is unaffected either way, and that is worth knowing rather than re-deriving: its
+`Depends:` is hand-written and unversioned (`package-deb.sh` refuses `dpkg-shlibdeps` precisely so
+the package is not pinned to its build host), nothing in the payload is compiled there — managed
+assemblies, Microsoft's downloaded runtime pack, and a prebuilt `Photino.Native.so` — and the
+archive is `-Zxz` rather than the host default. The floor is `libwebkit2gtk-4.1-0` + GTK3, which is
+Ubuntu 22.04 and Debian 12, wherever it is built. What a newer builder would cost is not the
+package but **the proof**: the release job extracts what it just built and runs the 16 `/selftest`
+probes against it, and that needs a WebKitGTK that launches.
 
 ## Documentation screenshots are generated, not taken
 

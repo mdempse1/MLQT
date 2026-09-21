@@ -55,6 +55,62 @@ public class WorkflowPlatformParityTests
                  .Select(m => m.Groups[1].Value)
                  .Distinct()];
 
+
+    /// <summary>
+    /// Every workflow file in the repository, so a new one cannot escape the check below by not
+    /// being <c>build-and-test.yml</c>.
+    /// </summary>
+    public static TheoryData<string> Workflows()
+    {
+        var directory = Path.Combine(RepositoryRoot(), ".github", "workflows");
+        var data = new TheoryData<string>();
+        foreach (var file in Directory.EnumerateFiles(directory, "*.yml"))
+            data.Add(Path.GetFileName(file));
+
+        Assert.True(data.Count >= 3, "found fewer workflow files than this repository has");
+        return data;
+    }
+
+    /// <summary>
+    /// No job runs on the floating <c>ubuntu-latest</c> label.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The label moves on a date, not on a commit (B256).</b> It migrates to Ubuntu 26 on
+    /// 19 October 2026, and Playwright ships no browser build for 26.04 at all — with the platform
+    /// override Chromium runs and <b>WebKit still will not launch</b>, its build linking
+    /// <c>libicu74</c> and <c>libvpx9</c> against a release carrying <c>libicu78</c> and no
+    /// <c>libvpx9</c>. WebKitGTK is what the Linux desktop host runs on, so losing it rehearses the
+    /// Linux GUI nowhere. The six jobs are pinned to <c>ubuntu-24.04</c>.</para>
+    ///
+    /// <para><b>Why a test and not a comment.</b> A pin holds only until somebody adds a job, and
+    /// the obvious thing to type is <c>ubuntu-latest</c>. The failure it would cause arrives on a
+    /// date rather than on that commit, so it lands on whatever push happens to be next and reads
+    /// as that change having broken something — which is the worst kind of failure to debug and the
+    /// reason this is worth a guard rather than a note.</para>
+    ///
+    /// <para><b>This does not say the pin is still right.</b> Nothing can: revisiting it is a
+    /// judgement about whether Playwright has caught up, and the note in <c>build-and-test.yml</c>
+    /// carries the dates to weigh.</para>
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(Workflows))]
+    public void NoJobRunsOnTheFloatingUbuntuLabel(string workflow)
+    {
+        var path = Path.Combine(RepositoryRoot(), ".github", "workflows", workflow);
+        var lines = File.ReadAllLines(path);
+
+        var floating = lines
+            .Select((line, index) => (Line: line.Trim(), Number: index + 1))
+            .Where(l => !l.Line.StartsWith('#'))
+            .Where(l => Regex.IsMatch(l.Line, @"^(runs-on:|- os:)\s*ubuntu-latest\s*$"))
+            .Select(l => $"line {l.Number}")
+            .ToList();
+
+        Assert.True(floating.Count == 0,
+            $"{workflow} runs a job on ubuntu-latest ({string.Join(", ", floating)}). "
+            + "The label migrates to Ubuntu 26, which Playwright has no WebKit build for - pin it to "
+            + "ubuntu-24.04 like the others, or settle B256 properly and update this test.");
+    }
     [Fact]
     public void TheChecksCanSeeBothJobs()
     {
@@ -109,8 +165,10 @@ public class WorkflowPlatformParityTests
         // platform the product actually ships on uncovered by them.
         var journeys = Job("ui-journeys");
 
-        Assert.Contains("ubuntu-latest", journeys);
-        Assert.Contains("windows-latest", journeys);
+        // An Ubuntu runner, not a particular label: the version is pinned and will be
+        // repinned (B256), and this test is about both platforms being covered.
+        Assert.Contains("ubuntu-", journeys);
+        Assert.Contains("windows-", journeys);
     }
 
     [Fact]
@@ -141,8 +199,8 @@ public class WorkflowPlatformParityTests
         // ran on one platform would say nothing about the one the phase exists to deliver.
         var selfTest = Job("desktop-selftest");
 
-        Assert.Contains("ubuntu-latest", selfTest);
-        Assert.Contains("windows-latest", selfTest);
+        Assert.Contains("ubuntu-", selfTest);
+        Assert.Contains("windows-", selfTest);
     }
 
     [Fact]

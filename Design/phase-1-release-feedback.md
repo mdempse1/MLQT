@@ -998,7 +998,8 @@ complete because the measurement agreed.
 ### WP9 — The test debt deliberately left
 
 **B267, B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
-and **B237** from WP2, and **B256** which is the only dated item in the phase
+and **B237** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
+out of order because of that, four weeks before the date it would have fired on
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
 repository has written a comment to defend?* — and then a second — *which sit on code that writes to
