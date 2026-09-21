@@ -219,6 +219,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
     {
         try
         {
+            ReportStatus($"Starting {ToolName}…");
             _omc = await _omcFactory.GetOrCreateAsync();
 
             // The library's own package.mo, not the class's file. OpenModelica will not load a
@@ -229,6 +230,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
             var rootFile = LibraryRootFile.For(graph, modelNode);
             if (rootFile != null)
             {
+                ReportStatus($"Opening {Path.GetFileName(rootFile)} in {ToolName}…");
                 var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
                 if (!loadSuccess)
                 {
@@ -320,6 +322,23 @@ public class OpenModelicaCheckingService : IModelCheckingService
             _currentProgress.WasCancelled = false;
             OnCheckingComplete?.Invoke(_currentProgress);
         }
+    }
+
+    /// <summary>
+    /// Says what is happening before there is anything to count.
+    /// </summary>
+    /// <remarks>
+    /// Starting the tool and opening the library is most of the wait on a large library, and
+    /// both counts are zero throughout it - so a progress dialog shown during it had nothing in
+    /// it, which reads as a stuck application rather than as a slow one (B259). Sent directly
+    /// rather than through the throttle: there are two of these in a whole run, and the first
+    /// is the one the user is waiting for.
+    /// </remarks>
+    private void ReportStatus(string status)
+    {
+        _currentProgress = new ModelCheckProgress { Status = status };
+        _lastProgressUpdate = DateTime.UtcNow;
+        OnProgressChanged?.Invoke(_currentProgress);
     }
 
     private void FireThrottledProgressUpdate()

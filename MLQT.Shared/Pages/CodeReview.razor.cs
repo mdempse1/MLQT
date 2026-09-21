@@ -48,6 +48,12 @@ public partial class CodeReview : IAsyncDisposable
     private bool _checkProgressDialog = false;
     private readonly DialogOptions _dialogOptions = new() { FullWidth = true };
     private string _checkingModel = "";
+
+    /// <summary>
+    /// What the tool is doing before it starts counting classes - starting, opening the library -
+    /// or null once it is checking them (B259).
+    /// </summary>
+    private string? _checkStatus;
     private string _checkingToolName = "";
     private bool _findingDetailsVisible = false;
     private LogMessage? _currentFinding = null;
@@ -1139,6 +1145,7 @@ public partial class CodeReview : IAsyncDisposable
             _modelsToCheck = progress.TotalModels;
             _modelsChecked = progress.ModelsChecked;
             _checkingModel = progress.CurrentModel;
+            _checkStatus = progress.Status;
             StateHasChanged();
         });
     }
@@ -1206,6 +1213,18 @@ public partial class CodeReview : IAsyncDisposable
     private int PassedCheckCount => _checkResults.Count(r => r.Success);
 
     /// <summary>
+    /// The progress dialog's title: the tool, and the count once there is one.
+    /// </summary>
+    /// <remarks>
+    /// Both counts are zero until the tool has started and the library is open, so the old
+    /// wording announced "0 checked out of 0" for the several seconds a user is most likely to
+    /// be wondering whether anything is happening. A single class is not counted either: one of
+    /// one is a progress bar with nothing to say, and the class is named in the dialog anyway.
+    /// </remarks>
+    internal static string CheckProgressTitle(string tool, int checkedCount, int total) =>
+        total <= 1 ? $"{tool} check" : $"{tool} check - {checkedCount} of {total} classes checked";
+
+    /// <summary>
     /// The headline: what was checked and how it went, in one sentence a user can act on.
     /// </summary>
     internal static string CheckOutcomeSummary(string tool, int passed, int failed, bool cancelled)
@@ -1236,11 +1255,16 @@ public partial class CodeReview : IAsyncDisposable
         _checkResults.Clear();
         _checkWasCancelled = false;
 
-        // Show progress dialog for packages
-        if (_currentModelNode.ClassType == "package")
-        {
-            _checkProgressDialog = true;
-        }
+        // Shown for one class as well as for a package. Nothing happens for several seconds
+        // after the button is pressed - the tool has to start and the library has to be opened -
+        // and for a single class there was nothing at all on screen during it. That is worse for
+        // OpenModelica, which has no window of its own to appear, so the only evidence the check
+        // was running was that the button had been pressed (B259).
+        _modelsToCheck = 0;
+        _modelsChecked = 0;
+        _checkingModel = "";
+        _checkStatus = null;
+        _checkProgressDialog = true;
 
         // StartCheckingAsync runs on background thread and returns immediately
         _ = DymolaCheckingService.StartCheckingAsync(
@@ -1259,11 +1283,16 @@ public partial class CodeReview : IAsyncDisposable
         _checkResults.Clear();
         _checkWasCancelled = false;
 
-        // Show progress dialog for packages
-        if (_currentModelNode.ClassType == "package")
-        {
-            _checkProgressDialog = true;
-        }
+        // Shown for one class as well as for a package. Nothing happens for several seconds
+        // after the button is pressed - the tool has to start and the library has to be opened -
+        // and for a single class there was nothing at all on screen during it. That is worse for
+        // OpenModelica, which has no window of its own to appear, so the only evidence the check
+        // was running was that the button had been pressed (B259).
+        _modelsToCheck = 0;
+        _modelsChecked = 0;
+        _checkingModel = "";
+        _checkStatus = null;
+        _checkProgressDialog = true;
 
         // StartCheckingAsync runs on background thread and returns immediately
         _ = OpenModelicaCheckingService.StartCheckingAsync(

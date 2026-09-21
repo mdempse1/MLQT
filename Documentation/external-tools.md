@@ -47,8 +47,15 @@ Once a tool is configured, its check button appears in the **Code Review** tab t
 
 1. Select a model in the library tree
 2. Click the Dymola or OpenModelica button in the Code Review toolbar
-3. The tool loads the model and checks it
-4. Any errors are added to the findings table
+3. A **progress dialog** appears straight away, saying what is happening: starting the tool, then
+   opening the library in it, then checking
+4. The tool loads the model and checks it
+5. Any errors are added to the findings table
+
+The first two of those are most of the wait, and neither is quick on a large library. The dialog
+opens on the click rather than when the first class is checked, because otherwise there is nothing
+on screen during them — and OpenModelica has no window of its own to appear, so there would be
+nothing anywhere to say the check was running.
 
 ### Checking an Entire Package
 
@@ -127,6 +134,16 @@ You can close Dymola's window and check again. MLQT asks whether the session it 
 answering before reusing it, and starts a new one when it is not — so the second check works like
 the first. The probe is a two-second ping rather than a command, so a dead session is noticed
 quickly rather than after the command timeout.
+
+### What happens to the tool when MLQT closes
+
+**The OpenModelica session ends with MLQT.** `omc` runs headless — no window, no taskbar entry — so
+one left behind would sit there indefinitely with nothing to say what it was or that it should be
+closed. MLQT ends the session it started as it exits.
+
+**Dymola is left running.** Its window is visible and you may well have carried on working in it,
+so closing it from underneath you could lose work. If you no longer want it, close it yourself; MLQT
+notices a session that has gone and starts a new one for the next check.
 
 ### Dymola vs OpenModelica Results
 

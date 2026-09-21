@@ -86,4 +86,33 @@ public class CheckOutcomeSummaryTests
                 Assert.StartsWith(tool, CodeReview.CheckOutcomeSummary(tool, passed, failed, cancelled));
             }
     }
+
+    #region B259 - the title while it is still running
+
+    /// <summary>
+    /// Before the tool has started there is nothing to count, and the dialog is now open during
+    /// exactly that period - so the title must not announce "0 checked out of 0", which is what a
+    /// user staring at a slow check read as the application being stuck.
+    /// </summary>
+    [Fact]
+    public void BeforeTheToolHasStarted_TheTitleCountsNothing()
+    {
+        Assert.Equal("OpenModelica check", CodeReview.CheckProgressTitle("OpenModelica", 0, 0));
+    }
+
+    [Fact]
+    public void OneClassIsNotCounted()
+    {
+        // "0 of 1 classes checked" is a progress bar with nothing to say; the class is named below it.
+        Assert.Equal("Dymola check", CodeReview.CheckProgressTitle("Dymola", 0, 1));
+    }
+
+    [Fact]
+    public void APackageIsCounted()
+    {
+        Assert.Equal("Dymola check - 7 of 15 classes checked",
+            CodeReview.CheckProgressTitle("Dymola", 7, 15));
+    }
+
+    #endregion
 }

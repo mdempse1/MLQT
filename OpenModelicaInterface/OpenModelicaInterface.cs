@@ -478,8 +478,9 @@ public class OpenModelicaInterface : IDisposable
             return;
         }
 
-        _isDisposed = true;
-
+        // `quit()` first, and the flag afterwards: ExitAsync asks IsConnected, which is false once
+        // _isDisposed is set, so setting it here meant the graceful exit was never actually sent and
+        // omc was always killed instead. Killed, it leaves its temporary directory behind.
         try
         {
             ExitAsync().Wait(TimeSpan.FromSeconds(5));
@@ -488,6 +489,8 @@ public class OpenModelicaInterface : IDisposable
         {
             // Ignore errors during shutdown
         }
+
+        _isDisposed = true;
 
         _socket?.Dispose();
 
