@@ -962,21 +962,29 @@ complete because the measurement agreed.
 
 ### WP9 — The test debt deliberately left
 
-**B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234** and
-**B237** from WP2, and **B256** which is the only dated item in the phase
+**B267, B228, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
+and **B237** from WP2, and **B256** which is the only dated item in the phase
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
 repository has written a comment to defend?* — and then a second — *which sit on code that writes to
 a user's files or their remote?* Those produced B219-B226, all closed. What is left is everything the
 two questions did not reach, and it is not a backlog of defects: most of it is equivalent mutants and
-code nobody should test. Three groups are worth a deliberate pass, in this order.
+code nobody should test. Four groups are worth a deliberate pass, in this order.
 
-**B228 first, because it is small and finishable.** Four survivors in `ModelicaFileEncoding`, of
+**B267 before any of them, because nothing else here can be finished without it.** `run-mutation.ps1`
+no longer reaches the mutation phase on this solution: Stryker runs every test project that
+transitively references the mutated assembly, which for `ModelicaParser` is all of them including the
+browser journeys, and aborts on their failure. Found doing WP7, where the guards had to be mutated by
+hand instead. **This is a prerequisite, not a peer**: B227 and B228 are lists of surviving mutants,
+and every closure in B219-B226 was recorded as *"mutant confirmed dead"* — which is a claim the tool
+has to be able to make. Do it first, or the rest of this package cannot be checked, only argued.
+
+**B228 next, because it is small and finishable.** Four survivors in `ModelicaFileEncoding`, of
 which the real one drops a byte-order mark from a file MLQT was asked to preserve. An afternoon,
 and it settles whether the encoding round trip — which CLAUDE.md singles out as progressive
 corruption when it goes wrong — holds under its own tests rather than under inspection.
 
-**B229 next, because it is the largest gap and the reason is structural.** 11% of covered mutants
+**B229 then, because it is the largest gap and the reason is structural.** 11% of covered mutants
 killed in each of the two external-tool services, and they are the only code in the solution whose
 suites no CI job runs. Nothing outside one machine exercises them. That is a decision the project
 made knowingly — a live Dymola cannot be a runner dependency — and the audit has now priced it.
@@ -1191,7 +1199,14 @@ WP2 has just demonstrated what that costs. None of the three depends on the othe
 
 ### WP13 — Performance, second pass
 
-**B261** · 1 item · M · **the measurement exists; the explanation does not**
+**B261, B257** · 2 items · M and S · **the measurement exists; the explanation does not**
+
+**B257 is here because WP4 closed without it.** It was filed from WP4's own measurements — the
+combined analysis path labels its step "Analysing dependencies" while it also style-checks, so the
+faster of the two paths reports itself as the slower one — and it was named in that package's prose
+and in no item list. WP4 then shipped. It is small, it is the same subject, and a label that
+misreports which path is faster is worth fixing in the package that goes looking for where the time
+goes.
 
 WP4 closed with the reported symptom fixed and one number left standing: with the unit-resolution
 work in, **coverage measurement is 69% of a check at 133 ms/class** — larger than any single rule
@@ -1232,6 +1247,41 @@ is still open — it is the tool with no timeout at all, which is the worse of t
 
 ---
 
+### WP15 — The library index, which claims more than it supplies
+
+**B268** · 1 item · M · **the compensating read is in; the untruth is not**
+
+WP7 traced a Code Review defect — a class of the user's own marked as changed by the browser and
+opened with every diff view disabled — back to a library index that lists classes it does not
+supply. A library loaded twice, the user's checkout and a tool's encrypted build of the same
+library, races to fill one graph. `DirectedGraph.AddNode` resolves each collision in favour of
+readable source, and **nothing tells the loser's index**, so both `LoadedLibrary` entries go on
+claiming the id.
+
+**Nothing is currently wrong because of it.** `LibraryOwnership.Owner` answers "which library owns
+this class?" by asking the graph which copy survived, and the five callers that used to search the
+list go through it. That is a *read* that compensates for a write that was never made.
+
+**Why it is still a package.** The index is the thing that is untrue, and it is untrue in a way the
+project has now paid for twice without fixing: `ILibraryDataService.TotalModelCount` exists only
+because summing `ModelIds` over-counts, and did so *differently on each launch* — 77,860 then 76,129
+for one project, a difference that was read at the time as a symptom of the host migration.
+`DictionaryScope.RepositoryForModel` carried a half-workaround that skipped claimants with no
+repository, which does not help when both have one. Each was fixed where it hurt and the cause left
+in place. The third occurrence was this one, and the next caller to write
+`Libraries.FirstOrDefault(l => l.ModelIds.Contains(id))` gets it back with no test objecting.
+
+**Two candidate fixes, and the choice is the work.** Have the load that wins a collision withdraw
+the id from the loser's index — cheap, but it means a load reaching into another library's state,
+and the collision is decided inside `DirectedGraph`, which knows nothing about libraries. Or stop
+`ModelIds` being a claim at all and derive membership from the graph, which makes the question
+unanswerable incorrectly but puts a lookup on paths that currently do a set test. **Measure the
+second before choosing it**: `ModelIds` is read per class in the check pipeline.
+
+**A guard is worth more than either.** Whatever is decided, the thing that stops the fourth
+occurrence is a test that fails when a resolution goes back to searching the list — the shape
+`LibraryOwnershipTests` already has, applied to whichever callers exist then.
+
 ## Sequencing summary
 
 ```
@@ -1255,11 +1305,15 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
                                      scope by the user before it was started
 
 WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
-        └──▶ WP9   B237 first (it blocks other packages' journeys) ▸ B228 ▸ B229 ▸ B227 ▸ B234
-                       needs no other package
+        └──▶ WP9   B237 first (it blocks other packages' journeys), then B267 before the
+                       mutation items — it is what makes "mutant confirmed dead" sayable —
+                       ▸ B228 ▸ B229 ▸ B227 ▸ B234; needs no other package
 WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
 WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
+                       ▸ B257, WP4's other leftover: the combined path's step label
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
+WP15  B268 the library index — WP7's root cause, compensated for in the read and still untrue
+                       in the write; independent, and nothing is broken while it waits
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone
@@ -1269,13 +1323,18 @@ WP3, WP5 and WP6 depend on nothing in WP2 and can be taken whenever a change of 
 WP4's B184 is placed after WP1 on purpose: re-scoping what gets checked is not worth doing while a
 malformed file can still drop classes out of the graph underneath it (B201).
 
-**Every open item in this phase names a package**, bar the two recorded above as needing no work
-(B152, B166), and that is a property worth keeping rather than a tidy-up. It has been re-checked
-after each round of new items, most recently on 2026-09-21, when three arrived at once and made two new
-packages necessary, as six did on 2026-09-20. The two ways an item escaped were "separable at any point" against a package that
-later closed, and a mention in a step's prose that no item list counted — both of which read as
-*scheduled* right up until the package shipped without them. An item that genuinely belongs nowhere
-belongs on the roadmap, where it is at least a candidate, not in the margin of a plan.
+**Every open item in this phase names a package**, bar the three recorded above as needing no work
+(B152, B166, B198), and that is a property worth keeping rather than a tidy-up. It has been re-checked
+after each round of new items, most recently on 2026-09-21 after WP7, which opened B267 and B268 and
+made one new package necessary — earlier the same day three items arrived at once and made two, as
+six did on 2026-09-20. The two ways an item escaped were "separable at any point" against a package
+that later closed, and a mention in a step's prose that no item list counted — both of which read as
+*scheduled* right up until the package shipped without them. **The check that found B267 and B268
+loose found B257 as well**, and between them they are one of each kind: B267 and B268 were named in
+WP7's prose where they were found and in no item list, and B257 was named in WP4's prose and left
+behind when WP4 shipped. They are in WP9, WP15 and WP13 now. Run this check when items are opened,
+not only when a package closes — WP4 closed on 2026-09-20 and B257 was loose for a day. An item that genuinely belongs nowhere belongs on the roadmap, where it is
+at least a candidate, not in the margin of a plan.
 
 WP9 follows WP8 because it is WP8's leftovers, not because anything blocks it: it needs no other
 package and can be taken whenever there is appetite for it. **It is the one package with no deadline**
