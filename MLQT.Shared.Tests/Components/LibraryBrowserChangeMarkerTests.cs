@@ -110,6 +110,74 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         return (browser, repositories, classifier);
     }
 
+    /// <summary>
+    /// A repository whose changed file holds <c>MyLib.Components.Resistor</c>, nested two deep, so
+    /// the pruned tree has packages to bring along with it.
+    /// </summary>
+    /// <remarks>
+    /// The packages come back from <c>GetModelById</c> because that is where the browser climbs
+    /// from — containment as the graph records it, not the dotted id split up.
+    /// </remarks>
+    private IRenderedComponent<LibraryBrowser> RenderNestedBrowser(ClassChangeKind kind)
+    {
+        var library = new[]
+        {
+            Nested("MyLib", "MyLib", parent: null),
+            Nested("MyLib.Components", "Components", parent: "MyLib"),
+            Nested("MyLib.Components.Resistor", "Resistor", parent: "MyLib.Components"),
+        }.ToDictionary(m => m.Id, StringComparer.Ordinal);
+
+        var graph = new DirectedGraph();
+        var fileId = GraphBuilder.GenerateFileId(FilePath);
+        graph.AddNode(new FileNode(fileId, FilePath));
+        foreach (var model in library.Values)
+        {
+            graph.AddNode(model);
+            graph.AddFileContainsModel(fileId, model.Id);
+        }
+
+        var libraryService = new Mock<ILibraryDataService>();
+        libraryService.SetupGet(l => l.CombinedGraph).Returns(graph);
+        libraryService.Setup(l => l.GetTopLevelModelsAsync()).ReturnsAsync([library["MyLib"]]);
+        libraryService.Setup(l => l.GetChildModelsAsync(It.IsAny<ModelNode>())).ReturnsAsync(new List<ModelNode>());
+        libraryService.Setup(l => l.GetModelById(It.IsAny<string>()))
+                      .Returns<string>(id => library.GetValueOrDefault(id));
+        libraryService.Setup(l => l.ModelsWithDescendantParserErrors())
+                      .Returns(new HashSet<string>(StringComparer.Ordinal));
+
+        _changes.Add(new VcsWorkingCopyFile { Path = @"MyLib\Components.mo", Status = VcsFileStatus.Modified });
+        var repositories = new Mock<IRepositoryService>();
+        repositories.Setup(r => r.GetWorkingCopyChanges("repo-1")).Returns(_changes);
+
+        var classifier = new Mock<IModelChangeClassifier>();
+        classifier
+            .Setup(c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()))
+            .Returns(new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal)
+            {
+                ["MyLib"] = ClassChangeKind.Unchanged,
+                ["MyLib.Components"] = ClassChangeKind.Unchanged,
+                ["MyLib.Components.Resistor"] = kind,
+            });
+
+        Services.AddSingleton(libraryService.Object);
+        Services.AddSingleton(repositories.Object);
+        Services.AddSingleton(classifier.Object);
+        Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
+
+        RenderProviders();
+        return Render<LibraryBrowser>(p => p
+            .Add(c => c.LibraryOnly, false)
+            .Add(c => c.Repository, _repository));
+    }
+
+    private static ModelNode Nested(string id, string name, string? parent) =>
+        new(id, name, $"package {name} end {name};")
+        {
+            LibraryId = "lib-1",
+            ParentModelName = parent,
+            ClassType = parent is null ? "package" : "model",
+        };
+
     private static IReadOnlyDictionary<string, ClassChangeKind> Kinds(
         params (string Id, ClassChangeKind Kind)[] entries) =>
         entries.ToDictionary(e => e.Id, e => e.Kind, StringComparer.Ordinal);
@@ -122,10 +190,11 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         browser.FindAll(".mud-treeview .mud-chip").Select(e => e.TextContent.Trim()).ToArray();
 
     /// <summary>
-    /// The class names the filtered list is showing.
+    /// The class names the tree is showing, packages included, in document order.
     /// </summary>
     private static string[] Listed(IRenderedComponent<LibraryBrowser> browser) =>
-        browser.FindAll(".mud-list-item .mud-typography-caption").Select(e => e.TextContent.Trim()).ToArray();
+        browser.FindAll(".mud-treeview-item-content .mud-typography-body1")
+               .Select(e => e.TextContent.Trim()).ToArray();
 
     /// <summary>
     /// Applies a filter and waits for the list it produces.
@@ -140,6 +209,10 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             browser.InvokeAsync(() => browser.Instance.OnChangeFilterChanged(filter));
             Assert.Single(browser.FindAll(".mlqt-change-filter"));
         });
+
+    /// <summary>The filter chips' labels, which carry the count behind each one.</summary>
+    private static string[] FilterChips(IRenderedComponent<LibraryBrowser> browser) =>
+        browser.FindAll(".mlqt-change-filter .mud-chip").Select(e => e.TextContent.Trim()).ToArray();
 
     // ---------------------------------------------------------------- the marker
 
@@ -232,7 +305,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     }
 
     [Fact]
-    public void FilteringToSimulationChangesListsOnlyThose()
+    public void FilteringToSimulationChangesShowsOnlyThose()
     {
         var browser = RenderBrowser(
             Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation),
@@ -242,20 +315,70 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
 
         Filter(browser, LibraryBrowser.ChangeFilter.AffectsSimulation);
 
-        browser.WaitForAssertion(() => Assert.Equal(["MyLib.Resistor"], Listed(browser)));
+        browser.WaitForAssertion(() => Assert.Equal(["Resistor"], Listed(browser)));
     }
 
     [Fact]
-    public void FilteringToCosmeticChangesListsOnlyThose()
+    public void FilteringToCosmeticChangesShowsOnlyThose()
     {
         var browser = RenderBrowser(
             Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation),
                   ("MyLib.Capacitor", ClassChangeKind.Cosmetic)),
-            "MyLib.Resistor", "MyLib.Capacitor");
+            "MyLib.Capacitor", "MyLib.Resistor");
 
         Filter(browser, LibraryBrowser.ChangeFilter.Cosmetic);
 
-        browser.WaitForAssertion(() => Assert.Equal(["MyLib.Capacitor"], Listed(browser)));
+        browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
+    }
+
+    /// <summary>
+    /// The filter is still a tree: a changed class arrives with the packages that contain it, and
+    /// clicking one of those is how the user gets at the rest of it.
+    /// </summary>
+    [Fact]
+    public void AFilteredClassIsShownUnderThePackagesThatContainIt()
+    {
+        var browser = RenderNestedBrowser(ClassChangeKind.AffectsSimulation);
+
+        Filter(browser, LibraryBrowser.ChangeFilter.AffectsSimulation);
+
+        browser.WaitForAssertion(() => Assert.Equal(["MyLib", "Components", "Resistor"], Listed(browser)));
+    }
+
+    /// <summary>
+    /// Each chip says how many classes are behind it, so "nothing here is cosmetic" is readable
+    /// without selecting anything and reading an empty tree.
+    /// </summary>
+    [Fact]
+    public void EachChipCarriesItsCount()
+    {
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation),
+                  ("MyLib.Capacitor", ClassChangeKind.Cosmetic),
+                  ("MyLib.Inductor", ClassChangeKind.Unchanged)),
+            "MyLib.Resistor", "MyLib.Capacitor", "MyLib.Inductor");
+
+        browser.WaitForAssertion(() => Assert.Equal(
+            ["All models", "Changed (2)", "Affects simulation (1)", "Cosmetic only (1)"],
+            FilterChips(browser)));
+    }
+
+    /// <summary>
+    /// Clicking a chip is what applies the filter — the handler being callable is not the same as
+    /// the chips being wired to it.
+    /// </summary>
+    [Fact]
+    public void ClickingAChipAppliesItsFilter()
+    {
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation),
+                  ("MyLib.Capacitor", ClassChangeKind.Cosmetic)),
+            "MyLib.Capacitor", "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+
+        browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
     }
 
     /// <summary>
@@ -294,8 +417,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         browser.WaitForAssertion(() =>
         {
             Assert.Empty(browser.FindAll(".mlqt-change-filter"));
-            Assert.Empty(Listed(browser));
-            Assert.NotEmpty(browser.FindAll(".mud-treeview"));
+            Assert.Equal(["Resistor"], Listed(browser));
         });
     }
 

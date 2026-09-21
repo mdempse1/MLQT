@@ -80,16 +80,18 @@ So MLQT compares **the class as it is now against the class as it was committed*
 
 ### Showing Only What Changed
 
-Above the tree, a **Show** list appears whenever the repository has uncommitted changes. It replaces the tree with a flat list of the classes that changed:
+Above the tree, a row of chips appears whenever the repository has uncommitted changes. Each one carries the number of classes behind it, so you can see there is nothing cosmetic here without selecting anything:
 
-| Option | Lists |
-|--------|-------|
-| **All models** | Nothing — the ordinary tree |
+| Chip | Shows |
+|------|-------|
+| **All models** | The ordinary tree, everything in it |
 | **Changed** | Every class with an uncommitted change of its own |
 | **Affects simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
 | **Cosmetic only** | The changes MLQT vouches for as layout, wording or graphics |
 
-Clicking an entry opens that class exactly as clicking it in the tree would. Choose **All models** to go back; the tree comes back expanded as you left it.
+**It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. Every node comes back already open, because you asked to see those classes rather than to go looking for them, and a class is a leaf there whatever it holds in the full tree: the children it has are ones the filter did not select.
+
+Click a class to open it, exactly as in the unfiltered tree. Click **All models** — or the selected chip again — to go back; the full tree returns expanded as you left it.
 
 **None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.
 

@@ -151,6 +151,7 @@ public partial class LibraryBrowser : IDisposable
             _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
             _descendantChangeKinds.Clear();
             _changeFilter = ChangeFilter.None;
+            _filteredTreeItems = new List<TreeItemData<ModelNode>>();
             return;
         }
 
@@ -190,7 +191,8 @@ public partial class LibraryBrowser : IDisposable
             }
 
             var changeKinds = ModelChangeClassifier.Classify(repository, changes);
-            return (true, status, changeKinds, DescendantKinds(status, changeKinds));
+            return (true, status, changeKinds,
+                DescendantKinds(status, changeKinds, LibraryDataService.GetModelById));
         });
 
         _hasUncommittedChanges = hasChanges;
@@ -204,6 +206,8 @@ public partial class LibraryBrowser : IDisposable
         // only takes its changes - and its filter - out of the browser mid-session.
         if (!hasChanges)
             _changeFilter = ChangeFilter.None;
+
+        RefreshFilteredTree();
     }
 
     private static readonly IReadOnlyDictionary<string, ClassChangeKind> EmptyKinds =
@@ -213,10 +217,15 @@ public partial class LibraryBrowser : IDisposable
     /// The strongest change kind anywhere below each ancestor of a changed model.
     /// </summary>
     /// <remarks>
-    /// <para>Walks up each changed model's dotted name adding it to every ancestor, and keeps the
-    /// highest kind seen — which is what <see cref="ClassChangeKind"/>'s ordering is for. A package
-    /// with one reformatted class and one changed equation under it reports the equation, because
-    /// that is the one the user has to go and look at.</para>
+    /// <para>Keeps the highest kind seen at each package — which is what
+    /// <see cref="ClassChangeKind"/>'s ordering is for. A package with one reformatted class and one
+    /// changed equation under it reports the equation, because that is the one the user has to go
+    /// and look at.</para>
+    ///
+    /// <para><b>Climbed through <see cref="AncestorChain"/></b>, so containment is what decides
+    /// which package a change belongs to. This used to split the dotted id, which is the mistake
+    /// B189 already recorded once: a quoted identifier carries dots of its own, so the split
+    /// attributed the change to packages that do not exist and the real one got nothing.</para>
     ///
     /// <para>Driven by the VCS status rather than by the kinds, so a repository whose changes could
     /// not be classified still bubbles a marker up its packages — which is what MLQT did for
@@ -224,7 +233,8 @@ public partial class LibraryBrowser : IDisposable
     /// </remarks>
     internal static Dictionary<string, ClassChangeKind> DescendantKinds(
         IReadOnlyDictionary<string, VcsFileStatus> status,
-        IReadOnlyDictionary<string, ClassChangeKind> kinds)
+        IReadOnlyDictionary<string, ClassChangeKind> kinds,
+        Func<string, ModelNode?> lookup)
     {
         var descendants = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
 
@@ -237,14 +247,10 @@ public partial class LibraryBrowser : IDisposable
             if (kind == ClassChangeKind.Unchanged)
                 continue;
 
-            var lastDot = modelId.LastIndexOf('.');
-            while (lastDot > 0)
+            foreach (var parentId in AncestorChain(modelId, lookup))
             {
-                var parentId = modelId.Substring(0, lastDot);
                 if (!descendants.TryGetValue(parentId, out var existing) || kind > existing)
                     descendants[parentId] = kind;
-
-                lastDot = parentId.LastIndexOf('.');
             }
         }
 
@@ -252,7 +258,7 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
-    /// Which of a repository's models the browser lists (B191).
+    /// Which of a repository's models the browser shows (B191).
     /// </summary>
     internal enum ChangeFilter
     {
@@ -276,42 +282,75 @@ public partial class LibraryBrowser : IDisposable
     private ChangeFilter _changeFilter = ChangeFilter.None;
 
     /// <summary>
-    /// The classes the current filter selects, with the marker each one would carry in the tree.
+    /// The tree the browser is showing: the whole library, or only what the filter selects.
     /// </summary>
     /// <remarks>
-    /// <para><b>A flat list rather than a pruned tree.</b> The tree loads its children on demand, so
-    /// "only the changed classes" would mean expanding every package to find out whether it has any —
-    /// which is the whole library. The list is also what the question asks for: which classes did I
-    /// change, and which of those matter.</para>
-    ///
-    /// <para>Driven by the VCS status map, so a class is listed because its file changed, and the
-    /// filter then decides on the kind. A class in a changed file that was not itself touched is
-    /// not listed at all.</para>
+    /// Rebuilt when the filter or the working copy changes rather than per render, because
+    /// <c>MudTreeView</c> is handed these objects and re-creating them under it on every render is
+    /// how a tree loses its expansion state.
     /// </remarks>
-    internal IReadOnlyList<(ModelNode Model, ChangeMarker Marker)> FilteredChanges()
+    private List<TreeItemData<ModelNode>> _filteredTreeItems = new();
+
+    internal List<TreeItemData<ModelNode>> ActiveTreeItems =>
+        _changeFilter == ChangeFilter.None ? TreeItems : _filteredTreeItems;
+
+    /// <summary>
+    /// The lazy loader, but only for the unfiltered tree.
+    /// </summary>
+    /// <remarks>
+    /// A filtered tree is built whole and already carries its children, so asking the server for
+    /// them again would replace a pruned package's children with all of them.
+    /// </remarks>
+    internal Func<ModelNode?, Task<IReadOnlyCollection<TreeItemData<ModelNode>>>>? ActiveServerData =>
+        _changeFilter == ChangeFilter.None ? LoadServerData : null;
+
+    /// <summary>The kind recorded for a model, or Unknown where the question was never asked.</summary>
+    private ClassChangeKind KindOf(string modelId) =>
+        _modelChangeKinds.TryGetValue(modelId, out var kind) ? kind : ClassChangeKind.Unknown;
+
+    /// <summary>
+    /// How many classes a filter would show. Displayed on its chip, so the user can see there is
+    /// nothing under "Cosmetic only" without selecting it and reading an empty tree.
+    /// </summary>
+    internal int CountFor(ChangeFilter filter)
+    {
+        if (filter == ChangeFilter.None)
+            return 0;
+
+        var count = 0;
+        foreach (var modelId in _modelVcsStatus.Keys)
+        {
+            if (Selects(filter, KindOf(modelId)))
+                count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>The classes the current filter selects.</summary>
+    /// <remarks>
+    /// Driven by the VCS status map, so a class is a candidate because its file changed and the
+    /// filter then decides on the kind. A class in a changed file that was not itself touched is
+    /// never selected by any of them.
+    /// </remarks>
+    internal IReadOnlyList<ModelNode> FilteredModels()
     {
         if (_changeFilter == ChangeFilter.None)
             return [];
 
         var graph = LibraryDataService.CombinedGraph;
-        var matches = new List<(ModelNode Model, ChangeMarker Marker)>();
+        var matches = new List<ModelNode>();
 
         foreach (var modelId in _modelVcsStatus.Keys)
         {
-            var kind = _modelChangeKinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
-            if (!Selects(_changeFilter, kind))
+            if (!Selects(_changeFilter, KindOf(modelId)))
                 continue;
 
-            var model = graph.GetNode<ModelNode>(modelId);
-            if (model is null)
-                continue;
-
-            var marker = MarkerFor(model);
-            if (marker.Shape == ChangeMarkerShape.Chip)
-                matches.Add((model, marker));
+            if (graph.GetNode<ModelNode>(modelId) is { } model)
+                matches.Add(model);
         }
 
-        return matches.OrderBy(m => m.Model.Id, StringComparer.Ordinal).ToList();
+        return matches;
     }
 
     /// <summary>Whether a filter wants a class of this kind.</summary>
@@ -323,9 +362,91 @@ public partial class LibraryBrowser : IDisposable
         _ => false,
     };
 
+    /// <summary>
+    /// The tree pruned to <paramref name="matches"/> and the packages that contain them.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Built whole, not lazily.</b> The ordinary tree fetches a node's children when it is
+    /// expanded, which cannot answer "show me only the changed classes" — finding out which packages
+    /// have one would mean expanding all of them. A filtered tree is small by construction (it is
+    /// the uncommitted changes) so it is cheaper to build the whole thing, and every node comes back
+    /// already open: the user asked to see these classes, not to go looking for them.</para>
+    ///
+    /// <para>Ancestors come from <see cref="AncestorChain"/>, so the packages shown are the ones
+    /// that really contain the class. An ancestor the lookup cannot resolve is skipped and its
+    /// child attaches to the nearest one that resolved, which keeps a malformed graph showing the
+    /// changes rather than nothing.</para>
+    /// </remarks>
+    internal static List<TreeItemData<ModelNode>> BuildFilteredTree(
+        IEnumerable<ModelNode> matches, Func<string, ModelNode?> lookup)
+    {
+        var built = new Dictionary<string, TreeItemData<ModelNode>>(StringComparer.Ordinal);
+
+        // Children is an IReadOnlyCollection on the item, so each node's is gathered here and
+        // assigned once at the end rather than appended to in place.
+        var children = new Dictionary<string, List<ITreeItemData<ModelNode>>>(StringComparer.Ordinal);
+        var roots = new List<ITreeItemData<ModelNode>>();
+
+        foreach (var match in matches)
+        {
+            TreeItemData<ModelNode>? parent = null;
+
+            foreach (var id in AncestorChain(match.Id, lookup).Append(match.Id))
+            {
+                if (built.TryGetValue(id, out var existing))
+                {
+                    parent = existing;
+                    continue;
+                }
+
+                var model = id == match.Id ? match : lookup(id);
+                if (model is null)
+                    continue;
+
+                var item = new TreeItemData<ModelNode>
+                {
+                    Value = model,
+                    Icon = IconForClassType(model.ClassType),
+                    Expanded = true,
+                };
+
+                built[id] = item;
+                children[id] = [];
+                (parent is null ? roots : children[parent.Value!.Id]).Add(item);
+                parent = item;
+            }
+        }
+
+        foreach (var (id, item) in built)
+        {
+            var own = children[id];
+            own.Sort(ByName);
+
+            // Expandable governs the arrow. Only a package that kept a child gets one; a class
+            // whose own children the filter did not select must not offer to open into nothing.
+            item.Expandable = own.Count > 0;
+            item.Children = own;
+        }
+
+        roots.Sort(ByName);
+        return roots.Cast<TreeItemData<ModelNode>>().ToList();
+    }
+
+    private static readonly Comparison<ITreeItemData<ModelNode>> ByName =
+        (left, right) => string.Compare(left.Value?.Name, right.Value?.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Rebuilds the filtered tree from the current filter and the current set of changes.
+    /// </summary>
+    private void RefreshFilteredTree() =>
+        _filteredTreeItems = _changeFilter == ChangeFilter.None
+            ? new List<TreeItemData<ModelNode>>()
+            : BuildFilteredTree(FilteredModels(), LibraryDataService.GetModelById);
+
     internal void OnChangeFilterChanged(ChangeFilter filter)
     {
         _changeFilter = filter;
+        RefreshFilteredTree();
         StateHasChanged();
     }
 

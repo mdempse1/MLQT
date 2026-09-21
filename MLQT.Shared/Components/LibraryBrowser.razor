@@ -209,66 +209,36 @@ else if (Repository != null)
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
             }
 
-            @* Only for a repository that has changes to narrow to. The list it switches to is flat
-               rather than a pruned tree: the tree loads its children on demand, so pruning it would
-               mean expanding the whole library to find out what is in it (B191). *@
-            @{ var changed = FilteredChanges(); }
+            @* Only for a repository that has changes to narrow to. Chips rather than a dropdown:
+               there are four of them, they are the whole of what this control does, and each can
+               carry the number of classes behind it - so "nothing is cosmetic here" is readable
+               without selecting anything (B191). *@
             @if (_hasUncommittedChanges)
             {
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-1">
-                    <MudSelect T="ChangeFilter" Value="_changeFilter" ValueChanged="OnChangeFilterChanged"
-                               Label="Show" Dense="true" Margin="Margin.Dense" Variant="Variant.Text"
-                               Class="mlqt-change-filter" Style="max-width: 220px;">
-                        <MudSelectItem Value="@ChangeFilter.None">All models</MudSelectItem>
-                        <MudSelectItem Value="@ChangeFilter.Changed">Changed</MudSelectItem>
-                        <MudSelectItem Value="@ChangeFilter.AffectsSimulation">Affects simulation</MudSelectItem>
-                        <MudSelectItem Value="@ChangeFilter.Cosmetic">Cosmetic only</MudSelectItem>
-                    </MudSelect>
-                    @if (_changeFilter != ChangeFilter.None)
-                    {
-                        <MudText Typo="Typo.caption">@changed.Count class(es)</MudText>
-                    }
-                </MudStack>
+                <MudChipSet T="ChangeFilter" SelectionMode="SelectionMode.SingleSelection"
+                            SelectedValue="_changeFilter" SelectedValueChanged="OnChangeFilterChanged"
+                            CheckMark="true" Size="Size.Small" Variant="Variant.Text"
+                            SelectedColor="Color.Primary" Class="mlqt-change-filter mb-1">
+                    <MudChip T="ChangeFilter" Value="@ChangeFilter.None">All models</MudChip>
+                    <MudChip T="ChangeFilter" Value="@ChangeFilter.Changed">Changed (@CountFor(ChangeFilter.Changed))</MudChip>
+                    <MudChip T="ChangeFilter" Value="@ChangeFilter.AffectsSimulation" SelectedColor="Color.Warning">Affects simulation (@CountFor(ChangeFilter.AffectsSimulation))</MudChip>
+                    <MudChip T="ChangeFilter" Value="@ChangeFilter.Cosmetic" SelectedColor="Color.Info">Cosmetic only (@CountFor(ChangeFilter.Cosmetic))</MudChip>
+                </MudChipSet>
             }
 
-            @if (_changeFilter != ChangeFilter.None)
+            @if (_changeFilter != ChangeFilter.None && _filteredTreeItems.Count == 0)
             {
-                @if (changed.Count == 0)
-                {
-                    <MudText Typo="Typo.caption" Class="ml-2 mb-2">
-                        No classes in this repository match that filter.
-                    </MudText>
-                }
-                else
-                {
-                    <MudList T="string" Dense="true" Class="mb-2">
-                        @foreach (var (model, marker) in changed)
-                        {
-                            <MudListItem T="string" Dense="true" OnClick="@(() => OnModelSelected(model))">
-                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                                    <MudText Typo="Typo.body1">@model.Name</MudText>
-                                    <MudTooltip Text="@marker.Tooltip" Placement="Placement.Right">
-                                        <MudChip T="string" Size="Size.Small" Color="@marker.Color"
-                                                 Variant="Variant.Text"
-                                                 Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
-                                            @marker.Text
-                                        </MudChip>
-                                    </MudTooltip>
-                                </MudStack>
-                                <MudText Typo="Typo.caption">@model.Id</MudText>
-                            </MudListItem>
-                        }
-                    </MudList>
-                }
+                <MudText Typo="Typo.caption" Class="ml-2 mb-2">
+                    No classes in this repository match that filter.
+                </MudText>
             }
 
-            @* The tree is withdrawn while a filter is on rather than pruned. Its expansion state
-               lives on TreeItems, which is a field, so it comes back as it was left. *@
-            @if (_changeFilter == ChangeFilter.None)
-            {
+            @* One tree, two item sources. A filter prunes it to the changed classes and the packages
+               that hold them, built whole and already open - and the lazy loader is withheld while
+               it is on, or expanding a pruned package would fetch all of its children back. *@
             <MudTreeView T="ModelNode"
-                Items="@TreeItems"
-                ServerData="@LoadServerData"
+                Items="@ActiveTreeItems"
+                ServerData="@ActiveServerData"
                 Dense="true"
                 Color="Color.Primary"
                 SelectedValueChanged="@((ModelNode node) => OnModelSelected(node))"
@@ -341,7 +311,6 @@ else if (Repository != null)
                     </MudTreeViewItem>
                 </ItemTemplate>
             </MudTreeView>
-            }
         </ChildContent>
     </MudExpansionPanel>
 }

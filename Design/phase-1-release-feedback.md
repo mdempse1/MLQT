@@ -755,10 +755,25 @@ display-only list for that reason.
 documentation) or nothing at all for a class whose file changed but whose own text did not; every
 chip now carries a tooltip, which none of them had; the descendant dot is coloured by the strongest
 change under it. Above the tree, a **Show** list narrows to Changed / Affects simulation / Cosmetic
-only. It produces a **flat list rather than a pruned tree**, because the tree loads its children on
-demand and "only the changed classes" would mean expanding the whole library to find out which ones
-those are. "Affects simulation" includes anything *not known* to be harmless, unclassifiable
-changes included — a filter that hid those would hide exactly what it was asked to find.
+only. "Affects simulation" includes anything *not known* to be harmless, unclassifiable changes
+included — a filter that hid those would hide exactly what it was asked to find.
+
+**The filter shipped as a dropdown over a flat list and was changed on the same day**, on the
+grounds that a chip row shows all four options at once and can carry a count on each — so "nothing
+here is cosmetic" is readable without selecting anything — and that a change is worth more with the
+packages that contain it than without them. The flat list existed because the tree loads its
+children on demand and pruning it looked like it would mean expanding the whole library; the way
+round that is that **a filtered tree does not need the lazy loader at all**. The matches are known,
+their ancestors come from `AncestorChain`, and the result is small by construction — it is the
+uncommitted changes. So the filtered tree is built whole, comes back already open, and the
+`ServerData` callback is withheld while a filter is on, or expanding a pruned package would fetch
+all of its children back.
+
+**`DescendantKinds` climbed the dotted id and now climbs `AncestorChain` too.** The pruned tree
+forced the question, because building one by splitting names would have put a class under packages
+that do not exist. That is the mistake B189 already recorded for the reveal walk — a quoted Modelica
+identifier carries dots of its own — and it was sitting in the rollup, inherited from the code this
+replaced.
 
 **The marker was written out twice** — once per tree template, repository mode and library-only mode
 — which is the shape B200 came from. It is now one decision in `ChangeMarker`, asked by both.
