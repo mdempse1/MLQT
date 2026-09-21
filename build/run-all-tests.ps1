@@ -74,13 +74,23 @@ Push-Location $repositoryRoot
 # Suites needing something the machine may not have, and the filter that makes the rest of the suite
 # runnable anyway. Anything not named here runs unfiltered.
 #
-# The SVN exclusion is the same one build-and-test.yml and check-coverage.ps1 apply, and for the same
-# reason: those tests want a working copy at C:\Projects\ModelicaEditorTest and a server. Kept
-# identical so a local run and a CI run measure the same thing.
+# The SVN exclusion names the three classes that cannot run without an svn client, and nothing else.
+# It used to be the substring 'Svn', which excluded 281 of the suite's 672 tests - six classes that
+# need no svn at all, including guards written for a defect a user had reported. Measured rather than
+# assumed: with svn taken off PATH, exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and
+# SvnMergeCommitTests fail; every other test passes (B266).
+#
+# On a machine that HAS svn, all three run: the two that want the fixed working copy at
+# C:\Projects\ModelicaEditorTest probe for it and skip themselves when it is absent, and
+# SvnIntegrationTests builds its own repository with svnadmin. That is the point of this script -
+# excusing a suite by category is how a real failure hides in it.
+$svnAvailable = [bool](Get-Command svn -ErrorAction SilentlyContinue)
+
 $suiteNotes = @{
     'RevisionControl.Tests' = @{
-        Filter       = 'FullyQualifiedName!~Svn'
-        Why          = 'SVN integration tests need a working copy and a server'
+        Filter       = if ($svnAvailable) { $null }
+                       else { 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
+        Why          = 'the SVN integration tests need an svn client'
         NeedsTooling = $false
     }
     'DymolaInterface.Tests' = @{

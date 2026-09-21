@@ -74,16 +74,25 @@ jobs:
         if: '!cancelled()'
         run: dotnet test ModelicaGraph.Tests -c Release --no-build --report-trx --report-trx-filename graph.trx --results-directory ${{ github.workspace }}/TestResults
 
-      # SVN tests are excluded on CI: the integration tests need a live working copy /
-      # server (e.g. C:\Projects\ModelicaEditorTest) that doesn't exist on the runner, and
-      # they self-skip when it's absent. Bundling the SlikSVN client (see
-      # build/fetch-svn-tools.ps1) does NOT make these runnable on its own — it only
-      # supplies svn.exe, not a repository. The bundled client is validated instead by the
-      # release workflow's "Verify bundled svn client" step. To run SVN tests locally,
-      # check out a working copy at that path and run RevisionControl.Tests without the filter.
-      - name: Run RevisionControl tests (exclude SVN integration)
+      # The three SVN classes that need an svn client are excluded here, and nothing else.
+      # The filter used to be the substring "Svn", which excluded 281 of the suite's 672
+      # tests - six classes that need no svn at all, including guards written for defects
+      # users had reported (B266). Measured rather than assumed: with svn taken off PATH,
+      # exactly SvnIntegrationTests, SvnIntegrationAdvancedTests and SvnMergeCommitTests
+      # fail, and every other test passes.
+      #
+      # The two that want the fixed working copy at C:\Projects\ModelicaEditorTest probe for
+      # it and skip themselves when it is absent, so they would pass here as no-ops; they are
+      # excluded anyway rather than reporting a pass nothing earned. SvnIntegrationTests
+      # builds its own repository with svnadmin, so it needs only the client - installing
+      # subversion on the runner would make it runnable, which is the obvious next step if
+      # these ever matter here. Bundling the SlikSVN client (build/fetch-svn-tools.ps1) does
+      # NOT make the other two runnable: it supplies svn.exe, not a repository, and is
+      # validated by the release workflow's "Verify bundled svn client" step instead.
+      # run-all-tests.ps1 runs all three on a machine that has svn.
+      - name: Run RevisionControl tests (exclude the SVN integration classes)
         if: '!cancelled()'
-        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol.trx --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename revcontrol.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Services tests
         if: '!cancelled()'
@@ -170,9 +179,9 @@ jobs:
 
       # Same exclusion as the Windows job: the SVN integration tests need a working copy and a server
       # no runner has. Kept identical so the two platforms measure the same thing.
-      - name: Run RevisionControl tests (exclude SVN integration)
+      - name: Run RevisionControl tests (exclude the SVN integration classes)
         if: '!cancelled()'
-        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~Svn" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults
+        run: dotnet test RevisionControl.Tests -c Release --no-build --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit" --report-trx --report-trx-filename revcontrol-linux.trx --results-directory ${{ github.workspace }}/TestResults
 
       - name: Run MLQT.Services tests
         if: '!cancelled()'

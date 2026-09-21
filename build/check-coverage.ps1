@@ -22,6 +22,13 @@
     below it. Debt is tolerated; new debt is not. Run with -UpdateBaseline to re-record, and read the
     diff - it is the point of keeping the file in the repository.
 
+    -UpdateBaseline records what THIS machine measured, and this machine may measure more than the
+    runner can. The gate runs on windows-latest, which has no svn client and no working copy at
+    C:\Projects\ModelicaEditorTest, so the SVN tests that probe for it skip there and cover nothing;
+    a developer's machine that has it covers more and would write a baseline CI cannot meet. Recording
+    an improvement is only safe from a machine configured like the runner - or after the run that
+    produced it has been seen to pass there (B266).
+
     A fourth way it fails, and the reason the baseline has an "excluded" list: a class in the ledger
     that is not in the report at all. That is not the same fact as "it meets the bar now" - it is no
     information - and until B104 the gate said the same sentence for both, so debt could be paid off
@@ -98,7 +105,7 @@ $suites = @(
     @{ Project = 'MLQT.Cli.Tests';        Filter = $null }
     @{ Project = 'MLQT.McpServer.Tests';  Filter = $null }
     @{ Project = 'MLQT.Shared.Tests';     Filter = $null }
-    @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~Svn' }
+    @{ Project = 'RevisionControl.Tests'; Filter = 'FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit' }
 )
 
 function Fail([string] $message) {

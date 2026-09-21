@@ -1436,12 +1436,17 @@ public class SvnIntegrationAdvancedTests : IDisposable
         _svn.CheckoutRevision(trunkUrl, "HEAD", checkoutPath);
         _svn.CreateBranch(checkoutPath, branchName, true);
 
-        // Create deeply nested directories
-        var nestedPath = Path.Combine(checkoutPath, "level1", "level2", "level3");
+        // Create deeply nested directories. The top one is unique per run: an earlier version of
+        // this test committed "level1/level2/level3/DeepFile.txt" to trunk, so every run since found
+        // the file already versioned with the same content, staged nothing, and failed on a commit
+        // that had nothing to commit. A test that depends on the repository not already containing
+        // its fixture fails once and then for ever (B266).
+        var root = "nested_" + Guid.NewGuid().ToString("N")[..8];
+        var nestedPath = Path.Combine(checkoutPath, root, "level2", "level3");
         Directory.CreateDirectory(nestedPath);
         File.WriteAllText(Path.Combine(nestedPath, "DeepFile.txt"), "Deep content");
 
-        var filesToAdd = new List<string> { Path.Combine("level1", "level2", "level3", "DeepFile.txt") };
+        var filesToAdd = new List<string> { Path.Combine(root, "level2", "level3", "DeepFile.txt") };
 
         // Act
         var result = _svn.Commit(checkoutPath, "Add file in nested directories", filesToAdd);

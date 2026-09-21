@@ -1406,8 +1406,12 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var newRevision = ParseCommittedRevision(commit.StdOut);
             if (newRevision == null)
             {
-                // svn committed nothing (no actual changes were staged).
-                result.ErrorMessage = "SVN commit failed.";
+                // svn ran and committed nothing: every selected path already matches what the server
+                // has. That is a different thing from a commit that failed, and saying "commit
+                // failed" for it sent a diagnosis a long way down the wrong road (B266) - the svn
+                // command had succeeded, so there was no error anywhere to find.
+                result.ErrorMessage =
+                    "Nothing was committed: the selected files match the versions already in the repository.";
                 return result;
             }
 

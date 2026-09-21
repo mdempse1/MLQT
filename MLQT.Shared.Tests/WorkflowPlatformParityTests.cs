@@ -91,10 +91,11 @@ public class WorkflowPlatformParityTests
     [Fact]
     public void TheSvnExclusionIsTheSameOnBothPlatforms()
     {
-        // The two jobs have to measure the same thing or their results are not comparable. The SVN
-        // integration tests need a working copy and a server no runner has, and check-coverage.ps1
-        // excludes them the same way for the same reason.
-        const string filter = @"--filter ""FullyQualifiedName!~Svn""";
+        // The two jobs have to measure the same thing or their results are not comparable. The three
+        // SVN classes needing an svn client are excluded, and check-coverage.ps1 excludes the same
+        // three for the same reason. The filter comes from SvnTestFilterTests rather than being
+        // written out again here: it was a substring once, in four files, and hid 281 tests (B266).
+        var filter = $@"--filter ""{SvnTestFilterTests.Expected}""";
 
         Assert.Contains(filter, Job("build-libraries"));
         Assert.Contains(filter, Job("linux-tests"));

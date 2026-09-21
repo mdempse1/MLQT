@@ -656,7 +656,15 @@ reading past a red line is not.
 
 ### WP6 — Revision control
 
-**B193, B202 ✅, B240 ✅, B264** · 4 items · S–M
+**B193, B202 ✅, B240 ✅, B264, B265 ✅, B266 ✅** · 6 items · S–M
+
+**Two of the six were found by using what the other two shipped**, on the same day, which is the
+pattern WP5 established and this package repeated. B265 is the one worth remembering: viewing any
+SVN history diff failed, and had failed before B202 touched it, because the dialog was converting
+a log path into a working-copy path by guessing - and testing the guess against a different root
+than the lookup used. B266 came out of writing B265's guards and noticing they would never run:
+the suite filter was the substring `Svn`, which hid 281 of 673 tests from every automated run and
+a failing test among them.
 
 **B240's decision, for the record, went the other way from both options this note offered.**
 Neither a new project reference nor a decoder passed in from the caller: `RevisionControl`

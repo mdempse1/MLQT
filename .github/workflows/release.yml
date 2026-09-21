@@ -77,7 +77,7 @@ jobs:
         run: |
           dotnet test ModelicaParser.Tests -c Release --no-restore
           dotnet test ModelicaGraph.Tests -c Release --no-restore
-          dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~Svn"
+          dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit"
           dotnet test MLQT.Services.Tests -c Release --no-restore
           dotnet test MLQT.McpServer.Tests -c Release --no-restore
           dotnet test MLQT.Cli.Tests -c Release --no-restore

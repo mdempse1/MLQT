@@ -477,6 +477,15 @@ CI job — the workflow says why — so this is the only thing that runs them; `
 `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once. On a machine without
 Dymola or OpenModelica, use `-CoreOnly`.
 
+**A fourth is partly in that position.** `RevisionControl.Tests` has three classes that need an svn
+client — `SvnIntegrationTests`, `SvnIntegrationAdvancedTests` and `SvnMergeCommitTests` — so CI
+excludes exactly those three, and this script excludes them **only when the machine has no svn**. The
+filter is the same string in four files and a test holds them together
+(`MLQT.Shared.Tests/SvnTestFilterTests.cs`), because it was once the substring `Svn`: that also
+excluded six classes needing no svn at all, hid 281 of the suite's 673 tests from every automated
+run, and hid a failing one among them (B266). **Classify a test by what it needs, never by what it is
+called.**
+
 **A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
 suites by category on the grounds that the machine might not have the tool, and immediately excused a
 real one — OpenModelica *is* installed on the main development machine, and

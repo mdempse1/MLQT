@@ -257,6 +257,34 @@ public class SvnIntegrationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Committing a file that already matches the repository says so, rather than reporting a
+    /// failure for a command that succeeded (B266).
+    /// </summary>
+    /// <remarks>
+    /// This is the message a real diagnosis ran into: a test failed with "SVN commit failed", the
+    /// svn command underneath it had returned success, and there was therefore no error anywhere to
+    /// find. What had happened was that the file was already committed, byte for byte.
+    /// </remarks>
+    [Fact]
+    public void Commit_WithNothingToCommit_SaysNothingWasCommitted()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "unchanged.txt");
+        File.WriteAllText(file, "the same content");
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add unchanged.txt\"");
+
+        // Same content, so svn has nothing to send.
+        var result = _svn.Commit(workingDir, "commit it again", ["unchanged.txt"]);
+
+        Assert.False(result.Success);
+        Assert.Contains("Nothing was committed", result.ErrorMessage);
+        Assert.DoesNotContain("failed", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void UpdateRevisionInPlace_AdvancesContentInPlace()
     {
