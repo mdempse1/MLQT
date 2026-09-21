@@ -310,7 +310,11 @@ Same as Git — use the date pickers to filter, and the "Load Next 50" / "Load L
 
 ### Viewing Changed Files and Diffs
 
-Click on any revision row to see the changed files. The **Diff** button shows the file at that revision compared to the current working copy.
+Click on any revision row to see the changed files. The **Diff** button shows **what that revision
+changed**: the file at the revision before it on the left, the file at that revision on the right.
+
+SVN revision numbers are global, so “the revision before” is simply N-1 — the state of the whole
+repository immediately before that commit, whether or not N-1 touched this particular file.
 
 MLQT handles SVN path differences automatically — it strips branch prefixes (`trunk/`, `branches/X/`, `tags/X/`) from server-relative paths to correctly match files in your working copy.
 

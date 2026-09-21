@@ -87,10 +87,11 @@ public class ModelicaFileAccessPolicyTests
 
         // SVN plumbing.
         ["RevisionControl/SvnRevisionControlSystem.cs"] = (3, "writes the svn targets file (a list of paths); "
-            + "the two reads take a conflicted file's .mine/.rN sidecars, which ARE Modelica source — "
-            + "RevisionControl deliberately has no project references, so it cannot reach the funnel. "
-            + "Read-only and shown in the conflict diff, so the cost is mojibake on a Windows-1252 "
-            + "library rather than a corrupted file. Backlog B240"),
+            + "the two reads take a conflicted file's .mine/.rN sidecars as BYTES and hand them back "
+            + "undecoded, which is the point - they are Modelica source, and RevisionControl has no "
+            + "project references to reach the funnel with. MLQT.Services/Helpers/VcsFileText decodes "
+            + "them through ModelicaFileEncoding.DetectFromBytes, so a Windows-1252 library keeps its "
+            + "accented characters in the conflict diff. Read as text, it did not (B240)"),
     };
 
     private static string RepositoryRoot()

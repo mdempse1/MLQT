@@ -230,6 +230,21 @@ public interface IRepositoryService
     string? GetFileContentAtRevision(string repositoryId, string filePath, string? revision = null);
 
     /// <summary>
+    /// The revision immediately before <paramref name="revision"/>, for showing what a commit
+    /// changed rather than how it differs from the working copy.
+    /// </summary>
+    /// <remarks>
+    /// Git and SVN answer this differently and neither is arithmetic a caller should do for itself;
+    /// see <c>IRevisionControlSystem.GetPreviousRevision</c>. Null means there is nothing before it -
+    /// the first commit, or a repository under no version control at all - and a caller diffing
+    /// against it should read that as empty rather than as a failure.
+    /// </remarks>
+    /// <param name="repositoryId">The repository ID.</param>
+    /// <param name="revision">The revision whose predecessor is wanted.</param>
+    /// <returns>The predecessor's revision identifier, or null if there is none.</returns>
+    string? GetPreviousRevision(string repositoryId, string revision);
+
+    /// <summary>
     /// Merges changes from a source branch into the current working copy.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

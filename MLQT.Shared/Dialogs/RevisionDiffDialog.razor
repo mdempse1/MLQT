@@ -23,16 +23,19 @@
         else if (_originalContent == _modifiedContent)
         {
             <MudAlert Severity="Severity.Info" Dense="true">
-                File is identical between revision @ShortRevision and the working copy.
+                Revision @ShortRevision did not change this file.
             </MudAlert>
         }
         else
         {
+            @* What the commit changed: the revision before it on the left, the revision itself on
+               the right. It used to put the working copy on the right, which against an old commit
+               is mostly other people's later work (B202). *@
             <DiffViewer OriginalContent="@(_originalContent ?? string.Empty)"
                         ModifiedContent="@(_modifiedContent ?? string.Empty)"
                         FileName="@FilePath"
-                        OriginalLabel="@($"Revision {ShortRevision}")"
-                        ModifiedLabel="Working Copy"
+                        OriginalLabel="@PreviousLabel"
+                        ModifiedLabel="@($"Revision {ShortRevision}")"
                         ViewMode="DiffViewMode.Unified"
                         ShowViewModeSelectorButtons="true"
                         Height="60vh" />

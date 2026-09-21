@@ -1,4 +1,5 @@
 using LibGit2Sharp;
+using System.Text;
 
 namespace RevisionControl.Tests;
 
@@ -1561,8 +1562,10 @@ public class GitOperationsTests : IDisposable
 
         Assert.NotNull(ours);
         Assert.NotNull(theirs);
-        Assert.Contains("main version", ours);
-        Assert.Contains("feature version", theirs);
+
+        // Bytes as the blob stored them, decoded by the caller - see B240 and VcsFileText.
+        Assert.Contains("main version", Encoding.UTF8.GetString(ours));
+        Assert.Contains("feature version", Encoding.UTF8.GetString(theirs));
 
         // Cleanup
         r.Reset(ResetMode.Hard);

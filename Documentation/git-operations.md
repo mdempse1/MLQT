@@ -349,7 +349,13 @@ The history loads incrementally for performance:
 
 Click on any commit row to see a popover showing:
 - The list of **changed files** in that commit, each with an icon indicating the change type (Added, Modified, Deleted, Renamed, Copied)
-- A **Diff** button next to each file to open a side-by-side diff comparing the file at that revision with the current working copy
+- A **Diff** button next to each file to open a side-by-side diff of **what that commit changed**: the commit's parent on the left, the commit itself on the right
+
+A file the commit added has an empty left-hand side, and one it deleted has an empty right-hand
+side. For a merge commit, the comparison is against its **first parent** — the branch the merge
+was made on — so the lines the merge brought in are not reported as though the merge had written
+them. The very first commit in a repository has nothing before it, so the whole file reads as
+added.
 
 ![Screenshot: The VCS History dialog with a commit row clicked, showing the changed-files popover beside it. Each file carries a status icon - a green plus for added, an orange pencil for modified - and clicking one opens the diff.](Images/git-operations-9.png)
 

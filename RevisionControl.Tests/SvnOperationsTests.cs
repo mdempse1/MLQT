@@ -130,6 +130,14 @@ public class SvnOperationsTests
 
     #region GetConflictVersions Tests (filesystem-based, no SVN needed)
 
+    /// <summary>
+    /// The sidecar's bytes as text. The system under test returns what was stored and leaves the
+    /// decoding to its caller, which is B240 - these fixtures are ASCII, so UTF-8 is exact.
+    /// </summary>
+    private static string? Text(byte[]? bytes) =>
+        bytes is null ? null : System.Text.Encoding.UTF8.GetString(bytes);
+
+
     [Fact]
     public void GetConflictVersions_WithNoSidecarFiles_ReturnsBothNull()
     {
@@ -164,7 +172,7 @@ public class SvnOperationsTests
 
             var (ours, theirs) = _svn.GetConflictVersions("unused", filePath);
 
-            Assert.Equal("my version content", ours);
+            Assert.Equal("my version content", Text(ours));
             Assert.Null(theirs);
         }
         finally
@@ -187,7 +195,7 @@ public class SvnOperationsTests
             var (ours, theirs) = _svn.GetConflictVersions("unused", filePath);
 
             Assert.Null(ours);
-            Assert.Equal("their version at r42", theirs);
+            Assert.Equal("their version at r42", Text(theirs));
         }
         finally
         {
@@ -210,7 +218,7 @@ public class SvnOperationsTests
 
             var (ours, theirs) = _svn.GetConflictVersions("unused", filePath);
 
-            Assert.Equal("version at r50", theirs); // highest revision wins
+            Assert.Equal("version at r50", Text(theirs)); // highest revision wins
         }
         finally
         {
@@ -232,8 +240,8 @@ public class SvnOperationsTests
 
             var (ours, theirs) = _svn.GetConflictVersions("unused", filePath);
 
-            Assert.Equal("my changes", ours);
-            Assert.Equal("incoming changes at r100", theirs);
+            Assert.Equal("my changes", Text(ours));
+            Assert.Equal("incoming changes at r100", Text(theirs));
         }
         finally
         {

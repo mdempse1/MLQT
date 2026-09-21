@@ -1211,6 +1211,33 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// <summary>
     /// Gets the content of a file at a specific revision.
     /// </summary>
+    /// <summary>
+    /// The commit's first parent, which is what it changed relative to.
+    /// </summary>
+    /// <remarks>
+    /// First parent rather than all of them: for a merge, that is the branch the merge was made on,
+    /// and diffing a file against the other parent would report the lines the merge brought in as
+    /// though the merge commit had written them. A root commit has no parent, and null says so.
+    /// </remarks>
+    public string? GetPreviousRevision(string repositoryPath, string revision)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return null;
+
+            using var repo = new Repository(repositoryPath);
+
+            var commit = ResolveToCommit(repo, revision);
+            return commit?.Parents.FirstOrDefault()?.Sha;
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("GetPreviousRevision", ex);
+            return null;
+        }
+    }
+
     public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
@@ -1371,9 +1398,16 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
-    /// Returns the "ours" and "theirs" versions of a conflicted file from the Git index.
+    /// Returns the "ours" and "theirs" versions of a conflicted file from the Git index, as the
+    /// bytes they were stored as.
     /// </summary>
-    public (string? ours, string? theirs) GetConflictVersions(string repositoryPath, string filePath)
+    /// <remarks>
+    /// <c>Blob.GetContentText()</c> decodes as UTF-8, which is wrong for the Windows-1252 half of a
+    /// mixed Modelica library and silently so - the caller gets replacement characters and no way to
+    /// tell they were not in the file. See the interface for why decoding is not this assembly's
+    /// job at all (B240).
+    /// </remarks>
+    public (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath)
     {
         try
         {
@@ -1386,12 +1420,8 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             if (conflict == null)
                 return (null, null);
 
-            var ours = conflict.Ours != null
-                ? repo.Lookup<Blob>(conflict.Ours.Id)?.GetContentText()
-                : null;
-            var theirs = conflict.Theirs != null
-                ? repo.Lookup<Blob>(conflict.Theirs.Id)?.GetContentText()
-                : null;
+            var ours = BlobBytes(repo, conflict.Ours?.Id);
+            var theirs = BlobBytes(repo, conflict.Theirs?.Id);
 
             return (ours, theirs);
         }
@@ -1400,6 +1430,22 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             RevisionControlLogger.Error("GetConflictVersions", ex);
             return (null, null);
         }
+    }
+
+    /// <summary>The blob's contents as stored, or null when there is no blob.</summary>
+    private static byte[]? BlobBytes(Repository repo, ObjectId? id)
+    {
+        if (id is null)
+            return null;
+
+        var blob = repo.Lookup<Blob>(id);
+        if (blob is null)
+            return null;
+
+        using var stream = blob.GetContentStream();
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>

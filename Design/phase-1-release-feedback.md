@@ -656,7 +656,16 @@ reading past a red line is not.
 
 ### WP6 — Revision control
 
-**B193, B202, B240** · 3 items · S–M
+**B193, B202 ✅, B240 ✅, B264** · 4 items · S–M
+
+**B240's decision, for the record, went the other way from both options this note offered.**
+Neither a new project reference nor a decoder passed in from the caller: `RevisionControl`
+returns the bytes it was given and MLQT decodes them. A version control system stores bytes and
+what they mean is the caller's question, so the assembly that knows nothing about Modelica does
+not have to learn anything to stop getting this wrong. Doing it turned up the same defect in
+Git, which the row had not mentioned because B239's scan was looking for raw file APIs and Git
+reaches its copy through `Blob.GetContentText()` — and then the same assumption three paths
+wider again, which is **B264** and was deliberately left rather than widened into blind.
 
 B193's real work is not enumerating tags, it is the surrounding UI being able to describe a detached
 HEAD rather than showing an empty branch name — and `LibraryBrowser.razor:97` already has a

@@ -1027,6 +1027,23 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// For a numeric revision, the file's HEAD peg is used so SVN can follow copy history back
     /// to revisions that predate the current branch.
     /// </summary>
+    /// <summary>
+    /// The revision before this one, which in SVN is arithmetic.
+    /// </summary>
+    /// <remarks>
+    /// Revision numbers are global and sequential, so N-1 is the state of the whole repository
+    /// immediately before N - whether or not N-1 touched the file being looked at, which is exactly
+    /// what "before this commit" means. Revision 1 has nothing before it. A non-numeric revision is
+    /// not something SVN can count back from, and null says so rather than guessing.
+    /// </remarks>
+    public string? GetPreviousRevision(string repositoryPath, string revision)
+    {
+        if (!long.TryParse(revision, out var number) || number <= 1)
+            return null;
+
+        return (number - 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public string? GetFileContentAtRevision(string repositoryPath, string filePath, string? revision = null)
     {
         try
@@ -1484,7 +1501,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// Returns the "ours" and "theirs" versions of a conflicted SVN file.
     /// SVN writes sidecar files: filename.ext.mine (ours) and filename.ext.r{n} (theirs = highest revision).
     /// </summary>
-    public (string? ours, string? theirs) GetConflictVersions(string repositoryPath, string filePath)
+    public (byte[]? ours, byte[]? theirs) GetConflictVersions(string repositoryPath, string filePath)
     {
         try
         {
@@ -1493,7 +1510,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             // "Ours" = the working copy version before the merge conflict markers were applied.
             var mineFile = Path.Combine(dir, fileName + ".mine");
-            var ours = File.Exists(mineFile) ? File.ReadAllText(mineFile) : null;
+            // Bytes, not text: File.ReadAllText decodes as UTF-8 and a Windows-1252 library's
+            // accented characters come back as replacement characters (B240).
+            var ours = File.Exists(mineFile) ? File.ReadAllBytes(mineFile) : null;
 
             // "Theirs" = the incoming branch revision — highest-numbered .r{n} sidecar file.
             var rFiles = Directory.GetFiles(dir, fileName + ".r*")
@@ -1505,7 +1524,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 .OrderByDescending(x => x.rev)
                 .ToList();
 
-            var theirs = rFiles.Count > 0 ? File.ReadAllText(rFiles[0].path) : null;
+            var theirs = rFiles.Count > 0 ? File.ReadAllBytes(rFiles[0].path) : null;
             return (ours, theirs);
         }
         catch (Exception ex)

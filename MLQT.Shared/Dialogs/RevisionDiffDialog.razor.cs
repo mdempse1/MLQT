@@ -31,31 +31,43 @@ public partial class RevisionDiffDialog
     private bool _isLoading = true;
 
     /// <summary>
-    /// Which content goes on which side: the revision on the left, the working copy on the right.
+    /// The revision on the left, or null when nothing came before this one.
+    /// </summary>
+    private string? _previousRevision;
+
+    /// <summary>The left-hand pane's label, which has to say what it is showing.</summary>
+    private string PreviousLabel =>
+        _previousRevision is null ? "Before" : $"Revision {Shorten(_previousRevision)}";
+
+    /// <summary>
+    /// A revision identifier short enough to label a pane with. A Git SHA is cut to the seven
+    /// characters the rest of the UI uses; an SVN revision number is already short.
+    /// </summary>
+    internal static string Shorten(string revision) =>
+        revision.Length > 7 ? revision[..7] : revision;
+
+    /// <summary>
+    /// Which content goes on which side: the revision before the commit on the left, the commit
+    /// itself on the right, so what is shown is what the commit changed (B202).
     /// </summary>
     /// <remarks>
-    /// <para><b>The change type does not enter into it</b>, and that is the fix for B155. This dialog
-    /// compares one revision against the working copy - its title says <c>@ &lt;revision&gt;</c>, its
-    /// panes are labelled "Revision N" and "Working Copy", and its own empty-diff message says "File
-    /// is identical between revision N and the working copy". Three statements of the same contract.
-    /// </para>
+    /// <para><b>It used to compare against the working copy</b>, which is a different question and
+    /// not the one a user clicking a file in a commit's changed-file list is asking. Against an old
+    /// commit in an active repository that diff is mostly other people's later work, and against a
+    /// file changed since it is impossible to tell which lines the commit was responsible for.
+    /// B155 documented that behaviour after finding it reported confusing numbers; this changes the
+    /// behaviour instead.</para>
     ///
-    /// <para>The code disagreed with all three for an <b>added</b> file: it put <c>string.Empty</c>
-    /// on the left and the <i>revision's</i> content on the right, so the pane labelled "Working
-    /// Copy" showed the revision and the pane labelled "Revision N" showed nothing. Against the first
-    /// commit of a file that was changed again later, it reported that revision's lines as additions
-    /// and never mentioned the lines the working copy actually has - which is what B155 saw, and why
-    /// it read as "comparing against nothing". That is the diff of the commit itself, a reasonable
-    /// thing to want and not what this dialog offers.</para>
-    ///
-    /// <para>The <c>Deleted</c> case it also carried was dead: a file deleted at that revision is
-    /// absent from the working copy, so the right-hand side is empty by way of
-    /// <c>workingCopyContent</c> being null, without a branch to say so. Where it was not dead it was
-    /// wrong - a file deleted then re-added would have had its current content hidden.</para>
+    /// <para><b>The change type does not enter into it</b>, and that part is B155's fix, kept.
+    /// A file added by the commit has no previous content and an empty left-hand side; a file
+    /// deleted by it has no content at the commit and an empty right-hand side. Both fall out of
+    /// the content being null, and a branch on <c>ChangeType</c> to say the same thing is a second
+    /// statement of it that can disagree - which is exactly what it did, putting the revision's
+    /// content in the pane labelled "Working Copy" for an added file.</para>
     /// </remarks>
     internal static (string Original, string Modified) SidesFor(
-        string? revisionContent, string? workingCopyContent)
-        => (revisionContent ?? string.Empty, workingCopyContent ?? string.Empty);
+        string? previousContent, string? revisionContent)
+        => (previousContent ?? string.Empty, revisionContent ?? string.Empty);
 
     protected override async Task OnInitializedAsync()
     {
@@ -68,48 +80,42 @@ public partial class RevisionDiffDialog
                 return;
             }
 
-            // For SVN, changed file paths from the log are repo-root-relative (e.g., "trunk/Models/Foo.mo")
-            // but GetFileContentAtRevision and the working copy need paths relative to the WC root.
-            // Try the path as-is first; if the working copy file isn't found, strip known SVN prefixes.
+            // For SVN, changed file paths from the log are repo-root-relative (e.g. "trunk/Models/Foo.mo")
+            // but GetFileContentAtRevision needs paths relative to the working copy root. Try the path
+            // as-is first; if nothing is there, strip the known SVN prefixes. The working copy is still
+            // what says which spelling is right, even though neither side of the diff comes from it.
             var filePath = FilePath;
-            var fullPath = Path.Combine(repository.LocalPath, filePath);
 
-            if (repository.VcsType == RepositoryVcsType.SVN && !File.Exists(fullPath))
+            if (repository.VcsType == RepositoryVcsType.SVN
+                && !File.Exists(Path.Combine(repository.LocalPath, filePath)))
             {
                 var stripped = StripSvnBranchPrefix(filePath);
-                if (stripped != filePath)
-                {
-                    var strippedFullPath = Path.Combine(repository.LocalPath, stripped);
-                    if (File.Exists(strippedFullPath))
-                    {
-                        filePath = stripped;
-                        fullPath = strippedFullPath;
-                    }
-                }
+                if (stripped != filePath && File.Exists(Path.Combine(repository.LocalPath, stripped)))
+                    filePath = stripped;
             }
+
+            _previousRevision = await Task.Run(() =>
+                RepositoryService.GetPreviousRevision(RepositoryId, Revision));
 
             var revisionContent = await Task.Run(() =>
                 RepositoryService.GetFileContentAtRevision(RepositoryId, filePath, Revision));
 
-            string? workingCopyContent = null;
-            if (File.Exists(fullPath))
-            {
-                workingCopyContent = await ModelicaFileEncoding.ReadAllTextOnlyAsync(fullPath);
-            }
+            // Null where there is no predecessor at all, which is the first commit of the repository
+            // - the same empty left-hand side as a file the commit added, and for the same reason.
+            var previousContent = _previousRevision is null
+                ? null
+                : await Task.Run(() =>
+                    RepositoryService.GetFileContentAtRevision(RepositoryId, filePath, _previousRevision));
 
-            (_originalContent, _modifiedContent) = SidesFor(revisionContent, workingCopyContent);
+            (_originalContent, _modifiedContent) = SidesFor(previousContent, revisionContent);
 
-            if (revisionContent == null && workingCopyContent == null)
+            // A file deleted by this commit has no content at it, which is the answer rather than a
+            // failure. Anything else with no content on either side is a failure worth naming.
+            if (revisionContent == null && ChangeType != VcsChangeType.Deleted)
             {
-                _errorMessage = $"Could not load file content. Revision content not found for '{filePath}' at {ShortRevision}, and working copy not found at '{fullPath}'.";
-            }
-            else if (revisionContent == null && ChangeType != VcsChangeType.Added)
-            {
-                _errorMessage = $"Could not load revision content for '{filePath}' at {ShortRevision}.";
-            }
-            else if (workingCopyContent == null && ChangeType != VcsChangeType.Deleted)
-            {
-                _errorMessage = $"Working copy not found at '{fullPath}'.";
+                _errorMessage = previousContent == null
+                    ? $"Could not load file content for '{filePath}' at {ShortRevision}."
+                    : $"Could not load revision content for '{filePath}' at {ShortRevision}.";
             }
         }
         catch (Exception ex)

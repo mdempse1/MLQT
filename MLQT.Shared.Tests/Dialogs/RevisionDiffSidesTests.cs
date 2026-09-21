@@ -4,64 +4,75 @@ using Xunit;
 namespace MLQT.Shared.Tests.Dialogs;
 
 /// <summary>
-/// Which side of the revision diff shows what (B155).
+/// Which side of the revision diff shows what (B155, then B202).
 /// </summary>
 /// <remarks>
-/// <para>The dialog compares <b>one revision against the working copy</b>, and says so three times:
-/// in its title, in its pane labels, and in the message it shows when the two match. The sides used
-/// to be chosen by the file's change type instead, and for an <b>added</b> file that put the
-/// revision's content in the pane labelled "Working Copy" and nothing in the pane labelled
-/// "Revision N" - so the first commit of a file changed later reported that revision's lines as
-/// additions and never showed the lines the working copy actually has.</para>
+/// <para><b>The dialog shows what a commit changed</b>: the revision before it on the left, the
+/// revision itself on the right. It used to compare the revision against the <i>working copy</i>,
+/// which is a different question and not the one a user clicking a file in a commit's changed-file
+/// list is asking — against an old commit that diff is mostly other people's later work (B202).</para>
 ///
-/// <para><b>The change type is no longer a parameter</b>, which is the real fix: the mapping cannot
-/// depend on something it is not given. These pin what is left, because it is the contract three
-/// pieces of the dialog's own text promise a reader.</para>
+/// <para><b>The change type is not a parameter</b>, and that is B155's fix, kept. The sides used to
+/// be chosen by it, and for an added file that put the revision's content in the pane labelled
+/// "Working Copy" and nothing in the pane labelled "Revision N". A mapping cannot disagree with
+/// itself about something it is not given.</para>
+///
+/// <para>These tests were rewritten rather than extended when the behaviour changed. They passed
+/// unaltered against it — <c>SidesFor</c> takes two strings and does not know what they mean — while
+/// their names and their prose described a dialog that no longer existed, which is worse than no
+/// tests at all.</para>
 /// </remarks>
 public class RevisionDiffSidesTests
 {
-    private const string AtRevision = "model M\n  Real x;\nend M;";
-    private const string InWorkingCopy = "model M\n  Real x;\n  Real y;\nend M;";
+    private const string Before = "model M\n  Real x;\nend M;";
+    private const string AtRevision = "model M\n  Real x;\n  Real y;\nend M;";
 
     [Fact]
-    public void TheRevisionIsOnTheLeftAndTheWorkingCopyOnTheRight()
+    public void ThePreviousRevisionIsOnTheLeftAndTheCommitOnTheRight()
     {
-        var (original, modified) = RevisionDiffDialog.SidesFor(AtRevision, InWorkingCopy);
+        var (original, modified) = RevisionDiffDialog.SidesFor(Before, AtRevision);
 
-        Assert.Equal(AtRevision, original);
-        Assert.Equal(InWorkingCopy, modified);
+        Assert.Equal(Before, original);
+        Assert.Equal(AtRevision, modified);
     }
 
     [Fact]
-    public void AFileAddedInThatRevisionStillComparesAgainstTheWorkingCopy()
+    public void AFileTheCommitAddedHasAnEmptyLeftHandSide()
     {
-        // The B155 case. An added file has content at the revision that added it, so there is a real
-        // comparison to make - and the two lines the working copy has gained since are the answer.
-        // The bug put string.Empty on the left and the revision on the right, which is the diff of
-        // the commit rather than the diff this dialog offers, and mislabelled both panes doing it.
-        var (original, modified) = RevisionDiffDialog.SidesFor(AtRevision, InWorkingCopy);
+        // Nothing to compare against: the file did not exist at the previous revision, so the
+        // caller passes null and the whole file reads as added. No branch on ChangeType says so.
+        var (original, modified) = RevisionDiffDialog.SidesFor(null, AtRevision);
 
-        Assert.NotEqual(string.Empty, original);
-        Assert.NotEqual(AtRevision, modified);
+        Assert.Equal(string.Empty, original);
+        Assert.Equal(AtRevision, modified);
     }
 
     [Fact]
-    public void AFileNoLongerInTheWorkingCopyHasAnEmptyRightHandSide()
+    public void AFileTheCommitDeletedHasAnEmptyRightHandSide()
     {
-        // A file deleted since that revision: null is what the caller passes when File.Exists said
-        // no, and it needs no branch of its own to come out empty.
-        var (original, modified) = RevisionDiffDialog.SidesFor(AtRevision, null);
+        var (original, modified) = RevisionDiffDialog.SidesFor(Before, null);
 
-        Assert.Equal(AtRevision, original);
+        Assert.Equal(Before, original);
         Assert.Equal(string.Empty, modified);
     }
 
     [Fact]
-    public void AFileNotPresentAtThatRevisionHasAnEmptyLeftHandSide()
+    public void TheFirstCommitOfARepositoryReadsAsAllAdditions()
     {
-        var (original, modified) = RevisionDiffDialog.SidesFor(null, InWorkingCopy);
+        // There is no revision before the first one, so the dialog has no predecessor to ask for -
+        // the same empty left-hand side as a file added later, reached by a different route.
+        var (original, modified) = RevisionDiffDialog.SidesFor(null, AtRevision);
 
         Assert.Equal(string.Empty, original);
-        Assert.Equal(InWorkingCopy, modified);
+        Assert.Equal(AtRevision, modified);
+    }
+
+    [Theory]
+    [InlineData("1a2b3c4d5e6f7a8b9c0d", "1a2b3c4")]   // a Git SHA, cut to what the rest of the UI shows
+    [InlineData("4711", "4711")]                       // an SVN revision number, already short
+    [InlineData("", "")]
+    public void ARevisionIsShortenedForItsPaneLabel(string revision, string expected)
+    {
+        Assert.Equal(expected, RevisionDiffDialog.Shorten(revision));
     }
 }

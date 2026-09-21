@@ -1464,6 +1464,23 @@ public class RepositoryService : IRepositoryService
         return vcs.GetFileContentAtRevision(repository.VcsRootPath, filePath, revision);
     }
 
+    public string? GetPreviousRevision(string repositoryId, string revision)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository == null || string.IsNullOrWhiteSpace(revision))
+            return null;
+
+        // A local directory has no history, so nothing came before anything.
+        IRevisionControlSystem? vcs = repository.VcsType switch
+        {
+            RepositoryVcsType.Git => _git,
+            RepositoryVcsType.SVN => _svn,
+            _ => null
+        };
+
+        return vcs?.GetPreviousRevision(repository.VcsRootPath, revision);
+    }
+
     public async Task<VcsOperationResult> CheckoutRevisionAsync(string repositoryId, string revision, CancellationToken cancellationToken = default)
     {
         var repository = GetRepository(repositoryId);
@@ -1614,7 +1631,10 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        return await Task.Run(() => vcs.GetConflictVersions(repository.VcsRootPath, filePath));
+        // Decoded here rather than in RevisionControl, which returns what was stored because it
+        // knows nothing about Modelica and should not start now (B240).
+        var (ours, theirs) = await Task.Run(() => vcs.GetConflictVersions(repository.VcsRootPath, filePath));
+        return (VcsFileText.Decode(ours), VcsFileText.Decode(theirs));
     }
 
     public async Task<VcsMergeResult> RebaseAsync(string repositoryId, string targetBranch)
