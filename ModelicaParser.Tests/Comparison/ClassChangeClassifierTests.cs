@@ -173,6 +173,28 @@ public class ClassChangeClassifierTests
     }
 
     /// <summary>
+    /// A class is one thing or the other, never both: a class carrying an equation change <i>and</i>
+    /// a redrawn icon is <see cref="ClassChangeKind.AffectsSimulation"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>The kinds are a ranking, not a set of labels, and this is the case that decides which.
+    /// "Cosmetic" has to mean <b>only</b> cosmetic, or it is not an answer to the question it is
+    /// asked: a reviewer narrowing to it is looking for the classes they can pass over, and one
+    /// with a changed equation in it is not one of those. The same class does appear under
+    /// "affects simulation", which is where it needs to be read.</para>
+    /// </remarks>
+    [Fact]
+    public void AClassWithBothKindsOfChangeAffectsSimulation()
+    {
+        var changed = Original
+            .Replace("R = 100", "R = 220")
+            .Replace("{{-70,30},{70,-30}}", "{{-80,40},{80,-40}}")
+            .Replace("\"Resistance\"", "\"The resistance\"");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    /// <summary>
     /// An annotation MLQT has never heard of is significant. The alternative — ignoring what it
     /// cannot name — would quietly hide every vendor annotation that steers a translator.
     /// </summary>

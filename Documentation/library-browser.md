@@ -87,7 +87,9 @@ Above the tree, a row of chips appears whenever the repository has uncommitted c
 | **All** | The ordinary tree, everything in it |
 | **Changed** | Every class with an uncommitted change of its own |
 | **Simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
-| **Cosmetic** | The changes MLQT vouches for as layout, wording or graphics |
+| **Cosmetic** | The changes MLQT vouches for as layout, wording or graphics — and *only* those |
+
+A class is one or the other, never both. If you changed an equation **and** moved the component on the diagram, the class is a simulation change: it appears under **Changed** and **Simulation**, and not under **Cosmetic**. That is what makes **Cosmetic** useful — it is the list you can pass over, so a class with a changed equation hiding among the redrawn icons would defeat it.
 
 **It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. It stays open exactly as far as you had it open, and no further: a filter is a question, not a rearrangement. A class is a leaf there whatever it holds in the full tree, because the children it has are ones the filter did not select.
 
