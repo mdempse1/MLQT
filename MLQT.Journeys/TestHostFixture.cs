@@ -75,6 +75,9 @@ public sealed class TestHostFixture : IAsyncLifetime
     /// <summary>The host's service provider, for a journey that drives a service directly.</summary>
     public IServiceProvider Services => _app!.Services;
 
+    /// <summary>The page handed out by the last <see cref="NewPageAsync"/>. See its remarks.</summary>
+    private IPage? _lastPage;
+
     public async ValueTask InitializeAsync()
     {
         _app = TestHostFactory.Build();
@@ -99,8 +102,36 @@ public sealed class TestHostFixture : IAsyncLifetime
     }
 
     /// <summary>A page with the console wired to the test output, and a sane default timeout.</summary>
+    /// <remarks>
+    /// <para><b>The page handed out last is closed first, and that is not tidiness (B237).</b> Every
+    /// open page is a live Blazor circuit, and <c>AppState</c> is a <i>singleton</i> shared by all of
+    /// them in this host — so a page left open goes on reacting to events raised by whatever page
+    /// came after it. <c>CodeReview.OnModelSelected</c> then runs on the raising circuit's
+    /// dispatcher rather than its own and the render call throws <c>The current thread is not
+    /// associated with the Dispatcher</c>, killing circuits that no test is looking at and taking
+    /// the current one's code viewer down with them.</para>
+    ///
+    /// <para><b>The desktop host has exactly one circuit, so none of this is reachable in the
+    /// product</b> — it is an artefact of a harness that opened 71 pages and closed none of them,
+    /// and the fix belongs here rather than in a component being made to tolerate it. Journeys hold
+    /// one page at a time and always have, so closing the previous one costs nothing; a journey that
+    /// ever needs two at once will have to say so here.</para>
+    /// </remarks>
     public async Task<IPage> NewPageAsync()
     {
+        if (_lastPage is { IsClosed: false } previous)
+        {
+            try
+            {
+                await previous.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone with its context, or the browser is shutting down. Either way there
+                // is no circuit left to leak.
+            }
+        }
+
         var context = await Browser.NewContextAsync();
 
         if (TraceDirectory is not null)
@@ -130,7 +161,7 @@ public sealed class TestHostFixture : IAsyncLifetime
         };
         page.PageError += (_, error) => Console.WriteLine($"[browser error] {error}");
 
-        return page;
+        return _lastPage = page;
     }
 
     /// <summary>

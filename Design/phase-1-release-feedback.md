@@ -998,7 +998,7 @@ complete because the measurement agreed.
 ### WP9 — The test debt deliberately left
 
 **B267 ✅, B228 ✅, B229, B227** · opened by WP8's audit, and held back from it on purpose · plus **B234**
-and **B237** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
+and **B237 ✅** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
 out of order because of that, four weeks before the date it would have fired on
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
@@ -1034,15 +1034,23 @@ all** - nothing tested `ForFile` directly, only through the encoding tests, whic
 line endings. 36 survivors before, 26 after. **Read the survivors, not the row about them**: a
 backlog entry written from an audit is a snapshot, and the tool is the source.
 
-**B237 is half done, and the half that is left is not a test problem.** The shared host had a cause
-nobody had named: every journey's fixture library is called `Lib`, so they all produce the same
-class ids, and nothing ever took one back out of the shared service — so a class resolved to the
-first journey's node, whose file had been deleted with its fixture. `ResetLibrariesAsync` fixes
-that and all 71 journeys pass with it. The journey was then written again and **still** passes
-alone and fails beside its siblings, so it is not committed: a test that depends on what ran before
-it is worse than no test. What is left is `CodeReview.OnModelSelected` calling `StateHasChanged`
-off the dispatcher and killing the circuit — **B271**, a product defect found by the journey this
-item exists to make possible, which is the argument for the journey rather than against it.
+**B237 ✅, and both causes were in the harness.** Every journey's fixture library is called `Lib`,
+so they all produce the same class ids, and nothing ever took one back out of the shared service —
+a class resolved to the first journey's node, whose file had been deleted with its fixture. And
+**no journey ever closed a page**: every open page is a live circuit while `AppState` is a
+singleton shared by all of them, so a stale page went on reacting to events raised by a later one,
+`CodeReview.OnModelSelected` ran on the raising circuit's dispatcher, and the render call killed
+circuits nothing was looking at. `ResetLibrariesAsync` and a `NewPageAsync` that closes the page it
+handed out last are the two fixes, and `CodeSearchJourney` is committed behind them.
+
+**B271 was filed against `CodeReview` and withdrawn.** It is the same thing seen from the stack
+rather than from the harness, and the desktop host has exactly one circuit so none of it is
+reachable in the product. Worth saying because the row set itself the right question — *is this
+reachable?* — and was written before answering it. A stack trace says where a thing failed, not
+whether a user can get there.
+
+**The suite is faster for it**: 75 tests in 59s where 71 took 2m05s. The leaked circuits were
+costing time as well as reliability, which nothing had attributed to them.
 
 **B229 then, because it is the largest gap and the reason is structural.** 11% of covered mutants
 killed in each of the two external-tool services, and they are the only code in the solution whose
