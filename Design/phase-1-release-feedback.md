@@ -765,9 +765,13 @@ packages that contain it than without them. The flat list existed because the tr
 children on demand and pruning it looked like it would mean expanding the whole library; the way
 round that is that **a filtered tree does not need the lazy loader at all**. The matches are known,
 their ancestors come from `AncestorChain`, and the result is small by construction — it is the
-uncommitted changes. So the filtered tree is built whole, comes back already open, and the
-`ServerData` callback is withheld while a filter is on, or expanding a pruned package would fetch
-all of its children back.
+uncommitted changes. So the filtered tree is built whole and the `ServerData` callback is withheld
+while a filter is on, or expanding a pruned package would fetch all of its children back.
+
+**It opens as far as the user had the tree open and no further**, which was the second thing
+reported: it first shipped fully expanded. The two views share one expansion record, so opening
+everything for the filter also left the full tree spread out once the filter was cleared — a filter
+is a question, not a rearrangement.
 
 **`DescendantKinds` climbed the dotted id and now climbs `AncestorChain` too.** The pruned tree
 forced the question, because building one by splitting names would have put a class under packages

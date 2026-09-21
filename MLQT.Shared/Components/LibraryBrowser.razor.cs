@@ -369,16 +369,23 @@ public partial class LibraryBrowser : IDisposable
     /// <para><b>Built whole, not lazily.</b> The ordinary tree fetches a node's children when it is
     /// expanded, which cannot answer "show me only the changed classes" — finding out which packages
     /// have one would mean expanding all of them. A filtered tree is small by construction (it is
-    /// the uncommitted changes) so it is cheaper to build the whole thing, and every node comes back
-    /// already open: the user asked to see these classes, not to go looking for them.</para>
+    /// the uncommitted changes), so it is cheaper to build the whole thing.</para>
+    ///
+    /// <para><b>It opens exactly as far as the user had the tree open</b>, from
+    /// <paramref name="expanded"/>. Opening every node instead would mean that applying a filter,
+    /// and then clearing it, left the tree spread out in a way the user never asked for — the two
+    /// views share one expansion record, so anything this opens is opened in the full tree too.</para>
     ///
     /// <para>Ancestors come from <see cref="AncestorChain"/>, so the packages shown are the ones
     /// that really contain the class. An ancestor the lookup cannot resolve is skipped and its
     /// child attaches to the nearest one that resolved, which keeps a malformed graph showing the
     /// changes rather than nothing.</para>
     /// </remarks>
+    /// <param name="matches">The classes the filter selected.</param>
+    /// <param name="lookup">Finds a model by id — how the containing packages are reached.</param>
+    /// <param name="expanded">The ids the user has open, which this neither adds to nor ignores.</param>
     internal static List<TreeItemData<ModelNode>> BuildFilteredTree(
-        IEnumerable<ModelNode> matches, Func<string, ModelNode?> lookup)
+        IEnumerable<ModelNode> matches, Func<string, ModelNode?> lookup, IReadOnlySet<string> expanded)
     {
         var built = new Dictionary<string, TreeItemData<ModelNode>>(StringComparer.Ordinal);
 
@@ -407,7 +414,7 @@ public partial class LibraryBrowser : IDisposable
                 {
                     Value = model,
                     Icon = IconForClassType(model.ClassType),
-                    Expanded = true,
+                    Expanded = expanded.Contains(id),
                 };
 
                 built[id] = item;
@@ -441,7 +448,7 @@ public partial class LibraryBrowser : IDisposable
     private void RefreshFilteredTree() =>
         _filteredTreeItems = _changeFilter == ChangeFilter.None
             ? new List<TreeItemData<ModelNode>>()
-            : BuildFilteredTree(FilteredModels(), LibraryDataService.GetModelById);
+            : BuildFilteredTree(FilteredModels(), LibraryDataService.GetModelById, _expandedNodeIds);
 
     internal void OnChangeFilterChanged(ChangeFilter filter)
     {
@@ -776,10 +783,11 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
-    /// Called when a tree node's expansion state changes.
-    /// Tracks expanded nodes so the state can be preserved during refresh.
+    /// Called when a tree node's expansion state changes. <c>_expandedNodeIds</c> is the one record
+    /// of it, so the state survives a refresh and the filtered tree opens to the same places the
+    /// full one does (B191).
     /// </summary>
-    private void OnNodeExpandedChanged(ITreeItemData<ModelNode> node, bool expanded)
+    internal void OnNodeExpandedChanged(ITreeItemData<ModelNode> node, bool expanded)
     {
         node.Expanded = expanded;
 

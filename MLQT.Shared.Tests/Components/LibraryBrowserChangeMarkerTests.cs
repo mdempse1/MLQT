@@ -359,7 +359,7 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
             "MyLib.Resistor", "MyLib.Capacitor", "MyLib.Inductor");
 
         browser.WaitForAssertion(() => Assert.Equal(
-            ["All models", "Changed (2)", "Affects simulation (1)", "Cosmetic only (1)"],
+            ["All", "Changed (2)", "Simulation (1)", "Cosmetic (1)"],
             FilterChips(browser)));
     }
 
@@ -490,5 +490,43 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
         repositories.Verify(r => r.GetWorkingCopyChanges("repo-1"), Times.AtLeastOnce);
         classifier.Verify(
             c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()), Times.AtLeastOnce);
+    }
+    /// <summary>
+    /// A filter is a question, not a rearrangement: the pruned tree opens where the user had the
+    /// full one open and nowhere else.
+    /// </summary>
+    /// <remarks>
+    /// The two views share one expansion record, so a filter that opened everything would also
+    /// leave the full tree spread out once it was cleared.
+    /// </remarks>
+    [Fact]
+    public void FilteringDoesNotOpenAnythingTheUserHadClosed()
+    {
+        var browser = RenderNestedBrowser(ClassChangeKind.AffectsSimulation);
+        browser.WaitForAssertion(() => Assert.Single(browser.Instance.ActiveTreeItems));
+
+        // The library is open; the package inside it is not.
+        browser.InvokeAsync(() =>
+            browser.Instance.OnNodeExpandedChanged(browser.Instance.ActiveTreeItems[0], true));
+
+        Filter(browser, LibraryBrowser.ChangeFilter.AffectsSimulation);
+
+        browser.WaitForAssertion(() =>
+        {
+            var root = Assert.Single(browser.Instance.ActiveTreeItems);
+            Assert.True(root.Expanded);
+            Assert.All(root.Children!, child => Assert.False(child.Expanded));
+        });
+    }
+
+    [Fact]
+    public void FilteringAClosedTreeLeavesItClosed()
+    {
+        var browser = RenderNestedBrowser(ClassChangeKind.AffectsSimulation);
+
+        Filter(browser, LibraryBrowser.ChangeFilter.AffectsSimulation);
+
+        browser.WaitForAssertion(() =>
+            Assert.All(browser.Instance.ActiveTreeItems, item => Assert.False(item.Expanded)));
     }
 }

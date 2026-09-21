@@ -84,14 +84,14 @@ Above the tree, a row of chips appears whenever the repository has uncommitted c
 
 | Chip | Shows |
 |------|-------|
-| **All models** | The ordinary tree, everything in it |
+| **All** | The ordinary tree, everything in it |
 | **Changed** | Every class with an uncommitted change of its own |
-| **Affects simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
-| **Cosmetic only** | The changes MLQT vouches for as layout, wording or graphics |
+| **Simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
+| **Cosmetic** | The changes MLQT vouches for as layout, wording or graphics |
 
-**It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. Every node comes back already open, because you asked to see those classes rather than to go looking for them, and a class is a leaf there whatever it holds in the full tree: the children it has are ones the filter did not select.
+**It is still the tree.** Selecting a chip prunes it to the classes that match and the packages that contain them, rather than flattening it into a list — so a change keeps the context of where it lives, and two changes in the same package are visibly in the same package. It stays open exactly as far as you had it open, and no further: a filter is a question, not a rearrangement. A class is a leaf there whatever it holds in the full tree, because the children it has are ones the filter did not select.
 
-Click a class to open it, exactly as in the unfiltered tree. Click **All models** — or the selected chip again — to go back; the full tree returns expanded as you left it.
+Click a class to open it, exactly as in the unfiltered tree. Click **All** — or the selected chip again — to go back; the full tree returns expanded as you left it, including anything you opened while the filter was on.
 
 **None of this appears for a repository marked [Reference only](settings-reference.md#reference-only-repositories).** MLQT never formats, checks, commits or writes to one, so there is nothing for a change marker to be about — and because a reference repository is not watched for file changes either, anything shown would only ever be refreshed by loading the project.
 

@@ -188,7 +188,11 @@ public class LibraryBrowserChangeKindTests
     // ---------------------------------------------------------------- the pruned tree
 
     private static List<TreeItemData<ModelNode>> Pruned(params string[] modelIds) =>
-        LibraryBrowser.BuildFilteredTree(modelIds.Select(id => Library[id]), Lookup);
+        PrunedWith([], modelIds);
+
+    private static List<TreeItemData<ModelNode>> PrunedWith(string[] expanded, params string[] modelIds) =>
+        LibraryBrowser.BuildFilteredTree(
+            modelIds.Select(id => Library[id]), Lookup, new HashSet<string>(expanded, StringComparer.Ordinal));
 
     /// <summary>Every id in the tree, outermost first, as "parent > child" paths.</summary>
     private static List<string> Paths(IEnumerable<ITreeItemData<ModelNode>> items, string prefix = "")
@@ -245,15 +249,35 @@ public class LibraryBrowserChangeKindTests
     }
 
     /// <summary>
-    /// Open, because the user asked to see these classes rather than to go looking for them — and
-    /// with a lazily loaded tree, a node left closed would have nothing to open into.
+    /// The pruned tree opens exactly as far as the user had the full one open, and no further.
     /// </summary>
+    /// <remarks>
+    /// The two views share one expansion record, so a filter that opened everything would leave the
+    /// tree spread out after it was cleared — a filter is a question, not a rearrangement.
+    /// </remarks>
     [Fact]
-    public void EveryPackageInThePrunedTreeIsAlreadyOpen()
+    public void ThePrunedTreeIsOpenWhereTheUserHadItOpen()
+    {
+        var items = Flatten(PrunedWith(["Lib"], "Lib.Pack.A")).ToDictionary(i => i.Value!.Id);
+
+        Assert.True(items["Lib"].Expanded);
+        Assert.False(items["Lib.Pack"].Expanded);
+    }
+
+    [Fact]
+    public void ATreeTheUserHadClosedStaysClosed()
     {
         Assert.All(
             Flatten(Pruned("Lib.Pack.A", "Lib.Other.C")),
-            item => Assert.True(item.Expanded));
+            item => Assert.False(item.Expanded));
+    }
+
+    [Fact]
+    public void ATreeTheUserHadFullyOpenStaysFullyOpen()
+    {
+        Assert.All(
+            Flatten(PrunedWith(["Lib", "Lib.Pack", "Lib.Other"], "Lib.Pack.A", "Lib.Other.C")),
+            item => Assert.Equal(item.Value!.Id != "Lib.Pack.A" && item.Value.Id != "Lib.Other.C", item.Expanded));
     }
 
     /// <summary>
@@ -274,7 +298,7 @@ public class LibraryBrowserChangeKindTests
     [Fact]
     public void NoMatchesMeansNoTree()
     {
-        Assert.Empty(LibraryBrowser.BuildFilteredTree([], Lookup));
+        Assert.Empty(PrunedWith([]));
     }
 
     /// <summary>
@@ -287,7 +311,7 @@ public class LibraryBrowserChangeKindTests
         ModelNode? lookup(string id) => id == "Lib" ? null : Lookup(id);
 
         Assert.Equal(["Lib.Pack", "Lib.Pack > Lib.Pack.A"], Paths(
-            LibraryBrowser.BuildFilteredTree([Library["Lib.Pack.A"]], lookup)));
+            LibraryBrowser.BuildFilteredTree([Library["Lib.Pack.A"]], lookup, new HashSet<string>())));
     }
 
     private static List<ITreeItemData<ModelNode>> Flatten(IEnumerable<ITreeItemData<ModelNode>> items)

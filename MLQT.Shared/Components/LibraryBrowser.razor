@@ -219,10 +219,18 @@ else if (Repository != null)
                             SelectedValue="_changeFilter" SelectedValueChanged="OnChangeFilterChanged"
                             CheckMark="true" Size="Size.Small" Variant="Variant.Text"
                             SelectedColor="Color.Primary" Class="mlqt-change-filter mb-1">
-                    <MudChip T="ChangeFilter" Value="@ChangeFilter.None">All models</MudChip>
-                    <MudChip T="ChangeFilter" Value="@ChangeFilter.Changed">Changed (@CountFor(ChangeFilter.Changed))</MudChip>
-                    <MudChip T="ChangeFilter" Value="@ChangeFilter.AffectsSimulation" SelectedColor="Color.Warning">Affects simulation (@CountFor(ChangeFilter.AffectsSimulation))</MudChip>
-                    <MudChip T="ChangeFilter" Value="@ChangeFilter.Cosmetic" SelectedColor="Color.Info">Cosmetic only (@CountFor(ChangeFilter.Cosmetic))</MudChip>
+                    <MudTooltip Text="Show all models">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.None">All</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show all changed models">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.Changed">Changed (@CountFor(ChangeFilter.Changed))</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show changed models that impact simulation">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.AffectsSimulation" SelectedColor="Color.Warning">Simulation (@CountFor(ChangeFilter.AffectsSimulation))</MudChip>
+                    </MudTooltip>
+                    <MudTooltip Text="Show changed models with documentation and graphical changes">
+                        <MudChip T="ChangeFilter" Value="@ChangeFilter.Cosmetic" SelectedColor="Color.Info">Cosmetic (@CountFor(ChangeFilter.Cosmetic))</MudChip>
+                    </MudTooltip>
                 </MudChipSet>
             }
 

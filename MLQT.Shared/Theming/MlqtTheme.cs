@@ -28,7 +28,7 @@ public static class MlqtTheme
         TextPrimary = "#6a70b1",
         AppbarBackground = "#6a93b1",
         AppbarText = "#ffffff",
-        Info = "#cccccc",
+        Info = "#6a70b1",
         PrimaryContrastText = "#ffffff"
     };
 
