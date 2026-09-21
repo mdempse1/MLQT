@@ -26,20 +26,26 @@
                 <BodyContent>
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
                         <MudText Typo="Typo.body1">@treeItem.Value?.Name</MudText>
-                        @if (treeItem.Value?.Id != null && _modelVcsStatus.TryGetValue(treeItem.Value.Id, out var libStatus))
+                        @{ var libMarker = MarkerFor(treeItem.Value); }
+                        @if (libMarker.Shape != ChangeMarkerShape.None)
                         {
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@VcsStatusHelper.GetStatusColor(libStatus)"
-                                     Variant="Variant.Text"
-                                     Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
-                                @VcsStatusHelper.GetStatusText(libStatus)
-                            </MudChip>
-                        }
-                        else if (treeItem.Value?.Id != null && _modelsWithDescendantChanges.Contains(treeItem.Value.Id))
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
-                                     Size="Size.Small" Color="Color.Warning"
-                                     Style="font-size: 8px; margin-left: 4px;" />
+                            <MudTooltip Text="@libMarker.Tooltip" Placement="Placement.Right">
+                                @if (libMarker.Shape == ChangeMarkerShape.Chip)
+                                {
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@libMarker.Color"
+                                             Variant="Variant.Text"
+                                             Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
+                                        @libMarker.Text
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
+                                             Size="Size.Small" Color="@libMarker.Color"
+                                             Style="font-size: 8px; margin-left: 4px;" />
+                                }
+                            </MudTooltip>
                         }
                         @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
                         {
@@ -203,6 +209,63 @@ else if (Repository != null)
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
             }
 
+            @* Only for a repository that has changes to narrow to. The list it switches to is flat
+               rather than a pruned tree: the tree loads its children on demand, so pruning it would
+               mean expanding the whole library to find out what is in it (B191). *@
+            @{ var changed = FilteredChanges(); }
+            @if (_hasUncommittedChanges)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-1">
+                    <MudSelect T="ChangeFilter" Value="_changeFilter" ValueChanged="OnChangeFilterChanged"
+                               Label="Show" Dense="true" Margin="Margin.Dense" Variant="Variant.Text"
+                               Class="mlqt-change-filter" Style="max-width: 220px;">
+                        <MudSelectItem Value="@ChangeFilter.None">All models</MudSelectItem>
+                        <MudSelectItem Value="@ChangeFilter.Changed">Changed</MudSelectItem>
+                        <MudSelectItem Value="@ChangeFilter.AffectsSimulation">Affects simulation</MudSelectItem>
+                        <MudSelectItem Value="@ChangeFilter.Cosmetic">Cosmetic only</MudSelectItem>
+                    </MudSelect>
+                    @if (_changeFilter != ChangeFilter.None)
+                    {
+                        <MudText Typo="Typo.caption">@changed.Count class(es)</MudText>
+                    }
+                </MudStack>
+            }
+
+            @if (_changeFilter != ChangeFilter.None)
+            {
+                @if (changed.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Class="ml-2 mb-2">
+                        No classes in this repository match that filter.
+                    </MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true" Class="mb-2">
+                        @foreach (var (model, marker) in changed)
+                        {
+                            <MudListItem T="string" Dense="true" OnClick="@(() => OnModelSelected(model))">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                                    <MudText Typo="Typo.body1">@model.Name</MudText>
+                                    <MudTooltip Text="@marker.Tooltip" Placement="Placement.Right">
+                                        <MudChip T="string" Size="Size.Small" Color="@marker.Color"
+                                                 Variant="Variant.Text"
+                                                 Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
+                                            @marker.Text
+                                        </MudChip>
+                                    </MudTooltip>
+                                </MudStack>
+                                <MudText Typo="Typo.caption">@model.Id</MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            }
+
+            @* The tree is withdrawn while a filter is on rather than pruned. Its expansion state
+               lives on TreeItems, which is a field, so it comes back as it was left. *@
+            @if (_changeFilter == ChangeFilter.None)
+            {
             <MudTreeView T="ModelNode"
                 Items="@TreeItems"
                 ServerData="@LoadServerData"
@@ -227,20 +290,26 @@ else if (Repository != null)
                                 <ChildContent>                            
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
                                         <MudText Typo="Typo.body1">@treeItem.Value?.Name</MudText>
-                                        @if (treeItem.Value?.Id != null && _modelVcsStatus.TryGetValue(treeItem.Value.Id, out var repoStatus))
+                                        @{ var repoMarker = MarkerFor(treeItem.Value); }
+                                        @if (repoMarker.Shape != ChangeMarkerShape.None)
                                         {
-                                            <MudChip T="string" Size="Size.Small"
-                                                    Color="@VcsStatusHelper.GetStatusColor(repoStatus)"
-                                                    Variant="Variant.Text"
-                                                    Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
-                                                @VcsStatusHelper.GetStatusText(repoStatus)
-                                            </MudChip>
-                                        }
-                                        else if (treeItem.Value?.Id != null && _modelsWithDescendantChanges.Contains(treeItem.Value.Id))
-                                        {
-                                            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
-                                                    Size="Size.Small" Color="Color.Warning"
-                                                    Style="font-size: 8px; margin-left: 4px;" />
+                                            <MudTooltip Text="@repoMarker.Tooltip" Placement="Placement.Right">
+                                                @if (repoMarker.Shape == ChangeMarkerShape.Chip)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small"
+                                                            Color="@repoMarker.Color"
+                                                            Variant="Variant.Text"
+                                                            Style="height: 14px; font-size: 0.55rem; margin-left: 4px;">
+                                                        @repoMarker.Text
+                                                    </MudChip>
+                                                }
+                                                else
+                                                {
+                                                    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
+                                                            Size="Size.Small" Color="@repoMarker.Color"
+                                                            Style="font-size: 8px; margin-left: 4px;" />
+                                                }
+                                            </MudTooltip>
                                         }
                                         @if (treeItem.Value != null && (treeItem.Value.HasParserErrors || _modelsWithDescendantParserErrors.Contains(treeItem.Value.Id)))
                                         {
@@ -272,6 +341,7 @@ else if (Repository != null)
                     </MudTreeViewItem>
                 </ItemTemplate>
             </MudTreeView>
+            }
         </ChildContent>
     </MudExpansionPanel>
 }

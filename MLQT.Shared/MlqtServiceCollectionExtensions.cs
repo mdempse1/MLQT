@@ -66,6 +66,7 @@ public static class MlqtServiceCollectionExtensions
         services.AddSingleton<IFormattingPipeline, FormattingPipeline>();
         services.AddSingleton<ICodeReviewService, CodeReviewService>();
         services.AddSingleton<IBaselineStatusService, BaselineStatusService>();
+        services.AddSingleton<IModelChangeClassifier, ModelChangeClassifier>();
         services.AddSingleton<IStyleCheckingService, StyleCheckingService>();
         services.AddSingleton<ICustomDictionaryService, CustomDictionaryService>();
         services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();

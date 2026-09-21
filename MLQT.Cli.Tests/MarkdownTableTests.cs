@@ -108,8 +108,8 @@ public class MarkdownTableTests
         for (var i = 1; i < lines.Length - 1; i++)
         {
             var isBlank = lines[i].Trim().Length == 0;
-            var betweenRows = Regex.IsMatch(lines[i - 1], @"^\| B\d+ \|")
-                              && Regex.IsMatch(lines[i + 1], @"^\| B\d+ \|");
+            var betweenRows = Regex.IsMatch(lines[i - 1], BacklogRow)
+                              && Regex.IsMatch(lines[i + 1], BacklogRow);
 
             if (isBlank && betweenRows)
                 breaks.Add(i + 1);
@@ -119,6 +119,14 @@ public class MarkdownTableTests
             "blank line(s) inside the backlog table, which ends it at that point: "
             + string.Join(", ", breaks.Select(b => $"line {b}")));
     }
+
+    /// <summary>
+    /// A backlog row, open or closed. The id cell carries a tick once the item is done, so a
+    /// pattern that insisted on <c>| Bnnn |</c> counted only the open ones — which made the row
+    /// count a measure of how much work was outstanding rather than of whether the table still
+    /// parses, and left a duplicate or a lost row among the closed ones invisible.
+    /// </summary>
+    private const string BacklogRow = @"^\| B(\d+)[^|]*\|";
 
     /// <summary>
     /// The ids are unique, unbroken above the watermark, and never reissued below it.
@@ -158,7 +166,7 @@ public class MarkdownTableTests
             $"the backlog says B1-B{issuedThrough} have been issued but that new items start at "
             + $"B{startAt}; those two sentences have to agree or an id gets reissued");
 
-        var ids = Regex.Matches(text, @"(?m)^\| B(\d+) \|").Select(m => int.Parse(m.Groups[1].Value)).ToList();
+        var ids = Regex.Matches(text, "(?m)" + BacklogRow).Select(m => int.Parse(m.Groups[1].Value)).ToList();
 
         Assert.True(ids.Count > 20, $"only found {ids.Count} backlog rows; the table format may have changed");
 

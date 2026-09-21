@@ -56,6 +56,10 @@ public class LibraryBrowserReferenceOnlyTests : MlqtComponentTestBase
         Services.AddSingleton(new Mock<IRepositoryService>().Object);
         Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
 
+        // The browser asks this what kind of change each model carries (B191). Nothing here has
+        // working-copy changes, so the stand-in is never called - it just has to be resolvable.
+        Services.AddSingleton(new Mock<IModelChangeClassifier>().Object);
+
         RenderProviders();
 
         // Repository mode, which is the mode the defect was reported in.

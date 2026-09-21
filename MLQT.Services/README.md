@@ -29,6 +29,7 @@ All services follow the pattern:
 | `ExternalResourceService` | `IExternalResourceService` | External resource analysis, validation, and monitoring |
 | `CustomDictionaryService` | `ICustomDictionaryService` | Each repository's accepted spellings, at `<repo>/.mlqt/dictionary.txt` |
 | `BaselineStatusService` | `IBaselineStatusService` | Classifies findings against each repository's committed baseline (new / touched / accepted) |
+| `ModelChangeClassifier` | `IModelChangeClassifier` | What kind of change each model in a working copy carries — one that can affect simulation, or one that cannot |
 | `DictionaryManagerService` | `IDictionaryManagerService` | Hunspell dictionary management (bundled + imported) |
 | `DymolaCheckingService` | `IModelCheckingService` | Model checking via Dymola |
 | `OpenModelicaCheckingService` | `IModelCheckingService` | Model checking via OpenModelica |

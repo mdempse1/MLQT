@@ -1,0 +1,488 @@
+using ModelicaParser.Comparison;
+
+namespace ModelicaParser.Tests;
+
+/// <summary>
+/// The distinction B191 is about: an edit that can change what is simulated, against one that
+/// cannot. Asserted over pairs of real class text rather than over the signature strings, because
+/// the signature is an implementation detail and the promise is about the classification.
+/// </summary>
+public class ClassChangeClassifierTests
+{
+    private const string Original = """
+        within MyLib;
+        model Resistor "An ideal resistor"
+          parameter Real R = 100 "Resistance";
+          Real v;
+          Real i;
+        equation
+          v = R * i;
+          annotation (Icon(graphics={Rectangle(extent={{-70,30},{70,-30}})}),
+            Documentation(info="<html>A resistor.</html>"));
+        end Resistor;
+        """;
+
+    private static ClassChangeKind Classify(string committed, string working)
+    {
+        var kinds = ClassChangeClassifier.Compare(committed, working);
+        return Assert.Contains("MyLib.Resistor", kinds);
+    }
+
+    // ---------------------------------------------------------------- nothing changed
+
+    [Fact]
+    public void AnIdenticalClassIsUnchanged()
+    {
+        Assert.Equal(ClassChangeKind.Unchanged, Classify(Original, Original));
+    }
+
+    // ---------------------------------------------------------------- cosmetic
+
+    [Fact]
+    public void ReformattingIsCosmetic()
+    {
+        var reformatted = Original
+            .Replace("  parameter Real R = 100", "    parameter  Real  R  =  100")
+            .Replace("  v = R * i;", "  v = R*i;");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, reformatted));
+    }
+
+    [Fact]
+    public void RewordingADescriptionIsCosmetic()
+    {
+        var reworded = Original.Replace("\"Resistance\"", "\"Resistance of the device\"");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, reworded));
+    }
+
+    [Fact]
+    public void RewordingTheClassDescriptionIsCosmetic()
+    {
+        var reworded = Original.Replace("\"An ideal resistor\"", "\"A linear resistor\"");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, reworded));
+    }
+
+    [Fact]
+    public void AddingACommentIsCosmetic()
+    {
+        var commented = Original.Replace("  Real v;", "  // the voltage across it\r\n  Real v;");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, commented));
+    }
+
+    [Fact]
+    public void MovingSomethingOnTheDiagramIsCosmetic()
+    {
+        var redrawn = Original.Replace("{{-70,30},{70,-30}}", "{{-80,40},{80,-40}}");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, redrawn));
+    }
+
+    [Fact]
+    public void RewritingTheDocumentationIsCosmetic()
+    {
+        var documented = Original.Replace(
+            "<html>A resistor.</html>",
+            "<html>An ideal linear resistor, per Ohm's law.</html>");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Classify(Original, documented));
+    }
+
+    /// <summary>
+    /// Reordering an annotation's elements means nothing — they are a set — so it is cosmetic
+    /// rather than a change to what is simulated. A save from another tool is how this arises, and
+    /// it arrives alongside the graphical rewrites above.
+    /// </summary>
+    [Fact]
+    public void ReorderingAnnotationElementsIsCosmetic()
+    {
+        var before = Wrap("  annotation (Evaluate=true, Inline=true);");
+        var after = Wrap("  annotation (Inline=true, Evaluate=true);");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrapped(before, after));
+    }
+
+    // ---------------------------------------------------------------- affects simulation
+
+    [Fact]
+    public void ChangingAnEquationAffectsSimulation()
+    {
+        var changed = Original.Replace("v = R * i;", "v = R * i + 1;");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    [Fact]
+    public void ChangingAParameterValueAffectsSimulation()
+    {
+        var changed = Original.Replace("R = 100", "R = 220");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    [Fact]
+    public void AddingADeclarationAffectsSimulation()
+    {
+        var changed = Original.Replace("  Real i;", "  Real i;\r\n  Real p;");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    [Fact]
+    public void RemovingAnEquationAffectsSimulation()
+    {
+        var changed = Original.Replace("  v = R * i;\r\n", "");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    [Fact]
+    public void ChangingATypeAffectsSimulation()
+    {
+        var changed = Original.Replace("parameter Real R", "parameter Integer R");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Classify(Original, changed));
+    }
+
+    /// <summary>
+    /// The half of B191 that a "skip every annotation" rule would get wrong: <c>Evaluate</c> changes
+    /// how the model is translated, and a graphical edit in the same annotation must not hide it.
+    /// </summary>
+    [Theory]
+    [InlineData("Evaluate=true", "Evaluate=false")]
+    [InlineData("Inline=true", "Inline=false")]
+    [InlineData("smoothOrder=1", "smoothOrder=2")]
+    [InlineData("HideResult=true", "HideResult=false")]
+    [InlineData("experiment(StopTime=1)", "experiment(StopTime=10)")]
+    public void ChangingASignificantAnnotationAffectsSimulation(string before, string after)
+    {
+        Assert.Equal(
+            ClassChangeKind.AffectsSimulation,
+            ClassifyWrapped(Wrap($"  annotation ({before});"), Wrap($"  annotation ({after});")));
+    }
+
+    [Fact]
+    public void ASignificantAnnotationChangedAlongsideAGraphicalOneStillAffectsSimulation()
+    {
+        var before = Wrap("  annotation (Evaluate=true, Icon(graphics={Line(points={{0,0},{1,1}})}));");
+        var after = Wrap("  annotation (Evaluate=false, Icon(graphics={Line(points={{0,0},{9,9}})}));");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, ClassifyWrapped(before, after));
+    }
+
+    /// <summary>
+    /// An annotation MLQT has never heard of is significant. The alternative — ignoring what it
+    /// cannot name — would quietly hide every vendor annotation that steers a translator.
+    /// </summary>
+    [Fact]
+    public void ChangingAnUnrecognisedAnnotationAffectsSimulation()
+    {
+        var before = Wrap("  annotation (__SomeVendor_inlineOrder=1);");
+        var after = Wrap("  annotation (__SomeVendor_inlineOrder=2);");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, ClassifyWrapped(before, after));
+    }
+
+    [Fact]
+    public void AddingASignificantAnnotationAffectsSimulation()
+    {
+        Assert.Equal(
+            ClassChangeKind.AffectsSimulation,
+            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\r\n  annotation (Evaluate=true);")));
+    }
+
+    /// <summary>
+    /// Adding a purely graphical annotation to a class that had none is cosmetic — the whole
+    /// annotation drops out of the comparison, so only the text differs.
+    /// </summary>
+    [Fact]
+    public void AddingOnlyAGraphicalAnnotationIsCosmetic()
+    {
+        Assert.Equal(
+            ClassChangeKind.Cosmetic,
+            ClassifyWrapped(
+                Wrap("  Real x;"),
+                Wrap("  Real x;\r\n  annotation (Icon(graphics={Line(points={{0,0},{1,1}})}));")));
+    }
+
+    // ---------------------------------------------------------------- where annotations attach
+
+    /// <summary>
+    /// A class body's annotation is a statement, so its semicolon goes with it. Without that, a
+    /// class that gained nothing but an icon would differ by a stray <c>;</c> and read as a change
+    /// to what is simulated — which is what <c>EmitComposition</c> is for.
+    /// </summary>
+    [Fact]
+    public void GainingOnlyAGraphicalAnnotationOnAnEquationSectionIsCosmetic()
+    {
+        var before = Wrap("  Real x;\r\nequation\r\n  x = 1;");
+        var after = Wrap("  Real x;\r\nequation\r\n  x = 1;\r\n  annotation (Diagram(coordinateSystem(extent={{-1,-1},{1,1}})));");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrapped(before, after));
+    }
+
+    [Fact]
+    public void AnAnnotationOnAnExtendsClauseIsJudgedTheSameWay()
+    {
+        var plain = Wrap("  extends Base;");
+        var drawn = Wrap("  extends Base annotation (Icon(graphics={Line(points={{0,0},{1,1}})}));");
+        var evaluated = Wrap("  extends Base annotation (Evaluate=true);");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrapped(plain, drawn));
+        Assert.Equal(ClassChangeKind.AffectsSimulation, ClassifyWrapped(plain, evaluated));
+    }
+
+    [Fact]
+    public void AnAnnotationOnADeclarationIsJudgedTheSameWay()
+    {
+        var plain = Wrap("  Real x;");
+        var placed = Wrap("  Real x annotation (Placement(transformation(extent={{-1,-1},{1,1}})));");
+        var evaluated = Wrap("  Real x annotation (Evaluate=true);");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrapped(plain, placed));
+        Assert.Equal(ClassChangeKind.AffectsSimulation, ClassifyWrapped(plain, evaluated));
+    }
+
+    /// <summary>
+    /// The external clause's semicolon terminates a declaration, not an annotation, so it is kept
+    /// whether or not the annotation on it survives. An external function's <c>Library</c> is
+    /// significant; a display-only annotation beside it is not.
+    /// </summary>
+    [Fact]
+    public void AnExternalFunctionsLibraryAnnotationAffectsSimulation()
+    {
+        var before = WrapFunction("  external \"C\" f(x) annotation (Library=\"mylib\");");
+        var after = WrapFunction("  external \"C\" f(x) annotation (Library=\"otherlib\");");
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, ClassifyWrappedFunction(before, after));
+    }
+
+    [Fact]
+    public void ADisplayOnlyAnnotationOnAnExternalFunctionIsCosmetic()
+    {
+        var before = WrapFunction("  external \"C\" f(x);");
+        var after = WrapFunction("  external \"C\" f(x) annotation (Documentation(info=\"<html>x</html>\"));");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, ClassifyWrappedFunction(before, after));
+    }
+
+    // ---------------------------------------------------------------- the other class shapes
+
+    /// <summary>
+    /// A short class definition — <c>type X = Real(...)</c> — is a class like any other, and its
+    /// modification is what it means.
+    /// </summary>
+    [Fact]
+    public void AShortClassDefinitionIsCompared()
+    {
+        var before = "within MyLib;\r\ntype Voltage = Real(unit=\"V\", min=0) \"Electrical potential\";\r\n";
+        var reworded = before.Replace("\"Electrical potential\"", "\"A voltage\"");
+        var changed = before.Replace("min=0", "min=-1");
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Assert.Contains("MyLib.Voltage", ClassChangeClassifier.Compare(before, reworded)));
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.Voltage", ClassChangeClassifier.Compare(before, changed)));
+    }
+
+    /// <summary>
+    /// A <c>der</c> class definition names the function and then the variables it is differentiated
+    /// with respect to; the first identifier is its own name.
+    /// </summary>
+    [Fact]
+    public void ADerClassDefinitionIsCompared()
+    {
+        var before = "within MyLib;\r\nfunction dArea = der(Area, r);\r\n";
+        var changed = "within MyLib;\r\nfunction dArea = der(Area, h);\r\n";
+
+        var kinds = ClassChangeClassifier.Compare(before, changed);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.dArea", kinds));
+    }
+
+    [Fact]
+    public void AClassDefinedByExtendingAnotherIsCompared()
+    {
+        var before = "within MyLib;\r\nmodel extends Base(R=1)\r\n  Real x;\r\nend Base;\r\n";
+        var changed = before.Replace("R=1", "R=2");
+
+        var kinds = ClassChangeClassifier.Compare(before, changed);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.Base", kinds));
+    }
+
+    /// <summary>
+    /// An annotation with nothing in it contributes nothing, so adding or removing one is cosmetic
+    /// rather than a change to what is simulated.
+    /// </summary>
+    [Fact]
+    public void AnEmptyAnnotationIsCosmetic()
+    {
+        Assert.Equal(
+            ClassChangeKind.Cosmetic,
+            ClassifyWrapped(Wrap("  Real x;"), Wrap("  Real x;\r\n  annotation ();")));
+    }
+
+    // ---------------------------------------------------------------- added and unknown
+
+    [Fact]
+    public void AClassWithNoCommittedVersionIsAdded()
+    {
+        var kinds = ClassChangeClassifier.Compare(committedText: null, Original);
+
+        Assert.Equal(ClassChangeKind.Added, Assert.Contains("MyLib.Resistor", kinds));
+    }
+
+    [Fact]
+    public void AClassAddedToAnExistingFileIsAdded()
+    {
+        var withAnother = Original + "\r\n\r\nmodel Capacitor\r\n  Real v;\r\nend Capacitor;\r\n";
+
+        var kinds = ClassChangeClassifier.Compare(Original, withAnother);
+
+        Assert.Equal(ClassChangeKind.Added, Assert.Contains("MyLib.Capacitor", kinds));
+        Assert.Equal(ClassChangeKind.Unchanged, Assert.Contains("MyLib.Resistor", kinds));
+    }
+
+    /// <summary>
+    /// A class that was deleted has nothing left in the tree to mark, so it is not reported. The
+    /// file itself still shows as modified.
+    /// </summary>
+    [Fact]
+    public void AClassRemovedFromTheFileIsNotReported()
+    {
+        var withAnother = Original + "\r\n\r\nmodel Capacitor\r\n  Real v;\r\nend Capacitor;\r\n";
+
+        var kinds = ClassChangeClassifier.Compare(withAnother, Original);
+
+        Assert.DoesNotContain("MyLib.Capacitor", kinds);
+    }
+
+    [Theory]
+    [InlineData("model Broken\r\n  Real x\r\nend Broken;", Original)]
+    public void AVersionThatWillNotParseIsUnknown(string committed, string working)
+    {
+        var kinds = ClassChangeClassifier.Compare(committed, working);
+
+        Assert.All(kinds.Values, kind => Assert.Equal(ClassChangeKind.Unknown, kind));
+    }
+
+    [Fact]
+    public void AWorkingCopyThatWillNotParseReportsNothing()
+    {
+        var kinds = ClassChangeClassifier.Compare(Original, "model Broken\r\n  Real x\r\nend Broken;");
+
+        Assert.Empty(kinds);
+    }
+
+    // ---------------------------------------------------------------- nesting
+
+    private const string Package = """
+        within MyLib;
+        package Components "Some components"
+
+          model Resistor
+            parameter Real R = 100;
+          end Resistor;
+
+          model Capacitor
+            parameter Real C = 1;
+          end Capacitor;
+
+        end Components;
+        """;
+
+    /// <summary>
+    /// The reason both halves of a signature exclude nested classes: editing one class in a package
+    /// must mark that class, not every package above it.
+    /// </summary>
+    [Fact]
+    public void EditingANestedClassLeavesItsPackageUnchanged()
+    {
+        var edited = Package.Replace("R = 100", "R = 220");
+
+        var kinds = ClassChangeClassifier.Compare(Package, edited);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.Components.Resistor", kinds));
+        Assert.Equal(ClassChangeKind.Unchanged, Assert.Contains("MyLib.Components.Capacitor", kinds));
+        Assert.Equal(ClassChangeKind.Unchanged, Assert.Contains("MyLib.Components", kinds));
+    }
+
+    [Fact]
+    public void AddingANestedClassChangesItsPackage()
+    {
+        var edited = Package.Replace(
+            "end Components;",
+            "  model Inductor\r\n    parameter Real L = 1;\r\n  end Inductor;\r\n\r\nend Components;");
+
+        var kinds = ClassChangeClassifier.Compare(Package, edited);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.Components", kinds));
+        Assert.Equal(ClassChangeKind.Added, Assert.Contains("MyLib.Components.Inductor", kinds));
+    }
+
+    [Fact]
+    public void RenamingANestedClassChangesItsPackage()
+    {
+        var edited = Package.Replace("Capacitor", "Cap");
+
+        var kinds = ClassChangeClassifier.Compare(Package, edited);
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, Assert.Contains("MyLib.Components", kinds));
+    }
+
+    /// <summary>
+    /// Reindenting a package is cosmetic for the package and invisible to its children, because the
+    /// children's own text is compared separately and has not moved relative to itself.
+    /// </summary>
+    [Fact]
+    public void ReindentingAPackageIsCosmeticForThePackageOnly()
+    {
+        var edited = Package.Replace("\r\n  model Resistor", "\r\n\r\n  model Resistor");
+
+        var kinds = ClassChangeClassifier.Compare(Package, edited);
+
+        Assert.Equal(ClassChangeKind.Cosmetic, Assert.Contains("MyLib.Components", kinds));
+        Assert.Equal(ClassChangeKind.Unchanged, Assert.Contains("MyLib.Components.Resistor", kinds));
+    }
+
+    // ---------------------------------------------------------------- names
+
+    [Fact]
+    public void ClassesAreKeyedByTheirFullModelicaName()
+    {
+        var kinds = ClassChangeClassifier.Compare(null, Package);
+
+        Assert.Equal(
+            ["MyLib.Components", "MyLib.Components.Capacitor", "MyLib.Components.Resistor"],
+            kinds.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void AFileWithNoWithinClauseKeysOnTheClassNameAlone()
+    {
+        var kinds = ClassChangeClassifier.Compare(null, "model Top\r\n  Real x;\r\nend Top;");
+
+        Assert.Equal(["Top"], kinds.Keys.ToArray());
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private static string Wrap(string body) =>
+        $"within MyLib;\r\nmodel Thing\r\n{body}\r\nend Thing;\r\n";
+
+    private static string WrapFunction(string body) =>
+        $"within MyLib;\r\nfunction F\r\n  input Real x;\r\n  output Real y;\r\n{body}\r\nend F;\r\n";
+
+    private static ClassChangeKind ClassifyWrappedFunction(string committed, string working)
+    {
+        var kinds = ClassChangeClassifier.Compare(committed, working);
+        return Assert.Contains("MyLib.F", kinds);
+    }
+
+    private static ClassChangeKind ClassifyWrapped(string committed, string working)
+    {
+        var kinds = ClassChangeClassifier.Compare(committed, working);
+        return Assert.Contains("MyLib.Thing", kinds);
+    }
+}

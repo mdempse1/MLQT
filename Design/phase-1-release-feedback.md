@@ -690,15 +690,87 @@ Modelica. Reaching the funnel means either giving that up or passing a decoder i
 and which of those is right is the question to answer first. Found by B239's scan, which is the only
 reason anyone knows.
 
-### WP7 — The two large ones
+### WP7 — The two large ones — **✅ complete 2026-09-21**
 
-**B188, B191** · 2 items · S and L
+**B188 ✅, B191 ✅** · 2 items · S and L
 
-Deliberately last, and **B191 should be confirmed as in scope before it is started.** Marking a model
+Deliberately last, and **B191 was confirmed as in scope before it was started.** Marking a model
 as modified is small; classifying the *kind* of change needs a comparison of the parsed old and new
 class, and that capability is worth well beyond the marker — which is also why it is the one item
 here big enough to be its own phase. B188 (a persisted repository order) is unrelated and small; it
 is here only because nothing else needs it.
+
+**B188 needed no sort key, and looking for where to put one was the whole of the work.** The list
+order already *is* the order everything shows: the library browser renders
+`IRepositoryService.Repositories` straight through, `SaveRepositorySettingsAsync` writes the active
+project's entries from that same list, and `LoadRepositorySettingsAsync` walks them back
+sequentially. So the feature is `MoveRepository(id, delta)` and two arrows. Two decisions are worth
+keeping. A move is **saved where it is made**, because the Manage Repositories tab has no Save
+button — the Settings page hides its action buttons for that panel, which is a thing to check before
+adding a control to it. And a move that would leave the list is **refused rather than clamped**, so
+that a refused move can save nothing: a settings write rewrites every repository's
+`.mlqt/settings.json`, which is not something to do because an arrow was clicked at the end of a
+list.
+
+**B191's deliverable is the comparison, not the marker.** `ModelicaParser/Comparison/` reduces every
+class in a file to two strings — a canonical token stream with comments, description strings and
+display-only annotations removed, and the class's own source verbatim — and compares them against
+the committed version class by class, keyed by full Modelica name so a caller holding a `ModelNode`
+can look one up by `Id`. Equal meaning and equal text is `Unchanged`, equal meaning and different
+text is `Cosmetic`, different meaning is `AffectsSimulation`, and no committed version is `Added`.
+
+Four things in it were not obvious beforehand:
+
+- **Both strings exclude the class's nested classes**, which appear as a placeholder carrying only
+  their name. Without that, editing one class in a package marks every package above it, which is
+  the behaviour B191 was raised against in the first place. Renaming, adding or removing a nested
+  class still changes the parent, because the placeholder carries the name.
+- **A class body's `annotation (...) ;` is a statement of its own**, so its semicolon has to go with
+  it. Everywhere else an annotation hangs off something that ends in a semicolon anyway — an
+  element, an equation, a statement — and both versions emit that semicolon whether or not the
+  annotation survives. Without the special case a class that gained nothing but an icon differed
+  from its committed self by a stray `;` and read as a change to what is simulated. The external
+  clause's semicolon is **not** that semicolon: it terminates a declaration and is emitted
+  regardless.
+- **An annotation's elements are a set**, so the kept ones are sorted. A tool that writes
+  `annotation(Inline=true, Evaluate=true)` where the file had them the other way round has changed
+  nothing, and that is exactly the rewrite a save from another tool produces.
+- **The visitor assumes a well-formed tree and says so.** `ClassSignatures.Of` refuses a file the
+  parser reported any error on and catches anything the visitor throws, so the failure mode is
+  `Unknown` — an answer, in the one direction that cannot mislead. Guarding inside the visitor
+  instead would mean signing half a class, and a signature missing an equation reports a real change
+  as no change at all. The guards were there first; removing them is what took the file over
+  ModelicaParser's 95% bar, and the bar was right to ask.
+
+**Annotations are filtered, not ignored, and the default runs the safe way.**
+`SimulationAnnotations` is a list of the display-only names — the drawing, documentation and dialog
+ones, plus the few vendor annotations MLQT is prepared to vouch for — and **everything else is
+significant**, including every vendor annotation it has not heard of. The two mistakes are not
+symmetric: calling a graphical edit significant costs the user a second look at a diagram, while
+calling a simulation change graphical hides it from someone who was relying on the marker to tell
+them what to read. `absoluteValue` is the borderline case and is deliberately left out of the
+display-only list for that reason.
+
+**What the user sees.** The tree marks **M** (orange, affects simulation), **G** (blue, graphical or
+documentation) or nothing at all for a class whose file changed but whose own text did not; every
+chip now carries a tooltip, which none of them had; the descendant dot is coloured by the strongest
+change under it. Above the tree, a **Show** list narrows to Changed / Affects simulation / Cosmetic
+only. It produces a **flat list rather than a pruned tree**, because the tree loads its children on
+demand and "only the changed classes" would mean expanding the whole library to find out which ones
+those are. "Affects simulation" includes anything *not known* to be harmless, unclassifiable
+changes included — a filter that hid those would hide exactly what it was asked to find.
+
+**The marker was written out twice** — once per tree template, repository mode and library-only mode
+— which is the shape B200 came from. It is now one decision in `ChangeMarker`, asked by both.
+
+**Verified by mutation by hand, because the tool would not run.** The phase's ground rule is
+verify-by-mutation for UI work, and `build/run-mutation.ps1` refuses to start on this solution —
+recorded as **B267**. So the four decisions worth holding were mutated by hand instead and each was
+confirmed to fail a test: making every modified class report the plain `M` marker (six tests),
+letting the reorder arrows' clicks reach the row underneath (one), and removing the reset that
+withdraws the change filter when the changes are committed (one). Each was restored and re-run
+green. That is narrower than a mutation pass over the new code and is recorded as such rather than
+claimed as one.
 
 ### WP8 — Test-harness fidelity — **✅ complete**
 
@@ -1135,7 +1207,8 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           │              and share WP3's gate
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
-                       └──▶ WP7   B191 only if confirmed in scope
+                       └──▶ WP7 ✅ B188 ▸ B191 — complete 2026-09-21; B191 confirmed in
+                                     scope by the user before it was started
 
 WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
         └──▶ WP9   B237 first (it blocks other packages' journeys) ▸ B228 ▸ B229 ▸ B227 ▸ B234

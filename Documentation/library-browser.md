@@ -50,12 +50,13 @@ When working with Git or SVN repositories, the tree shows the VCS status of each
 
 ### Status Chips
 
-Models whose files have uncommitted changes display a small colored chip next to their name:
+Models whose files have uncommitted changes display a small colored chip next to their name. Hover over any chip to see what it means.
 
 | Chip | Color | Meaning |
 |------|-------|---------|
-| **A** | Green | **Added** — A new file that has been added to version control |
-| **M** | Orange | **Modified** — An existing file that has been changed |
+| **A** | Green | **Added** — A new file added to version control, or a new class inside a changed file |
+| **M** | Orange | **Modified** — This class changed in a way that can affect simulation |
+| **G** | Blue | **Graphical** — This class changed, but only its layout, comments, documentation or graphics |
 | **D** | Orange | **Deleted** — A file that has been deleted |
 | **R** | Orange | **Renamed** — A file that has been renamed |
 | **N** | Green | **Untracked** — A new file not yet added to version control |
@@ -63,9 +64,38 @@ Models whose files have uncommitted changes display a small colored chip next to
 
 ![Screenshot: The tree with VCS status on it - an orange "M" chip beside the modified class, and the orange dot on the package above it that says a change is somewhere inside.](Images/library-browser-2.png)
 
+### What Kind of Change It Is
+
+**M** and **G** are about the class, not the file it lives in. Every other chip is about the file: a deleted file is deleted for every class in it, and an untracked one is untracked for all of them. "Modified" is the one that is not, because a `package.mo` holding three hundred classes changes when any one of them is edited, and the other two hundred and ninety-nine are untouched.
+
+So MLQT compares **the class as it is now against the class as it was committed** — the parsed classes, not the text — and marks each one with what it found:
+
+- **M (orange)** — something a translator reads is different: an equation, a declaration, a modification, or an annotation that changes how the model is built. This is the one to review.
+- **G (blue)** — the class changed, but nothing a translator reads did. Reformatting, a re-worded description, a rewritten `Documentation`, a component dragged across the diagram, an icon redrawn.
+- **no chip** — the class's file changed, but this class did not. Its own text is identical to the committed version.
+
+**Annotations are not ignored wholesale.** Several of them change what is simulated, and a change to one of those is an **M** however graphical the rest of the annotation is. `Evaluate`, `Inline`, `LateInline`, `smoothOrder`, `GenerateEvents`, `derivative`, `inverse`, `HideResult`, `Protection`, `experiment`, `uses`, `version` and the external-function annotations (`Include`, `Library`, `IncludeDirectory`, `LibraryDirectory`, `SourceDirectory`) are all treated as significant, and so is **any annotation MLQT does not recognise**, including a vendor's. Only a known list — the drawing, documentation and dialog annotations — is treated as graphical.
+
+**When MLQT cannot tell**, the chip stays a plain orange **M** and its tooltip says so. That happens when the committed version of the file cannot be read or does not parse, when the file is conflicted, and in a repository that is not under version control.
+
+### Showing Only What Changed
+
+Above the tree, a **Show** list appears whenever the repository has uncommitted changes. It replaces the tree with a flat list of the classes that changed:
+
+| Option | Lists |
+|--------|-------|
+| **All models** | Nothing — the ordinary tree |
+| **Changed** | Every class with an uncommitted change of its own |
+| **Affects simulation** | The changes worth reading: everything except the ones MLQT is confident are graphical. A class it could not classify is in here |
+| **Cosmetic only** | The changes MLQT vouches for as layout, wording or graphics |
+
+Clicking an entry opens that class exactly as clicking it in the tree would. Choose **All models** to go back; the tree comes back expanded as you left it.
+
 ### Descendant Change Indicator
 
-Parent packages that contain modified files (but are not themselves directly modified) show a small **orange dot** next to their name. This lets you quickly spot which branches of the tree contain changes without expanding every node.
+Parent packages that contain modified files (but are not themselves directly modified) show a small **dot** next to their name. This lets you quickly spot which branches of the tree contain changes without expanding every node.
+
+The dot is coloured by the strongest change under it: **orange** when something below it can affect simulation, **blue** when everything below it is graphical. A package whose file changed but whose own text did not gets the dot rather than a chip.
 
 ## Repository Header (Repository View Only)
 

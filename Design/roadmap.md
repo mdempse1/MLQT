@@ -72,7 +72,7 @@ with first and separately** — `nightly-webkit.yml` was triggered by hand on 20
 run at all, and passed with 57 WebKit journeys executed and none skipped.
 
 **The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
-into work packages by shared root cause rather than by area (WP0–WP14; WP0–WP5, WP8 and WP11 are done, and WP13–WP14 were added on 2026-09-21), and records the eleven root causes established while planning — two of which change what the
+into work packages by shared root cause rather than by area (WP0–WP14; WP0–WP5, WP7, WP8 and WP11 are done, and WP13–WP14 were added on 2026-09-21), and records the eleven root causes established while planning — two of which change what the
 fix is.
 
 The phase has grown since: **B204–B212** while fixing and confirming the first set, **B213–B218**
@@ -110,9 +110,12 @@ Three of the items are larger than the rest and worth naming here rather than on
   as work, and WP2 is now built on it.
 - **B184 — make `--changed-from` check only what changed.** Everything still has to be loaded, but
   re-checking everything then filtering is the largest available win on CI check time.
-- **B191 — distinguish the kind of change a model carries.** Marking a model as modified is small;
+- **B191 ✅ — distinguish the kind of change a model carries.** Marking a model as modified is small;
   telling a simulation-affecting edit from a graphical or documentation one needs a comparison of the
-  parsed classes, and that capability is useful well beyond the marker.
+  parsed classes, and that capability is useful well beyond the marker. **Shipped 2026-09-21 as
+  `ModelicaParser/Comparison/`**, which reduces a class to what it means and what it says and
+  compares the two against its committed self. The marker is one caller of it; the pull-request
+  review, the CLI and the MCP server are the obvious others.
 
 ### 2. Wave-2 analyses
 

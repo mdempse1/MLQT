@@ -1,4 +1,6 @@
 using System.IO;
+using MLQT.Shared.Helpers;
+using ModelicaParser.Comparison;
 using RevisionControl;
 
 namespace MLQT.Shared.Components;
@@ -8,6 +10,7 @@ public partial class LibraryBrowser : IDisposable
     [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
+    [Inject] private IModelChangeClassifier ModelChangeClassifier { get; set; } = null!;
     [Inject] private AppState NavState { get; set; } = null!;
     [Inject] private IDialogService DialogService { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
@@ -62,10 +65,20 @@ public partial class LibraryBrowser : IDisposable
     private Dictionary<string, VcsFileStatus> _modelVcsStatus = new();
 
     /// <summary>
-    /// Set of model IDs whose descendants have VCS changes.
-    /// Used to show a generic change indicator on parent packages.
+    /// What kind of change each model in a changed file carries (B191), by model ID. A model that is
+    /// absent was never classified — a repository outside version control, or one whose committed
+    /// version could not be read — which is a different thing from
+    /// <see cref="ClassChangeKind.Unchanged"/>, and the marker says so.
     /// </summary>
-    private HashSet<string> _modelsWithDescendantChanges = new();
+    private IReadOnlyDictionary<string, ClassChangeKind> _modelChangeKinds =
+        new Dictionary<string, ClassChangeKind>();
+
+    /// <summary>
+    /// The strongest change kind anywhere below each model ID, so a package can say what is waiting
+    /// under it without being expanded. <see cref="ClassChangeKind.Unknown"/> is the entry for a
+    /// descendant that changed in a way nothing could classify.
+    /// </summary>
+    private Dictionary<string, ClassChangeKind> _descendantChangeKinds = new();
 
     /// <summary>
     /// Set of model IDs whose descendants have recorded parser errors. Used to bubble the
@@ -118,7 +131,7 @@ public partial class LibraryBrowser : IDisposable
 
     /// <summary>
     /// Checks if the repository has uncommitted changes, updates the _hasUncommittedChanges field,
-    /// and builds the model-to-VCS-status mapping for tree annotations.
+    /// and builds the model-to-VCS-status and model-to-change-kind mappings for tree annotations.
     /// </summary>
     private async Task CheckForUncommittedChangesAsync()
     {
@@ -126,60 +139,198 @@ public partial class LibraryBrowser : IDisposable
         {
             _hasUncommittedChanges = false;
             _modelVcsStatus.Clear();
-            _modelsWithDescendantChanges.Clear();
+            _modelChangeKinds = new Dictionary<string, ClassChangeKind>();
+            _descendantChangeKinds.Clear();
             return;
         }
 
-        var repoId = Repository.Id;
-        var vcsRootPath = Repository.VcsRootPath;
+        var repository = Repository;
+        var repoId = repository.Id;
+        var vcsRootPath = repository.VcsRootPath;
         var graph = LibraryDataService.CombinedGraph;
 
         // Build VCS status mapping on background thread to avoid blocking UI
-        // when the working copy cache has expired and SVN status must be queried
-        var (hasChanges, modelStatus, descendantChanges) = await Task.Run(() =>
+        // when the working copy cache has expired and SVN status must be queried.
+        // Classifying the changes belongs on the same thread for the same reason, and more so: it
+        // reads each changed file's committed version out of the repository and parses it.
+        var (hasChanges, modelStatus, kinds, descendants) = await Task.Run(() =>
         {
             var changes = RepositoryService.GetWorkingCopyChanges(repoId);
             var status = new Dictionary<string, VcsFileStatus>();
-            var descendants = new HashSet<string>();
 
-            if (changes != null && changes.Count > 0)
+            if (changes == null || changes.Count == 0)
+                return (false, status, EmptyKinds, new Dictionary<string, ClassChangeKind>());
+
+            foreach (var change in changes)
             {
-                foreach (var change in changes)
+                if (!change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // change.Path is relative to VcsRootPath; normalize separators
+                // so Path.Combine works correctly on Windows with Git's forward slashes.
+                var nativePath = change.Path.Replace('/', Path.DirectorySeparatorChar);
+                var absolutePath = Path.Combine(vcsRootPath, nativePath);
+                var fileId = GraphBuilder.GenerateFileId(absolutePath);
+                var modelsInFile = graph.GetModelsInFile(fileId);
+
+                foreach (var model in modelsInFile)
                 {
-                    if (!change.Path.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // change.Path is relative to VcsRootPath; normalize separators
-                    // so Path.Combine works correctly on Windows with Git's forward slashes.
-                    var nativePath = change.Path.Replace('/', Path.DirectorySeparatorChar);
-                    var absolutePath = Path.Combine(vcsRootPath, nativePath);
-                    var fileId = GraphBuilder.GenerateFileId(absolutePath);
-                    var modelsInFile = graph.GetModelsInFile(fileId);
-
-                    foreach (var model in modelsInFile)
-                    {
-                        status[model.Id] = change.Status;
-                    }
-                }
-
-                foreach (var modelId in status.Keys)
-                {
-                    var lastDot = modelId.LastIndexOf('.');
-                    while (lastDot > 0)
-                    {
-                        var parentId = modelId.Substring(0, lastDot);
-                        descendants.Add(parentId);
-                        lastDot = parentId.LastIndexOf('.');
-                    }
+                    status[model.Id] = change.Status;
                 }
             }
 
-            return (changes?.Count > 0, status, descendants);
+            var changeKinds = ModelChangeClassifier.Classify(repository, changes);
+            return (true, status, changeKinds, DescendantKinds(status, changeKinds));
         });
 
         _hasUncommittedChanges = hasChanges;
         _modelVcsStatus = modelStatus;
-        _modelsWithDescendantChanges = descendantChanges;
+        _modelChangeKinds = kinds;
+        _descendantChangeKinds = descendants;
+
+        // A filter with nothing left to filter is withdrawn along with its control, or committing
+        // while "Affects simulation" is selected leaves the tree hidden behind an empty list and no
+        // visible way back to it.
+        if (!hasChanges)
+            _changeFilter = ChangeFilter.None;
+    }
+
+    private static readonly IReadOnlyDictionary<string, ClassChangeKind> EmptyKinds =
+        new Dictionary<string, ClassChangeKind>();
+
+    /// <summary>
+    /// The strongest change kind anywhere below each ancestor of a changed model.
+    /// </summary>
+    /// <remarks>
+    /// <para>Walks up each changed model's dotted name adding it to every ancestor, and keeps the
+    /// highest kind seen — which is what <see cref="ClassChangeKind"/>'s ordering is for. A package
+    /// with one reformatted class and one changed equation under it reports the equation, because
+    /// that is the one the user has to go and look at.</para>
+    ///
+    /// <para>Driven by the VCS status rather than by the kinds, so a repository whose changes could
+    /// not be classified still bubbles a marker up its packages — which is what MLQT did for
+    /// everything before B191, and is still the right answer when nothing better is known.</para>
+    /// </remarks>
+    internal static Dictionary<string, ClassChangeKind> DescendantKinds(
+        IReadOnlyDictionary<string, VcsFileStatus> status,
+        IReadOnlyDictionary<string, ClassChangeKind> kinds)
+    {
+        var descendants = new Dictionary<string, ClassChangeKind>(StringComparer.Ordinal);
+
+        foreach (var modelId in status.Keys)
+        {
+            // A class that is in a changed file but was not itself changed contributes nothing to
+            // its ancestors - otherwise every package above a modified package.mo would claim a
+            // change that is not there.
+            var kind = kinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
+            if (kind == ClassChangeKind.Unchanged)
+                continue;
+
+            var lastDot = modelId.LastIndexOf('.');
+            while (lastDot > 0)
+            {
+                var parentId = modelId.Substring(0, lastDot);
+                if (!descendants.TryGetValue(parentId, out var existing) || kind > existing)
+                    descendants[parentId] = kind;
+
+                lastDot = parentId.LastIndexOf('.');
+            }
+        }
+
+        return descendants;
+    }
+
+    /// <summary>
+    /// Which of a repository's models the browser lists (B191).
+    /// </summary>
+    internal enum ChangeFilter
+    {
+        /// <summary>The ordinary tree, everything in it.</summary>
+        None,
+
+        /// <summary>Every class with an uncommitted change of its own.</summary>
+        Changed,
+
+        /// <summary>
+        /// The changes a reviewer has to read. Anything not <i>known</i> to be harmless is in here,
+        /// including a class MLQT could not compare — leaving those out would be a filter that hides
+        /// exactly what it was asked to find.
+        /// </summary>
+        AffectsSimulation,
+
+        /// <summary>Changes MLQT is prepared to vouch for as layout, wording or graphics.</summary>
+        Cosmetic,
+    }
+
+    private ChangeFilter _changeFilter = ChangeFilter.None;
+
+    /// <summary>
+    /// The classes the current filter selects, with the marker each one would carry in the tree.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A flat list rather than a pruned tree.</b> The tree loads its children on demand, so
+    /// "only the changed classes" would mean expanding every package to find out whether it has any —
+    /// which is the whole library. The list is also what the question asks for: which classes did I
+    /// change, and which of those matter.</para>
+    ///
+    /// <para>Driven by the VCS status map, so a class is listed because its file changed, and the
+    /// filter then decides on the kind. A class in a changed file that was not itself touched is
+    /// not listed at all.</para>
+    /// </remarks>
+    internal IReadOnlyList<(ModelNode Model, ChangeMarker Marker)> FilteredChanges()
+    {
+        if (_changeFilter == ChangeFilter.None)
+            return [];
+
+        var graph = LibraryDataService.CombinedGraph;
+        var matches = new List<(ModelNode Model, ChangeMarker Marker)>();
+
+        foreach (var modelId in _modelVcsStatus.Keys)
+        {
+            var kind = _modelChangeKinds.TryGetValue(modelId, out var known) ? known : ClassChangeKind.Unknown;
+            if (!Selects(_changeFilter, kind))
+                continue;
+
+            var model = graph.GetNode<ModelNode>(modelId);
+            if (model is null)
+                continue;
+
+            var marker = MarkerFor(model);
+            if (marker.Shape == ChangeMarkerShape.Chip)
+                matches.Add((model, marker));
+        }
+
+        return matches.OrderBy(m => m.Model.Id, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Whether a filter wants a class of this kind.</summary>
+    internal static bool Selects(ChangeFilter filter, ClassChangeKind kind) => filter switch
+    {
+        ChangeFilter.Changed => kind != ClassChangeKind.Unchanged,
+        ChangeFilter.AffectsSimulation => kind is not (ClassChangeKind.Unchanged or ClassChangeKind.Cosmetic),
+        ChangeFilter.Cosmetic => kind == ClassChangeKind.Cosmetic,
+        _ => false,
+    };
+
+    internal void OnChangeFilterChanged(ChangeFilter filter)
+    {
+        _changeFilter = filter;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// What to draw beside a model in the tree — the one decision, asked by both tree templates.
+    /// </summary>
+    internal ChangeMarker MarkerFor(ModelNode? model)
+    {
+        if (model?.Id is not { } id)
+            return ChangeMarker.None;
+
+        var status = _modelVcsStatus.TryGetValue(id, out var fileStatus) ? fileStatus : (VcsFileStatus?)null;
+        var kind = _modelChangeKinds.TryGetValue(id, out var own) ? own : ClassChangeKind.Unknown;
+        var descendants = _descendantChangeKinds.TryGetValue(id, out var below) ? below : ClassChangeKind.Unchanged;
+
+        return ChangeMarker.For(status, kind, descendants);
     }
 
     /// <summary>
@@ -205,7 +356,7 @@ public partial class LibraryBrowser : IDisposable
                 item.Value.FileStatus = status;
             }
 
-            if (_modelsWithDescendantChanges.Contains(item.Value.Id))
+            if (_descendantChangeKinds.ContainsKey(item.Value.Id))
             {
                 item.Value.HasDescendantChanges = true;
             }
