@@ -22,7 +22,8 @@ public class SingleFilePackageAnalyzerTests
     /// file of its own.
     /// </summary>
     private static DirectedGraph Build(
-        (string Name, string? FileId, bool Standalone)[] children, string packageFileId = "P.mo")
+        (string Name, string? FileId, bool Standalone)[] children, string packageFileId = "P.mo",
+        string[]? asPackages = null)
     {
         var graph = new DirectedGraph();
         graph.AddNode(new ModelNode("P", "P", "package P\nend P;")
@@ -35,7 +36,9 @@ public class SingleFilePackageAnalyzerTests
         foreach (var (name, fileId, standalone) in children)
             graph.AddNode(new ModelNode("P." + name, name, $"model {name} end {name};")
             {
-                ClassType = "model",
+                // A package child is written as a directory, a model child as Name.mo — which is
+                // the difference that decides whether two names colliding on case really collide.
+                ClassType = asPackages?.Contains(name) == true ? "package" : "model",
                 ParentModelName = "P",
                 ContainingFileId = fileId,
                 CanBeStoredStandalone = standalone
@@ -83,22 +86,51 @@ public class SingleFilePackageAnalyzerTests
     }
 
     [Fact]
-    public void ChildrenWhoseNamesDifferOnlyInCase_AreNotReported()
+    public void TwoModelsWhoseNamesDifferOnlyInCase_AreNotReported()
     {
-        // Why MSL's Spice3.Internal.JFET is still in package.mo, which took a while to work out.
-        // It has a sibling package called Jfet, and ModelicaPackageSaver will not write two children
-        // whose names differ only in case as separate entries — so the formatter deliberately keeps
-        // both inline. Reporting them would be a finding whose fix moves nothing.
-        //
-        // That rule is coarser than it needs to be, since a package becomes a directory and a model
-        // becomes a .mo file and those two cannot collide. Backlog B244.
+        // Both would be written as Jfet.mo, so neither can be given a file and reporting them would
+        // be a finding whose fix moves nothing.
         var findings = Analyze(Build([("Jfet", "P.mo", true), ("JFET", "P.mo", true)]));
 
         Assert.Empty(findings);
     }
 
     [Fact]
-    public void AChildCalledPackage_IsNotReported()
+    public void AModelAndAPackageWhoseNamesDifferOnlyInCase_AreReported()
+    {
+        // Why MSL's Spice3.Internal.JFET was still in package.mo, which took a while to work out.
+        // It has a sibling *package* called Jfet, and the saver refused to write two children whose
+        // names differ only in case — though one becomes the directory Jfet and the other the file
+        // JFET.mo, which cannot collide. Four pairs in MSL alone (B245).
+        var findings = Analyze(
+            Build([("Jfet", "P.mo", true), ("JFET", "P.mo", true)], asPackages: ["Jfet"]));
+
+        var finding = Assert.Single(findings);
+        Assert.Contains("2 classes", finding.Message);
+    }
+
+    [Fact]
+    public void TwoPackagesWhoseNamesDifferOnlyInCase_AreNotReported()
+    {
+        // ...and two packages both want the directory Jfet, so they are back to colliding.
+        var findings = Analyze(
+            Build([("Jfet", "P.mo", true), ("JFET", "P.mo", true)], asPackages: ["Jfet", "JFET"]));
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void APackageCalledPackage_IsReported()
+    {
+        // The reserved-entry question is about the entry, not the name: package.mo is taken, but a
+        // package called Package becomes the directory Package and collides with nothing.
+        var findings = Analyze(Build([("Package", "P.mo", true)], asPackages: ["Package"]));
+
+        Assert.Single(findings);
+    }
+
+    [Fact]
+    public void AModelCalledPackage_IsNotReported()
     {
         // It would be written as package.mo, which is the file its parent already occupies.
         Assert.Empty(Analyze(Build([("package", "P.mo", true)])));

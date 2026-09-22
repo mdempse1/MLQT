@@ -53,16 +53,17 @@ public class ModelicaPackageSaver
         // PHASE 2: Pre-compute tree structure (parent-child relationships and standalone status)
         var modelIndex = allModels.ToDictionary(m => m.Id);
         var childrenByParent = BuildChildrenIndex(allModels, modelIds);
-        var standaloneChildren = ComputeStandaloneChildren(allModels, childrenByParent);
 
         // Pre-compute data that requires parse trees while they are still available
-        // (parse trees will be released during rendering in Phase 3)
+        // (parse trees will be released during rendering in Phase 3). This runs before
+        // ComputeStandaloneChildren because that asks what each child would be written AS, and a
+        // short class definition is a package that is still written as a file.
         var shortClassIds = new HashSet<string>();
         var preComputedElementNames = new Dictionary<string, List<string>>();
         var formatPreserved = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in allModels)
         {
-            if (IsShortClassDefinition(model))
+            if (PackageFileLayout.IsShortClassDefinition(model))
                 shortClassIds.Add(model.Id);
 
             // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
@@ -82,6 +83,8 @@ public class ModelicaPackageSaver
                     preComputedElementNames[model.Id] = elementNames;
             }
         }
+
+        var standaloneChildren = ComputeStandaloneChildren(childrenByParent, shortClassIds);
 
         // PHASE 3: Pre-render all models in parallel
         // Parse trees are released immediately after each model is rendered to avoid
@@ -259,43 +262,19 @@ public class ModelicaPackageSaver
     /// <summary>
     /// Computes which children can be stored standalone for each parent.
     /// Returns a dictionary mapping parent ID to set of standalone child names.
+    ///
+    /// <para>The answer itself is <see cref="PackageFileLayout"/>'s, because
+    /// <c>SingleFilePackageAnalyzer</c> reports on exactly the classes this decides to write, and
+    /// the two had a copy each of a rule that was the same wrong answer twice (B245). The
+    /// short-class question is handed in rather than asked, because every parse tree is still in
+    /// hand at this point.</para>
     /// </summary>
     private static Dictionary<string, HashSet<string>> ComputeStandaloneChildren(
-        List<ModelNode> allModels,
-        Dictionary<string, List<ModelNode>> childrenByParent)
-    {
-        var result = new Dictionary<string, HashSet<string>>();
-
-        foreach (var kvp in childrenByParent)
-        {
-            var parentId = kvp.Key;
-            var children = kvp.Value;
-            var standaloneNames = new HashSet<string>();
-
-            // Detect case-insensitive duplicate names
-            var nameCounts = children
-                .GroupBy(m => m.Definition.Name.ToLowerInvariant())
-                .ToDictionary(g => g.Key, g => g.Count());
-
-            foreach (var child in children)
-            {
-                var canStore = child.CanBeStoredStandalone;
-
-                var lowerName = child.Definition.Name.ToLowerInvariant();
-                var hasCaseInsensitiveDuplicate = nameCounts[lowerName] > 1;
-                var conflictsWithPackageMo = lowerName == "package";
-
-                if (canStore && !hasCaseInsensitiveDuplicate && !conflictsWithPackageMo)
-                {
-                    standaloneNames.Add(child.Definition.Name);
-                }
-            }
-
-            result[parentId] = standaloneNames;
-        }
-
-        return result;
-    }
+        Dictionary<string, List<ModelNode>> childrenByParent,
+        HashSet<string> shortClassIds)
+        => childrenByParent.ToDictionary(
+            kvp => kvp.Key,
+            kvp => PackageFileLayout.StandaloneChildNames(kvp.Value, m => shortClassIds.Contains(m.Id)));
 
     /// <summary>
     /// Pre-renders all models in parallel and returns a dictionary of rendered code.
@@ -334,13 +313,9 @@ public class ModelicaPackageSaver
                         return;
                     }
 
-                    var classType = model.ClassType;
-
-                    var isShortClass = IsShortClassDefinition(model);
-
                     // Determine which children to exclude (for packages)
                     HashSet<string>? classNamesToExclude = null;
-                    if (classType == "package" && !isShortClass)
+                    if (PackageFileLayout.WrittenAsDirectory(model))
                     {
                         standaloneChildren.TryGetValue(model.Id, out classNamesToExclude);
                     }
@@ -404,12 +379,9 @@ public class ModelicaPackageSaver
         if (!renderedCode.TryRemove(model.Id, out var code))
             return;
 
-        var classType = model.ClassType;
-
-        // Use pre-computed short class status since parse trees have been released
-        var isShortClass = shortClassIds.Contains(model.Id);
-
-        if (classType == "package" && !isShortClass)
+        // The same question ComputeStandaloneChildren asked when it decided this class could have
+        // its own entry, so the two cannot disagree about what that entry is.
+        if (PackageFileLayout.WrittenAsDirectory(model, m => shortClassIds.Contains(m.Id)))
         {
             // Create package directory
             var packageDir = Path.Combine(parentDirectory, model.Definition.Name);
@@ -612,23 +584,6 @@ public class ModelicaPackageSaver
     /// Checks if a model uses a short class definition (e.g., package A = B "description";).
     /// Short class definitions should be saved as .mo files, not as directories.
     /// </summary>
-    private static bool IsShortClassDefinition(ModelNode model)
-    {
-        if (model.Definition.ParsedCode == null)
-            return false;
-
-        // Look for short_class_specifier in the parsed code
-        foreach (var classDefContext in model.Definition.ParsedCode.class_definition())
-        {
-            var classSpecifier = classDefContext.class_specifier();
-            if (classSpecifier?.short_class_specifier() != null)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// Extracts all element names from a package's parsed code.

@@ -1244,7 +1244,7 @@ already have.
 
 ### WP12 — Rules, second pass
 
-**B246 ✅, B245, B252** · 3 items, 1 done · S–M
+**B246 ✅, B245 ✅, B252** · 3 items, 2 done · S–M
 
 Three rule items found by pointing the checker at a real library and then working in it, which is the
 only way any of them would have been found. They are separate from WP3 because that package shipped,
@@ -1277,13 +1277,30 @@ they share WP3's gate and should be taken together rather than a month apart.
   copies of the predefined-type list, each different. They now derive from one, with
   `TypeResolver`'s extra `Complex` — an MSL operator record, not a language type — stated as the
   difference it is rather than kept as a second list.
-- **B245** is a change to the **write** path — which children the saver is willing to store as
-  separate files — so it carries WP3's gate with it: a full-library save compared before and after,
-  and the parity number. Four pairs in MSL are waiting on it, `JFET`/`Jfet` among them.
+- **B245 ✅ — done 2026-09-22.** A change to the **write** path — which children the saver is
+  willing to store as separate files — so it carried WP3's gate: a full-library save compared before
+  and after, and the parity number.
+
+  **The larger half of it was not in the row.** `SingleFilePackageAnalyzer` held its own copy of the
+  rule, commented *same rule ModelicaPackageSaver writes by*, and it was the same wrong answer
+  twice — which is precisely why the rule could stay quiet about MSL's four pairs and nobody asked
+  whether the refusal was necessary. Both now ask `ModelicaGraph/PackageFileLayout.cs`, which
+  compares the **directory entry** each child would be written as rather than its class name.
+
+  **The gate earned its keep again, twice.** It found a second real case the row did not name —
+  `Modelica.Icons.Package`, a package refused because the check for `package.mo` was also on the
+  name rather than the entry — and the first parity run came back *no difference*, which was the
+  Release CLI not having been rebuilt. That is B174's trap verbatim, and it is now two for two:
+  **rebuild before believing a negative result.** On MSL (6,489 classes) nothing was lost, 54 paths
+  were gained, 6,382 of the 6,384 common files were byte-identical, and of 5,296 findings exactly
+  one message changed.
 - **B252 extends B181 from one boundary to four**: constants, parameters, variables, components,
-  then classes, where today only the last of those is enforced. **The order is the first question,
-  not the code** — some teams write parameters before constants, and connectors group `input`/`output`
-  — so settle whether it is one fixed order or a configured one before building anything. The part
+  then classes, where today only the last of those is enforced. **The order was the first question,
+  not the code**, and it is settled (2026-09-22): **one fixed order**, constants → parameters →
+  variables → components → classes, with `input`/`output`-prefixed declarations forming their own
+  group ahead of the rest, as connectors conventionally write them. Not configurable — the formatter
+  has to be able to produce whatever the rule asks for, and one order it can always produce is worth
+  more than a setting nobody would change. The part
   that is not obvious is telling a *variable* from a *component*: `Real x` against `Resistor r` is
   easy, but `SI.Length x` is a variable by every convention and a class by the grammar, so the
   declared type has to be followed through its alias chain. `MissingUnits` already does that and is
@@ -1433,9 +1450,10 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
           │              B253 ✅ B254 ✅ taken early, both reported mid-flight
           │              everything reported from using what WP2 built
-          ├──▶ WP12  rules, second pass — B246 ✅ done 2026-09-22 (it fired on every
-          │              library); B245 and B252 remain, together: both change the
-          │              write path and share WP3's gate
+          ├──▶ WP12  rules, second pass — B246 ✅ and B245 ✅ done 2026-09-22;
+          │              B252 remains, the other write-path item, its order settled:
+          │              constants, parameters, variables, components, then classes,
+          │              with input/output grouped ahead of the rest
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7 ✅ B188 ▸ B191 — complete 2026-09-21; B191 confirmed in

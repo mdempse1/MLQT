@@ -99,13 +99,12 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
         if (!childrenByParent.TryGetValue(package.Id, out var children) || children.Count == 0)
             return [];
 
-        // A class that cannot be stored standalone — replaceable, redeclare, inner, outer — has to
-        // live in its parent's file whatever the repository's convention, and so does one whose name
-        // is not unique among its siblings once case is ignored: two of them cannot both be a file
-        // on a case-insensitive filesystem. Same rule ModelicaPackageSaver writes by.
-        var nameCounts = children
-            .GroupBy(c => c.Definition.Name.ToLowerInvariant(), StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        // Which of them could have their own entry at all: not replaceable, redeclare, inner or
+        // outer, and not colliding with a sibling's or the package's own directory entry. Asked of
+        // PackageFileLayout rather than worked out here, because the saver has to give the same
+        // answer or this rule reports a class the formatter will not move — which it did, for MSL's
+        // four case-differing pairs, by both of them comparing class names instead of entries (B245).
+        var storable = PackageFileLayout.StandaloneChildNames(children);
 
         // Every child that could have a file and does not — <b>not</b> "all of them, or none"
         // (B243). That was the first reading, and a real library shows how wrong it is: MSL's
@@ -115,9 +114,7 @@ public sealed class SingleFilePackageAnalyzer : IGraphAnalyzer
         // stays put for years. The comparison is on the file, not the path: two classes in the same
         // file share a file id.
         return children
-            .Where(c => c.CanBeStoredStandalone)
-            .Where(c => nameCounts[c.Definition.Name.ToLowerInvariant()] == 1)
-            .Where(c => !string.Equals(c.Definition.Name, "package", StringComparison.OrdinalIgnoreCase))
+            .Where(c => storable.Contains(c.Definition.Name))
             .Where(c => SharesFileWith(c, package))
             .ToList();
     }

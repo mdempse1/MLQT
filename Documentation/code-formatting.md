@@ -144,9 +144,14 @@ The reason is version control, and it is the same reason MLQT formats at all: so
 Not every class can have a file of its own, and MLQT leaves those inline in the parent package:
 
 - classes carrying an element prefix — `replaceable`, `redeclare`, `inner`, `outer` — which Modelica only permits inside their parent;
-- a class whose name differs from a sibling's only by case, which would collide on a case-insensitive file system;
-- a class named `package`, which would collide with `package.mo` itself;
-- short class definitions (`package Types = Modelica.Units.SI;`), which are written as a single line rather than as a directory.
+- short class definitions (`package Types = Modelica.Units.SI;`), which are written as a single line rather than as a directory;
+- a class whose **directory entry** would collide with a sibling's or with a file the package already
+  has. A package is written as a directory `Name` and every other class as a file `Name.mo`, so the
+  collision is between those, not between the class names: two models called `JFET` and `Jfet` would
+  both want `Jfet.mo` and both stay inline, but a model `JFET` beside a *package* `Jfet` is a file
+  next to a directory and both are written out. For the same reason a model called `Package` stays
+  inline — it would be written as `Package.mo`, which is the `package.mo` the directory already has —
+  while a *package* called `Package` becomes the directory `Package` and does not collide.
 
 ### When the restructure happens
 

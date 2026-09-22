@@ -1024,6 +1024,102 @@ public class ModelicaPackageSaverTests : IDisposable
         Assert.Equal(once, twice);
     }
 
+    // --- B245: the collision test is the directory entry, not the class name ---
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_SplitsAModelAndAPackageWhoseNamesDifferOnlyInCase()
+    {
+        // MSL's Spice3.Internal has four such pairs - MOS/Mos, MOS2/Mos2, DIODE/Diode, JFET/Jfet.
+        // A model is written as JFET.mo and a package as the directory Jfet, and those two entries
+        // cannot collide, so both can be stored separately. Comparing the class names instead kept
+        // both inline in package.mo, which is why Spice3.Internal.JFET is still in there.
+        var packageCode = """
+            package Internal
+              model JFET
+                Real i;
+              end JFET;
+              package Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "model JFET Real i; end JFET;", "model"),
+            ("Jfet", "package Jfet Real c; end Jfet;", "package")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.True(File.Exists(Path.Combine(packageDir, "JFET.mo")), "JFET should be its own file");
+        Assert.True(File.Exists(Path.Combine(packageDir, "Jfet", "package.mo")), "Jfet should be its own directory");
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_KeepsTwoModelsWhoseNamesDifferOnlyInCaseInline()
+    {
+        // The case the rule is actually for: two models would both be written as Jfet.mo on a
+        // case-insensitive filesystem, so neither may be stored separately.
+        var packageCode = """
+            package Internal
+              model JFET
+                Real i;
+              end JFET;
+              model Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "model JFET Real i; end JFET;", "model"),
+            ("Jfet", "model Jfet Real c; end Jfet;", "model")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.False(File.Exists(Path.Combine(packageDir, "JFET.mo")), "JFET must stay in package.mo");
+        Assert.False(File.Exists(Path.Combine(packageDir, "Jfet.mo")), "Jfet must stay in package.mo");
+        var packageMo = File.ReadAllText(Path.Combine(packageDir, "package.mo"));
+        Assert.Contains("model JFET", packageMo);
+        Assert.Contains("model Jfet", packageMo);
+    }
+
+    [Fact]
+    public void SaveLibraryToDirectoryWithResult_KeepsTwoPackagesWhoseNamesDifferOnlyInCaseInline()
+    {
+        // ...and the same for two packages, which would both want the directory Jfet.
+        var packageCode = """
+            package Internal
+              package JFET
+                Real i;
+              end JFET;
+              package Jfet
+                Real c;
+              end Jfet;
+            end Internal;
+            """;
+        var graph = CreateGraphWithPackage("Internal", packageCode, new List<(string, string, string)>
+        {
+            ("JFET", "package JFET Real i; end JFET;", "package"),
+            ("Jfet", "package Jfet Real c; end Jfet;", "package")
+        });
+        var outputDir = CreateTempDirectory();
+
+        ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None);
+
+        var packageDir = Path.Combine(outputDir, "Internal");
+        Assert.False(Directory.Exists(Path.Combine(packageDir, "JFET")), "JFET must stay in package.mo");
+        Assert.False(Directory.Exists(Path.Combine(packageDir, "Jfet")), "Jfet must stay in package.mo");
+    }
+
     private static int CountWithinClauses(string code) => CountOccurrences(code, "within ");
 
     private static int CountOccurrences(string haystack, string needle)
