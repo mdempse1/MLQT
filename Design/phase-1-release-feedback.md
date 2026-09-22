@@ -1357,11 +1357,13 @@ once already.
 
 ### WP14 — External tools, second pass
 
-**B262, B263** · 2 items · S and M · **B263 is the item; B262 is half of its mechanism**
+**B262, B263** · 2 items · M and M · **B263 is the item; B262 is half of its mechanism, and has grown one of its own**
 
 What the user asked for is one thing: *let me give the tool longer for a model that takes longer*.
 Underneath it the two tools are in different states and neither is right — Dymola is about to have a
-settable `CommandTimeout` with nothing setting it (PR #9), and OpenModelica has carried
+settable `CommandTimeout` with nothing setting it (PR #9, which grew in review into a per-call timeout **and**
+a `CancellationToken` on thirteen wrappers, plus a constructor that can block ~32s waiting out a busy Dymola —
+see B262), and OpenModelica has carried
 `CommandTimeoutMs` and `StartupTimeoutMs` in its settings since it was written with **nothing reading
 either**, so a long `omc` check has no timeout at all and blocks indefinitely.
 
@@ -1369,6 +1371,13 @@ either**, so a long `omc` check has no timeout at all and blocks indefinitely.
 B170's second and third reports inside two days: a question answered for one tool and left alone for
 its sibling, where the sibling's silence looks like agreement. The settings tab, the two interfaces
 and both checking services are one change.
+
+**Two things B262 carries that are not about timeouts at all.** `DymolaCheckingService` already holds a
+`_cancellationTokenSource` that today only stops *between* models; the new `CancellationToken` parameter is what
+makes Cancel interrupt a check already running, which is worth having whatever is decided about settings. And
+the constructor blocking for up to ~32s inside `GetOrCreateAsync`’s lock is a UI freeze unless it is moved off
+the UI thread — that one is a defect the merge introduces, not an opportunity it offers, so it lands whether or
+not B263 is done.
 
 **The Dymola half waits on PR #9 merging; the OpenModelica half does not.** Start there if the review
 is still open — it is the tool with no timeout at all, which is the worse of the two states.
