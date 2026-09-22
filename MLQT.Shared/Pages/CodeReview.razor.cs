@@ -2055,7 +2055,7 @@ document.head.appendChild(style);
         }
 
         var fileOwner = graph.GetModelsInFile(fileId!)
-            .Where(m => targetNode.Id == m.Id || targetNode.Id.StartsWith(m.Id + ".", StringComparison.Ordinal))
+            .Where(m => ModelicaName.IsInSubtree(targetNode.Id, m.Id))
             .OrderBy(m => m.Id.Length)
             .FirstOrDefault() ?? targetNode;
 

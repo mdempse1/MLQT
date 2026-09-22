@@ -2,6 +2,7 @@ using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 using OpenModelicaInterface.Interfaces;
 using static MLQT.Services.LoggingService;
 using OpenModelicaInterface;
@@ -215,7 +216,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
             if (modelNode.ClassType == "package")
             {
                 modelsToCheck = graph.ModelNodes
-                    .Where(m => m.Id.StartsWith(modelNode.Id + ".") &&
+                    .Where(m => ModelicaName.IsStrictlyInside(m.Id, modelNode.Id) &&
                                 m.ClassType != "package")
                     .ToList();
             }

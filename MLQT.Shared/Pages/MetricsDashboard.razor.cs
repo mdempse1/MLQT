@@ -1,4 +1,5 @@
 using ModelicaGraph.Analysis;
+using ModelicaParser.Helpers;
 using RevisionControl;
 using ModelicaParser.StyleRules;
 
@@ -67,8 +68,7 @@ public partial class MetricsDashboard : IDisposable
         // this report covers (e.g. after switching project, or after its repository was marked
         // reference only).
         _scope = NavState.MetricsScope;
-        if (!string.IsNullOrEmpty(_scope) && !ReportableModels()
-                .Any(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)))
+        if (!string.IsNullOrEmpty(_scope) && !ReportableModels().Any(m => InScope(m.Id, _scope)))
         {
             _scope = "";
             NavState.MetricsScope = "";
@@ -195,8 +195,7 @@ public partial class MetricsDashboard : IDisposable
     /// and must not cover <c>Modelica.BlocksExtra</c>, which a bare <c>StartsWith(scope)</c> would.
     /// </remarks>
     internal static bool InScope(string modelId, string scope)
-        => string.IsNullOrEmpty(scope) || modelId == scope
-           || modelId.StartsWith(scope + ".", System.StringComparison.Ordinal);
+        => string.IsNullOrEmpty(scope) || ModelicaName.IsInSubtree(modelId, scope);
 
     // Ensure the full analysis has run so the finding count is complete: dependency analysis (for the
     // graph-based rules) plus style checking. Kicks off whatever is missing; findings then stream in and
@@ -502,9 +501,7 @@ public partial class MetricsDashboard : IDisposable
         RecountFindings();
 
         var all = ReportableModels();
-        var models = string.IsNullOrEmpty(_scope)
-            ? all
-            : all.Where(m => m.Id == _scope || m.Id.StartsWith(_scope + ".", System.StringComparison.Ordinal)).ToList();
+        var models = all.Where(m => InScope(m.Id, _scope)).ToList();
         _modelCount = models.Count;
         _loading = true;
         StateHasChanged();
@@ -551,8 +548,7 @@ public partial class MetricsDashboard : IDisposable
             var settingsFor = StyleSettingsLookup();
             _summary = await Task.Run(() => children.Select(pkg =>
             {
-                var models = all.Where(m => m.Id == pkg
-                    || m.Id.StartsWith(pkg + ".", System.StringComparison.Ordinal)).ToList();
+                var models = all.Where(m => InScope(m.Id, pkg)).ToList();
                 return (pkg, MetricsCalculator.Compute(graph, models, settingsFor));
             }).ToList());
             // The union, not the first row's: sub-packages can sit in repositories with different
@@ -596,7 +592,7 @@ public partial class MetricsDashboard : IDisposable
         }
         IEnumerable<string> children = parent.Length == 0
             ? packages.Where(id => !id.Contains('.'))
-            : packages.Where(id => id.StartsWith(parent + ".", System.StringComparison.Ordinal)
+            : packages.Where(id => ModelicaName.IsStrictlyInside(id, parent)
                                    && id.IndexOf('.', parent.Length + 1) < 0);
         return children.OrderBy(id => id, System.StringComparer.Ordinal).ToList();
     }

@@ -1,4 +1,5 @@
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Visitors;
 
@@ -161,11 +162,12 @@ public static class TypeResolver
         {
             var alias = stmt[..eq].Trim();
             var target = stmt[(eq + 1)..].Trim();
-            if (name == alias)
-                return graph.GetNode<ModelNode>(target);
-            if (name.StartsWith(alias + ".", StringComparison.Ordinal))
-                return graph.GetNode<ModelNode>(target + name[alias.Length..]);
-            return null;
+            // `import SI = Modelica.SIunits;` makes SI.Voltage mean Modelica.SIunits.Voltage:
+            // the name is re-rooted from the alias onto the target, and is unresolvable here if it
+            // is not under the alias at all.
+            return ModelicaName.ReRoot(name, alias, target) is { } aliased
+                ? graph.GetNode<ModelNode>(aliased)
+                : null;
         }
 
         // Wildcard: "Modelica.Units.SI.*"
@@ -180,10 +182,10 @@ public static class TypeResolver
         // Plain: "Modelica.Units.SI" — the last segment becomes the implicit alias.
         var lastDot = stmt.LastIndexOf('.');
         var leaf = lastDot >= 0 ? stmt[(lastDot + 1)..] : stmt;
-        if (name == leaf)
-            return graph.GetNode<ModelNode>(stmt);
-        if (name.StartsWith(leaf + ".", StringComparison.Ordinal))
-            return graph.GetNode<ModelNode>(stmt + name[leaf.Length..]);
-        return null;
+        // `import Modelica.SIunits;` makes SIunits.Voltage mean Modelica.SIunits.Voltage - the
+        // same re-rooting, with the statement's last segment standing in for the alias.
+        return ModelicaName.ReRoot(name, leaf, stmt) is { } imported
+            ? graph.GetNode<ModelNode>(imported)
+            : null;
     }
 }
