@@ -669,7 +669,11 @@ dotnet tool install --global dotnet-stryker      # once
 and the baseline test run, and a whole assembly takes hours.
 
 **`-All`** mutates the same seven assemblies the coverage gate measures, smallest first so the early
-ones calibrate the machine before anything committing starts. It writes to `MutationReport/`
+ones calibrate the machine before anything committing starts. **It takes about an hour**, not the
+many hours it took before B267: each assembly is now judged by its own suite rather than by every
+suite that references it, so a run of 24,901 mutants took 52 minutes on 2026-09-22 where 23,634
+took 5h 40m in September's audit. That also means **scores from before and after B267 are not
+comparable** for any assembly something else depends on. It writes to `MutationReport/`
 (git-ignored) and **is resumable** — a project whose report is already there is skipped, so Ctrl-C and
 run it again to continue. Each project's result is printed as it finishes, and the run ends with
 `MutationReport/mutation-survivors.md`: one list of every surviving mutant, grouped by project and
