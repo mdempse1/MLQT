@@ -1242,9 +1242,18 @@ already have.
   achievable by destroying the text — **a number that can only go one way needs a second number
   beside it that can go the other.**
 
-### WP12 — Rules, second pass
+### WP12 ✅ — Rules, second pass
 
-**B246 ✅, B245 ✅, B252** · 3 items, 2 done · S–M
+**B246 ✅, B245 ✅, B252 ✅** · 3 items, all done 2026-09-22 · S–M
+
+**✅ The package is done — 2026-09-22 — and the gate was worth having, again.** Two of the three
+were judged by running them over a whole library rather than by reading, and each time that found
+something reading had not: B245's parity run turned up `Modelica.Icons.Package`, a second real case
+of the same bug that the item did not name, and B252's produced the only number that makes that item
+safe to ship (0 findings after formatting, against 5,760 before). B246's own row named two gaps and
+the work found two more underneath them, both in the same place — how a reference is *collected* —
+which is the shape this package should be remembered for: **all three items read as being about
+rules, and two of the three were actually about the layer below.**
 
 Three rule items found by pointing the checker at a real library and then working in it, which is the
 only way any of them would have been found. They are separate from WP3 because that package shipped,
@@ -1294,13 +1303,31 @@ they share WP3's gate and should be taken together rather than a month apart.
   **rebuild before believing a negative result.** On MSL (6,489 classes) nothing was lost, 54 paths
   were gained, 6,382 of the 6,384 common files were byte-identical, and of 5,296 findings exactly
   one message changed.
-- **B252 extends B181 from one boundary to four**: constants, parameters, variables, components,
-  then classes, where today only the last of those is enforced. **The order was the first question,
-  not the code**, and it is settled (2026-09-22): **one fixed order**, constants → parameters →
-  variables → components → classes, with `input`/`output`-prefixed declarations forming their own
-  group ahead of the rest, as connectors conventionally write them. Not configurable — the formatter
-  has to be able to produce whatever the rule asks for, and one order it can always produce is worth
-  more than a setting nobody would change. The part
+- **B252 ✅ — done 2026-09-22.** It extends B181 from one boundary to four. **The order was the
+  first question, not the code**, and it was settled before anything was built: **one fixed order**,
+  inputs and outputs → constants → parameters → variables → components → classes. Not configurable,
+  because the formatter has to be able to produce whatever the rule asks for and one order it can
+  always produce is worth more than a setting almost nobody would change.
+
+  **A new rule, not a wider one.** `MLQT.Style.DeclarationOrder` sits beside
+  `ComponentsBeforeClasses` with that rule as its prerequisite, rather than redefining it: MSL
+  reports 3,246 of the new findings, and a repository that had the coarse rule switched on must not
+  acquire them silently, with a baseline full of drift, because MLQT changed its mind about what the
+  id meant.
+
+  **The thing that actually needed care was the agreement.** `DeclarationKinds` is one classifier
+  asked by both the rule and `ModelicaRenderer`, and the renderer is handed the *same* type lookup
+  the checker gets — including the class-id tracking that resolves a nested class in its own scope,
+  because the rule checks that nested class on its own. Without a graph both fall back to the
+  predefined types alone. Either way the two give one answer, which is the only property that makes
+  the pair safe: a finding the formatter does not clear is worse than no rule at all, and there is a
+  test that formats a class and then checks the result.
+
+  **Gate, on MSL.** With the option off, all 6,438 written files are byte-identical to the previous
+  build — the refinement is genuinely inert until switched on. With it on, 724 files are rewritten,
+  and a check over the formatted tree reports **0** ordering findings where the library as shipped
+  reports 5,760. That number is the gate for this item: every finding the rule raises is one the
+  formatter clears. The part
   that is not obvious is telling a *variable* from a *component*: `Real x` against `Resistor r` is
   easy, but `SI.Length x` is a variable by every convention and a class by the grammar, so the
   declared type has to be followed through its alias chain. `MissingUnits` already does that and is
@@ -1459,10 +1486,7 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
           │              B253 ✅ B254 ✅ taken early, both reported mid-flight
           │              everything reported from using what WP2 built
-          ├──▶ WP12  rules, second pass — B246 ✅ and B245 ✅ done 2026-09-22;
-          │              B252 remains, the other write-path item, its order settled:
-          │              constants, parameters, variables, components, then classes,
-          │              with input/output grouped ahead of the rest
+          ├──▶ WP12 ✅ rules, second pass — B246 ▸ B245 ▸ B252, complete 2026-09-22
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7 ✅ B188 ▸ B191 — complete 2026-09-21; B191 confirmed in

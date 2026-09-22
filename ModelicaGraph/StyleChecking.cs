@@ -36,10 +36,12 @@ public static class StyleChecking
         Func<string, string, bool>? baseClassHasIcon = null,
         NamingConventionConfig? namingConfig = null,
         Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
-        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null)
+        Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null,
+        Func<string, string, bool>? isSimpleType = null)
         => RunStyleCheckingFindings(_currentModel, settings, fullModelId, knownModelIds, spellChecker,
                 knownModelNames, isExcludedFromFormatting, baseClassHasIcon, namingConfig: namingConfig,
-                inheritedElementNames: inheritedElementNames, unitLookup: unitLookup)
+                inheritedElementNames: inheritedElementNames, unitLookup: unitLookup,
+                isSimpleType: isSimpleType)
             .Select(f => f.ToLogMessage())
             .ToList();
 
@@ -95,7 +97,8 @@ public static class StyleChecking
         NamingConventionConfig? namingConfig = null,
         Func<string, IReadOnlySet<string>>? inheritedElementNames = null,
         Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? unitLookup = null,
-        CheckTimings? timings = null)
+        CheckTimings? timings = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         List<Finding> findings = new();
         _currentModel.StyleRulesChecked = true;
@@ -144,6 +147,14 @@ public static class StyleChecking
             if (settings.ComponentsBeforeClasses)
             {
                 RunRule(new ComponentsBeforeClasses(basePackage), parsedCode, findings, timings);
+            }
+            // The finer order inside the group the rule above puts ahead of nested classes. Its own
+            // switch, and its own visitor: the two report different things about the same section,
+            // and a repository that had only the coarse rule on must not silently acquire the other
+            // one's findings (B252).
+            if (settings.DeclarationOrder)
+            {
+                RunRule(new DeclarationOrder(basePackage, isSimpleType), parsedCode, findings, timings);
             }
             if (settings.InitialEQAlgoFirst || settings.InitialEQAlgoLast)
             {
@@ -287,6 +298,44 @@ public static class StyleChecking
         {
             var imports = importsByModel.GetOrAdd(key.ModelId, id => ImportsOf(graph, id));
             return UnitResolver.Resolve(graph, key.ModelId, key.TypeName, imports, unitCache, ancestors);
+        });
+    }
+
+    /// <summary>
+    /// Creates a lookup saying whether a declared type resolves to a simple type rather than to a
+    /// structured class — which is what tells a variable from a component, and the one part of
+    /// <see cref="DeclarationKind"/> the grammar cannot answer. Null when there is no graph, leaving
+    /// only the predefined types recognised.
+    ///
+    /// <para>A Modelica <c>type</c> is exactly the restricted class for a derived simple type, so
+    /// the question is what the name resolves to and what kind of class that is. <c>SI.Length</c> is
+    /// <c>type Length = Real(...)</c> and is a variable; <c>Resistor</c> is a <c>model</c> and is a
+    /// component. A name that resolves to nothing is a component, which is the same answer a caller
+    /// with no graph gets — so a library that will not load does not have its declarations
+    /// rearranged on a guess.</para>
+    ///
+    /// <para>Memoised on the question rather than the answer, for <see cref="CreateUnitLookup"/>'s
+    /// reason: resolving is the expensive half, and a library writing <c>SI.Temperature</c> in a
+    /// hundred classes would otherwise pay for it a hundred times.</para>
+    ///
+    /// <para><b>The formatter is given this same lookup</b>, so the order it writes and the order
+    /// the rule asks for cannot come apart.</para>
+    /// </summary>
+    public static Func<string, string, bool>? CreateSimpleTypeLookup(DirectedGraph? graph)
+    {
+        if (graph == null) return null;
+
+        var importsByModel = new ConcurrentDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var byRequest = new ConcurrentDictionary<(string ModelId, string TypeName), bool>();
+
+        return (modelId, typeName) => byRequest.GetOrAdd((modelId, typeName), key =>
+        {
+            if (TypeResolver.IsPredefined(key.TypeName))
+                return true;
+
+            var imports = importsByModel.GetOrAdd(key.ModelId, id => ImportsOf(graph, id));
+            var resolved = TypeResolver.Resolve(graph, key.ModelId, key.TypeName, imports);
+            return resolved?.ClassType == "type";
         });
     }
 

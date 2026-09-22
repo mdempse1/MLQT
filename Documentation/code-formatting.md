@@ -15,13 +15,25 @@ The first is the master switch; the other five say what "formatted" means for th
 | **Apply formatting rules. If off then just used as part of style guidelines** | — | `ApplyFormattingRules` | The master switch. Off, MLQT reports layout but never rewrites a file. See [Understanding "Apply Formatting Rules"](settings-reference.md#understanding-apply-formatting-rules) |
 | **A class may only have 1 public, 1 protected, 1 equation or algorithm section** | `MLQT.Style.OneOfEachSection` | `OneOfEachSection` | Merges multiple sections of the same kind into one |
 | **Composition must be imports first; then extends at the top of the public/protected sections** | `MLQT.Style.ImportStatementsFirst` | `ImportStatementsFirst` | Moves `import` statements to the top of each section, then `extends` clauses |
-| **Composition must have components before classes** | — *(formatting only)* | `ComponentsBeforeClasses` | Sorts component declarations before nested class definitions. Only does anything when *imports first* is also on |
+| **Composition must have components before classes** | `MLQT.Style.ComponentsBeforeClasses` | `ComponentsBeforeClasses` | Sorts component declarations before nested class definitions. Only does anything when *imports first* is also on |
+| **Declarations in order: inputs and outputs, constants, parameters, variables, components** | `MLQT.Style.DeclarationOrder` | `DeclarationOrder` | Sorts the declarations within that group. Only does anything when *components before classes* is also on |
 | **If there is an initial equation/algorithm section it should appear before the equation/algorithm section** | `MLQT.Style.InitialEqAlgoFirst` | `InitialEQAlgoFirst` | Writes `initial equation` and `initial algorithm` blocks before the regular ones |
 | **If there is an initial equation/algorithm section it should appear after the equation/algorithm section** | `MLQT.Style.InitialEqAlgoLast` | `InitialEQAlgoLast` | Writes them after the regular ones |
 
-The two initial-section switches are mutually exclusive: turning one on turns the other off. *Components before classes* is a **refinement of** *imports first* rather than an alternative to it — the formatter only consults it inside the branch that imports-first selects, so on its own it changes nothing. [Settings Reference](settings-reference.md#formatting-rules) has the same six rows with their defaults and the full description of each.
+The two initial-section switches are mutually exclusive: turning one on turns the other off. The
+last three rows are a chain of refinements rather than alternatives: *components before classes*
+refines *imports first*, and *declarations in order* refines that, and the formatter consults each
+only inside the branch the one above it selects — so on its own, each changes nothing.
+[Settings Reference](settings-reference.md#formatting-rules) has the same seven rows with their
+defaults and the full description of each.
 
-**Components before classes is formatting only.** It has no rule id, so it changes what the formatter writes and is never reported as a finding — `mlqt check` in CI cannot see it, and neither can the desktop findings list.
+**Declarations in order needs to know a variable from a component**, and that is not something the
+Modelica grammar answers: `Real x` is a variable and `Resistor r` is a component, but `SI.Length x`
+is a variable by every convention while its type is a class. MLQT follows the declared type through
+its alias chain, which needs the library loaded — so a check with nothing loaded recognises only
+`Real`, `Integer`, `Boolean` and `String` as variables and leaves everything else where a component
+goes. **The formatter is told exactly the same thing**, so what it writes is always what the rule
+asks for.
 
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
 source order and moves nothing at all — so the other switches are **switched off with it**, both as
@@ -40,6 +52,7 @@ A repository's settings live in `.mlqt/settings.json`, committed with the code, 
     "OneOfEachSection": true,
     "ImportStatementsFirst": true,
     "ComponentsBeforeClasses": false,
+    "DeclarationOrder": false,
     "InitialEQAlgoFirst": true,
     "InitialEQAlgoLast": false
 }

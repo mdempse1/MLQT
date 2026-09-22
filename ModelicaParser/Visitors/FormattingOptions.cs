@@ -10,7 +10,7 @@ namespace ModelicaParser.Visitors;
 /// call site that passed them in the wrong order compiled perfectly. Adding
 /// <see cref="InitialSectionsLast"/> is what made that cost visible.</para>
 ///
-/// <para>All four default to off, which is the renderer's "leave the source as it is" behaviour: with
+/// <para>All of them default to off, which is the renderer's "leave the source as it is" behaviour: with
 /// <see cref="OneOfEachSection"/> off it does not reorder anything at all, so the rest have no effect.
 /// That is why <see cref="None"/> is the right thing to pass wherever the caller only wants the text
 /// re-rendered rather than reformatted.</para>
@@ -33,6 +33,18 @@ namespace ModelicaParser.Visitors;
 /// pair, which really does turn its opposite off), and nesting is a dependency, not an exclusion.
 /// Every renderer test passes the two together for that reason.</para>
 /// </param>
+/// <param name="DeclarationOrder">
+/// Within the component group, write inputs and outputs first, then constants, then parameters,
+/// then variables, then components — the finer order <see cref="ComponentsBeforeClasses"/> is the
+/// last boundary of.
+///
+/// <para><b>It refines <see cref="ComponentsBeforeClasses"/> the way that refines
+/// <see cref="ImportsFirst"/>.</b> The renderer reads this option only inside the branch that one
+/// selects, so on its own it changes nothing. Telling a variable from a component needs the
+/// declared type resolved, which needs a graph, so a renderer given no <c>isSimpleType</c> callback
+/// recognises only the predefined types as quantities — and <c>MLQT.Style.DeclarationOrder</c> is
+/// given the same callback, so the two always agree about where a declaration belongs.</para>
+/// </param>
 /// <param name="InitialSectionsLast">
 /// Write <c>initial equation</c>/<c>initial algorithm</c> after the ordinary equation and algorithm
 /// sections rather than before them. Off means before, which is the convention
@@ -43,7 +55,8 @@ public sealed record FormattingOptions(
     bool OneOfEachSection = false,
     bool ImportsFirst = false,
     bool ComponentsBeforeClasses = false,
-    bool InitialSectionsLast = false)
+    bool InitialSectionsLast = false,
+    bool DeclarationOrder = false)
 {
     /// <summary>Reorder nothing — render the class as it is written.</summary>
     public static readonly FormattingOptions None = new();

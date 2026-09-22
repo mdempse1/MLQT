@@ -255,6 +255,17 @@
                 Disabled="!SelectedSettings.OneOfEachSection
                           || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)"
                 Label="Composition must have components before classes" />
+            @* And this refines that one the same way again, so it is gated on the whole chain:
+               inputs and outputs, constants, parameters, variables, components is the finer order
+               inside the group components-before-classes puts ahead of nested classes, and the
+               renderer reads it only inside that branch. *@
+            <MudSwitch T="bool" Color="Color.Primary" Size="Size.Small"
+                Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.DeclarationOrder)"
+                ValueChanged="@(v => SelectedSettings.SetRuleEnabled(RuleIds.DeclarationOrder, v))"
+                Disabled="!SelectedSettings.OneOfEachSection
+                          || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ImportStatementsFirst)
+                          || !SelectedSettings.IsRuleSwitchedOn(RuleIds.ComponentsBeforeClasses)"
+                Label="Declarations in order: inputs and outputs, constants, parameters, variables, components" />
             <MudSwitch T="bool" ValueChanged="OnInitialEqFirst" Color="Color.Primary" Size="Size.Small"
                 Value="@SelectedSettings.IsRuleSwitchedOn(RuleIds.InitialEqAlgoFirst)"
                 Disabled="!SelectedSettings.OneOfEachSection"

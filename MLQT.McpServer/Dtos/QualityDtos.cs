@@ -20,6 +20,7 @@ public sealed class StyleSettingsInput
 {
     public bool? ImportStatementsFirst { get; set; }
     public bool? ComponentsBeforeClasses { get; set; }
+    public bool? DeclarationOrder { get; set; }
     public bool? OneOfEachSection { get; set; }
     public bool? DontMixEquationAndAlgorithm { get; set; }
     public bool? DontMixConnections { get; set; }
@@ -70,6 +71,7 @@ public sealed class StyleSettingsInput
     [
         new(RuleIds.ImportStatementsFirst, i => i.ImportStatementsFirst, (i, v) => i.ImportStatementsFirst = v),
         new(RuleIds.ComponentsBeforeClasses, i => i.ComponentsBeforeClasses, (i, v) => i.ComponentsBeforeClasses = v),
+        new(RuleIds.DeclarationOrder, i => i.DeclarationOrder, (i, v) => i.DeclarationOrder = v),
         new(RuleIds.OneOfEachSection, i => i.OneOfEachSection, (i, v) => i.OneOfEachSection = v),
         new(RuleIds.DontMixEquationAndAlgorithm, i => i.DontMixEquationAndAlgorithm, (i, v) => i.DontMixEquationAndAlgorithm = v),
         new(RuleIds.DontMixConnections, i => i.DontMixConnections, (i, v) => i.DontMixConnections = v),
@@ -124,6 +126,9 @@ public sealed class StyleSettingsInput
         if (ComponentsBeforeClasses is { } componentsFirst)
             s.ComponentsBeforeClasses = componentsFirst;
 
+        if (DeclarationOrder is { } declarationOrder)
+            s.DeclarationOrder = declarationOrder;
+
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
     }
@@ -151,6 +156,7 @@ public sealed class StyleSettingsInput
         var input = new StyleSettingsInput
         {
             ComponentsBeforeClasses = s.ComponentsBeforeClasses,
+            DeclarationOrder = s.DeclarationOrder,
             SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
         };
 

@@ -40,6 +40,14 @@ public sealed class StyleCheckContext
     public Func<string, string, (bool IsRealDerived, bool TypeHasUnit)>? UnitLookup { get; private init; }
 
     /// <summary>
+    /// Whether a declared type resolves to a simple type rather than a structured class, which is
+    /// what tells a variable from a component for the declaration-order rule. Null when there is no
+    /// graph, leaving only the predefined types recognised — and the formatter is handed the same
+    /// lookup, so the order it writes and the order the rule asks for cannot come apart.
+    /// </summary>
+    public Func<string, string, bool>? IsSimpleType { get; private init; }
+
+    /// <summary>
     /// Measures each class's coverage contribution as it is checked, or null when the caller does not
     /// want coverage collected.
     ///
@@ -133,6 +141,7 @@ public sealed class StyleCheckContext
             // The rule resolves types the same way the Unit coverage dimension does, so the findings
             // and the dashboard describe the same gaps.
             UnitLookup = settings.CheckMissingUnits ? StyleChecking.CreateUnitLookup(graph) : null,
+            IsSimpleType = settings.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
             // per class for a row the report will not show. Deliberately the repository-wide answer

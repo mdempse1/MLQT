@@ -94,8 +94,13 @@ public class ModelicaPackageSaver
             excludedSet.UnionWith(excludedModelIds);
         excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
         var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
+        // Built once for the whole save, and only when the layout actually asks for the finer
+        // declaration order — resolving a type walks imports and the extends chain, and a save that
+        // is not ordering declarations must not pay for it.
+        var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
+
         var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            formatting, excludedOrNull);
+            formatting, excludedOrNull, isSimpleType);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
@@ -171,16 +176,22 @@ public class ModelicaPackageSaver
     /// produce output for malformed input, but that output is not a faithful copy of the file.
     /// </param>
     public static string RenderFileSource(string fileSource, string? withinParent, FormattingOptions formatting,
-        out IReadOnlyList<ParserError> parserErrors)
+        out IReadOnlyList<ParserError> parserErrors, string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         var (parseTree, errors) = ModelicaParserHelper.ParseWithErrors(WithinClause.Ensure(fileSource, withinParent));
         parserErrors = errors;
-        return RenderStoredDefinition(parseTree, formatting);
+        return RenderStoredDefinition(parseTree, formatting, rootClassId, isSimpleType);
     }
 
     /// <summary>Renders a parsed stored_definition with the standard save-time renderer settings.</summary>
+    /// <param name="rootClassId">The id of the outermost class, for the type lookup below.</param>
+    /// <param name="isSimpleType">Tells the renderer a variable from a component, which is what
+    /// <see cref="FormattingOptions.DeclarationOrder"/> needs and the grammar cannot answer. The
+    /// checker is given the same lookup, so the two cannot order a class differently.</param>
     private static string RenderStoredDefinition(modelicaParser.Stored_definitionContext parseTree,
-        FormattingOptions formatting)
+        FormattingOptions formatting, string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         var visitor = new ModelicaRenderer(
             renderForCodeEditor: false,
@@ -188,7 +199,9 @@ public class ModelicaPackageSaver
             excludeClassDefinitions: false,
             tokenStream: null,
             classNamesToExclude: null,
-            formatting: formatting);
+            formatting: formatting,
+            rootClassId: rootClassId,
+            isSimpleType: isSimpleType);
         visitor.VisitStored_definition(parseTree);
 
         var code = string.Join("\n", visitor.Code);
@@ -287,7 +300,8 @@ public class ModelicaPackageSaver
         Dictionary<string, List<ModelNode>> childrenByParent,
         Dictionary<string, HashSet<string>> standaloneChildren,
         FormattingOptions formatting,
-        HashSet<string>? excludedModelIds = null)
+        HashSet<string>? excludedModelIds = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         const int batchSize = 500;
         var renderedCode = new ConcurrentDictionary<string, string>();
@@ -327,7 +341,9 @@ public class ModelicaPackageSaver
                         excludeClassDefinitions: false,
                         tokenStream: null,
                         classNamesToExclude: classNamesToExclude,
-                        formatting: formatting);
+                        formatting: formatting,
+                        rootClassId: model.Id,
+                        isSimpleType: isSimpleType);
                     visitor.VisitStored_definition(model.Definition.ParsedCode);
                     var code = string.Join("\n", visitor.Code);
 

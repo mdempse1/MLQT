@@ -88,6 +88,7 @@ public class StyleCheckingSettings
         OneOfEachSection: OneOfEachSection,
         ImportsFirst: ImportStatementsFirst,
         ComponentsBeforeClasses: ComponentsBeforeClasses,
+        DeclarationOrder: DeclarationOrder,
         // The two initial-section rules are mutually exclusive in the settings UI, so this reads
         // "last if the repository asked for last, otherwise first".
         InitialSectionsLast: InitialEQAlgoLast);
@@ -193,6 +194,7 @@ public class StyleCheckingSettings
         !SeveritiesEqual(other) ||
         ApplyFormattingRules != other.ApplyFormattingRules ||
         ComponentsBeforeClasses != other.ComponentsBeforeClasses ||
+        DeclarationOrder != other.DeclarationOrder ||
         // Changes which package.order findings are reported, so the answer differs even though no
         // rule was switched on or off.
         PackageOrderMatchesDymola != other.PackageOrderMatchesDymola ||
@@ -365,6 +367,26 @@ public class StyleCheckingSettings
     {
         get => Configured(RuleIds.ComponentsBeforeClasses);
         set => SetRuleEnabled(RuleIds.ComponentsBeforeClasses, value);
+    }
+
+    /// <summary>
+    /// The finer ordering <see cref="ComponentsBeforeClasses"/> is the last boundary of: inputs and
+    /// outputs, constants, parameters, variables, components. Separate from it rather than folded
+    /// in, so that a repository which had the coarse rule on does not silently acquire a different
+    /// set of findings and a baseline full of drift (B252).
+    /// </summary>
+    [JsonIgnore]
+    public bool DeclarationOrder
+    {
+        get => IsRuleEnabled(RuleIds.DeclarationOrder);
+        set => SetRuleEnabled(RuleIds.DeclarationOrder, value);
+    }
+
+    [JsonPropertyName(nameof(DeclarationOrder))]
+    public bool DeclarationOrderConfigured
+    {
+        get => Configured(RuleIds.DeclarationOrder);
+        set => SetRuleEnabled(RuleIds.DeclarationOrder, value);
     }
     public bool DontMixEquationAndAlgorithm
     {

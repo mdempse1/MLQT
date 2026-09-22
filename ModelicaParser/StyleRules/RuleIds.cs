@@ -15,6 +15,7 @@ public static class RuleIds
     public const string InitialEqAlgoLast = "MLQT.Style.InitialEqAlgoLast";
     public const string OneOfEachSection = "MLQT.Style.OneOfEachSection";
     public const string ComponentsBeforeClasses = "MLQT.Style.ComponentsBeforeClasses";
+    public const string DeclarationOrder = "MLQT.Style.DeclarationOrder";
     public const string DontMixEquationAndAlgorithm = "MLQT.Style.DontMixEquationAndAlgorithm";
     public const string DontMixConnections = "MLQT.Style.DontMixConnections";
     public const string ClassDescription = "MLQT.Doc.ClassDescription";

@@ -116,6 +116,11 @@ public static class IncrementalFormatter
         var formatting = settings.ToFormattingOptions();
         var formattedFiles = new ConcurrentDictionary<string, string>();
 
+        // The same lookup the checker is given, for the same reason: the order written here and the
+        // order MLQT.Style.DeclarationOrder asks for have to be one answer. Built only when the
+        // layout asks for it — resolving a type is not free.
+        var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
+
         await Task.Run(() => Parallel.ForEach(filesToProcess, fileEntry =>
         {
             try
@@ -130,7 +135,8 @@ public static class IncrementalFormatter
                 var fileSource = ModelicaFileEncoding.ReadAllTextOnly(fileEntry.FilePath);
 
                 var formatted = ModelicaPackageSaver.RenderFileSource(
-                    fileSource, fileEntry.Owner.ParentModelName, formatting, out var parserErrors);
+                    fileSource, fileEntry.Owner.ParentModelName, formatting, out var parserErrors,
+                    rootClassId: fileEntry.Owner.Id, isSimpleType: isSimpleType);
 
                 // Reformatting invalid Modelica produces unreliable output, and this overwrites the
                 // file in place. Leave a file we cannot parse exactly as the user left it — the style
@@ -161,7 +167,9 @@ public static class IncrementalFormatter
                         excludeClassDefinitions: false,
                         tokenStream: null,
                         classNamesToExclude: null,
-                        formatting: formatting);
+                        formatting: formatting,
+                        rootClassId: modelNode.Id,
+                        isSimpleType: isSimpleType);
                     visitor.Visit(modelTree);
                     modelNode.Definition.ModelicaCode = WithinClause.Strip(string.Join("\n", visitor.Code));
                 }

@@ -61,6 +61,46 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private readonly bool _initialSectionsLast;
 
     /// <summary>
+    /// Write the finer declaration order inside the component group — see
+    /// <see cref="FormattingOptions.DeclarationOrder"/>. Read only where
+    /// <see cref="_componentsBeforeClasses"/> is.
+    /// </summary>
+    private readonly bool _declarationOrder;
+
+    /// <summary>
+    /// Given the class being written and a declared type name, whether that type is a simple type
+    /// rather than a structured class — the one part of <see cref="DeclarationKind"/> that cannot be
+    /// read off the grammar. Null when the caller has no graph, which leaves only the predefined
+    /// types recognised.
+    ///
+    /// <para><b>The rule is given the same callback</b>, so the arrangement this writes and the one
+    /// <c>MLQT.Style.DeclarationOrder</c> asks for cannot come apart — which they would the moment
+    /// the two resolved a type differently, leaving a finding the formatter does not clear.</para>
+    /// </summary>
+    private readonly Func<string, string, bool>? _isSimpleType;
+
+    /// <summary>
+    /// The id of the class currently being written, innermost last. Kept because the type lookup is
+    /// scope-sensitive: a nested class has its own imports, so asking as its parent can resolve
+    /// <c>SI.Length</c> differently from the way the rule, which checks that nested class on its
+    /// own, resolves it.
+    /// </summary>
+    private readonly Stack<string> _classPath = new();
+
+    /// <summary>Class-definition nesting depth; the outermost class is 1.</summary>
+    private int _classDepth;
+
+    /// <summary>
+    /// The type lookup bound to the class currently being written, or null when the caller supplied
+    /// none. <see cref="DeclarationKinds"/> then recognises only the predefined types, which is the
+    /// same answer <c>MLQT.Style.DeclarationOrder</c> gives without a graph.
+    /// </summary>
+    private Func<string, bool>? TypeLookup()
+        => _isSimpleType is null || _classPath.Count == 0
+            ? null
+            : typeName => _isSimpleType(_classPath.Peek(), typeName);
+
+    /// <summary>
     /// Gets the rendered code lines.
     /// </summary>
     public List<string> Code => _code;
@@ -72,7 +112,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         BufferedTokenStream? tokenStream = null, 
         HashSet<string>? classNamesToExclude = null, 
         int maxLineLength = 100, 
-        FormattingOptions? formatting = null)
+        FormattingOptions? formatting = null,
+        string? rootClassId = null,
+        Func<string, string, bool>? isSimpleType = null)
     {
         _renderForCodeEditor = renderForCodeEditor;
         _showAnnotations = showAnnotations;
@@ -86,6 +128,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _importsFirst = layout.ImportsFirst;
         _componentsBeforeClasses = layout.ComponentsBeforeClasses;
         _initialSectionsLast = layout.InitialSectionsLast;
+        _declarationOrder = layout.DeclarationOrder;
+        _isSimpleType = isSimpleType;
+        if (!string.IsNullOrEmpty(rootClassId))
+            _classPath.Push(rootClassId);
     }
 
     #region Helper Methods
@@ -488,7 +534,25 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
         Visit(context.class_prefixes());
         Space();
-        Visit(context.class_specifier());
+
+        // The outermost class is the root the caller named; anything below it is a nested class,
+        // which resolves type names in its own scope. Only extended when there is a path to extend —
+        // with no root the lookup has nothing to key on and is not called at all.
+        _classDepth++;
+        var extended = _classDepth > 1 && _classPath.Count > 0
+            && GetClassNameFromDefinition(context) is { } name;
+        if (extended)
+            _classPath.Push(_classPath.Peek() + "." + GetClassNameFromDefinition(context));
+        try
+        {
+            Visit(context.class_specifier());
+        }
+        finally
+        {
+            if (extended)
+                _classPath.Pop();
+            _classDepth--;
+        }
         return null;
     }
 
@@ -630,6 +694,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         External
     }
 
+    /// <summary>
+    /// Which elements one <see cref="WriteComposition"/> pass writes. The five declaration kinds are
+    /// here rather than inside <see cref="Components"/> because writing them in order means writing
+    /// them in five passes — the renderer's way of ordering anything is to walk the section once per
+    /// group, which is what kept all declarations in one undifferentiated group until B252.
+    /// </summary>
     private enum Element
     {
         Any,
@@ -637,8 +707,41 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         Extends,
         Components,
         Classes,
-        ClassAndComponents
+        ClassAndComponents,
+        InputsOutputs,
+        Constants,
+        Parameters,
+        Variables,
+        ComponentInstances
     }
+
+    /// <summary>The declaration kind one <see cref="Element"/> pass writes, or null if it is not a
+    /// declaration pass.</summary>
+    private static DeclarationKind? KindWritten(Element element) => element switch
+    {
+        Element.InputsOutputs => DeclarationKind.InputOutput,
+        Element.Constants => DeclarationKind.Constant,
+        Element.Parameters => DeclarationKind.Parameter,
+        Element.Variables => DeclarationKind.Variable,
+        Element.ComponentInstances => DeclarationKind.Component,
+        _ => null
+    };
+
+    /// <summary>The passes that write the declaration group, in the order they are written.</summary>
+    private static readonly Element[] DeclarationPasses =
+    {
+        Element.InputsOutputs, Element.Constants, Element.Parameters,
+        Element.Variables, Element.ComponentInstances
+    };
+
+    /// <summary>
+    /// How the declaration group is written: as one pass in source order, or as one pass per kind.
+    /// One call site per section so the public and protected halves cannot be given different
+    /// conventions — which is how the two initial-section orderings came to need
+    /// <see cref="WriteInitialSections"/>.
+    /// </summary>
+    private IEnumerable<Element> DeclarationGroupPasses()
+        => _declarationOrder ? DeclarationPasses : new[] { Element.Components };
 
     /// <summary>
     /// Writes the <c>initial equation</c> and <c>initial algorithm</c> sections. Called either before
@@ -829,7 +932,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     //Public section
                     WriteComposition(context, CodeSection.Public, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        WriteComposition(context, CodeSection.Public, Element.Components);
+                        foreach (var pass in DeclarationGroupPasses())
+                            WriteComposition(context, CodeSection.Public, pass);
                         _writeFinalComments = true;
                         WriteComposition(context, CodeSection.Public, Element.Classes);
                     }
@@ -846,7 +950,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (_importsFirst) {
                     var alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, Element.Components, alreadyWrittenSectionMarker);
+                        foreach (var pass in DeclarationGroupPasses())
+                            alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, pass, alreadyWrittenSectionMarker);
                         _writeFinalComments = true;
                         WriteComposition(context, CodeSection.Protected, Element.Classes, alreadyWrittenSectionMarker);
                     }
@@ -1039,6 +1144,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     WriteElement(element);
                 }
                 else if ((_currentElement.Peek() == Element.Components || _currentElement.Peek() == Element.ClassAndComponents) && element.component_clause() != null)
+                {
+                    WriteCommentIfProceedsThisElement(context, i - 1);
+                    WriteElement(element);
+                }
+                else if (KindWritten(_currentElement.Peek()) is { } wanted
+                         && element.component_clause() is { } clause
+                         && DeclarationKinds.KindOf(clause, TypeLookup()) == wanted)
                 {
                     WriteCommentIfProceedsThisElement(context, i - 1);
                     WriteElement(element);

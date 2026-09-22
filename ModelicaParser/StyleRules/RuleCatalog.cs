@@ -133,6 +133,12 @@ public static class RuleCatalog
             // reach. The prerequisite chains — imports-first itself requires one-of-each-section — so
             // naming the nearer one states the real dependency without restating the far one.
             new RuleDefinition(RuleIds.ComponentsBeforeClasses, "Components before classes", "Ordering", RuleSeverity.Warning, "Component declarations must appear before nested class definitions within a section.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.ImportStatementsFirst),
+            // Requires ComponentsBeforeClasses, which is the boundary this extends from one to
+            // four. The renderer reads the finer order only inside the branch that option selects,
+            // so with it off nothing is reordered and the rule would report an arrangement the
+            // formatter cannot reach — the same reason its prerequisite names imports-first rather
+            // than one-of-each-section. The chain resolves transitively.
+            new RuleDefinition(RuleIds.DeclarationOrder, "Declarations in order", "Ordering", RuleSeverity.Warning, "Declarations must be written in the order inputs and outputs, constants, parameters, variables, components.", SeverityFollowsFormatter: true, RequiresRule: RuleIds.ComponentsBeforeClasses),
             new RuleDefinition(RuleIds.DontMixEquationAndAlgorithm, "Don't mix equation and algorithm", "Ordering", RuleSeverity.Warning, "A class must not mix equation and algorithm sections."),
             new RuleDefinition(RuleIds.DontMixConnections, "Don't mix connections and equations", "Ordering", RuleSeverity.Warning, "An equation section must not mix connect statements and equations."),
             new RuleDefinition(RuleIds.ClassDescription, "Class has description", "Documentation", RuleSeverity.Warning, "A class must have a description string."),
