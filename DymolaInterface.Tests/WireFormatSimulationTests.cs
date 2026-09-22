@@ -65,7 +65,7 @@ public class WireFormatSimulationTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.LinearizeModelAsync("M");
+        await h.Dymola.LinearizeModelAsync("M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("linearizeModel", h.Handler.LastRequest.Method);
         Assert.Equal(9, h.Handler.LastRequest.ParamCount);
         Assert.Equal("\"dslin\"", h.Handler.LastRequest.Param(8).GetString());
@@ -76,7 +76,7 @@ public class WireFormatSimulationTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.SimulateModelAsync("M", stopTime: 2.0);
+        await h.Dymola.SimulateModelAsync("M", stopTime: 2.0, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("simulateModel", h.Handler.LastRequest.Method);
         Assert.Equal(9, h.Handler.LastRequest.ParamCount);
         Assert.Equal(2.0, h.Handler.LastRequest.Param(2).GetDouble());
@@ -89,7 +89,7 @@ public class WireFormatSimulationTests
         using var h = new DymolaTestHarness();
         h.SetResultJson("true");
         await h.Dymola.SimulateExtendedModelAsync("M", 0.0, 1.0, 0, 0.0, "Dassl", 1e-4, 0.0,
-            "dsres", new[] { "a", "b" }, new[] { 1.0, 2.0 }, new[] { "a" }, true);
+            "dsres", new[] { "a", "b" }, new[] { 1.0, 2.0 }, new[] { "a" }, true, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("simulateExtendedModel", h.Handler.LastRequest.Method);
         Assert.Equal(13, h.Handler.LastRequest.ParamCount);
         Assert.Equal(2, h.Handler.LastRequest.Param(9).GetArrayLength());
@@ -106,7 +106,7 @@ public class WireFormatSimulationTests
             new[] { "a", "b" },
             new[] { new[] { 1.0, 2.0 }, new[] { 3.0, 4.0 } },
             new[] { "a" },
-            new[] { "r1", "r2" }, true);
+            new[] { "r1", "r2" }, true, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("simulateMultiExtendedModel", h.Handler.LastRequest.Method);
         // The 3rd argument block (index 10) is a 2x2 matrix of doubles.
         Assert.Equal(JsonValueKind.Array, h.Handler.LastRequest.Param(10).ValueKind);
@@ -123,7 +123,7 @@ public class WireFormatSimulationTests
             new[] { "p" },
             new[] { new[] { 1.0 } },
             new[] { "r" },
-            new[] { "f1" }, true);
+            new[] { "f1" }, true, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("simulateMultiResultsModel", h.Handler.LastRequest.Method);
     }
 }

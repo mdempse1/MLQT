@@ -141,13 +141,14 @@ await dymola.SetVariableAsync("myVariable", 42.0);
 ### Process Management
 - `StartDymolaProcessAsync()` - Start Dymola process
 - `StopDymolaProcessAsync()` - Stop Dymola process
-- `IsOfflineMode()` - Check if in offline mode
+- `IsOfflineMode()` - Check if in offline mode. Decided once, in the constructor, and not re-probed later
 - `SetOfflineMode(bool)` - Enable/disable offline mode
+- Constructor `connectionWindow` - How long the constructor keeps asking a Dymola that accepts the connection but does not answer - busy with a command, since its JSON-RPC server is single-threaded - before starting offline (default `DefaultConnectionWindow`, 30 seconds; zero for a single probe). A refused connection is final at once, so constructing an interface for a Dymola that is not running yet does not wait
 - `ProcessId` - OS process id of the Dymola this interface started; `null` when it attached to one started elsewhere, after `Detach()`, or once that process has exited
 - `OwnsProcess` - True while this interface owns a still-running Dymola that it started itself
 - `Detach()` - Give up ownership without stopping Dymola, so disposing the interface leaves it running
-- `CommandTimeout` - Default limit for one command before the call gives up (default `DefaultCommandTimeout`, five minutes; at most `MaxCommandTimeout`, or `Timeout.InfiniteTimeSpan` for no limit), read afresh for every command
-- Per-call `timeout` - `SimulateModelAsync`, `TranslateModelAsync`, `TranslateModelFMUAsync`, `CheckModelAsync`, `LinearizeModelAsync`, `RunScriptAsync` and `ExecuteCommandAsync` take an optional `TimeSpan?` that replaces `CommandTimeout` for that call alone. Prefer it wherever one interface is shared: the property is a plain field, so two callers raising and restoring it race
+- `CommandTimeout` - Default limit for one command before the call gives up (default `DefaultCommandTimeout`, five minutes; at most `MaxCommandTimeout`, or `Timeout.InfiniteTimeSpan` for no limit), read afresh for every command. Dymola carries on with a command whose call gave up, and answers nothing else until it finishes, so commands sent in the meantime fail too
+- Per-call `timeout` and `cancellationToken` - the wrappers that can run long (`SimulateModelAsync`, `SimulateExtendedModelAsync`, `SimulateMultiExtendedModelAsync`, `SimulateMultiResultsModelAsync`, `LinearizeModelAsync`, `TranslateModelAsync`, `TranslateModelExportAsync`, `TranslateModelFMUAsync`, `CheckModelAsync`, `CheckConversionAsync`, `ImportFMUAsync`, `RunScriptAsync` and `ExecuteCommandAsync`) take an optional `TimeSpan?` that replaces `CommandTimeout` for that call alone, and a `CancellationToken`. Prefer the timeout wherever one interface is shared: the property is a plain field, so two callers raising and restoring it race. A cancelled call returns like any failed command, whether it was still queued or already sent
 
 ### Model Operations
 - `CheckModelAsync(problem, simulate, constraint)` - Check a model

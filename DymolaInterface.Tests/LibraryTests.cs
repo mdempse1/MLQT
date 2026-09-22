@@ -50,7 +50,7 @@ public class LibraryTests
         var modelName = "Modelica.Mechanics.Rotational.Examples.First";
 
         // Act
-        var result = await _fixture.Dymola.TranslateModelAsync(modelName);
+        var result = await _fixture.Dymola.TranslateModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Translation should succeed");
@@ -64,7 +64,7 @@ public class LibraryTests
         var modelName = "Modelica.Electrical.Analog.Examples.ChuaCircuit";
 
         // Act
-        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false);
+        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Model check should succeed");

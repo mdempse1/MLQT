@@ -3,21 +3,34 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Text;
 using DymolaInterface.Tests.Fakes;
 
 namespace DymolaInterface.Tests;
 
 /// <summary>
-/// Tests for <see cref="DymolaInterface.CommandTimeout"/> and the per-call timeout: the limits
-/// that let one long simulation run for hours while ordinary commands keep the five-minute
-/// default, and that keep the connection probe out of that budget.
+/// Tests for <see cref="DymolaInterface.CommandTimeout"/>, the per-call timeout and cancellation,
+/// and the connection window: the limits that let one long simulation run for hours while
+/// ordinary commands keep the five-minute default, and that keep a busy Dymola from being
+/// mistaken for an absent one.
 /// </summary>
 public class CommandTimeoutTests
 {
+    private static CancellationToken Test => TestContext.Current.CancellationToken;
+
     private static HttpClient ClientOf(DymolaInterface dymola)
         => (HttpClient)typeof(DymolaInterface)
             .GetField("_httpClient", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(dymola)!;
+
+    private static int FreePort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
 
     [Fact]
     public void Constructor_BuildsAClientWithNoOverallTimeout()
@@ -66,7 +79,7 @@ public class CommandTimeoutTests
         h.Dymola.CommandTimeout = DymolaInterface.MaxCommandTimeout;
 
         Assert.Equal(DymolaInterface.MaxCommandTimeout, h.Dymola.CommandTimeout);
-        Assert.True(await h.Dymola.ExecuteCommandAsync("command()"));
+        Assert.True(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: Test));
     }
 
     [Fact]
@@ -78,7 +91,7 @@ public class CommandTimeoutTests
         h.Dymola.CommandTimeout = Timeout.InfiniteTimeSpan;
 
         Assert.Equal(Timeout.InfiniteTimeSpan, h.Dymola.CommandTimeout);
-        Assert.True(await h.Dymola.ExecuteCommandAsync("command()"));
+        Assert.True(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: Test));
     }
 
     [Fact]
@@ -89,7 +102,7 @@ public class CommandTimeoutTests
         h.Dymola.CommandTimeout = TimeSpan.FromMilliseconds(200);
 
         var elapsed = Stopwatch.StartNew();
-        var ok = await h.Dymola.ExecuteCommandAsync("slowCommand()");
+        var ok = await h.Dymola.ExecuteCommandAsync("slowCommand()", cancellationToken: Test);
         elapsed.Stop();
 
         Assert.False(ok);
@@ -104,7 +117,7 @@ public class CommandTimeoutTests
         h.Handler.ResponseDelay = TimeSpan.FromMilliseconds(100);
         h.Dymola.CommandTimeout = TimeSpan.FromSeconds(10);
 
-        Assert.True(await h.Dymola.ExecuteCommandAsync("quickCommand()"));
+        Assert.True(await h.Dymola.ExecuteCommandAsync("quickCommand()", cancellationToken: Test));
     }
 
     /// <summary>
@@ -121,7 +134,7 @@ public class CommandTimeoutTests
         h.Dymola.CommandTimeout = TimeSpan.FromSeconds(30);
 
         var elapsed = Stopwatch.StartNew();
-        var ok = await h.Dymola.ExecuteCommandAsync("longCommand()");
+        var ok = await h.Dymola.ExecuteCommandAsync("longCommand()", cancellationToken: Test);
         elapsed.Stop();
 
         Assert.True(ok, $"gave up after {elapsed.Elapsed}");
@@ -136,9 +149,9 @@ public class CommandTimeoutTests
         h.Handler.ResponseDelay = TimeSpan.FromMilliseconds(500);
 
         h.Dymola.CommandTimeout = TimeSpan.FromMilliseconds(100);
-        var first = await h.Dymola.ExecuteCommandAsync("first()");
+        var first = await h.Dymola.ExecuteCommandAsync("first()", cancellationToken: Test);
         h.Dymola.CommandTimeout = TimeSpan.FromSeconds(10);
-        var second = await h.Dymola.ExecuteCommandAsync("second()");
+        var second = await h.Dymola.ExecuteCommandAsync("second()", cancellationToken: Test);
 
         Assert.False(first);
         Assert.True(second);
@@ -153,7 +166,7 @@ public class CommandTimeoutTests
         h.Dymola.CommandTimeout = TimeSpan.FromSeconds(30);
 
         var elapsed = Stopwatch.StartNew();
-        var ok = await h.Dymola.ExecuteCommandAsync("slowCommand()", TimeSpan.FromMilliseconds(200));
+        var ok = await h.Dymola.ExecuteCommandAsync("slowCommand()", TimeSpan.FromMilliseconds(200), Test);
         elapsed.Stop();
 
         Assert.False(ok);
@@ -168,7 +181,7 @@ public class CommandTimeoutTests
         h.Handler.ResponseDelay = TimeSpan.FromMilliseconds(500);
         h.Dymola.CommandTimeout = TimeSpan.FromMilliseconds(100);
 
-        Assert.True(await h.Dymola.ExecuteCommandAsync("longCommand()", TimeSpan.FromSeconds(10)));
+        Assert.True(await h.Dymola.ExecuteCommandAsync("longCommand()", TimeSpan.FromSeconds(10), Test));
     }
 
     [Fact]
@@ -177,7 +190,7 @@ public class CommandTimeoutTests
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
 
-        await h.Dymola.ExecuteCommandAsync("command()", TimeSpan.FromSeconds(42));
+        await h.Dymola.ExecuteCommandAsync("command()", TimeSpan.FromSeconds(42), Test);
 
         Assert.Equal(DymolaInterface.DefaultCommandTimeout, h.Dymola.CommandTimeout);
     }
@@ -188,9 +201,87 @@ public class CommandTimeoutTests
         using var h = new DymolaTestHarness();
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => h.Dymola.ExecuteCommandAsync("command()", TimeSpan.FromDays(60)));
+            () => h.Dymola.ExecuteCommandAsync("command()", TimeSpan.FromDays(60), Test));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => h.Dymola.ExecuteCommandAsync("command()", TimeSpan.Zero));
+            () => h.Dymola.ExecuteCommandAsync("command()", TimeSpan.Zero, Test));
+    }
+
+    /// <summary>
+    /// The argument check does not depend on whether a Dymola happens to be connected: an
+    /// invalid timeout is the caller's mistake either way.
+    /// </summary>
+    [Fact]
+    public async Task PerCallTimeout_OutOfRange_IsRejectedEvenWhileOffline()
+    {
+        using var h = new DymolaTestHarness();
+        h.Dymola.SetOfflineMode(true);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => h.Dymola.ExecuteCommandAsync("command()", TimeSpan.FromDays(60), Test));
+    }
+
+    [Fact]
+    public async Task PerCallTimeout_ReachesTheMultiRunSimulation()
+    {
+        using var h = new DymolaTestHarness();
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+
+        var elapsed = Stopwatch.StartNew();
+        var result = await h.Dymola.SimulateMultiResultsModelAsync("M", 0.0, 1.0, 0, 0.0, "Dassl", 1e-4, 0.0,
+            "dsres", new[] { "p" }, new[] { new[] { 1.0 } }, new[] { "r" }, new[] { "f1" }, true,
+            TimeSpan.FromMilliseconds(200), Test);
+        elapsed.Stop();
+
+        Assert.Null(result);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public async Task Command_CancelledWhileInFlight_ReturnsFalsePromptly()
+    {
+        using var h = new DymolaTestHarness();
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await h.Dymola.ExecuteCommandAsync("slowCommand()", cancellationToken: cancel.Token);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    /// <summary>
+    /// Cancelled while still queued behind another command, the call returns false like any
+    /// other abandoned command - and is never sent at all.
+    /// </summary>
+    [Fact]
+    public async Task Command_CancelledWhileQueuedBehindAnother_ReturnsFalseRatherThanThrowing()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(2);
+
+        var first = h.Dymola.ExecuteCommandAsync("first()", cancellationToken: Test);
+        await Task.Delay(200, Test);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var queued = await h.Dymola.ExecuteCommandAsync("queued()", cancellationToken: cancel.Token);
+
+        Assert.False(queued);
+        Assert.True(await first);
+        Assert.DoesNotContain(h.Handler.Requests, r => r.Method == "queued()");
+    }
+
+    [Fact]
+    public async Task Command_WithAnAlreadyCancelledToken_ReturnsFalse()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+
+        Assert.False(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: cancel.Token));
     }
 
     /// <summary>
@@ -204,39 +295,100 @@ public class CommandTimeoutTests
         h.SetResultBool(true);
         h.Handler.ResponseIdOverride = 9999;
 
-        Assert.False(await h.Dymola.ExecuteCommandAsync("command()"));
+        Assert.False(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: Test));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-5000)]
+    public void Constructor_NegativeConnectionWindow_IsRejected(int milliseconds)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DymolaInterface(string.Empty, 1, "127.0.0.1", TimeSpan.FromMilliseconds(milliseconds)));
     }
 
     /// <summary>
-    /// The connection probe must not inherit the command budget: StartDymolaProcessAsync polls
-    /// it up to thirty times while holding the command lock, so a long - or infinite - command
-    /// budget would wedge the interface. Against a server that accepts the connection and never
-    /// answers, construction has to give up in seconds.
+    /// A refused connection means nothing is listening, so there is nothing to wait for. On
+    /// Windows it takes about two seconds to fail - as long as the answer budget - which is
+    /// why the probe makes the TCP connect on its own first: over HTTP alone it would read as
+    /// a busy Dymola, and construction would sit out the whole window before every start.
     /// </summary>
     [Fact]
-    public void Constructor_AgainstAServerThatAcceptsAndNeverAnswers_GivesUpQuickly()
+    public void Constructor_WhenNothingIsListening_DoesNotWaitOutTheWindow()
     {
-        using var server = new SilentTcpServer();
+        var port = FreePort();
 
         var elapsed = Stopwatch.StartNew();
-        using var dymola = new DymolaInterface(dymolaPath: string.Empty, portNumber: server.Port, hostname: "127.0.0.1");
+        using var dymola = new DymolaInterface(string.Empty, port, "127.0.0.1", TimeSpan.FromSeconds(30));
         elapsed.Stop();
 
         Assert.True(dymola.IsOfflineMode());
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(10), $"construction took {elapsed.Elapsed}");
+    }
+
+    /// <summary>
+    /// A busy Dymola answers nothing until its command finishes. Construction keeps asking until
+    /// the window closes rather than giving up at the first silent probe - and gives up then,
+    /// bounded, whatever CommandTimeout is.
+    /// </summary>
+    [Fact]
+    public void Constructor_AgainstADymolaThatNeverAnswers_GivesUpWhenTheWindowCloses()
+    {
+        using var server = new BusyServer(TimeSpan.MaxValue);
+
+        var elapsed = Stopwatch.StartNew();
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.FromSeconds(3));
+        elapsed.Stop();
+
+        Assert.True(dymola.IsOfflineMode());
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(3), $"gave up after only {elapsed.Elapsed}");
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"the probe took {elapsed.Elapsed}");
     }
 
-    /// <summary>Accepts connections and never sends a byte back.</summary>
-    private sealed class SilentTcpServer : IDisposable
+    [Fact]
+    public void Constructor_AgainstADymolaBusyForLessThanTheWindow_ComesUpOnline()
+    {
+        using var server = new BusyServer(TimeSpan.FromSeconds(3));
+
+        var elapsed = Stopwatch.StartNew();
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.FromSeconds(20));
+        elapsed.Stop();
+
+        Assert.False(dymola.IsOfflineMode(), $"still offline after {elapsed.Elapsed}");
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(2), $"answered too early, after {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public void Constructor_WithAZeroWindow_ProbesOnce()
+    {
+        using var server = new BusyServer(TimeSpan.MaxValue);
+
+        var elapsed = Stopwatch.StartNew();
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+        elapsed.Stop();
+
+        Assert.True(dymola.IsOfflineMode());
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(4), $"the probe took {elapsed.Elapsed}");
+    }
+
+    /// <summary>
+    /// Stands in for Dymola's single-threaded JSON-RPC server: while it is busy, every
+    /// connection is accepted - the listening socket completes the handshake - and never
+    /// answered; after that, each request gets a JSON-RPC success.
+    /// </summary>
+    private sealed class BusyServer : IDisposable
     {
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stopping = new();
-        private readonly List<TcpClient> _accepted = new();
+        private readonly List<TcpClient> _held = new();
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private readonly TimeSpan _busyFor;
 
         public int Port { get; }
 
-        public SilentTcpServer()
+        public BusyServer(TimeSpan busyFor)
         {
+            _busyFor = busyFor;
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -247,15 +399,47 @@ public class CommandTimeoutTests
         {
             while (!_stopping.IsCancellationRequested)
             {
+                TcpClient client;
                 try
                 {
-                    var client = await _listener.AcceptTcpClientAsync(_stopping.Token);
-                    lock (_accepted)
-                        _accepted.Add(client);
+                    client = await _listener.AcceptTcpClientAsync(_stopping.Token);
                 }
                 catch
                 {
                     return;
+                }
+
+                if (_clock.Elapsed < _busyFor)
+                {
+                    lock (_held)
+                        _held.Add(client);
+                }
+                else
+                {
+                    _ = Task.Run(() => AnswerAsync(client, _stopping.Token));
+                }
+            }
+        }
+
+        private static async Task AnswerAsync(TcpClient client, CancellationToken stopping)
+        {
+            using (client)
+            {
+                try
+                {
+                    var stream = client.GetStream();
+                    var read = await stream.ReadAsync(new byte[8192], stopping);
+                    if (read == 0)
+                        return;
+
+                    const string body = "{\"result\":true,\"error\":null,\"id\":0}";
+                    var response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                        + $"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stopping);
+                }
+                catch
+                {
+                    // A probe that hung up first is nothing the test needs to see.
                 }
             }
         }
@@ -264,8 +448,8 @@ public class CommandTimeoutTests
         {
             _stopping.Cancel();
             _listener.Stop();
-            lock (_accepted)
-                foreach (var client in _accepted)
+            lock (_held)
+                foreach (var client in _held)
                     client.Dispose();
             _stopping.Dispose();
         }
