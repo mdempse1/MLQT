@@ -1,4 +1,5 @@
 using ModelicaParser;
+using ModelicaParser.Helpers;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -71,20 +72,7 @@ public static class ReferenceResolver
     }
 
     /// <summary>The Modelica built-in types and operators, which are never library classes.</summary>
-    public static bool IsBuiltInType(string name)
-        => BuiltInTypes.Contains(name.Split('.')[0]);
-
-    private static readonly HashSet<string> BuiltInTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Real", "Integer", "Boolean", "String",
-        "StateSelect", "AssertionLevel",
-        "time", "der", "pre", "edge", "change", "reinit",
-        "sample", "initial", "terminal", "noEvent",
-        "smooth", "terminate", "abs", "sign", "sqrt",
-        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-        "sinh", "cosh", "tanh", "exp", "log", "log10",
-        "min", "max", "sum", "product"
-    };
+    public static bool IsBuiltInType(string name) => ModelicaLanguage.IsBuiltInName(name);
 
     /// <summary>The reference text of a name context (matches ModelAnalyzer).</summary>
     public static string GetQualifiedName(modelicaParser.NameContext context) => context.GetText().Trim();

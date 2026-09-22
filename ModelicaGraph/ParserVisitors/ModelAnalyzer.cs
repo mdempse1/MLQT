@@ -30,6 +30,12 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     // recorded at depth 1 — see ResolveAndAddDependency.
     private int _classDepth;
 
+    // Depth of annotation nesting, and of the code-bearing annotation arguments inside it. An
+    // annotation is metadata, not code, so its content is not collected as references — see
+    // ResolveAndAddDependency and CodeBearingAnnotationKeys.
+    private int _annotationDepth;
+    private int _annotationCodeDepth;
+
     // --- External resource state (from ExternalResourceExtractor) ---
     private static readonly Dictionary<string, ResourceReferenceType> ExternalAnnotationKeys = new(StringComparer.Ordinal)
     {
@@ -390,7 +396,59 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
             CheckForLoadSelector(context.class_modification());
         }
 
-        return base.VisitAnnotation(context);
+        // Everything below here is annotation content, and dependency recording is off for it (see
+        // ResolveAndAddDependency). The subtree is still walked: external resources, modelica:// URIs
+        // and loadSelector parameters all live inside annotations and are what this visitor is for.
+        _annotationDepth++;
+        try
+        {
+            return base.VisitAnnotation(context);
+        }
+        finally
+        {
+            _annotationDepth--;
+        }
+    }
+
+    /// <summary>
+    /// The annotation arguments whose contents name classes the translator really calls, rather than
+    /// describing how to draw something. Inside one of these, dependency recording is on again.
+    ///
+    /// <para><c>derivative</c> and <c>inverse</c> name functions (§12.7, §12.8) and <c>choices</c>
+    /// names the classes a redeclaration may be given (§7.3.4). Without them the blanket exclusion
+    /// would drop real edges and report every <c>_der</c> function as an unused class.</para>
+    /// </summary>
+    private static readonly HashSet<string> CodeBearingAnnotationKeys = new(StringComparer.Ordinal)
+    {
+        "derivative", "inverse", "choices", "choice"
+    };
+
+    /// <summary>
+    /// An annotation argument: <c>name (modification)? string_comment</c>. The name is the key —
+    /// <c>Icon</c>, <c>Dialog</c>, <c>Placement</c> — and is never a class reference, so it is not
+    /// visited as one. Only the modification is, and only under a code-bearing key does it record.
+    /// </summary>
+    public override object? VisitElement_modification([NotNull] modelicaParser.Element_modificationContext context)
+    {
+        if (_annotationDepth == 0)
+            return base.VisitElement_modification(context);
+
+        var key = context.name()?.GetText();
+        var isCodeBearing = key != null && CodeBearingAnnotationKeys.Contains(key);
+        if (isCodeBearing)
+            _annotationCodeDepth++;
+        try
+        {
+            // The key itself is skipped; its value is not.
+            if (context.modification() is { } modification)
+                Visit(modification);
+            return null;
+        }
+        finally
+        {
+            if (isCodeBearing)
+                _annotationCodeDepth--;
+        }
     }
 
     #endregion
@@ -403,6 +461,16 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         // inside nested class definitions belong to those classes' own ModelNodes, which are analysed
         // separately — attributing them here would pollute the enclosing node's dependency edges.
         if (_classDepth > 1)
+            return;
+
+        // An annotation describes the class; it does not use anything. Its contents are annotation
+        // grammar — Line, Rectangle, Dialog, Placement — and name resolution cannot tell that from a
+        // class, so a library holding a class of the same name collected an edge from every model
+        // with an icon. The uses(...) annotation is the sharpest case of both directions: it names
+        // the libraries, so counting it as a reference made every declared library look used and
+        // every graphics keyword look like a library (B246). CodeBearingAnnotationKeys is the
+        // exception — derivative, inverse and choices do name classes.
+        if (_annotationDepth > 0 && _annotationCodeDepth == 0)
             return;
 
         var resolvedId = ReferenceResolver.Resolve(_graph, _modelId, _imports, reference);

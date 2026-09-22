@@ -16,10 +16,14 @@ namespace ModelicaGraph.Analysis;
 /// </summary>
 public static class TypeResolver
 {
-    private static readonly HashSet<string> PredefinedTypes = new(StringComparer.Ordinal)
-    {
-        "Real", "Integer", "Boolean", "String", "Complex", "Clock"
-    };
+    /// <summary>
+    /// <see cref="ModelicaLanguage.PredefinedTypes"/> plus <c>Complex</c>, which is not a language
+    /// type at all: it is an operator record in MSL, written like a predefined type everywhere and
+    /// resolvable as a class only when MSL is loaded. The addition is the whole difference between
+    /// this list and the language's own, and is stated here rather than by keeping a second copy.
+    /// </summary>
+    private static readonly HashSet<string> PredefinedTypes =
+        new(ModelicaLanguage.PredefinedTypes.Append("Complex"), StringComparer.Ordinal);
 
     /// <summary>True for the Modelica built-in/predefined types, which are never library classes.</summary>
     public static bool IsPredefined(string? typeName)

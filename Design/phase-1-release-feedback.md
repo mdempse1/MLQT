@@ -1244,18 +1244,39 @@ already have.
 
 ### WP12 — Rules, second pass
 
-**B246, B245, B252** · 3 items · S–M
+**B246 ✅, B245, B252** · 3 items, 1 done · S–M
 
 Three rule items found by pointing the checker at a real library and then working in it, which is the
 only way any of them would have been found. They are separate from WP3 because that package shipped,
 and separate from each other except in kind — though **two of the three change the write path**, so
 they share WP3's gate and should be taken together rather than a month apart.
 
-- **B246 first, and it is not small in effect.** `MLQT.Structure.UsesUndeclared` reports Modelica's
-  own built-ins — `Connections`, `ExternalObject`, `rooted` — and the graphical primitives inside
-  annotations, which is why **every** library reports a missing `uses(Line)`. A rule that fires on
-  every library is a rule nobody can leave on, so this is not cosmetic: it is the difference between
+- **B246 ✅ — done 2026-09-22, and it was not small in effect.** `MLQT.Structure.UsesUndeclared`
+  reported Modelica's own built-ins — `Connections`, `ExternalObject`, `rooted` — and the graphical
+  primitives inside annotations, which is why **every** library reported a missing `uses(Line)`. A
+  rule that fires on every library is a rule nobody can leave on, so this was the difference between
   the rule being usable and not.
+
+  **Neither gap was in the analyzer.** Both are in how a reference is collected, which is why
+  reading the rule could not find them: `ReferenceResolver` binds a simple name to any node it
+  happens to find, and nothing told it that annotation content is not code. The fix is in two
+  places — `ModelicaLanguage`, the language's own names written down once and checked *before* the
+  node lookup, and an annotation gate in `ModelAnalyzer` that keeps walking the subtree (external
+  resources and `loadSelector` parameters live there) while recording nothing from it, bar
+  `derivative`, `inverse` and `choices`, which do name classes.
+
+  **Two things fell out that this package did not know about**, and both argue for taking the other
+  two items with the same suspicion of what the *collection* does rather than what the rule says:
+  the `uses(...)` annotation was itself counted as a reference to every library it declares, so
+  `MLQT.Structure.UsesDeclaredUnused` **could never fire on a root package** — dead, not quiet; and
+  the built-in list compared case-insensitively though Modelica is case-sensitive, so a component
+  typed `Sum`, `Max`, `Abs`, `Sign`, `Sqrt`, `Sin`, `Cos`, `Exp` or `Log` — every one a real
+  `Modelica.Blocks.Math` class — was silently dropped from the graph.
+
+  The row's own instruction to *check what the sibling rules do with the same names* found three
+  copies of the predefined-type list, each different. They now derive from one, with
+  `TypeResolver`'s extra `Complex` — an MSL operator record, not a language type — stated as the
+  difference it is rather than kept as a second list.
 - **B245** is a change to the **write** path — which children the saver is willing to store as
   separate files — so it carries WP3's gate with it: a full-library save compared before and after,
   and the parity number. Four pairs in MSL are waiting on it, `JFET`/`Jfet` among them.
@@ -1412,9 +1433,9 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
           ├──▶ WP11  Code Review, second pass — B250 ▸ B247 ▸ B248/B249 ▸ B233
           │              B253 ✅ B254 ✅ taken early, both reported mid-flight
           │              everything reported from using what WP2 built
-          ├──▶ WP12  rules, second pass — B246 first (it fires on every library),
-          │              then B245 and B252 together: both change the write path
-          │              and share WP3's gate
+          ├──▶ WP12  rules, second pass — B246 ✅ done 2026-09-22 (it fired on every
+          │              library); B245 and B252 remain, together: both change the
+          │              write path and share WP3's gate
           └──▶ WP4   perf; B184 after WP1 so the graph is trusted first;
                        B235 from WP2, measured already — take it with B174
                        └──▶ WP7 ✅ B188 ▸ B191 — complete 2026-09-21; B191 confirmed in
