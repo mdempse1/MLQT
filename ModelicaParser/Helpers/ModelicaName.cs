@@ -39,6 +39,45 @@ public static class ModelicaName
     }
 
     /// <summary>
+    /// True when <paramref name="id"/> is <paramref name="root"/> itself or a class nested inside
+    /// it. A namesake that merely starts with the same letters is not.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The separator is the whole of it (B274).</b> This question was written out by hand
+    /// fourteen times across six files, always as
+    /// <c>id == root || id.StartsWith(root + ".", StringComparison.Ordinal)</c> — and four of those
+    /// copies decide what an MCP tool <b>moves or deletes from a user's repository</b>. Mutation
+    /// testing emptied the <c>"."</c> in each of them with no test objecting, which makes
+    /// <c>Suspensions</c> a prefix of <c>SuspensionsExtra</c> and sweeps an unrelated library into
+    /// the operation. A Modelica name is dot-separated: <c>A.B</c> is inside <c>A</c> and <c>AB</c>
+    /// is not, and the only thing between those two readings is a one-character string that reads
+    /// like punctuation.</para>
+    /// </remarks>
+    public static bool IsInSubtree(string id, string root) =>
+        string.Equals(id, root, StringComparison.Ordinal) || IsStrictlyInside(id, root);
+
+    /// <summary>
+    /// True when <paramref name="id"/> is nested inside <paramref name="root"/> — the subtree
+    /// without its own root.
+    /// </summary>
+    public static bool IsStrictlyInside(string id, string root) =>
+        id.Length > root.Length
+        && id[root.Length] == '.'
+        && id.StartsWith(root, StringComparison.Ordinal);
+
+    /// <summary>
+    /// <paramref name="id"/> with its <paramref name="oldRoot"/> prefix replaced by
+    /// <paramref name="newRoot"/>, or null when it is not in that subtree at all.
+    /// </summary>
+    /// <remarks>
+    /// Paired with <see cref="IsInSubtree"/> deliberately: every caller that re-roots an id first
+    /// asks whether it should, and keeping the two together means the substring arithmetic cannot
+    /// be applied to a name the test would have rejected.
+    /// </remarks>
+    public static string? ReRoot(string id, string oldRoot, string newRoot) =>
+        IsInSubtree(id, oldRoot) ? newRoot + id[oldRoot.Length..] : null;
+
+    /// <summary>
     /// The library a class belongs to — the first segment, which is the top-level package Modelica
     /// resolves everything else against.
     /// </summary>

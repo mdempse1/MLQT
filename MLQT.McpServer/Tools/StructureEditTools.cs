@@ -191,13 +191,9 @@ public sealed class StructureEditTools
         string newClassCode;
         if (comp.SoleInClause)
         {
-            // Remove the whole declaration line: from the start of its line through the terminating ';'.
-            var lineStart = code.LastIndexOf('\n', comp.ClauseStart) + 1;
-            var semicolon = code.IndexOf(';', comp.ClauseStop);
-            if (semicolon < 0)
+            if (RemoveWholeLine(code, comp.ClauseStart, comp.ClauseStop) is not { } withoutLine)
                 return new ToolError("Could not find the end of the component declaration.");
-            var removeEnd = semicolon + 1 < code.Length && code[semicolon + 1] == '\n' ? semicolon + 1 : semicolon;
-            newClassCode = code[..lineStart] + code[(removeEnd + 1)..];
+            newClassCode = withoutLine;
         }
         else
         {
@@ -469,7 +465,9 @@ public sealed class StructureEditTools
         if (conn is null)
             return new ToolError($"'{classId}' has no connection between '{a}' and '{b}'.");
 
-        var newClassCode = RemoveWholeLine(ctx.ClassCode, conn.Start, conn.Stop);
+        if (RemoveWholeLine(ctx.ClassCode, conn.Start, conn.Stop) is not { } newClassCode)
+            return new ToolError("Could not find the end of the connect statement.");
+
         return ToResult(classId, null, await ClassBodyEditor.ApplyAsync(
             _libraries, _resources, _session, ctx, newClassCode, preview, $"remove connection from '{classId}'"));
     }
@@ -582,13 +580,32 @@ public sealed class StructureEditTools
         return code[..ws] + prefix + block + "\n" + endIndent + code[bodyEnd..];
     }
 
-    // Remove the whole line spanning [start, stop] plus its terminating ';' and trailing newline.
-    private static string RemoveWholeLine(string code, int start, int stop)
+    /// <summary>
+    /// Removes the whole line spanning <paramref name="start"/>..<paramref name="stop"/>, including
+    /// its terminating <c>;</c> and the newline after it, and returns null when the statement has no
+    /// terminating semicolon.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The one place a line is deleted from a class, for both callers.</b> Removing a
+    /// component that is alone on its line used to compute the same three offsets for itself, seven
+    /// lines away from this - so the arithmetic that decides which characters of a user's file
+    /// disappear existed twice in one file, and a fix to either was a fix to one of them (B274).
+    /// Its extra behaviour is kept rather than lost: it reported an error when there was no
+    /// semicolon where this fell back to <c>stop</c>, so this now answers null and lets each caller
+    /// say what that means.</para>
+    ///
+    /// <para>The contract the tests hold it to is the whole of it: <b>what is left is the original
+    /// lines minus exactly one</b>. That is what a wrong offset here breaks - by swallowing the line
+    /// above, by leaving a blank line behind, or by eating the newline and merging two lines - and
+    /// none of those change whether the removed text is still present, which is all the tests before
+    /// them asked.</para>
+    /// </remarks>
+    private static string? RemoveWholeLine(string code, int start, int stop)
     {
         var lineStart = code.LastIndexOf('\n', start) + 1;
         var semicolon = code.IndexOf(';', stop);
         if (semicolon < 0)
-            semicolon = stop;
+            return null;
         var removeEnd = semicolon + 1 < code.Length && code[semicolon + 1] == '\n' ? semicolon + 1 : semicolon;
         return code[..lineStart] + code[(removeEnd + 1)..];
     }

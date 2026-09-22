@@ -411,8 +411,7 @@ public sealed class EditTools
         var oldLeaf = node.Name;
         if (string.Equals(newParentId, node.ParentModelName, StringComparison.Ordinal))
             return new ToolError($"'{classId}' is already a child of '{newParentId}'.");
-        if (string.Equals(newParentId, classId, StringComparison.Ordinal) ||
-            newParentId.StartsWith(classId + ".", StringComparison.Ordinal))
+        if (ModelicaName.IsInSubtree(newParentId, classId))
             return new ToolError("A class cannot be moved into itself or one of its own descendants.");
 
         var newId = $"{newParentId}.{oldLeaf}";
@@ -433,7 +432,7 @@ public sealed class EditTools
 
         // Old -> new id map for the class and all its descendants (their ids all change with the move).
         var descendants = _libraries.GetAllModels().Select(m => m.Id)
-            .Where(id => id == classId || id.StartsWith(classId + ".", StringComparison.Ordinal))
+            .Where(id => ModelicaName.IsInSubtree(id, classId))
             .ToList();
         var targetSet = new HashSet<string>(descendants, StringComparer.Ordinal);
         string MapId(string oldId) => newId + oldId[classId.Length..];
@@ -736,9 +735,8 @@ public sealed class EditTools
         if (!m.Success)
             return text;
         var name = m.Groups[1].Value;
-        if (name != oldPrefix && !name.StartsWith(oldPrefix + ".", StringComparison.Ordinal))
+        if (ModelicaName.ReRoot(name, oldPrefix, newPrefix) is not { } replacement)
             return text;
-        var replacement = newPrefix + name[oldPrefix.Length..];
         var g = m.Groups[1];
         return text[..g.Index] + replacement + text[(g.Index + name.Length)..];
     }
@@ -814,7 +812,7 @@ public sealed class EditTools
     // The class and every descendant (its whole subtree).
     private List<string> Descendants(string classId) => _libraries.GetAllModels()
         .Select(m => m.Id)
-        .Where(id => id == classId || id.StartsWith(classId + ".", StringComparison.Ordinal))
+        .Where(id => ModelicaName.IsInSubtree(id, classId))
         .ToList();
 
     // Distinct source files that hold the subtree's models.

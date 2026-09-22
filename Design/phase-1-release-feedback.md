@@ -999,7 +999,15 @@ complete because the measurement agreed.
 
 **B267 ✅, B228 ✅, B229 ✅, B227 ✅** · opened by WP8's audit, and held back from it on purpose · plus
 **B234 ✅** and **B237 ✅** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
-out of order because of that, four weeks before the date it would have fired on
+out of order because of that, four weeks before the date it would have fired on · **and B274, B275**,
+which the re-run campaign opened once B267 had made its numbers mean what they say
+
+**The package reopened on 2026-09-22 rather than closing.** Everything above shipped, the campaign
+was re-run to see what was left, and it named two groups that belong here rather than anywhere
+else: they are the same kind of work, found by the same tool, and the alternative was a package of
+two items or a pair of orphans. B274 first — it is the one with no reason behind it, and it sits on
+code that deletes lines from a user's files. B275 second, because half of it genuinely cannot be
+tested without a server and the work is deciding which half.
 
 WP8 asked one question of the 5,990 surviving mutants — *which of these sit on a line this
 repository has written a comment to defend?* — and then a second — *which sit on code that writes to
@@ -1413,7 +1421,8 @@ WP0 ✅ ▶ WP1 ✅ ▶ WP2 ✅  S0/S1 ▸ B213 classifier ▸ B214 elision ▸ 
 WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the suite is to be trusted there
         └──▶ WP9   B237 first (it blocks other packages' journeys), then B267 before the
                        mutation items — it is what makes "mutant confirmed dead" sayable —
-                       ▸ B228 ▸ B229 ▸ B227 ▸ B234; needs no other package
+                       ▸ B228 ▸ B229 ▸ B227 ▸ B234, then ▸ B274 ▸ B275 from the
+                       re-run campaign; needs no other package
 WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
 WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
                        ▸ B257, WP4's other leftover: the combined path's step label
