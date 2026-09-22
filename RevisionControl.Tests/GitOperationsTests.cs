@@ -1164,6 +1164,142 @@ public class GitOperationsTests : IDisposable
     }
 
     /// <summary>Runs git in a directory and returns stdout; the tests above need a real remote.</summary>
+    // ---- what a write actually wrote (B275) --------------------------------------
+
+    /// <summary>
+    /// A new file that git has never seen is included in a commit-everything.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why this is separate from <see cref="Commit_WithAllChanges_StagesAndCommits"/>.</b>
+    /// That test creates an untracked file too, but asserts only that a commit came back - and it
+    /// also modifies a tracked file, so the commit succeeds either way. Turning off
+    /// <c>IncludeUntracked</c> leaves it green while every newly created class silently fails to be
+    /// committed, which is the whole point of the option (B275).</para>
+    ///
+    /// <para>Read back through LibGit2Sharp rather than through <c>GetWorkingCopyChanges</c>: the
+    /// question is what is in the commit, and asking the same product that staged it would answer
+    /// with the same assumption.</para>
+    /// </remarks>
+    [Fact]
+    public void Commit_PutsAnUntrackedFileInTheCommit()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["tracked.mo"] = "v1" });
+        using (repo) { }
+
+        File.WriteAllText(Path.Combine(repoPath, "brand-new.mo"), "model New end New;");
+
+        var result = _git.Commit(repoPath, "add a new class");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains("brand-new.mo", CommittedPaths(repoPath));
+    }
+
+    /// <summary>
+    /// The same, for a file in a directory git has never seen - which is what adding a sub-package
+    /// looks like on disk, and what <c>RecurseUntrackedDirs</c> is for. Without it git reports the
+    /// directory as one untracked entry and staging it by name stages nothing.
+    /// </summary>
+    [Fact]
+    public void Commit_PutsAFileFromAnUntrackedDirectoryInTheCommit()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["tracked.mo"] = "v1" });
+        using (repo) { }
+
+        Directory.CreateDirectory(Path.Combine(repoPath, "NewPackage"));
+        File.WriteAllText(Path.Combine(repoPath, "NewPackage", "package.mo"), "package NewPackage end NewPackage;");
+
+        var result = _git.Commit(repoPath, "add a sub-package");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains("NewPackage/package.mo", CommittedPaths(repoPath));
+    }
+
+    /// <summary>
+    /// The positive case for <see cref="GitRevisionControlSystem.Push"/>, which had none: the only
+    /// push tests were an invalid path and a repository with no remote, so nothing established that
+    /// a push puts anything anywhere. Uses a bare repository on disk as the remote, exactly as the
+    /// force-push tests below do.
+    /// </summary>
+    [Fact]
+    public void Push_PutsTheLocalCommitOnTheRemote()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        string localHead;
+        using (repo)
+        {
+            repo.Network.Remotes.Add("origin", remotePath);
+            RunGit(repoPath, "push -u origin HEAD");
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Second");
+            localHead = repo.Head.Tip.Sha;
+        }
+
+        var result = _git.Push(repoPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(localHead, RunGit(remotePath, "rev-parse HEAD").Trim());
+    }
+
+    /// <summary>
+    /// A push that is not a fast-forward is refused, and the other person's commit survives. This
+    /// is the safety property that separates <c>push</c> from <c>push --force-with-lease</c>, and
+    /// force-push had a test for it while push did not.
+    /// </summary>
+    [Fact]
+    public void Push_WhenTheRemoteHasMovedOn_IsRefusedAndLeavesTheOtherCommitAlone()
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (ours, oursPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (ours)
+        {
+            ours.Network.Remotes.Add("origin", remotePath);
+            RunGit(oursPath, "push -u origin HEAD");
+        }
+
+        var theirsPath = NewTempPath("GitOpsTheirs");
+        RunGit(Path.GetTempPath(), $"clone \"{remotePath}\" \"{theirsPath}\"");
+        File.WriteAllText(Path.Combine(theirsPath, "theirs.mo"), "model B end B;");
+        RunGit(theirsPath, "add theirs.mo");
+        RunGit(theirsPath, "-c user.email=t@t -c user.name=T commit -m \"Theirs\"");
+        RunGit(theirsPath, "push origin HEAD");
+
+        var theirCommit = RunGit(theirsPath, "rev-parse HEAD").Trim();
+        Assert.NotEmpty(theirCommit);
+
+        using (var repo = new Repository(oursPath))
+            AddCommit(repo, oursPath, new() { ["f.mo"] = "model A \"ours\" end A;" }, "Ours");
+
+        var result = _git.Push(oursPath);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Equal(theirCommit, RunGit(remotePath, "rev-parse HEAD").Trim());
+    }
+
+    /// <summary>Every path in the repository's current commit, slash-separated as git reports them.</summary>
+    private static List<string> CommittedPaths(string repoPath)
+    {
+        using var repo = new Repository(repoPath);
+        var paths = new List<string>();
+        Walk(repo.Head.Tip.Tree, "");
+        return paths;
+
+        void Walk(Tree tree, string prefix)
+        {
+            foreach (var entry in tree)
+            {
+                if (entry.TargetType == TreeEntryTargetType.Tree)
+                    Walk((Tree)entry.Target, prefix + entry.Name + "/");
+                else
+                    paths.Add(prefix + entry.Name);
+            }
+        }
+    }
+
     private static string RunGit(string workingDirectory, string args)
     {
         var psi = new System.Diagnostics.ProcessStartInfo("git", args)

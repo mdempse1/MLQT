@@ -999,7 +999,7 @@ complete because the measurement agreed.
 
 **B267 ✅, B228 ✅, B229 ✅, B227 ✅** · opened by WP8's audit, and held back from it on purpose · plus
 **B234 ✅** and **B237 ✅** from WP2, and **B256 ✅** which was the only dated item in the phase - taken first and
-out of order because of that, four weeks before the date it would have fired on · **and B274, B275**,
+out of order because of that, four weeks before the date it would have fired on · **and B274 ✅, B275 ✅**,
 which the re-run campaign opened once B267 had made its numbers mean what they say
 
 **The package reopened on 2026-09-22 rather than closing.** Everything above shipped, the campaign
