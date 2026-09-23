@@ -36,7 +36,8 @@ public class LibraryTests
         await _fixture.EnsureDymolaStartedAsync();
 
         // Act
-        var result = await _fixture.Dymola.OpenModelAsync("Invalid/Path/package.mo", mustRead: false);
+        var result = await _fixture.Dymola.OpenModelAsync("Invalid/Path/package.mo", mustRead: false,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Opening invalid path should fail");

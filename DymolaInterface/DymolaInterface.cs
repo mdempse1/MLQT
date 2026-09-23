@@ -68,8 +68,9 @@ public class DymolaInterface : IDisposable
     /// How long a new interface keeps asking a Dymola that accepts the connection but does not
     /// answer, before starting offline. Dymola's JSON-RPC server is single-threaded and answers
     /// nothing while it runs a command, so a Dymola that is merely busy looks exactly like
-    /// that - and treating it as absent would leave the interface offline for good, because
-    /// nothing probes it again. A refused connection is final at once: nothing is listening.
+    /// that. An interface that starts offline still probes again on its next command, so this
+    /// only decides how long construction may block. A refused connection is final at once:
+    /// nothing is listening.
     /// </summary>
     public static readonly TimeSpan DefaultConnectionWindow = TimeSpan.FromSeconds(30);
 
@@ -125,7 +126,7 @@ public class DymolaInterface : IDisposable
     /// until <paramref name="connectionWindow"/> closes - <see cref="DefaultConnectionWindow"/>
     /// when not given, zero for a single probe - so construction can take that long. A refused
     /// connection is final at once. Either way the interface starts offline when no Dymola
-    /// answered, and nothing probes it again.
+    /// answered, and each command then probes once more before giving up.
     /// </summary>
     public DymolaInterface(string dymolaPath = "", int portNumber = 8082, string hostname = "127.0.0.1",
         TimeSpan? connectionWindow = null)
@@ -291,6 +292,7 @@ public class DymolaInterface : IDisposable
         var elapsed = Stopwatch.StartNew();
         while (true)
         {
+            // No delay needed between probes: a busy verdict always costs the full ConnectionProbeTimeout.
             var result = Probe();
             if (result != ProbeResult.Busy)
                 return result == ProbeResult.Answered;
@@ -304,7 +306,10 @@ public class DymolaInterface : IDisposable
     /// cannot tell the two failures apart: a refused connection takes about two seconds to fail
     /// on Windows, as long as the answer budget, so both would surface as the same
     /// cancellation. A busy Dymola still completes the TCP handshake at once - the listening
-    /// socket's backlog accepts it - and only then fails to answer.
+    /// socket's backlog accepts it - and only then fails to answer. Dymola is not calling accept
+    /// meanwhile, but the backlog does not fill up and start refusing: measured against a live
+    /// Dymola, the connect stayed at 0-1 ms through a 30-second busy period, including the ~30
+    /// connections the probing itself opens.
     /// </summary>
     private ProbeResult Probe()
     {
@@ -475,13 +480,14 @@ public class DymolaInterface : IDisposable
     /// as for any failed command - an invalid <paramref name="timeout"/> is the only thing that
     /// throws. Dymola carries on with a command either of them abandons, and answers nothing
     /// else until it finishes.
+    ///
+    /// An offline interface probes once more before giving up, and comes back online if Dymola
+    /// answers: the Dymola it missed may only have been busy, or not started yet.
     /// </summary>
     protected async Task<JsonElement?> CallDymolaFunctionAsync(string cmd, object?[]? parameters = null,
         TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeout.HasValue ? ValidateTimeout(timeout.Value, nameof(timeout)) : _commandTimeout;
-
-        if (_isOffline) return null;
 
         try
         {
@@ -495,6 +501,13 @@ public class DymolaInterface : IDisposable
 
         try
         {
+            if (_isOffline)
+            {
+                if (Probe() != ProbeResult.Answered)
+                    return null;
+                _isOffline = false;
+            }
+
             _rpcId++;
             int sentId = _rpcId;
             var fixedParams = FixJsonParameterList(parameters) ?? Array.Empty<object?>();
@@ -880,9 +893,10 @@ public class DymolaInterface : IDisposable
     public async Task<bool> ExportInitialDsinAsync(string scriptName)
         => GetBooleanResult(await CallDymolaFunctionAsync("exportInitialDsin", new object?[] { scriptName }));
 
-    public async Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true)
+    public async Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("openModel",
-            new object?[] { path, mustRead, changeDirectory }));
+            new object?[] { path, mustRead, changeDirectory }, timeout, cancellationToken));
 
     public async Task<bool> OpenModelFileAsync(string modelName, string path = "", string version = "", bool newTab = false)
         => GetBooleanResult(await CallDymolaFunctionAsync("openModelFile",
@@ -906,9 +920,10 @@ public class DymolaInterface : IDisposable
                 storeInitial, storeAllVariables, storeSimulator, storePlotFilenames }));
 
     public async Task<bool> SaveTotalModelAsync(string fileName, string modelName,
-        bool skipStandard = false, bool completePackage = false)
+        bool skipStandard = false, bool completePackage = false,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("saveTotalModel",
-            new object?[] { fileName, modelName, skipStandard, completePackage }));
+            new object?[] { fileName, modelName, skipStandard, completePackage }, timeout, cancellationToken));
 
     public async Task<bool> SetClassTextAsync(string parentName, string fullText)
         => GetBooleanResult(await CallDymolaFunctionAsync("setClassText",

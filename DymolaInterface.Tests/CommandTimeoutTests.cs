@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using DymolaInterface.Tests.Fakes;
 
 namespace DymolaInterface.Tests;
@@ -237,6 +238,68 @@ public class CommandTimeoutTests
     }
 
     [Fact]
+    public async Task PerCallTimeout_ReachesOpenModel()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await h.Dymola.OpenModelAsync("Large.mo", timeout: TimeSpan.FromMilliseconds(200), cancellationToken: Test);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public async Task OpenModel_CancelledWhileInFlight_ReturnsFalsePromptly()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await h.Dymola.OpenModelAsync("Large.mo", cancellationToken: cancel.Token);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public async Task PerCallTimeout_ReachesSaveTotalModel()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await h.Dymola.SaveTotalModelAsync("Total.mo", "M", timeout: TimeSpan.FromMilliseconds(200), cancellationToken: Test);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public async Task SaveTotalModel_CancelledWhileInFlight_ReturnsFalsePromptly()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(true);
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await h.Dymola.SaveTotalModelAsync("Total.mo", "M", cancellationToken: cancel.Token);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), $"gave up only after {elapsed.Elapsed}");
+    }
+
+    [Fact]
     public async Task Command_CancelledWhileInFlight_ReturnsFalsePromptly()
     {
         using var h = new DymolaTestHarness();
@@ -372,6 +435,38 @@ public class CommandTimeoutTests
     }
 
     /// <summary>
+    /// An interface that started offline because Dymola was busy is not written off: its next
+    /// command asks again, and once Dymola answers, the command goes through.
+    /// </summary>
+    [Fact]
+    public async Task Command_OnceADymolaBusyAtConstructionAnswers_ComesOnlineAndRuns()
+    {
+        using var server = new BusyServer(TimeSpan.FromSeconds(3));
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+        await Task.Delay(TimeSpan.FromSeconds(2), Test);
+
+        var ok = await dymola.ExecuteCommandAsync("command()", cancellationToken: Test);
+
+        Assert.True(ok);
+        Assert.False(dymola.IsOfflineMode());
+    }
+
+    [Fact]
+    public async Task Command_WhileDymolaIsStillBusy_GivesUpAfterOneProbe()
+    {
+        using var server = new BusyServer(TimeSpan.MaxValue);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+
+        var elapsed = Stopwatch.StartNew();
+        var ok = await dymola.ExecuteCommandAsync("command()", cancellationToken: Test);
+        elapsed.Stop();
+
+        Assert.False(ok);
+        Assert.True(dymola.IsOfflineMode());
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(6), $"took {elapsed.Elapsed}");
+    }
+
+    /// <summary>
     /// Stands in for Dymola's single-threaded JSON-RPC server: while it is busy, every
     /// connection is accepted - the listening socket completes the handshake - and never
     /// answered; after that, each request gets a JSON-RPC success.
@@ -428,11 +523,13 @@ public class CommandTimeoutTests
                 try
                 {
                     var stream = client.GetStream();
-                    var read = await stream.ReadAsync(new byte[8192], stopping);
+                    var buffer = new byte[8192];
+                    var read = await stream.ReadAsync(buffer, stopping);
                     if (read == 0)
                         return;
 
-                    const string body = "{\"result\":true,\"error\":null,\"id\":0}";
+                    var id = Regex.Match(Encoding.UTF8.GetString(buffer, 0, read), "\"id\"\\s*:\\s*(\\d+)");
+                    var body = $"{{\"result\":true,\"error\":null,\"id\":{(id.Success ? id.Groups[1].Value : "0")}}}";
                     var response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                         + $"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
                     await stream.WriteAsync(Encoding.ASCII.GetBytes(response), stopping);

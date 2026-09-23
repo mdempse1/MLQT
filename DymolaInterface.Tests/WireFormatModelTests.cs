@@ -177,7 +177,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.OpenModelAsync("lib/package.mo");
+        await h.Dymola.OpenModelAsync("lib/package.mo", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("openModel", h.Handler.LastRequest.Method);
         Assert.True(h.Handler.LastRequest.Param(1).GetBoolean());
         Assert.True(h.Handler.LastRequest.Param(2).GetBoolean());
@@ -237,7 +237,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.SaveTotalModelAsync("out.mo", "M");
+        await h.Dymola.SaveTotalModelAsync("out.mo", "M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("saveTotalModel", h.Handler.LastRequest.Method);
     }
 
