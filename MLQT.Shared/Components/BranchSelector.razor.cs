@@ -55,7 +55,13 @@ public partial class BranchSelector
 
     protected override async Task OnParametersSetAsync()
     {
-        // Reload if repository changed
+        // Reload when the repository changes - and NOT on the first parameter set, which follows
+        // OnInitializedAsync and used to see _lastRepositoryId still null.
+        //
+        // That loaded every dialog twice: two GetBranches calls into git or svn per open, and a
+        // second pass through the loading state, which blanks the tree that had just been drawn and
+        // puts it back. Invisible as a flicker and not invisible to a test that had found a row in
+        // the first tree and clicked it during the second load.
         if (_lastRepositoryId != RepositoryId)
         {
             _lastRepositoryId = RepositoryId;
@@ -67,6 +73,10 @@ public partial class BranchSelector
 
     public async Task LoadBranches()
     {
+        // Claimed here rather than in OnParametersSetAsync, so the parameter set that follows
+        // OnInitializedAsync sees the repository it is already showing.
+        _lastRepositoryId = RepositoryId;
+
         if (string.IsNullOrEmpty(RepositoryId))
         {
             _treeItems = new();

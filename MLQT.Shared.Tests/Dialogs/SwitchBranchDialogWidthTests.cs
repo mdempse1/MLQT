@@ -1,3 +1,4 @@
+using AngleSharp.Dom;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using MLQT.Services.DataTypes;
@@ -39,6 +40,29 @@ public class SwitchBranchDialogWidthTests : MlqtComponentTestBase
         Services.AddSingleton(repositories.Object);
     }
 
+    /// <summary>
+    /// The row for <paramref name="text"/>, waited for rather than looked for once.
+    /// </summary>
+    /// <remarks>
+    /// <b>Wait for the thing you are about to use.</b> These tests used to wait for the name to turn
+    /// up anywhere in the markup and then reach for the paragraph carrying it, which is a weaker
+    /// condition than the one they depend on: the selector fills its tree on a background thread
+    /// (<c>BranchSelector.LoadBranches</c> awaits a <c>Task.Run</c>) and MudTreeView renders each row
+    /// as a component of its own, so there is a render where the name is in the markup and that
+    /// paragraph is not. It passed everywhere it was run and failed once on a loaded CI runner, which
+    /// is the only way a test like this ever tells you.
+    /// </remarks>
+    private static IElement Row(IRenderedComponent<MudDialogProvider> provider, string text)
+    {
+        IElement? row = null;
+        provider.WaitForAssertion(() =>
+        {
+            row = provider.FindAll("p").FirstOrDefault(e => e.TextContent.Trim() == text);
+            Assert.NotNull(row);
+        });
+        return row!;
+    }
+
     private async Task<IRenderedComponent<MudDialogProvider>> ShowAsync()
     {
         var (provider, _) = await ShowDialogAsync<SwitchBranchDialog>(
@@ -70,9 +94,7 @@ public class SwitchBranchDialogWidthTests : MlqtComponentTestBase
             new VcsBranchInfo { Name = "v2.0.0", IsTag = true });
 
         var provider = await ShowAsync();
-        provider.WaitForAssertion(() => Assert.Contains("v2.0.0", provider.Markup));
-
-        var tag = provider.FindAll("p").First(e => e.TextContent.Trim() == "v2.0.0");
+        var tag = Row(provider, "v2.0.0");
         await provider.InvokeAsync(() => tag.Click());
 
         provider.WaitForAssertion(() => Assert.Contains("detached HEAD", provider.Markup));
@@ -89,9 +111,7 @@ public class SwitchBranchDialogWidthTests : MlqtComponentTestBase
             new VcsBranchInfo { Name = "release", IsTag = false });
 
         var provider = await ShowAsync();
-        provider.WaitForAssertion(() => Assert.Contains("release", provider.Markup));
-
-        var branch = provider.FindAll("p").First(e => e.TextContent.Trim() == "release");
+        var branch = Row(provider, "release");
         await provider.InvokeAsync(() => branch.Click());
 
         Assert.DoesNotContain("detached HEAD", provider.Markup);

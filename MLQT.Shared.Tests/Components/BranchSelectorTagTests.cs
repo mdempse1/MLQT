@@ -30,17 +30,55 @@ public class BranchSelectorTagTests : MlqtComponentTestBase
     private static VcsBranchInfo Tag(string name, bool current = false) =>
         new() { Name = name, IsTag = true, IsCurrent = current };
 
+    private Mock<IRepositoryService> _repositories = new();
+
     private IRenderedComponent<BranchSelector> RenderSelector(params VcsBranchInfo[] refs)
     {
-        var repositories = new Mock<IRepositoryService>();
-        repositories.Setup(r => r.GetBranches("repo-1", It.IsAny<bool>())).Returns(refs.ToList());
-        repositories.Setup(r => r.GetRepository("repo-1"))
-                    .Returns(new Repository { Id = "repo-1", Name = "ExternData", CurrentBranch = "main" });
+        _repositories = new Mock<IRepositoryService>();
+        _repositories.Setup(r => r.GetBranches("repo-1", It.IsAny<bool>())).Returns(refs.ToList());
+        _repositories.Setup(r => r.GetRepository("repo-1"))
+                     .Returns(new Repository { Id = "repo-1", Name = "ExternData", CurrentBranch = "main" });
 
-        Services.AddSingleton(repositories.Object);
+        Services.AddSingleton(_repositories.Object);
         RenderProviders();
 
         return Render<BranchSelector>(p => p.Add(c => c.RepositoryId, "repo-1"));
+    }
+
+    [Fact]
+    public void TheBranchListIsReadOnceWhenTheSelectorOpens()
+    {
+        // It was read twice. OnInitializedAsync loads, and the parameter set that follows it saw
+        // _lastRepositoryId still null and loaded again - two calls into git or svn per open, and a
+        // second pass through the loading state, which blanks the tree that had just been drawn and
+        // puts it back.
+        //
+        // The flicker is too quick to see and was not too quick for a test: SwitchBranchDialogWidthTests
+        // found a row in the first tree and clicked it while the second load had the tree off screen.
+        // It passed on every machine it was run on and failed once on a loaded CI runner, which is
+        // the only way a race of that width ever tells you.
+        var selector = RenderSelector(Branch("main", current: true), Tag("v2.0.0"));
+        selector.WaitForAssertion(() => Assert.Contains("v2.0.0", selector.Markup));
+
+        _repositories.Verify(r => r.GetBranches("repo-1", It.IsAny<bool>()), Times.Once);
+    }
+
+    [Fact]
+    public void ChangingTheRepositoryStillReloads()
+    {
+        // The guard is there to catch a real change, and it still does.
+        var selector = RenderSelector(Branch("main", current: true), Tag("v2.0.0"));
+        selector.WaitForAssertion(() => Assert.Contains("v2.0.0", selector.Markup));
+
+        _repositories.Setup(r => r.GetBranches("repo-2", It.IsAny<bool>()))
+                     .Returns(new List<VcsBranchInfo> { Branch("other", current: true) });
+        _repositories.Setup(r => r.GetRepository("repo-2"))
+                     .Returns(new Repository { Id = "repo-2", Name = "Other", CurrentBranch = "other" });
+
+        selector.Render(p => p.Add(c => c.RepositoryId, "repo-2"));
+
+        selector.WaitForAssertion(() => Assert.Contains("other", selector.Markup));
+        _repositories.Verify(r => r.GetBranches("repo-2", It.IsAny<bool>()), Times.Once);
     }
 
     [Fact]
