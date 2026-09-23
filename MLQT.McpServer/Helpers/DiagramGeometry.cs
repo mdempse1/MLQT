@@ -218,6 +218,28 @@ internal static class DiagramGeometry
     /// connector of their own at all.</para>
     /// </summary>
     public static Dictionary<string, Placement> Placements(string classCode)
+        => Placements(classCode, Layer.Diagram);
+
+    /// <summary>
+    /// Which of a Placement's two transformations to read.
+    ///
+    /// <para>A Placement says where a component goes on the enclosing class's <b>diagram</b>, in
+    /// <c>transformation</c>, and where it goes on the enclosing class's <b>icon</b>, in
+    /// <c>iconTransformation</c>. The second is what puts a connector on the outside of a block, and
+    /// <b>where it is absent the first stands in for it</b> — which is how most of the Modelica
+    /// Standard Library is written, so reading only the explicit ones finds almost none.</para>
+    /// </summary>
+    public enum Layer
+    {
+        /// <summary>Where the component sits on the enclosing class's diagram.</summary>
+        Diagram,
+
+        /// <summary>Where it sits on the enclosing class's icon, falling back to the diagram's.</summary>
+        Icon,
+    }
+
+    /// <summary>Every component declared in the code with a placement on <paramref name="layer"/>.</summary>
+    public static Dictionary<string, Placement> Placements(string classCode, Layer layer)
     {
         var result = new Dictionary<string, Placement>(StringComparer.Ordinal);
         var layout = ClassBodyLocator.Analyze(classCode);
@@ -225,7 +247,7 @@ internal static class DiagramGeometry
         {
             if (c.DeclStart < 0 || c.DeclStop >= classCode.Length || c.DeclStop < c.DeclStart)
                 continue;
-            if (ParsePlacement(classCode[c.DeclStart..(c.DeclStop + 1)]) is { } placement)
+            if (ParsePlacement(classCode[c.DeclStart..(c.DeclStop + 1)], layer) is { } placement)
                 result[c.Name] = placement;
         }
         return result;
@@ -244,9 +266,9 @@ internal static class DiagramGeometry
     /// shadows an inherited one of the same name, which is what Modelica means by redeclaring.</para>
     /// </summary>
     public static Dictionary<string, Placement> Placements(
-        ILibraryDataService libraries, string classId, string classCode)
+        ILibraryDataService libraries, string classId, string classCode, Layer layer = Layer.Diagram)
     {
-        var result = Placements(classCode);
+        var result = Placements(classCode, layer);
 
         var node = libraries.GetModelById(classId);
         if (node is null)
@@ -266,7 +288,7 @@ internal static class DiagramGeometry
             if (!byOwner.TryGetValue(member.OwnerId, out var owned))
             {
                 var ownerCode = libraries.GetModelById(member.OwnerId)?.Definition.ModelicaCode;
-                owned = ownerCode is null ? [] : Placements(ownerCode);
+                owned = ownerCode is null ? [] : Placements(ownerCode, layer);
                 byOwner[member.OwnerId] = owned;
             }
 
@@ -291,9 +313,12 @@ internal static class DiagramGeometry
     /// <c>extent={{-20,-20},{20,20}}, rotation=90, origin={60,-120}</c>, and without the origin that
     /// is a 40x40 box at the centre rather than a connector on the bottom edge.</para>
     /// </summary>
-    private static Placement? ParsePlacement(string declaration)
+    private static Placement? ParsePlacement(string declaration, Layer layer)
     {
-        var transformation = TransformationArguments(declaration) ?? declaration;
+        var transformation =
+            (layer == Layer.Icon ? TransformationArguments(declaration, "iconTransformation") : null)
+            ?? TransformationArguments(declaration, "transformation")
+            ?? declaration;
 
         var e = ExtentRegex.Match(transformation);
         if (!e.Success)
@@ -323,20 +348,20 @@ internal static class DiagramGeometry
     /// <c>transformation</c> — deliberately not matching <c>iconTransformation</c>, which ends in the
     /// same characters.
     /// </summary>
-    private static string? TransformationArguments(string declaration)
+    private static string? TransformationArguments(string declaration, string keyword)
     {
         var search = 0;
         while (true)
         {
-            var start = declaration.IndexOf("transformation", search, StringComparison.Ordinal);
+            var start = declaration.IndexOf(keyword, search, StringComparison.Ordinal);
             if (start < 0)
                 return null;
             search = start + 1;
 
             if (start > 0 && (char.IsLetterOrDigit(declaration[start - 1]) || declaration[start - 1] == '_'))
-                continue;   // iconTransformation, or some other word ending in it
+                continue;   // iconTransformation when transformation was asked for, and the like
 
-            var open = start + "transformation".Length;
+            var open = start + keyword.Length;
             while (open < declaration.Length && char.IsWhiteSpace(declaration[open]))
                 open++;
             if (open >= declaration.Length || declaration[open] != '(')

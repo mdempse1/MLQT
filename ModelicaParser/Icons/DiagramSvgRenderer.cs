@@ -15,9 +15,15 @@ namespace ModelicaParser.Icons;
 /// The point <paramref name="Rotation"/> turns about, as [x,y]. Null means the extent's own centre,
 /// which is what a transformation with no <c>origin</c> amounts to.
 /// </param>
+/// <param name="Children">
+/// What is drawn <em>inside</em> this component's icon, in the icon's own coordinates: its
+/// connectors. A Modelica component shows its type's connectors on its icon, which is what makes a
+/// diagram look wired rather than like a row of boxes, and they are separate drawings with
+/// placements of their own rather than graphics in the icon's list.
+/// </param>
 public sealed record DiagramComponent(
     string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null,
-    double[]? RotationCentre = null);
+    double[]? RotationCentre = null, IReadOnlyList<DiagramComponent>? Children = null);
 
 /// <summary>One connection line, as the poly-line the diagram draws for it.</summary>
 /// <param name="Points">At least two points, in the parent's diagram coordinates.</param>
@@ -71,6 +77,13 @@ public static class DiagramSvgRenderer
         var viewHeight = view[3] - view[1];
         var height = (int)Math.Round(width * viewHeight / viewWidth);
 
+        // Modelica states a line thickness and an arrow size in MILLIMETRES - a length on the page,
+        // not in the drawing - so how many coordinate units they come to depends on how far in this
+        // view is zoomed. A constant instead gives outlines ten pixels thick on a diagram, which is
+        // what the red frames in Modelica.Blocks.Examples.PID_Controller came out as.
+        var pixelsPerUnit = width / viewWidth;
+        var context = ContextFor(pixelsPerUnit, scale: 1, mirrorX: false, mirrorY: false);
+
         var svg = new StringBuilder();
         svg.AppendLine(
             $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{Math.Max(height, 1)}\" "
@@ -78,18 +91,18 @@ public static class DiagramSvgRenderer
         svg.AppendLine("  <rect x=\"-100%\" y=\"-100%\" width=\"300%\" height=\"300%\" fill=\"#ffffff\"/>");
         svg.AppendLine("  <g transform=\"scale(1,-1)\">");
 
-        AppendFrame(svg, declared, view);
+        AppendFrame(svg, declared, view, context);
 
         // The class's own diagram graphics sit under the components, as a background does.
         if (diagramLayer is { HasGraphics: true })
-            Indent(svg, IconSvgRenderer.RenderPrimitives(diagramLayer.Graphics, fileNameResolver));
+            Indent(svg, IconSvgRenderer.RenderPrimitives(diagramLayer.Graphics, fileNameResolver, context));
 
         foreach (var component in components)
-            AppendComponent(svg, component, fileNameResolver);
+            AppendComponent(svg, component, fileNameResolver, pixelsPerUnit, 1, false, false, "    ");
 
         // Lines last, so a connection is never hidden by a component it runs past.
         foreach (var connection in connections)
-            AppendConnection(svg, connection);
+            AppendConnection(svg, connection, context);
 
         svg.AppendLine("  </g>");
         svg.AppendLine("</svg>");
@@ -100,19 +113,30 @@ public static class DiagramSvgRenderer
     /// The declared coordinate system, drawn only when something is outside it — otherwise it is the
     /// edge of the image and an outline says nothing.
     /// </summary>
-    private static void AppendFrame(StringBuilder svg, double[] declared, double[] view)
+    private static void AppendFrame(
+        StringBuilder svg, double[] declared, double[] view, IconSvgRenderer.GraphicsContext context)
     {
         if (view.SequenceEqual(declared))
             return;
 
+        var stroke = context.UnitsPerMillimetre * DefaultThicknessMm;
         svg.AppendLine(
             $"    <rect x=\"{F(declared[0])}\" y=\"{F(declared[1])}\" "
             + $"width=\"{F(declared[2] - declared[0])}\" height=\"{F(declared[3] - declared[1])}\" "
-            + "fill=\"none\" stroke=\"#c0c0c0\" stroke-width=\"1\" stroke-dasharray=\"6,4\"/>");
+            + $"fill=\"none\" stroke=\"#c0c0c0\" stroke-width=\"{W(stroke)}\" "
+            + $"stroke-dasharray=\"{F(stroke * 6)},{F(stroke * 4)}\"/>");
     }
 
+    /// <summary>
+    /// One component, and everything it carries, inside a transform that maps its type's icon
+    /// coordinate system onto its Placement.
+    /// </summary>
+    /// <param name="pixelsPerUnit">Of the outermost view, for turning millimetres into units.</param>
+    /// <param name="scale">How much the enclosing transforms have already scaled by, so a connector
+    /// drawn two levels in still gets a one-pixel outline.</param>
     private static void AppendComponent(
-        StringBuilder svg, DiagramComponent component, Func<string, string?>? fileNameResolver)
+        StringBuilder svg, DiagramComponent component, Func<string, string?>? fileNameResolver,
+        double pixelsPerUnit, double scale, bool mirrorX, bool mirrorY, string indent)
     {
         var extent = component.Extent;
         var cx = (extent[0] + extent[2]) / 2;
@@ -120,7 +144,7 @@ public static class DiagramSvgRenderer
 
         if (component.Icon is not { HasGraphics: true })
         {
-            AppendPlaceholder(svg, component, cx, cy);
+            AppendPlaceholder(svg, component, cx, cy, ContextFor(pixelsPerUnit, scale, mirrorX, mirrorY));
             return;
         }
 
@@ -144,7 +168,7 @@ public static class DiagramSvgRenderer
             ? (centre[0], centre[1])
             : (cx, cy);
 
-        svg.Append("    <g transform=\"")
+        svg.Append(indent).Append("<g transform=\"")
             .Append($"translate({F(rx)},{F(ry)})");
         if (component.Rotation != 0)
             svg.Append($" rotate({F(component.Rotation)})");
@@ -152,10 +176,22 @@ public static class DiagramSvgRenderer
             .Append($" scale({F(scaleX)},{F(scaleY)}) translate({F(-iconCx)},{F(-iconCy)})")
             .AppendLine("\">");
 
-        Indent(svg, IconSvgRenderer.RenderPrimitives(
-            component.Icon.Graphics.Select(g => WithName(g, component.Name)), fileNameResolver), "      ");
+        // A non-uniform scale does not have one answer for what it does to a stroke; the geometric
+        // mean is what SVG itself approximates with, and these scales are square in practice.
+        var inner = scale * Math.Sqrt(Math.Abs(scaleX * scaleY));
+        var innerMirrorX = mirrorX ^ (scaleX < 0);
+        var innerMirrorY = mirrorY ^ (scaleY < 0);
 
-        svg.AppendLine("    </g>");
+        Indent(svg, IconSvgRenderer.RenderPrimitives(
+            component.Icon.Graphics.Select(g => WithName(g, component.Name)), fileNameResolver,
+            ContextFor(pixelsPerUnit, inner, innerMirrorX, innerMirrorY)), indent + "  ");
+
+        // The connectors on the component's icon, each with a placement of its own inside it.
+        foreach (var child in component.Children ?? [])
+            AppendComponent(svg, child, fileNameResolver, pixelsPerUnit, inner,
+                            innerMirrorX, innerMirrorY, indent + "  ");
+
+        svg.Append(indent).AppendLine("</g>");
     }
 
     /// <summary>
@@ -163,19 +199,24 @@ public static class DiagramSvgRenderer
     /// its name. A blank space would read as "nothing is there", which is the wrong conclusion for an
     /// agent judging its own layout — the component is there, it simply draws nothing.
     /// </summary>
-    private static void AppendPlaceholder(StringBuilder svg, DiagramComponent component, double cx, double cy)
+    private static void AppendPlaceholder(
+        StringBuilder svg, DiagramComponent component, double cx, double cy,
+        IconSvgRenderer.GraphicsContext context)
     {
         var e = Normalize(component.Extent);
+        var stroke = context.UnitsPerMillimetre * DefaultThicknessMm;
         svg.AppendLine(
             $"    <rect x=\"{F(e[0])}\" y=\"{F(e[1])}\" width=\"{F(e[2] - e[0])}\" height=\"{F(e[3] - e[1])}\" "
-            + "fill=\"#f5f5f5\" stroke=\"#909090\" stroke-width=\"1\" stroke-dasharray=\"4,3\"/>");
+            + $"fill=\"#f5f5f5\" stroke=\"#909090\" stroke-width=\"{W(stroke)}\" "
+            + $"stroke-dasharray=\"{F(stroke * 4)},{F(stroke * 3)}\"/>");
         svg.AppendLine(
             $"    <text x=\"{F(cx)}\" y=\"{F(-cy)}\" font-size=\"10\" text-anchor=\"middle\" "
             + "dominant-baseline=\"middle\" fill=\"#404040\" transform=\"scale(1,-1)\">"
             + $"{System.Security.SecurityElement.Escape(component.Name)}</text>");
     }
 
-    private static void AppendConnection(StringBuilder svg, DiagramConnection connection)
+    private static void AppendConnection(
+        StringBuilder svg, DiagramConnection connection, IconSvgRenderer.GraphicsContext context)
     {
         if (connection.Points.Count < 2)
             return;
@@ -186,7 +227,8 @@ public static class DiagramSvgRenderer
             : ConnectionColor;
 
         svg.AppendLine(
-            $"    <polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"0.8\"/>");
+            $"    <polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" "
+            + $"stroke-width=\"{W(context.UnitsPerMillimetre * DefaultThicknessMm)}\"/>");
     }
 
     /// <summary>
@@ -279,5 +321,27 @@ public static class DiagramSvgRenderer
                 svg.Append(indent).AppendLine(line.Trim());
     }
 
+    /// <summary>Modelica's default line thickness, in millimetres.</summary>
+    private const double DefaultThicknessMm = 0.25;
+
+    /// <summary>
+    /// The context for graphics drawn under <paramref name="scale"/>, calibrated so a line of the
+    /// default 0.25 mm comes out one pixel wide however far in it is nested.
+    /// </summary>
+    private static IconSvgRenderer.GraphicsContext ContextFor(
+        double pixelsPerUnit, double scale, bool mirrorX, bool mirrorY)
+    {
+        var effective = pixelsPerUnit * scale;
+        return new IconSvgRenderer.GraphicsContext
+        {
+            UnitsPerMillimetre = effective > 0 ? 1 / (DefaultThicknessMm * effective) : IconSvgRenderer.DefaultUnitsPerMillimetre,
+            MirrorX = mirrorX,
+            MirrorY = mirrorY,
+        };
+    }
+
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>A stroke width, which needs more places than a coordinate does - see IconSvgRenderer.</summary>
+    private static string W(double value) => value.ToString("0.#####", CultureInfo.InvariantCulture);
 }

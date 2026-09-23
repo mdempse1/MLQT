@@ -22,6 +22,13 @@ public class DiagramSvgRendererTests
         ],
     };
 
+    /// <summary>
+    /// The declared coordinate system's outline, drawn only when something is outside it. Named by
+    /// its colour, which nothing else uses: its dash pattern is a length on the page and so depends
+    /// on how far the view is zoomed in.
+    /// </summary>
+    private const string CanvasOutline = "stroke=\"#c0c0c0\"";
+
     private static DiagramComponent At(string name, double x, double y, IconData? icon, double rotation = 0)
         => new(name, [x - 10, y - 10, x + 10, y + 10], rotation, icon);
 
@@ -104,7 +111,7 @@ public class DiagramSvgRendererTests
 
         Assert.Contains("viewBox=\"-100 -100 200 200\"", svg);
         // The declared canvas is only outlined when something is outside it.
-        Assert.DoesNotContain("stroke-dasharray=\"6,4\"", svg);
+        Assert.DoesNotContain(CanvasOutline, svg);
     }
 
     [Fact]
@@ -114,7 +121,7 @@ public class DiagramSvgRendererTests
         // to say: that the agent put something where the model does not reach.
         var svg = DiagramSvgRenderer.Render(null, [At("stray", 400, 0, Box())], []);
 
-        Assert.Contains("stroke-dasharray=\"6,4\"", svg);
+        Assert.Contains(CanvasOutline, svg);
         Assert.DoesNotContain("viewBox=\"-100 -100 200 200\"", svg);
         Assert.Contains("translate(400,0)", svg);
     }
@@ -128,7 +135,7 @@ public class DiagramSvgRendererTests
         var turned = DiagramSvgRenderer.Render(null, [At("a", 100, 0, Box(), rotation: 45)], []);
 
         Assert.NotEqual(square, turned);
-        Assert.Contains("stroke-dasharray=\"6,4\"", turned);
+        Assert.Contains(CanvasOutline, turned);
     }
 
     [Fact]

@@ -137,13 +137,20 @@ icon at its `Placement`, the connection lines between them, and whatever the cla
 diagram layer, returned as a PNG. Overlapping components, a signal running right to left and a
 connector left on the wrong edge are obvious in the picture and invisible in the numbers.
 
-What it draws is what a Modelica tool draws, which took getting three things right that are easy to
+What it draws is what a Modelica tool draws, which took getting several things right that are easy to
 miss and are invisible until a render is put beside one: a Placement's `extent` is stated **relative
-to its `origin`**, the components on a diagram include the **inherited** ones (a block usually gets
-its `u` and `y` from a base class and declares no connector of its own), and a **connector is drawn
-with its diagram layer, not its icon layer** — Modelica gives it both, and they are different
-drawings. `get_diagram_layout` reports the same absolute extents and the same inherited components,
-so the numbers and the picture describe one diagram.
+to its `origin`**; the components on a diagram include the **inherited** ones (a block usually gets
+its `u` and `y` from a base class and declares no connector of its own); a **connector placed on a
+diagram is drawn with its diagram layer, not its icon layer**, which are different drawings; a
+component shows **its own type's connectors on its icon**, which is what makes a diagram look wired
+rather than like a row of boxes; **line thickness and arrow size are millimetres**, so the units they
+come to depend on how far the view is zoomed; and a component placed with a reversed extent is
+mirrored, but its label is not. `get_diagram_layout` reports the same absolute extents and the same
+inherited components, so the numbers and the picture describe one diagram.
+
+**Two known gaps**, both visible against a Modelica tool and both recorded in the backlog: a
+connector declared `if <condition>` is drawn even when the condition is false (B277), and a `%name`
+in icon text is substituted while `%parameter` references such as `J=%J` are not (B278).
 
 Two deliberate differences from a Modelica tool's diagram window:
 

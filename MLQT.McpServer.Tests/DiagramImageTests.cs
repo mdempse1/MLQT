@@ -69,6 +69,9 @@ public class DiagramImageTests
         return host;
     }
 
+    /// <summary>The declared canvas's outline, named by the colour nothing else uses.</summary>
+    private const string CanvasOutline = "stroke=\"#c0c0c0\"";
+
     private static DiagramTools Tools(TestHost host)
         => new(host.Libraries, host.Resources, host.Session);
 
@@ -122,8 +125,8 @@ public class DiagramImageTests
 
         // The declared canvas is outlined only once something is outside it - inside, the frame is
         // the edge of the image and drawing it says nothing.
-        Assert.DoesNotContain("stroke-dasharray=\"6,4\"", before);
-        Assert.Contains("stroke-dasharray=\"6,4\"", after);
+        Assert.DoesNotContain(CanvasOutline, before);
+        Assert.Contains(CanvasOutline, after);
     }
 
     [Fact]

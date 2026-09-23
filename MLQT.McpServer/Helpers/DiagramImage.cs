@@ -34,8 +34,6 @@ internal static class DiagramImage
     public const int MinWidth = 200;
     public const int MaxWidth = 2000;
 
-    private static readonly Regex PointsRegex = new(
-        @"points\s*=\s*\{(.*?)\}\s*\}", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex PointRegex = new(
         @"\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}", RegexOptions.Compiled);
     private static readonly Regex ColorRegex = new(
@@ -108,12 +106,16 @@ internal static class DiagramImage
 
             // Resolved in the scope of the class that DECLARED it, which for an inherited connector
             // is the base class and not this one.
+            var scope = member.InheritedFrom is null ? imports : member.OwnerImports;
+            var type = TypeResolver.Resolve(
+                libraries.CombinedGraph, member.OwnerId, member.Element.Type, scope);
+
             components.Add(new DiagramComponent(
                 member.Element.Name, placement.Extent, placement.Rotation,
-                IconOf(libraries, member.OwnerId, member.Element.Type,
-                       member.InheritedFrom is null ? imports : member.OwnerImports),
+                IconOf(libraries, member.OwnerId, member.Element.Type, scope),
                 member.Element.Type,
-                placement.RotationCentre));
+                placement.RotationCentre,
+                type is null ? null : ConnectorsOn(libraries, type)));
         }
 
         return components;
@@ -145,6 +147,70 @@ internal static class DiagramImage
         if (string.Equals(type.ClassType, "connector", StringComparison.Ordinal)
             && DiagramLayerOf(type) is { } diagram)
             return diagram;
+
+        var dot = type.Id.LastIndexOf('.');
+        return IconSvgRenderer.ExtractIconWithInheritance(
+            source,
+            baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
+            initialPackageContext: dot > 0 ? type.Id[..dot] : null);
+    }
+
+    /// <summary>
+    /// The connectors a component shows on its icon, in the icon's own coordinates.
+    ///
+    /// <para><b>Without these a diagram is a row of boxes with lines ending near them.</b> A block's
+    /// icon graphics draw the block; its ports are separate components of the type, each with a
+    /// placement of its own, and Modelica puts them on the icon so a reader can see what connects to
+    /// what.</para>
+    ///
+    /// <para><b>Where they go is the icon layer's answer, which usually is not written down.</b> A
+    /// Placement may carry an <c>iconTransformation</c> saying where the connector sits on the
+    /// enclosing class's icon; where it does not — which is most of the Modelica Standard Library —
+    /// the <c>transformation</c> serves for both. And it is the connector's ICON layer that is drawn
+    /// here, not its diagram layer: this is an icon.</para>
+    /// </summary>
+    private static List<DiagramComponent>? ConnectorsOn(ILibraryDataService libraries, ModelNode type)
+    {
+        var code = type.Definition.ModelicaCode;
+        if (string.IsNullOrEmpty(code))
+            return null;
+
+        var placements = DiagramGeometry.Placements(
+            libraries, type.Id, code, DiagramGeometry.Layer.Icon);
+        if (placements.Count == 0)
+            return null;
+
+        var connectors = new List<DiagramComponent>();
+
+        foreach (var member in ClassElementResolver
+                     .Collect(libraries.CombinedGraph, type, includeProtected: false, includeInherited: true)
+                     .Where(m => m.Element.Kind == ClassElementKind.Component))
+        {
+            if (!placements.TryGetValue(member.Element.Name, out var placement))
+                continue;
+
+            var memberType = TypeResolver.Resolve(
+                libraries.CombinedGraph, member.OwnerId, member.Element.Type, member.OwnerImports);
+
+            // Only connectors. A block that contains other blocks does not draw them on its icon —
+            // that is its diagram, and it is a different picture.
+            if (memberType is null || !string.Equals(memberType.ClassType, "connector", StringComparison.Ordinal))
+                continue;
+
+            connectors.Add(new DiagramComponent(
+                member.Element.Name, placement.Extent, placement.Rotation,
+                IconWithInheritance(libraries, memberType),
+                member.Element.Type,
+                placement.RotationCentre));
+        }
+
+        return connectors.Count > 0 ? connectors : null;
+    }
+
+    private static IconData? IconWithInheritance(ILibraryDataService libraries, ModelNode type)
+    {
+        if (type.Definition.ModelicaCode is not { Length: > 0 } source)
+            return null;
 
         var dot = type.Id.LastIndexOf('.');
         return IconSvgRenderer.ExtractIconWithInheritance(
@@ -243,11 +309,10 @@ internal static class DiagramImage
                 continue;
 
             var text = code[modification.Start.StartIndex..(modification.Stop.StopIndex + 1)];
-            var points = PointsRegex.Match(text);
-            if (!points.Success)
+            if (PointsArray(text) is not { } list)
                 return null;
 
-            var parsed = PointRegex.Matches(points.Groups[1].Value)
+            var parsed = PointRegex.Matches(list)
                 .Select(m => new[] { Num(m.Groups[1].Value), Num(m.Groups[2].Value) })
                 .ToList();
             if (parsed.Count < 2)
@@ -263,6 +328,37 @@ internal static class DiagramImage
     }
 
     /// <summary>A Modelica colour literal, e.g. <c>{0,0,127}</c>, as RGB.</summary>
+    /// <summary>
+    /// The contents of a <c>points={{..},{..},..}</c> array, matched by brace depth.
+    ///
+    /// <para>The obvious regex is <c>points=\{(.*?)\}\s*\}</c>, and it is wrong in a way that looks
+    /// right: lazily, the first <c>}}</c> it can reach is the one closing the <em>last</em> point, so
+    /// the array comes back with its final point cut in half. A two-point connection then had one
+    /// point and was silently re-routed, and a six-point one was drawn with five — the connection
+    /// lines that stopped short of what they connect.</para>
+    /// </summary>
+    private static string? PointsArray(string text)
+    {
+        var at = text.IndexOf("points", StringComparison.Ordinal);
+        if (at < 0)
+            return null;
+
+        var open = text.IndexOf('{', at);
+        if (open < 0)
+            return null;
+
+        var depth = 0;
+        for (var i = open; i < text.Length; i++)
+        {
+            if (text[i] == '{')
+                depth++;
+            else if (text[i] == '}' && --depth == 0)
+                return text[(open + 1)..i];
+        }
+
+        return null;
+    }
+
     private static int[]? ParseColor(string literal)
     {
         var all = Regex.Matches(literal, @"\d+");

@@ -16,6 +16,42 @@ public static class IconSvgRenderer
     public const int DefaultSize = 24;
 
     /// <summary>
+    /// Coordinate units per millimetre used when nobody says otherwise — the value the icon path has
+    /// always drawn with, at which Modelica's default 0.25 mm line comes out as 5 units in a 200-unit
+    /// icon and so as a visible hairline at 24 px.
+    /// </summary>
+    public const double DefaultUnitsPerMillimetre = 20;
+
+    /// <summary>
+    /// What the surrounding transform does to the primitives, and so what each has to do for itself.
+    ///
+    /// <para><b>Line thickness and arrow size are physical.</b> Modelica states them in millimetres,
+    /// which is a length on the page rather than in the drawing, so the number of coordinate units
+    /// they come to depends on how far the caller has zoomed in. An icon at 24 px and a diagram at
+    /// 800 px are two very different zooms of the same 200-unit square, and one constant for both
+    /// gives a diagram whose every outline is ten pixels thick.</para>
+    ///
+    /// <para><b>Mirroring is what a reversed extent means</b>, and it applies to the drawing and not
+    /// to the writing: Modelica mirrors a component whose Placement extent runs right to left, and
+    /// its label still has to be read. <c>MirrorX</c> / <c>MirrorY</c> say that the enclosing
+    /// transform flips, so text can undo it.</para>
+    /// </summary>
+    public sealed record GraphicsContext
+    {
+        /// <summary>What every caller got before any of this was a question.</summary>
+        public static readonly GraphicsContext Default = new();
+
+        /// <summary>Coordinate units to one millimetre, for line thickness and arrow size.</summary>
+        public double UnitsPerMillimetre { get; init; } = DefaultUnitsPerMillimetre;
+
+        /// <summary>Whether the enclosing transform mirrors horizontally.</summary>
+        public bool MirrorX { get; init; }
+
+        /// <summary>Whether the enclosing transform mirrors vertically.</summary>
+        public bool MirrorY { get; init; }
+    }
+
+    /// <summary>
     /// Renders IconData as an SVG string.
     /// </summary>
     /// <param name="icon">The IconData to render.</param>
@@ -53,7 +89,7 @@ public static class IconSvgRenderer
         {
             if (!primitive.Visible) continue;
 
-            var svg = RenderPrimitive(primitive, fileNameResolver);
+            var svg = RenderPrimitive(primitive, fileNameResolver, GraphicsContext.Default);
             if (!string.IsNullOrEmpty(svg))
             {
                 sb.AppendLine($"    {svg}");
@@ -310,14 +346,17 @@ public static class IconSvgRenderer
     /// with Y up.</para>
     /// </summary>
     public static string RenderPrimitives(
-        IEnumerable<GraphicsPrimitive> graphics, Func<string, string?>? fileNameResolver = null)
+        IEnumerable<GraphicsPrimitive> graphics, Func<string, string?>? fileNameResolver = null,
+        GraphicsContext? context = null)
     {
+        context ??= GraphicsContext.Default;
+
         var sb = new StringBuilder();
         foreach (var primitive in graphics)
         {
             if (!primitive.Visible)
                 continue;
-            var svg = RenderPrimitive(primitive, fileNameResolver);
+            var svg = RenderPrimitive(primitive, fileNameResolver, context);
             if (!string.IsNullOrEmpty(svg))
                 sb.AppendLine(svg);
         }
@@ -325,21 +364,22 @@ public static class IconSvgRenderer
         return sb.ToString();
     }
 
-    private static string? RenderPrimitive(GraphicsPrimitive primitive, Func<string, string?>? fileNameResolver)
+    private static string? RenderPrimitive(
+        GraphicsPrimitive primitive, Func<string, string?>? fileNameResolver, GraphicsContext context)
     {
         return primitive switch
         {
-            RectanglePrimitive rect => RenderRectangle(rect),
-            EllipsePrimitive ellipse => RenderEllipse(ellipse),
-            LinePrimitive line => RenderLine(line),
-            PolygonPrimitive polygon => RenderPolygon(polygon),
-            TextPrimitive text => RenderText(text),
+            RectanglePrimitive rect => RenderRectangle(rect, context),
+            EllipsePrimitive ellipse => RenderEllipse(ellipse, context),
+            LinePrimitive line => RenderLine(line, context),
+            PolygonPrimitive polygon => RenderPolygon(polygon, context),
+            TextPrimitive text => RenderText(text, context),
             BitmapPrimitive bitmap => RenderBitmap(bitmap, fileNameResolver),
             _ => null
         };
     }
 
-    private static string RenderRectangle(RectanglePrimitive rect)
+    private static string RenderRectangle(RectanglePrimitive rect, GraphicsContext context)
     {
         var x1 = rect.Extent[0];
         var y1 = rect.Extent[1];
@@ -352,7 +392,7 @@ public static class IconSvgRenderer
         var height = Math.Abs(y2 - y1);
 
         var transform = GetTransformAttribute(rect.Origin, rect.Rotation);
-        var style = GetStyleAttribute(rect);
+        var style = GetStyleAttribute(rect, context);
 
         if (rect.Radius > 0)
         {
@@ -361,7 +401,7 @@ public static class IconSvgRenderer
         return $"<rect x=\"{F(x)}\" y=\"{F(y)}\" width=\"{F(width)}\" height=\"{F(height)}\"{transform}{style}/>";
     }
 
-    private static string RenderEllipse(EllipsePrimitive ellipse)
+    private static string RenderEllipse(EllipsePrimitive ellipse, GraphicsContext context)
     {
         var x1 = ellipse.Extent[0];
         var y1 = ellipse.Extent[1];
@@ -374,7 +414,7 @@ public static class IconSvgRenderer
         var ry = Math.Abs(y2 - y1) / 2;
 
         var transform = GetTransformAttribute(ellipse.Origin, ellipse.Rotation);
-        var style = GetStyleAttribute(ellipse);
+        var style = GetStyleAttribute(ellipse, context);
 
         // Full ellipse
         if (ellipse.StartAngle == 0 && ellipse.EndAngle == 360)
@@ -420,28 +460,80 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\"{transform}{style}/>";
     }
 
-    private static string RenderLine(LinePrimitive line)
+    private static string RenderLine(LinePrimitive line, GraphicsContext context)
     {
         if (line.Points.Count < 2) return "";
 
         var transform = GetTransformAttribute(line.Origin, line.Rotation);
-        var style = GetLineStyleAttribute(line);
+        var style = GetLineStyleAttribute(line, context);
+
+        var svg = new StringBuilder();
 
         if (line.Smooth == "Bezier" && line.Points.Count >= 4)
         {
-            return RenderBezierLine(line, transform, style);
+            svg.Append(RenderBezierLine(line, transform, style));
         }
-
-        // Polyline for multiple points, line for two points
-        if (line.Points.Count == 2)
+        else if (line.Points.Count == 2)
         {
             var p1 = line.Points[0];
             var p2 = line.Points[1];
-            return $"<line x1=\"{F(p1[0])}\" y1=\"{F(p1[1])}\" x2=\"{F(p2[0])}\" y2=\"{F(p2[1])}\"{transform}{style}/>";
+            svg.Append($"<line x1=\"{F(p1[0])}\" y1=\"{F(p1[1])}\" x2=\"{F(p2[0])}\" y2=\"{F(p2[1])}\"{transform}{style}/>");
+        }
+        else
+        {
+            var points = string.Join(" ", line.Points.Select(p => $"{F(p[0])},{F(p[1])}"));
+            svg.Append($"<polyline points=\"{points}\" fill=\"none\"{transform}{style}/>");
         }
 
-        var points = string.Join(" ", line.Points.Select(p => $"{F(p[0])},{F(p[1])}"));
-        return $"<polyline points=\"{points}\" fill=\"none\"{transform}{style}/>";
+        // A Line's arrow is part of the Line and was being dropped: the label pointing at the PI
+        // controller in Modelica.Blocks.Examples.PID_Controller came out as a plain red stroke.
+        svg.Append(RenderArrow(line, context, line.ArrowEnd, line.Points[^1], line.Points[^2], transform));
+        svg.Append(RenderArrow(line, context, line.ArrowStart, line.Points[0], line.Points[1], transform));
+
+        return svg.ToString();
+    }
+
+    /// <summary>
+    /// One end's arrowhead, as a triangle on the line's own axis, or nothing when that end has none.
+    /// </summary>
+    /// <param name="kind">The Modelica <c>Arrow</c> value: None, Open, Filled or Half.</param>
+    /// <param name="tip">The point the arrow sits at.</param>
+    /// <param name="towards">The neighbouring point, which gives the direction it points away from.</param>
+    private static string RenderArrow(
+        LinePrimitive line, GraphicsContext context, string? kind,
+        double[] tip, double[] towards, string transform)
+    {
+        if (string.IsNullOrEmpty(kind) || kind == "None")
+            return "";
+
+        var dx = tip[0] - towards[0];
+        var dy = tip[1] - towards[1];
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length == 0)
+            return "";
+
+        // arrowSize is a length on the page, like the line thickness beside it.
+        var size = (line.ArrowSize > 0 ? line.ArrowSize : 3) * context.UnitsPerMillimetre;
+        var (ux, uy) = (dx / length, dy / length);
+        var (px, py) = (-uy, ux);                       // the perpendicular, for the barbs
+        var baseX = tip[0] - ux * size;
+        var baseY = tip[1] - uy * size;
+        var half = size * 0.35;
+
+        var points = string.Join(" ",
+            $"{F(tip[0])},{F(tip[1])}",
+            $"{F(baseX + px * half)},{F(baseY + py * half)}",
+            $"{F(baseX - px * half)},{F(baseY - py * half)}");
+
+        var colour = ColorToHex(line.LineColor);
+
+        // Open draws the barbs and no more; Filled and Half are solid, Half being a single barb that
+        // is not worth a shape of its own at the sizes these are drawn at.
+        return kind == "Open"
+            ? $"<polyline points=\"{points}\" fill=\"none\" stroke=\"{colour}\" "
+              + $"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"{transform}/>"
+            : $"<polygon points=\"{points}\" fill=\"{colour}\" stroke=\"{colour}\" "
+              + $"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"{transform}/>";
     }
 
     private static string RenderBezierLine(LinePrimitive line, string transform, string style)
@@ -461,12 +553,12 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\" fill=\"none\"{transform}{style}/>";
     }
 
-    private static string RenderPolygon(PolygonPrimitive polygon)
+    private static string RenderPolygon(PolygonPrimitive polygon, GraphicsContext context)
     {
         if (polygon.Points.Count < 3) return "";
 
         var transform = GetTransformAttribute(polygon.Origin, polygon.Rotation);
-        var style = GetStyleAttribute(polygon);
+        var style = GetStyleAttribute(polygon, context);
 
         if (polygon.Smooth == "Bezier" && polygon.Points.Count >= 4)
         {
@@ -501,7 +593,7 @@ public static class IconSvgRenderer
         return $"<path d=\"{path}\"{transform}{style}/>";
     }
 
-    private static string RenderText(TextPrimitive text)
+    private static string RenderText(TextPrimitive text, GraphicsContext context)
     {
         var x1 = text.Extent[0];
         var y1 = text.Extent[1];
@@ -540,8 +632,16 @@ public static class IconSvgRenderer
         // Escape special characters in text
         var displayText = System.Security.SecurityElement.Escape(text.TextString);
 
-        // Note: SVG text needs special handling for Y-axis flip - we counteract the parent group's flip
-        return $"<text x=\"{F(x)}\" y=\"{F(-cy)}\" font-size=\"{F(fontSize)}\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"{fillColor}\" transform=\"scale(1,-1)\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
+        // The parent group has Y flipped, so text counteracts it. Where the caller also mirrors —
+        // a component whose Placement extent runs right to left — it counteracts that as well: the
+        // drawing is mirrored, the words are not, which is what a Modelica tool shows and what
+        // anyone reading a label expects.
+        var flipX = context.MirrorX ? -1 : 1;
+        var flipY = context.MirrorY ? 1 : -1;
+
+        return $"<text x=\"{F(x * flipX)}\" y=\"{F(-cy * -flipY)}\" font-size=\"{F(fontSize)}\" "
+             + $"text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"{fillColor}\" "
+             + $"transform=\"scale({flipX},{flipY})\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
     }
 
     private static string RenderBitmap(BitmapPrimitive bitmap, Func<string, string?>? fileNameResolver)
@@ -634,7 +734,7 @@ public static class IconSvgRenderer
         return "";
     }
 
-    private static string GetStyleAttribute(GraphicsPrimitive primitive)
+    private static string GetStyleAttribute(GraphicsPrimitive primitive, GraphicsContext context)
     {
         var styles = new List<string>();
 
@@ -652,7 +752,7 @@ public static class IconSvgRenderer
         if (primitive.LinePattern != "None")
         {
             styles.Add($"stroke=\"{ColorToHex(primitive.LineColor)}\"");
-            styles.Add($"stroke-width=\"{F(20 * primitive.LineThickness)}\"");
+            styles.Add($"stroke-width=\"{W(context.UnitsPerMillimetre * primitive.LineThickness)}\"");
 
             // Line pattern
             var dashArray = GetDashArray(primitive.LinePattern);
@@ -669,12 +769,12 @@ public static class IconSvgRenderer
         return " " + string.Join(" ", styles);
     }
 
-    private static string GetLineStyleAttribute(LinePrimitive line)
+    private static string GetLineStyleAttribute(LinePrimitive line, GraphicsContext context)
     {
         var styles = new List<string>();
 
         styles.Add($"stroke=\"{ColorToHex(line.LineColor)}\"");
-        styles.Add($"stroke-width=\"{F(20 * line.LineThickness)}\"");
+        styles.Add($"stroke-width=\"{W(context.UnitsPerMillimetre * line.LineThickness)}\"");
 
         // Line pattern
         var dashArray = GetDashArray(line.LinePattern);
@@ -682,9 +782,6 @@ public static class IconSvgRenderer
         {
             styles.Add($"stroke-dasharray=\"{dashArray}\"");
         }
-
-        // Arrow markers would require defining SVG markers - simplified for now
-        // In a full implementation, we'd define markers in <defs> and reference them
 
         return " " + string.Join(" ", styles);
     }
@@ -713,6 +810,17 @@ public static class IconSvgRenderer
     private static string F(double value)
     {
         return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A stroke width, which needs more places than a coordinate does. Two decimals is ample for a
+    /// position in a 200-unit drawing and not for a line thickness that gets smaller the further in
+    /// the view zooms - at 1600 px a hairline is 0.125 units, which "0.##" turns into 0.13, and a
+    /// few steps further in it rounds to nothing at all and the line disappears.
+    /// </summary>
+    private static string W(double value)
+    {
+        return value.ToString("0.#####", CultureInfo.InvariantCulture);
     }
 
     #endregion
