@@ -235,6 +235,15 @@ public sealed class GuidanceTools
             The coordinate system. A diagram is {{-100,-100},{100,100}} unless the class declares otherwise,
             with x to the right and y UP (not down, as in most image formats). A component's Placement
             extent is where its type's icon is scaled to, so its size is your choice, not the type's.
+            An extent written with an origin is RELATIVE to it - origin={60,-120} with
+            extent={{-20,-20},{20,20}} is a 40x40 box on the bottom edge, not one in the middle - and
+            get_diagram_layout reports extents with the origin already added in, so what it gives you
+            is where the component actually is.
+
+            Inherited ports are part of the diagram. Most blocks declare no connector at all and get
+            u and y from a base class (Modelica.Blocks.Interfaces.SISO and its neighbours);
+            get_diagram_layout lists those with the base class in inheritedFrom, and they are drawn.
+            You cannot move one without redeclaring it, so lay the rest of the model out around them.
 
             Sizes and the grid. Place on a multiple of 10 and give an ordinary block a 20x20 extent
             ({{-10,-10},{10,10}} about its centre) — that is the size the Modelica Standard Library draws a

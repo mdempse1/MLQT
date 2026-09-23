@@ -11,8 +11,13 @@ namespace ModelicaParser.Icons;
 /// <param name="Icon">The component type's icon, merged down its extends chain, or null when the type
 /// could not be resolved or draws nothing — in which case an outline is drawn in its place.</param>
 /// <param name="TypeName">The declared type, shown in the placeholder when there is no icon.</param>
+/// <param name="RotationCentre">
+/// The point <paramref name="Rotation"/> turns about, as [x,y]. Null means the extent's own centre,
+/// which is what a transformation with no <c>origin</c> amounts to.
+/// </param>
 public sealed record DiagramComponent(
-    string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null);
+    string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null,
+    double[]? RotationCentre = null);
 
 /// <summary>One connection line, as the poly-line the diagram draws for it.</summary>
 /// <param name="Points">At least two points, in the parent's diagram coordinates.</param>
@@ -132,11 +137,19 @@ public static class DiagramSvgRenderer
         var iconCx = (icon[0] + icon[2]) / 2;
         var iconCy = (icon[1] + icon[3]) / 2;
 
+        // Rotation turns about the transformation's origin, which is usually the centre of the
+        // placement box and is not obliged to be. Turning about the box centre instead moves a
+        // component that states an off-centre origin, rather than only turning it.
+        var (rx, ry) = component.RotationCentre is { Length: >= 2 } centre
+            ? (centre[0], centre[1])
+            : (cx, cy);
+
         svg.Append("    <g transform=\"")
-            .Append($"translate({F(cx)},{F(cy)})");
+            .Append($"translate({F(rx)},{F(ry)})");
         if (component.Rotation != 0)
             svg.Append($" rotate({F(component.Rotation)})");
-        svg.Append($" scale({F(scaleX)},{F(scaleY)}) translate({F(-iconCx)},{F(-iconCy)})")
+        svg.Append($" translate({F(cx - rx)},{F(cy - ry)})")
+            .Append($" scale({F(scaleX)},{F(scaleY)}) translate({F(-iconCx)},{F(-iconCy)})")
             .AppendLine("\">");
 
         Indent(svg, IconSvgRenderer.RenderPrimitives(

@@ -49,8 +49,8 @@ internal static class DiagramImage
         if (tree is null)
             return null;
 
-        var placements = DiagramGeometry.Placements(code);
-        var components = Components(libraries, node, code, placements);
+        var placements = DiagramGeometry.Placements(libraries, node.Id, code);
+        var components = Components(libraries, node, placements);
         var connections = Connections(libraries, node.Id, code, placements);
         var diagramLayer = IconExtractor.ExtractDiagram(tree);
 
@@ -84,31 +84,53 @@ internal static class DiagramImage
 
     // --- Components ------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The components to draw: everything the class presents, declared or inherited, that carries a
+    /// Placement. The set comes from <c>ClassElementResolver</c> rather than from the class's own
+    /// text, because most blocks in the Modelica Standard Library declare no connector at all - a
+    /// diagram built from the declarations alone leaves out the two ports every reader looks for.
+    /// </summary>
     private static List<DiagramComponent> Components(
-        ILibraryDataService libraries, ModelNode node, string code,
+        ILibraryDataService libraries, ModelNode node,
         IReadOnlyDictionary<string, DiagramGeometry.Placement> placements)
     {
         var imports = Imports(node);
         var components = new List<DiagramComponent>();
 
-        foreach (var component in ClassBodyLocator.Analyze(code).Components)
+        foreach (var member in ClassElementResolver
+                     .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+                     .Where(m => m.Element.Kind == ClassElementKind.Component))
         {
-            if (!placements.TryGetValue(component.Name, out var placement))
-                continue;   // no Placement: Modelica does not draw it either
+            // No Placement means Modelica does not draw it either - a parameter, or a component the
+            // author never put on the diagram.
+            if (!placements.TryGetValue(member.Element.Name, out var placement))
+                continue;
 
+            // Resolved in the scope of the class that DECLARED it, which for an inherited connector
+            // is the base class and not this one.
             components.Add(new DiagramComponent(
-                component.Name, placement.Extent, placement.Rotation,
-                IconOf(libraries, node.Id, component.TypeText, imports),
-                component.TypeText));
+                member.Element.Name, placement.Extent, placement.Rotation,
+                IconOf(libraries, member.OwnerId, member.Element.Type,
+                       member.InheritedFrom is null ? imports : member.OwnerImports),
+                member.Element.Type,
+                placement.RotationCentre));
         }
 
         return components;
     }
 
     /// <summary>
-    /// The icon a component's type shows, merged down its extends chain the way Modelica composes
-    /// one. Null when the type is not loaded — the renderer draws an outline for that, because
-    /// "MLQT cannot resolve this type" and "this component is not there" must not look the same.
+    /// What a component's type draws when it is shown on someone else's diagram. Null when the type
+    /// is not loaded - the renderer draws an outline for that, because "MLQT cannot resolve this
+    /// type" and "this component is not there" must not look the same.
+    ///
+    /// <para><b>A connector is the exception, and it is the whole of what a block's diagram shows.</b>
+    /// Modelica gives a connector two representations: the icon layer, used where the connector
+    /// appears on the enclosing class's own icon, and the diagram layer, used where it appears on
+    /// the enclosing class's diagram. They are different drawings - <c>RealInput</c>'s icon is a
+    /// triangle filling its whole coordinate system, its diagram layer is a smaller triangle sitting
+    /// against the edge plus a <c>%name</c> label - so drawing the icon in a diagram gives a
+    /// connector several times the size Dymola draws, and no name beside it.</para>
     /// </summary>
     private static IconData? IconOf(
         ILibraryDataService libraries, string classId, string? typeText, IReadOnlyList<string> imports)
@@ -120,11 +142,27 @@ internal static class DiagramImage
         if (type?.Definition.ModelicaCode is not { Length: > 0 } source)
             return null;
 
+        if (string.Equals(type.ClassType, "connector", StringComparison.Ordinal)
+            && DiagramLayerOf(type) is { } diagram)
+            return diagram;
+
         var dot = type.Id.LastIndexOf('.');
         return IconSvgRenderer.ExtractIconWithInheritance(
             source,
             baseName => Resolve(libraries, type.Id, baseName)?.Definition.ModelicaCode,
             initialPackageContext: dot > 0 ? type.Id[..dot] : null);
+    }
+
+    /// <summary>
+    /// A connector's own diagram layer, or null when it has none and the icon layer must stand in.
+    /// Not merged down the extends chain: a diagram is what a class draws itself, where an icon is
+    /// composed from what it inherits.
+    /// </summary>
+    private static IconData? DiagramLayerOf(ModelNode type)
+    {
+        var tree = type.Definition.EnsureParsed();
+        var diagram = tree is null ? null : IconExtractor.ExtractDiagram(tree);
+        return diagram is { HasGraphics: true } ? diagram : null;
     }
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)

@@ -24,19 +24,27 @@ internal static class DiagramGeometry
     }
 
     /// <summary>A component's Placement: where its type's icon goes, and how it is turned.</summary>
-    public sealed record Placement(double[] Extent, double Rotation);
+    /// <param name="Extent">[x1,y1,x2,y2] in the enclosing diagram's coordinates, with any
+    /// <c>origin</c> already added in — a Modelica extent is stated relative to it.</param>
+    /// <param name="Rotation">Degrees counter-clockwise.</param>
+    /// <param name="RotationCentre">The point the rotation turns about: the transformation's
+    /// <c>origin</c> where it has one, and the extent's own centre where it does not. The two differ
+    /// only for an extent that is not symmetric about its origin, which is legal and rare.</param>
+    public sealed record Placement(double[] Extent, double Rotation, double[] RotationCentre);
 
     private static readonly Regex ExtentRegex = new(
         @"extent\s*=\s*\{\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*,\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}",
         RegexOptions.Compiled);
     private static readonly Regex RotationRegex = new(@"rotation\s*=\s*(-?\d+(?:\.\d+)?)", RegexOptions.Compiled);
+    private static readonly Regex OriginRegex = new(
+        @"origin\s*=\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}", RegexOptions.Compiled);
 
     /// <summary>The orthogonal poly-line for a connection, or null when it cannot be drawn (an endpoint's
     /// component has no Placement). Points are integer diagram coordinates.</summary>
     public static IReadOnlyList<Pt>? RouteConnection(
         ILibraryDataService libraries, string classId, string classCode, string portA, string portB)
     {
-        var placements = Placements(classCode);
+        var placements = Placements(libraries, classId, classCode);
         var a = Locate(libraries, classId, classCode, placements, portA);
         var b = Locate(libraries, classId, classCode, placements, portB);
         if (a is null || b is null)
@@ -200,10 +208,14 @@ internal static class DiagramGeometry
     // --- Parsing helpers ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Every component in the class that has a Placement, by name. The one reader of a placement
-    /// from source: get_diagram_layout reports these, the router positions connections with them
-    /// and get_diagram_image draws them, and a second regex for the same annotation is how three
-    /// answers to one question start (B196).
+    /// Every component declared in <paramref name="classCode"/> that has a Placement, by name. The
+    /// one reader of a placement from source: get_diagram_layout reports these, the router positions
+    /// connections with them and get_diagram_image draws them, and a second regex for the same
+    /// annotation is how three answers to one question start (B196).
+    ///
+    /// <para><b>Only what the class declares itself.</b> Use the overload taking the graph for the
+    /// components a class inherits — most blocks in the Modelica Standard Library declare no
+    /// connector of their own at all.</para>
     /// </summary>
     public static Dictionary<string, Placement> Placements(string classCode)
     {
@@ -213,15 +225,134 @@ internal static class DiagramGeometry
         {
             if (c.DeclStart < 0 || c.DeclStop >= classCode.Length || c.DeclStop < c.DeclStart)
                 continue;
-            var slice = classCode[c.DeclStart..(c.DeclStop + 1)];
-            var e = ExtentRegex.Match(slice);
-            if (!e.Success)
-                continue;
-            var extent = new[] { Num(e.Groups[1].Value), Num(e.Groups[2].Value), Num(e.Groups[3].Value), Num(e.Groups[4].Value) };
-            var rot = RotationRegex.Match(slice);
-            result[c.Name] = new Placement(extent, rot.Success ? Num(rot.Groups[1].Value) : 0);
+            if (ParsePlacement(classCode[c.DeclStart..(c.DeclStop + 1)]) is { } placement)
+                result[c.Name] = placement;
         }
         return result;
+    }
+
+    /// <summary>
+    /// Every component of the class that has a Placement, <b>including the ones it inherits</b>.
+    ///
+    /// <para>This is what a diagram is made of. <c>Modelica.Blocks.Continuous.Integrator</c> declares
+    /// two optional connectors and gets its <c>u</c> and <c>y</c> from
+    /// <c>Interfaces.SISO</c>; drawing only what a class declares itself left the two connectors
+    /// every reader looks for off the picture entirely (B196).</para>
+    ///
+    /// <para><paramref name="classCode"/> is taken as given rather than read from the node, so a
+    /// caller part-way through an edit positions against the text it is editing. A declaration in it
+    /// shadows an inherited one of the same name, which is what Modelica means by redeclaring.</para>
+    /// </summary>
+    public static Dictionary<string, Placement> Placements(
+        ILibraryDataService libraries, string classId, string classCode)
+    {
+        var result = Placements(classCode);
+
+        var node = libraries.GetModelById(classId);
+        if (node is null)
+            return result;
+
+        // One parse per base class rather than one per inherited component: SISO's two connectors
+        // would otherwise cost two passes over the same source, and a deep chain many more.
+        var byOwner = new Dictionary<string, Dictionary<string, Placement>>(StringComparer.Ordinal);
+
+        foreach (var member in ClassElementResolver
+                     .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+                     .Where(m => m.Element.Kind == ClassElementKind.Component && m.InheritedFrom is not null))
+        {
+            if (result.ContainsKey(member.Element.Name))
+                continue;
+
+            if (!byOwner.TryGetValue(member.OwnerId, out var owned))
+            {
+                var ownerCode = libraries.GetModelById(member.OwnerId)?.Definition.ModelicaCode;
+                owned = ownerCode is null ? [] : Placements(ownerCode);
+                byOwner[member.OwnerId] = owned;
+            }
+
+            if (owned.TryGetValue(member.Element.Name, out var placement))
+                result[member.Element.Name] = placement;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The <c>transformation(...)</c> of a declaration's Placement, or null when it has none.
+    ///
+    /// <para><b>The transformation, not the whole annotation.</b> A Placement may also carry an
+    /// <c>iconTransformation</c>, which says where the component sits in the enclosing class's
+    /// <em>icon</em> — a different question, and searching the declaration for the first
+    /// <c>extent=</c> answers whichever one happens to be written first.</para>
+    ///
+    /// <para><b>The extent is relative to <c>origin</c></b>, which defaults to the centre of the
+    /// coordinate system. Reading the extent and ignoring the origin puts every component that uses
+    /// one in the middle of the diagram: MSL writes an optional connector as
+    /// <c>extent={{-20,-20},{20,20}}, rotation=90, origin={60,-120}</c>, and without the origin that
+    /// is a 40x40 box at the centre rather than a connector on the bottom edge.</para>
+    /// </summary>
+    private static Placement? ParsePlacement(string declaration)
+    {
+        var transformation = TransformationArguments(declaration) ?? declaration;
+
+        var e = ExtentRegex.Match(transformation);
+        if (!e.Success)
+            return null;
+
+        var extent = new[]
+        {
+            Num(e.Groups[1].Value), Num(e.Groups[2].Value),
+            Num(e.Groups[3].Value), Num(e.Groups[4].Value),
+        };
+
+        var rotation = RotationRegex.Match(transformation);
+        var origin = OriginRegex.Match(transformation);
+        var (ox, oy) = origin.Success
+            ? (Num(origin.Groups[1].Value), Num(origin.Groups[2].Value))
+            : (0d, 0d);
+
+        double[] absolute = [extent[0] + ox, extent[1] + oy, extent[2] + ox, extent[3] + oy];
+        double[] centre = origin.Success ? [ox, oy] : [(absolute[0] + absolute[2]) / 2, (absolute[1] + absolute[3]) / 2];
+
+        return new Placement(absolute, rotation.Success ? Num(rotation.Groups[1].Value) : 0, centre);
+    }
+
+    /// <summary>
+    /// The text between the parentheses of <c>transformation(</c>, matched by depth so a nested
+    /// <c>extent={{..},{..}}</c> cannot end it early. Null when the declaration has no
+    /// <c>transformation</c> — deliberately not matching <c>iconTransformation</c>, which ends in the
+    /// same characters.
+    /// </summary>
+    private static string? TransformationArguments(string declaration)
+    {
+        var search = 0;
+        while (true)
+        {
+            var start = declaration.IndexOf("transformation", search, StringComparison.Ordinal);
+            if (start < 0)
+                return null;
+            search = start + 1;
+
+            if (start > 0 && (char.IsLetterOrDigit(declaration[start - 1]) || declaration[start - 1] == '_'))
+                continue;   // iconTransformation, or some other word ending in it
+
+            var open = start + "transformation".Length;
+            while (open < declaration.Length && char.IsWhiteSpace(declaration[open]))
+                open++;
+            if (open >= declaration.Length || declaration[open] != '(')
+                continue;
+
+            var depth = 0;
+            for (var i = open; i < declaration.Length; i++)
+            {
+                if (declaration[i] == '(')
+                    depth++;
+                else if (declaration[i] == ')' && --depth == 0)
+                    return declaration[(open + 1)..i];
+            }
+
+            return declaration[(open + 1)..];   // unbalanced; take what there is
+        }
     }
 
     private static string? ComponentTypeText(string classCode, string componentName)

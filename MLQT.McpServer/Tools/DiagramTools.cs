@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
+using ModelicaGraph.Analysis;
+using ModelicaParser.DataTypes;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
@@ -20,11 +22,6 @@ namespace MLQT.McpServer.Tools;
 [McpServerToolType]
 public sealed class DiagramTools
 {
-    private static readonly Regex ExtentRegex =
-        new(@"extent\s*=\s*\{\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*,\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*\}",
-            RegexOptions.Compiled);
-    private static readonly Regex RotationRegex = new(@"rotation\s*=\s*(-?\d+)", RegexOptions.Compiled);
-
     private readonly ILibraryDataService _libraries;
     private readonly IExternalResourceService _resources;
     private readonly SessionState _session;
@@ -38,8 +35,12 @@ public sealed class DiagramTools
 
     [McpServerTool(Name = "get_diagram_layout")]
     [Description("Get a class's diagram layout: each component's name, type and Placement extent " +
-                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. Use " +
-                "this to see how a model is arranged before adjusting it. Read-only.")]
+                "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. " +
+                "INHERITED components are included, marked with the base class they come from - most " +
+                "blocks declare no connector of their own and get their ports from a base class. An " +
+                "extent is absolute: a Placement written with an origin has it added in already. Use " +
+                "this to see how a model is arranged before adjusting it, and get_diagram_image to " +
+                "look at it. Read-only.")]
     public object GetDiagramLayout(
         [Description("Fully-qualified class id.")] string classId)
     {
@@ -50,14 +51,24 @@ public sealed class DiagramTools
             return new ToolError($"Class '{classId}' failed to parse.");
 
         var code = node.Definition.ModelicaCode ?? string.Empty;
-        var layout = ClassBodyLocator.Analyze(code);
 
-        var components = layout.Components.Select(c =>
-        {
-            var text = code[c.DeclStart..(c.DeclStop + 1)];
-            var (extent, rotation) = ParsePlacement(text);
-            return new DiagramComponent(c.Name, c.TypeText, extent, rotation);
-        }).ToList();
+        // The same reader the image and the connection router use, so the numbers and the picture
+        // cannot describe different diagrams - which they did while this had a regex of its own.
+        var placements = DiagramGeometry.Placements(_libraries, classId, code);
+
+        var components = ClassElementResolver
+            .Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+            .Where(m => m.Element.Kind == ClassElementKind.Component)
+            .Select(m =>
+            {
+                placements.TryGetValue(m.Element.Name, out var placement);
+                return new DiagramComponent(
+                    m.Element.Name, m.Element.Type,
+                    placement is null ? null : [.. placement.Extent.Select(ToInt)],
+                    placement is null or { Rotation: 0 } ? null : ToInt(placement.Rotation),
+                    m.InheritedFrom);
+            })
+            .ToList();
 
         var connections = BehaviorExtractor.ExtractFromCode(code).Connections
             .Select(x => new ConnectionView(x.PortA, x.PortB)).ToList();
@@ -159,18 +170,7 @@ public sealed class DiagramTools
         return new StructureEditResult(classId, r.FilePath, r.PreviewOnly, !r.PreviewOnly, r.AffectedCount, r.NewFileContent, null);
     }
 
-    private static (IReadOnlyList<int>? Extent, int? Rotation) ParsePlacement(string componentText)
-    {
-        var m = ExtentRegex.Match(componentText);
-        IReadOnlyList<int>? extent = null;
-        if (m.Success)
-            extent = new[] { ToInt(m.Groups[1].Value), ToInt(m.Groups[2].Value), ToInt(m.Groups[3].Value), ToInt(m.Groups[4].Value) };
-        var rot = RotationRegex.Match(componentText);
-        int? rotation = rot.Success ? ToInt(rot.Groups[1].Value) : null;
-        return (extent, rotation);
-    }
-
-    private static int ToInt(string s) => (int)Math.Round(double.Parse(s, System.Globalization.CultureInfo.InvariantCulture));
+    private static int ToInt(double value) => (int)Math.Round(value);
 
     // Set the Placement on a component, returning the new class code, or null if the component is absent.
     private static string? SetPlacement(string classCode, string componentName, int x1, int y1, int x2, int y2, int rotation)

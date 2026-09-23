@@ -137,6 +137,14 @@ icon at its `Placement`, the connection lines between them, and whatever the cla
 diagram layer, returned as a PNG. Overlapping components, a signal running right to left and a
 connector left on the wrong edge are obvious in the picture and invisible in the numbers.
 
+What it draws is what a Modelica tool draws, which took getting three things right that are easy to
+miss and are invisible until a render is put beside one: a Placement's `extent` is stated **relative
+to its `origin`**, the components on a diagram include the **inherited** ones (a block usually gets
+its `u` and `y` from a base class and declares no connector of its own), and a **connector is drawn
+with its diagram layer, not its icon layer** — Modelica gives it both, and they are different
+drawings. `get_diagram_layout` reports the same absolute extents and the same inherited components,
+so the numbers and the picture describe one diagram.
+
 Two deliberate differences from a Modelica tool's diagram window:
 
 - **Nothing is clipped.** A viewer scales to the declared coordinate system and cuts off anything

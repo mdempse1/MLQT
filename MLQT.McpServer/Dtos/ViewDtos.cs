@@ -112,7 +112,13 @@ public sealed record InterfaceSearchItem(
 public sealed record InterfaceSearchResult(int Total, int Count, IReadOnlyList<InterfaceSearchItem> Items);
 
 /// <summary>A component's diagram placement: its bounding extent [x1,y1,x2,y2] and optional rotation.</summary>
-public sealed record DiagramComponent(string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation);
+/// <summary>
+/// A component on a class's diagram. Extent is [x1,y1,x2,y2] in the diagram's own coordinates, with
+/// any <c>origin</c> from the Placement already added in; InheritedFrom names the base class that
+/// declared it, or is null when the class declares it itself.
+/// </summary>
+public sealed record DiagramComponent(
+    string Name, string? Type, IReadOnlyList<int>? Extent, int? Rotation, string? InheritedFrom = null);
 
 /// <summary>The diagram layout of a class: its components' placements plus its connections.</summary>
 public sealed record DiagramLayoutResult(
