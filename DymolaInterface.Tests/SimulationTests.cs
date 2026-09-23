@@ -30,7 +30,7 @@ public class SimulationTests
             stopTime: 4.0,
             numberOfIntervals: 500,
             method: "Dassl",
-            tolerance: 0.0001
+            tolerance: 0.0001, cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Assert
@@ -45,7 +45,7 @@ public class SimulationTests
         var modelName = "Invalid.Model.Name";
 
         // Act
-        var result = await _fixture.Dymola.SimulateModelAsync(problem: modelName);
+        var result = await _fixture.Dymola.SimulateModelAsync(problem: modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Simulation should fail for invalid model");
@@ -59,7 +59,7 @@ public class SimulationTests
         var modelName = "Modelica.Electrical.Analog.Examples.ChuaCircuit";
 
         // Act
-        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false);
+        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Model check should succeed");
@@ -73,7 +73,7 @@ public class SimulationTests
         var modelName = "Invalid.Model.Name";
 
         // Act
-        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false);
+        var result = await _fixture.Dymola.CheckModelAsync(modelName, simulate: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result, "Model check should fail for invalid model");
@@ -87,7 +87,7 @@ public class SimulationTests
         var modelName = "Modelica.Mechanics.Rotational.Examples.First";
 
         // Act
-        var result = await _fixture.Dymola.TranslateModelAsync(modelName);
+        var result = await _fixture.Dymola.TranslateModelAsync(modelName, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result, "Translation should succeed");
@@ -101,7 +101,7 @@ public class SimulationTests
         var modelName = "Invalid.Model.Name";
 
         // Act
-        await _fixture.Dymola.SimulateModelAsync(problem: modelName);
+        await _fixture.Dymola.SimulateModelAsync(problem: modelName, cancellationToken: TestContext.Current.CancellationToken);
         var error = await _fixture.Dymola.GetLastErrorAsync();
 
         // Assert
@@ -115,7 +115,7 @@ public class SimulationTests
     {
         // Arrange
         await _fixture.EnsureDymolaStartedAsync();
-        await _fixture.Dymola.SimulateModelAsync("Modelica.Blocks.Examples.PID_Controller", stopTime: 1.0);
+        await _fixture.Dymola.SimulateModelAsync("Modelica.Blocks.Examples.PID_Controller", stopTime: 1.0, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var result = await _fixture.Dymola.ClearAsync(fast: true);

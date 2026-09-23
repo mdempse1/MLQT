@@ -86,7 +86,7 @@ public class WireFormatCoreTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        var ok = await h.Dymola.ExecuteCommandAsync("foo()");
+        var ok = await h.Dymola.ExecuteCommandAsync("foo()", cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(ok);
         Assert.Equal("foo()", h.Handler.LastRequest.Method);
     }
@@ -325,7 +325,7 @@ public class WireFormatCoreTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.RunScriptAsync("s.mos", silent: true, scriptDir: "/tmp");
+        await h.Dymola.RunScriptAsync("s.mos", silent: true, scriptDir: "/tmp", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("RunScript", h.Handler.LastRequest.Method);
         Assert.True(h.Handler.LastRequest.Param(1).GetBoolean());
     }
