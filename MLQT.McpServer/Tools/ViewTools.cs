@@ -31,7 +31,9 @@ public sealed class ViewTools
                 "with the base class it came from in inheritedFrom), so you get the complete picture without " +
                 "chasing base classes — set include_inherited=false for only what the class declares itself. " +
                 "Far smaller than get_class_source. A component is a connector when it has a causality or its " +
-                "type resolves to a loaded connector class. A parameter's default is the value it takes; a " +
+                "type resolves to a loaded connector class. A connector carrying a 'condition' is " +
+                "CONDITIONAL - it exists only where that expression is true, so an instance that leaves it " +
+                "false has no such port and connecting to it is an error. A parameter's default is the value it takes; a " +
                 "typeModification (e.g. \"(min=0)\") constrains its type and is reported apart from the " +
                 "default, since a declaration can carry both. For a class from an encrypted library, " +
                 "recoveredFromDocumentation is true and the members come from the vendor's generated " +
@@ -75,7 +77,9 @@ public sealed class ViewTools
             var isConnector = !isFunction && (e.Causality is not null || typeIsConnector);
 
             if (isConnector)
-                connectors.Add(new ConnectorView(e.Name, e.Type, e.Causality, e.Connection, typeIsConnector, e.Description, m.InheritedFrom));
+                connectors.Add(new ConnectorView(
+                    e.Name, e.Type, e.Causality, e.Connection, typeIsConnector, e.Description,
+                    m.InheritedFrom, Unit: null, e.Condition));
             else if (e.Variability is "parameter" or "constant")
                 parameters.Add(new ParameterView(
                     e.Name, e.Type, e.Variability, e.DefaultValue, e.TypeModification,
@@ -143,6 +147,7 @@ public sealed class ViewTools
                 m.Element.Prefixes,
                 m.Element.LeadingComments,
                 m.Element.Line,
+                m.Element.Condition,
                 m.InheritedFrom))
             .ToList();
 

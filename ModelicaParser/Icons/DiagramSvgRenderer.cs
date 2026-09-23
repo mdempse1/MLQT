@@ -21,9 +21,14 @@ namespace ModelicaParser.Icons;
 /// diagram look wired rather than like a row of boxes, and they are separate drawings with
 /// placements of their own rather than graphics in the icon's list.
 /// </param>
+/// <param name="ValueOf">
+/// What a parameter of this component is set to, for the <c>%name</c>-style references in its icon
+/// text. Null answers only <c>%name</c>, which leaves an inertia labelled <c>J=%J</c> (B278).
+/// </param>
 public sealed record DiagramComponent(
     string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null,
-    double[]? RotationCentre = null, IReadOnlyList<DiagramComponent>? Children = null);
+    double[]? RotationCentre = null, IReadOnlyList<DiagramComponent>? Children = null,
+    Func<string, string?>? ValueOf = null);
 
 /// <summary>One connection line, as the poly-line the diagram draws for it.</summary>
 /// <param name="Points">At least two points, in the parent's diagram coordinates.</param>
@@ -183,7 +188,7 @@ public static class DiagramSvgRenderer
         var innerMirrorY = mirrorY ^ (scaleY < 0);
 
         Indent(svg, IconSvgRenderer.RenderPrimitives(
-            component.Icon.Graphics.Select(g => WithName(g, component.Name)), fileNameResolver,
+            component.Icon.Graphics.Select(g => WithText(g, component)), fileNameResolver,
             ContextFor(pixelsPerUnit, inner, innerMirrorX, innerMirrorY)), indent + "  ");
 
         // The connectors on the component's icon, each with a placement of its own inside it.
@@ -232,11 +237,11 @@ public static class DiagramSvgRenderer
     }
 
     /// <summary>
-    /// A copy of the primitive with <c>%name</c> resolved, which is how every icon in the Modelica
-    /// Standard Library writes a component's label. Left alone when there is nothing to substitute,
-    /// so the common case allocates nothing.
+    /// A copy of the primitive with its <c>%</c> references resolved — the component's name, its
+    /// class, and the values its parameters were given. Left alone when there is nothing to
+    /// substitute, so the common case allocates nothing.
     /// </summary>
-    private static GraphicsPrimitive WithName(GraphicsPrimitive primitive, string name)
+    private static GraphicsPrimitive WithText(GraphicsPrimitive primitive, DiagramComponent component)
     {
         if (primitive is not TextPrimitive text || !text.TextString.Contains('%'))
             return primitive;
@@ -247,7 +252,8 @@ public static class DiagramSvgRenderer
             Origin = text.Origin,
             Rotation = text.Rotation,
             Extent = text.Extent,
-            TextString = text.TextString.Replace("%name", name, StringComparison.Ordinal),
+            TextString = IconText.Resolve(
+                text.TextString, component.Name, component.TypeName, component.ValueOf),
             FontSize = text.FontSize,
             FontName = text.FontName,
             FontStyles = text.FontStyles,

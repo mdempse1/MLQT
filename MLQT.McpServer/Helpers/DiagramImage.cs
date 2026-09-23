@@ -110,12 +110,19 @@ internal static class DiagramImage
             var type = TypeResolver.Resolve(
                 libraries.CombinedGraph, member.OwnerId, member.Element.Type, scope);
 
+            // What this instance's parameters are: the modification it was given, then the type's
+            // own default. It answers both the %references in the icon's text (B278) and whether a
+            // conditional connector on that icon is there at all (B277).
+            var valueOf = ComponentValues.For(
+                libraries.CombinedGraph, type, member.Element.Modifications);
+
             components.Add(new DiagramComponent(
                 member.Element.Name, placement.Extent, placement.Rotation,
                 IconOf(libraries, member.OwnerId, member.Element.Type, scope),
                 member.Element.Type,
                 placement.RotationCentre,
-                type is null ? null : ConnectorsOn(libraries, type)));
+                type is null ? null : ConnectorsOn(libraries, type, valueOf),
+                valueOf));
         }
 
         return components;
@@ -169,7 +176,8 @@ internal static class DiagramImage
     /// the <c>transformation</c> serves for both. And it is the connector's ICON layer that is drawn
     /// here, not its diagram layer: this is an icon.</para>
     /// </summary>
-    private static List<DiagramComponent>? ConnectorsOn(ILibraryDataService libraries, ModelNode type)
+    private static List<DiagramComponent>? ConnectorsOn(
+        ILibraryDataService libraries, ModelNode type, Func<string, string?> valueOf)
     {
         var code = type.Definition.ModelicaCode;
         if (string.IsNullOrEmpty(code))
@@ -187,6 +195,14 @@ internal static class DiagramImage
                      .Where(m => m.Element.Kind == ClassElementKind.Component))
         {
             if (!placements.TryGetValue(member.Element.Name, out var placement))
+                continue;
+
+            // A connector declared `if <expr>` is only there when the expression holds, and an
+            // instance that never enabled it has no such port: MSL's Integrator, Torque and
+            // SpringDamper each carry one that is off by default, and drawing them put three ports
+            // on a diagram that Dymola leaves bare (B277). Undecidable answers are drawn — showing a
+            // port that is switched off is a smaller lie than hiding one that is switched on.
+            if (ModelicaCondition.Evaluate(member.Element.Condition, valueOf) == false)
                 continue;
 
             var memberType = TypeResolver.Resolve(

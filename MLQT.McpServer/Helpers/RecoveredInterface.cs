@@ -80,6 +80,9 @@ public static class RecoveredInterface
                     // Nothing was read from a file, so there is no line to point at. Zero says that;
                     // a 1 would look like the top of the class and be wrong in a way that navigates.
                     Line: 0,
+                    // Documentation does not say whether a member was conditional, and it would be
+                    // a guess to imply it was not.
+                    Condition: null,
                     InheritedFrom: null));
         }
 

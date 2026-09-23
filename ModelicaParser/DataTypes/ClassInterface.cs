@@ -57,6 +57,17 @@ public sealed record ClassElement
     /// </summary>
     public string? TypeModification { get; init; }
 
+    /// <summary>
+    /// The expression a conditional component is declared with — <c>heatPort if useHeatPort</c>
+    /// yields <c>"useHeatPort"</c> — or null for an ordinary one. Components only.
+    ///
+    /// <para><b>A component whose condition is false does not exist</b>: it takes part in no
+    /// connection and a tool does not draw it. The condition is almost always a boolean parameter of
+    /// the same class, so what it comes to depends on the modification the instance was given, which
+    /// is why this is kept as written rather than as an answer.</para>
+    /// </summary>
+    public string? Condition { get; init; }
+
     /// <summary>Description string from the trailing comment. Components and nested classes.</summary>
     public string? Description { get; init; }
 
@@ -73,9 +84,14 @@ public sealed record ClassElement
     public int Line { get; init; }
 
     /// <summary>
-    /// For an <see cref="ClassElementKind.Extends"/> element: the scalar modifications applied to the base
-    /// class, e.g. <c>extends Base(k = 5)</c> yields {"k" =&gt; "5"}. These override inherited defaults.
-    /// Null when there are none. Non-scalar (nested) modifications are omitted.
+    /// The scalar modifications this element applies, or null when there are none. Non-scalar
+    /// (nested) modifications are omitted.
+    ///
+    /// <para>For an <see cref="ClassElementKind.Extends"/> element these are what the base class was
+    /// given: <c>extends Base(k = 5)</c> yields {"k" =&gt; "5"}, and they override inherited
+    /// defaults. For a <see cref="ClassElementKind.Component"/> they are what this instance was
+    /// given: <c>Inertia inertia1(J = 1)</c> yields {"J" =&gt; "1"}, which is what decides what the
+    /// component's own icon says and whether its conditional connectors are there at all.</para>
     /// </summary>
     public IReadOnlyDictionary<string, string>? Modifications { get; init; }
 }

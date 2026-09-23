@@ -45,7 +45,8 @@ public sealed record ConnectorView(
     bool TypeIsConnector,
     string? Description,
     string? InheritedFrom,
-    string? Unit = null);
+    string? Unit = null,
+    string? Condition = null);
 
 /// <summary>A public component that is neither a parameter nor a connector (e.g. a record field).</summary>
 public sealed record MemberView(
@@ -61,7 +62,8 @@ public sealed record FunctionSignatureView(
     IReadOnlyList<ParameterView> Outputs);
 
 /// <summary>One raw element from list_class_elements. InheritedFrom is the base class id it comes from,
-/// or null if declared in the class itself.</summary>
+/// or null if declared in the class itself. Condition is the expression a conditional component is
+/// declared with, and such a component exists only where that expression is true.</summary>
 public sealed record ClassElementView(
     string Kind,
     string Name,
@@ -77,6 +79,7 @@ public sealed record ClassElementView(
     IReadOnlyList<string> Prefixes,
     IReadOnlyList<string> LeadingComments,
     int Line,
+    string? Condition,
     string? InheritedFrom);
 
 /// <summary>Full element listing for a class.</summary>

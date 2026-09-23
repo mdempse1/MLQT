@@ -148,9 +148,14 @@ come to depend on how far the view is zoomed; and a component placed with a reve
 mirrored, but its label is not. `get_diagram_layout` reports the same absolute extents and the same
 inherited components, so the numbers and the picture describe one diagram.
 
-**Two known gaps**, both visible against a Modelica tool and both recorded in the backlog: a
-connector declared `if <condition>` is drawn even when the condition is false (B277), and a `%name`
-in icon text is substituted while `%parameter` references such as `J=%J` are not (B278).
+A component's parameters are read the way Modelica reads them — the modification the instance was
+given, then the type's own default — and that answers two things at once. A connector declared
+`if <expr>` **exists only where that expression is true**, so a component whose optional heat port or
+support flange was never switched on does not draw one; and an icon labelled `J=%J` says `J=1`.
+`get_class_interface` and `list_class_elements` report a conditional connector's `condition` too,
+because listing it without saying so tells you that you can connect to a port that may not be there.
+Where the expression is past what MLQT evaluates, the connector **is** drawn: showing a port that is
+switched off is a smaller lie than hiding one that is switched on.
 
 Two deliberate differences from a Modelica tool's diagram window:
 

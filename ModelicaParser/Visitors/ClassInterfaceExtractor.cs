@@ -1,3 +1,5 @@
+using Antlr4.Runtime;
+using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
@@ -166,6 +168,8 @@ public static class ClassInterfaceExtractor
                 Connection = connection,
                 DefaultValue = ReadBinding(declaration!.modification()),
                 TypeModification = ReadTypeModification(declaration.modification()),
+                Modifications = ScalarModifications(declaration.modification()?.class_modification()),
+                Condition = SourceText(decl.condition_attribute()?.expression()),
                 Description = ReadStringComment(decl.comment()?.string_comment()),
                 IsPublic = isPublic,
                 Prefixes = prefixes,
@@ -180,6 +184,53 @@ public static class ClassInterfaceExtractor
         modelicaParser.Extends_clauseContext ext)
     {
         var list = ext.class_or_inheritence_modification()?.argument_or_inheritence_list();
+        if (list is null)
+            return null;
+
+        Dictionary<string, string>? mods = null;
+        foreach (var arg in list.argument())
+        {
+            var em = arg.element_modification_or_replaceable()?.element_modification();
+            var name = em?.name()?.GetText();
+            if (string.IsNullOrEmpty(name))
+                continue;
+            var value = ScalarModificationValue(em!.modification());
+            if (value is null)
+                continue;
+            (mods ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
+        }
+        return mods;
+    }
+
+    /// <summary>
+    /// A context's text <b>as it was written</b>, whitespace included.
+    ///
+    /// <para><c>GetText()</c> concatenates the token texts and so loses the spaces between them,
+    /// which is harmless for a name or a number and destroys an expression: the condition
+    /// <c>use_reset and use_set</c> comes back as <c>use_resetanduse_set</c>, a single identifier
+    /// that resolves to nothing. It read as one more undecidable condition rather than as a bug,
+    /// which is how it survived until a connector that should have gone stayed on the picture.</para>
+    /// </summary>
+    private static string? SourceText(ParserRuleContext? context)
+    {
+        if (context?.Start?.InputStream is null || context.Stop is null)
+            return null;
+
+        var text = context.Start.InputStream
+            .GetText(Interval.Of(context.Start.StartIndex, context.Stop.StopIndex))
+            .Trim();
+
+        return text.Length > 0 ? text : null;
+    }
+
+    /// <summary>
+    /// The scalar arguments of a modification: <c>(J = 1, phi(fixed = true))</c> yields {J:1}, the
+    /// nested one being a modification of a sub-component rather than a value this element takes.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string>? ScalarModifications(
+        modelicaParser.Class_modificationContext? classMod)
+    {
+        var list = classMod?.argument_list();
         if (list is null)
             return null;
 
