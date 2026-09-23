@@ -107,7 +107,7 @@ under `line`, because they answer a question about a class rather than about a f
 
 ## What the tools cover
 
-The server exposes 83 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 66 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
@@ -150,7 +150,7 @@ signal flow, and which edge a connector sits on.
 
 ## Testing a server manually (McpTester)
 
-[MLQT.McpTester](../MLQT.McpTester/README.md) is a small desktop app, on Windows and Linux, for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client.
+[MLQT.McpTester](../MLQT.McpTester/README.md) is a small desktop app, on Windows and Linux, for exercising **any** stdio MCP server by hand. It launches a server, shows the instructions it returned on connect, lists its tools, generates an input form from each tool's JSON Schema, calls the tool, and shows the result. It is the quickest way to try the MLQT server's tools without wiring up a full AI client, and it **displays image content rather than describing it** — so `get_diagram_image` shows you the diagram, which is the only way to judge whether a layout is right.
 
 ```bash
 dotnet build MLQT.McpTester/MLQT.McpTester.csproj -t:Run

@@ -1,9 +1,5 @@
 @page "/"
-@using System.Text
-@using System.Text.Json
-@using System.Text.Json.Nodes
 @using ModelContextProtocol.Client
-@using ModelContextProtocol.Protocol
 @inject McpClientService Mcp
 @implements IDisposable
 
@@ -190,7 +186,7 @@
                     </MudCardContent>
                 </MudCard>
 
-                @if (_resultText is not null)
+                @if (_result is not null)
                 {
                     <MudCard Elevation="1">
                         <MudCardContent>
@@ -205,9 +201,37 @@
                                     <MudChip T="string" Color="Color.Success" Size="Size.Small">ok</MudChip>
                                 }
                             </div>
-                            <MudPaper Outlined="true" Class="pa-3" Style="overflow-x:auto;">
-                                <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-size:0.8rem;">@_resultText</pre>
-                            </MudPaper>
+
+                            @* Images first: a tool that returns one returns it to be looked at, and
+                               scrolling past a page of JSON to reach the picture defeats that. *@
+                            @foreach (var image in _result.Images)
+                            {
+                                <MudPaper Outlined="true" Class="pa-2 mb-2" Style="overflow:auto;">
+                                    @* Checkerboard, because a diagram is drawn on white and so is the
+                                       card: without it, where the image ends is a guess. *@
+                                    <div style="@CheckerboardStyle">
+                                        <img src="@image.DataUri" alt="tool result image"
+                                             style="@(_actualSize ? "display:block;" : "display:block; max-width:100%; height:auto;")" />
+                                    </div>
+                                </MudPaper>
+                                <div class="d-flex align-center mb-3" style="gap:8px;">
+                                    <MudText Typo="Typo.caption">@image.MimeType · @Kb(image.Bytes)</MudText>
+                                    <MudSpacer />
+                                    <MudSwitch T="bool" @bind-Value="_actualSize" Color="Color.Primary"
+                                               Size="Size.Small" Label="Actual size" />
+                                </div>
+                            }
+
+                            @if (_result.Text.Length > 0)
+                            {
+                                <MudPaper Outlined="true" Class="pa-3" Style="overflow-x:auto;">
+                                    <pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-size:0.8rem;">@_result.Text</pre>
+                                </MudPaper>
+                            }
+                            else if (_result.Images.Count == 0)
+                            {
+                                <MudText Typo="Typo.body2">The tool returned no content.</MudText>
+                            }
                         </MudCardContent>
                     </MudCard>
                 }
@@ -235,7 +259,12 @@
 
     private McpClientTool? _selectedTool;
     private List<ToolParam> _params = new();
-    private string? _resultText;
+    private ToolResultView? _result;
+
+    // Off by default: a rendered diagram is wider than the panel, and fitting it is what makes the
+    // layout readable at a glance. Kept across calls, because someone who wants pixels wants them
+    // for the next call too.
+    private bool _actualSize;
     private bool _isError;
 
     private void FillMlqtServer() => _command = MlqtServerPath;
@@ -246,7 +275,7 @@
         _connectError = null;
         _selectedTool = null;
         _params = new();
-        _resultText = null;
+        _result = null;
         await InvokeAsync(StateHasChanged);
         try
         {
@@ -271,7 +300,7 @@
         await Mcp.DisconnectAsync();
         _selectedTool = null;
         _params = new();
-        _resultText = null;
+        _result = null;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -279,7 +308,7 @@
     {
         _selectedTool = tool;
         _params = ToolSchema.Parse(tool.JsonSchema);
-        _resultText = null;
+        _result = null;
         _callError = null;
     }
 
@@ -288,14 +317,14 @@
         if (_selectedTool is null) return;
         _calling = true;
         _callError = null;
-        _resultText = null;
+        _result = null;
         await InvokeAsync(StateHasChanged);
         try
         {
             var args = ToolSchema.BuildArguments(_params);
             var result = await Mcp.CallToolAsync(_selectedTool.Name, args);
             _isError = result.IsError ?? false;
-            _resultText = RenderResult(result);
+            _result = ToolResultView.From(result);
         }
         catch (Exception ex)
         {
@@ -311,37 +340,21 @@
     private static string FieldLabel(ToolParam p)
         => $"{p.Name}{(p.Required ? " *" : "")} ({p.Type})";
 
-    private static string RenderResult(CallToolResult result)
-    {
-        var sb = new StringBuilder();
-        foreach (var block in result.Content)
-        {
-            if (block is TextContentBlock text)
-                sb.AppendLine(PrettyJson(text.Text));
-            else
-                sb.AppendLine($"[{block.Type} content]");
-        }
-        if (result.StructuredContent is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null } sc)
-        {
-            sb.AppendLine();
-            sb.AppendLine("// structuredContent:");
-            sb.AppendLine(JsonSerializer.Serialize(sc, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        return sb.ToString().Trim();
-    }
+    private static string Kb(int bytes) => bytes < 1024 ? $"{bytes} B" : $"{bytes / 1024.0:0.#} kB";
 
-    private static string PrettyJson(string text)
-    {
-        try
-        {
-            var node = JsonNode.Parse(text);
-            return node?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? text;
-        }
-        catch
-        {
-            return text;
-        }
-    }
+    /// <summary>
+    /// The transparency checkerboard every image editor uses, as a pure CSS gradient so the app
+    /// carries no asset for it.
+    /// </summary>
+    private const string CheckerboardStyle =
+        "background-color:#ffffff;"
+        + "background-image:linear-gradient(45deg,#e8e8e8 25%,transparent 25%),"
+        + "linear-gradient(-45deg,#e8e8e8 25%,transparent 25%),"
+        + "linear-gradient(45deg,transparent 75%,#e8e8e8 75%),"
+        + "linear-gradient(-45deg,transparent 75%,#e8e8e8 75%);"
+        + "background-size:16px 16px;"
+        + "background-position:0 0,0 8px,8px -8px,-8px 0;"
+        + "display:inline-block;";
 
     public void Dispose() => _ = Mcp.DisconnectAsync();
 }
