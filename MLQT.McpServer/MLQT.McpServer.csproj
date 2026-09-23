@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -17,6 +17,12 @@
          Microsoft.AspNetCore.App framework reference, which is no longer needed now that
          MLQT.Services is UI-free (no MudBlazor). -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <!-- Rasterises a rendered diagram SVG to PNG for get_diagram_image (B196): an agent that has
+         just placed components can look at what it made instead of reading coordinates back. Svg.Skia
+         is MIT and pulls SkiaSharp, whose native library is per-RID - the Linux asset is named
+         explicitly because SkiaSharp ships Windows and macOS by default and MLQT ships Linux too. -->
+    <PackageReference Include="Svg.Skia" Version="5.2.3" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,10 +13,19 @@ namespace ModelicaParser.Visitors;
 /// </summary>
 public class IconExtractor : modelicaBaseVisitor<object?>
 {
+    /// <summary>The annotation holding a class's own graphics — the layer a diagram is drawn in.</summary>
+    public const string DiagramLayer = "Diagram";
+
+    /// <summary>The annotation holding the graphics a class shows when it is used inside another.</summary>
+    public const string IconLayer = "Icon";
+
+    private readonly string _layer;
     private readonly List<string> _extendsClasses = new();
     private IconData? _currentIcon;
     private int _classDepth = 0;
     private string? _withinPackage;
+
+    private IconExtractor(string layer) => _layer = layer;
 
     /// <summary>
     /// Extracts Icon data from a Modelica class definition string.
@@ -28,6 +37,18 @@ public class IconExtractor : modelicaBaseVisitor<object?>
         var result = ExtractIconWithInheritance(modelicaCode);
         return result?.Icon;
     }
+
+    /// <summary>
+    /// Extracts the <c>Diagram</c> layer instead of the <c>Icon</c> layer — the graphics a class
+    /// draws on its own diagram, and the coordinate system its components are placed in.
+    ///
+    /// <para>Diagram graphics are <b>not inherited the way an icon is</b>, which is why this is a
+    /// separate entry point rather than a flag on the ones above: an icon is merged down the
+    /// extends chain because that is how Modelica composes what a component looks like, and a
+    /// diagram is the class's own drawing.</para>
+    /// </summary>
+    public static IconData? ExtractDiagram(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, DiagramLayer)?.Icon;
 
     /// <summary>
     /// Extracts Icon data from a pre-parsed Modelica parse tree.
@@ -67,10 +88,14 @@ public class IconExtractor : modelicaBaseVisitor<object?>
     /// <param name="parseTree">The pre-parsed ANTLR4 parse tree.</param>
     /// <returns>IconExtractionResult containing icon and extends information.</returns>
     public static IconExtractionResult? ExtractIconWithInheritance(modelicaParser.Stored_definitionContext parseTree)
+        => ExtractLayer(parseTree, IconLayer);
+
+    private static IconExtractionResult? ExtractLayer(
+        modelicaParser.Stored_definitionContext parseTree, string layer)
     {
         try
         {
-            var extractor = new IconExtractor();
+            var extractor = new IconExtractor(layer);
             extractor.Visit(parseTree);
             return new IconExtractionResult
             {
@@ -153,7 +178,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
             if (elementMod != null)
             {
                 var name = elementMod.name()?.GetText();
-                if (name == "Icon")
+                if (name == _layer)
                 {
                     _currentIcon = new IconData();
                     var modification = elementMod.modification();

@@ -28,8 +28,11 @@ public sealed class ClassQueryTools
     [Description("Get structural metadata for a single Modelica class by its fully-qualified id: " +
                 "class type (model/block/package/function/record/connector/type/class), whether it is " +
                 "partial, its containing file and line span, package version, 'uses' dependencies from " +
-                "the annotation, whether it carries an experiment() annotation (i.e. is simulatable), and " +
-                "parse health. Does NOT return the source code (use get_class_source) or the dependency " +
+                "the annotation, whether it carries an experiment() annotation (i.e. is simulatable), " +
+                "parse health, and whether the class was recovered from a vendor's documentation " +
+                "rather than read from source (recoveredFromDocumentation - an encrypted library; " +
+                "such a class is never writable, and get_class_interface says what was recovered). " +
+                "Does NOT return the source code (use get_class_source) or the dependency " +
                 "graph (use get_dependencies / find_usages).")]
     public object GetClassInfo(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
@@ -65,14 +68,19 @@ public sealed class ClassQueryTools
             node.CanBeStoredStandalone,
             node.HasParserErrors,
             node.HasFatalParseFailure,
-            writable);
+            writable,
+            node.IsExternalStub);
     }
 
     [McpServerTool(Name = "get_class_source")]
     [Description("Get the Modelica source code for a class. By default (include_annotations=false) the " +
-                "graphical/experiment/Documentation annotations are stripped, returning just the " +
-                "structural code — much smaller, and still valid parseable Modelica. Set " +
-                "include_annotations=true to get the verbatim source including all annotations.")]
+                "graphical/experiment/Documentation annotations are removed, returning just the " +
+                "structural code — much smaller, and still valid parseable Modelica. Either way you " +
+                "get the class's own text and not a reformat of it: each line is the file's line " +
+                "with any annotation cut out of it, still at its original number (an annotation " +
+                "written on its own lines leaves them blank), so the 'modelLine' of a finding from " +
+                "list_findings indexes this text directly. Set include_annotations=true to keep the " +
+                "annotations.")]
     public object GetClassSource(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -86,26 +94,29 @@ public sealed class ClassQueryTools
 
         var code = node.Definition.ModelicaCode ?? string.Empty;
 
-        // Verbatim requested, or nothing safely renderable: return the stored source as-is.
+        // Verbatim requested, or nothing safely parseable: return the stored source as-is.
         if (includeAnnotations || node.IsParseFailurePlaceholder || string.IsNullOrWhiteSpace(code))
             return new ClassSourceResult(node.Id, node.ClassType, includeAnnotations, code);
 
         try
         {
-            // Re-render with annotations off. Pass the token stream so comments are preserved.
-            var (parseTree, tokenStream) = ModelicaParserHelper.ParseWithTokens(code);
-            var renderer = new ModelicaRenderer(
-                renderForCodeEditor: false,
-                showAnnotations: false,
-                excludeClassDefinitions: false,
-                tokenStream: tokenStream);
-            renderer.VisitStored_definition(parseTree);
-            var stripped = string.Join("\n", renderer.Code);
+            // Cut the annotations out of the text rather than re-rendering the class without them
+            // (B218). The renderer rebuilds every line it emits, so what came back was a reformat of
+            // the class rather than the class, and its line numbers agreed with nothing - not the
+            // file, and not the `modelLine` this same server reports against a finding.
+            //
+            // ElisionFinder takes the annotations out and leaves every other character as written.
+            // It reports the lines left empty rather than deleting them, and they are blanked here
+            // rather than dropped: an agent holds no line map, so preserving the numbering is what
+            // makes get_class_source and list_findings describe the same text.
+            var (spliced, elision) = ElisionFinder.WithoutAnnotations(
+                ModelicaParserHelper.Parse(code), code, elidedTextMustParse: true);
+            var stripped = string.Join("\n", elision.Blank(spliced.Split('\n')));
             return new ClassSourceResult(node.Id, node.ClassType, AnnotationsIncluded: false, stripped);
         }
         catch
         {
-            // Fall back to verbatim source if rendering fails for any reason.
+            // Fall back to verbatim source if the parse fails for any reason.
             return new ClassSourceResult(node.Id, node.ClassType, AnnotationsIncluded: true, code);
         }
     }

@@ -67,12 +67,28 @@ public static class ElisionFinder
     /// right line. An annotation running across lines is spliced onto its first line and the rest
     /// of its lines are returned as elided, so the caller's existing line map does that half.</para>
     /// </summary>
+    /// <param name="elidedTextMustParse">
+    /// Whether the caller will drop the elided lines and then parse, or hand on, what is left.
+    ///
+    /// <para>It changes one thing: who owns the semicolon. An annotation written on its own lines
+    /// is usually followed by one, and in <c>annotation (Placement(...));</c> under a declaration
+    /// that semicolon terminates the <em>declaration</em> — taking it out with the annotation runs
+    /// the declaration into the next one. The same is true of an extends clause, an equation and an
+    /// external clause; only the class-level <c>annotation ';'</c> owns its own. With this set, a
+    /// semicolon that is not the annotation's is kept, so what remains is still Modelica.</para>
+    ///
+    /// <para><b>The viewer leaves it false on purpose.</b> Keeping it puts a line holding nothing
+    /// but <c>;</c> on screen for every hidden declaration annotation, which in a library of any
+    /// size is precisely the per-annotation noise B233 was asked to remove — and the viewer never
+    /// parses the elided text, only the spliced source, which still has those annotations in it.
+    /// <c>get_class_source</c> sets it because an agent reads the elided text and edits it (B218).</para>
+    /// </param>
     /// <returns>
     /// The spliced source, which has exactly as many lines as it was given, and the lines to drop
     /// from it — whole-line annotations, plus the continuation lines of the ones spliced.
     /// </returns>
     public static (string Source, SourceElision Elision) WithoutAnnotations(
-        modelicaParser.Stored_definitionContext? tree, string source)
+        modelicaParser.Stored_definitionContext? tree, string source, bool elidedTextMustParse = false)
     {
         if (tree is null)
             return (source, SourceElision.None);
@@ -91,7 +107,9 @@ public static class ElisionFinder
                      .OrderByDescending(a => a.Start?.Line ?? 0)
                      .ThenByDescending(a => a.Start?.Column ?? 0))
         {
-            if (TryWholeLines(annotation, lines, out var first, out var last))
+            var ownsSemicolon = !elidedTextMustParse || OwnsItsSemicolon(annotation);
+
+            if (TryWholeLines(annotation, lines, out var first, out var last, ownsSemicolon))
             {
                 ranges.Add(new ElidedRange(first, last, null));
                 continue;
@@ -102,8 +120,23 @@ public static class ElisionFinder
 
             // What was before it on its first line, joined to what was after it on its last. When
             // those are different lines the ones between go, and so does the tail of the last.
-            var head = spliced[first - 1][..startColumn].TrimEnd();
+            //
+            // The head keeps its indentation when there is nothing else on the line, so an
+            // annotation spliced only because it does not own the semicolon after it leaves that
+            // semicolon where the reader expects it rather than in column 1.
+            var before = spliced[first - 1][..startColumn];
+            var head = before.Trim().Length == 0 ? before : before.TrimEnd();
             var tail = spliced[last - 1][endColumn..];
+
+            // A class-level annotation sharing its line with code is spliced like any other, and
+            // its semicolon has to go with it or the composition is left holding a bare `;`.
+            if (elidedTextMustParse && ownsSemicolon)
+            {
+                var afterAnnotation = tail.AsSpan().TrimStart();
+                if (afterAnnotation.StartsWith(";"))
+                    tail = afterAnnotation[1..].ToString();
+            }
+
             spliced[first - 1] = head + tail;
 
             if (last > first)
@@ -217,8 +250,14 @@ public static class ElisionFinder
     /// whitespace before it on the first, and nothing but whitespace and an optional statement
     /// semicolon after it on the last.
     /// </summary>
+    /// <param name="consumeTrailingSemicolon">
+    /// Whether a semicolon after the context counts as part of it. It does for anything removed as
+    /// a whole element — a nested class, a class-level annotation — and does not for an annotation
+    /// attached to something that the semicolon terminates.
+    /// </param>
     private static bool TryWholeLines(
-        ParserRuleContext context, string[] lines, out int firstLine, out int lastLine)
+        ParserRuleContext context, string[] lines, out int firstLine, out int lastLine,
+        bool consumeTrailingSemicolon = true)
     {
         firstLine = context.Start?.Line ?? 0;
         lastLine = context.Stop?.Line ?? 0;
@@ -236,10 +275,49 @@ public static class ElisionFinder
             return false;
 
         var after = lastText.AsSpan(endColumn).TrimStart();
-        if (after.StartsWith(";"))
+        if (consumeTrailingSemicolon && after.StartsWith(";"))
             after = after[1..];
 
         return after.IsWhiteSpace();
+    }
+
+    /// <summary>
+    /// Whether the semicolon after <paramref name="annotation"/> belongs to the annotation rather
+    /// than to whatever it is attached to.
+    ///
+    /// <para>The grammar writes <c>annotation ';'</c> only in <c>composition</c>, at either end of
+    /// a class body. Everywhere else — a declaration's or an equation's <c>comment</c>, an
+    /// <c>extends_clause</c>, and the <c>'external' ... (annotation)? ';'</c> form, where the
+    /// semicolon closes the external clause — the annotation is part of a larger element and the
+    /// semicolon closes that element.</para>
+    /// </summary>
+    private static bool OwnsItsSemicolon(modelicaParser.AnnotationContext annotation)
+    {
+        if (annotation.Parent is not modelicaParser.CompositionContext composition)
+            return false;
+
+        // Both the external clause's annotation and the class's are direct children of the
+        // composition, so the parent alone does not separate them. Walking back to the nearest
+        // terminal does: the external one has `external` behind it and no semicolon since.
+        var index = -1;
+        for (var i = 0; i < composition.ChildCount; i++)
+            if (ReferenceEquals(composition.GetChild(i), annotation))
+            {
+                index = i;
+                break;
+            }
+
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (composition.GetChild(i) is not ITerminalNode terminal)
+                continue;
+            if (terminal.GetText() == ";")
+                return true;
+            if (terminal.GetText() == "external")
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>The declared name of a class definition, for a marker to mention.</summary>

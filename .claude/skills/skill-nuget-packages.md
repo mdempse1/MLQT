@@ -109,6 +109,31 @@ these two are what replaced them, and they are the whole of the host's dependenc
 - **NuGet**: https://www.nuget.org/packages/NetMQ
 - **Note**: Used for REQ-REP communication with OpenModelica Compiler
 
+## Graphics
+
+### Svg.Skia (v5.2.3)
+- **Purpose**: Rasterises an SVG to a bitmap. Behind `get_diagram_image`, which draws a class's
+  diagram and returns it as a PNG so an agent can look at a layout rather than read its coordinates
+  back (B196)
+- **Used in**: MLQT.McpServer
+- **License**: [MIT](https://github.com/wieslawsoltes/Svg.Skia/blob/master/LICENSE.TXT)
+- **NuGet**: https://www.nuget.org/packages/Svg.Skia
+- **Note**: Pulls **SkiaSharp**, whose drawing is done by a **native** library published per runtime
+  identifier. SkiaSharp ships the Windows and macOS assets itself; the Linux one is referenced
+  explicitly below because MLQT ships Linux and would otherwise publish a tree that answers every
+  other tool and fails the moment a diagram is asked for. `build/publish-tools.sh` checks the file is
+  there for the runtime being published
+
+### SkiaSharp.NativeAssets.Linux (v4.148.0)
+- **Purpose**: The `libSkiaSharp.so` for `linux-x64`. Its version must match the SkiaSharp that
+  Svg.Skia resolves, not be picked independently
+- **Used in**: MLQT.McpServer
+- **License**: [MIT](https://github.com/mono/SkiaSharp/blob/main/LICENSE.md)
+- **NuGet**: https://www.nuget.org/packages/SkiaSharp.NativeAssets.Linux
+- **Note**: The default (not `.NoDependencies`) build, which uses the system fontconfig — MLQT's
+  Linux target is a desktop `.deb` whose WebKitGTK dependency guarantees it, and the alternative
+  enumerates no fonts, so diagram text would come out blank
+
 ## Testing
 
 ### xunit.v3 (v4.0.0)
@@ -190,5 +215,6 @@ Test packages are marked as development dependencies and don't ship with the app
 | MLQT.Services | MudBlazor, NLog |
 | MLQT.Shared | MudBlazor, MudBlazor.Extensions, NLog |
 | MLQT.Photino | Photino.Blazor, Microsoft.AspNetCore.Components.WebView |
+| MLQT.McpServer | ModelContextProtocol, Microsoft.Extensions.Hosting, Svg.Skia, SkiaSharp.NativeAssets.Linux |
 | MLQT.McpTester | Photino.Blazor, Microsoft.AspNetCore.Components.WebView, MudBlazor, ModelContextProtocol |
 | Test Projects | xunit.v3, coverlet.MTP, Microsoft.Testing.Extensions.TrxReport (MLQT.Shared.Tests also: bunit; RevisionControl.Tests also: SharpSvn) |

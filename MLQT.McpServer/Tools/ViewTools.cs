@@ -33,7 +33,10 @@ public sealed class ViewTools
                 "Far smaller than get_class_source. A component is a connector when it has a causality or its " +
                 "type resolves to a loaded connector class. A parameter's default is the value it takes; a " +
                 "typeModification (e.g. \"(min=0)\") constrains its type and is reported apart from the " +
-                "default, since a declaration can carry both. Needs only a loaded library.")]
+                "default, since a declaration can carry both. For a class from an encrypted library, " +
+                "recoveredFromDocumentation is true and the members come from the vendor's generated " +
+                "help: names, descriptions and units, with no types, defaults or inheritance - that is " +
+                "everything the vendor published. Needs only a loaded library.")]
     public object GetClassInterface(
         [Description("Fully-qualified class id, e.g. 'Modelica.Blocks.Continuous.Integrator'.")]
         string classId,
@@ -48,6 +51,13 @@ public sealed class ViewTools
 
         var extends = merged.Where(m => m.Element.Kind == ClassElementKind.Extends)
             .Select(m => m.Element.Name).ToList();
+
+        // A class from an encrypted library: its extends are real declarations in the synthesized
+        // source and are collected above, but its members were never expressible as Modelica and
+        // come off the documentation instead (B179). includeInherited has no meaning here - the
+        // vendor's tables already list what a class inherits.
+        if (RecoveredInterface.For(node) is { } documented)
+            return RecoveredInterface.ToInterfaceView(node, documented, extends);
         var parameters = new List<ParameterView>();
         var connectors = new List<ConnectorView>();
         var members = new List<MemberView>();
@@ -101,7 +111,10 @@ public sealed class ViewTools
                 "leadingComments (the // or /* */ comments written just above it). This is the granular " +
                 "data behind get_class_interface. A component's default is the value it is bound to; its " +
                 "typeModification is any modification written on its type (e.g. \"(min=0)\" or \"(k=2)\"), " +
-                "which is not a value. Needs only a loaded library.")]
+                "which is not a value. For a class from an encrypted library, recoveredFromDocumentation " +
+                "is true and its members come from the vendor's generated help - name, description, " +
+                "unit and which table they were in (parameter / connector / input / output), with no " +
+                "type, no default and line 0. Needs only a loaded library.")]
     public object ListClassElements(
         [Description("Fully-qualified class id.")] string classId,
         [Description("Include elements declared in protected sections. Default false.")]
@@ -111,6 +124,8 @@ public sealed class ViewTools
     {
         if (Load(classId, out var node, out _, out var error))
             return error!;
+
+        var recovered = RecoveredInterface.For(node);
 
         var elements = ClassElementResolver.Collect(_libraries.CombinedGraph, node!, includeProtected, includeInherited)
             .Select(m => new ClassElementView(
@@ -131,7 +146,12 @@ public sealed class ViewTools
                 m.InheritedFrom))
             .ToList();
 
-        return new ClassElementsResult(node!.Id, elements.Count, elements);
+        // Appended rather than merged: these are not declarations the resolver could have found,
+        // and the extends clauses above are the only thing a stub's source really declares.
+        if (recovered is not null)
+            elements.AddRange(RecoveredInterface.ToElementViews(recovered));
+
+        return new ClassElementsResult(node!.Id, elements.Count, elements, recovered is not null);
     }
 
     [McpServerTool(Name = "get_class_documentation")]

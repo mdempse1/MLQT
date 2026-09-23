@@ -23,7 +23,8 @@ internal static class DiagramGeometry
         public bool IsNone => Dx == 0 && Dy == 0;
     }
 
-    private sealed record Placement(double[] Extent, double Rotation);
+    /// <summary>A component's Placement: where its type's icon goes, and how it is turned.</summary>
+    public sealed record Placement(double[] Extent, double Rotation);
 
     private static readonly Regex ExtentRegex = new(
         @"extent\s*=\s*\{\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}\s*,\s*\{\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\}",
@@ -198,7 +199,13 @@ internal static class DiagramGeometry
 
     // --- Parsing helpers ---------------------------------------------------------------------------
 
-    private static Dictionary<string, Placement> Placements(string classCode)
+    /// <summary>
+    /// Every component in the class that has a Placement, by name. The one reader of a placement
+    /// from source: get_diagram_layout reports these, the router positions connections with them
+    /// and get_diagram_image draws them, and a second regex for the same annotation is how three
+    /// answers to one question start (B196).
+    /// </summary>
+    public static Dictionary<string, Placement> Placements(string classCode)
     {
         var result = new Dictionary<string, Placement>(StringComparer.Ordinal);
         var layout = ClassBodyLocator.Analyze(classCode);

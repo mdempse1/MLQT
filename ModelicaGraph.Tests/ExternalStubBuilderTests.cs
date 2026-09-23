@@ -162,6 +162,36 @@ public class ExternalStubBuilderTests
     }
 
     [Fact]
+    public void AddDocumentedClasses_KeepsTheDocumentationOnTheNode()
+    {
+        // The members the documentation listed - parameters, connectors, a function's arguments -
+        // have no truthful Modelica declaration, since the generator publishes no types, so they
+        // cannot travel in the synthesized source the way the description and the extends do. They
+        // were parsed and then dropped here, and get_class_interface answered "no parameters" for a
+        // vendor class that has a dozen (B179).
+        var graph = new DirectedGraph();
+        var documented = new DocumentedClass(
+            "Lib.Thing", "A thing", null, true, null, DocumentedClass.KindModel, [],
+            Parameters: [new DocumentedMember("k", "Gain", null)],
+            Connectors: [new DocumentedMember("p", "Pin", null)],
+            Inputs: [], Outputs: [], Contents: []);
+
+        ExternalStubBuilder.AddDocumentedClasses(graph, [documented], @"C:\libs\Lib\package.moe");
+
+        var node = graph.GetNode<ModelNode>("Lib.Thing");
+        Assert.Same(documented, node!.RecoveredFromDocumentation);
+        Assert.Equal("k", Assert.Single(node.RecoveredFromDocumentation!.Parameters).Name);
+
+        // ...and never written into the declaration, which has no type to give it.
+        Assert.DoesNotContain("parameter", node.Definition.ModelicaCode);
+        Assert.DoesNotContain("Pin", node.Definition.ModelicaCode);
+    }
+
+    [Fact]
+    public void AnOrdinaryNodeHasNoDocumentation()
+        => Assert.Null(new ModelNode("M", "M", "model M end M;").RecoveredFromDocumentation);
+
+    [Fact]
     public void AddDocumentedClasses_StampsVersionOnTheRootOnly()
     {
         var graph = new DirectedGraph();

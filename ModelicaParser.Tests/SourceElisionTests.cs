@@ -66,6 +66,46 @@ public class SourceElisionTests
         Assert.Equal(["1", "2"], SourceElision.Of([new ElidedRange(3, 10, null)]).Apply(TenLines));
     }
 
+    // ── blanking, for a caller with no line map ───────────────────────────────────
+
+    [Fact]
+    public void BlankingEmptiesTheHiddenLinesInsteadOfRemovingThem()
+    {
+        var elision = SourceElision.Of([new ElidedRange(3, 5, null), new ElidedRange(8, 8, null)]);
+
+        // Same count, so line n is still line n - which is the whole reason it exists (B218).
+        Assert.Equal(["1", "2", "", "", "", "6", "7", "", "9", "10"], elision.Blank(TenLines));
+    }
+
+    [Fact]
+    public void BlankingKeepsAReplacementOnTheRangesFirstLine()
+    {
+        var elision = SourceElision.Of([new ElidedRange(3, 5, "…")]);
+
+        Assert.Equal(["1", "2", "…", "", "", "6", "7", "8", "9", "10"], elision.Blank(TenLines));
+    }
+
+    [Fact]
+    public void BlankingNothingChangesNothing()
+    {
+        Assert.Equal(TenLines, SourceElision.None.Blank(TenLines));
+    }
+
+    [Fact]
+    public void BlankingStopsAtTheEndOfWhatItWasGiven()
+    {
+        // The ranges were measured against the class's source; a caller can hand over less of it.
+        var elision = SourceElision.Of([new ElidedRange(2, 9, null)]);
+
+        Assert.Equal(["1", "", ""], elision.Blank(["1", "2", "3"]));
+    }
+
+    [Fact]
+    public void BlankingRefusesNullsRatherThanTreatingThemAsEmpty()
+    {
+        Assert.Throws<ArgumentNullException>(() => SourceElision.None.Blank(null!));
+    }
+
     // ── the map ───────────────────────────────────────────────────────────────────
 
     [Fact]

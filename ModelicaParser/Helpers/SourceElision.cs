@@ -149,6 +149,36 @@ public sealed class SourceElision
     }
 
     /// <summary>
+    /// The same substitution as <see cref="Apply"/>, but every hidden line is emptied rather than
+    /// removed, so the result has exactly as many lines as it was given and each one is still at its
+    /// own number.
+    ///
+    /// <para><b>Why both exist.</b> A viewer shows the elided text next to a line map it can invert,
+    /// so dropping the lines costs nothing. A caller handing the text to someone with no map — the
+    /// MCP <c>get_class_source</c> tool handing a class to an agent that will go on to read findings
+    /// reported against that class's own line numbers — has to keep the numbering, and a blank line
+    /// is the cheapest thing that does (B218).</para>
+    ///
+    /// <para>A range with a replacement keeps it on the range's first line and blanks the rest.</para>
+    /// </summary>
+    public List<string> Blank(IReadOnlyList<string> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+
+        var display = new List<string>(lines);
+        foreach (var range in _ranges)
+        {
+            var last = Math.Min(range.LastLine, display.Count);
+            for (var line = range.FirstLine; line <= last; line++)
+                display[line - 1] = line == range.FirstLine && range.Replacement is { } replacement
+                    ? replacement
+                    : string.Empty;
+        }
+
+        return display;
+    }
+
+    /// <summary>
     /// Which line of the original is showing at <paramref name="displayLine"/>. A replacement line
     /// answers with the first line of the range it stands for, which is where the hidden text began
     /// — so clicking it navigates to the annotation or the class, not past it.

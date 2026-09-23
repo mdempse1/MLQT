@@ -16,11 +16,16 @@ public sealed record ClassInterfaceView(
     IReadOnlyList<ParameterView> Parameters,
     IReadOnlyList<ConnectorView> Connectors,
     IReadOnlyList<MemberView> PublicComponents,
-    FunctionSignatureView? FunctionSignature);
+    FunctionSignatureView? FunctionSignature,
+    bool RecoveredFromDocumentation = false);
 
 /// <summary>A settable parameter/constant (or a function argument). InheritedFrom is the base class id
 /// it comes from, or null if declared in the class itself. Default is the value it takes; TypeModification
-/// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.</summary>
+/// is any modification written on its type (e.g. "(min=0)"), which is a constraint, not a value.
+///
+/// <para>Unit is only ever set for a class recovered from documentation, where the vendor's table
+/// states it and there is no type to read it from. For a class read from source the unit lives in
+/// the declared type, as Modelica writes it.</para></summary>
 public sealed record ParameterView(
     string Name,
     string? Type,
@@ -28,7 +33,8 @@ public sealed record ParameterView(
     string? Default,
     string? TypeModification,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null);
 
 /// <summary>A connector member (physical connector, or a causal signal port).</summary>
 public sealed record ConnectorView(
@@ -38,14 +44,16 @@ public sealed record ConnectorView(
     string? Connection,
     bool TypeIsConnector,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null);
 
 /// <summary>A public component that is neither a parameter nor a connector (e.g. a record field).</summary>
 public sealed record MemberView(
     string Name,
     string? Type,
     string? Description,
-    string? InheritedFrom);
+    string? InheritedFrom,
+    string? Unit = null);
 
 /// <summary>A function's inputs and outputs, in declaration order.</summary>
 public sealed record FunctionSignatureView(
@@ -75,7 +83,8 @@ public sealed record ClassElementView(
 public sealed record ClassElementsResult(
     string Id,
     int Count,
-    IReadOnlyList<ClassElementView> Elements);
+    IReadOnlyList<ClassElementView> Elements,
+    bool RecoveredFromDocumentation = false);
 
 /// <summary>Documentation of a class: its description plus the Documentation annotation strings.</summary>
 public sealed record ClassDocumentationResult(

@@ -1,4 +1,5 @@
 using ModelicaParser.DataTypes;
+using ModelicaParser.ExternalDocs;
 using ModelicaParser.Helpers;
 using RevisionControl;
 
@@ -315,6 +316,23 @@ public class ModelNode : GraphNode
     /// references, and findings about a vendor's library are not the user's to fix.</para>
     /// </summary>
     public bool IsExternalStub { get; set; }
+
+    /// <summary>
+    /// The documentation a stub was reconstructed from, kept whole, or null for a class read from
+    /// source. Only ever set alongside <see cref="IsExternalStub"/>.
+    ///
+    /// <para><b>The one thing the synthesized source cannot carry.</b> The vendor's help lists a
+    /// class's parameters, connectors, function inputs and outputs — name, description and unit —
+    /// and a Modelica declaration needs a <em>type</em>, which the generator does not emit and which
+    /// must never be guessed: <c>parameter Real k</c> is a fabrication that feeds the type and unit
+    /// resolvers, and a connector written as one would be wrong for every class that has one. So
+    /// these members are the exception to "synthesize source, never metadata" — not because the
+    /// metadata path is nicer, but because there is no truthful declaration to write.</para>
+    ///
+    /// <para>Nothing that checks, resolves or writes reads this. It is here for the surfaces that
+    /// <em>report</em> a class to a user or an agent, which can say where it came from (B179).</para>
+    /// </summary>
+    public DocumentedClass? RecoveredFromDocumentation { get; set; }
 
     /// <summary>
     /// True when any <see cref="ParserError"/> has been recorded against this model —

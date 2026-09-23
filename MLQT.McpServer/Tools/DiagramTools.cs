@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -62,6 +63,61 @@ public sealed class DiagramTools
             .Select(x => new ConnectionView(x.PortA, x.PortB)).ToList();
 
         return new DiagramLayoutResult(classId, components, connections);
+    }
+
+    [McpServerTool(Name = "get_diagram_image")]
+    [Description("Render a class's diagram as a PNG image and return it, so you can LOOK at a layout " +
+                "rather than read its coordinates back. Each component is drawn with its own type's " +
+                "icon at its Placement, with the connection lines between them; a component whose type " +
+                "is not loaded is drawn as a dashed box with its name, so an unresolved type and an " +
+                "absent component do not look alike. Anything placed outside the class's coordinate " +
+                "system is still shown, with the declared canvas outlined - being able to see that is " +
+                "most of the point. Use it after set_component_placement / add_connection to check what " +
+                "you built: overlapping components, a signal flowing right to left and a connector left " +
+                "on the wrong edge are obvious here and invisible in get_diagram_layout. Needs only a " +
+                "loaded library.")]
+    public object GetDiagramImage(
+        [Description("Fully-qualified class id.")] string classId,
+        [Description("Image width in pixels (default 800, 200-2000). The height follows the diagram's " +
+                     "aspect ratio.")]
+        int width = 800)
+    {
+        var node = _libraries.GetModelById(classId);
+        if (node is null)
+            return ToolDiagnostics.ClassNotFound(_libraries, classId);
+        if (node.IsParseFailurePlaceholder)
+            return new ToolError($"Class '{classId}' failed to parse.");
+
+        width = Math.Clamp(width, DiagramImage.MinWidth, DiagramImage.MaxWidth);
+
+        string? svg;
+        try
+        {
+            svg = DiagramImage.RenderSvg(_libraries, node, width);
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not draw the diagram of '{classId}': {ex.Message}");
+        }
+
+        if (svg is null)
+            return new ToolError(
+                $"'{classId}' has nothing to draw: no component carries a Placement and the class has no "
+                + "diagram graphics of its own. Use set_component_placement to position its components.");
+
+        try
+        {
+            return new ImageContentBlock
+            {
+                MimeType = "image/png",
+                // Data is the base64 as UTF-8 bytes, which is what goes on the wire.
+                Data = System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(DiagramImage.ToPng(svg))),
+            };
+        }
+        catch (Exception ex)
+        {
+            return new ToolError($"Could not rasterise the diagram of '{classId}': {ex.Message}");
+        }
     }
 
     [McpServerTool(Name = "set_component_placement")]

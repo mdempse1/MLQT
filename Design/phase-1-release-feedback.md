@@ -1334,7 +1334,7 @@ they share WP3's gate and should be taken together rather than a month apart.
   the precedent. And the renderer writes all four kinds as one group, so it changes too — which is
   why this sits beside B245 rather than on its own.
 
-### WP10 — MCP, whenever
+### WP10 — MCP, whenever ✅ complete 2026-09-23
 
 **B179, B196, B218** · 3 items · S–M · no dependency on any other package
 
@@ -1353,6 +1353,28 @@ WP2 has just demonstrated what that costs. None of the three depends on the othe
   the annotations without touching anything else, so this is a swap of one call for another. Take it
   first — it is the smallest and it makes the server internally consistent, which the other two
   assume.
+
+**What the package found that its three rows did not say.** Each item turned out to rest on a claim
+about existing code that was not true, and in each case the untrue part was the work:
+
+- B218 was "a swap of one call for another", and it was — but the elision was built for the viewer,
+  which never parses what it elides, so it takes the semicolon after an annotation away with it. That
+  semicolon belongs to the annotation only in a class body; under a declaration it closes the
+  declaration. `elidedTextMustParse` is the named difference between a caller that displays the
+  result and one that hands it to somebody who will edit it.
+- B179 said the members were "already sitting on the synthesized stub". They were not: the parser
+  recovered them and `ExternalStubBuilder` dropped them, and nothing in the repository had read a
+  `DocumentedMember` since the day it was written. They could not simply join the stub either — a
+  declaration needs a type and the generator publishes none — so this is the one stated exception to
+  "synthesize source, never metadata", and it is stated because the reason is specific: there is no
+  truthful declaration to write.
+- B196 said "the SVG is already produced". What is produced is one class's *icon*; composing a
+  diagram out of the icons of its components, at their placements, with the lines between them, was
+  the larger half of the item and the dependency question was the smaller one.
+
+**The lesson is the one the package was created to demonstrate.** All three had sat unscheduled as
+"separable at any point", and all three carried a sentence asserting that most of the work was
+already done. Nobody had checked, because nothing schedules an item filed as separable.
 
 ### WP13 — Performance, second pass
 
@@ -1497,7 +1519,7 @@ WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the su
                        mutation items — it is what makes "mutant confirmed dead" sayable —
                        ▸ B228 ▸ B229 ▸ B227 ▸ B234, then ▸ B274 ▸ B275 from the
                        re-run campaign; needs no other package
-WP10  B218 ▸ B179, B196 (MCP) — independent of everything, but now scheduled rather than "separable"
+WP10 ✅ B218 ▸ B179 ▸ B196 (MCP) — complete 2026-09-23
 WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
                        ▸ B257, WP4's other leftover: the combined path's step label
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9

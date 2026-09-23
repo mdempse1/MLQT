@@ -109,6 +109,10 @@ public static class ExternalStubBuilder
         var node = new ModelNode(documented.FullName, documented.SimpleName, source)
         {
             IsExternalStub = true,
+            // Kept whole: the members the documentation listed have no truthful Modelica
+            // declaration (no types are published), so they cannot travel in the synthesized
+            // source the way the description and the base classes do. See ModelNode.
+            RecoveredFromDocumentation = documented,
             ClassType = documented.Kind,
             ParentModelName = documented.ParentName,
             // The documentation lists a package's children in declaration order, which is what

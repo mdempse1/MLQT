@@ -11,10 +11,15 @@ namespace MLQT.McpServer.Tools;
 [McpServerToolType]
 public sealed class GuidanceTools
 {
-    private static readonly IReadOnlyList<string> Topics =
-        ["overview", "workflows", "views", "editing", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
+    /// <summary>
+    /// The topics offered, in the order they are listed to an agent. Held to <c>Guidance</c>'s own
+    /// keys by a test: the two are a list and a dictionary of the same thing, and a topic advertised
+    /// with no text reads to an agent as a server that lost its documentation.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> Topics =
+        ["overview", "workflows", "views", "editing", "diagrams", "dependencies", "style", "spelling", "formatting", "vcs", "resources"];
 
-    private static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, string> Guidance = new(StringComparer.OrdinalIgnoreCase)
     {
         ["overview"] = """
             MLQT MCP server — author, check, format and analyse Modelica code. Its focus is editing and
@@ -32,8 +37,8 @@ public sealed class GuidanceTools
             - Generic git/svn operations (commit, log, push, branch) are intentionally NOT provided —
               use your normal CLI for those. The two VCS tools here add Modelica-awareness the CLI lacks.
 
-            Call get_guidance with a topic for recipes: workflows, views, editing, dependencies, style,
-            spelling, formatting, vcs, resources.
+            Call get_guidance with a topic for recipes: workflows, views, editing, diagrams, dependencies,
+            style, spelling, formatting, vcs, resources.
             """,
 
         ["workflows"] = """
@@ -210,11 +215,60 @@ public sealed class GuidanceTools
 
             Diagram layout:
             - set_component_placement(classId, name, x1,y1,x2,y2, rotation?) positions a component;
-              get_diagram_layout shows the arrangement. No auto-layout — set placements explicitly.
+              get_diagram_layout shows the arrangement and get_diagram_image draws it. No auto-layout —
+              set placements explicitly. See the 'diagrams' topic for the conventions to place by.
 
             After an external change (a manual edit or VCS pull), reload(target?) re-reads from disk. Then
             validate: check_class + spell_check + validate_class_references. Type/unit/equation-balance and
             simulation are out of scope here — use a Modelica compiler/simulation tool for those.
+            """,
+
+        ["diagrams"] = """
+            Laying out a diagram that looks like the library it sits in.
+
+            LOOK AT IT. get_diagram_image(classId) renders the class as a PNG: components with their own
+            types' icons at their placements, and the connection lines between them. get_diagram_layout
+            gives you the same arrangement as numbers. Coordinates do not tell you that two components
+            overlap, that a signal runs backwards or that a connector ended up on the wrong edge, and the
+            image does — check the picture after placing, not just the extents.
+
+            The coordinate system. A diagram is {{-100,-100},{100,100}} unless the class declares otherwise,
+            with x to the right and y UP (not down, as in most image formats). A component's Placement
+            extent is where its type's icon is scaled to, so its size is your choice, not the type's.
+
+            Sizes and the grid. Place on a multiple of 10 and give an ordinary block a 20x20 extent
+            ({{-10,-10},{10,10}} about its centre) — that is the size the Modelica Standard Library draws a
+            block at inside a 200x200 canvas, and a model whose parts are all 20x20 reads as one drawing.
+            Leave 20-30 units between neighbours: connection lines need somewhere to run, and components
+            that touch look like one component.
+
+            Signal flow runs LEFT TO RIGHT. Sources on the left, sinks and outputs on the right, each stage
+            in between at the x where it belongs in the chain. This is not decoration: it is how a reader
+            knows which way causality goes, and reversing it is the single thing that makes a generated
+            diagram look wrong. Put a feedback path BELOW the forward path, not through it.
+
+            Where connectors sit, which decides where a component must go:
+            - A causal signal input is on the LEFT edge of its type's icon, an output on the RIGHT, both at
+              mid-height. So placing a block to the right of the one feeding it makes the connection a
+              straight horizontal line, and placing it to the left makes the line double back.
+            - An acausal physical connector (a Pin, a flange, a fluid port) sits wherever the library put it
+              — often left and right for a two-port component, top and bottom for one in a vertical chain.
+              Read it: get_class_interface lists the connectors, and get_diagram_layout on an existing model
+              in the same library shows how that library arranges them.
+            - Rotation turns the connectors with the component. rotation=90 puts a left-edge input at the
+              bottom; rotation=180 mirrors a component end for end, which is how a two-port component is
+              turned round in a loop.
+            - Ground, references and anything that terminates a physical branch go BELOW the branch, because
+              that is where every electrical and mechanical library in Modelica draws them.
+
+            Connections. add_connection and set_component_placement route the line for you, orthogonally,
+            from the real connector positions — so position the components first and the wiring follows.
+            Modelica diagrams use horizontal and vertical segments, not diagonals; if a route looks wrong in
+            the image, the fix is almost always to move a component rather than to hand-write points.
+
+            Copy the library. The strongest thing you can do is open an existing model from the same library
+            with get_diagram_image and match its spacing, its sizes and the direction its signals run. Every
+            library has house style, and a diagram that follows it is read as belonging.
             """,
 
         ["dependencies"] = """
@@ -323,9 +377,10 @@ public sealed class GuidanceTools
     [McpServerTool(Name = "get_guidance")]
     [Description("Get guidance on how to use this server's tools effectively. Call with no topic for an " +
                 "overview and the list of topics, or a topic for focused recipes. Topics: overview, " +
-                "workflows, views, editing, dependencies, style, spelling, formatting, vcs, resources.")]
+                "workflows, views, editing, diagrams, dependencies, style, spelling, formatting, vcs, " +
+                "resources.")]
     public object GetGuidance(
-        [Description("Optional topic. Omit for the overview. One of: overview, workflows, views, editing, " +
+        [Description("Optional topic. Omit for the overview. One of: overview, workflows, views, editing, diagrams, " +
                      "dependencies, style, spelling, formatting, vcs, resources.")]
         string? topic = null)
     {

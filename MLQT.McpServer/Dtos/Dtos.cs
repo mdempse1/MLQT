@@ -82,7 +82,8 @@ public sealed record ClassInfo(
     bool CanBeStoredStandalone,
     bool HasParserErrors,
     bool HasFatalParseFailure,
-    bool? Writable);
+    bool? Writable,
+    bool RecoveredFromDocumentation = false);
 
 public sealed record ClassSourceResult(
     string Id,

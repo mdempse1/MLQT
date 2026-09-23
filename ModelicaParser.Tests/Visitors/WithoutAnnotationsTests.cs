@@ -159,4 +159,127 @@ public class WithoutAnnotationsTests
         Assert.Equal("model M \"m\" end M;", spliced);
         Assert.Empty(elision.Ranges);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // elidedTextMustParse — B218. The viewer never parses the elided text, only the spliced
+    // source; get_class_source hands the elided text to an agent that edits it and gives it back.
+    // The difference between the two is one character: who owns the semicolon after an annotation.
+    // ---------------------------------------------------------------------------------------
+
+    private static (string[] Spliced, SourceElision Elision) MustParse(string source)
+    {
+        var lf = Lf(source);
+        var (spliced, elision) =
+            ElisionFinder.WithoutAnnotations(ModelicaParserHelper.Parse(lf), lf, elidedTextMustParse: true);
+        return (spliced.Split('\n'), elision);
+    }
+
+    /// <summary>What comes out once the elided lines really are dropped.</summary>
+    private static string Elided(string source)
+    {
+        var (spliced, elision) = MustParse(source);
+        return string.Join('\n', elision.Apply(spliced));
+    }
+
+    [Fact]
+    public void ADeclarationKeepsTheSemicolonItsHiddenAnnotationSatOn()
+    {
+        // The whole of B218's remaining sting. `Real y "output"` followed by a line holding only
+        // `annotation (...);` loses its terminator when that line goes, and runs into whatever is
+        // declared next.
+        var (spliced, elision) = MustParse("""
+            model M "m"
+              Real y "output"
+                annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+              Real z;
+            end M;
+            """);
+
+        Assert.Equal("    ;", spliced[2]);
+        Assert.Empty(elision.Ranges);
+    }
+
+    [Fact]
+    public void AClassLevelAnnotationTakesItsOwnSemicolonWithIt()
+    {
+        // The other side of the same decision: here the semicolon is the annotation's, and leaving
+        // it behind puts a bare `;` in the class body, which is not an element.
+        var (_, elision) = MustParse("""
+            model M "m"
+              Real x;
+              annotation (Icon(graphics={Rectangle(extent={{-1,-1},{1,1}})}));
+            end M;
+            """);
+
+        Assert.Equal([new ElidedRange(3, 3, null)], elision.Ranges);
+    }
+
+    [Theory]
+    [InlineData("""
+        model M "m"
+          Real y "output"
+            annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+          Real z;
+          annotation (Icon(graphics={Rectangle(extent={{-1,-1},{1,1}})}));
+        end M;
+        """)]
+    [InlineData("""
+        model M "m"
+          extends Base
+            annotation (choicesAllMatching=true);
+          Real z;
+        end M;
+        """)]
+    [InlineData("""
+        function F "f"
+          input Real u;
+          output Real v;
+        external "C" v = f_impl(u)
+          annotation (Library="mylib",
+            Include="#include <f_impl.h>");
+        end F;
+        """)]
+    [InlineData("""
+        model M "m"
+        equation
+          connect(a.p, b.n) annotation (Line(
+            points={{-10,0},{10,0}}));
+        end M;
+        """)]
+    public void TheElidedTextParses(string source)
+    {
+        var (_, _, errors) = ModelicaParserHelper.ParseWithTokensAndErrors(Elided(source));
+
+        Assert.True(errors.Count == 0,
+            "dropping the elided lines must leave Modelica: "
+            + string.Join("; ", errors.Select(e => $"{e.Line}: {e.Message}")));
+    }
+
+    [Fact]
+    public void AClassAnnotationSharingItsLineWithCodeTakesItsSemicolonToo()
+    {
+        // Spliced rather than elided, because the line is not the annotation's alone - and the
+        // semicolon still has to go with it, or the composition is left holding a bare `;`.
+        var (spliced, _) = MustParse("model M \"m\" Real x; annotation (Icon()); end M;");
+
+        Assert.Equal("model M \"m\" Real x; end M;", spliced[0]);
+    }
+
+    [Fact]
+    public void TheViewerStillDropsTheLineWholeByDefault()
+    {
+        // Left as it was on purpose: keeping the semicolon puts a line holding nothing but `;` on
+        // screen for every hidden declaration annotation, which is the per-annotation noise B233
+        // was asked to remove.
+        var (spliced, elision) = Without("""
+            model M "m"
+              Real y "output"
+                annotation (Placement(transformation(extent={{-10,-10},{10,10}})));
+              Real z;
+            end M;
+            """);
+
+        Assert.Equal("    annotation (Placement(transformation(extent={{-10,-10},{10,10}})));", spliced[2]);
+        Assert.Equal([new ElidedRange(3, 3, null)], elision.Ranges);
+    }
 }

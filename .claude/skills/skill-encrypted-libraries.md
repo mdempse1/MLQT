@@ -41,6 +41,22 @@ opposite of the shared-pipeline principle that keeps GUI, CLI and MCP reporting 
 The cost is that a stub looks like an ordinary node to code that **writes**, and that is bought off
 with exactly one flag.
 
+### The one exception, and why it is not a crack in the rule
+
+**A class's members cannot be synthesized**, because a Modelica declaration needs a *type* and the
+generator does not publish one. `parameter Real k` is a fabrication that feeds `TypeResolver` and
+`UnitResolver` looking exactly like something read from source, and a connector written as a
+component would be wrong for every class that has one. So the parameters, connectors, inputs,
+outputs and record contents stay as metadata: `ExternalStubBuilder` keeps the whole
+`DocumentedClass` on `ModelNode.RecoveredFromDocumentation`, and **nothing that checks, resolves or
+writes reads it** — only the surfaces that *report* a class do (B179).
+
+The rule above is unchanged and the reason is the same one that produced it: the stub route is taken
+wherever a truthful declaration can be written, and here there is none to write. They were parsed
+and dropped for a year, so `get_class_interface` answered "no parameters" for a vendor class with a
+dozen. It now returns them with `recoveredFromDocumentation: true` and **`type: null`**, which says
+*not published* rather than *not worked out*.
+
 ## `IsExternalStub` — the write-path guards must be exhaustive
 
 The highest-severity failure mode is MLQT rewriting a vendor library it cannot read, in the user's

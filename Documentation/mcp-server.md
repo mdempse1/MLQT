@@ -80,6 +80,13 @@ The server returns a short set of instructions to the client on connect, and a `
 
 3. **Learn classes from compact "views" rather than raw source.** `get_class_interface` (public parameters, connectors and, for functions, the signature — with inherited members merged in), `list_class_elements`, `get_class_documentation` and `get_class_behavior` (equations/connections) give an agent what it needs without reading the whole file. `search_classes` also returns each hit's description and a short documentation snippet so the agent can pick the right class — often a higher-level *aggregate* component the library provides — without opening each candidate.
 
+   **For a class from an encrypted library the views still answer**, from the vendor's generated
+   help rather than from source: `get_class_interface` and `list_class_elements` return its
+   parameters, connectors and, for a function, its inputs and outputs, each with the description and
+   unit the vendor published. Both results carry `recoveredFromDocumentation: true`, and every
+   member's `type` is `null` — the generator does not publish declared types, and MLQT will not
+   invent one. `get_class_info` carries the same flag, and such a class is never writable.
+
 4. **Analysis is opt-in — except parse errors.** Loading only parses structure. Dependency edges, impact analysis and external-resource queries require `analyze_dependencies` to have run first (it can be slow on a large set of libraries). Style checking is opt-in via `check_class` / `check_library`, using each repository's rules. **Parse errors are not opt-in**: `check_class` and `check_library` always report them (`MLQT.Parse.SyntaxError`, `MLQT.Parse.Failure`) at `Error` severity with source `Parser`, even when no style rules are enabled, and `check_class` on a class that failed to parse returns the parse error rather than refusing. Treat one as a stop sign — every other rule reads a parse tree that is missing the code in question, so "no findings" on a file that did not parse means "never looked", not "fine". A style finding carries the severity the repository configured for its rule, as `Style error`, `Style warning` or `Style info`, so `list_findings severity:"error"` selects the rules the team set to Error and not the parse diagnostics' bare `Error`.
 
 5. **A finding carries two line numbers, and they are not interchangeable.** `list_findings`
@@ -90,11 +97,17 @@ apart. Use `line` with `filePath` when editing the file; use `modelLine` when wo
 meaning different things. (`check_class` and `check_library` return the class-relative number only,
 under `line`, because they answer a question about a class rather than about a file.)
 
+   `modelLine` indexes `get_class_source` **whether or not the annotations were asked for**. With
+   `include_annotations: false` the annotations are cut out of the text rather than the class being
+   re-rendered without them: each line comes back as the file wrote it, minus any annotation on it,
+   and an annotation written on its own lines leaves them blank rather than closing the gap. So the
+   two tools describe the same text, which is what re-rendering could not do.
+
 6. **Edit surgically.** Element-level tools change one thing without resending the whole class (`add_component`, `set_component_modifier`, `add_connection`, `add_equation`, …), or `create_class` / `update_class_source` / `rename_class` / `move_class` / `delete_class` work at the whole-class level. Every edit is parse-checked with rollback, refuses read-only files, and can be previewed with `preview: true`.
 
 ## What the tools cover
 
-The server exposes 82 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
+The server exposes 83 tools. The full list is in [MLQT.McpServer/README.md](../MLQT.McpServer/README.md); the groups are:
 
 | Group | Purpose |
 |-------|---------|
@@ -104,7 +117,7 @@ The server exposes 82 tools. The full list is in [MLQT.McpServer/README.md](../M
 | **Search** | Find classes by documentation prose (`search_text`) or by shape (`search_by_interface`) |
 | **Editing** | Whole-class and element-level authoring, plus atomic `batch_edit` |
 | **Documentation** | Set description strings and the `Documentation(info/revisions)` HTML |
-| **Diagram** | Read and set component `Placement`; connection lines are drawn automatically (below) |
+| **Diagram** | Read and set component `Placement`, render the diagram as an image; connection lines are drawn automatically (below) |
 | **Dependencies & impact** | Analyse dependencies, find usages, assess the impact of a change |
 | **Code quality** | Read/set style settings, run style checks, list findings, suppress a rule in source (`suppress_rule`), and accept a word's spelling in one class (`accept_spelling_in_class`). `set_style_settings` merges: name only the rules you are changing, and the rest keep their current values — it writes the repository's committed `.mlqt/settings.json`, so an agent that sent a whole object to change one rule would rewrite the lot |
 | **Spelling** | Spell-check and correct descriptions and documentation |
@@ -115,6 +128,25 @@ The server exposes 82 tools. The full list is in [MLQT.McpServer/README.md](../M
 ## Automatic diagram connections
 
 When you position components on the diagram with `set_component_placement`, the server automatically draws the connection lines: any `connect(...)` whose two components are both placed gets (or has refreshed) a `Line` annotation routed **orthogonally** between the two connector positions, coloured by connector type. It is enough to position the components — no separate call is needed, and moving a component re-routes the lines that touch it.
+
+## Looking at a diagram
+
+An agent laying out a model places components and wires them up, and is then told in coordinates what
+it just did. `get_diagram_image` renders the class instead: each component drawn with its own type's
+icon at its `Placement`, the connection lines between them, and whatever the class draws on its own
+diagram layer, returned as a PNG. Overlapping components, a signal running right to left and a
+connector left on the wrong edge are obvious in the picture and invisible in the numbers.
+
+Two deliberate differences from a Modelica tool's diagram window:
+
+- **Nothing is clipped.** A viewer scales to the declared coordinate system and cuts off anything
+  beyond it. Here the view grows to hold everything drawn and the declared canvas is outlined, so a
+  component placed off-canvas is the first thing you see rather than the one thing you cannot.
+- **A component whose type is not loaded is still drawn**, as a dashed box carrying its name. "This
+  library is not loaded" and "there is no component here" must not look the same.
+
+`get_guidance("diagrams")` carries the conventions to lay out by — sizes, the grid, left-to-right
+signal flow, and which edge a connector sits on.
 
 ## Testing a server manually (McpTester)
 

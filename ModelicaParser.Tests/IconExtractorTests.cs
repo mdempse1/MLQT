@@ -1,5 +1,6 @@
 using Xunit;
 using ModelicaParser.Icons;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 
 namespace ModelicaParser.Tests;
@@ -1039,6 +1040,46 @@ end Test;";
         Assert.Equal("None", line.ArrowStart);
         Assert.Equal("Open", line.ArrowEnd);
         Assert.Equal(5.0, line.ArrowSize);
+    }
+
+    #endregion
+
+    #region Diagram layer
+
+    /// <summary>
+    /// The same extractor reads the Diagram annotation, which is what a class draws on its own
+    /// canvas rather than what it looks like inside another (B196).
+    /// </summary>
+    [Fact]
+    public void ExtractDiagram_ReadsTheDiagramLayerAndNotTheIcon()
+    {
+        var code = """
+            model Test
+              annotation (
+                Icon(graphics={Rectangle(extent={{-100,-100},{100,100}})}),
+                Diagram(coordinateSystem(extent={{-200,-100},{200,100}}),
+                        graphics={Ellipse(extent={{-50,-50},{50,50}})}));
+            end Test;
+            """;
+
+        var diagram = IconExtractor.ExtractDiagram(ModelicaParserHelper.Parse(code));
+
+        Assert.NotNull(diagram);
+        Assert.IsType<EllipsePrimitive>(Assert.Single(diagram!.Graphics));
+        Assert.Equal([-200, -100, 200, 100], diagram.CoordinateExtent);
+
+        // ...and the other way round, so neither is reading the other's arguments.
+        var icon = IconExtractor.ExtractIcon(code);
+        Assert.IsType<RectanglePrimitive>(Assert.Single(icon!.Graphics));
+    }
+
+    [Fact]
+    public void ExtractDiagram_AClassWithNoDiagramAnnotationHasNone()
+    {
+        var diagram = IconExtractor.ExtractDiagram(ModelicaParserHelper.Parse(
+            "model Test annotation (Icon(graphics={Rectangle(extent={{-1,-1},{1,1}})})); end Test;"));
+
+        Assert.Null(diagram);
     }
 
     #endregion

@@ -167,6 +167,12 @@ public class DebianPackageTests
         // for unrelated reasons, so nothing else was ever going to find it.
         Assert.Contains("libnotify4", depends);
 
+        // libfontconfig1 is the same shape found before it cost anything: the MCP server rasterises
+        // a diagram through SkiaSharp, whose Linux native library links fontconfig, and GTK3 pulls
+        // fontconfig in through pango on every desktop - so no developer machine would ever have
+        // shown it missing. The server also runs headless, where that reasoning does not hold.
+        Assert.Contains("libfontconfig1", depends);
+
         // The pre-t64 names, which the renamed packages on Ubuntu 24.04 and later still Provide, so
         // one dependency line resolves on both sides of that transition. Verified against a real
         // archive: libgtk-3-0t64 declares "Provides: libgtk-3-0".

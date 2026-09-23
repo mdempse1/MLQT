@@ -300,6 +300,31 @@ public static class IconSvgRenderer
         return mergedIcon;
     }
 
+    /// <summary>
+    /// The graphics themselves, as an SVG fragment, with no surrounding element. For a caller that
+    /// has its own coordinate frame to put them in - a diagram places each component's icon inside a
+    /// transform of its own (B196) - and so cannot use a whole document.
+    ///
+    /// <para>The fragment assumes the Y-flipped group <see cref="RenderToSvg"/> establishes: text
+    /// and bitmaps counter-flip themselves, and everything else is written in Modelica coordinates
+    /// with Y up.</para>
+    /// </summary>
+    public static string RenderPrimitives(
+        IEnumerable<GraphicsPrimitive> graphics, Func<string, string?>? fileNameResolver = null)
+    {
+        var sb = new StringBuilder();
+        foreach (var primitive in graphics)
+        {
+            if (!primitive.Visible)
+                continue;
+            var svg = RenderPrimitive(primitive, fileNameResolver);
+            if (!string.IsNullOrEmpty(svg))
+                sb.AppendLine(svg);
+        }
+
+        return sb.ToString();
+    }
+
     private static string? RenderPrimitive(GraphicsPrimitive primitive, Func<string, string?>? fileNameResolver)
     {
         return primitive switch

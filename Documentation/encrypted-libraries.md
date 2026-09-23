@@ -122,6 +122,28 @@ is never reported on — there is no source in it to have an opinion about.
 `load_library` accepts an encrypted library directory and loads it the same way, returning the usual
 library summary.
 
+An agent gets more back than the synthesized declaration shows. The vendor's help lists each class's
+parameters, connectors and, for a function, its inputs and outputs, and `get_class_interface` and
+`list_class_elements` return them with the description and the unit the vendor published:
+
+```json
+{
+  "id": "Battery.BMS.CurrentRestrictor",
+  "recoveredFromDocumentation": true,
+  "parameters": [
+    { "name": "iMax", "type": null, "description": "Maximum current", "unit": "A" }
+  ],
+  "connectors": [
+    { "name": "p", "type": null, "description": "Positive pin" }
+  ]
+}
+```
+
+Every `type` is `null` and always will be: the generator does not publish declared types, and a
+guessed one would be indistinguishable from a real one everywhere downstream.
+`recoveredFromDocumentation` is what says so — it appears on `get_class_info`,
+`get_class_interface` and `list_class_elements`, and a class carrying it is never writable.
+
 ---
 
 ## When a library ships no documentation
