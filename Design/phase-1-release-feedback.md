@@ -830,7 +830,8 @@ the class read as not under version control. The log settled it in one line: *73
 from documentation; 650 left to the source already loaded for them* — a race, which is why a handful
 of classes were affected rather than a library, and why the set moved between runs.
 `LibraryOwnership.Owner` is now the one answer, and it asks the graph which copy survived rather
-than asking the list who claims it. The index is still untrue, which is **B268**.
+than asking the list who claims it. The index was still untrue, which was **B268** — made true by
+WP15, which stopped the two copies being loaded together at all.
 
 **None of it applies to a reference-only repository**, reported by the user as soon as the filter
 shipped. The reasoning is the one already written down for that setting — MLQT never formats,
@@ -1500,26 +1501,44 @@ different releases, so a class-by-class merge kept a stub for every class the ne
 deleted — in both arrival orders, since the stub builder adds whatever the source lacks. The decision
 is per library instead: **an encrypted library is never loaded beside readable source for the same
 library, and the source wins whole.** `SourceSupersedesEncrypted` holds the rule (exact top-level
-name; an unknown name matches nothing), and it is applied in two places —
+name; an unknown name matches nothing), and it is asked in three places, cheapest first —
 
 - `RepositoryService.LoadLibrariesAsync` skips the encrypted build **before reading it**, from the
   names every repository's discovery already has. That is the reported project's shape, and asking
   discovery rather than the loaded list is what takes the race out without serialising anything,
   so the startup cost this section told us to measure does not arise;
+- `AddEncryptedLibraryFromDirectoryAsync` asks before reading the help HTML, for the callers with
+  no discovery pass in front of them — the CLI's `--dependency`, the MCP server's `load_library` and
+  the Reference Libraries setting. Without it those read the documentation and built a graph of
+  stubs only to throw them away;
 - `LibraryDataService.Register`, which every load path now goes through, retires whichever copy
-  registers second. That covers the reference-library setting, a library added mid-session and a
-  folder not named after its library.
+  registers second under the same lock. That catches what the first two cannot: source arriving
+  while the encrypted build is mid-load, and a folder not named after its library.
 
-Both are logged and not shown. `RemoveLibrary` now removes only the nodes a library supplies — it
+All three are logged and not shown. `LoadedLibrary.SupersededBy` records why a library came back
+empty, because an empty index is also what a library shipping no documentation looks like and the
+two need opposite messages — `load_library` had started calling one "ships no usable
+documentation", and the CLI named it as loaded. The CLI no longer records such a library as a
+baseline dependency, and `Baseline.DriftFrom` does not report one satisfied by source as missing
+from a baseline taken before this change, which would have told the user to pass a `--dependency`
+they had already passed. `RemoveLibrary` now removes only the nodes a library supplies — it
 removed every id it listed, so removing an encrypted library that had lost classes to source
 deleted the user's own classes from the graph. The guard is `LibraryOwnershipPolicyTests`, a ledger
 of every production read of a library's `ModelIds`, checked by putting a search back and watching it
 fail; the three Code Review searches and two in `LibraryDataService` now ask `LibraryOwnership`.
+That and `TotalModelCount`'s distinct count are **kept as safety nets**, not removed: two readable
+checkouts of one library in different repositories still produce two claimants, and nothing
+prevents that. `DirectedGraph.AddNode`'s source-beats-stub rule is still load-bearing — when the
+encrypted build loads first, the source's classes land in the graph before `Register` retires it.
 
 Removing a repository can leave unloaded an encrypted build it was standing in for, so the Manage
 Repositories tab offers **Load project** on the active project after one is removed. Wiring that
 up found **B280**: a project switch — which is what the reload is — never loaded the Reference
-Libraries setting, so every switch ran without them until restart.
+Libraries setting, so every switch ran without them until restart. `OnProjectChanged` loads them
+now, after the project's own libraries, as startup does.
+
+Verified: 6,869 tests across the seven CI suites, the 75 browser journeys and the coverage ratchet.
+Commit `0314b2f`.
 
 ## Sequencing summary
 
