@@ -107,13 +107,14 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
         AddTokens(component: null, FormattingRuleIds);
     }
 
-    private static readonly string[] FormattingRuleIds =
-    [
-        RuleIds.ImportStatementsFirst, RuleIds.ExtendsAtTop,
-        RuleIds.InitialEqAlgoFirst, RuleIds.InitialEqAlgoLast,
-        RuleIds.OneOfEachSection, RuleIds.DontMixEquationAndAlgorithm,
-        RuleIds.DontMixConnections
-    ];
+    // Every layout rule, read from the catalogue rather than listed here. A hand-written list is how
+    // ComponentsBeforeClasses and DeclarationOrder went on being reported on a class marked
+    // format=false: both arrived after it, and the FormattingExcludedModels name list waived them
+    // while this did not (B284). SuppressionTests holds the two exclusions to the same rules.
+    private static readonly string[] FormattingRuleIds = RuleCatalog.BuiltIn.Values
+        .Where(r => r.Category == "Ordering")
+        .Select(r => r.Id)
+        .ToArray();
 
     private void AddSpellingWords(IEnumerable<string> words)
     {
