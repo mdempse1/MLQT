@@ -1589,6 +1589,29 @@ now, after the project's own libraries, as startup does.
 Verified: 6,869 tests across the seven CI suites, the 75 browser journeys and the coverage ratchet.
 Commit `0314b2f`.
 
+### WP16 — Performance, the serial phases
+
+**B281, B282** · 2 items · M each · **the per-class phase is no longer where the wall clock goes**
+
+Opened 2026-09-24 from WP13's last profile. Cutting per-class thread time by a third moved a Claytex
+check from 4m21s to 4m12s, and the trace says why: of a 257s run, loading is 34s, **dependency
+analysis 74s**, the per-class checks 68s across 24 cores, and **the whole-graph analyses 72s one after
+another on one thread**. The two items are those two serial phases, and they share a shape — each
+parses every class in the graph when the question is only about some of them.
+
+- **B282, dependency analysis.** Phase 1+2 parses all 39,596 classes (42s) and Phase 3, the second
+  `loadSelector` pass, parses all of them again (40s). Phase 3 only needs the classes that can reach a
+  tracked parameter, and Phase 1+2 has just built the edges that say which.
+- **B281, the graph analyses.** Serial by construction, and `UnusedMembersAnalyzer`'s first pass walks
+  the whole graph rather than the checked set — ~95% of that analyzer's time, the pass that reports
+  being under 5%.
+
+**The gate is WP4's and WP13's**: re-measure on Claytex with `--timings` before touching anything,
+profile rather than guess, and hold findings — and for B282 the external-resource graph — identical
+on Claytex and MSL. Both narrowings rest on dependency edges meaning what they are assumed to mean,
+so **verify the edge first** (that `extends` is recorded, how far a modification can reach) and keep
+the full scan as the fallback when edges are absent.
+
 ## Sequencing summary
 
 ```
@@ -1620,6 +1643,8 @@ WP13 ✅ B261 ▸ B257 — complete 2026-09-24: coverage shares the rule's unit 
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
 WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
                        beside source for the same library; B280 found doing it
+WP16  B281 ▸ B282 — the serial phases WP13's profile found: the graph analyses (72s, one
+                       thread) and dependency analysis (74s, every class parsed twice)
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone
