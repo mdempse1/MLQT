@@ -35,12 +35,13 @@
         position: relative;
     }
 
-    .mud-grid {
-        width: 100%;
+    /* The grid a MudExSplitPanel wraps itself in fills its container, which is what lets the panes
+       take the window's height. Only that grid: this used to be every .mud-grid, and a MudGrid used
+       for layout inside a page that has a definite height - the Metrics tab's coverage grid - then
+       stretched to the page's height and left a blank space below its content. MetricsLayoutJourney
+       holds the one; the documentation screenshots show the other. */
+    .mud-grid:has(> .mud-ex-split-panel) {
         height: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        box-sizing: border-box;
     }
 
     .mud-navmenu {
