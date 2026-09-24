@@ -81,6 +81,32 @@ ones; a plain-source library loaded for reference needed `LoadedLibrary.IsRefere
 (backlog B80), and that is what keeps it out of the checks, the coverage figures and the metrics
 trend.
 
+## Source for the same library wins whole, not class by class
+
+A tool's library folder ships the encrypted build of libraries a user may also have checked out as
+source, and the two are routinely **different releases**. They are never both loaded:
+`SourceSupersedesEncrypted` (exact top-level name; an unknown name matches nothing) decides, and it is
+applied twice (B268, WP15):
+
+- `RepositoryService.LoadLibrariesAsync` skips the encrypted build **before reading it**, from the
+  names each repository's discovery already has — discovery runs for every repository before any
+  library loads, so this takes the parallel-load race out without serialising anything;
+- `LibraryDataService.Register`, which every load path goes through, retires whichever copy
+  registers second under the same lock — the reference-library setting, a library added mid-session,
+  and a folder not named after its library all arrive that way.
+
+**Why whole.** Merged per class, the encrypted build kept a stub for every class the newer source
+had deleted — in either arrival order, because the stub builder adds whatever the source lacks — so
+the user's library showed vendor classes it did not have, and a reference to a deleted class resolved
+instead of being reported. Both copies' indexes also claimed the same ids, which is what three
+separate callers had to be taught to read around.
+
+**What it does not do.** Nothing reloads the encrypted build if the source goes away mid-session;
+the Manage Repositories tab offers **Load project** on the active project after a repository is
+removed, and that path loads it. `DirectedGraph.AddNode`'s stub-versus-source rule and
+`LibraryOwnership.Owner` are still there, now as safety nets, and `LibraryOwnershipPolicyTests`
+holds every read of a library's `ModelIds` to a ledger so the list search does not come back.
+
 ## What the HTML gives, and what it does not
 
 ```html

@@ -1929,7 +1929,7 @@ document.head.appendChild(style);
             return;
         }
 
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(package.Id));
+        var library = LibraryDataService.GetOwningLibrary(package.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
         if (repository is null || library is null)
@@ -2109,7 +2109,7 @@ document.head.appendChild(style);
             return false;
         }
 
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(target.FileOwner.Id));
+        var library = LibraryDataService.GetOwningLibrary(target.FileOwner.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
         var repoId = repository?.Id;
@@ -2580,7 +2580,7 @@ document.head.appendChild(style);
 
         // Identify the repository (if any) so file monitoring can be paused across the write,
         // preventing the watcher from echoing our own change back as a pending refresh.
-        var library = LibraryDataService.Libraries.FirstOrDefault(l => l.ModelIds.Contains(_currentModelNode.Id));
+        var library = LibraryDataService.GetOwningLibrary(_currentModelNode.Id);
         var repository = string.IsNullOrEmpty(library?.RepositoryId)
             ? null : RepositoryService.GetRepository(library.RepositoryId);
         var repoId = repository?.Id;

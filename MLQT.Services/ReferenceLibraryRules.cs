@@ -76,13 +76,14 @@ public static class ReferenceLibraryRules
         if (encryptedName is not { Length: > 0 })
             return null;
 
-        var sameName = loaded.FirstOrDefault(l => string.Equals(l.Name, encryptedName, StringComparison.Ordinal));
+        var sameName = loaded.FirstOrDefault(l => SourceSupersedesEncrypted.SameLibrary(l.Name, encryptedName));
         if (sameName is null)
             return null;
 
         // Readable source always beats classes reconstructed from vendor documentation, so a readable
-        // candidate is loaded even when an encrypted copy got there first and lets AddNode replace the
-        // stubs. Every other combination is a second copy of something already present.
+        // candidate is loaded even when an encrypted copy got there first — and the encrypted copy is
+        // then retired whole as the source registers (SourceSupersedesEncrypted), not merged with it
+        // class by class. Every other combination is a second copy of something already present.
         if (!isEncrypted && sameName.SourceType == LibrarySourceType.EncryptedDirectory)
             return null;
 

@@ -87,4 +87,15 @@ public class LoadedLibrary
     /// telling anyone about.</para>
     /// </summary>
     public int? DocumentedClassCount { get; set; }
+
+    /// <summary>
+    /// For an encrypted library that was not used because readable source for the same library is
+    /// loaded, where that source is. Null for every library that is in use.
+    ///
+    /// <para>Such a library has an empty <see cref="ModelIds"/>, and so does one that ships no
+    /// documentation — and the two need opposite messages: one is a vendor library MLQT cannot read,
+    /// the other is working exactly as intended (B268). A caller reporting on a library it asked to
+    /// load asks this before reading the empty index as a problem.</para>
+    /// </summary>
+    public string? SupersededBy { get; set; }
 }

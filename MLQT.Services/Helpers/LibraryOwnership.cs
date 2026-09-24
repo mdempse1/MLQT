@@ -7,12 +7,13 @@ namespace MLQT.Services.Helpers;
 /// Which loaded library a class belongs to, when more than one of them claims it.
 /// </summary>
 /// <remarks>
-/// <para><b>Two libraries claiming one class is ordinary, not a fault.</b> A tool's library folder
-/// ships the encrypted build of a library the user also has checked out as source, and both are
-/// loaded — one for reference, one to work in. Only one copy of the class survives in the graph and
-/// <c>DirectedGraph.AddNode</c> decides which, readable source always beating a class reconstructed
-/// from vendor documentation. <b>The library index is never told</b>, so the losing entry goes on
-/// listing an id it no longer supplies.</para>
+/// <para><b>Two libraries claiming one class was ordinary until B268.</b> A tool's library folder
+/// ships the encrypted build of a library the user also has checked out as source, both were loaded,
+/// and the losing entry went on listing ids whose node was now the source's. An encrypted build is
+/// no longer loaded beside its source (<c>SourceSupersedesEncrypted</c>), so that case has gone. Two
+/// claimants still arise from two readable checkouts of one library in different repositories, and
+/// from an encrypted library whose folder is not named after the package it documents — which the
+/// name rule cannot see.</para>
 ///
 /// <para><b>So the answer comes from the graph, not from the list.</b> Whichever way the collision
 /// was resolved, the owner is the library that could have supplied the node that is actually there:

@@ -87,9 +87,10 @@ public class DirectedGraph
             else if (node is ModelNode newModel && _nodes[node.Id] is ModelNode existingModel)
             {
                 // Readable source always beats a class reconstructed from vendor documentation, in
-                // whichever order the two arrive. The same library really does turn up twice: a tool's
-                // library folder ships the encrypted build of a library the user also has checked out
-                // as source, and both land in the one graph.
+                // whichever order the two arrive. The encrypted build of a library is no longer kept
+                // beside its source (B268, SourceSupersedesEncrypted) — but when the encrypted copy is
+                // loaded first, the source's classes land here before that library is retired, and
+                // this is what replaces the stubs in that window.
                 //
                 // This has to be decided before the standalone rule below, because that rule cannot
                 // see the difference. A stub is never standalone, so a stub colliding with a nested

@@ -1435,9 +1435,9 @@ is still open — it is the tool with no timeout at all, which is the worse of t
 
 ---
 
-### WP15 — The library index, which claims more than it supplies
+### WP15 — The library index, which claims more than it supplies — **✅ complete 2026-09-23**
 
-**B268** · 1 item · M · **the compensating read is in; the untruth is not**
+**B268 ✅** · 1 item · M · plus **B280 ✅**, found doing it · **done by a fourth option — see the end of this section**
 
 WP7 traced a Code Review defect — a class of the user's own marked as changed by the browser and
 opened with every diff view disabled — back to a library index that lists classes it does not
@@ -1494,6 +1494,33 @@ Measure the startup cost before committing to it, the same way WP13 is told to.
 occurrence is a test that fails when a resolution goes back to searching the list — the shape
 `LibraryOwnershipTests` already has, applied to whichever callers exist then.
 
+**What was done (2026-09-23).** None of the three: each makes the index readable or true, and none
+stops the two copies being **mixed**, which is what was actually wrong. The copies are routinely
+different releases, so a class-by-class merge kept a stub for every class the newer source had
+deleted — in both arrival orders, since the stub builder adds whatever the source lacks. The decision
+is per library instead: **an encrypted library is never loaded beside readable source for the same
+library, and the source wins whole.** `SourceSupersedesEncrypted` holds the rule (exact top-level
+name; an unknown name matches nothing), and it is applied in two places —
+
+- `RepositoryService.LoadLibrariesAsync` skips the encrypted build **before reading it**, from the
+  names every repository's discovery already has. That is the reported project's shape, and asking
+  discovery rather than the loaded list is what takes the race out without serialising anything,
+  so the startup cost this section told us to measure does not arise;
+- `LibraryDataService.Register`, which every load path now goes through, retires whichever copy
+  registers second. That covers the reference-library setting, a library added mid-session and a
+  folder not named after its library.
+
+Both are logged and not shown. `RemoveLibrary` now removes only the nodes a library supplies — it
+removed every id it listed, so removing an encrypted library that had lost classes to source
+deleted the user's own classes from the graph. The guard is `LibraryOwnershipPolicyTests`, a ledger
+of every production read of a library's `ModelIds`, checked by putting a search back and watching it
+fail; the three Code Review searches and two in `LibraryDataService` now ask `LibraryOwnership`.
+
+Removing a repository can leave unloaded an encrypted build it was standing in for, so the Manage
+Repositories tab offers **Load project** on the active project after one is removed. Wiring that
+up found **B280**: a project switch — which is what the reload is — never loaded the Reference
+Libraries setting, so every switch ran without them until restart.
+
 ## Sequencing summary
 
 ```
@@ -1523,8 +1550,8 @@ WP10 ✅ B218 ▸ B179 ▸ B196 (MCP) — complete 2026-09-23
 WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
                        ▸ B257, WP4's other leftover: the combined path's step label
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
-WP15  B268 the library index — WP7's root cause, compensated for in the read and still untrue
-                       in the write; independent, and nothing is broken while it waits
+WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
+                       beside source for the same library; B280 found doing it
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone

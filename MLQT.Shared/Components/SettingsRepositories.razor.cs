@@ -201,6 +201,14 @@ public partial class SettingsRepositories : IDisposable
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Whether to offer <b>Load project</b> for the project that is already active: only once a
+    /// repository has been removed from it. Removing one can leave a library unloaded that it was
+    /// standing in for — an encrypted build whose source it held (B268) — and loading the project
+    /// again is the existing path that puts that right.
+    /// </summary>
+    internal bool CanReloadActiveProject => RepositoryService.RepositoryRemovedSinceProjectLoad;
+
     private async Task LoadProject(string projectId)
     {
         // Signal MainLayout to show progress dialog immediately before loading starts

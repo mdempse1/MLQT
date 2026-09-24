@@ -536,6 +536,16 @@ public partial class MainLayout : IDisposable
             var project = RepositoryService.GetActiveProject();
             _currentProjectName = project?.Name;
 
+            // The Reference Libraries setting is not part of any project, and the switch has just
+            // cleared the whole graph, those libraries included. Only startup loaded them, so every
+            // project switch - and every reload of the active project - carried on without them until
+            // the application was restarted (B280). After the project's own libraries, as at startup,
+            // and announced to the tree once.
+            using (LibraryDataService.SuppressTreeDataChanged())
+            {
+                await LoadReferenceLibrariesAsync();
+            }
+
             // Compact the LOH + trim packages after loading
             var totalModelCount = LibraryDataService.TotalModelCount;
             if (totalModelCount > 0)

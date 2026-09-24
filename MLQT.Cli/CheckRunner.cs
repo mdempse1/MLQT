@@ -126,7 +126,8 @@ internal static class CheckRunner
         // needs to know why the numbers moved.
         if (baseline is not null && load.Settings is not null)
         {
-            var drift = baseline.DriftFrom(load.Settings, load.DependencyLibraries);
+            var drift = baseline.DriftFrom(
+                load.Settings, load.DependencyLibraries, load.DependenciesLoadedFromSource);
             if (drift.HasDrifted)
             {
                 stderr.WriteLine("warning: the baseline was generated with a different configuration");

@@ -211,6 +211,23 @@ public class CheckPipelineTests : IDisposable
     }
 
     [Fact]
+    public void AnEncryptedDependencyOfTheLibraryBeingChecked_IsNotUsedAndNotMisreported()
+    {
+        // B268: a tool's library folder on --dependency usually holds the encrypted build of the very
+        // library being checked. The source wins, so the encrypted copy contributes nothing - and it
+        // must not be named as loaded, nor warned about as shipping no documentation, both of which
+        // an empty library looks like.
+        var lib = Library(NewDirectory("Commercial"), "Commercial");
+        var encrypted = EncryptedLibrary("Commercial", "2.1", withHelp: true);
+
+        var (code, _, stderr) = Run("check", lib, "--dependency", encrypted);
+
+        Assert.Equal(ExitCodes.Ok, code);
+        Assert.DoesNotContain("ships no usable documentation", stderr);
+        Assert.DoesNotContain("for reference resolution", stderr);
+    }
+
+    [Fact]
     public void AnEncryptedLibraryInsideTheRepository_IsNotReportedOn()
     {
         // There is no source in it to have an opinion about — only classes rebuilt from the vendor's

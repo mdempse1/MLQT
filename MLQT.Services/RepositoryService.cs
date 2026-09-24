@@ -446,17 +446,33 @@ public class RepositoryService : IRepositoryService
                 _ => LibrarySourceType.Directory
             };
 
+            // Asked once, before anything in this repository loads: every other repository in the
+            // project has been discovered by now, so this is the whole project's answer and not a
+            // race between parallel loads (B268).
+            var readable = ReadableLibrariesInProject();
+
             // Load all libraries in parallel for much faster repository loading
             var tasks = pathsToLoad.Select(relativePath => Task.Run(async () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var fullPath = string.IsNullOrEmpty(relativePath)
-                    ? repository.LocalPath
-                    : Path.Combine(repository.LocalPath, relativePath);
+                var fullPath = LibraryPath(repository, relativePath);
 
                 try
                 {
+                    // An encrypted build of a library the project also has as source is not read at
+                    // all. LibraryDataService would retire it on arrival anyway; this saves reading
+                    // its documentation to find that out. See SourceSupersedesEncrypted.
+                    if (EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath)
+                        && SourceSupersedesEncrypted.ReadableSourceFor(
+                            repository.DiscoveredLibraries.GetValueOrDefault(relativePath), readable) is { } source)
+                    {
+                        Info("RepositoryService",
+                            $"Not loading encrypted library '{repository.DiscoveredLibraries[relativePath]}' at " +
+                            $"{fullPath}: readable source for it is in the project at {source}");
+                        return;
+                    }
+
                     Debug("RepositoryService", $"Loading library from: {fullPath}");
 
                     // A repository can contain an encrypted library alongside the source that uses
@@ -507,6 +523,44 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    private static string LibraryPath(Repository repository, string relativePath) =>
+        string.IsNullOrEmpty(relativePath)
+            ? repository.LocalPath
+            : Path.Combine(repository.LocalPath, relativePath);
+
+    /// <summary>
+    /// Every readable library the project knows of, by name and location: each repository's
+    /// discovered libraries that are not encrypted, and every readable library already loaded — which
+    /// covers the ones that arrived by the reference-library setting and have no repository.
+    /// </summary>
+    private List<(string Name, string Location)> ReadableLibrariesInProject()
+    {
+        List<Repository> repositories;
+        lock (_lock)
+        {
+            repositories = _repositories.ToList();
+        }
+
+        var readable = new List<(string Name, string Location)>();
+        foreach (var repository in repositories)
+        {
+            foreach (var (relativePath, name) in repository.DiscoveredLibraries.ToList())
+            {
+                var fullPath = LibraryPath(repository, relativePath);
+                if (!EncryptedLibraryDetector.IsEncryptedLibraryRoot(fullPath))
+                    readable.Add((name, fullPath));
+            }
+        }
+
+        foreach (var library in _libraryDataService.Libraries)
+        {
+            if (library.SourceType != LibrarySourceType.EncryptedDirectory)
+                readable.Add((library.Name, library.SourcePath));
+        }
+
+        return readable;
+    }
+
     /// <inheritdoc />
     public bool MoveRepository(string repositoryId, int delta)
     {
@@ -555,6 +609,8 @@ public class RepositoryService : IRepositoryService
             {
                 _libraryDataService.RemoveLibrary(libraryId);
             }
+
+            RepositoryRemovedSinceProjectLoad = true;
         }
 
         OnRepositoriesChanged?.Invoke();
@@ -562,6 +618,9 @@ public class RepositoryService : IRepositoryService
         // Save settings asynchronously
         _ = SaveRepositorySettingsAsync();
     }
+
+    /// <inheritdoc />
+    public bool RepositoryRemovedSinceProjectLoad { get; private set; }
 
     public async Task RefreshRepositoryAsync(string repositoryId, CancellationToken cancellationToken = default)
     {
@@ -715,6 +774,7 @@ public class RepositoryService : IRepositoryService
         {
             _loadWarnings.Clear();
         }
+        RepositoryRemovedSinceProjectLoad = false;
         var settings = await _settingsService.GetAsync(SettingsKey, new RepositorySettingsCollection());
 
         // Migration: if no projects defined but legacy Repositories exist, migrate them
@@ -998,6 +1058,7 @@ public class RepositoryService : IRepositoryService
 
         _fileMonitoringService.StopAllMonitoring();
         _libraryDataService.ClearAllLibraries();
+        RepositoryRemovedSinceProjectLoad = false;
 
         OnRepositoriesChanged?.Invoke();
 

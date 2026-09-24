@@ -114,6 +114,32 @@ public class SessionAndClassToolsTests
     }
 
     [Fact]
+    public async Task LoadLibrary_EncryptedCopyOfLoadedSource_SaysTheSourceIsUsed()
+    {
+        // B268: an encrypted build of a library whose source is loaded is retired on arrival, so its
+        // index is empty - exactly like one that ships no documentation. The tool has to say which,
+        // because the two call for opposite responses from the agent reading it.
+        using var host = new TestHost();
+        var session = new SessionTools(host.Libraries, host.Repositories, host.Resources, host.Session);
+        var source = host.WriteLibraryDir(new Dictionary<string, string> { ["package.mo"] = Package });
+        ToolAssert.Ok<LibrarySummary>(await session.LoadLibrary(source));
+
+        var encrypted = Path.Combine(host.NewTempDir(), "TestLib 2.0.0");
+        Directory.CreateDirectory(Path.Combine(encrypted, "help"));
+        File.WriteAllText(Path.Combine(encrypted, "package.moe"), "not readable");
+        File.WriteAllText(Path.Combine(encrypted, "help", "TestLib.html"),
+            "<html><head><meta name=\"HTML-Generator\" content=\"Dymola\"></head><body>" +
+            "<h2><a name=\"TestLib\"></a>TestLib</h2>" +
+            "<p><span class=\"ModelicaDescription\">encrypted</span></p></body></html>");
+
+        var err = ToolAssert.Error(await session.LoadLibrary(encrypted));
+
+        Assert.Contains("readable source for it is already loaded", err.Error);
+        Assert.DoesNotContain("no usable documentation", err.Error);
+        Assert.Equal("Directory", Assert.Single(session.ListLibraries()).SourceType);
+    }
+
+    [Fact]
     public async Task LoadLibrary_BadPath_ReturnsError()
     {
         using var host = new TestHost();

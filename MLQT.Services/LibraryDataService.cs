@@ -159,10 +159,7 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -210,10 +207,7 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -271,6 +265,23 @@ public class LibraryDataService : ILibraryDataService
 
             library.Name = detected.Name;
 
+            // Readable source for this library is already loaded, so it would be retired the moment it
+            // registered. Asked before the documentation is read rather than after, so a library whose
+            // source is checked out costs a directory probe instead of a pass over its help HTML and a
+            // graph full of stubs built only to be taken out again. RepositoryService asks the same
+            // question earlier still, from discovery; this is for every caller that comes straight
+            // here - the CLI's dependencies, the MCP server's load_library, the Reference Libraries
+            // setting. A source that arrives while this is loading is still caught by Register.
+            if (ReadableSourceLoadedFor(library.Name) is { } source)
+            {
+                library.SupersededBy = source;
+                Info("LibraryDataService",
+                    $"Encrypted library '{library.Name}' at {directoryPath} is not used: readable source for " +
+                    $"it is loaded from {source}");
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
+
             if (!detected.HasDocumentation)
             {
                 // Nothing shipped that describes the library. Loading zero classes is the honest
@@ -282,10 +293,7 @@ public class LibraryDataService : ILibraryDataService
                     $"Encrypted library '{detected.Name}' ships no documentation; its classes cannot be recovered");
                 library.DocumentedClassCount = 0;
 
-                lock (_lock)
-                {
-                    _libraries.Add(library);
-                }
+                Register(library);
 
                 OnLibrariesChanged?.Invoke();
                 RaiseTreeDataChanged();
@@ -319,13 +327,16 @@ public class LibraryDataService : ILibraryDataService
             // re-analyse before it can trust the graph.
             _combinedGraph.InvalidateDependencyAnalysis();
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            var registered = Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
+
+            if (!registered)
+            {
+                LogProcessEnd("LibraryDataService", $"Loading encrypted library: {directoryPath}");
+                return library;
+            }
 
             Info("LibraryDataService",
                 $"Loaded encrypted library '{library.Name}' {detected.Version} with {library.ModelIds.Count} " +
@@ -502,10 +513,7 @@ public class LibraryDataService : ILibraryDataService
                 }
             }
 
-            lock (_lock)
-            {
-                _libraries.Add(library);
-            }
+            Register(library);
 
             OnLibrariesChanged?.Invoke();
             RaiseTreeDataChanged();
@@ -529,16 +537,112 @@ public class LibraryDataService : ILibraryDataService
             var library = _libraries.FirstOrDefault(l => l.Id == libraryId);
             if (library != null)
             {
-                // Remove all models belonging to this library from the combined graph, in one pass
-                // over its edges - a whole library is the largest removal there is.
-                _combinedGraph.RemoveNodes(library.ModelIds);
-
+                RemoveSuppliedNodes(library);
                 _libraries.Remove(library);
             }
         }
 
         OnLibrariesChanged?.Invoke();
         RaiseTreeDataChanged();
+    }
+
+    /// <summary>
+    /// Adds a newly loaded library to the list, applying <see cref="SourceSupersedesEncrypted"/> on
+    /// the way in. Every load path registers through here, so the rule cannot be missing from one.
+    /// </summary>
+    /// <returns>False when the library itself was superseded and is not registered: an encrypted
+    /// build arriving after readable source for it. Its classes are gone from the graph and its index
+    /// is emptied, so a caller that counts or keeps it sees a library that contributes nothing.</returns>
+    /// <remarks>
+    /// The check and the add are one step under the lock. Two parallel loads of the same library —
+    /// the ordinary shape of a project that holds a checkout and a tool's library folder — therefore
+    /// cannot both miss each other: whichever registers second sees the first.
+    /// </remarks>
+    private bool Register(LoadedLibrary library)
+    {
+        List<(LoadedLibrary Library, int Removed)> retired = [];
+        bool registered;
+
+        lock (_lock)
+        {
+            foreach (var superseded in SourceSupersedesEncrypted.Retires(library, _libraries))
+            {
+                var removed = RemoveSuppliedNodes(superseded);
+                _libraries.Remove(superseded);
+                superseded.ModelIds = [];
+                superseded.TopLevelModelIds = [];
+                superseded.ChildrenByParent = new();
+                superseded.SupersededBy = ReferenceEquals(superseded, library)
+                    ? _libraries.First(l => l.SourceType != LibrarySourceType.EncryptedDirectory
+                                            && SourceSupersedesEncrypted.SameLibrary(l.Name, library.Name)).SourcePath
+                    : library.SourcePath;
+                retired.Add((superseded, removed));
+            }
+
+            registered = !retired.Any(r => ReferenceEquals(r.Library, library));
+            if (registered)
+                _libraries.Add(library);
+        }
+
+        foreach (var (superseded, removed) in retired)
+        {
+            Info("LibraryDataService",
+                $"Encrypted library '{superseded.Name}' at {superseded.SourcePath} is not used: readable " +
+                $"source for it is loaded from {superseded.SupersededBy}" +
+                (removed > 0 ? $"; {removed} documented class(es) the source does not have were removed" : ""));
+        }
+
+        return registered;
+    }
+
+    /// <summary>Where readable source for the named library is loaded from, or null.</summary>
+    private string? ReadableSourceLoadedFor(string name)
+    {
+        lock (_lock)
+        {
+            return SourceSupersedesEncrypted.ReadableSourceFor(name, _libraries
+                .Where(l => l.SourceType != LibrarySourceType.EncryptedDirectory)
+                .Select(l => (l.Name, l.SourcePath)));
+        }
+    }
+
+    /// <summary>
+    /// Takes out of the graph the nodes this library actually supplies, and nothing else.
+    /// </summary>
+    /// <returns>How many class nodes were removed.</returns>
+    /// <remarks>
+    /// <para><b>Not every id in <see cref="LoadedLibrary.ModelIds"/>.</b> An encrypted library that
+    /// was loaded before readable source for it lists ids whose node is now the source's, and
+    /// removing by the list deleted the user's own classes from the graph along with the vendor's.
+    /// A library supplies stubs if it is encrypted and readable classes otherwise, which is the same
+    /// question <see cref="Owns"/> answers for the tree.</para>
+    ///
+    /// <para>An encrypted library's <c>package.moe</c> file node goes with it. It holds nothing once
+    /// the stubs are gone, and a file node for a vendor's encrypted package left in the graph is one
+    /// more path that every write has to remember not to take at face value.</para>
+    /// </remarks>
+    private int RemoveSuppliedNodes(LoadedLibrary library)
+    {
+        var supplied = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in library.ModelIds)
+        {
+            if (_combinedGraph.GetNode<ModelNode>(id) is { } node && Owns(library, node))
+                supplied.Add(id);
+        }
+
+        // One pass over the graph's edges - a whole library is the largest removal there is.
+        _combinedGraph.RemoveNodes(supplied);
+
+        if (library.SourceType == LibrarySourceType.EncryptedDirectory && !string.IsNullOrEmpty(library.SourcePath))
+        {
+            // The same path the loader gave the stub builder, so the same id. Removed whatever its
+            // ContainedModelIds says: RemoveNodes does not update a file's list, and nothing else is
+            // in this file - source that replaced a stub was detached from it as it arrived.
+            _combinedGraph.RemoveNode(GraphBuilder.GenerateFileId(
+                Path.Combine(library.SourcePath, EncryptedLibraryDetector.EncryptedPackageFileName)));
+        }
+
+        return supplied.Count;
     }
 
     /// <inheritdoc/>
@@ -636,17 +740,9 @@ public class LibraryDataService : ILibraryDataService
             var fileNode = _combinedGraph.GetNode<FileNode>(fileId);
             if (fileNode != null)
             {
-                var modelsInFile = _combinedGraph.GetModelsInFile(fileId);
-                foreach (var model in modelsInFile)
+                foreach (var model in _combinedGraph.GetModelsInFile(fileId))
                 {
-                    foreach (var lib in _libraries)
-                    {
-                        if (lib.ModelIds.Contains(model.Id))
-                        {
-                            library = lib;
-                            break;
-                        }
-                    }
+                    library = LibraryOwnership.Owner(_libraries, model.Id, GetModelById);
                     if (library != null) break;
                 }
             }
@@ -823,11 +919,10 @@ public class LibraryDataService : ILibraryDataService
     /// Whether this library is the one whose copy of <paramref name="node"/> is actually in the
     /// graph.
     ///
-    /// <para>The same library can be loaded twice — a tool's library folder ships the encrypted
-    /// build of a library the user also has checked out as source, and both are perfectly ordinary
-    /// repositories in the same project. Only one copy of each class survives in the graph (source
-    /// wins), but both <see cref="LoadedLibrary"/> entries still list the same ids, so "which
-    /// library does this class belong to" has two answers and only one of them is right.</para>
+    /// <para>A library supplies stubs if it is encrypted and readable classes otherwise. Since B268 an
+    /// encrypted build is never registered beside source for the same library, so this rarely has two
+    /// candidates to choose between; it is what <see cref="RemoveSuppliedNodes"/> asks so that removing
+    /// a library cannot take another library's classes with it, whatever the index says.</para>
     /// </summary>
     private static bool Owns(LoadedLibrary library, ModelNode node) =>
         node.IsExternalStub == (library.SourceType == LibrarySourceType.EncryptedDirectory);
@@ -840,7 +935,9 @@ public class LibraryDataService : ILibraryDataService
             lock (_lock)
             {
                 // Distinct ids that are actually in the graph. Both halves earn their place: the set
-                // is what stops a class listed by two libraries being counted twice, and the graph
+                // is what stops a class listed by two libraries being counted twice (two readable
+                // checkouts of one library, now that an encrypted build never sits beside its source),
+                // and the graph
                 // lookup is what stops an id a library still lists after its node has gone being
                 // counted at all.
                 //
@@ -892,9 +989,9 @@ public class LibraryDataService : ILibraryDataService
                 // claiming the *same node object*. Adding it once per claiming library put the
                 // library in the tree twice, and — since preparing it for display stamps the
                 // library id onto the shared node — both copies ended up attributed to whichever
-                // library was processed last. That is why a library appeared twice under one
-                // repository and not at all under the other, and why which repository it landed in
-                // varied from one library to the next.
+                // library was processed last. The case that produced it, a tool's encrypted build
+                // beside the user's checkout, no longer loads both (B268); two readable checkouts of
+                // one library in different repositories still would.
                 var byModelId = new Dictionary<string, (ModelNode Node, LoadedLibrary Library)>(StringComparer.Ordinal);
 
                 lock (_lock)
@@ -959,12 +1056,11 @@ public class LibraryDataService : ILibraryDataService
                     return [];
 
                 // The library for this parent is the one that owns it, not merely the first that
-                // claims it. Both copies of a doubly-loaded library list the same parent, but their
-                // child lists differ: the encrypted one knows only what its documentation named, the
-                // source one knows what is actually there. Taking the first claimant meant expanding
-                // a package could show the wrong set of children entirely.
-                var candidates = _libraries.Where(l => l.ModelIds.Contains(parentModel.Id)).ToList();
-                var library = candidates.FirstOrDefault(l => Owns(l, parentModel)) ?? candidates.FirstOrDefault();
+                // claims it: two copies of a library list the same parent with different children, and
+                // taking the first claimant meant expanding a package could show the wrong set. Since
+                // B268 an encrypted build is not loaded beside its source, so the claimants are two
+                // readable copies when there are two at all.
+                var library = LibraryOwnership.Owner(_libraries, parentModel.Id, _ => parentModel);
                 if (library == null)
                     return [];
 

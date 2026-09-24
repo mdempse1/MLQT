@@ -96,6 +96,18 @@ public interface IRepositoryService
     void RemoveRepository(string repositoryId, bool unloadLibraries = true);
 
     /// <summary>
+    /// Whether a repository has been removed, with its libraries, since the active project was last
+    /// loaded — and so whether reloading it could give a different answer.
+    /// </summary>
+    /// <remarks>
+    /// A library that was standing in for another is not replaced when it goes: an encrypted build
+    /// left unloaded because the removed repository held its source stays unloaded (B268). Reloading
+    /// the project is what brings it back, so the settings tab offers <b>Load project</b> for the
+    /// active project while this is true, and the load clears it.
+    /// </remarks>
+    bool RepositoryRemovedSinceProjectLoad { get; }
+
+    /// <summary>
     /// Refreshes a repository (re-discover libraries).
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

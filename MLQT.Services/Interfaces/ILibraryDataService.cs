@@ -20,16 +20,15 @@ public interface ILibraryDataService
     /// </summary>
     /// <remarks>
     /// <para>Not <c>Libraries.Sum(l =&gt; l.ModelIds.Count)</c>, which is what the callers used to do
-    /// and which over-counts. The same library is routinely loaded twice — a tool's library folder
-    /// ships the encrypted build of a library the user also has checked out as source — and while only
-    /// one copy of each class survives in the graph, <b>both</b> <c>LoadedLibrary</c> entries can list
-    /// the id. Whether they do depends on which load won the race: a stub is not recorded at all when
-    /// the source is already there, and is recorded and later superseded when it is not.</para>
+    /// and which over-counts whenever two libraries list the same id. Until B268 that was routine: a
+    /// tool's encrypted build and the user's checkout of the same library were both loaded, and whether
+    /// both indexes listed an id depended on which load won the race — so the sum was <b>differently
+    /// wrong each run</b>, 77,860 then 76,129 for one project on consecutive launches. It is the number
+    /// the deferred-analysis threshold is compared against.</para>
     ///
-    /// <para>So the sum was not merely wrong, it was <b>differently wrong each run</b> — the same
-    /// project reported 77,860 and 76,129 on consecutive launches, and the difference was read as a
-    /// symptom of the host migration. It is the number the deferred-analysis threshold is compared
-    /// against.</para>
+    /// <para>An encrypted build is no longer loaded beside source for the same library, so that case
+    /// has gone. The distinct count stays because two libraries can still list one id: two readable
+    /// checkouts of the same library in different repositories, which nothing prevents.</para>
     /// </remarks>
     int TotalModelCount { get; }
 
@@ -38,12 +37,12 @@ public interface ILibraryDataService
     /// </summary>
     /// <remarks>
     /// <para><b>Not <c>Libraries.FirstOrDefault(l =&gt; l.ModelIds.Contains(id))</c>, which is what
-    /// five callers used to do.</b> As <see cref="TotalModelCount"/> records, the same library is
-    /// routinely loaded twice — a tool's library folder ships the encrypted build of a library the
-    /// user also has checked out as source — and <b>both entries can list the same id</b>. Only one
-    /// copy survives in the graph, and <c>DirectedGraph.AddNode</c> decides which: readable source
-    /// always beats a class reconstructed from vendor documentation. The library index is not told,
-    /// so the encrypted entry goes on claiming a class it no longer provides.</para>
+    /// five callers used to do</b>, and <c>LibraryOwnershipPolicyTests</c> holds the line. When two
+    /// libraries list the same id, <c>FirstOrDefault</c> returns whichever was added first. Until B268
+    /// that was the ordinary case — a tool's encrypted build loaded beside the user's checkout of the
+    /// same library, both indexes claiming the same classes. An encrypted build is no longer loaded
+    /// beside its source, but two readable checkouts of one library still produce two claimants, and
+    /// the answer here does not depend on load order either way.</para>
     ///
     /// <para><b>What that cost.</b> <c>FirstOrDefault</c> returns whichever library was added first,
     /// which is a race between two parallel loads, so a class could resolve to the vendor's

@@ -76,6 +76,13 @@ rather than surfacing later as unresolved references.
 Reference libraries are **never checked, formatted, committed or written to**. They appear in the
 library browser so you can read them, and nothing more.
 
+**If you also have the library's source checked out**, MLQT uses the source and does not load the
+encrypted copy at all — not even the classes the source lacks. The installed copy is often an older
+release, and mixing the two would put classes your checkout has deleted back into your library. The
+application log records each encrypted library left out this way and where its source is. If you
+remove the repository holding that source, choose **Load project** on the active project in
+**Settings → Manage Repositories** to bring the encrypted copy back.
+
 The paths are stored in your application settings rather than in the repository's
 `.mlqt/settings.json`, because an install location is a property of your machine — a colleague's
 checkout or a CI runner will not have the same one.

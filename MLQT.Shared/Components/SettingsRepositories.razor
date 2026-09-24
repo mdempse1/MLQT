@@ -44,7 +44,15 @@
                         @if (isActive)
                         {
                             <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Class="ml-2">Active</MudChip>
-                        } 
+                            @if (CanReloadActiveProject)
+                            {
+                                <MudTooltip Text="Load project again - a repository has been removed since it was loaded">
+                                    <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" Color="Color.Primary"
+                                        aria-label="Load project again"
+                                        OnClick="() => LoadProject(project.Id)" />
+                                </MudTooltip>
+                            }
+                        }
                         else
                         {
                             <MudTooltip Text="Load project">

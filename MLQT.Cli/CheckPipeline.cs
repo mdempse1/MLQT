@@ -20,7 +20,8 @@ internal sealed record LoadResult(
     IReadOnlyList<ModelNode>? Models = null,
     StyleCheckingSettings? Settings = null,
     IReadOnlyList<string>? DependencyLibraries = null,
-    CheckTimings? Timings = null)
+    CheckTimings? Timings = null,
+    IReadOnlyList<string>? DependenciesLoadedFromSource = null)
 {
     public bool Ok => ExitCode == ExitCodes.Ok;
     public static LoadResult Failed(int code) =>
@@ -52,12 +53,24 @@ internal static class CheckPipeline
     /// the baseline and compared name-by-name to detect a check running against a different set of
     /// dependencies than the baseline was taken with, so nothing variable — a class count, a path —
     /// may be folded into it: that would report drift every time the vendor reissued the library.</param>
+    /// <param name="loadedFromSource">Collects the name of an encrypted library that was not loaded
+    /// because readable source for it is (B268). It contributes nothing, so naming it as loaded would be
+    /// untrue — but it is not missing either, and baseline drift is told so.</param>
     private static void ReportEncrypted(
-        LoadedLibrary library, List<string> loadedNames, TextWriter stderr)
+        LoadedLibrary library, List<string> loadedNames, List<string> loadedFromSource, TextWriter stderr)
     {
-        // Only when the vendor shipped nothing readable. A library whose documentation was read
-        // perfectly well but whose every class we already have from source also adds no nodes, and
-        // warning about that told people to go looking for a problem they did not have.
+        // First: its index is empty and it read no documentation, which is exactly what a library
+        // shipping none looks like, and the warning below would be false.
+        if (library.SupersededBy is not null)
+        {
+            loadedFromSource.Add(library.Name);
+            return;
+        }
+
+        // Only when the vendor shipped nothing readable. Asked of the documentation count, not of
+        // the index: a library whose documentation was read but whose classes all turned out to be
+        // loaded already adds no nodes either, and warning about that told people to go looking for
+        // a problem they did not have.
         if (library.DocumentedClassCount is null or 0)
         {
             stderr.WriteLine(
@@ -217,6 +230,7 @@ internal static class CheckPipeline
         var models = new List<ModelNode>();
         var seenModelIds = new HashSet<string>(StringComparer.Ordinal);
         var referenceLibraries = new List<string>();
+        var loadedFromSource = new List<string>();
         foreach (var path in libraryPaths)
         {
             LoadedLibrary library;
@@ -236,7 +250,7 @@ internal static class CheckPipeline
             // reconstruction.
             if (library.SourceType == LibrarySourceType.EncryptedDirectory)
             {
-                ReportEncrypted(library, referenceLibraries, stderr);
+                ReportEncrypted(library, referenceLibraries, loadedFromSource, stderr);
                 continue;
             }
 
@@ -273,7 +287,7 @@ internal static class CheckPipeline
                 {
                     var library = await libraryData.AddLibraryFromPathAsync(path);
                     if (library.SourceType == LibrarySourceType.EncryptedDirectory)
-                        ReportEncrypted(library, dependencyLibraries, stderr);
+                        ReportEncrypted(library, dependencyLibraries, loadedFromSource, stderr);
                     else
                         dependencyLibraries.Add(library.Name);
                 }
@@ -392,6 +406,6 @@ internal static class CheckPipeline
         // the set that was checked, without loading the library a second time.
         return new LoadResult(
             ExitCodes.Ok, findings, modelToFile, locations, modelsChecked, graph, models, settings,
-            dependencyLibraries, timings);
+            dependencyLibraries, timings, loadedFromSource);
     }
 }
