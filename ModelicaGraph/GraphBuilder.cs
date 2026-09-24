@@ -590,18 +590,17 @@ public static class GraphBuilder
 
         // Phase 3: LoadSelector Pass 2 — find modifications of discovered parameters
         // Now that all loadSelector and loadResource parameters are known across the graph,
-        // re-scan models to find modifications of those parameters in component instances.
-        progressLog?.Invoke("Phase 3: LoadSelector pass 2");
-        bool hasTrackedParams = allModels.Any(m =>
-            m.LoadSelectorParameters.Count > 0 ||
-            m.LoadResourceParameters.Count > 0);
+        // re-scan the models that could modify one. Every model, once: a second parse of the whole
+        // graph, 40s of a Claytex check to find two resources (B282). See MayModifyATrackedParameter.
+        var phase3Models = allModels.Where(m => MayModifyATrackedParameter(graph, m)).ToList();
+        progressLog?.Invoke($"Phase 3: LoadSelector pass 2 over {phase3Models.Count} of {allModels.Count} models");
 
-        if (hasTrackedParams)
+        if (phase3Models.Count > 0)
         {
             // Built once for the whole pass: it describes the graph, not any one model.
             var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
             totalProcessed = 0;
-            foreach (var batch in Batch(allModels, batchSize))
+            foreach (var batch in Batch(phase3Models, batchSize))
             {
                 var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
 
@@ -655,7 +654,7 @@ public static class GraphBuilder
                 }
 
                 totalProcessed += batch.Count;
-                progressLog?.Invoke($"Phase 3: {totalProcessed}/{allModels.Count} models processed");
+                progressLog?.Invoke($"Phase 3: {totalProcessed}/{phase3Models.Count} models processed");
                 GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
             }
         }
@@ -701,6 +700,26 @@ public static class GraphBuilder
     /// <summary>
     /// Splits a list into batches of the specified size.
     /// </summary>
+    /// <summary>
+    /// Whether the second loadSelector pass could find anything in <paramref name="model"/>: whether it
+    /// uses a class that declares a loadSelector or loadResource parameter.
+    /// </summary>
+    /// <remarks>
+    /// <para>The pass matches <c>T comp(name = ...)</c> where <c>T</c> itself declares <c>name</c>, so a
+    /// class can only produce a result by declaring a component of such a <c>T</c> — which is a use of
+    /// <c>T</c>, and the first pass has just recorded it as an edge. Measured before being relied on
+    /// (B282): over Claytex with the Dymola library folder, MSL, and Buildings with MSL, every class the
+    /// full pass found a resource in was among these, and on Claytex they are 1,211 classes of 68,746.</para>
+    ///
+    /// <para>Asked per class, so it serves the full analysis and the incremental one alike. The
+    /// incremental one used to decide from whether a re-analysed class <i>declared</i> a tracked
+    /// parameter, which is the wrong end of the relationship: editing a class to set another class's
+    /// file parameter skipped the pass, and lost that resource until the next full analysis.</para>
+    /// </remarks>
+    public static bool MayModifyATrackedParameter(DirectedGraph graph, ModelNode model) =>
+        model.UsedModelIds.Any(id => graph.GetNode<ModelNode>(id) is { } used
+            && (used.LoadSelectorParameters.Count > 0 || used.LoadResourceParameters.Count > 0));
+
     private static IEnumerable<List<T>> Batch<T>(List<T> source, int batchSize)
     {
         for (int i = 0; i < source.Count; i += batchSize)
@@ -805,17 +824,18 @@ public static class GraphBuilder
                 modelResources[sourceId] = resources;
         }
 
-        // Phase 3: LoadSelector Pass 2 — only for target models with tracked parameters.
-        // Parse trees were released in Phase 1; EnsureParsed() re-parses on demand.
-        bool hasTrackedParams = models.Any(m =>
-            m.LoadSelectorParameters.Count > 0 || m.LoadResourceParameters.Count > 0);
+        // Phase 3: LoadSelector Pass 2 — for the re-analysed models that could modify a tracked
+        // parameter. Parse trees were released in Phase 1; EnsureParsed() re-parses on demand.
+        // Decided per model by what it uses, not by whether any of them declares a parameter, which
+        // skipped the pass for exactly the edit it exists for (B282). See MayModifyATrackedParameter.
+        var phase3Models = models.Where(m => MayModifyATrackedParameter(graph, m)).ToList();
 
-        if (hasTrackedParams)
+        if (phase3Models.Count > 0)
         {
             var pass2Results = new ConcurrentBag<(string modelId, List<ExternalResourceInfo> resources)>();
             var parameterIndex = LoadSelectorModificationAnalyzer.ParameterIndex.Build(graph);
 
-            Parallel.ForEach(models, model =>
+            Parallel.ForEach(phase3Models, model =>
             {
                 try
                 {

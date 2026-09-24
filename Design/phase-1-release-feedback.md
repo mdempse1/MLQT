@@ -1589,9 +1589,9 @@ now, after the project's own libraries, as startup does.
 Verified: 6,869 tests across the seven CI suites, the 75 browser journeys and the coverage ratchet.
 Commit `0314b2f`.
 
-### WP16 — Performance, the serial phases
+### WP16 — Performance, the serial phases — **✅ complete 2026-09-24**
 
-**B281 ✅, B282** · 2 items · M each · **the per-class phase is no longer where the wall clock goes**
+**B281 ✅, B282 ✅** · 2 items · M each · **the per-class phase is no longer where the wall clock goes**
 
 Opened 2026-09-24 from WP13's last profile. Cutting per-class thread time by a third moved a Claytex
 check from 4m21s to 4m12s, and the trace says why: of a 257s run, loading is 34s, **dependency
@@ -1628,6 +1628,18 @@ The collector was the gain, and the parallel analyzers are a loss without it. Al
 tests with it. **The desktop app is the host not measured directly** and wants confirming over a real
 session. B282's 74s was measured under workstation GC too, so it is re-measured before anything else.
 
+**B282, done 2026-09-24.** Re-measured under server GC, dependency analysis was 19.2s, Phase 3 about
+8s of it. Two guesses were measured and dropped on the way — the per-batch `GC.Collect(2)` calls
+(no difference) and the finalizer thread (the runtime's own cleanup). The narrowing held: Phase 3 only
+matches a component of a class that itself declares the parameter, so it is asked only of the classes
+that use such a class — verified on Claytex, MSL and Buildings, and 1,211 of 68,746 on Claytex. The same
+per-class question fixed the incremental path, which skipped the pass unless a re-analysed class
+*declared* a tracked parameter. The external-resource graph is identical on all three corpora, dependency
+analysis is ~35% faster on each (Claytex 23.7s → 15.5s), and the whole Claytex check 68.8s → 65.6s.
+
+**Where WP16 leaves a Claytex check: 4m21s at the start of WP13, about 65s now**, findings identical
+throughout — most of it from the collector, which no single phase's table could have shown.
+
 ## Sequencing summary
 
 ```
@@ -1659,8 +1671,8 @@ WP13 ✅ B261 ▸ B257 — complete 2026-09-24: coverage shares the rule's unit 
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
 WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
                        beside source for the same library; B280 found doing it
-WP16  B281 ✅ ▸ B282 — B281 found workstation GC was most of the time: server GC in every host,
-                       Claytex 4m13s → 70.5s; B282 (dependency analysis) is re-measured under it first
+WP16 ✅ B281 ▸ B282 — complete 2026-09-24: server GC in every host (Claytex 4m13s → 70.5s), and
+                       the second loadSelector pass asked only of a carrier's users (→ ~65s)
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone
