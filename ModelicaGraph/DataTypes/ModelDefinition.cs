@@ -94,10 +94,16 @@ public class ModelDefinition
     /// Ensures that ParsedCode is populated, parsing ModelicaCode if needed.
     /// Returns the parse tree (never null unless ModelicaCode is empty).
     /// </summary>
+    /// <remarks>
+    /// Reads <see cref="ParsedCode"/> once, and returns the tree it parsed rather than reading the
+    /// property back. Another reader can release the tree at any moment, and reading it twice
+    /// returned null for a class with source whenever that happened in between — which dependency
+    /// analysis took as nothing to analyse, leaving the class with no edges and no message (B291).
+    /// </remarks>
     public modelicaParser.Stored_definitionContext? EnsureParsed()
     {
-        if (ParsedCode != null)
-            return ParsedCode;
+        if (ParsedCode is { } existing)
+            return existing;
 
         if (string.IsNullOrWhiteSpace(ModelicaCode))
             return null;
@@ -118,7 +124,7 @@ public class ModelDefinition
         if (MayRecordParserErrors && ParserErrors.Count == 0)
             ParserErrors = errors;
 
-        return ParsedCode;
+        return parseTree;
     }
 
     /// <summary>

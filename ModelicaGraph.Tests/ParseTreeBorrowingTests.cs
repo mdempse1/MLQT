@@ -241,4 +241,37 @@ public class ParseTreeBorrowingTests
         Assert.Null(icons.Definition.ParsedCode);
         Assert.Null(user.Definition.ParsedCode);
     }
+    [Fact]
+    public void EnsureParsed_NeverReturnsNullForAClassWithSource_WhileAnotherThreadReleasesTheTree()
+    {
+        // It read ParsedCode twice - once to test it, once to return it - so a tree released by
+        // another reader in between came back as null. Dependency analysis takes null as "nothing to
+        // analyse" and moves on, so the class was left with no edges and nothing said so. Borrow
+        // releases whatever it parsed, and the Metrics tab borrows while the analysis runs.
+        var definition = new ModelDefinition("M", "model M Real x; end M;");
+        using var stop = new System.Threading.CancellationTokenSource();
+
+        var releaser = System.Threading.Tasks.Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+                definition.ParsedCode = null;
+        });
+
+        var nulls = 0;
+        try
+        {
+            System.Threading.Tasks.Parallel.For(0, 20_000, _ =>
+            {
+                if (definition.EnsureParsed() is null)
+                    System.Threading.Interlocked.Increment(ref nulls);
+            });
+        }
+        finally
+        {
+            stop.Cancel();
+            releaser.Wait();
+        }
+
+        Assert.Equal(0, nulls);
+    }
 }
