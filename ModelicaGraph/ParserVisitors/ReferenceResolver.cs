@@ -1,5 +1,6 @@
 using ModelicaParser;
 using ModelicaParser.Helpers;
+using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
 
 namespace ModelicaGraph;
@@ -18,9 +19,9 @@ public sealed class ImportInfo
 /// it refers to, or null. Extracted from <see cref="ModelAnalyzer"/> so dependency analysis and the
 /// reference-locating used by rename resolve by the SAME rules.
 ///
-/// Known limitations (shared with dependency analysis, by design): it does not model names inherited
-/// into scope via <c>extends</c>, and alias expansion is a substring replace. A null result therefore
-/// means "not resolvable by these rules", not a guarantee the name is undefined.
+/// Known limitation (shared with dependency analysis, by design): it does not model names inherited
+/// into scope via <c>extends</c>. A null result therefore means "not resolvable by these rules", not a
+/// guarantee the name is undefined.
 /// </summary>
 public static class ReferenceResolver
 {
@@ -28,48 +29,27 @@ public static class ReferenceResolver
     public static string? Resolve(
         DirectedGraph graph, string ownerModelId, IReadOnlyList<ImportInfo> imports, string reference)
     {
-        if (string.IsNullOrWhiteSpace(reference) || IsBuiltInType(reference))
+        if (string.IsNullOrWhiteSpace(reference))
             return null;
 
-        // Already fully-qualified.
-        if (graph.GetNode<ModelNode>(reference) != null)
-            return reference;
+        // A leading dot is Modelica's "from the top": the name is already fully qualified.
+        var name = reference.TrimStart('.');
+        if (name.Length == 0 || IsBuiltInType(name))
+            return null;
 
-        // Import aliases.
-        foreach (var import in imports)
-        {
-            if (!string.IsNullOrEmpty(import.Alias) && reference.StartsWith(import.Alias))
-            {
-                var resolved = reference.Replace(import.Alias, import.QualifiedName);
-                if (graph.GetNode<ModelNode>(resolved) != null)
-                    return resolved;
-            }
-        }
-
-        // Wildcard imports.
-        foreach (var import in imports)
-        {
-            if (!import.IsWildcard)
-                continue;
-            var candidate = $"{import.QualifiedName}.{reference}";
-            if (graph.GetNode<ModelNode>(candidate) != null)
-                return candidate;
-        }
-
-        // Relative lookup, innermost scope outwards: the owner's own scope first — a class may
-        // declare nested classes, and those shadow same-named classes in any enclosing scope — then
-        // out through the enclosing package hierarchy.
-        var parts = ownerModelId.Split('.');
-        for (var i = parts.Length; i >= 1; i--)
-        {
-            var scopePath = string.Join(".", parts.Take(i));
-            var candidate = $"{scopePath}.{reference}";
-            if (graph.GetNode<ModelNode>(candidate) != null)
-                return candidate;
-        }
-
-        return null;
+        // The lookup is TypeResolver's, so dependency analysis and the analyses that resolve types
+        // cannot disagree about a name. This used to be a copy of it that had drifted: a plain
+        // `import A.B.C;` made nothing visible here - only an aliased one did, matched by prefix, so
+        // `SIx` would have matched an alias `SI` - and neither looked at the imports of enclosing
+        // packages, which is where MSL declares `SI` for every block (B292).
+        return TypeResolver.ResolveName(graph, ownerModelId, name, imports.Select(Describe).ToList())?.Id;
     }
+
+    /// <summary>An import in the string form <see cref="TypeResolver"/> reads.</summary>
+    private static string Describe(ImportInfo import) =>
+        !string.IsNullOrEmpty(import.Alias) ? $"{import.Alias} = {import.QualifiedName}"
+        : import.IsWildcard ? $"{import.QualifiedName}.*"
+        : import.QualifiedName;
 
     /// <summary>The Modelica built-in types and operators, which are never library classes.</summary>
     public static bool IsBuiltInType(string name) => ModelicaLanguage.IsBuiltInName(name);
@@ -109,6 +89,10 @@ public static class ReferenceResolver
         var qualifiedName = GetQualifiedName(name);
         if (context.IDENT() != null)
             imports.Add(new ImportInfo { Alias = context.IDENT().GetText(), QualifiedName = qualifiedName, IsWildcard = false });
+        else if (context.import_list() is { } list)
+            // `import A.B.{C, D};` is `import A.B.C; import A.B.D;`, each visible by its own name.
+            foreach (var ident in list.IDENT())
+                imports.Add(new ImportInfo { Alias = ident.GetText(), QualifiedName = $"{qualifiedName}.{ident.GetText()}", IsWildcard = false });
         else if (context.GetText().Contains(".*"))
             imports.Add(new ImportInfo { QualifiedName = qualifiedName, IsWildcard = true });
         else

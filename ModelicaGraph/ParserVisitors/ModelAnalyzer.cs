@@ -104,38 +104,9 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public override object? VisitImport_clause([NotNull] modelicaParser.Import_clauseContext context)
     {
-        var importText = context.GetText();
-        var name = context.name();
-        if (name != null)
-        {
-            var qualifiedName = GetQualifiedName(name);
-            var ident = context.IDENT();
-            if (ident != null)
-            {
-                _imports.Add(new ImportInfo
-                {
-                    Alias = ident.GetText(),
-                    QualifiedName = qualifiedName,
-                    IsWildcard = false
-                });
-            }
-            else if (importText.Contains(".*"))
-            {
-                _imports.Add(new ImportInfo
-                {
-                    QualifiedName = qualifiedName,
-                    IsWildcard = true
-                });
-            }
-            else
-            {
-                _imports.Add(new ImportInfo
-                {
-                    QualifiedName = qualifiedName,
-                    IsWildcard = false
-                });
-            }
-        }
+        // The shared reading, so dependency analysis and the reference locator agree on what an
+        // import makes visible - this was a copy of it, and it missed the list form.
+        ReferenceResolver.AddImport(_imports, context);
 
         return base.VisitImport_clause(context);
     }

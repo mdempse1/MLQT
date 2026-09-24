@@ -44,6 +44,25 @@ public static class TypeResolver
         if (name.Length == 0 || IsPredefined(name))
             return null;
 
+        return ResolveName(graph, ownerId, name, imports);
+    }
+
+    /// <summary>
+    /// The lookup itself, for a name already known not to be predefined: <see cref="Resolve"/> and
+    /// dependency analysis's <c>ReferenceResolver</c> both come here, so they cannot disagree about
+    /// what a name refers to.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Each enclosing scope's imports are visible, not only the class's own.</b> Modelica looks
+    /// a name up in each enclosing class in turn — its elements, then its imports — so
+    /// <c>import Modelica.Units.SI;</c> in <c>Modelica.Blocks</c> is what <c>SI.Time</c> means in every
+    /// block below it. Asking only the class that wrote the name left MSL's controllers without edges to
+    /// the types they use (B292). The enclosing classes' imports come from
+    /// <see cref="ClassImports.For"/>, which reads each package once.</para>
+    /// </remarks>
+    internal static ModelNode? ResolveName(
+        DirectedGraph graph, string ownerId, string name, IReadOnlyList<string>? imports)
+    {
         // 1. Already fully-qualified.
         if (graph.GetNode<ModelNode>(name) is { } exact)
             return exact;
@@ -54,7 +73,8 @@ public static class TypeResolver
                 if (ResolveViaImport(graph, import, name) is { } viaImport)
                     return viaImport;
 
-        // 3. Relative: start in the class's own scope and walk outward through enclosing packages.
+        // 3. Relative: start in the class's own scope and walk outward through enclosing packages,
+        //    trying each one's classes and then its imports.
         var parts = ownerId.Split('.');
         for (var take = parts.Length; take >= 0; take--)
         {
@@ -62,6 +82,13 @@ public static class TypeResolver
             var candidate = prefix.Length == 0 ? name : $"{prefix}.{name}";
             if (graph.GetNode<ModelNode>(candidate) is { } node)
                 return node;
+
+            // The owner's own imports were step 2.
+            if (take == parts.Length || prefix.Length == 0 || graph.GetNode<ModelNode>(prefix) is not { } scope)
+                continue;
+            foreach (var import in ClassImports.For(scope.Definition))
+                if (ResolveViaImport(graph, import, name) is { } viaEnclosing)
+                    return viaEnclosing;
         }
 
         return null;
@@ -156,7 +183,7 @@ public static class TypeResolver
         return result;
     }
 
-    private static ModelNode? ResolveViaImport(DirectedGraph graph, string import, string name)
+    internal static ModelNode? ResolveViaImport(DirectedGraph graph, string import, string name)
     {
         var stmt = import.Trim();
 

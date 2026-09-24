@@ -19,7 +19,7 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/>, <see cref="Suppressions"/> and <see cref="IconSvg"/> all describe
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/> and <see cref="IconSvg"/> all describe
     /// code that is no longer here.</para>
     ///
     /// <para>The tree is on that list, and the comment here used to say it was not — that
@@ -39,6 +39,7 @@ public class ModelDefinition
             ParsedCode = null;
             Coverage = null;
             Suppressions = null;
+            Imports = null;
             IconSvg = null;
             IconRendered = false;
         }
@@ -63,6 +64,13 @@ public class ModelDefinition
     /// walk and the shared-empty convention live.</para>
     /// </summary>
     public ModelicaParser.StyleRules.SuppressionSet? Suppressions { get; set; }
+
+    /// <summary>
+    /// The import statements the class declares, once something has read them. Null until then.
+    /// Kept because every class inside a package asks for the package's imports when it resolves a
+    /// name (B292). Set it through <see cref="ClassImports.For"/> rather than directly.
+    /// </summary>
+    public IReadOnlyList<string>? Imports { get; set; }
 
     /// <summary>
     /// The class's icon as SVG, once something has rendered it, and whether that has been tried.
