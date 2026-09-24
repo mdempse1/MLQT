@@ -522,4 +522,75 @@ end SimpleModel;
     // Assert
     Assert.NotEmpty(ruleFindings);
   }
+  // The section counting reads keywords as terminals and an element list by whether it holds any
+  // token, rather than rebuilding each child's text (B261 follow-up: that was the whole of this rule's
+  // cost on Claytex). These pin the answers the text comparison gave, so the cheaper test cannot
+  // quietly count differently.
+
+  [Fact]
+  public void ElementsBeforeAnExplicitPublic_AreAPublicSectionAlready()
+  {
+    var code = """
+model SimpleModel
+  Real a "before any section keyword";
+public
+  Real x "description here";
+end SimpleModel;
+""";
+
+    var ruleFindings = CheckRule(code, false);
+
+    Assert.Contains(ruleFindings, f => f.Summary.Contains("more than 1 public section"));
+  }
+
+  [Fact]
+  public void NothingBeforeAnExplicitPublic_IsOnePublicSection()
+  {
+    var code = """
+model SimpleModel
+public
+  Real x "description here";
+protected
+  Real y "description here";
+end SimpleModel;
+""";
+
+    Assert.Empty(CheckRule(code, false));
+  }
+
+  [Fact]
+  public void AComment_BeforeAnExplicitPublic_CountsAsTheImplicitSection()
+  {
+    // The element list before `public` holds only a comment. The text comparison counted any
+    // non-empty text, and a comment is text, so this is two public sections - pinned as the
+    // existing answer, not endorsed as the right one.
+    var code = """
+model SimpleModel
+  // a comment and nothing else
+public
+  Real x "description here";
+end SimpleModel;
+""";
+
+    var ruleFindings = CheckRule(code, false);
+
+    Assert.Contains(ruleFindings, f => f.Summary.Contains("more than 1 public section"));
+  }
+
+  [Fact]
+  public void TwoProtectedKeywords_AreTwoProtectedSections()
+  {
+    var code = """
+model SimpleModel
+protected
+  Real x "description here";
+protected
+  Real y "description here";
+end SimpleModel;
+""";
+
+    var ruleFindings = CheckRule(code, false);
+
+    Assert.Contains(ruleFindings, f => f.Summary.Contains("more than 1 protected section"));
+  }
 }

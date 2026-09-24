@@ -781,7 +781,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         for (int i = 0; i < children.Count; i++)
         {
             var child = children[i];
-            var text = child.GetText();
+            var text = SectionKeyword.Of(child);   // never GetText() on a rule node: see SectionKeyword
 
             if (text == "public" && (section == CodeSection.Any || section==CodeSection.Public))
             {

@@ -1,4 +1,5 @@
 using Antlr4.Runtime.Misc;
+using ModelicaParser.Helpers;
 using ModelicaParser.DataTypes;
 
 namespace ModelicaParser.StyleRules;
@@ -50,7 +51,7 @@ public class PublicParametersAndConstantsHaveDescription : VisitorWithModelNameT
             for (int i = 0; i < context.children.Count; i++)
             {
                 var child = context.children[i];
-                var text = child.GetText();
+                var text = SectionKeyword.Of(child);   // never GetText() on a rule node: see SectionKeyword
 
                 if (text == "public")
                 {

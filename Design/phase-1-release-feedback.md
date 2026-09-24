@@ -1423,6 +1423,32 @@ the rule and the measurer both, so each `(class, type)` question is resolved onc
 
 Every coverage figure is identical as well; the two metrics snapshots differ only in their timestamps.
 
+The question B261 left about `CoverageDimensions.ForClass` was answered by timing it rather than by
+reading it: 0.34µs a call on Claytex's class ids and settings, 7.4ms for a whole check. It does no
+per-class work that belongs per repository.
+
+**Then the profiler, because coverage was still ~15ms a class.** `dotnet-trace` over the same run:
+59% of what remained was `OneOfEachSection.VisitComposition`, called by the layout measurement, and
+`RuleContext.GetText` was **30% of all non-idle time in the whole check**. Four loops over a class
+body's children found the `public`/`protected`/`external` keywords by asking every child for its text,
+which for an element list or an equation section rebuilds that child's whole source — and an outer
+class contains its nested ones, each walked again in turn. `SectionKeyword.Of` reads keywords from
+terminals only, and all four use it.
+
+| Claytex, same build and settings | After B261 | After `SectionKeyword` |
+|---|---:|---:|
+| all measured work (thread-s) | 1,542.6 | 1,088.7 |
+| coverage (thread-s) | 323.6 | 161.2 |
+| `OneOfEachSection` + parameter descriptions + naming (thread-s) | 410 | below the top ten |
+| wall clock | 4m21s | 4m12s |
+| findings / coverage | identical | identical |
+
+**The wall clock barely moved, and the trace says why.** Of a 257s run, loading is 34s, dependency
+analysis **74s**, the per-class checks **68s** spread across 24 cores, and the whole-graph analyses
+**72s run one after another on a single thread** — `UnusedMembersAnalyzer` 41s, `ShadowingAnalyzer`
+23s, `UnusedImportAnalyzer` 9s. Cutting per-class thread time can only ever buy its share of 68s.
+The next wall-clock gain is in the serial phases, and is not in this package.
+
 **B257** was a naming defect in the log, not in the dialog: the combined pass logged its start as the
 combined pass, its end as "dependency analysis", and a style-checking completion with no start, so
 read by name the dependency half carried the whole four minutes. `DeferredDependencyStep` names the
