@@ -84,7 +84,7 @@ Updates your working copy to the latest revision from the SVN server. This is eq
 
 Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **directly to the server** — there is no separate push step.
 
-![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional finding ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
+![Screenshot: The SVN Commit Changes dialog showing the commit message field, the optional Issue ID field, and the file list with checkboxes. The "Commit (2 files)" button should be visible.](Images/svn-operations-1.png)
 
 ### Dialog Fields
 
@@ -93,7 +93,7 @@ Opens the **Commit Changes** dialog. In SVN, a commit sends your changes **direc
 | **Commit message** | Required. Describes what you changed. |
 | **Issue ID** | Optional (required if "Require an issue number" is enabled in repository settings). |
 
-### Finding Number Handling
+### Issue Number Handling
 
 Same as Git — see [Git Operations: Committing Changes](git-operations.md#committing-changes) for details on issue number settings.
 
@@ -260,8 +260,9 @@ If the merge produces conflicts, the dialog shows each conflicted file with reso
 | **Accept Incoming** | Use the version from the branch being merged |
 | **Keep Mine** | Keep your current working copy's version |
 | **Mark as Resolved** | For tree conflicts (file/directory structure conflicts), marks the conflict as resolved without changing content |
-| **Edit Externally** | Open the file in your default editor for manual resolution |
-| **View Conflict** | Opens a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)" |
+| **Edit Externally** | Marks the file as being resolved outside MLQT — it does not open an editor. The file's full path is shown with a **Mark as Resolved** button; edit the file in your own editor, then click **Mark as Resolved** |
+
+Click a conflicted file's name to open a side-by-side diff showing "Ours (current branch)" vs "Theirs (incoming)" (not available for a tree conflict). A progress indicator shows how many conflicts have been resolved (e.g., "2 of 5 conflict(s) resolved.").
 
 #### SVN Tree Conflicts
 
@@ -310,7 +311,7 @@ Same as Git — use the date pickers to filter, and the "Load Next 50" / "Load L
 
 ### Viewing Changed Files and Diffs
 
-Click on any revision row to see the changed files. The **Diff** button shows **what that revision
+Click on any revision row to see the changed files. Clicking a file shows **what that revision
 changed**: the file at the revision before it on the left, the file at that revision on the right.
 
 SVN revision numbers are global, so “the revision before” is simply N-1 — the state of the whole

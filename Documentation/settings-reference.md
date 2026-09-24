@@ -86,7 +86,7 @@ Only the active project's repositories can be reordered. Load a project to chang
 
 Some repositories hold code you depend on but do not maintain: a tool's library folder, or another
 team's repository. Tick **Reference only** — when adding the repository, or later in
-**Settings > Repositories** — and MLQT loads it so that references into it resolve and leaves it
+**Settings > Manage Repositories** — and MLQT loads it so that references into it resolve and leaves it
 alone otherwise:
 
 - it is not style-checked, so no findings are raised against code you cannot change;
@@ -105,7 +105,7 @@ have read access to is exactly the case.
 
 Repository settings are edited through **Settings > Manage Repositories** by clicking on a repository row. Each repository has its own independent copy of all style, formatting, and commit settings.
 
-The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
+The dialog has four action buttons: **Apply** saves any changes, **Cancel** discards them, **Format All Files** immediately reformats every `.mo` file in the repository using the current formatting rules, and is disabled while **Apply formatting rules** is off (see [Understanding "Apply Formatting Rules"](#understanding-apply-formatting-rules)), and **Delete Repository** removes the repository from the project.
 
 ### Commit Requirements
 
@@ -154,7 +154,7 @@ diagnostics, which are not settings — see
 | **Every class must have an icon** | `MLQT.Doc.ClassIcon` | Off | Checks that every class has an `annotation(Icon(...))` defining its graphical representation. Icons are used by graphical Modelica editors like Dymola and OpenModelica to display the class in diagrams. |
 | **Every public parameter must have a description** | `MLQT.Doc.ParameterDescription` | Off | Checks that every public `parameter` declaration includes a description string. Parameters are the primary way users configure models, so descriptions are important for usability. |
 | **Every public constant must have a description** | `MLQT.Doc.ConstantDescription` | Off | Checks that every public `constant` declaration includes a description string. |
-| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, an expansion panel appears with granular controls: preset selection (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants), per-class-type naming rules (model, function, block, connector, record, type, package, class, operator), per-visibility element rules (public/protected variables, parameters, constants), underscore suffix handling, and exception names. See [Naming Conventions](naming-conventions.md) for full details. |
+| **Check that the naming convention is followed** | `MLQT.Naming.Convention` | Off | Shown in the dialog under its own **Naming** heading, between Spell checking and Style guidelines, rather than with the rules in this table. Checks that class, variable, parameter, and constant names follow configurable naming conventions. When set to anything but **Off**, a panel appears with the *Naming Convention Rules* dropdown (Modelica Standard, snake_case, Modelica + UPPER_CASE Constants, or **Custom**), underscore suffix handling, and exception names. Choosing **Custom** shows the per-class-type naming rules (model, function, block, connector, record, type, package, class, operator) and per-visibility element rules (public/protected variables, parameters, constants); choosing a named preset replaces them all. See [Naming Conventions](naming-conventions.md) for full details. |
 | **A class may only have either an equation or algorithm section, not both** | `MLQT.Style.DontMixEquationAndAlgorithm` | Off | Checks that a class does not contain both `equation` and `algorithm` sections. Mixing these can make models harder to understand and maintain. |
 | **Do not mix connections and equations in the same class** | `MLQT.Style.DontMixConnections` | Off | Checks that `connect()` statements and equations are not mixed together in the same equation section. Keeping connections separate from equations improves readability. |
 
@@ -177,13 +177,14 @@ Formatting rules define structural ordering requirements for Modelica code. Thes
 
 The **Setting** column gives each checkbox's label exactly as the dialog shows it, so you can find
 it. The rest of this documentation uses the short names — **One of each section**, **Imports
-first**, **Extends at top**, **Components before classes**, **Initial equation/algorithm
-first**/**last** — and those are the same six settings.
+first**, **Extends at top**, **Components before classes**, **Declarations in order**, **Initial
+equation/algorithm first**/**last** — and those are the same six switches below **Apply formatting
+rules** (Imports first and Extends at top share one switch).
 
 #### One of each section is required by the rest
 
-The last four settings in that table — **Imports first, extends at top**, **Components before
-classes**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
+The last five settings in that table — **Imports first, extends at top**, **Components before
+classes**, **Declarations in order**, and the two **Initial equation/algorithm** options — **do nothing unless One of each
 section is also on**, and MLQT enforces that rather than leaving it to be discovered.
 
 The reason is in the formatter. `ModelicaRenderer` reorders a class only in its one-of-each-section
@@ -191,7 +192,7 @@ mode; with that setting off it writes the composition in source order and moves 
 their own the other rules would report an arrangement that pressing **Format All Files** could never
 produce — findings nobody can clear, against a setting that looks enabled.
 
-- **In the app**, the four switches are greyed out until you turn **One of each section** on. They
+- **In the app**, the five switches are greyed out until you turn **One of each section** on. They
   keep showing what they are set to rather than jumping to off, because nothing has been switched
   off — the settings are still there, and are simply not in effect. Turning the prerequisite back on
   makes them active again exactly as they were.
@@ -400,7 +401,6 @@ severity above) — equivalent to choosing the default severity in the dialog:
     "CheckMissingUnits": true,
     "CheckUnusedImports": true,
     "CheckPackageOrder": true,
-    "CheckSingleFilePackage": true,
     "PackageOrderMatchesDymola": false,
     "CheckUsesUndeclared": true,
     "CheckUsesDeclaredUnused": true,
@@ -423,6 +423,10 @@ also works for the built-in style rules:
 }
 ```
 
+`MLQT.Structure.SingleFilePackage` has no on/off key of its own: it is on by default, and the only way
+to set it in `settings.json` is through `RuleSeverities`, for example
+`"MLQT.Structure.SingleFilePackage": "Off"`.
+
 A per-finding waiver can be written into the source with a `__MLQT(suppress="<rule id>")` annotation
 (see [Code Review](code-review.md#suppressing-a-rule)).
 
@@ -432,7 +436,7 @@ A per-finding waiver can be written into the source with a `__MLQT(suppress="<ru
 |---------|---------|---------|-------------|
 | **Spell check every description string** | `MLQT.Spelling.Description` | Off | Runs spell checking on all description strings in the library. Helps catch typos in the short text that appears in class, parameter, and variable descriptions. |
 | **Spell check all documentation** | `MLQT.Spelling.Documentation` | Off | Runs spell checking on the HTML content in `annotation(Documentation(info="..."))` sections. Since documentation is often user-facing, catching spelling errors here is valuable. |
-| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two severity rows, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
+| **Language dictionaries** | — | English (US), English (UK) | Multi-select dropdown, just below the two severity rows and shown only while at least one of them is not **Off**, choosing which language dictionaries this repository is checked against. A word is correct if it appears in **any** selected dictionary; selecting none falls back to the two bundled English dictionaries. Additional languages can be imported using the **Import Language** button (requires a Hunspell `.aff` and `.dic` file pair). Imported dictionaries are stored at `%LocalAppData%/MLQT/Dictionaries/`. The choice is saved to the repository's `.mlqt/settings.json`, so CI checks against the same dictionaries — and MLQT warns here when this machine has no dictionary for a language the settings ask for. |
 
 The spell checker automatically skips Modelica keywords, camelCase identifiers, ALL_CAPS constants, words with digits or underscores, HTML tag names, decoded HTML entities, component/variable names declared in the current model, and model names from all loaded libraries. A built-in list of Modelica and engineering terms (Modelica, Dymola, Jacobian, revolute, enthalpy, thyristor, linearization, etc.) is also included, in the spelling of the language you selected. The possessive of an accepted word is accepted too, so a name in the repository's word list does not come back as a mistake the moment it is written as "Stodola's".
 
@@ -442,7 +446,7 @@ Spelling findings appear in the **Code Review** findings table with the line num
 
 Words that no dictionary knows but that are not mistakes (company names, domain terms, abbreviations) are kept per repository, in `.mlqt/dictionary.txt` beside `settings.json`. Committing it means the app and `mlqt check` in CI accept the same words and report the same spelling findings.
 
-The **Accepted spellings** expandable panel in this repository's settings lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
+The **Accepted spellings** expandable panel in this repository's settings — shown, like the dictionary dropdown, only while at least one spell-check rule is not **Off** — lets you add, remove, filter, import, and export them. Words can also be added by right-clicking an underlined misspelled word in the Code Review code viewer and choosing **Add to Dictionary**, which writes to the list of the repository owning that class — the fastest workflow.
 
 A word applies only to the repository holding it; the same term in another repository has to be accepted there too. Earlier versions kept one machine-wide list at `%LocalAppData%/MLQT/custom_dictionary.txt`; it is no longer used for checking, and an **Import machine list** button appears while it exists so its words can be copied into a repository.
 
@@ -543,7 +547,7 @@ your-repository/
         ...
 ```
 
-The `settings.json` file contains all the repository-specific settings in JSON format:
+The `settings.json` file holds the repository-specific settings in JSON format. The example below shows a selection of them; a saved file also carries keys not shown here, such as `RuleSeverities`, `ExcludedLibraries`, `PackageOrderMatchesDymola` and the `Check*` switches described above:
 
 ```json
 {

@@ -22,7 +22,7 @@ The file monitor skips:
 
 ### Debouncing
 
-When a file is saved, the operating system often generates multiple change events in rapid succession (e.g., a temporary write followed by the final write). MLQT debounces these with a 500ms window — if the same type of change occurs on the same file within 500ms, only the last event is kept.
+When a file is saved, the operating system often generates multiple change events in rapid succession (e.g., a temporary write followed by the final write). MLQT debounces these with a 500ms window — if the same type of change occurs on the same file within 500ms of the event MLQT recorded, the first event is kept and the repeats are ignored.
 
 Different change types are not debounced against each other. For example, if a file is deleted and then re-created (as SVN does during some operations), both events are tracked and consolidated.
 

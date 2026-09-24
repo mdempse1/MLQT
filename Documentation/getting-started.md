@@ -215,7 +215,7 @@ Each repository has its own set of settings that control commit requirements, st
 2. Click on a repository row in the active project's table
 3. The **Edit Repository Details** dialog opens
 
-![Screenshot: The Edit Repository Details dialog showing all the settings sections — repository name and path at the top, followed by Commit requirements, Style guidelines, Formatting rules, and Spell checking sections with their toggle switches.](Images/getting-started-8.png)
+![Screenshot: The Edit Repository Details dialog showing all the settings sections — repository name and path at the top, followed by the Commit requirements and Formatting rules switches and the first of the rule sections, whose rules each take a severity.](Images/getting-started-8.png)
 
 The dialog has the following fields and sections:
 
@@ -229,7 +229,7 @@ The dialog has the following fields and sections:
 
 ### Settings Sections
 
-The repository settings are organized into four categories. Each setting is a toggle switch that can be turned on or off. See the [Settings Reference](settings-reference.md) for a detailed explanation of every setting.
+The repository settings are organized into these sections: **Commit requirements**, **Formatting rules**, **Spell checking**, **Naming**, **Style guidelines**, **Reference validation**, **Static analysis**, **Excluded libraries**, and — for SVN repositories only — **SVN branch directories**. The commit requirements and formatting rules are switches that are turned on or off; each checking rule instead takes a severity of **Off**, **Info**, **Warning** or **Error**. See the [Settings Reference](settings-reference.md) for a detailed explanation of every setting.
 
 When you are done making changes, click **Apply** to save them, or **Cancel** to discard changes. Click **Format All Files** to immediately reformat every Modelica file in the repository — this is the recommended way to do an initial formatting pass when first enabling formatting rules (a progress dialog is shown as this can take several minutes for large repositories). Click **Delete Repository** to remove the repository from the project, it is not removed from the file system.
 

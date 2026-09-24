@@ -100,16 +100,16 @@ Same as Modelica Standard, but constants (both public and protected) use UPPER_C
 2. Set **Check that the naming convention is followed** to a severity — **Warning** to report,
    **Error** to fail the CI quality gate on a misnamed element
 3. An expansion panel appears below the row showing the current convention settings
-4. Select a preset or customize individual rules
+4. Choose a preset in the *Naming Convention Rules* dropdown, or choose **Custom** to show the per-class and per-element selectors
 5. Save settings
 
 Naming convention findings appear in the **Code Review** findings table alongside other style checking findings. Each finding identifies the offending name, what convention it should follow, and whether it is a class name or element name.
 
-![Screenshot: The naming convention expansion panel showing the preset dropdown set to "Modelica Standard", the Class Names section with nine NamingStyleSelect dropdowns, the Public Elements and Protected Elements sections, the Allow underscore suffixes toggle, and the Exception Names area with a text field and chip set.](Images/naming-conventions-1.png)
+![Screenshot: The naming convention expansion panel showing the Naming Convention Rules dropdown set to "Modelica Standard", the Allow underscore suffixes toggle, and the exception names area with its chip set and "Add additional exceptions" field. The per-class and per-element selectors are not shown, because they appear only when the preset is Custom.](Images/naming-conventions-1.png)
 
 ### Customizing Rules
 
-When you change any individual naming rule after selecting a preset, the preset name automatically changes to "Custom". This indicates that the current configuration does not match any predefined preset.
+The per-class and per-element style selectors are shown only when the *Naming Convention Rules* dropdown is set to **Custom**. Choose **Custom** there to set individual rules; choosing a named preset replaces them all.
 
 To return to a preset, select it from the preset dropdown — this replaces all individual settings with the preset defaults.
 
@@ -117,8 +117,8 @@ To return to a preset, select it from the preset dropdown — this replaces all 
 
 To add a name that should always be accepted regardless of the naming convention:
 
-1. In the **Exception Names** section of the naming convention panel, type the name in the text field
-2. Click the **+** button (or press Enter)
+1. Under **Names that bypass convention checks (e.g., product names)** in the naming convention panel, type the name in the **Add additional exceptions** field
+2. Click the **+** button
 3. The name appears as a chip below the text field
 4. To remove an exception, click the close button on its chip
 
@@ -130,10 +130,10 @@ For cases where you need to allow a *pattern* of names rather than individual ex
 
 This is useful when a convention has systematic exceptions. For example, if model class names should be PascalCase but documentation release notes classes use a versioned format like `Version_2026_1`:
 
-1. Next to any naming style dropdown, click the **filter icon** to expand the pattern editor
+1. Next to any naming style dropdown, click the **+** button (tooltip "Add additional allowed patterns using regular expressions") to expand the pattern editor
 2. Enter a regex pattern (e.g., `^[A-Z][a-zA-Z]+(_\d+)+$` to match PascalCase followed by underscore-digit segments)
-3. Click the **+** button to add the pattern
-4. The pattern appears as a chip and the filter icon shows a badge with the pattern count
+3. Click the **check-mark** button to add the pattern
+4. The pattern appears as a chip and the **+** button shows a badge with the pattern count
 5. To remove a pattern, click the close button on its chip
 
 Patterns are scoped per slot — a pattern added to "model" does not apply to "function" or other class types. This allows different exception patterns for different naming contexts.

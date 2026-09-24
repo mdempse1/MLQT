@@ -4,11 +4,11 @@ MLQT can automatically apply formatting rules to Modelica source files. This pag
 
 ## Formatting Settings
 
-Formatting is controlled by six switches in each repository's settings, under **Formatting rules**. Open them with **Settings > Manage Repositories**, then click the repository's row.
+Formatting is controlled by seven switches in each repository's settings, under **Formatting rules**. Open them with **Settings > Manage Repositories**, then click the repository's row.
 
-![Screenshot: The "Formatting rules" section of the Edit Repository Details dialog, showing six toggle switches: "Apply formatting rules", "A class may only have 1 public, 1 protected, 1 equation or algorithm section", "Composition must be imports first; then extends at the top of the public/protected sections", "Composition must have components before classes", and the two initial equation/algorithm ordering switches.](Images/code-formatting-1.png)
+![Screenshot: The "Formatting rules" section of the Edit Repository Details dialog, showing seven toggle switches: "Apply formatting rules", "A class may only have 1 public, 1 protected, 1 equation or algorithm section", "Composition must be imports first; then extends at the top of the public/protected sections", "Composition must have components before classes", "Declarations in order: inputs and outputs, constants, parameters, variables, components", and the two initial equation/algorithm ordering switches.](Images/code-formatting-1.png)
 
-The first is the master switch; the other five say what "formatted" means for this repository. **The labels below are the dialog's own**, so you can match what you are reading to what is on the screen.
+The first is the master switch; the other six say what "formatted" means for this repository. **The labels below are the dialog's own**, so you can match what you are reading to what is on the screen.
 
 | Switch | Rule id | Settings key | What the formatter does |
 |--------|---------|--------------|-------------------------|
@@ -61,7 +61,7 @@ A repository's settings live in `.mlqt/settings.json`, committed with the code, 
 Two things to watch when writing this by hand:
 
 - **The key and the rule id are not spelled the same.** The key is `InitialEQAlgoFirst` with a capital `EQ`; the rule id is `MLQT.Style.InitialEqAlgoFirst`. The keys are what `settings.json` uses; the rule ids are what findings, `RuleSeverities` and `__MLQT(suppress="…")` use.
-- **A severity written against one of these does nothing.** These five are switches, not Off/Info/Warning/Error rows, and their level is worked out rather than chosen: a layout finding is a **warning** when *Apply formatting rules* is off and an **error** when it is on. Writing `"MLQT.Style.OneOfEachSection": "Error"` in `RuleSeverities` records only that the rule is on — the value is not read. See [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
+- **A severity written against one of these does nothing.** These six are switches, not Off/Info/Warning/Error rows, and their level is worked out rather than chosen: a layout finding is a **warning** when *Apply formatting rules* is off and an **error** when it is on. Writing `"MLQT.Style.OneOfEachSection": "Error"` in `RuleSeverities` records only that the rule is on — the value is not read. See [How severely these are reported](settings-reference.md#how-severely-these-are-reported).
 
 > **Formatting and checking agree about these.** Each row above is also a style rule, and the
 > formatter writes what the rule asks for. That was not always true of *Initial equation/algorithm
@@ -121,7 +121,7 @@ If you change any formatting-related settings in a repository's configuration (s
 
 ### Format All Files Button
 
-The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. Use this when:
+The **Format All Files** button in repository settings forces a complete reformat of every file in the repository. It is disabled while **Apply formatting rules** is off. Use this when:
 
 - Setting up MLQT on an existing repository for the first time
 - After changing formatting rules and wanting to ensure complete consistency

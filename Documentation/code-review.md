@@ -51,10 +51,10 @@ The diff view:
 | Button | Icon | Description |
 |--------|------|-------------|
 | **Run Style Checking on ALL classes** | Check | Runs style checking across every loaded class (not just the current one) and populates the findings table with the results. Always available. |
-| **Exclude from Formatting** | FormatClear | Toggles formatting exclusion for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes, the file is reverted first to undo any prior formatting. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
+| **Exclude from auto-formatting** / **Include in auto-formatting** | FormatClear | Toggles formatting exclusion (the tooltip names what a click will do) for the currently selected model. When active (yellow/orange, filled), the model is excluded from all auto-formatting operations. When inactive (primary color, outlined), the model follows normal formatting rules. Disabled when no model is selected or when the model is not part of a repository. When toggling ON, if the model's file has uncommitted VCS changes, the file is reverted first to undo any prior formatting. When toggling OFF, the model will be formatted on the next formatting pass. See [Code Formatting — Excluding Models](code-formatting.md#excluding-models-from-formatting) for full details. The toggle writes `__MLQT(format=false)` into the class itself, so the exclusion travels with it when it is renamed or moved and is committed alongside the code it applies to; toggling off removes the directive again. Write the annotation by hand if you want to record a `reason` for it. |
 | **Show/Hide Annotations** | Bookmark | Toggles the display of Modelica annotations in the code viewer. Annotations (like `annotation(Documentation(...))`, icon definitions, `Placement`, `Line`) can be verbose — hiding them lets you focus on the functional code. **Every annotation goes, including the ones written on the same line as code** — so a `connect(...)` in an equation section comes back as just the connection. Nothing is left in their place: the button stays filled while they are hidden, and that is the only marker. Line numbers are unaffected, so a finding still points at the right line. This toggle also affects the diff view. |
-| **Check using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools. |
-| **Check using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools. |
+| **Check this class using Dymola** | Dymola logo | Sends the current model (or all models in a package) to Dymola for checking. Only visible if the Dymola path is configured in Settings > External Tools, and disabled when no class is selected. |
+| **Check this class using OpenModelica** | OM logo | Sends the current model (or all models in a package) to OpenModelica for checking. Only visible if the OpenModelica path is configured in Settings > External Tools, and disabled when no class is selected. |
 
 ### Moving between classes
 
@@ -81,12 +81,12 @@ The box is disabled until a class is open, and the count appears only once you h
 
 When you click the Dymola or OpenModelica button:
 
-- For a **single model**, the check runs immediately
-- For a **package**, a progress dialog appears showing which model is currently being checked and a progress bar
+- A progress dialog opens straight away, for a single model as well as for a package, showing what the tool is doing (starting, opening the library), then which model is being checked, with a progress bar. Its title is "Dymola check" (or "OpenModelica check"); for a package it adds the count, e.g. "Dymola check - 3 of 12 classes checked"
 - You can click **Stop** on the progress dialog to cancel the check
+- When the check finishes, a results dialog titled "Dymola check" or "OpenModelica check" opens with a one-line summary of how it went and the tool's own log for each class it has something to say about
 - Any errors found are added to the findings table below
 
-![Screenshot: The check progress dialog showing "Dymola Check Progress - x checked out of y" with a progress bar and the current model name being checked, and a Stop button.](Images/code-review-4.png)
+![Screenshot: The check progress dialog titled "Dymola check - x of y classes checked" with a progress bar and the current model name being checked, and a Stop button.](Images/code-review-4.png)
 
 ## Syntax Highlighting
 
@@ -119,7 +119,7 @@ The findings table at the bottom shows all detected problems across your loaded 
 
 | Column | Description |
 |--------|-------------|
-| **Model** | The fully qualified Modelica path of the model containing the finding. Long names are abbreviated with ellipsis (e.g., `MyLibrary...SubPackage.MyModel`). |
+| **Model** | The fully qualified Modelica path of the model containing the finding. Names longer than 40 characters are abbreviated to the first two parts and the last, with an ellipsis between (e.g., `MyLibrary.Fluid.Pipes.Examples.MyLongModelName` becomes `MyLibrary.Fluid....MyLongModelName`). |
 | **Description** | A summary of what the finding is (e.g., "Class has no description", "Parser error", "Check Failed"). |
 | **Line Number** | The line number in the model's source code where the finding was found. For style findings that apply to the class as a whole, this may be 0. |
 | **Type** | The severity of the finding — typically "Error", "Warning", or "Info". |
@@ -129,8 +129,8 @@ The findings table at the bottom shows all detected problems across your loaded 
 Four controls narrow the findings table, and they combine — each one applies on top of the others:
 
 - **"Only this model" toggle** — When enabled, the table only shows findings for the currently selected model. When disabled (default), findings from all models are shown.
-- **Search field** — Type text to filter findings by model name, description, details, or severity. **Every space-separated term must match**, so a second word narrows the list rather than widening it. Terms may match different fields, so a partial class name and a keyword work together.
-- **Rule list** — Narrows to one rule. Only the rules the current findings actually use are offered, so the list is never longer than it needs to be. A rule's name is not in its findings' text, so this is something the search box cannot do.
+- **Search field** — Type text to filter findings by model name, description, details, severity, or rule id. **Every space-separated term must match**, so a second word narrows the list rather than widening it. Terms may match different fields, so a partial class name and a keyword work together.
+- **Rule list** — Narrows to one rule. Only the rules the current findings actually use are offered, so the list is never longer than it needs to be. The list selects a rule by its title; the search box matches a rule's id (such as part of `MLQT.Structure.UsesUndeclared`) but not its title, which is not in its findings' text.
 - **"Changes vs baseline" switch** — Hides accepted debt; see [Filtering to what you have changed](#filtering-to-what-you-have-changed) below.
 
 **The heading always says what you are looking at.** With nothing filtered it counts the findings
@@ -190,7 +190,7 @@ regardless of which rules are enabled — or, when it is spread evenly, a filter
 
 ### Interacting with Findings
 
-- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code.
+- **Click a row** to navigate to the model containing that finding. The code viewer updates to show that model's code and scrolls to the line the finding names (a finding with no line leaves the viewer at the top of the class).
 - If the finding has **additional details**, clicking the row opens an **Finding Details dialog** showing the full summary, severity, line number, and detailed description.
 - In the Finding Details dialog, click **Resolve** to remove the finding from the list (marking it as addressed), or **Close** to dismiss the dialog without removing the finding. 
 

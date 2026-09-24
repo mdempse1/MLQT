@@ -54,7 +54,7 @@ The two tools are left in different states, and the result says which:
 - **OpenModelica's session is closed**, because its connection cannot be reused once a reply has
   been given up on. The next check starts a fresh session, which takes a second or two.
 
-**Cancel** now ends a check that is already running, not only the ones still waiting their turn. The
+**Stop** now ends a check that is already running, not only the ones still waiting their turn. The
 tools themselves are interrupted in the same way as above: Dymola finishes the check it was given,
 and OpenModelica's session is closed.
 
@@ -90,7 +90,7 @@ nothing anywhere to say the check was running.
 4. Click **Stop** to cancel the check at any time
 5. Errors for each model are added to the findings table as they are found
 
-![Screenshot: The check progress dialog showing "Dymola Check Progress - 7 checked out of 15" with a progress bar, the current model name, and the Stop button.](Images/code-review-4.png)
+![Screenshot: The check progress dialog titled "Dymola check - 7 of 15 classes checked" with a progress bar, the current model name, and the Stop button.](Images/code-review-4.png)
 
 ### Which file the tool is asked to open
 
@@ -138,7 +138,7 @@ not control.
 
 Errors from external tools appear in the Code Review findings table with:
 - **Model**: The fully qualified name of the model that failed
-- **Description**: "Check Failed" or a summary of the error
+- **Description**: "<Tool> Check Failed" (for example "Dymola Check Failed"), "<Tool> ran out of time" when the check hit its time limit, or a summary of the error
 - **Type**: "Error"
 - **Details**: The full error message from the tool (visible by clicking the row)
 

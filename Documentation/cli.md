@@ -50,7 +50,7 @@ copy of a library has that another does not, and `mlqt hook`
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the working-copy root; built-in defaults if there is none |
 | `--baseline <path>` | Classify findings against a baseline (new vs accepted debt) | none |
 | `--changed-from <ref>` | VCS ref to diff against, to escalate debt in changed models ([what a `<ref>` may be](#what-a-ref-may-be)) | none |
 | `--touched-debt warn\|fail\|ignore` | Existing debt in a model the change touched: report it, gate on it, or leave it out of the report entirely | `warn` |
@@ -66,7 +66,7 @@ copy of a library has that another does not, and `mlqt hook`
 | `--no-suppress` | Ignore `__MLQT` suppression annotations, to audit what has been waived — see [Suppressing intentional findings](ci-quality-gate.md#suppressing-intentional-findings) | off |
 | `--dependency <path>` | Load another library so references resolve; never reported on. Repeatable | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch (findings may not be real) | off |
-| `--metrics` | Record a coverage snapshot in `<library-path>/.mlqt/metrics-history.json` | off |
+| `--metrics` | Record a coverage snapshot in the repository's `.mlqt/metrics-history.json` (the nearest directory at or above `<library-path>` holding a `.mlqt` directory, else the working-copy root) | off |
 | `--metrics-out <path>` | Record it somewhere else instead (implies `--metrics`) | — |
 | `--metrics-force` | Record even when the numbers are unchanged (implies `--metrics`) | off |
 | `--timings` | Print where the run's time went to stderr when it finishes: parsing, each style rule by name, each whole-graph analysis | off |
@@ -81,8 +81,10 @@ copy of a library has that another does not, and `mlqt hook`
 | `1` | Findings at or above `--fail-on` |
 | `2` | Usage, load or setup error (bad path, unreadable config, dependency version mismatch) — and any unexpected failure inside `mlqt` itself, which is reported as a defect to report rather than left as a crash |
 
-Because the built-in **style** rules report at **warning** severity by default, `--fail-on error` is
-effectively report-only for them (it surfaces findings but exits `0`). Use `--fail-on warning` for a
+Because most built-in **style** rules report at **warning** severity by default
+(`MLQT.Duplicate.Declaration` is Error, `MLQT.Unused.PublicClass` is Info), `--fail-on error` is
+largely report-only for them (it surfaces their findings but exits `0` — except on a duplicate
+declaration). Use `--fail-on warning` for a
 strict gate, or `--fail-on off` to never fail.
 
 Two things do report as errors and so fail even the default gate. **Diagnostics** are one — see
@@ -244,8 +246,12 @@ for good.
 ## Settings
 
 The rules that run are controlled by a `StyleCheckingSettings` JSON file — the same format the
-desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, no style rules are enabled
-and only parse diagnostics are produced. See [settings-reference.md](settings-reference.md).
+desktop app writes to `<repo>/.mlqt/settings.json`. If no config is found, only the rules that are on
+by default run — currently `MLQT.Structure.SingleFilePackage` — alongside the
+[diagnostics](#diagnostics), and `mlqt` says so with `note: only the rules that are on by default are
+enabled; nothing else has been configured for this library. See settings-reference.md to choose the
+rules you want.` (`note: no style rules are enabled; no findings will be produced.` appears only when
+every rule has been turned off.) See [settings-reference.md](settings-reference.md).
 
 **Where they are found.** Without `--config`, `mlqt` looks for `.mlqt/settings.json` in the library
 directory and then in each directory above it, stopping at a working-copy root (one holding `.git` or
@@ -254,7 +260,8 @@ belong to a repository, and a repository usually holds several libraries under o
 `mlqt check MyRepo/MyLibrary` uses `MyRepo/.mlqt/settings.json` — the same rules, and the same
 accepted spellings, your team sees in the app.
 
-**Per-rule severity.** Enabled rules default to `Warning`. To make a rule fail the gate at
+**Per-rule severity.** Most rules default to `Warning` (`MLQT.Duplicate.Declaration` is `Error`,
+`MLQT.Unused.PublicClass` is `Info`). To make a rule fail the gate at
 `--fail-on error`, set it to `Error` in a `RuleSeverities` map (keyed by rule id):
 
 ```json
@@ -329,7 +336,7 @@ record findings that a check with the right dependencies never raises.
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--baseline <path>` | Where to write (or re-read) the baseline | `<library-path>/.mlqt/baseline.json` |
-| `--config <path>` | Settings file to use | the `.mlqt/settings.json` within `<library-path>`, else built-in defaults if none exists |
+| `--config <path>` | Settings file to use | the nearest `.mlqt/settings.json` at or above `<library-path>`, stopping at the working-copy root; built-in defaults if there is none |
 | `--dependency <path>` | Load another library so references resolve; never recorded as debt. Repeatable — see [Resolving references into other libraries](#resolving-references-into-other-libraries) | none |
 | `--allow-version-mismatch` | Continue despite a dependency version mismatch | off |
 | `--force` | Required by `update` to widen a baseline, and by `create` to overwrite one — see [`prune` vs `update`](#prune-vs-update) | off |
@@ -354,6 +361,7 @@ $ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
 note: baseline holds 101032 entries; one entry can cover several findings, so the accepted count
       below can be larger
 No new findings (104447 finding(s) accepted as baseline debt) in 38112 model(s).
+0 new, 0 touched-debt, 104447 accepted as baseline debt across 38112 model(s).
 ```
 
 An entry is a **fingerprint**: rule id + class + element + detail, deliberately *without* a line
@@ -436,7 +444,7 @@ configuration has moved on, because both ways it can differ are otherwise silent
 
 ```
 $ mlqt check ./MyLibrary --baseline .mlqt/baseline.json
-warning: the baseline was generated with a different rule set
+warning: the baseline was generated with a different configuration
          enabled since: MLQT.Doc.ClassDescription
          severity changed: MLQT.Doc.ParameterDescription (Warning -> Error)
          Pre-existing findings of a newly enabled rule are reported as new.
@@ -567,7 +575,8 @@ mlqt check ./ExternData --baseline .mlqt/baseline.json --changed-from main \
 
 ## Recording the coverage trend
 
-`--metrics` appends a point to `<library-path>/.mlqt/metrics-history.json` — the same file the desktop
+`--metrics` appends a point to the repository's `.mlqt/metrics-history.json` — the nearest directory at
+or above `<library-path>` that holds a `.mlqt` directory, else the working-copy root — the same file the desktop
 app's **Metrics** tab plots ([metrics-dashboard.md](metrics-dashboard.md)). Running it per commit in
 CI builds the burndown automatically,
 instead of it depending on someone remembering to press **Save snapshot**.
@@ -844,8 +853,9 @@ followed to the directory git actually reads hooks from.
 
 The options are baked into the generated script; re-run `mlqt hook install` to change them.
 
-**What the hook does.** It exits immediately unless the staged change touches a `.mo` file, so
-commits it has nothing to say about cost nothing. Otherwise it runs `mlqt check` over the library
+**What the hook does.** It exits immediately unless the staged change adds, copies or modifies a `.mo`
+file, so commits it has nothing to say about cost nothing — including one that only deletes `.mo`
+files, which skips the check. Otherwise it runs `mlqt check` over the library
 with the options above and blocks the commit on a non-zero exit — including exit `2`, because a check
 that could not run has not approved anything.
 

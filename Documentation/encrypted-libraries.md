@@ -61,8 +61,8 @@ certainty.
 
 ### In the application
 
-Add the folder your libraries are installed in under **Settings → Reference Libraries**. For Dymola
-that is typically:
+Add the folder your libraries are installed in under **Settings → Reference Libraries**, with
+**Add folder**. For Dymola that is typically:
 
 ```
 C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library
@@ -70,8 +70,13 @@ C:\Program Files\Dymola 2026x Refresh 1\Modelica\Library
 
 MLQT scans the folder, finds every library beneath it — encrypted or not — and loads them read-only
 at startup, before your own libraries are analysed. The table shows how many libraries each folder
-contributes and how many of those are encrypted, so a mistyped or moved path is obvious immediately
-rather than surfacing later as unresolved references.
+contributes and how many of those are encrypted (the **Libraries found** column), so a mistyped or
+moved path is obvious immediately rather than surfacing later as unresolved references. Changes take
+effect the next time the project is loaded.
+
+Recovery is controlled by **Recover encrypted libraries from their documentation**, above the table.
+It is on by default; turn it off and an encrypted library's namespace is left opaque, so references
+into it are not resolved.
 
 Reference libraries are **never checked, formatted, committed or written to**. They appear in the
 library browser so you can read them, and nothing more.

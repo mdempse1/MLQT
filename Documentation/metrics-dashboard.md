@@ -34,7 +34,7 @@ the more useful pair — it tells you how much work the remaining percent actual
 | **Equation/algorithm not mixed** | It does not have both an `equation` and an `algorithm` section. |
 | **Connections not mixed** | Its equation sections do not mix `connect` statements with other equations. |
 
-Three things decide whether a dimension is listed at all:
+Four things decide whether a dimension is listed at all:
 
 - **The rule has to be on.** A rule set to **Off** in [repository settings](settings-reference.md) is
   you saying that gap does not matter here, so the dimension is dropped rather than reported at 40%
@@ -125,7 +125,7 @@ per dimension (eligible − compliant), plus a total line. Use it for the same r
 count above: on a big library the counts move well before the percentages do. Snapshots taken before
 counts were recorded show as `—` in this view.
 
-The table below lists exact values, most recent first, with the revision each snapshot was taken at.
+The table below lists exact values for the 15 most recent snapshots, newest first, with the revision each snapshot was taken at.
 
 ### Saving snapshots
 

@@ -52,6 +52,8 @@ The External Resources view is split into two panels:
 - **Left panel** — A directory tree showing all referenced resources organized by their file system location
 - **Right panel** — Details about the selected resource, including which models reference it
 
+If the loaded libraries hold more models than the **Defer analysis threshold** (see [ui-customization.md](ui-customization.md#startup-analysis)), MLQT defers this analysis at startup, and the view instead says that external resource analysis has not been run yet and offers **Run External Resource Analysis Now**.
+
 ## File Type Filters
 
 At the top of the view, a row of filter chips lets you control which types of files are shown in the tree. Click a chip to toggle its filter on or off.
@@ -65,7 +67,7 @@ At the top of the view, a row of filter chips lets you control which types of fi
 | **Documentation** | `.pdf`, `.html`, `.htm`, `.doc`, `.docx`, `.md` | Off |
 | **All** | Everything else not covered above | Off |
 
-Hover over any filter chip to see the exact file extensions it covers.
+Hover over any filter chip except **All** to see the exact file extensions it covers.
 
 Only files matching at least one active filter are shown. Directories that contain no matching files are automatically hidden.
 
@@ -149,7 +151,7 @@ Warnings in the External Resources view help identify potential problems:
 | **File not found** | The referenced file does not exist at the resolved path | Check if the file was deleted, moved, or never committed to the repository |
 | **Directory not found** | An annotated directory (Include, Library, or Source) does not exist | The external function annotations may reference a directory that needs to be created or populated |
 | **Could not resolve path** | A `modelica://` URI could not be mapped to a file on disk | Check for typos in the URI, or ensure the referenced library is loaded |
-| **Absolute path reference** | The resource is referenced using an absolute path rather than a `modelica://` URI | Absolute paths break portability — consider converting to a `modelica://` URI |
+| **Absolute path is not portable: <path>** | The resource is referenced using an absolute path rather than a `modelica://` URI | Absolute paths break portability — consider converting to a `modelica://` URI |
 
 ## Practical Use Cases
 

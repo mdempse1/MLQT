@@ -855,7 +855,7 @@ public class RepositoryService : IRepositoryService
             {
                 Warn("RepositoryService", $"Repository path no longer exists, skipping: {entry.LocalPath}");
                 AddLoadWarning($"Repository '{entry.Name}' was not loaded: its path no longer exists ({entry.LocalPath}). " +
-                    "Fix or remove it in Settings > Repositories.");
+                    "Fix or remove it in Settings > Manage Repositories.");
                 continue;
             }
 

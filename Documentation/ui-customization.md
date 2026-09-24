@@ -48,13 +48,22 @@ When you select **Custom**, a set of color pickers appears. Each controls a diff
 
 ### Theme Defaults
 
-When switching to **Light** theme, custom colors are reset to the default light palette:
+Switching between **Light**, **Dark** and **Custom** changes only which theme is shown — it never resets your custom colors, so a palette you have built is still there when you switch back to **Custom**. On a fresh install the custom colors start from these defaults:
 - Primary: `#6a70b1` (purple-blue)
 - Secondary: `#666666` (gray)
 - Tertiary: `#a18ac1` (light purple)
 - Black: `#272c34`, White: `#ffffff`
 
-The **Dark** theme uses MudBlazor's built-in dark palette.
+The **Dark** theme uses MudBlazor's dark palette with MLQT's own accent colors (primary, secondary, tertiary and app bar) and a dark gray background.
+
+## Startup Analysis
+
+**Defer analysis threshold (model count)** (default `500`) decides how much work MLQT does when a
+project opens. When the loaded libraries hold more models than this, formatting, dependency
+analysis, style checking and external resource analysis are not started automatically. The startup
+dialog shows each deferred step greyed out with a play button: click a step to run it, **Run All** to
+run every one, or **Close** to start working without them. The Dependencies and External Resources
+views also offer to run their analysis when you open them.
 
 ## Syntax Highlighting
 
@@ -71,7 +80,7 @@ Four preset themes are available:
 | **OpenModelica** | Colors matching the OpenModelica Connection Editor. Familiar for OMEdit users. |
 | **Custom** | Define your own colors using the color pickers below. |
 
-Each theme automatically adjusts for light or dark mode — when you switch the UI theme between Light and Dark, the syntax highlighting colors update to match.
+The **VS Code**, **Dymola** and **OpenModelica** themes adjust automatically for light or dark mode — when you switch the UI theme between Light and Dark, their colors update to match. **Custom** keeps the colors you chose, whichever mode you are in.
 
 > **[Screenshot: The Syntax Highlighting button group showing "VS Code", "Dymola", "OpenModelica", and "Custom" buttons. "VS Code" should have a checkmark. Below, the code preview should show a sample Modelica model with the VS Code color scheme.]**
 

@@ -72,7 +72,7 @@ Logs go to **stderr**; **stdout** carries the JSON-RPC protocol, so never write 
 
 ## How an agent uses it
 
-The server returns a short set of instructions to the client on connect, and a `get_guidance` tool provides fuller, task-oriented recipes on demand (pass a topic such as `workflows`, `views`, `editing`, `dependencies`, `style`, `spelling`, `formatting`, `vcs`, or `resources`). The essential workflow:
+The server returns a short set of instructions to the client on connect, and a `get_guidance` tool provides fuller, task-oriented recipes on demand (pass one of `overview`, `workflows`, `views`, `editing`, `diagrams`, `dependencies`, `style`, `spelling`, `formatting`, `vcs` or `resources`). The essential workflow:
 
 1. **Load first.** Almost every tool operates on an in-memory graph. Load a library with `load_repository` (a Git/SVN working copy or a directory of libraries) or `load_library` (one library directory, its `package.mo`, or a single `.mo` file). `load_library` also accepts an **encrypted** library (a directory holding a `package.moe`): its classes are recovered from the vendor's generated documentation so references into it resolve, but it is read-only and never reported on — see [encrypted-libraries.md](encrypted-libraries.md). To start a brand-new project, `create_library` writes and loads an empty top-level library on disk.
 

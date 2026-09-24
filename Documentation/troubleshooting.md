@@ -12,7 +12,7 @@
 |-------|----------|
 | Path does not exist | Verify the path is correct and the directory exists on disk |
 | No Modelica files found | The directory must contain at least one `package.mo` file for MLQT to recognize it as a Modelica library |
-| Git not installed | For remote Git repositories, MLQT needs `git.exe` on your PATH for clone, fetch, and push operations. SVN does not require a command-line client. |
+| Git not installed | For remote Git repositories, MLQT needs `git.exe` on your PATH for clone, fetch, and push operations. Every SVN operation uses the `svn` command-line client: it is bundled with the Windows installer, but on Linux you need the `subversion` package. |
 | Network issues | For remote repositories, check your network connection and verify the URL is correct |
 | Permission denied | Ensure you have read access to the repository directory. For remote repositories, verify your credentials. |
 
@@ -176,7 +176,7 @@ No. MLQT is a library management and quality tool, not a code editor. You edit c
 ### Do I need Git or SVN installed?
 
 - **Git**: MLQT uses LibGit2Sharp (a built-in library) for local Git operations such as committing, branching, and reading history. However, operations that interact with a remote server — **fetch, push, rebase** — shell out to `git.exe` so that all configured credential helpers (Git Credential Manager, SSH keys, GitHub Desktop, etc.) are used automatically. You **must have Git installed** for these operations to work.
-- **SVN**: MLQT performs all SVN operations through the `svn` command-line client and ships its own bundled copy, so you do **not** need to install an SVN client. If you prefer to use a specific svn executable, set the `MLQT_SVN_PATH` environment variable to its full path.
+- **SVN**: MLQT performs all SVN operations through the `svn` command-line client. On **Windows** the installer ships its own bundled copy, so you do **not** need to install an SVN client. On **Linux** no client is bundled: MLQT runs `svn` from your `PATH`, and the `.deb` only recommends `subversion`, so install it (`sudo apt install subversion`) if you declined it — see [Installation](installation.md#svn-and-git-on-linux). If you prefer to use a specific svn executable, set the `MLQT_SVN_PATH` environment variable to its full path.
 
 ### Can I use both Git and SVN repositories in the same project?
 

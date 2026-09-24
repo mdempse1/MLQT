@@ -771,9 +771,9 @@ public class DocumentationScreenshots(TestHostFixture host) : IDisposable
 
         // The formatting switches on their own. code-formatting.md's table describes exactly these,
         // and described four of them under invented short names, so a reader could not match what
-        // they were reading to what was on screen. Tall enough for the master switch and all five
+        // they were reading to what was on screen. Tall enough for the master switch and all six
         // rules: the last two labels are a full line each.
-        await SectionShotAsync(page, "Formatting rules", "code-formatting-1", height: 178);
+        await SectionShotAsync(page, "Formatting rules", "code-formatting-1", height: 210);
 
         await SectionShotAsync(page, "Spell checking", "settings-reference-6", height: 320);
 
