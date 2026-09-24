@@ -1,5 +1,6 @@
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using Photino.NET;
 
 namespace MLQT.Photino.Services;
 
@@ -18,20 +19,23 @@ namespace MLQT.Photino.Services;
 ///
 /// <para>Probe 11 (<c>filepicker.wired</c>) asserts only that a picker resolves. That a dialog opens
 /// and returns a path stays a manual check, once per platform — 7b-5 and 7b-6.</para>
+///
+/// <para><b>Every dialog is opened from the top of the message loop, never from inside WebView2
+/// (B283).</b> See <see cref="OnTheMessageLoopAsync{T}"/>.</para>
 /// </remarks>
 internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : IFilePickerService
 {
-    public Task<string?> PickAndReadFileAsync(string fileExtension)
+    public async Task<string?> PickAndReadFileAsync(string fileExtension)
     {
-        var path = PickFile(fileExtension);
-        return Task.FromResult(path is null ? null : ReadOrNull(path));
+        var path = await PickFileAsync(fileExtension);
+        return path is null ? null : ReadOrNull(path);
     }
 
-    public Task<FilePickerResult?> PickModelicaFileAsync(string fileExtension)
+    public async Task<FilePickerResult?> PickModelicaFileAsync(string fileExtension)
     {
-        var path = PickFile(fileExtension);
+        var path = await PickFileAsync(fileExtension);
         if (path is null)
-            return Task.FromResult<FilePickerResult?>(null);
+            return null;
 
         // Through ModelicaFileEncoding, not File.ReadAllText: this method returns Modelica source,
         // and the population is mixed — an older library stores curly quotes and accented characters
@@ -39,31 +43,31 @@ internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : 
         // funnel detects the encoding per file and cannot fail (B239).
         var content = ReadModelicaOrNull(path);
         if (content is null)
-            return Task.FromResult<FilePickerResult?>(null);
+            return null;
 
         // A package.mo is the root of a directory-shaped library, and callers act on the directory.
         var isPackage = string.Equals(Path.GetFileName(path), "package.mo", StringComparison.OrdinalIgnoreCase);
 
-        return Task.FromResult<FilePickerResult?>(new FilePickerResult
+        return new FilePickerResult
         {
             FilePath = path,
             Content = content,
             IsPackageFile = isPackage,
             DirectoryPath = isPackage ? Path.GetDirectoryName(path) : null,
-        });
+        };
     }
 
-    public Task<string?> PickFolderAsync(string title = "Select folder")
+    public async Task<string?> PickFolderAsync(string title = "Select folder")
     {
         var window = windows.Window;
         if (window is null)
-            return Task.FromResult<string?>(null);
+            return null;
 
-        var chosen = window.ShowOpenFolder(title, multiSelect: false);
-        return Task.FromResult(chosen is { Length: > 0 } ? chosen[0] : null);
+        var chosen = await OnTheMessageLoopAsync(window, () => window.ShowOpenFolder(title, multiSelect: false));
+        return chosen is { Length: > 0 } ? chosen[0] : null;
     }
 
-    private string? PickFile(string fileExtension)
+    private async Task<string?> PickFileAsync(string fileExtension)
     {
         var window = windows.Window;
         if (window is null)
@@ -72,12 +76,64 @@ internal sealed class PhotinoFilePickerService(PhotinoWindowAccessor windows) : 
         // Photino wants the pattern with the dot, and callers pass either shape.
         var pattern = fileExtension.StartsWith('.') ? "*" + fileExtension : "*." + fileExtension.TrimStart('*', '.');
 
-        var chosen = window.ShowOpenFile(
+        var chosen = await OnTheMessageLoopAsync(window, () => window.ShowOpenFile(
             "Please select a Modelica file",
             multiSelect: false,
-            filters: [("Modelica", [pattern])]);
+            filters: [("Modelica", [pattern])]));
 
         return chosen is { Length: > 0 } ? chosen[0] : null;
+    }
+
+    /// <summary>
+    /// Opens a native dialog from the top of the window's message loop, and waits for it without
+    /// holding anything up.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why (B283).</b> A click reaches a component through WebView2's
+    /// <c>WebMessageReceived</c> callback, and Photino.Blazor handles the message <i>inline</i>, on that
+    /// callback's own stack — its <c>SynchronousTaskScheduler</c> runs the task where it is queued. So a
+    /// picker opened directly from a click ran the dialog's nested message loop inside WebView2's event
+    /// handler, and anything Blazor rendered while the user browsed (a snackbar, progress, the file
+    /// monitor) reached <c>SendWebMessage</c> re-entrantly, with that callback still on the stack. WebView2
+    /// does not support that re-entrancy, and runtime 153 stops the process on it: MLQT crashed with
+    /// <c>0x80000003</c> in <c>EmbeddedBrowserWebView.dll</c> while a user navigated the folder dialog,
+    /// with nothing in the log because nothing managed ever saw it.</para>
+    ///
+    /// <para><b>How.</b> <see cref="PhotinoWindow.Invoke"/> called from a thread-pool thread queues the
+    /// work to the UI thread, which reaches it only after the click's callback has returned — so the
+    /// dialog runs from the message loop itself, where a nested loop is ordinary. The pool thread waits
+    /// in <c>Invoke</c> for as long as the dialog is open; the caller only awaits. Not
+    /// <c>await Task.Yield()</c>: that goes wherever the current synchronization context sends it, and
+    /// with none it would open a native dialog on a pool thread, which is worse.</para>
+    /// </remarks>
+    private static Task<T> OnTheMessageLoopAsync<T>(PhotinoWindow window, Func<T> open)
+    {
+        var result = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                window.Invoke(() =>
+                {
+                    try
+                    {
+                        result.TrySetResult(open());
+                    }
+                    catch (Exception ex)
+                    {
+                        result.TrySetException(ex);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // The window is closing, or Photino refused the call. The caller treats a failed
+                // picker as cancelled, and the log says why.
+                MLQT.Services.LoggingService.Error(nameof(PhotinoFilePickerService), "Could not open a native dialog", ex);
+                result.TrySetResult(default!);
+            }
+        });
+        return result.Task;
     }
 
     /// <summary>

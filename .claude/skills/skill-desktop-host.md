@@ -54,6 +54,19 @@ to stdout, and a Blazor render batch is one of those — base64, tens of kilobyt
 written synchronously on the thread producing the update. That was the shape of the "Photino feels
 slower than MAUI" report (B121).
 
+**A native dialog is never opened from inside WebView2's callback (B283).** A click reaches a
+component through WebView2's `WebMessageReceived`, and Photino.Blazor handles the message *inline* on
+that callback's stack (its `SynchronousTaskScheduler` runs a task where it is queued). A picker opened
+straight from a click therefore ran the dialog's nested message loop inside WebView2's event handler;
+anything Blazor rendered while the user browsed reached `SendWebMessage` re-entrantly, and WebView2
+runtime 153 stops the process on that — `0x80000003` in `EmbeddedBrowserWebView.dll`, and **nothing in
+MLQT's log**, because no managed code ever saw it. The only evidence is the Windows Application event
+log. `PhotinoFilePickerService.OnTheMessageLoopAsync` opens every dialog by handing it to
+`PhotinoWindow.Invoke` from a pool thread, so it runs from the top of the message loop once the
+callback has returned; `NativeDialogPolicyTests` holds every dialog call in both Photino apps to it. Not
+`await Task.Yield()`, which goes wherever the current synchronization context sends it — with none, a
+native dialog would open on a pool thread.
+
 **Webview chrome settings go in before `Run`.** `SetContextMenuEnabled(false)` and
 `SetDevToolsEnabled(...)` turn off the engine's own right-click menu and its **Inspect** entry, which
 were on in both release builds. Reading them *during* `RegisterWindowCreatedHandler` segfaults the
