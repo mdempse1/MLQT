@@ -91,7 +91,7 @@ public readonly record struct ChangeMarker(ChangeMarkerShape Shape, string Text,
             "Changed in a way that can affect simulation"),
 
         ClassChangeKind.Cosmetic => new ChangeMarker(
-            ChangeMarkerShape.Chip, "G", MudBlazor.Color.Info,
+            ChangeMarkerShape.Chip, "C", MudBlazor.Color.Info,
             "Changed, but only its layout, comments, documentation or graphics"),
 
         ClassChangeKind.Added => new ChangeMarker(
