@@ -484,8 +484,21 @@ public partial class ExternalResources : IDisposable
         if (selectedWarningTypes.Count > 0)
             return MatchesWarningTypes(node, selectedWarningTypes);
 
+        if (selectedFileTypes.Contains(AllFileTypes))
+            return true;
+
         return selectedFileTypes.Contains(CategoryOf(node.FileExtension));
     }
+
+    /// <summary>
+    /// The value of the <b>All</b> chip: every file, whatever else is selected (B287).
+    /// </summary>
+    /// <remarks>
+    /// It used to be the <c>other</c> category under a label that said "All", so selecting it on its
+    /// own showed only the files no other chip covered. It is now also the only way to reach
+    /// <c>other</c> — an extension nobody listed is shown by showing everything.
+    /// </remarks>
+    internal const string AllFileTypes = "all";
 
     /// <summary>Whether a resource is one of the kinds of warning selected.</summary>
     internal static bool MatchesWarningTypes(ResourceTreeNode node, IReadOnlyCollection<string> selectedWarningTypes)
@@ -503,8 +516,8 @@ public partial class ExternalResources : IDisposable
     /// </summary>
     /// <remarks>
     /// Every resource lands in exactly one, and <c>other</c> is the catch-all rather than a
-    /// category of its own — an extension nobody listed still has to be reachable, or a user who
-    /// has all the boxes ticked is silently not shown some of their own files.
+    /// category of its own. It has no chip: an extension nobody listed is reached through
+    /// <see cref="AllFileTypes"/>, which shows everything.
     /// </remarks>
     internal static string CategoryOf(string? extension)
     {

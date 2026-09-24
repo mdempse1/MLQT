@@ -61,22 +61,24 @@ public class ExternalResourceCategoryTests
     {
         // The promise this holds: a category with no chip is a set of the user's own files that
         // nothing can display, however the filters are set. The two lists are written in different
-        // files - one in C#, one in markup - so only a test keeps them in step.
+        // files - one in C#, one in markup - so only a test keeps them in step. The one exception is
+        // the catch-all, which the All chip reaches by showing everything (B287).
         var chips = FileTypeChips().ToHashSet(StringComparer.Ordinal);
 
-        Assert.NotEmpty(chips);
-        Assert.Empty(ExternalResources.AllCategories.Except(chips));
+        Assert.Contains(ExternalResources.AllFileTypes, chips);
+        Assert.Equal(["other"], ExternalResources.AllCategories.Except(chips));
     }
 
     [Fact]
     public void EveryFilterChip_IsACategoryTheClassifierCanReturn()
     {
         // And the other direction: a chip for a category nothing is ever classified as is a filter
-        // that does nothing, which reads as "there are no files of this kind".
+        // that does nothing, which reads as "there are no files of this kind". All is the exception,
+        // being every category at once rather than one of them.
         var chips = FileTypeChips();
 
         Assert.NotEmpty(chips);
-        Assert.Empty(chips.Except(ExternalResources.AllCategories));
+        Assert.Equal([ExternalResources.AllFileTypes], chips.Except(ExternalResources.AllCategories));
     }
 
     [Fact]

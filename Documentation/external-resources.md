@@ -65,9 +65,9 @@ At the top of the view, a row of filter chips lets you control which types of fi
 | **Libs** | `.lib`, `.dll`, `.a`, `.so` | On |
 | **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.svg`, `.ico`, `.tiff`, `.webp` | Off |
 | **Documentation** | `.pdf`, `.html`, `.htm`, `.doc`, `.docx`, `.md` | Off |
-| **All** | Everything else not covered above | Off |
+| **All** | Every file, whatever its type — including extensions none of the other chips list. Selecting it shows everything, whichever other chips are selected | Off |
 
-Hover over any filter chip except **All** to see the exact file extensions it covers.
+Hover over any other filter chip to see the exact file extensions it covers.
 
 Only files matching at least one active filter are shown. Directories that contain no matching files are automatically hidden.
 

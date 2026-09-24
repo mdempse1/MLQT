@@ -108,6 +108,27 @@ public class MissingChipCountTests
         Assert.False(ExternalResources.NodePassesFilters(File("table.mat"), MissingOnly, DefaultFileTypes));
     }
 
+    [Theory]
+    [InlineData("table.mat")]       // a selected type
+    [InlineData("diagram.png")]     // an unselected one
+    [InlineData("data.weird")]      // other, the catch-all
+    [InlineData("LICENSE")]         // other, by having no extension at all
+    public void TheAllChipShowsEveryFile(string name)
+    {
+        // B287: the chip labelled All was the "other" category, so on its own it showed only the
+        // files no other chip covered. On its own it now shows everything.
+        Assert.True(ExternalResources.NodePassesFilters(File(name), NoWarningFilter, [ExternalResources.AllFileTypes]));
+    }
+
+    [Fact]
+    public void WithoutTheAllChipAnUnselectedTypeIsHidden()
+    {
+        // The control for the theory above: it is the All chip showing these, not the filter
+        // having stopped filtering.
+        Assert.False(ExternalResources.NodePassesFilters(File("diagram.png"), NoWarningFilter, DefaultFileTypes));
+        Assert.False(ExternalResources.NodePassesFilters(File("data.weird"), NoWarningFilter, DefaultFileTypes));
+    }
+
     [Fact]
     public void WithNoWarningFilterTheFileTypeFilterStillApplies()
     {
