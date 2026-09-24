@@ -16,7 +16,7 @@ MLQT can integrate with **Dymola** and **OpenModelica** to check your Modelica m
 ### Auto-Detection
 
 MLQT attempts to auto-detect installed tools on startup:
-- **Dymola**: Scans `Program Files` for recent Dymola versions (2020 onwards), checking both standard and Refresh installations
+- **Dymola**: Scans `Program Files` for recent Dymola versions (2021 onwards), checking both standard and Refresh installations
 - **OpenModelica**: Scans `Program Files` for recent OpenModelica versions, trying common installation paths
 
 If auto-detection succeeds, the path is pre-filled. If your tool is installed in a non-standard location, you'll need to set the path manually.
