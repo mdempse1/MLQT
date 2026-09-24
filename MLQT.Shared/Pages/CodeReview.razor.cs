@@ -553,7 +553,8 @@ public partial class CodeReview : IAsyncDisposable
                 {
                     await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
                     Step("revert");
-                    await LibraryDataService.ReloadFileAsync(target.FilePath);
+                    await LibraryDataService.RefreshDependenciesAsync(
+                        await LibraryDataService.ReloadFileAsync(target.FilePath));
                     Step("reload after revert");
                     _currentModelNode = LibraryDataService.CombinedGraph.GetNode<ModelNode>(modelId);
 
@@ -2138,8 +2139,10 @@ document.head.appendChild(style);
             return false;
         }
 
-        // Re-parse the file from disk so all model nodes are rebuilt from the saved content.
+        // Re-parse the file from disk so all model nodes are rebuilt from the saved content, and give
+        // them back the dependency edges the reload took (B290).
         var affected = await LibraryDataService.ReloadFileAsync(target.FilePath);
+        await LibraryDataService.RefreshDependenciesAsync(affected);
         if (monitorPaused && !string.IsNullOrEmpty(monitoredRoot))
         {
             FileMonitoringService.StartMonitoring(repoId!, monitoredRoot);
@@ -2623,6 +2626,9 @@ document.head.appendChild(style);
         // what will show whether the rest of it needs the same treatment.
         var reload = System.Diagnostics.Stopwatch.StartNew();
         var affected = await LibraryDataService.ReloadFileAsync(filePath);
+        // The reload took the file's dependency edges with it: without this the corrected class
+        // offered nothing to go to (B290).
+        await LibraryDataService.RefreshDependenciesAsync(affected);
         reload.Stop();
 
         if (reload.ElapsedMilliseconds > 1000)

@@ -1092,6 +1092,106 @@ end TestPkg;
     }
 
     // ============================================================================
+    // RefreshDependenciesAsync - a reload takes the file's dependency edges (B290)
+    // ============================================================================
+
+    /// <summary>
+    /// A one-file-per-class library: <c>Der</c> extends <c>Base</c>, and <c>User</c> declares a
+    /// <c>Der</c> - so reloading Der.mo loses an edge in each direction.
+    /// </summary>
+    private static async Task<(LibraryDataService Service, string Root, string DerFile)> AnalysedLibraryAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-refresh-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        Directory.CreateDirectory(lib);
+        await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        await File.WriteAllTextAsync(Path.Combine(lib, "Base.mo"), "within Lib;\npartial model Base\nend Base;\n");
+        var derFile = Path.Combine(lib, "Der.mo");
+        await File.WriteAllTextAsync(derFile, "within Lib;\nmodel Der \"Derivative\"\n  extends Base;\nend Der;\n");
+        await File.WriteAllTextAsync(Path.Combine(lib, "User.mo"), "within Lib;\nmodel User\n  Der d;\nend User;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        await service.EnsureDependenciesAnalyzedAsync();
+        return (service, root, derFile);
+    }
+
+    private static List<string> Uses(LibraryDataService service, string id) =>
+        service.CombinedGraph.GetUsedModels(id).Select(m => m.Id).ToList();
+
+    [Fact]
+    public async Task AReloadedClass_HasNoEdgesUntilRefreshed()
+    {
+        var (service, root, derFile) = await AnalysedLibraryAsync();
+        try
+        {
+            Assert.Contains("Lib.Base", Uses(service, "Lib.Der"));
+
+            await File.WriteAllTextAsync(derFile, "within Lib;\nmodel Der \"Derivative of input\"\n  extends Base;\nend Der;\n");
+            var affected = await service.ReloadFileAsync(derFile);
+
+            // What the user saw: the graph still says it is analysed, and the class uses nothing.
+            Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+            Assert.Empty(Uses(service, "Lib.Der"));
+
+            await service.RefreshDependenciesAsync(affected);
+
+            Assert.Equal(["Lib.Base"], Uses(service, "Lib.Der"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Refreshing_RestoresTheEdgesOtherClassesHadToTheReloadedOne()
+    {
+        var (service, root, derFile) = await AnalysedLibraryAsync();
+        try
+        {
+            // User keeps its side - it records the edge by id - but the new Der node does not know it
+            // is used, which is what impact analysis and the unused-class check read.
+            var affected = await service.ReloadFileAsync(derFile);
+            Assert.DoesNotContain("Lib.User", service.CombinedGraph.GetModelUsedBy("Lib.Der").Select(m => m.Id));
+
+            await service.RefreshDependenciesAsync(affected);
+
+            Assert.Contains("Lib.Der", Uses(service, "Lib.User"));
+            Assert.Contains("Lib.User", service.CombinedGraph.GetModelUsedBy("Lib.Der").Select(m => m.Id));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Refreshing_BeforeAnyAnalysis_AnalysesNothing()
+    {
+        // Nothing to keep current, and analysing a handful of classes must not leave the graph
+        // claiming an analysis that never ran over the rest.
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-refresh-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        Directory.CreateDirectory(lib);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\n  model A\n  end A;\n  model B\n    A a;\n  end B;\nend Lib;\n");
+            var service = new LibraryDataService();
+            await service.AddLibraryFromDirectoryAsync(lib);
+
+            await service.RefreshDependenciesAsync(["Lib.B"]);
+
+            Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+            Assert.Empty(Uses(service, "Lib.B"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ============================================================================
     // Multiple libraries
     // ============================================================================
 

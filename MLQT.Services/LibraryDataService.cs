@@ -720,6 +720,17 @@ public class LibraryDataService : ILibraryDataService
     }
 
     /// <inheritdoc/>
+    public async Task RefreshDependenciesAsync(IReadOnlyCollection<string> modelIds)
+    {
+        if (modelIds.Count == 0 || !_combinedGraph.DependenciesAnalyzed)
+            return;
+
+        await GraphBuilder.AnalyzeDependenciesForModelsAsync(
+            _combinedGraph, modelIds.ToHashSet(StringComparer.Ordinal), GetLibraryInfos());
+        _combinedGraph.ReconcileDependencyEdges();
+    }
+
+    /// <inheritdoc/>
     public async Task<List<string>> ReloadFileAsync(string filePath)
     {
         var affectedModelIds = new List<string>();

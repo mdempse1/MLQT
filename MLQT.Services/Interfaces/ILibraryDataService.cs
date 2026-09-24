@@ -160,7 +160,27 @@ public interface ILibraryDataService
     /// </summary>
     /// <param name="filePath">Path to the file to reload.</param>
     /// <returns>List of affected model IDs (both removed and newly added).</returns>
+    /// <remarks>
+    /// <b>The reloaded classes come back with no dependency edges</b>, while the graph goes on saying
+    /// its dependencies are analysed. Call <see cref="RefreshDependenciesAsync"/> with what this
+    /// returns once the edit is complete — after the last reload, when one edit touches several files.
+    /// </remarks>
     Task<List<string>> ReloadFileAsync(string filePath);
+
+    /// <summary>
+    /// Rebuilds the dependency edges of <paramref name="modelIds"/> after they were reloaded, and
+    /// repairs the edges other classes had to them. Does nothing when dependencies have not been
+    /// analysed, since there is nothing to keep current.
+    /// </summary>
+    /// <remarks>
+    /// A reload replaces each class in the file with a new node that uses nothing, and removing the
+    /// old one takes every other class's edge to it as well. Without this, a class the user had just
+    /// corrected a word in offered no classes to go to, and the classes using it stopped showing it
+    /// (B290). Separate from the reload, rather than part of it, because an edit that moves a class
+    /// between files reloads both, and analysing after the first would resolve the moved class while
+    /// it was in neither.
+    /// </remarks>
+    Task RefreshDependenciesAsync(IReadOnlyCollection<string> modelIds);
 
     /// <summary>
     /// Removes all models associated with a specific file from the graph.

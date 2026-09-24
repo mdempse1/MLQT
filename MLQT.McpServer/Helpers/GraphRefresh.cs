@@ -25,12 +25,9 @@ internal static class GraphRefresh
 
         var graph = libraries.CombinedGraph;
 
+        // The same refresh the desktop app makes after its own edits (B290), rather than a copy of it.
         if (session.DependenciesAnalyzed)
-        {
-            var idSet = affectedModelIds.ToHashSet(StringComparer.Ordinal);
-            await GraphBuilder.AnalyzeDependenciesForModelsAsync(graph, idSet, BuildLibraryInfos(libraries));
-            graph.ReconcileDependencyEdges();
-        }
+            await libraries.RefreshDependenciesAsync(affectedModelIds);
 
         if (session.ResourcesAnalyzed)
             await resources.AnalyzeResourcesForModelsAsync(affectedModelIds, graph);
