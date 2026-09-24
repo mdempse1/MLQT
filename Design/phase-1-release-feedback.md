@@ -1591,7 +1591,7 @@ Commit `0314b2f`.
 
 ### WP16 — Performance, the serial phases
 
-**B281, B282** · 2 items · M each · **the per-class phase is no longer where the wall clock goes**
+**B281 ✅, B282** · 2 items · M each · **the per-class phase is no longer where the wall clock goes**
 
 Opened 2026-09-24 from WP13's last profile. Cutting per-class thread time by a third moved a Claytex
 check from 4m21s to 4m12s, and the trace says why: of a 257s run, loading is 34s, **dependency
@@ -1611,6 +1611,22 @@ profile rather than guess, and hold findings — and for B282 the external-resou
 on Claytex and MSL. Both narrowings rest on dependency edges meaning what they are assumed to mean,
 so **verify the edge first** (that `extends` is recorded, how far a modification can reach) and keep
 the full scan as the fallback when edges are absent.
+
+**B281, done 2026-09-24 — and the phase was not serial so much as waiting.** The edge held (16,226 of
+16,226 extends clauses into the checked set carried one), so `UnusedMembersAnalyzer` asks only a
+candidate's users, and both big analyzers went parallel. The phase stayed at 72s with twenty threads
+busy. Read per thread, the earlier serial trace had already said why: the analysing thread spent **53
+of 72 seconds suspended in `PollGCWorker`**, waiting for collections. Every host ran workstation GC.
+
+| Claytex, findings identical in all four | Workstation GC | Server GC |
+|---|---:|---:|
+| before B281 | 242s, 8.2 GB | 104s, 8.5 GB |
+| with B281 | 255s, 11.4 GB | **70.5s**, 8.7 GB |
+
+The collector was the gain, and the parallel analyzers are a loss without it. All three hosts now set
+`ServerGarbageCollection`, held by `HostGarbageCollectionTests`; the published tree runs its smoke
+tests with it. **The desktop app is the host not measured directly** and wants confirming over a real
+session. B282's 74s was measured under workstation GC too, so it is re-measured before anything else.
 
 ## Sequencing summary
 
@@ -1643,8 +1659,8 @@ WP13 ✅ B261 ▸ B257 — complete 2026-09-24: coverage shares the rule's unit 
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
 WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
                        beside source for the same library; B280 found doing it
-WP16  B281 ▸ B282 — the serial phases WP13's profile found: the graph analyses (72s, one
-                       thread) and dependency analysis (74s, every class parsed twice)
+WP16  B281 ✅ ▸ B282 — B281 found workstation GC was most of the time: server GC in every host,
+                       Claytex 4m13s → 70.5s; B282 (dependency analysis) is re-measured under it first
 
 No package, and deliberately: B152 (photographed screenshots) and B166 (a variance that has not
 recurred) — both recorded above as needing no work rather than waiting for someone

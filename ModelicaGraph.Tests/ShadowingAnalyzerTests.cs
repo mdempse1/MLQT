@@ -61,4 +61,21 @@ public class ShadowingAnalyzerTests
     {
         Assert.Empty(Run(Model("M", "model M\n  Real x;\nend M;")));
     }
+    [Fact]
+    public void FindingsComeBackInTheOrderTheClassesWereGiven()
+    {
+        // Analysed in parallel since B281; the report must not depend on which thread finished first.
+        var graph = new DirectedGraph();
+        graph.AddNode(Model("Base", "model Base\n  Real x;\nend Base;"));
+        var derived = Enumerable.Range(0, 40)
+            .Select(i => Model($"D{i:D2}", $"model D{i:D2}\n  extends Base;\n  Real x;\nend D{i:D2};"))
+            .ToList();
+        foreach (var d in derived) graph.AddNode(d);
+        var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings { CheckShadowing = true }, derived);
+
+        var order = GraphAnalysisRunner.Run(ctx, new IGraphAnalyzer[] { new ShadowingAnalyzer() })
+            .Where(x => x.RuleId == RuleIds.ShadowingInheritedMember).Select(x => x.ModelId).ToList();
+
+        Assert.Equal(derived.Select(d => d.Id), order);
+    }
 }

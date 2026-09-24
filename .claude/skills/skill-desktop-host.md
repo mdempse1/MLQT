@@ -204,6 +204,11 @@ file dialog opening, and that settings survive an upgrade.
 
 ## Platform facts worth not rediscovering
 
+- **The host runs server GC**, as the CLI and MCP server do (B281). A style check allocates parse trees from
+  every core, and under the default workstation collector a Claytex check spent most of its time with every
+  thread suspended for collections. `HostGarbageCollectionTests` holds the setting. It was measured in the CLI;
+  if the desktop app ever shows memory or responsiveness trouble over a long session, this is the first
+  setting to question, and `System.GC.ConserveMemory` / `GCHeapCount` the first knobs before turning it off.
 - **`libnotify4` is a required Linux dependency** and nothing else pulls it in. `Photino.Native.so`
   lists it among its `NEEDED` entries and `libwebkit2gtk-4.1-0` does not depend on it. Take the
   install list from `objdump -p`, not from what seemed necessary. This puts the floor at
