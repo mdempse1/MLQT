@@ -1377,9 +1377,9 @@ about existing code that was not true, and in each case the untrue part was the 
 "separable at any point", and all three carried a sentence asserting that most of the work was
 already done. Nobody had checked, because nothing schedules an item filed as separable.
 
-### WP13 — Performance, second pass
+### WP13 — Performance, second pass — **✅ complete 2026-09-24**
 
-**B261, B257** · 2 items · M and S · **the measurement exists; the explanation does not**
+**B261 ✅, B257 ✅** · 2 items · M and S · **the measurement exists; the explanation does not**
 
 **B257 is here because WP4 closed without it.** It was filed from WP4's own measurements — the
 combined analysis path labels its step "Analysing dependencies" while it also style-checks, so the
@@ -1404,6 +1404,29 @@ before the second guess rather than after it.
 none, so measuring a class re-parses its ancestry the way `MissingUnits` did before B174 — which was
 worth 3x there. It is a hypothesis, not a plan: the same cache was measured as "no change at all"
 once already.
+
+**What was done (2026-09-24).** The gate first. The 69% was **Claytex** — 21,673 classes, from the
+application log of 2026-09-22 — and it reproduced with the CLI on the current build before anything
+was changed: the whole `ModelicaLibrariesTrunk/Modelica` repository with the Dymola 2026x Refresh 1
+library folder on `--dependency`, coverage **2,901.9s (66%)** of 4,374.5s thread-time. The same table
+held the control that made a profiler unnecessary: `rule:MissingUnits` asked the same unit question
+about the same components for **389.1s**. So the hypothesis held, and for the reason stated — the
+measurer had neither of B174's caches. `StyleCheckContext` now builds one unit lookup and gives it to
+the rule and the measurer both, so each `(class, type)` question is resolved once between them.
+
+| Claytex, same build and settings | Before | After |
+|---|---:|---:|
+| coverage (thread-s) | 2,901.9 | 323.6 |
+| all measured work (thread-s) | 4,374.5 | 1,542.6 |
+| wall clock | 6m51s | 4m21s |
+| findings | 104,643 | 104,643, identical |
+
+Every coverage figure is identical as well; the two metrics snapshots differ only in their timestamps.
+
+**B257** was a naming defect in the log, not in the dialog: the combined pass logged its start as the
+combined pass, its end as "dependency analysis", and a style-checking completion with no start, so
+read by name the dependency half carried the whole four minutes. `DeferredDependencyStep` names the
+pass once for both ends and both messages, decided from whether style checking really was carried.
 
 ### WP14 — External tools, second pass
 
@@ -1566,8 +1589,8 @@ WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the su
                        ▸ B228 ▸ B229 ▸ B227 ▸ B234, then ▸ B274 ▸ B275 from the
                        re-run campaign; needs no other package
 WP10 ✅ B218 ▸ B179 ▸ B196 (MCP) — complete 2026-09-23
-WP13  B261 coverage measurement — WP4's second root cause; same gate, measure before touching
-                       ▸ B257, WP4's other leftover: the combined path's step label
+WP13 ✅ B261 ▸ B257 — complete 2026-09-24: coverage shares the rule's unit lookup, 6m51s → 4m21s
+                       on Claytex; the combined pass names itself at both ends of the log
 WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
 WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
                        beside source for the same library; B280 found doing it

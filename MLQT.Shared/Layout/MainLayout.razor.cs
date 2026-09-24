@@ -914,15 +914,18 @@ public partial class MainLayout : IDisposable
     private async Task RunDeferredDependenciesAsync(bool combineStyleChecking = false)
     {
         if (NavState.HasDependencyAnalysisRun) return;
+
+        // Whether style checking really is carried by this pass - asked for, and not already done -
+        // decided once, so the log and the messages cannot describe a different pass from the one
+        // that runs (B257).
+        var combined = combineStyleChecking && !NavState.HasStyleCheckingRun;
+        var step = DeferredDependencyStep.For(combined);
+
         PowerManagementService.PreventSleep();
         try
         {
-            LogProcessStart("MainLayout", combineStyleChecking
-                ? "Running deferred dependency analysis + style checking (combined)"
-                : "Running deferred dependency analysis");
-            await InvokeAsync(() => Snackbar.Add(
-                combineStyleChecking ? "Analysing dependencies and checking style..." : "Analysing dependencies...",
-                Severity.Normal));
+            LogProcessStart("MainLayout", step.ProcessName);
+            await InvokeAsync(() => Snackbar.Add(step.Starting, Severity.Normal));
 
             var libraryInfos = GetLibraryInfos();
 
@@ -932,7 +935,7 @@ public partial class MainLayout : IDisposable
             Action<ModelNode>? postAnalysisAction = null;
             ConcurrentBag<LogMessage>? combinedFindings = null;
 
-            if (combineStyleChecking && !NavState.HasStyleCheckingRun)
+            if (combined)
             {
                 // Build model-to-settings lookup: each model belongs to a library with a repository
                 var modelToSettings = BuildModelToStyleSettingsMap();
@@ -984,10 +987,9 @@ public partial class MainLayout : IDisposable
             NavState.DependencyAnalysisCompleted();
             _step3deferred = false;
             _step3color = Color.Success;
-            LogProcessEnd("MainLayout", "Running deferred dependency analysis");
 
             // If style checking was combined, report findings and mark as complete
-            if (combineStyleChecking && combinedFindings != null)
+            if (combined && combinedFindings != null)
             {
                 var findingsList = combinedFindings.ToList();
                 if (findingsList.Count > 0)
@@ -1003,12 +1005,17 @@ public partial class MainLayout : IDisposable
                 _step4deferred = false;
                 _step4color = Color.Success;
                 _showStyleCheckingCompleteMessage = true;
-                LogProcessEnd("MainLayout", "Running deferred style checking (combined with dependency analysis)");
             }
+
+            // One end, under the name the start was logged with, after both halves are done. It was
+            // two: "dependency analysis" completing after the combined pass - so read against its
+            // start it carried the whole of style checking - and a "style checking" completion a
+            // moment later that had no start at all, which read as style checking taking no time.
+            LogProcessEnd("MainLayout", step.ProcessName);
 
             await InvokeAsync(() =>
             {
-                Snackbar.Add("Dependency analysis complete.", Severity.Success);
+                Snackbar.Add(step.Finished, Severity.Success);
                 StateHasChanged();
             });
         }

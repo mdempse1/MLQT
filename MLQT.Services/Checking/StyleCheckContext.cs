@@ -117,6 +117,14 @@ public sealed class StyleCheckContext
         var classIds = graph.ModelNodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
         IReadOnlySet<string>? knownModelIds = settings.ValidateModelReferences ? classIds : null;
 
+        // One unit lookup for the rule and the coverage measurer, so each (class, type) question is
+        // resolved once between them. Built separately they each did the resolving, and the
+        // measurer's copy had neither of the caches B174 gave the rule: coverage was 68% of a Claytex
+        // check, eight times the rule asking the same questions (B261).
+        var unitLookup = settings.CheckMissingUnits || collectCoverage
+            ? StyleChecking.CreateUnitLookup(graph)
+            : null;
+
         IReadOnlySet<string>? knownModelNames = null;
         if ((settings.SpellCheckDescription || settings.SpellCheckDocumentation) && spellChecker != null)
             knownModelNames = graph.ModelNodes
@@ -140,7 +148,7 @@ public sealed class StyleCheckContext
                 : null,
             // The rule resolves types the same way the Unit coverage dimension does, so the findings
             // and the dashboard describe the same gaps.
-            UnitLookup = settings.CheckMissingUnits ? StyleChecking.CreateUnitLookup(graph) : null,
+            UnitLookup = settings.CheckMissingUnits ? unitLookup : null,
             IsSimpleType = settings.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null,
             NamingConfig = settings.FollowNamingConvention ? settings.NamingConvention.ToConfig() : null,
             // Measured for what this repository tracks: a rule nobody enabled buys a tree walk
@@ -150,7 +158,7 @@ public sealed class StyleCheckContext
             // costs one walk, while not measuring it would make the report re-parse the class. The
             // narrowing happens where the report is assembled, in MetricsCalculator.
             Coverage = collectCoverage
-                ? new CoverageMeasurer(graph, CoverageDimensions.TrackedFor(settings), honorSuppressions)
+                ? new CoverageMeasurer(graph, CoverageDimensions.TrackedFor(settings), honorSuppressions, unitLookup)
                 : null,
         };
     }
