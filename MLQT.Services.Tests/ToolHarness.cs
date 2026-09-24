@@ -85,13 +85,15 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     /// <summary>The flags of the last <c>checkModel</c> — <c>simulate</c> is not a check.</summary>
     public (bool Simulate, bool Constraint) LastCheckFlags;
 
-    public Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true)
+    public Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         OpenFlags.Add((mustRead, changeDirectory));
         return Task.FromResult(Open(path));
     }
 
-    public Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false)
+    public Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         LastCheckFlags = (simulate, constraint);
         return Task.FromResult(Check(problem));

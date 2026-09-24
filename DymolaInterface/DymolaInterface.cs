@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using DymolaInterface.Interfaces;
 using System.Globalization;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
@@ -48,15 +49,103 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     private bool _disposed;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
 
-    public DymolaInterface(string dymolaPath = "", int portNumber = 8082, string hostname = "127.0.0.1")
+    /// <summary>
+    /// The per-command time-out a new interface starts with: five minutes, the limit every
+    /// command had before <see cref="CommandTimeout"/> made it configurable.
+    /// </summary>
+    public static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromSeconds(300);
+
+    /// <summary>
+    /// The longest time-out a command can be given: the largest delay a
+    /// <see cref="CancellationTokenSource"/> accepts, one millisecond short of
+    /// <see cref="uint.MaxValue"/> milliseconds (about 49.7 days). A larger value throws where
+    /// the token source is constructed - inside a command, where the failure surfaces as every
+    /// command failing - so it is rejected here, in front of the caller, instead. Use
+    /// <see cref="Timeout.InfiniteTimeSpan"/> for no limit.
+    /// </summary>
+    public static readonly TimeSpan MaxCommandTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
+    /// <summary>
+    /// How long a new interface keeps asking a Dymola that accepts the connection but does not
+    /// answer, before starting offline. Dymola's JSON-RPC server is single-threaded and answers
+    /// nothing while it runs a command, so a Dymola that is merely busy looks exactly like
+    /// that. An interface that starts offline still probes again on its next command, so this
+    /// only decides how long construction may block. A refused connection is final at once:
+    /// nothing is listening.
+    /// </summary>
+    public static readonly TimeSpan DefaultConnectionWindow = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long one probe waits for Dymola to answer, deliberately short and independent of
+    /// <see cref="CommandTimeout"/>: <see cref="StartDymolaProcessAsync"/> polls up to thirty
+    /// times while holding the command lock, so a long command budget - or an infinite one -
+    /// would wedge the interface for the rest of the session.
+    /// </summary>
+    private static readonly TimeSpan ConnectionProbeTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// How long the TCP connect of a probe may take. Windows retries a refused connection for
+    /// about two seconds before failing it - as long as <see cref="ConnectionProbeTimeout"/> -
+    /// so the connect gets a budget of its own that outlasts those retries, and "refused" is
+    /// reported as refused rather than as a busy Dymola worth waiting for.
+    /// </summary>
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
+
+    private TimeSpan _commandTimeout = DefaultCommandTimeout;
+
+    /// <summary>
+    /// How long one Dymola command may run before the call gives up and returns as if it had
+    /// failed, for calls that do not pass a time-out of their own. Read afresh for every
+    /// command. Accepts <see cref="Timeout.InfiniteTimeSpan"/> for no limit, and at most
+    /// <see cref="MaxCommandTimeout"/>. Dymola itself carries on with a command whose call has
+    /// given up, and answers nothing else until it finishes: commands sent in the meantime
+    /// fail too.
+    ///
+    /// Prefer the per-call <c>timeout</c> parameter where one interface is shared between
+    /// callers: this is a plain field, so two callers raising and restoring it around their own
+    /// long commands will race.
+    /// </summary>
+    public TimeSpan CommandTimeout
     {
+        get => _commandTimeout;
+        set => _commandTimeout = ValidateTimeout(value, nameof(value));
+    }
+
+    private static TimeSpan ValidateTimeout(TimeSpan value, string paramName)
+    {
+        if (value == Timeout.InfiniteTimeSpan || (value > TimeSpan.Zero && value <= MaxCommandTimeout))
+            return value;
+
+        throw new ArgumentOutOfRangeException(paramName, value,
+            $"The command time-out must be positive and at most {MaxCommandTimeout} - the longest " +
+            "delay a CancellationTokenSource accepts - or Timeout.InfiniteTimeSpan for no limit.");
+    }
+
+    /// <summary>
+    /// Connect to the Dymola on <paramref name="hostname"/>:<paramref name="portNumber"/>, if one
+    /// is there. A Dymola that accepts the connection but is busy with a command is asked again
+    /// until <paramref name="connectionWindow"/> closes - <see cref="DefaultConnectionWindow"/>
+    /// when not given, zero for a single probe - so construction can take that long. A refused
+    /// connection is final at once. Either way the interface starts offline when no Dymola
+    /// answered, and each command then probes once more before giving up.
+    /// </summary>
+    public DymolaInterface(string dymolaPath = "", int portNumber = 8082, string hostname = "127.0.0.1",
+        TimeSpan? connectionWindow = null)
+    {
+        var window = connectionWindow ?? DefaultConnectionWindow;
+        if (window < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(connectionWindow), window,
+                "The connection window must be zero, for a single probe, or positive.");
+
         _dymolaPath = dymolaPath;
         _portNumber = portNumber;
         _hostname = hostname;
         _dymolaUrl = $"http://{hostname}:{portNumber}";
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(300) };
+        // No client-wide limit: each request is bounded by CommandTimeout instead, which,
+        // unlike HttpClient.Timeout, can still be changed after the first request is sent.
+        _httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _rpcId = 0;
-        _isOffline = !IsDymolaRunning();
+        _isOffline = !ConnectWithin(window);
     }
 
     /// <summary>
@@ -85,7 +174,7 @@ public class DymolaInterface : IDymolaInterface, IDisposable
             for (int i = 0; i < 30; i++)
             {
                 await Task.Delay(1000);
-                if (IsDymolaRunning())
+                if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
                     return;
@@ -193,18 +282,67 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         catch { return false; }
     }
 
-    private bool IsDymolaRunning()
+    private enum ProbeResult { Answered, Busy, Unavailable }
+
+    /// <summary>
+    /// Keep probing while Dymola accepts the connection but does not answer, until
+    /// <paramref name="window"/> closes; stop at the first answer or refusal.
+    /// </summary>
+    private bool ConnectWithin(TimeSpan window)
     {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            // No delay needed between probes: a busy verdict always costs the full ConnectionProbeTimeout.
+            var result = Probe();
+            if (result != ProbeResult.Busy)
+                return result == ProbeResult.Answered;
+            if (elapsed.Elapsed >= window)
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// One connection probe. The TCP connect is made on its own first because a single request
+    /// cannot tell the two failures apart: a refused connection takes about two seconds to fail
+    /// on Windows, as long as the answer budget, so both would surface as the same
+    /// cancellation. A busy Dymola still completes the TCP handshake at once - the listening
+    /// socket's backlog accepts it - and only then fails to answer. Dymola is not calling accept
+    /// meanwhile, but the backlog does not fill up and start refusing: measured against a live
+    /// Dymola, the connect stayed at 0-1 ms through a 30-second busy period, including the ~30
+    /// connections the probing itself opens.
+    /// </summary>
+    private ProbeResult Probe()
+    {
+        try
+        {
+            using var connect = new CancellationTokenSource(ConnectTimeout);
+            using var tcp = new TcpClient();
+            tcp.ConnectAsync(_hostname, _portNumber, connect.Token).AsTask().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            return ProbeResult.Unavailable;
+        }
+
         try
         {
             _rpcId++;
             var request = new { method = "ping", @params = (object?)null, id = _rpcId };
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
-            var response = _httpClient.PostAsync(_dymolaUrl, content).GetAwaiter().GetResult();
-            return response.IsSuccessStatusCode;
+            using var limit = new CancellationTokenSource(ConnectionProbeTimeout);
+            var response = _httpClient.PostAsync(_dymolaUrl, content, limit.Token).GetAwaiter().GetResult();
+            return response.IsSuccessStatusCode ? ProbeResult.Answered : ProbeResult.Unavailable;
         }
-        catch { return false; }
+        catch (OperationCanceledException)
+        {
+            return ProbeResult.Busy;
+        }
+        catch
+        {
+            return ProbeResult.Unavailable;
+        }
     }
 
     public bool IsOfflineMode() => _isOffline;
@@ -361,30 +499,73 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     /// <summary>
     /// Issue a JSON-RPC call. Parameter transformation is applied via
     /// <see cref="FixJsonParameter"/> before serialization.
+    ///
+    /// <paramref name="timeout"/> replaces <see cref="CommandTimeout"/> for this call alone,
+    /// which is how a caller gives one long command its own budget on an interface other
+    /// callers share; <paramref name="cancellationToken"/> gives up on the command, whether it
+    /// is still queued behind another or already in flight. Either way the call returns null,
+    /// as for any failed command - an invalid <paramref name="timeout"/> is the only thing that
+    /// throws. Dymola carries on with a command either of them abandons, and answers nothing
+    /// else until it finishes.
+    ///
+    /// An offline interface probes once more before giving up, and comes back online if Dymola
+    /// answers: the Dymola it missed may only have been busy, or not started yet.
     /// </summary>
-    protected async Task<JsonElement?> CallDymolaFunctionAsync(string cmd, object?[]? parameters = null)
+    protected async Task<JsonElement?> CallDymolaFunctionAsync(string cmd, object?[]? parameters = null,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        if (_isOffline) return null;
+        var effectiveTimeout = timeout.HasValue ? ValidateTimeout(timeout.Value, nameof(timeout)) : _commandTimeout;
 
-        await _commandLock.WaitAsync();
         try
         {
+            await _commandLock.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller before it was sent.");
+            return null;
+        }
+
+        try
+        {
+            if (_isOffline)
+            {
+                if (Probe() != ProbeResult.Answered)
+                    return null;
+                _isOffline = false;
+            }
+
             _rpcId++;
+            int sentId = _rpcId;
             var fixedParams = FixJsonParameterList(parameters) ?? Array.Empty<object?>();
             var request = new
             {
                 method = cmd.Replace("\\", "\\\\"),
                 @params = fixedParams.Length > 0 || !cmd.Contains("(") ? fixedParams : null,
-                id = _rpcId
+                id = sentId
             };
 
             var jsonRequest = JsonSerializer.Serialize(request);
             var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync(_dymolaUrl, content);
-            var responseText = await response.Content.ReadAsStringAsync();
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            limit.CancelAfter(effectiveTimeout);
+            var response = await _httpClient.PostAsync(_dymolaUrl, content, limit.Token);
+            var responseText = await response.Content.ReadAsStringAsync(limit.Token);
 
             var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseText);
+
+            // A command we gave up on is still being worked on by Dymola, and its answer can
+            // arrive while a later command is waiting. Only the reply carrying this request's
+            // id is this command's result.
+            if (jsonResponse.TryGetProperty("id", out var answeredId)
+                && answeredId.ValueKind == JsonValueKind.Number
+                && !(answeredId.TryGetInt32(out var answered) && answered == sentId))
+            {
+                Console.Error.WriteLine(
+                    $"Dymola answered request {answeredId.GetRawText()} while '{cmd}' (request {sentId}) was waiting; discarding it.");
+                return null;
+            }
 
             if (jsonResponse.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Null)
             {
@@ -395,6 +576,15 @@ public class DymolaInterface : IDymolaInterface, IDisposable
             {
                 throw new Exception($"Dymola error: {errorObj}");
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller.");
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine(
+                $"Dymola command '{cmd}' gave up after {effectiveTimeout} (CommandTimeout); Dymola may still be running it.");
         }
         catch (Exception e)
         {
@@ -527,9 +717,10 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     /// command text as the JSON-RPC method name with no parameters, which is the
     /// form Dymola's scripting server evaluates verbatim.
     /// </summary>
-    public async Task<bool> ExecuteCommandAsync(string cmd)
+    public async Task<bool> ExecuteCommandAsync(string cmd, TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
     {
-        var result = await CallDymolaFunctionAsync(cmd, null);
+        var result = await CallDymolaFunctionAsync(cmd, null, timeout, cancellationToken);
         return GetBooleanResult(result);
     }
 
@@ -625,8 +816,10 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         => GetBooleanResult(await CallDymolaFunctionAsync("RequestOption",
             new object?[] { optionName, licenseDate, verbose }));
 
-    public async Task<bool> RunScriptAsync(string script, bool silent = false, string scriptDir = "")
-        => GetBooleanResult(await CallDymolaFunctionAsync("RunScript", new object?[] { script, silent, scriptDir }));
+    public async Task<bool> RunScriptAsync(string script, bool silent = false, string scriptDir = "",
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        => GetBooleanResult(await CallDymolaFunctionAsync("RunScript",
+            new object?[] { script, silent, scriptDir }, timeout, cancellationToken));
 
     public async Task<bool> SetDymolaCompilerAsync(string compiler, string[]? settings = null, bool mergeSettings = true)
         => GetBooleanResult(await CallDymolaFunctionAsync("SetDymolaCompiler",
@@ -654,13 +847,15 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     #region Models / files / FMU
 
     public async Task<bool> CheckConversionAsync(string library, string fromVersion, string[] oldVersions,
-        string reportPath, bool autoAddExtends)
+        string reportPath, bool autoAddExtends, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("checkConversion",
-            new object?[] { library, fromVersion, oldVersions, reportPath, autoAddExtends }));
+            new object?[] { library, fromVersion, oldVersions, reportPath, autoAddExtends },
+            timeout, cancellationToken));
 
-    public async Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false)
+    public async Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("checkModel",
-            new object?[] { problem, simulate, constraint }));
+            new object?[] { problem, simulate, constraint }, timeout, cancellationToken));
 
     public async Task<string> GetClassTextAsync(string fullName, bool includeAnnotations = false, bool formatted = false)
         => GetStringResult(await CallDymolaFunctionAsync("getClassText",
@@ -670,10 +865,11 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         => await CallDymolaFunctionAsync("getDependentLibraries", new object?[] { modelName, dependentModels });
 
     public async Task<bool> ImportFMUAsync(string fileName, bool includeAllVariables, bool integrate,
-        bool promptReplacement, string packageName, bool includeVariables, string modelName, bool sourceCodeImport)
+        bool promptReplacement, string packageName, bool includeVariables, string modelName, bool sourceCodeImport,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("importFMU",
             new object?[] { fileName, includeAllVariables, integrate, promptReplacement, packageName,
-                includeVariables, modelName, sourceCodeImport }));
+                includeVariables, modelName, sourceCodeImport }, timeout, cancellationToken));
 
     public async Task<bool> ImportInitialAsync(string dsName = "dsfinal.txt")
         => GetBooleanResult(await CallDymolaFunctionAsync("importInitial", new object?[] { dsName }));
@@ -724,9 +920,10 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     public async Task<bool> ExportInitialDsinAsync(string scriptName)
         => GetBooleanResult(await CallDymolaFunctionAsync("exportInitialDsin", new object?[] { scriptName }));
 
-    public async Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true)
+    public async Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("openModel",
-            new object?[] { path, mustRead, changeDirectory }));
+            new object?[] { path, mustRead, changeDirectory }, timeout, cancellationToken));
 
     public async Task<bool> OpenModelFileAsync(string modelName, string path = "", string version = "", bool newTab = false)
         => GetBooleanResult(await CallDymolaFunctionAsync("openModelFile",
@@ -750,25 +947,31 @@ public class DymolaInterface : IDymolaInterface, IDisposable
                 storeInitial, storeAllVariables, storeSimulator, storePlotFilenames }));
 
     public async Task<bool> SaveTotalModelAsync(string fileName, string modelName,
-        bool skipStandard = false, bool completePackage = false)
+        bool skipStandard = false, bool completePackage = false,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("saveTotalModel",
-            new object?[] { fileName, modelName, skipStandard, completePackage }));
+            new object?[] { fileName, modelName, skipStandard, completePackage }, timeout, cancellationToken));
 
     public async Task<bool> SetClassTextAsync(string parentName, string fullText)
         => GetBooleanResult(await CallDymolaFunctionAsync("setClassText",
             new object?[] { parentName, fullText }));
 
-    public async Task<bool> TranslateModelAsync(string problem)
-        => GetBooleanResult(await CallDymolaFunctionAsync("translateModel", new object?[] { problem }));
+    public async Task<bool> TranslateModelAsync(string problem, TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => GetBooleanResult(await CallDymolaFunctionAsync("translateModel", new object?[] { problem },
+            timeout, cancellationToken));
 
-    public async Task<bool> TranslateModelExportAsync(string modelName)
-        => GetBooleanResult(await CallDymolaFunctionAsync("translateModelExport", new object?[] { modelName }));
+    public async Task<bool> TranslateModelExportAsync(string modelName, TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => GetBooleanResult(await CallDymolaFunctionAsync("translateModelExport", new object?[] { modelName },
+            timeout, cancellationToken));
 
     public async Task<bool> TranslateModelFMUAsync(string modelToOpen, bool storeResult, string modelName,
-        string fmiVersion, string fmiType, bool includeSource, bool includeImage, bool includeVariables)
+        string fmiVersion, string fmiType, bool includeSource, bool includeImage, bool includeVariables,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("translateModelFMU",
             new object?[] { modelToOpen, storeResult, modelName, fmiVersion, fmiType,
-                includeSource, includeImage, includeVariables }));
+                includeSource, includeImage, includeVariables }, timeout, cancellationToken));
 
     #endregion
 
@@ -802,44 +1005,47 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     public async Task<bool> LinearizeModelAsync(string problem = "", double startTime = 0.0,
         double stopTime = 1.0, int numberOfIntervals = 0, double outputInterval = 0.0,
         string method = "Dassl", double tolerance = 0.0001, double fixedStepSize = 0.0,
-        string resultFile = "dslin")
+        string resultFile = "dslin", TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("linearizeModel",
             new object?[] { problem, startTime, stopTime, numberOfIntervals, outputInterval,
-                method, tolerance, fixedStepSize, resultFile }));
+                method, tolerance, fixedStepSize, resultFile }, timeout, cancellationToken));
 
     public async Task<bool> SimulateModelAsync(string problem = "", double startTime = 0.0,
         double stopTime = 1.0, int numberOfIntervals = 0, double outputInterval = 0.0,
         string method = "Dassl", double tolerance = 0.0001, double fixedStepSize = 0.0,
-        string resultFile = "dsres")
+        string resultFile = "dsres", TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => GetBooleanResult(await CallDymolaFunctionAsync("simulateModel",
             new object?[] { problem, startTime, stopTime, numberOfIntervals, outputInterval,
-                method, tolerance, fixedStepSize, resultFile }));
+                method, tolerance, fixedStepSize, resultFile }, timeout, cancellationToken));
 
     public async Task<JsonElement?> SimulateExtendedModelAsync(string problem, double startTime,
         double stopTime, int numberOfIntervals, double outputInterval, string method, double tolerance,
         double fixedStepSize, string resultFile, string[] initialNames, double[] initialValues,
-        string[] finalNames, bool autoLoad)
+        string[] finalNames, bool autoLoad, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => await CallDymolaFunctionAsync("simulateExtendedModel",
             new object?[] { problem, startTime, stopTime, numberOfIntervals, outputInterval, method,
-                tolerance, fixedStepSize, resultFile, initialNames, initialValues, finalNames, autoLoad });
+                tolerance, fixedStepSize, resultFile, initialNames, initialValues, finalNames, autoLoad },
+            timeout, cancellationToken);
 
     public async Task<JsonElement?> SimulateMultiExtendedModelAsync(string problem, double startTime,
         double stopTime, int numberOfIntervals, double outputInterval, string method, double tolerance,
         double fixedStepSize, string resultFile, string[] initialNames, double[][] initialValues,
-        string[] finalNames, string[] resultFileNames, bool autoLoad)
+        string[] finalNames, string[] resultFileNames, bool autoLoad,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => await CallDymolaFunctionAsync("simulateMultiExtendedModel",
             new object?[] { problem, startTime, stopTime, numberOfIntervals, outputInterval, method,
                 tolerance, fixedStepSize, resultFile, initialNames, initialValues, finalNames,
-                resultFileNames, autoLoad });
+                resultFileNames, autoLoad }, timeout, cancellationToken);
 
     public async Task<JsonElement?> SimulateMultiResultsModelAsync(string problem, double startTime,
         double stopTime, int numberOfIntervals, double outputInterval, string method, double tolerance,
         double fixedStepSize, string resultFile, string[] initialNames, double[][] initialValues,
-        string[] resultNames, string[] resultFileNames, bool autoLoad)
+        string[] resultNames, string[] resultFileNames, bool autoLoad,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => await CallDymolaFunctionAsync("simulateMultiResultsModel",
             new object?[] { problem, startTime, stopTime, numberOfIntervals, outputInterval, method,
                 tolerance, fixedStepSize, resultFile, initialNames, initialValues, resultNames,
-                resultFileNames, autoLoad });
+                resultFileNames, autoLoad }, timeout, cancellationToken);
 
     #endregion
 

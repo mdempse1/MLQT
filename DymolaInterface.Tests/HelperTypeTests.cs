@@ -153,7 +153,7 @@ public class HelperTypeTests
         using var di = new DymolaInterface("", 1, "127.0.0.1");
         Assert.True(di.IsOfflineMode());
 
-        var ok = await di.ExecuteCommandAsync("whatever");
+        var ok = await di.ExecuteCommandAsync("whatever", cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(ok);
 
         var s = await di.GetLastErrorAsync();

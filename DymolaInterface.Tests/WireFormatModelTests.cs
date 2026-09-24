@@ -13,7 +13,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.CheckConversionAsync("lib", "2026", new[] { "2025", "2024" }, "report.txt", true);
+        await h.Dymola.CheckConversionAsync("lib", "2026", new[] { "2025", "2024" }, "report.txt", true, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("checkConversion", h.Handler.LastRequest.Method);
         Assert.Equal(5, h.Handler.LastRequest.ParamCount);
         Assert.Equal(2, h.Handler.LastRequest.Param(2).GetArrayLength());
@@ -24,7 +24,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.CheckModelAsync("M");
+        await h.Dymola.CheckModelAsync("M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("checkModel", h.Handler.LastRequest.Method);
         Assert.False(h.Handler.LastRequest.Param(1).GetBoolean());
         Assert.False(h.Handler.LastRequest.Param(2).GetBoolean());
@@ -55,7 +55,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.ImportFMUAsync("f.fmu", true, true, false, "pkg", true, "M", false);
+        await h.Dymola.ImportFMUAsync("f.fmu", true, true, false, "pkg", true, "M", false, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("importFMU", h.Handler.LastRequest.Method);
         Assert.Equal(8, h.Handler.LastRequest.ParamCount);
     }
@@ -177,7 +177,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.OpenModelAsync("lib/package.mo");
+        await h.Dymola.OpenModelAsync("lib/package.mo", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("openModel", h.Handler.LastRequest.Method);
         Assert.True(h.Handler.LastRequest.Param(1).GetBoolean());
         Assert.True(h.Handler.LastRequest.Param(2).GetBoolean());
@@ -237,7 +237,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.SaveTotalModelAsync("out.mo", "M");
+        await h.Dymola.SaveTotalModelAsync("out.mo", "M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("saveTotalModel", h.Handler.LastRequest.Method);
     }
 
@@ -255,7 +255,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.TranslateModelAsync("M");
+        await h.Dymola.TranslateModelAsync("M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("translateModel", h.Handler.LastRequest.Method);
     }
 
@@ -264,7 +264,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.TranslateModelExportAsync("M");
+        await h.Dymola.TranslateModelExportAsync("M", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("translateModelExport", h.Handler.LastRequest.Method);
     }
 
@@ -273,7 +273,7 @@ public class WireFormatModelTests
     {
         using var h = new DymolaTestHarness();
         h.SetResultBool(true);
-        await h.Dymola.TranslateModelFMUAsync("M", true, "MyFMU", "2.0", "all", false, true, true);
+        await h.Dymola.TranslateModelFMUAsync("M", true, "MyFMU", "2.0", "all", false, true, true, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("translateModelFMU", h.Handler.LastRequest.Method);
         Assert.Equal(8, h.Handler.LastRequest.ParamCount);
         Assert.Equal("\"2.0\"", h.Handler.LastRequest.Param(3).GetString());

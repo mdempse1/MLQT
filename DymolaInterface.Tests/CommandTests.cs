@@ -23,7 +23,7 @@ public class CommandTests
         await _fixture.EnsureDymolaStartedAsync();
 
         // Act
-        var result = await _fixture.Dymola.ExecuteCommandAsync("Advanced.Define.DAEsolver = true");
+        var result = await _fixture.Dymola.ExecuteCommandAsync("Advanced.Define.DAEsolver = true", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - Command should execute without throwing exception
         Assert.True(true);
@@ -37,7 +37,7 @@ public class CommandTests
         await _fixture.EnsureDymolaStartedAsync();
 
         // Act
-        var result = await _fixture.Dymola.ExecuteCommandAsync("cd()");
+        var result = await _fixture.Dymola.ExecuteCommandAsync("cd()", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - Command should execute without throwing exception
         Assert.True(true);
@@ -50,7 +50,7 @@ public class CommandTests
         await _fixture.EnsureDymolaStartedAsync();
 
         // Act
-        var result = await _fixture.Dymola.ExecuteCommandAsync("cd(\"c:\\Temp\")");
+        var result = await _fixture.Dymola.ExecuteCommandAsync("cd(\"c:\\Temp\")", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - Command should execute without throwing exception
         Assert.True(true);

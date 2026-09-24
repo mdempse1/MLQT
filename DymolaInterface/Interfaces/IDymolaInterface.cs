@@ -18,10 +18,19 @@ namespace DymolaInterface.Interfaces;
 public interface IDymolaInterface
 {
     /// <summary>Opens a <c>.mo</c> file in the session.</summary>
-    Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true);
+    /// <param name="timeout">How long to wait for this command, or null for the session's
+    /// <c>CommandTimeout</c>.</param>
+    /// <param name="cancellationToken">Stops the wait. Dymola itself is not interrupted: it finishes
+    /// the command, and the session is only as usable afterwards as Dymola is.</param>
+    Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default);
 
     /// <summary>Runs <c>checkModel</c> on a class. True means it checked, not that it was silent.</summary>
-    Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false);
+    /// <param name="timeout">How long to wait for this command, or null for the session's
+    /// <c>CommandTimeout</c>.</param>
+    /// <param name="cancellationToken">Stops the wait; see <see cref="OpenModelAsync"/>.</param>
+    Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false,
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default);
 
     /// <summary>Clears the session's loaded classes.</summary>
     Task<bool> ClearAsync(bool fast = false);
