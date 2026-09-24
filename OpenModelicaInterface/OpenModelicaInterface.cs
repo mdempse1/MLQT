@@ -39,6 +39,30 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     public bool IsConnected => _socket != null && !_isDisposed;
 
     /// <summary>
+    /// How long one command may take before the session is given up on; <see cref="Timeout.InfiniteTimeSpan"/>
+    /// for no limit (B263).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A command that runs out of time ends the session</b>, not just the wait. omc is
+    /// spoken to over a ZeroMQ REQ socket, which must receive the reply to one request before it may
+    /// send the next — so once a reply has been given up on the socket is unusable, and omc is still
+    /// working on the abandoned command anyway. The socket is closed and omc killed, <see cref="IsConnected"/>
+    /// turns false, and the factory starts a fresh session for the next caller.</para>
+    ///
+    /// <para>Before this there was no limit at all: the receive blocked until omc answered, so a
+    /// long check hung its caller indefinitely, and <c>OpenModelicaSettings.CommandTimeoutMs</c> was a
+    /// setting nothing read.</para>
+    /// </remarks>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long omc may take to start and answer its first command. Replaces a fixed two-second
+    /// sleep, which was both too long for a fast start and no bound at all on a slow one — the
+    /// version query after it waited as long as omc took.
+    /// </summary>
+    public TimeSpan StartupTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Starts the OMC process and establishes ZMQ connection.
     /// </summary>
     public async Task StartAsync()
@@ -76,10 +100,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardOutput));
         _ = Task.Run(() => ConsumeStreamAsync(_omcProcess.StandardError));
 
-        // Wait for OMC to start its ZMQ server
-        await Task.Delay(2000);
-
-        // Connect to OMC via ZMQ
+        // Connect straight away: ZeroMQ keeps trying until omc has bound its port, and holds the
+        // first request until then, so the question is only how long to wait for the answer.
         try
         {
             _socket = new RequestSocket();
@@ -90,18 +112,25 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             throw new InvalidOperationException($"Failed to connect to OMC on port {_port}", ex);
         }
 
-        // Verify connection by getting version
+        // Verify connection by getting version, within StartupTimeout.
+        string version;
         try
         {
-            var version = await GetVersionAsync();
-            if (string.IsNullOrEmpty(version))
-            {
-                throw new InvalidOperationException("Failed to establish communication with OMC");
-            }
+            version = UnquoteString(await SendCommandAsync("getVersion()", StartupTimeout, "start"));
+        }
+        catch (TimeoutException)
+        {
+            throw;   // already says what happened, and the session has been closed
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException("OMC started but failed to respond to commands", ex);
+        }
+
+        if (string.IsNullOrEmpty(version))
+        {
+            Abandon();
+            throw new InvalidOperationException("Failed to establish communication with OMC");
         }
     }
 
@@ -115,10 +144,14 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             while (!_isDisposed && reader != null)
             {
                 var line = await reader.ReadLineAsync();
-                if (line != null)
+                if (line == null)
                 {
-                    Debug.WriteLine($"OMC: {line}");
+                    // End of stream: omc has exited. Looping on here spun a thread at full speed for
+                    // as long as this object lived, which a session closed after a timeout does.
+                    break;
                 }
+
+                Debug.WriteLine($"OMC: {line}");
             }
         }
         catch (ObjectDisposedException)
@@ -132,31 +165,133 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// </summary>
     /// <param name="command">The OMC command to execute</param>
     /// <returns>The response from OMC</returns>
-    public async Task<string> SendCommandAsync(string command)
+    /// <param name="cancellationToken">Gives up on the command, whether still queued behind another
+    /// or already sent. Once sent, giving up closes the session — see <see cref="CommandTimeout"/>.</param>
+    /// <exception cref="TimeoutException">omc did not answer within <see cref="CommandTimeout"/>; the
+    /// session has been closed.</exception>
+    /// <exception cref="OperationCanceledException">The token fired.</exception>
+    public Task<string> SendCommandAsync(string command, CancellationToken cancellationToken = default)
+        => SendCommandAsync(command, CommandTimeout, "command", cancellationToken);
+
+    private async Task<string> SendCommandAsync(
+        string command, TimeSpan timeout, string what, CancellationToken cancellationToken = default)
     {
         if (!IsConnected)
         {
             throw new InvalidOperationException("Not connected to OMC. Call StartAsync() first.");
         }
 
-        await _commandLock.WaitAsync();
+        // Cancelled while queued: nothing has been sent, so the session is untouched.
+        await _commandLock.WaitAsync(cancellationToken);
         try
         {
-            // Send command via ZMQ
-            await Task.Run(() => _socket!.SendFrame(command));
+            var socket = _socket!;
 
-            // Receive response via ZMQ (message boundary handled by ZMQ)
-            var response = await Task.Run(() => _socket!.ReceiveFrameString());
+            // Sent and received against one clock, both in slices, so the wait can end on the time
+            // limit or the token rather than only when omc answers. The send needs it as much as the
+            // receive: a REQ socket with no peer blocks in SendFrame until one connects, so an omc
+            // that never binds its port - or one still starting - held a bare send for as long as it
+            // took, and a start-up limit on the receive alone bounded nothing.
+            var response = await Task.Run(() => Exchange(socket, command, timeout, cancellationToken));
+            if (response is null)
+            {
+                Abandon();
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new TimeoutException(what == "start"
+                    ? $"OpenModelica did not start and answer within {timeout.TotalSeconds:0.#}s; it has been stopped."
+                    : $"OpenModelica did not answer {Describe(command)} within {timeout.TotalSeconds:0.#}s; the session has been closed.");
+            }
 
-            return response ?? "";
+            return response;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException)
         {
             throw new InvalidOperationException($"Failed to send command to OMC: {command}", ex);
         }
         finally
         {
             _commandLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Sends <paramref name="command"/> and returns the reply, or null when the time limit passed or
+    /// the token fired first - at either end.
+    /// </summary>
+    private static string? Exchange(
+        RequestSocket socket, string command, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var clock = Stopwatch.StartNew();
+
+        var sent = false;
+        while (!sent)
+        {
+            if (NextWait(timeout, clock, cancellationToken) is not { } wait)
+                return null;
+            sent = socket.TrySendFrame(wait, command);
+        }
+
+        while (true)
+        {
+            if (NextWait(timeout, clock, cancellationToken) is not { } wait)
+                return null;
+            if (socket.TryReceiveFrameString(wait, out var reply))
+                return reply ?? "";
+        }
+    }
+
+    /// <summary>How long the next slice of a wait may be, or null when the wait is over.</summary>
+    private static TimeSpan? NextWait(TimeSpan timeout, Stopwatch clock, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+            return null;
+
+        var slice = TimeSpan.FromMilliseconds(100);
+        if (timeout == Timeout.InfiniteTimeSpan)
+            return slice;
+
+        var left = timeout - clock.Elapsed;
+        if (left <= TimeSpan.Zero)
+            return null;
+        if (left >= slice)
+            return slice;
+
+        // Never less than a millisecond. NetMQ takes the wait in whole milliseconds, and a remainder
+        // under one truncates to zero - which it does not treat as "do not wait": measured, a 1 ms
+        // start-up limit then waited out the whole start of omc.
+        return left < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : left;
+    }
+
+    /// <summary>The command as a message can show it: its name, not a whole script.</summary>
+    private static string Describe(string command)
+    {
+        var name = command.Split('(', 2)[0].Trim();
+        return name.Length is > 0 and <= 60 ? $"'{name}'" : "a command";
+    }
+
+    /// <summary>
+    /// Closes a session that can no longer be used: the REQ socket is stuck waiting for a reply that
+    /// was given up on, and omc is still busy with the command behind it. Leaves the object undisposed
+    /// but disconnected, so the factory replaces it.
+    /// </summary>
+    private void Abandon()
+    {
+        try { _socket?.Dispose(); } catch { /* already unusable */ }
+        _socket = null;
+
+        if (_omcProcess != null)
+        {
+            try
+            {
+                if (!_omcProcess.HasExited)
+                    _omcProcess.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Gone already, or not ours to kill.
+            }
+            _omcProcess.Dispose();
+            _omcProcess = null;
         }
     }
 
@@ -212,11 +347,11 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// Loads a Modelica file.
     /// </summary>
     /// <param name="filePath">Path to .mo file</param>
-    public async Task<bool> LoadFileAsync(string filePath)
+    public async Task<bool> LoadFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
         // Escape backslashes for Windows paths
         var escapedPath = filePath.Replace("\\", "/");
-        var response = await SendCommandAsync($"loadFile(\"{escapedPath}\")");
+        var response = await SendCommandAsync($"loadFile(\"{escapedPath}\")", cancellationToken);
         return ParseBoolean(response);
     }
 
@@ -224,9 +359,9 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// Checks a model for errors.
     /// </summary>
     /// <param name="modelName">Fully qualified model name</param>
-    public async Task<bool> CheckModelAsync(string modelName)
+    public async Task<bool> CheckModelAsync(string modelName, CancellationToken cancellationToken = default)
     {
-        var response = await SendCommandAsync($"checkModel({modelName})");
+        var response = await SendCommandAsync($"checkModel({modelName})", cancellationToken);
         return response.Contains("completed successfully.");
     }
 

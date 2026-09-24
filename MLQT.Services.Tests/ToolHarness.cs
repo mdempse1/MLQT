@@ -38,6 +38,16 @@ public abstract class FakeTool
     /// <summary>Thrown from every read of the log.</summary>
     public Exception? ThrowOnRead;
 
+    /// <summary>Whether a given class runs out of time. Each tool reports that its own way: Dymola
+    /// answers nothing and says so in its outcome, omc throws <see cref="TimeoutException"/>.</summary>
+    public Func<string, bool>? TimesOut;
+
+    /// <summary>Whether opening a given file runs out of time, reported the same ways.</summary>
+    public Func<string, bool>? OpenTimesOut;
+
+    /// <summary>A check that is still running when the caller cancels it — the only way it ends.</summary>
+    public bool WaitsForCancel;
+
     /// <summary>Each call, as a verb: <c>open</c>, <c>clear</c>, <c>clearLog</c>, <c>check</c>, <c>read</c>.</summary>
     public readonly List<string> Calls = [];
 
@@ -85,23 +95,57 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     /// <summary>The flags of the last <c>checkModel</c> — <c>simulate</c> is not a check.</summary>
     public (bool Simulate, bool Constraint) LastCheckFlags;
 
+    /// <summary>What the real interface reports about the last command: answered, or not.</summary>
+    public CommandOutcome LastOutcome { get; private set; } = CommandOutcome.Answered;
+
     public Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
         TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         OpenFlags.Add((mustRead, changeDirectory));
+        if (OpenTimesOut?.Invoke(path) == true)
+        {
+            Calls.Add("open");
+            LastOutcome = CommandOutcome.TimedOut;
+            return Task.FromResult(false);
+        }
+
+        LastOutcome = CommandOutcome.Answered;
         return Task.FromResult(Open(path));
     }
 
-    public Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false,
+    public async Task<bool> CheckModelAsync(string problem, bool simulate = false, bool constraint = false,
         TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         LastCheckFlags = (simulate, constraint);
-        return Task.FromResult(Check(problem));
+        if (WaitsForCancel)
+        {
+            Calls.Add("check");
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                LastOutcome = CommandOutcome.Cancelled;
+                return false;
+            }
+        }
+
+        if (TimesOut?.Invoke(problem) == true)
+        {
+            Calls.Add("check");
+            LastOutcome = CommandOutcome.TimedOut;
+            return false;
+        }
+
+        LastOutcome = CommandOutcome.Answered;
+        return Check(problem);
     }
 
     public Task<bool> ClearAsync(bool fast = false)
     {
         Calls.Add("clear");
+        LastOutcome = CommandOutcome.Answered;
         return Task.FromResult(true);
     }
 
@@ -109,10 +153,16 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     {
         Calls.Add("clearLog");
         Buffer = "";
+        LastOutcome = CommandOutcome.Answered;
         return Task.FromResult(true);
     }
 
-    public Task<string> GetLastErrorAsync() => Task.FromResult(Read(draining: false));
+    public Task<string> GetLastErrorAsync()
+    {
+        var said = Read(draining: false);
+        LastOutcome = CommandOutcome.Answered;
+        return Task.FromResult(said);
+    }
 }
 
 /// <summary>
@@ -121,9 +171,33 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
 /// </summary>
 public sealed class FakeOpenModelica : FakeTool, IOpenModelicaInterface
 {
-    public Task<bool> LoadFileAsync(string filePath) => Task.FromResult(Open(filePath));
+    public Task<bool> LoadFileAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        if (OpenTimesOut?.Invoke(filePath) == true)
+        {
+            Calls.Add("open");
+            throw new TimeoutException("the fake omc ran out of time opening the file");
+        }
 
-    public Task<bool> CheckModelAsync(string modelName) => Task.FromResult(Check(modelName));
+        return Task.FromResult(Open(filePath));
+    }
+
+    public async Task<bool> CheckModelAsync(string modelName, CancellationToken cancellationToken = default)
+    {
+        if (WaitsForCancel)
+        {
+            Calls.Add("check");
+            await Task.Delay(Timeout.Infinite, cancellationToken);   // throws, as the real one does
+        }
+
+        if (TimesOut?.Invoke(modelName) == true)
+        {
+            Calls.Add("check");
+            throw new TimeoutException("the fake omc ran out of time checking");
+        }
+
+        return Check(modelName);
+    }
 
     public Task<string> GetErrorStringAsync() => Task.FromResult(Read(draining: true));
 

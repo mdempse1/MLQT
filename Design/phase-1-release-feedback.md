@@ -1454,9 +1454,9 @@ combined pass, its end as "dependency analysis", and a style-checking completion
 read by name the dependency half carried the whole four minutes. `DeferredDependencyStep` names the
 pass once for both ends and both messages, decided from whether style checking really was carried.
 
-### WP14 — External tools, second pass
+### WP14 — External tools, second pass — **✅ complete 2026-09-24**
 
-**B262, B263** · 2 items · M and M · **B263 is the item; B262 is half of its mechanism, and has grown one of its own**
+**B262 ✅, B263 ✅** · 2 items · M and M · **B263 is the item; B262 is half of its mechanism, and has grown one of its own**
 
 What the user asked for is one thing: *let me give the tool longer for a model that takes longer*.
 Underneath it the two tools are in different states and neither is right — Dymola is about to have a
@@ -1480,6 +1480,24 @@ not B263 is done.
 
 **The Dymola half waits on PR #9 merging; the OpenModelica half does not.** Start there if the review
 is still open — it is the tool with no timeout at all, which is the worse of the two states.
+
+**What was done (2026-09-24).** PR #9 had merged to `main` only, so `main` came into `backlog` first,
+and the merge needed one fix: B229's `IDymolaInterface` still named the old signatures. Then the plan
+as written, as one change across both tools:
+
+- **B262's two defects first**: `SetOfflineMode(true)` holds commands back through a flag the probe
+  cannot clear, and the Dymola constructor and start-up run on the thread pool.
+- **A time limit per tool**, in the External Tools tab, read at last by omc — whose send had to be
+  bounded as well as its receive, and whose waits must never be under a millisecond — and applied to
+  Dymola through PR #9's `CommandTimeout`.
+- **A timeout is not a failed model.** Dymola answers `false` whatever went wrong, so `LastOutcome`
+  says why; omc throws and closes its session. Both services report "ran out of time" with the
+  setting's name, do not ask the tool for its log afterwards, and stop a package run there.
+- **Cancel ends a check in flight**, because the token now reaches the check.
+
+Found on the way and fixed: `CodeReview` had never applied the OpenModelica settings, so the path and
+port in the tab never reached omc — the sibling shape this section warned of, one level up — and omc's
+stdout reader spun a thread once omc exited. All ten suites pass, the two live-tool ones included.
 
 ---
 
@@ -1668,7 +1686,8 @@ WP8 ✅ test-harness fidelity (B205, B212) — independent; before WP2 if the su
 WP10 ✅ B218 ▸ B179 ▸ B196 (MCP) — complete 2026-09-23
 WP13 ✅ B261 ▸ B257 — complete 2026-09-24: coverage shares the rule's unit lookup, 6m51s → 4m21s
                        on Claytex; the combined pass names itself at both ends of the log
-WP14  B263 across both tools, with B262 as its Dymola half — the omc half is not blocked by PR #9
+WP14 ✅ B262 ▸ B263 — complete 2026-09-24: a time limit per tool, Cancel reaches a running check,
+                       a timeout is reported as one; main (PR #9) merged into backlog first
 WP15 ✅ B268 the library index — complete 2026-09-23: an encrypted library is never loaded
                        beside source for the same library; B280 found doing it
 WP16 ✅ B281 ▸ B282 — complete 2026-09-24: server GC in every host (Claytex 4m13s → 70.5s), and

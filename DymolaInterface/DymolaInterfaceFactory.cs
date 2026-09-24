@@ -39,7 +39,12 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             if (_instance != null)
             {
                 if (await _instance.IsAliveAsync())
+                {
+                    // Applied on every hand-out rather than only at creation, so a time limit changed
+                    // in the settings reaches the session already open.
+                    _instance.CommandTimeout = _dymolaSettings.CommandTimeout;
                     return _instance;
+                }
 
                 // Dropped and rebuilt rather than reconnected: the instance owns an HttpClient and a
                 // process handle that both describe the session that has gone.
@@ -47,17 +52,23 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                 _instance = null;
             }
 
-            // Create instance with settings
-            _instance = new DymolaInterface(
-                dymolaPath: _dymolaSettings.DymolaPath,
-                portNumber: _dymolaSettings.PortNumber,
-                hostname: _dymolaSettings.HostAddress
-            );
+            // On the thread pool, both of them (B262). The constructor waits out a Dymola that
+            // accepts the connection but is too busy to answer - up to its 30-second connection
+            // window, synchronously - and a caller on the UI thread arrives here holding it, because
+            // an uncontended lock is taken without yielding. Starting Dymola is the same wait in
+            // another form: its loop resumes on the caller's context after each delay and then
+            // probes synchronously. Either one froze the window.
+            var settings = _dymolaSettings;
+            _instance = await Task.Run(() => new DymolaInterface(
+                dymolaPath: settings.DymolaPath,
+                portNumber: settings.PortNumber,
+                hostname: settings.HostAddress));
+            _instance.CommandTimeout = settings.CommandTimeout;
 
-            //Open Dymola
             if (_instance.IsOfflineMode())
             {
-                await _instance.StartDymolaProcessAsync();
+                var starting = _instance;
+                await Task.Run(starting.StartDymolaProcessAsync);
             }
 
             return _instance;

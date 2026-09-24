@@ -126,9 +126,15 @@ The library automatically handles response parsing based on the expected return 
 
 #### Connection Management
 
-- `StartAsync()` - Starts the OMC process and establishes communication
-- `IsConnected` - Property indicating if OMC is running
+- `StartAsync()` - Starts the OMC process and establishes communication, waiting up to `StartupTimeout` for omc to answer (throws `TimeoutException` and stops omc if it does not)
+- `IsConnected` - Property indicating if OMC is running. False after a command ran out of time or was cancelled - see below
 - `ExitAsync()` - Gracefully shuts down OMC
+
+#### Time limits
+
+- `CommandTimeout` - How long one command may take (default 60 s; `Timeout.InfiniteTimeSpan` for no limit). `OpenModelicaSettings.CommandTimeoutMs` sets it through the factory, 0 meaning no limit
+- `StartupTimeout` - How long `StartAsync` waits for omc to answer (default 5 s; `OpenModelicaSettings.StartupTimeoutMs`)
+- **A command that runs out of time, or is cancelled after it was sent, closes the session.** omc is spoken to over a ZeroMQ REQ socket, which cannot send again until it has received, and omc is still working on the command anyway - so the socket is closed, omc is stopped, `IsConnected` turns false, and the factory starts a fresh session for the next caller. The command throws `TimeoutException` or `OperationCanceledException`
 
 #### Version Information
 
@@ -166,7 +172,7 @@ The library automatically handles response parsing based on the expected return 
 
 #### Custom Commands
 
-- `SendCommandAsync(command)` - Sends a raw OMC scripting command
+- `SendCommandAsync(command, cancellationToken)` - Sends a raw OMC scripting command, bounded by `CommandTimeout`
 
 ## Examples
 

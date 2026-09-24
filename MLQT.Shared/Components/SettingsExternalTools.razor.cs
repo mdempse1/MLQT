@@ -15,6 +15,33 @@ public partial class SettingsExternalTools : IDisposable
     private bool _showDymolaWarning = false;
     private bool _showOpenModelicaWarning = false;
 
+    /// <summary>
+    /// The largest limit the field accepts: the settings hold milliseconds in an <c>int</c>, which
+    /// stops at about 24.8 days. Nothing needs longer, and nothing longer could be stored.
+    /// </summary>
+    internal const int MaxTimeLimitSeconds = int.MaxValue / 1000;
+
+    /// <summary>
+    /// Each tool's check time limit, shown in seconds and kept in milliseconds (B263). One field per
+    /// tool, and the same one for both, because a user asking for longer asks it of whichever tool
+    /// they are using - and the tool left without a setting is the one whose silence reads as
+    /// agreement (B170).
+    /// </summary>
+    internal int DymolaTimeLimitSeconds
+    {
+        get => _settings.Dymola.CommandTimeoutMs / 1000;
+        set => _settings.Dymola.CommandTimeoutMs = ToMilliseconds(value);
+    }
+
+    /// <inheritdoc cref="DymolaTimeLimitSeconds"/>
+    internal int OpenModelicaTimeLimitSeconds
+    {
+        get => _settings.OpenModelica.CommandTimeoutMs / 1000;
+        set => _settings.OpenModelica.CommandTimeoutMs = ToMilliseconds(value);
+    }
+
+    private static int ToMilliseconds(int seconds) => Math.Clamp(seconds, 0, MaxTimeLimitSeconds) * 1000;
+
     protected override void OnInitialized()
     {
         NavState.OnSaveSettings += SaveSettings;

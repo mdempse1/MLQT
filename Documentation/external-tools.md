@@ -27,6 +27,7 @@ If auto-detection succeeds, the path is pre-filled. If your tool is installed in
 |-------|-------------|
 | **Path to Dymola Executable** | The full path to `dymola.exe`. Click the folder icon to browse — MLQT navigates to the selected folder and looks for `bin64/dymola.exe`. |
 | **Port Number** | The port Dymola uses for its HTTP JSON-RPC interface. Default: `8082`. Change this if the default conflicts with another service. |
+| **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `300` (five minutes). `0` means no limit. |
 
 If the specified executable is not found, a warning message appears below the path field.
 
@@ -36,6 +37,26 @@ If the specified executable is not found, a warning message appears below the pa
 |-------|-------------|
 | **Path to OpenModelica Compiler Executable** | The full path to `omc.exe`. Click the folder icon to browse — MLQT navigates to the selected folder and looks for `bin/omc.exe`. |
 | **Port Number** | The port used for the ZeroMQ communication channel. Default: `13027`. |
+| **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `60`. `0` means no limit. |
+
+### When a check runs out of time
+
+A large model can take longer to check than the limit allows. That is not the same as the model
+being wrong, so MLQT does not report it as a failed check: the result says the tool **ran out of
+time**, names the class, and points to **Check time limit** above. A check over a package stops at
+the first class that runs out of time, because the tool is still busy with it (Dymola) or has been
+restarted (OpenModelica), and every class after it would wait out the same limit.
+
+The two tools are left in different states, and the result says which:
+
+- **Dymola cannot be interrupted.** It carries on with the check and answers nothing else until it
+  finishes, so a check started straight afterwards waits for it.
+- **OpenModelica's session is closed**, because its connection cannot be reused once a reply has
+  been given up on. The next check starts a fresh session, which takes a second or two.
+
+**Cancel** now ends a check that is already running, not only the ones still waiting their turn. The
+tools themselves are interrupted in the same way as above: Dymola finishes the check it was given,
+and OpenModelica's session is closed.
 
 ## Using External Tool Checks
 

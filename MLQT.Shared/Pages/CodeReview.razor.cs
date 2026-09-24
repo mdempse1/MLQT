@@ -362,7 +362,11 @@ public partial class CodeReview : IAsyncDisposable
             _settings.Dymola = await SettingsService.GetAsync("Dymola", new DymolaSettings());
             _settings.OpenModelica = await SettingsService.GetAsync("OpenModelica", new OpenModelicaSettings());
 
-            DymolaCheckingService.UpdateSettings(_settings.Dymola);            
+            // Both tools, which it was not: only Dymola's settings reached its service, so the path,
+            // port - and now the time limit - a user set for OpenModelica were never applied, and omc
+            // ran on its defaults whatever the settings tab said (B263).
+            DymolaCheckingService.UpdateSettings(_settings.Dymola);
+            OpenModelicaCheckingService.UpdateSettings(_settings.OpenModelica);
         }
         catch (Exception ex)
         {

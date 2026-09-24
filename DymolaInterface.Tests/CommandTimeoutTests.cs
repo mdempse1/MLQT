@@ -467,6 +467,105 @@ public class CommandTimeoutTests
     }
 
     /// <summary>
+    /// B263: every command answers false when it gets no result, whatever the reason, and the
+    /// checking service needs the reason - a check that ran out of time is not a failed model, and
+    /// asking Dymola for its log afterwards waits out the limit again. LastOutcome says which.
+    /// </summary>
+    [Fact]
+    public async Task LastOutcome_AfterAnAnswer_IsAnswered()
+    {
+        using var h = new DymolaTestHarness();
+        h.SetResultBool(false);   // Dymola's own "no" is still an answer
+
+        Assert.False(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: Test));
+        Assert.Equal(CommandOutcome.Answered, h.Dymola.LastOutcome);
+    }
+
+    [Fact]
+    public async Task LastOutcome_AfterRunningOutOfTime_IsTimedOut()
+    {
+        using var h = new DymolaTestHarness();
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+        h.Dymola.CommandTimeout = TimeSpan.FromMilliseconds(200);
+
+        Assert.False(await h.Dymola.ExecuteCommandAsync("slowCommand()", cancellationToken: Test));
+        Assert.Equal(CommandOutcome.TimedOut, h.Dymola.LastOutcome);
+    }
+
+    [Fact]
+    public async Task LastOutcome_AfterTheCallerCancels_IsCancelled()
+    {
+        using var h = new DymolaTestHarness();
+        h.Handler.ResponseDelay = TimeSpan.FromSeconds(20);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        Assert.False(await h.Dymola.ExecuteCommandAsync("slowCommand()", cancellationToken: cancel.Token));
+        Assert.Equal(CommandOutcome.Cancelled, h.Dymola.LastOutcome);
+    }
+
+    [Fact]
+    public async Task LastOutcome_WhileHeldOffline_IsOffline()
+    {
+        using var h = new DymolaTestHarness();
+        h.Dymola.SetOfflineMode(true);
+
+        Assert.False(await h.Dymola.ExecuteCommandAsync("command()", cancellationToken: Test));
+        Assert.Equal(CommandOutcome.Offline, h.Dymola.LastOutcome);
+    }
+
+    /// <summary>
+    /// B262: offline because the caller said so is not undone by the next command's probe. Before
+    /// the two were kept apart, the probe found this Dymola answering, cleared the flag and ran the
+    /// command - so <c>SetOfflineMode(true)</c> held nothing back, and the only test of it asserted
+    /// that the flag round-tripped.
+    /// </summary>
+    [Fact]
+    public async Task SetOfflineMode_HoldsCommandsBack_EvenWhileDymolaAnswers()
+    {
+        using var server = new BusyServer(TimeSpan.Zero);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+        Assert.False(dymola.IsOfflineMode());   // it is there, and answering
+
+        dymola.SetOfflineMode(true);
+        var ok = await dymola.ExecuteCommandAsync("command()", cancellationToken: Test);
+
+        Assert.False(ok);
+        Assert.True(dymola.IsOfflineMode());
+        Assert.False(await dymola.IsAliveAsync());
+    }
+
+    [Fact]
+    public async Task SetOfflineModeFalse_ReleasesTheHold()
+    {
+        using var server = new BusyServer(TimeSpan.Zero);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+        dymola.SetOfflineMode(true);
+
+        dymola.SetOfflineMode(false);
+        var ok = await dymola.ExecuteCommandAsync("command()", cancellationToken: Test);
+
+        Assert.True(ok);
+        Assert.False(dymola.IsOfflineMode());
+    }
+
+    /// <summary>
+    /// Having stopped Dymola, a later command must not reconnect to whatever else is listening on
+    /// the port - another Dymola, started by somebody else. The server here stands for that one.
+    /// </summary>
+    [Fact]
+    public async Task AfterStopDymolaProcess_ACommandDoesNotReconnectToWhateverAnswersNext()
+    {
+        using var server = new BusyServer(TimeSpan.Zero);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+
+        await dymola.StopDymolaProcessAsync();
+        var ok = await dymola.ExecuteCommandAsync("command()", cancellationToken: Test);
+
+        Assert.False(ok);
+        Assert.True(dymola.IsOfflineMode());
+    }
+
+    /// <summary>
     /// Stands in for Dymola's single-threaded JSON-RPC server: while it is busy, every
     /// connection is accepted - the listening socket completes the handshake - and never
     /// answered; after that, each request gets a JSON-RPC success.

@@ -40,4 +40,11 @@ public interface IDymolaInterface
 
     /// <summary>The log for the commands since it was last cleared.</summary>
     Task<string> GetLastErrorAsync();
+
+    /// <summary>
+    /// What became of the last command: answered, or not sent, timed out, cancelled or failed. A
+    /// <c>false</c> from <see cref="CheckModelAsync"/> means the model failed only when this says
+    /// <see cref="CommandOutcome.Answered"/>.
+    /// </summary>
+    CommandOutcome LastOutcome { get; }
 }

@@ -34,15 +34,36 @@ public class OpenModelicaSettings
     public int DefaultNumberOfIntervals { get; set; } = 500;
 
     /// <summary>
-    /// Timeout for starting OMC process (milliseconds).
+    /// How long omc may take to start and answer its first command (milliseconds); 0 for no limit.
     /// </summary>
     public int StartupTimeoutMs { get; set; } = 5000;
 
     /// <summary>
-    /// Timeout for individual commands (milliseconds).
-    /// Set to 0 for no timeout.
+    /// How long one command may take before the session is given up on (milliseconds); 0 for no
+    /// limit. A command that runs out of time closes the session, because omc cannot be interrupted
+    /// and its socket cannot be reused; the next command starts a fresh one.
     /// </summary>
+    /// <remarks>
+    /// Carried since this class was written and read by nothing until B263, so until then an omc
+    /// check had no limit at all whatever this said.
+    /// </remarks>
     public int CommandTimeoutMs { get; set; } = 60000;
+
+    /// <summary><see cref="CommandTimeoutMs"/> as a span: infinite for 0, the default for a negative
+    /// value, which the dialog does not allow and a hand-edited settings file might.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan CommandTimeout => ToSpan(CommandTimeoutMs, 60000);
+
+    /// <summary><see cref="StartupTimeoutMs"/> as a span, on the same terms.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan StartupTimeout => ToSpan(StartupTimeoutMs, 5000);
+
+    private static TimeSpan ToSpan(int milliseconds, int fallback) => milliseconds switch
+    {
+        0 => Timeout.InfiniteTimeSpan,
+        < 0 => TimeSpan.FromMilliseconds(fallback),
+        _ => TimeSpan.FromMilliseconds(milliseconds),
+    };
 
     /// <summary>
     /// Whether to automatically load Modelica Standard Library on startup.

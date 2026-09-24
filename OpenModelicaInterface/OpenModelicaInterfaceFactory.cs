@@ -27,14 +27,30 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
         {
             if (_instance != null)
             {
-                return _instance;
+                // A session a timed-out command closed is not handed back: its socket is gone and omc
+                // with it (see OpenModelicaInterface.CommandTimeout). Replaced, not reconnected.
+                if (_instance.IsConnected)
+                {
+                    // Applied on every hand-out, so a limit changed in the settings reaches the
+                    // session already running.
+                    _instance.CommandTimeout = _omcSettings.CommandTimeout;
+                    return _instance;
+                }
+
+                _instance.Dispose();
+                _instance = null;
             }
 
-            // Create instance with settings
+            // Create instance with settings. The two limits are the ones OpenModelicaSettings has
+            // carried since it was written and nothing read until B263.
             _instance = new OpenModelicaInterface(
                 omcPath: _omcSettings.OmcPath,
                 port: _omcSettings.PortNumber
-            );
+            )
+            {
+                CommandTimeout = _omcSettings.CommandTimeout,
+                StartupTimeout = _omcSettings.StartupTimeout,
+            };
 
             // Start OMC process
             if (!_instance.IsConnected)

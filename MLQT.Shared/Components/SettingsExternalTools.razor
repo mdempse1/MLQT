@@ -1,5 +1,6 @@
 @using DymolaInterface
 @using OpenModelicaInterface
+@using MLQT.Services.Helpers
 @using System.Threading.Tasks
 
 
@@ -29,6 +30,16 @@
                     ShrinkLabel="true"
                     Class="mt-4"/>
 
+    <MudNumericField @bind-Value="@DymolaTimeLimitSeconds"
+                    Label="@($"{ToolTimeLimit.SettingName} (seconds)")"
+                    HelperText="How long one check or library load may take before it is stopped. 0 means no limit."
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Min="0" Max="@MaxTimeLimitSeconds"
+                    Typo="Typo.body1"
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+
 
     <MudText Typo="Typo.subtitle1" Class="ml-2 mt-4">OpenModelica</MudText>
     <MudTextField @bind-Value="@_settings.OpenModelica.OmcPath"
@@ -52,6 +63,16 @@
                     Margin="Margin.Dense"
                     Min="1" Max="65535"
                     Typo="Typo.body1" 
+                    ShrinkLabel="true"
+                    Class="mt-4"/>
+
+    <MudNumericField @bind-Value="@OpenModelicaTimeLimitSeconds"
+                    Label="@($"{ToolTimeLimit.SettingName} (seconds)")"
+                    HelperText="How long one check or library load may take before it is stopped. 0 means no limit."
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Min="0" Max="@MaxTimeLimitSeconds"
+                    Typo="Typo.body1"
                     ShrinkLabel="true"
                     Class="mt-4"/>
 </MudPaper>

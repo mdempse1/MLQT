@@ -98,6 +98,34 @@ ModelCheckingServiceContract.cs` asserts the shared promises once and runs them 
 returning fixed strings, because most of these promises are about which check's output a result
 carries.
 
+**Running out of time, and being cancelled (B262, B263).** Both tools have a time limit per command,
+set in the External Tools tab (`DymolaSettings.CommandTimeoutMs`, `OpenModelicaSettings.CommandTimeoutMs`;
+0 is no limit) and applied by the factory on every hand-out, and both services pass the run's
+cancellation token into the check itself, so Cancel ends a check in flight. What a timeout leaves
+behind differs, and that difference is the whole design:
+
+- **Dymola returns `false`/`null` whatever went wrong**, so `IDymolaInterface.LastOutcome`
+  (`Answered` / `Offline` / `TimedOut` / `Cancelled` / `Failed`) says why. A `false` from
+  `CheckModelAsync` is the model's verdict only when the outcome is `Answered`. After `TimedOut` the
+  service must **not** ask for the log: Dymola is still busy and would answer nothing until it finished,
+  so the read waits out a second limit.
+- **omc throws `TimeoutException` and closes its own session.** Its REQ socket cannot send again until
+  it has received, and omc is still working, so the socket is disposed and omc killed;
+  `IsConnected` turns false and the factory replaces the session next time. Send *and* receive are
+  bounded against one clock (`Exchange`), because a REQ socket with no peer blocks in `SendFrame`
+  until one connects — and no wait is ever under a millisecond, because NetMQ truncates to whole
+  milliseconds and a zero did not mean "do not wait": a 1 ms start-up limit waited out omc's whole start.
+
+`ModelCheckResult.TimedOut` marks the result, `ToolTimeLimit` writes it (and names the setting by the
+constant the dialog's label uses), a package run stops at the first one, and a cancelled check returns
+no result at all. `ModelCheckingServiceContract` holds all of it against both tools.
+
+**`SetOfflineMode(true)` holds commands back** since B262, through a `_forcedOffline` the recovery
+probe cannot clear; `StopDymolaProcessAsync` sets it too, so a later command cannot reconnect to some
+other Dymola on the same port. The factory builds the session and starts Dymola **on the thread pool**:
+the constructor can wait out a busy Dymola for 30 seconds, synchronously, and a caller on the UI thread
+used to arrive there holding the window.
+
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
 as a thousands separator. When encoding scalar/array values into `name=value` commands

@@ -35,4 +35,11 @@ public class ModelCheckResult
     /// in a field called ErrorMessage would make every warning look like a failure (B170).
     /// </remarks>
     public string? Log { get; set; }
+
+    /// <summary>
+    /// The tool did not finish within its time limit. Not a verdict on the model: a large one that
+    /// is perfectly sound looks the same. A run stops at the first of these, because the next class
+    /// would wait on a tool that is still busy or has been restarted (B263).
+    /// </summary>
+    public bool TimedOut { get; set; }
 }

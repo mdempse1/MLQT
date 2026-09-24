@@ -765,6 +765,120 @@ public abstract class ModelCheckingServiceContract
         return (graph, model);
     }
 
+    // ── running out of time, and being cancelled (B262, B263) ────────────────────
+
+    /// <summary>
+    /// A check that runs out of time is not a failed model: a large model that is perfectly sound
+    /// looks the same. The result says it ran out of time and where the limit is set.
+    /// </summary>
+    [Fact]
+    public async Task ACheckThatRunsOutOfTimeIsNotReportedAsAFailedModel()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        harness.Tool.TimesOut = _ => true;
+
+        var result = await harness.Service.CheckModelAsync(model, graph);
+
+        Assert.False(result.Success);
+        Assert.True(result.TimedOut);
+        Assert.Contains("ran out of time", result.Summary);
+        Assert.Contains(model.Id, result.ErrorMessage);
+        Assert.Contains(MLQT.Services.Helpers.ToolTimeLimit.SettingName, result.ErrorMessage);
+        Assert.DoesNotContain("Check Failed", result.Summary);
+    }
+
+    /// <summary>
+    /// And the tool is not asked why. Dymola is still busy with the check and would answer nothing
+    /// until it finished, so asking waits out the whole limit a second time; omc's session has been
+    /// closed. Either way there is no log to read.
+    /// </summary>
+    [Fact]
+    public async Task ACheckThatRunsOutOfTimeDoesNotThenAskForTheLog()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        harness.Tool.TimesOut = _ => true;
+
+        await harness.Service.CheckModelAsync(model, graph);
+
+        var check = harness.Tool.Calls.LastIndexOf("check");
+        Assert.True(check >= 0, "the class was never checked");
+        Assert.DoesNotContain("read", harness.Tool.Calls.Skip(check + 1));
+    }
+
+    /// <summary>
+    /// A run stops at the first class to run out of time: the tool is still busy with it, or has
+    /// been restarted, so every class after it would wait out the same limit. It is reported as
+    /// finished, not cancelled - nobody cancelled it - and the class that ran out of time is in the
+    /// results with its reason.
+    /// </summary>
+    [Fact]
+    public async Task APackageRunStopsAtTheFirstClassToRunOutOfTime()
+    {
+        var harness = NewHarness();
+        var (graph, package) = Package(5);
+        harness.Tool.TimesOut = _ => true;   // whichever class comes first; the order is the graph's
+        var results = new List<ModelCheckResult>();
+        ModelCheckProgress? completed = null;
+        harness.Service.OnModelChecked += r => { lock (results) results.Add(r); };
+        harness.Service.OnCheckingComplete += p => completed = p;
+
+        await RunToCompletion(harness, package, graph);
+
+        Assert.Equal(1, harness.Tool.ChecksRun);   // the first class, and nothing after it
+        var only = Assert.Single(results);
+        Assert.True(only.TimedOut);
+        Assert.NotNull(completed);
+        Assert.True(completed.IsComplete);
+        Assert.False(completed.WasCancelled);
+    }
+
+    /// <summary>
+    /// B262: Cancel used to stop between classes, so a check already running was waited out first -
+    /// on a large model, exactly the wait the user was trying to end. The token reaches the check now.
+    /// </summary>
+    [Fact]
+    public async Task CancelEndsACheckThatIsStillRunning()
+    {
+        var harness = NewHarness();
+        var (graph, package) = Package(5);
+        harness.Tool.WaitsForCancel = true;
+        var results = new List<ModelCheckResult>();
+        ModelCheckProgress? completed = null;
+        harness.Service.OnModelChecked += r => { lock (results) results.Add(r); };
+        harness.Service.OnCheckingComplete += p => completed = p;
+
+        await harness.Service.StartCheckingAsync(package, graph);
+        await WaitUntilAsync(() => harness.Tool.Calls.Contains("check"), "the first check never started");
+
+        harness.Service.StopChecking();
+        await WaitUntilAsync(() => !harness.Service.IsRunning, "the running check was not interrupted");
+
+        Assert.NotNull(completed);
+        Assert.True(completed.WasCancelled);
+        Assert.Empty(results);   // an interrupted check is the user's decision, not a result
+        Assert.Equal(1, harness.Tool.Calls.Count(c => c == "check"));
+    }
+
+    /// <summary>
+    /// A library that runs out of time opening is not cleared and opened again: the retry exists for
+    /// a library the tool already has, and after a timeout it would wait out the whole limit again.
+    /// </summary>
+    [Fact]
+    public async Task ALibraryThatRunsOutOfTimeToOpenIsNotRetried()
+    {
+        var harness = NewHarness();
+        harness.Tool.OpenTimesOut = _ => true;
+
+        var (success, error) = await harness.Service.EnsureLibraryLoadedAsync(ThisFile());
+
+        Assert.False(success);
+        Assert.Contains(MLQT.Services.Helpers.ToolTimeLimit.SettingName, error);
+        Assert.Equal(1, harness.Tool.OpenAttempts);
+        Assert.Equal(0, harness.Tool.Clears);
+    }
+
     private protected static (DirectedGraph graph, ModelNode package) Package(int children)
     {
         var graph = new DirectedGraph();

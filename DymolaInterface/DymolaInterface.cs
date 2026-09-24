@@ -46,6 +46,29 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     private Process? _dymolaProcess;
     private int _rpcId;
     private bool _isOffline;
+
+    /// <summary>
+    /// Offline because the caller said so, which no probe may undo (B262).
+    /// </summary>
+    /// <remarks>
+    /// <para>Kept apart from <see cref="_isOffline"/>, which means "Dymola did not answer" and which
+    /// the recovery probe rightly clears when it answers again. Sharing one flag, the probe could not
+    /// tell the two apart: <see cref="SetOfflineMode"/>(true) was followed by a command that probed,
+    /// found Dymola, cleared the flag and ran — so the switch did nothing, and the only test of it
+    /// asserted that the flag round-tripped, never that a command was held back.</para>
+    ///
+    /// <para><see cref="StopDymolaProcessAsync"/> sets it too. Having stopped Dymola, the next command
+    /// must not reconnect to whatever else is listening on that port — a different Dymola, started
+    /// by somebody else.</para>
+    /// </remarks>
+    private bool _forcedOffline;
+
+    /// <summary>
+    /// What became of the last command — see <see cref="CommandOutcome"/>. Set under the command lock,
+    /// so it belongs to the last command to finish; a caller sharing the interface with another must
+    /// read it before that one's next command.
+    /// </summary>
+    public CommandOutcome LastOutcome { get; private set; } = CommandOutcome.Answered;
     private bool _disposed;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
 
@@ -177,6 +200,7 @@ public class DymolaInterface : IDymolaInterface, IDisposable
                 if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
+                    _forcedOffline = false;
                     return;
                 }
             }
@@ -219,6 +243,7 @@ public class DymolaInterface : IDymolaInterface, IDisposable
                 _dymolaProcess = null;
             }
             _isOffline = true;
+            _forcedOffline = true;   // see _forcedOffline: not to be undone by the next probe
         }
         finally
         {
@@ -345,8 +370,17 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         }
     }
 
-    public bool IsOfflineMode() => _isOffline;
-    public void SetOfflineMode(bool enable) => _isOffline = enable;
+    public bool IsOfflineMode() => _forcedOffline || _isOffline;
+
+    /// <summary>
+    /// Holds every command back (<c>true</c>) until told otherwise, or releases that hold
+    /// (<c>false</c>) and treats Dymola as reachable until a command finds it is not.
+    /// </summary>
+    public void SetOfflineMode(bool enable)
+    {
+        _forcedOffline = enable;
+        _isOffline = enable;
+    }
 
     /// <summary>
     /// Whether this session can still be used — cheaply, and without waiting on the 300-second
@@ -365,7 +399,7 @@ public class DymolaInterface : IDymolaInterface, IDisposable
     /// </remarks>
     public async Task<bool> IsAliveAsync()
     {
-        if (_disposed || _isOffline)
+        if (_disposed || _forcedOffline || _isOffline)
             return false;
 
         if (_dymolaProcess is { HasExited: true })
@@ -523,17 +557,33 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller before it was sent.");
+            LastOutcome = CommandOutcome.Cancelled;
             return null;
         }
 
         try
         {
+            // Held back without asking: the caller said offline, and a probe that found Dymola
+            // would otherwise override them. See _forcedOffline.
+            if (_forcedOffline)
+            {
+                LastOutcome = CommandOutcome.Offline;
+                return null;
+            }
+
             if (_isOffline)
             {
                 if (Probe() != ProbeResult.Answered)
+                {
+                    LastOutcome = CommandOutcome.Offline;
                     return null;
+                }
                 _isOffline = false;
             }
+
+            // Pessimistic until a reply is in hand: every exit below that is not a result is some
+            // kind of failure, and the catches narrow it.
+            LastOutcome = CommandOutcome.Failed;
 
             _rpcId++;
             int sentId = _rpcId;
@@ -564,13 +614,17 @@ public class DymolaInterface : IDymolaInterface, IDisposable
             {
                 Console.Error.WriteLine(
                     $"Dymola answered request {answeredId.GetRawText()} while '{cmd}' (request {sentId}) was waiting; discarding it.");
+                LastOutcome = CommandOutcome.Failed;
                 return null;
             }
 
             if (jsonResponse.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Null)
             {
                 if (jsonResponse.TryGetProperty("result", out var result))
+                {
+                    LastOutcome = CommandOutcome.Answered;
                     return result;
+                }
             }
             else if (jsonResponse.TryGetProperty("error", out var errorObj))
             {
@@ -580,11 +634,13 @@ public class DymolaInterface : IDymolaInterface, IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Console.Error.WriteLine($"Dymola command '{cmd}' was cancelled by the caller.");
+            LastOutcome = CommandOutcome.Cancelled;
         }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine(
                 $"Dymola command '{cmd}' gave up after {effectiveTimeout} (CommandTimeout); Dymola may still be running it.");
+            LastOutcome = CommandOutcome.TimedOut;
         }
         catch (Exception e)
         {
