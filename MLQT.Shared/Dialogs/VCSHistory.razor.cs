@@ -441,12 +441,12 @@ public partial class VCSHistory
         _isCheckingOut = true;
         StateHasChanged();
 
+        // Paused for the checkout and the reload after it, and handed to the analysis pipeline only
+        // once that has worked. A reload that threw used to leave the monitor off for the session:
+        // the only restart was on the path where the checkout itself failed (B296).
+        using var pause = MonitorPause.Begin(FileMonitoringService, _repository);
         try
         {
-            // Pause file monitoring before checkout to prevent the large number of file-change
-            // events from locking up the UI. The analysis handler will restart monitoring.
-            FileMonitoringService.StopMonitoring(_repository.Id);
-
             var result = await RepositoryService.CheckoutRevisionAsync(_repository.Id, _selectedEntry.Revision);
             _checkoutResultSuccess = result.Success;
             _checkoutResultMessage = result.Success
@@ -462,14 +462,15 @@ public partial class VCSHistory
 
                 // Trigger background analysis (formatting + dependencies + style + resources).
                 // Handler will restart monitoring once formatting is complete.
+                pause.HandOver();
                 NavState.VcsFilesChanged(_repository.Id);
             }
-            else
-            {
-                // Checkout failed — restart monitor so future edits are still tracked
-                if (!string.IsNullOrEmpty(_repository.VcsRootPath))
-                    FileMonitoringService.StartMonitoring(_repository.Id, _repository.VcsRootPath);
-            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(VCSHistory), $"Checking out revision {_selectedEntry.Revision} failed", ex);
+            _checkoutResultSuccess = false;
+            _checkoutResultMessage = $"Checkout failed: {ex.Message}";
         }
         finally
         {

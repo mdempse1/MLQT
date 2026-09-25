@@ -38,6 +38,9 @@ public class SwitchBranchDialogWidthTests : MlqtComponentTestBase
         repositories.Setup(r => r.GetWorkingCopyChanges(RepositoryId)).Returns([]);
 
         Services.AddSingleton(repositories.Object);
+
+        // The dialog holds the monitor off while it switches (B296); nothing here switches.
+        Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
     }
 
     /// <summary>

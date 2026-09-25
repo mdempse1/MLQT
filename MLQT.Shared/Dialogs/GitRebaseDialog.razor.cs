@@ -4,19 +4,32 @@ using System.IO;
 
 namespace MLQT.Shared.Dialogs;
 
-public partial class GitRebaseDialog
+public partial class GitRebaseDialog : IDisposable
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
     [Inject] private IDialogService DialogService { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
-    [Inject] private AppState NavState { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
 
     [Parameter]
     public string RepositoryId { get; set; } = "";
+
+    /// <summary>
+    /// What the rebase did to the working copy. The browser reloads and analyses from this once the
+    /// dialog closes, however it was closed (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
+
+    // Held from the start of the rebase until it is finished or abandoned. Ended by the dialog
+    // closing too, which is the way out a cancel in the conflict phase used to miss.
+    private MonitorPause? _pause;
+
+    // Revert all discarded the user's changes before the rebase, which an abort does not bring back.
+    private bool _discardedChanges;
 
     private enum RebasePhase
     {
@@ -73,7 +86,8 @@ public partial class GitRebaseDialog
     {
         var parameters = new DialogParameters<CommitChangesDialog>
         {
-            { x => x.RepositoryId, RepositoryId }
+            { x => x.RepositoryId, RepositoryId },
+            { x => x.Outcome, Outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
@@ -87,12 +101,20 @@ public partial class GitRebaseDialog
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
-
-        _isWorking = false;
+        VcsOperationResult result;
+        try
+        {
+            result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (result.Success)
         {
+            _discardedChanges = true;
+            Outcome.WorkingCopyChanged = true;
             await CheckWorkingCopyState();
             if (_phase == RebasePhase.ReadyToRebase)
                 await StartRebase();
@@ -115,7 +137,7 @@ public partial class GitRebaseDialog
 
         var repository = RepositoryService.GetRepository(RepositoryId);
         if (repository != null)
-            FileMonitoringService.StopMonitoring(RepositoryId);
+            _pause = MonitorPause.Begin(FileMonitoringService, repository);
 
         try
         {
@@ -128,24 +150,25 @@ public partial class GitRebaseDialog
                 return;
             }
 
+            Outcome.WorkingCopyChanged = true;
+
             if (rebaseResult.HasConflicts)
             {
                 ApplyConflicts(rebaseResult.ConflictedFiles);
+                Outcome.LeftInProgress = true;
                 _phase = RebasePhase.ConflictResolution;
                 return;
             }
 
-            // Clean rebase complete
-            NavState.VcsFilesChanged(RepositoryId);
+            // Clean rebase complete. The browser reloads and analyses once the dialog closes.
             _phase = RebasePhase.PushPrompt;
         }
         finally
         {
+            // Conflicts keep the monitor off while the user resolves them - an edit to a conflicted
+            // file is not a change to format. Every other outcome is finished with it.
             if (_phase != RebasePhase.ConflictResolution)
-            {
-                if (repository != null)
-                    FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
-            }
+                _pause?.Dispose();
             StateHasChanged();
         }
     }
@@ -155,15 +178,20 @@ public partial class GitRebaseDialog
         _isWorking = true;
         StateHasChanged();
 
-        var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
+        try
+        {
+            var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
 
-        if (result.Success)
-            _conflictStates[filePath] = ConflictFileState.Resolved;
-        else
-            _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
-
-        _isWorking = false;
-        StateHasChanged();
+            if (result.Success)
+                _conflictStates[filePath] = ConflictFileState.Resolved;
+            else
+                _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
+        }
+        finally
+        {
+            _isWorking = false;
+            StateHasChanged();
+        }
     }
 
     private void SetEditingExternally(string filePath)
@@ -178,8 +206,15 @@ public partial class GitRebaseDialog
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await RepositoryService.ContinueRebaseAsync(RepositoryId);
-        _isWorking = false;
+        VcsMergeResult result;
+        try
+        {
+            result = await RepositoryService.ContinueRebaseAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (!string.IsNullOrEmpty(result.ErrorMessage))
         {
@@ -196,12 +231,9 @@ public partial class GitRebaseDialog
             return;
         }
 
-        // All commits replayed successfully
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository != null)
-            FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
-
-        NavState.VcsFilesChanged(RepositoryId);
+        // All commits replayed successfully. The browser reloads and analyses once the dialog closes.
+        Outcome.LeftInProgress = false;
+        _pause?.Dispose();
         _phase = RebasePhase.PushPrompt;
         StateHasChanged();
     }
@@ -211,16 +243,23 @@ public partial class GitRebaseDialog
         _isWorking = true;
         StateHasChanged();
 
-        var result = await RepositoryService.AbortRebaseAsync(RepositoryId);
-        _isWorking = false;
-
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository != null)
-            FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
+        VcsOperationResult result;
+        try
+        {
+            result = await RepositoryService.AbortRebaseAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+            _pause?.Dispose();
+        }
 
         if (result.Success)
         {
-            NavState.VcsFilesChanged(RepositoryId);
+            // Back where it started. The libraries were never reloaded from the half-rebased working
+            // copy, so there is nothing to reload now - unless Revert all discarded changes first.
+            Outcome.LeftInProgress = false;
+            Outcome.WorkingCopyChanged = _discardedChanges;
             MudDialog?.Cancel();
         }
         else
@@ -235,8 +274,14 @@ public partial class GitRebaseDialog
         _isWorking = true;
         StateHasChanged();
 
-        _pushResult = await RepositoryService.ForcePushAsync(RepositoryId);
-        _isWorking = false;
+        try
+        {
+            _pushResult = await RepositoryService.ForcePushAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (_pushResult.Success)
             MudDialog?.Close(DialogResult.Ok(true));
@@ -253,6 +298,9 @@ public partial class GitRebaseDialog
     {
         MudDialog?.Cancel();
     }
+
+    /// <summary>Starts the monitor again if the dialog closes with the rebase unfinished.</summary>
+    public void Dispose() => _pause?.Dispose();
 
     private async Task ShowDiff(string filePath)
     {

@@ -4,19 +4,29 @@ using System.IO;
 
 namespace MLQT.Shared.Dialogs;
 
-public partial class GitMergeBranchDialog
+public partial class GitMergeBranchDialog : IDisposable
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
     [Inject] private IDialogService DialogService { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
-    [Inject] private AppState NavState { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
 
     [Parameter]
     public string RepositoryId { get; set; } = "";
+
+    /// <summary>
+    /// What the merge did to the working copy. The browser reloads and analyses from this once the
+    /// dialog closes, however it was closed (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
+
+    // Held from the start of the merge until it is committed or abandoned. Ended by the dialog
+    // closing too, which is the way out a cancel in the conflict phase used to miss.
+    private MonitorPause? _pause;
 
     private enum MergePhase
     {
@@ -68,7 +78,8 @@ public partial class GitMergeBranchDialog
     {
         var parameters = new DialogParameters<CommitChangesDialog>
         {
-            { x => x.RepositoryId, RepositoryId }
+            { x => x.RepositoryId, RepositoryId },
+            { x => x.Outcome, Outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
@@ -84,12 +95,19 @@ public partial class GitMergeBranchDialog
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
-
-        _isWorking = false;
+        VcsOperationResult result;
+        try
+        {
+            result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (result.Success)
         {
+            Outcome.WorkingCopyChanged = true;
             await StartMerge();
         }
         else
@@ -110,7 +128,7 @@ public partial class GitMergeBranchDialog
 
         var repository = RepositoryService.GetRepository(RepositoryId);
         if (repository != null)
-            FileMonitoringService.StopMonitoring(RepositoryId);
+            _pause = MonitorPause.Begin(FileMonitoringService, repository);
 
         try
         {
@@ -130,24 +148,26 @@ public partial class GitMergeBranchDialog
                 return;
             }
 
+            Outcome.WorkingCopyChanged = true;
+
             if (_mergeResult.HasConflicts)
             {
                 _conflictStates = VcsConflictRules.CarryForward(_mergeResult.ConflictedFiles, _conflictStates);
+                Outcome.LeftInProgress = true;
                 _phase = MergePhase.ConflictResolution;
                 return;
             }
 
-            // Clean merge — LibGit2Sharp auto-created the merge commit
-            NavState.VcsFilesChanged(RepositoryId);
+            // Clean merge — LibGit2Sharp auto-created the merge commit. The browser reloads and
+            // analyses once the dialog closes.
             _phase = MergePhase.PushPrompt;
         }
         finally
         {
+            // Conflicts keep the monitor off while the user resolves them; every other outcome is
+            // finished with it.
             if (_phase != MergePhase.ConflictResolution)
-            {
-                if (repository != null)
-                    FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
-            }
+                _pause?.Dispose();
             StateHasChanged();
         }
     }
@@ -157,19 +177,20 @@ public partial class GitMergeBranchDialog
         _isWorking = true;
         StateHasChanged();
 
-        var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
-
-        if (result.Success)
+        try
         {
-            _conflictStates[filePath] = ConflictFileState.Resolved;
-        }
-        else
-        {
-            _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
-        }
+            var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
 
-        _isWorking = false;
-        StateHasChanged();
+            if (result.Success)
+                _conflictStates[filePath] = ConflictFileState.Resolved;
+            else
+                _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
+        }
+        finally
+        {
+            _isWorking = false;
+            StateHasChanged();
+        }
     }
 
     private void SetEditingExternally(string filePath)
@@ -180,21 +201,21 @@ public partial class GitMergeBranchDialog
 
     private async Task CommitMerge()
     {
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository != null)
-            FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
+        _pause?.Dispose();
 
         var parameters = new DialogParameters<CommitChangesDialog>
         {
             { x => x.RepositoryId, RepositoryId },
-            { x => x.InitialCommitMessage, BuildMergeCommitMessage() }
+            { x => x.InitialCommitMessage, BuildMergeCommitMessage() },
+            { x => x.Outcome, Outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Merged Changes", parameters, options);
         await dialogRef.Result;
 
-        // Trigger formatting + analysis pipeline after commit
-        NavState.VcsFilesChanged(RepositoryId);
+        // Every conflict is resolved, committed or not, so the formatter may run once the dialog
+        // closes and the browser has reloaded.
+        Outcome.LeftInProgress = false;
         _phase = MergePhase.PushPrompt;
         StateHasChanged();
     }
@@ -204,9 +225,14 @@ public partial class GitMergeBranchDialog
         _isWorking = true;
         StateHasChanged();
 
-        _pushResult = await RepositoryService.PushAsync(RepositoryId);
-
-        _isWorking = false;
+        try
+        {
+            _pushResult = await RepositoryService.PushAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (_pushResult.Success)
             MudDialog?.Close(DialogResult.Ok(_mergeResult));
@@ -234,6 +260,9 @@ public partial class GitMergeBranchDialog
     {
         MudDialog?.Cancel();
     }
+
+    /// <summary>Starts the monitor again if the dialog closes with the merge unfinished.</summary>
+    public void Dispose() => _pause?.Dispose();
 
     private string BuildMergeCommitMessage() =>
         MergeCommitMessage.Build(_mergeResult?.SourceBranch, _selectedBranch, _currentBranch);

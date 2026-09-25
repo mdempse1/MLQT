@@ -1,8 +1,11 @@
+using RevisionControl;
+
 namespace MLQT.Shared.Dialogs;
 
 public partial class SwitchBranchDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
@@ -52,7 +55,15 @@ public partial class SwitchBranchDialog
 
         try
         {
-            var result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
+            // Held off for the checkout, which rewrites every file that differs between the two
+            // branches - and was the one VCS operation that let the monitor report each of them
+            // (B296). Started again straight after: the browser reloads and starts the analysis.
+            VcsOperationResult result;
+            var repository = RepositoryService.GetRepository(RepositoryId);
+            using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, repository))
+            {
+                result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
+            }
 
             if (!result.Success)
             {

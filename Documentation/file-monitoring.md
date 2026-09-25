@@ -86,11 +86,11 @@ Some VCS operations automatically trigger a full refresh without you needing to 
 |-----------|-------------|
 | **Update (Pull)** | Yes — files may have changed from the remote |
 | **Switch branch** | Yes — the entire working copy changes |
-| **Merge** | Yes — merged files need re-analysis |
-| **Rebase** | Yes — rebased files need re-analysis |
+| **Merge** | Yes, once the dialog closes — merged files need re-analysis. Closed with conflicts still unresolved, the libraries are reloaded but not formatted or re-checked: a file with conflict markers in it is not Modelica |
+| **Rebase** | Yes, once the dialog closes, as for a merge |
 | **Revert** | Yes — reverted files need re-analysis |
 | **Checkout revision** | Yes — all files may change |
-| **Commit** | No — committing does not change file content |
+| **Commit** | No — committing does not change file content. Yes if the SVN working copy was out of date: MLQT updates it before committing, and that changes files |
 | **Push** | No — pushing does not change local files |
 | **Create branch** | No — creating a branch does not change files |
 
@@ -122,7 +122,7 @@ During automatic refreshes, the file monitor is temporarily paused to avoid dete
 
 The file monitor is automatically paused and resumed during certain operations to prevent false change detection:
 
-- **During VCS operations**: Paused before the operation starts, resumed after the analysis pipeline completes
+- **During VCS operations**: Paused before the operation starts, and resumed however it ends — by the analysis pipeline once it has formatted, or straight away if the operation fails or its dialog is closed. While you resolve a merge or rebase conflict in its dialog the monitor stays paused, and closing the dialog with conflicts unresolved resumes it
 - **During formatting**: Paused before writing formatted files, resumed after all files are saved
 - **During repository settings changes**: Paused if formatting settings change, resumed after reformatting completes
 

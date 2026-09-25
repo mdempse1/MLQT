@@ -993,18 +993,16 @@ public partial class LibraryBrowser : IDisposable
             return;
 
         var repository = Repository;
-        var analysisHandedOver = false;
 
         _isLoading = true;
         StateHasChanged();
 
+        // Pause file monitoring before the VCS update to prevent the flood of file-change events
+        // from locking up the UI. Handed to the analysis pipeline, which restarts it after
+        // formatting, or started again here if the update never gets that far (B294).
+        using var pause = MonitorPause.Begin(FileMonitoringService, repository);
         try
         {
-            // Pause file monitoring before the VCS update to prevent the flood of file-change
-            // events from locking up the UI. The analysis handler (OnVcsFilesChanged) will
-            // restart monitoring after formatting is applied.
-            FileMonitoringService.StopMonitoring(repository.Id);
-
             // Update the repository from the remote if it's a VCS repository
             if (repository.VcsType != RepositoryVcsType.Local)
             {
@@ -1023,24 +1021,7 @@ public partial class LibraryBrowser : IDisposable
                 }
             }
 
-            // Said, because it is most of the wait and nothing else on screen accounts for it: the
-            // VCS step has finished by now, and without this the progress bar that stays up reads
-            // as the update still running (B294).
-            Snackbar.Add("Reloading libraries…", Severity.Normal);
-
-            // Reload library data from disk (re-discover libraries, re-parse changed files).
-            // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
-            // state references stale tree items with null Children — clear it to avoid the
-            // "expanded but no children visible" MudTreeView glitch.
-            await RepositoryService.RefreshRepositoryAsync(repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-
-            // Trigger background analysis (formatting + dependencies + style + resources).
-            // Handler will restart monitoring once formatting is complete.
-            analysisHandedOver = true;
-            NavState.VcsFilesChanged(repository.Id);
+            await ReloadAndAnalyseAsync(repository, pause);
         }
         catch (Exception ex)
         {
@@ -1049,15 +1030,87 @@ public partial class LibraryBrowser : IDisposable
         }
         finally
         {
-            // The monitor was stopped above and only the analysis pipeline restarts it. If that was
-            // never reached, nothing else will, and every later edit goes unseen (B294).
-            if (!analysisHandedOver && !string.IsNullOrEmpty(repository.VcsRootPath))
-                FileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
-
             _isLoading = false;
             StateHasChanged();
         }
     });
+
+    /// <summary>
+    /// Reloads a repository's libraries from a working copy a VCS operation has rewritten, then
+    /// starts the formatting and analysis pipeline - in that order, and for an operation started
+    /// from this browser, from here only (B296).
+    /// </summary>
+    /// <remarks>
+    /// <para>The order is the point. The merge and rebase dialogs used to start the pipeline while
+    /// they were still open, and this browser then removed and reloaded every library once they
+    /// closed, so the analysis ran over a graph being rebuilt under it. A dialog now records what it
+    /// did in a <see cref="VcsDialogOutcome"/> and leaves the rest to this.</para>
+    ///
+    /// <para>With <paramref name="analyse"/> false the pipeline is not started: a merge or rebase
+    /// left with conflicts has files in it that are not Modelica, and the pipeline formats every
+    /// changed file.</para>
+    /// </remarks>
+    private async Task ReloadAndAnalyseAsync(Repository repository, MonitorPause? pause, bool analyse = true)
+    {
+        // Said, because it is most of the wait and nothing else on screen accounts for it: the
+        // VCS step has finished by now, and without this the progress bar that stays up reads
+        // as the update still running (B294).
+        Snackbar.Add("Reloading libraries…", Severity.Normal);
+
+        // Reload library data from disk (re-discover libraries, re-parse changed files).
+        // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
+        // state references stale tree items with null Children — clear it to avoid the
+        // "expanded but no children visible" MudTreeView glitch.
+        await RepositoryService.RefreshRepositoryAsync(repository.Id);
+        _expandedNodeIds.Clear();
+        await CheckForUncommittedChangesAsync();
+        await RefreshTreeItems();
+
+        if (!analyse)
+            return;
+
+        // Trigger background analysis (formatting + dependencies + style + resources).
+        // Handler will restart monitoring once formatting is complete.
+        pause?.HandOver();
+        NavState.VcsFilesChanged(repository.Id);
+    }
+
+    /// <summary>
+    /// What follows a VCS dialog, whichever way it was closed: nothing but a status refresh if it
+    /// left the working copy alone, and a reload and analysis if it did not.
+    /// </summary>
+    internal async Task AfterVcsDialogAsync(Repository repository, VcsDialogOutcome outcome, string operation)
+    {
+        if (!outcome.WorkingCopyChanged)
+        {
+            RepositoryService.InvalidateWorkingCopyCache(repository.Id);
+            await CheckForUncommittedChangesAsync();
+            await RefreshTreeItems();
+            StateHasChanged();
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            await ReloadAndAnalyseAsync(repository, pause: null, analyse: !outcome.LeftInProgress);
+
+            if (outcome.LeftInProgress)
+                Snackbar.Add($"The {operation} is not finished: resolve the remaining conflicts and commit, or abort it.",
+                    Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(LibraryBrowser), $"Reloading {repository.Name} after the {operation} failed", ex);
+            Snackbar.Add($"Reloading after the {operation} failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
 
     /// <summary>
     /// Whether a VCS operation started from this browser is still running, so the others stay
@@ -1157,8 +1210,9 @@ public partial class LibraryBrowser : IDisposable
 
         if (result != null && !result.Canceled)
         {
-            // Branch was created successfully - refresh repository info
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
+            // Nothing to reload: a new branch starts where the working copy already is, and
+            // CreateBranchAsync has already read the new branch name. This used to remove and
+            // reload every library for it (B296).
             Snackbar.Add($"Created branch: {result.Data}", Severity.Success);
             StateHasChanged();
         }
@@ -1172,50 +1226,34 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
-        if (Repository.VcsType == RepositoryVcsType.Git)
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
+        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
+
+        // Waited for however it closes - a merge cancelled in its conflict phase has still rewritten
+        // the working copy, and the outcome says so where a cancelled result cannot (B296).
+        if (repository.VcsType == RepositoryVcsType.Git)
         {
             var gitParameters = new DialogParameters<GitMergeBranchDialog>
             {
-                { x => x.RepositoryId, Repository.Id }
+                { x => x.RepositoryId, repository.Id },
+                { x => x.Outcome, outcome }
             };
-            var gitOptions = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
-            var gitDialog = await DialogService.ShowAsync<GitMergeBranchDialog>("Merge Branch", gitParameters, gitOptions);
-            var gitResult = await gitDialog.Result;
-
-            if (gitResult != null && !gitResult.Canceled)
+            var gitDialog = await DialogService.ShowAsync<GitMergeBranchDialog>("Merge Branch", gitParameters, options);
+            await gitDialog.Result;
+        }
+        else
+        {
+            var parameters = new DialogParameters<MergeBranchDialog>
             {
-                // VcsFilesChanged (formatting + analysis) is fired by GitMergeBranchDialog itself
-                // after the merge commit. Refresh the tree to reflect the new state.
-                // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-                await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-                _expandedNodeIds.Clear();
-                await CheckForUncommittedChangesAsync();
-                await RefreshTreeItems();
-                StateHasChanged();
-            }
-            return;
+                { x => x.RepositoryId, repository.Id },
+                { x => x.Outcome, outcome }
+            };
+            var dialog = await DialogService.ShowAsync<MergeBranchDialog>("Merge Branch", parameters, options);
+            await dialog.Result;
         }
 
-        var parameters = new DialogParameters<MergeBranchDialog>
-        {
-            { x => x.RepositoryId, Repository.Id }
-        };
-        var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
-        var dialog = await DialogService.ShowAsync<MergeBranchDialog>("Merge Branch", parameters, options);
-        var result = await dialog.Result;
-
-        if (result != null && !result.Canceled)
-        {
-            // Merge was performed — refresh the tree to show uncommitted merge changes.
-            // VcsFilesChanged (formatting + analysis) is fired by MergeBranchDialog itself
-            // after the commit dialog closes, so that formatting runs on committed files only.
-            // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
-        }
+        await AfterVcsDialogAsync(repository, outcome, "merge");
     }
 
     private Task ShowCommitChangesDialog() => RunVcsOperationAsync(CommitChangesAsync);
@@ -1233,24 +1271,24 @@ public partial class LibraryBrowser : IDisposable
         RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
         await CheckForUncommittedChangesAsync();
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<CommitChangesDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialog = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
         var result = await dialog.Result;
 
         if (result != null && !result.Canceled)
-        {
-            // A commit doesn't change file content, only VCS status — no need to reload libraries.
-            // Just invalidate the working copy cache and refresh the tree status markers.
-            RepositoryService.InvalidateWorkingCopyCache(Repository.Id);
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
             Snackbar.Add("Changes committed successfully.", Severity.Success);
-            StateHasChanged();
-        }
+
+        // A commit changes no file content, only VCS status, so this is usually a status refresh.
+        // Not when the working copy was out of date: the dialog updated it before committing, which
+        // rewrites files, and that has to be reloaded whether or not the commit then went ahead (B296).
+        await AfterVcsDialogAsync(repository, outcome, "commit");
     }
 
     private Task ShowRevertFilesDialog() => RunVcsOperationAsync(RevertFilesAsync);
@@ -1365,23 +1403,20 @@ public partial class LibraryBrowser : IDisposable
         if (Repository == null)
             return;
 
+        var repository = Repository;
+        var outcome = new VcsDialogOutcome();
         var parameters = new DialogParameters<GitRebaseDialog>
         {
-            { x => x.RepositoryId, Repository.Id }
+            { x => x.RepositoryId, repository.Id },
+            { x => x.Outcome, outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialog = await DialogService.ShowAsync<GitRebaseDialog>("Rebase Branch", parameters, options);
-        var result = await dialog.Result;
+        await dialog.Result;
 
-        if (result != null && !result.Canceled)
-        {
-            // RefreshRepositoryAsync reloads all libraries — clear stale expansion state.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
-            _expandedNodeIds.Clear();
-            await CheckForUncommittedChangesAsync();
-            await RefreshTreeItems();
-            StateHasChanged();
-        }
+        // However it closed: a rebase cancelled in its conflict phase has still rewritten the working
+        // copy, and the outcome says so where a cancelled result cannot (B296).
+        await AfterVcsDialogAsync(repository, outcome, "rebase");
     }
 
     private Task PushToRemote() => RunVcsOperationAsync(PushToRemoteAsync);
@@ -1402,8 +1437,9 @@ public partial class LibraryBrowser : IDisposable
 
             if (result.Success)
             {
+                // Nothing to reload: a push sends commits and changes no file. This used to remove
+                // and reload every library for it (B296).
                 Snackbar.Add("Push successful.", Severity.Success);
-                await RepositoryService.RefreshRepositoryAsync(Repository.Id);
                 StateHasChanged();
             }
             else

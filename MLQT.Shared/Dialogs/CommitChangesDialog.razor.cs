@@ -6,6 +6,7 @@ public partial class CommitChangesDialog
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private ILibraryDataService LibraryDataService { get; set; } = null!;
+    [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
@@ -15,6 +16,13 @@ public partial class CommitChangesDialog
 
     [Parameter]
     public string InitialCommitMessage { get; set; } = "";
+
+    /// <summary>
+    /// Told when committing had to update the working copy first, which rewrites files the libraries
+    /// were loaded from. The caller reloads from it once the dialog closes (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
 
     private Repository? _repository;
     private bool _isCommitting = false;
@@ -98,7 +106,19 @@ public partial class CommitChangesDialog
                 _statusMessage = "Working copy is out of date — updating...";
                 StateHasChanged();
 
-                var updateResult = await RepositoryService.UpdateRepositoryAsync(RepositoryId);
+                // An update like any other: the monitor held off while it writes, and the caller
+                // told, so the libraries are reloaded from what it wrote. It used to do neither, and
+                // the graph went on describing the files from before the update.
+                VcsUpdateResult updateResult;
+                var repository = RepositoryService.GetRepository(RepositoryId);
+                using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, repository))
+                {
+                    updateResult = await RepositoryService.UpdateRepositoryAsync(RepositoryId);
+                }
+
+                if (updateResult.HasChanges)
+                    Outcome.WorkingCopyChanged = true;
+
                 if (!updateResult.Success)
                 {
                     _errorMessage = $"Update failed: {updateResult.ErrorMessage}";

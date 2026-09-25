@@ -4,19 +4,29 @@ using System.IO;
 
 namespace MLQT.Shared.Dialogs;
 
-public partial class MergeBranchDialog
+public partial class MergeBranchDialog : IDisposable
 {
     [Inject] private IRepositoryService RepositoryService { get; set; } = null!;
     [Inject] private IFileMonitoringService FileMonitoringService { get; set; } = null!;
     [Inject] private IDialogService DialogService { get; set; } = null!;
     [Inject] private ISnackbar Snackbar { get; set; } = null!;
-    [Inject] private AppState NavState { get; set; } = null!;
 
     [CascadingParameter]
     private IMudDialogInstance? MudDialog { get; set; }
 
     [Parameter]
     public string RepositoryId { get; set; } = "";
+
+    /// <summary>
+    /// What the merge did to the working copy. The browser reloads and analyses from this once the
+    /// dialog closes, however it was closed (B296).
+    /// </summary>
+    [Parameter]
+    public VcsDialogOutcome Outcome { get; set; } = new();
+
+    // Held from the start of the merge until it is committed or abandoned. Ended by the dialog
+    // closing too, which is the way out a cancel in the conflict phase used to miss.
+    private MonitorPause? _pause;
 
     private enum MergePhase
     {
@@ -68,7 +78,8 @@ public partial class MergeBranchDialog
     {
         var parameters = new DialogParameters<CommitChangesDialog>
         {
-            { x => x.RepositoryId, RepositoryId }
+            { x => x.RepositoryId, RepositoryId },
+            { x => x.Outcome, Outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Changes", parameters, options);
@@ -84,12 +95,19 @@ public partial class MergeBranchDialog
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
-
-        _isWorking = false;
+        VcsOperationResult result;
+        try
+        {
+            result = await RepositoryService.CleanWorkspaceAsync(RepositoryId);
+        }
+        finally
+        {
+            _isWorking = false;
+        }
 
         if (result.Success)
         {
+            Outcome.WorkingCopyChanged = true;
             await StartMerge();
         }
         else
@@ -111,7 +129,7 @@ public partial class MergeBranchDialog
 
         var repository = RepositoryService.GetRepository(RepositoryId);
         if (repository != null)
-            FileMonitoringService.StopMonitoring(RepositoryId);
+            _pause = MonitorPause.Begin(FileMonitoringService, repository);
 
         try
         {
@@ -130,6 +148,8 @@ public partial class MergeBranchDialog
                 _conflictStates = VcsConflictRules.CarryForward(
                     _mergeResult.ConflictedFiles.Concat(_mergeResult.TreeConflictedFiles).Distinct(),
                     _conflictStates);
+                Outcome.WorkingCopyChanged = true;
+                Outcome.LeftInProgress = true;
                 _phase = MergePhase.ConflictResolution;
                 return;
             }
@@ -141,17 +161,17 @@ public partial class MergeBranchDialog
                 return;
             }
 
-            // Success, no conflicts — open commit dialog
-            MudDialog?.Close(DialogResult.Ok(_mergeResult));
-            await ShowCommitDialog();
+            // Success, no conflicts — commit it, then close
+            Outcome.WorkingCopyChanged = true;
+            _pause?.Dispose();
+            await CommitAndClose();
         }
         finally
         {
+            // Conflicts keep the monitor off while the user resolves them; every other outcome is
+            // finished with it.
             if (_phase != MergePhase.ConflictResolution)
-            {
-                if (repository != null)
-                    FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
-            }
+                _pause?.Dispose();
             _statusMessage = null;
             StateHasChanged();
         }
@@ -162,19 +182,20 @@ public partial class MergeBranchDialog
         _isWorking = true;
         StateHasChanged();
 
-        var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
-
-        if (result.Success)
+        try
         {
-            _conflictStates[filePath] = ConflictFileState.Resolved;
-        }
-        else
-        {
-            _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
-        }
+            var result = await RepositoryService.ResolveConflictAsync(RepositoryId, filePath, choice);
 
-        _isWorking = false;
-        StateHasChanged();
+            if (result.Success)
+                _conflictStates[filePath] = ConflictFileState.Resolved;
+            else
+                _errorMessage = $"Could not resolve {Path.GetFileName(filePath)}: {result.ErrorMessage}";
+        }
+        finally
+        {
+            _isWorking = false;
+            StateHasChanged();
+        }
     }
 
     private void SetEditingExternally(string filePath)
@@ -185,29 +206,31 @@ public partial class MergeBranchDialog
 
     private async Task CommitMerge()
     {
-        var repository = RepositoryService.GetRepository(RepositoryId);
-        if (repository != null)
-            FileMonitoringService.StartMonitoring(RepositoryId, repository.VcsRootPath);
-
-        MudDialog?.Close(DialogResult.Ok(_mergeResult));
-        await ShowCommitDialog();
+        _pause?.Dispose();
+        await CommitAndClose();
     }
 
-    private async Task ShowCommitDialog()
+    /// <summary>
+    /// Offers the commit, then closes. Closed afterwards rather than before: the browser reloads and
+    /// starts the formatting pipeline when this dialog closes, and the formatter must not run before
+    /// the commit or it puts its own changes into the merge commit. This used to close first and
+    /// start the pipeline itself after the commit - while the browser was reloading every library
+    /// over it.
+    /// </summary>
+    private async Task CommitAndClose()
     {
         var parameters = new DialogParameters<CommitChangesDialog>
         {
             { x => x.RepositoryId, RepositoryId },
-            { x => x.InitialCommitMessage, BuildMergeCommitMessage() }
+            { x => x.InitialCommitMessage, BuildMergeCommitMessage() },
+            { x => x.Outcome, Outcome }
         };
         var options = new DialogOptions { CloseOnEscapeKey = true, FullWidth = true };
         var dialogRef = await DialogService.ShowAsync<CommitChangesDialog>("Commit Merged Changes", parameters, options);
         await dialogRef.Result;
 
-        // Trigger the formatting + analysis pipeline only after the commit is complete.
-        // Doing this before the commit would format uncommitted merge changes, which could
-        // introduce non-merge changes into the merge commit.
-        NavState.VcsFilesChanged(RepositoryId);
+        Outcome.LeftInProgress = false;
+        MudDialog?.Close(DialogResult.Ok(_mergeResult));
     }
 
     private string BuildMergeCommitMessage()
@@ -243,4 +266,7 @@ public partial class MergeBranchDialog
     {
         MudDialog?.Cancel();
     }
+
+    /// <summary>Starts the monitor again if the dialog closes with the merge unfinished.</summary>
+    public void Dispose() => _pause?.Dispose();
 }

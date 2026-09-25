@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
 using MLQT.Shared.Components;
+using MLQT.Shared.Dialogs;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using Moq;
@@ -122,5 +123,62 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
 
         update.SetResult(new VcsUpdateResult { Success = true, HasChanges = false });
         browser.WaitForAssertion(() => Assert.False(UpdateButton(browser).HasAttribute("disabled")));
+    }
+
+    // ---- After a VCS dialog (B296) ------------------------------------------------------------
+    //
+    // The merge and rebase dialogs used to start the analysis pipeline while still open, and the
+    // browser then removed and reloaded every library once they closed - the analysis ran over a
+    // graph being rebuilt under it. A dialog now only records what it did; the browser reloads, and
+    // then starts the pipeline.
+
+    private List<string> RecordReloadAndAnalysis()
+    {
+        var sequence = new List<string>();
+        _repositories.Setup(r => r.RefreshRepositoryAsync("repo-1", It.IsAny<CancellationToken>()))
+            .Callback(() => sequence.Add("reload"))
+            .Returns(Task.CompletedTask);
+        NavState.OnVcsFilesChanged += _ => sequence.Add("analyse");
+        return sequence;
+    }
+
+    [Fact]
+    public async Task ADialogThatRewroteTheWorkingCopy_IsReloadedBeforeItIsAnalysed()
+    {
+        var browser = RenderBrowser();
+        var sequence = RecordReloadAndAnalysis();
+
+        await browser.InvokeAsync(() => browser.Instance.AfterVcsDialogAsync(
+            Repo(), new VcsDialogOutcome { WorkingCopyChanged = true }, "merge"));
+
+        Assert.Equal(["reload", "analyse"], sequence);
+    }
+
+    [Fact]
+    public async Task ADialogLeftWithConflicts_IsReloadedButNotFormatted()
+    {
+        // The pipeline formats every changed file, and a file with conflict markers in it is not
+        // Modelica.
+        var browser = RenderBrowser();
+        var sequence = RecordReloadAndAnalysis();
+
+        await browser.InvokeAsync(() => browser.Instance.AfterVcsDialogAsync(
+            Repo(), new VcsDialogOutcome { WorkingCopyChanged = true, LeftInProgress = true }, "rebase"));
+
+        Assert.Equal(["reload"], sequence);
+    }
+
+    [Fact]
+    public async Task ADialogThatChangedNothing_ReloadsNothing()
+    {
+        // A merge with nothing to merge, a commit, a dialog opened and closed: the libraries are
+        // still the working copy's, and reloading MSL's is twenty seconds of nothing.
+        var browser = RenderBrowser();
+        var sequence = RecordReloadAndAnalysis();
+
+        await browser.InvokeAsync(() => browser.Instance.AfterVcsDialogAsync(
+            Repo(), new VcsDialogOutcome(), "commit"));
+
+        Assert.Empty(sequence);
     }
 }
