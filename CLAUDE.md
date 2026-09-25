@@ -513,8 +513,9 @@ text they built with CRLF themselves, so the check would be noise.
 
 **A failure is a failure, whichever suite it is in.** An earlier version excused the tool-dependent
 suites by category on the grounds that the machine might not have the tool, and immediately excused a
-real one — OpenModelica *is* installed on the main development machine, and
-`GetErrorStringAsync_AfterClear_ReturnsEmpty` fails against omc 1.26 (backlog B116). Excusing by
+real one — OpenModelica *is* installed on the main development machine, and a test in that suite
+was failing against omc 1.26 (backlog B116, since fixed: the test was wrong about what omc does, and
+nobody looked while the category was excused). Excusing by
 category hides the thing you wanted to find; `-CoreOnly` is a decision, reading past a red line is
 not.
 

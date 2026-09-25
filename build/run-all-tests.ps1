@@ -30,8 +30,8 @@
 .NOTES
     A failure is a failure, whichever suite it is in. An earlier version excused failures in the
     tool-dependent suites on the grounds that the machine might not have the tool - and then quietly
-    excused a real one: OpenModelica *is* installed here, and
-    GetErrorStringAsync_AfterClear_ReturnsEmpty fails against it. Excusing by category hides the
+    excused a real one: OpenModelica *is* installed here, and a test in that suite was failing
+    against it (B116, fixed on 2026-09-08 - the test was wrong about omc). Excusing by category hides the
     thing you wanted to find. A machine without the tools uses -CoreOnly, which is a decision rather
     than a shrug.
 

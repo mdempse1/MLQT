@@ -17,8 +17,9 @@ CI runs seven suites. This runs ten. The three it adds are the whole reason the 
 `DymolaInterface.Tests` and `OpenModelicaInterface.Tests` need a live tool that no runner has, and
 `MLQT.Journeys` needs `pwsh MLQT.Journeys/bin/Release/net10.0/playwright.ps1 install chromium` once.
 
-**A failure is a failure**, including in the tool-dependent suites. B116 is open against `omc` 1.26
-and is the one known exception; anything else is a finding.
+**A failure is a failure**, including in the tool-dependent suites. There is no known exception:
+B116, which this list once excused against `omc` 1.26, was a test that was wrong about omc and was
+fixed on 2026-09-08. Anything red is a finding.
 
 ## 2. The fidelity corpus, by hand
 

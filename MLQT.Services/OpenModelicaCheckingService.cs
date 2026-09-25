@@ -389,8 +389,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
             // Drained first, so what comes back afterwards belongs to *this* check. `getErrorString`
             // returns the accumulated messages and empties the buffer, so reading it here discards
             // anything left by an earlier command — without which a model that checked cleanly could
-            // be shown the error from one checked before it. (B116 is open against omc 1.26's
-            // behaviour here, which is why this discards rather than relying on it.)
+            // be shown the error from one checked before it. (B116 established that omc 1.26's
+            // `clear()` resets the loaded classes and not the error buffer, which is why this drains
+            // the buffer rather than relying on anything else to have emptied it.)
             _ = await SafeErrorStringAsync();
 
             bool checkResult;
