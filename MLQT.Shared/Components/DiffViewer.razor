@@ -28,7 +28,15 @@
         </MudText>
     </div>
 
-    @if (!string.IsNullOrEmpty(_errorMessage))
+    @if (IsPreparing)
+    {
+        @* The diff is being computed off the dispatcher (B341); the lines of the last one describe
+           other content, so they are not shown meanwhile. *@
+        <div class="diff-empty">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Comparing…</MudText>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
     {
         <div class="diff-empty" style="padding: 16px;">
             <MudAlert Severity="Severity.Warning" Dense="true">@_errorMessage</MudAlert>
@@ -48,7 +56,7 @@
                 <div class="diff-line @GetLineClass(line.Type)">
                     <span class="diff-line-prefix">@line.Prefix</span>
                     <span class="diff-line-number">@line.LineNumber</span>
-                    <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                    <span class="diff-line-content">@((MarkupString)Html(line.Content))</span>
                 </div>
             }
         </div>
@@ -63,7 +71,7 @@
                     {
                         <div class="diff-line @GetLineClass(line.Type)">
                             <span class="diff-line-number">@line.LineNumber</span>
-                            <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                            <span class="diff-line-content">@((MarkupString)Html(line.Content))</span>
                         </div>
                     }
                 </div>
@@ -75,7 +83,7 @@
                     {
                         <div class="diff-line @GetLineClass(line.Type)">
                             <span class="diff-line-number">@line.LineNumber</span>
-                            <span class="diff-line-content">@((MarkupString)ParseContent(line.Content))</span>
+                            <span class="diff-line-content">@((MarkupString)Html(line.Content))</span>
                         </div>
                     }
                 </div>

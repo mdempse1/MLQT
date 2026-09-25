@@ -53,11 +53,15 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
     {
         ArrangeSettings();
 
-        return Render<DiffViewer>(p => p
+        var viewer = Render<DiffViewer>(p => p
             .Add(c => c.OriginalContent, original)
             .Add(c => c.ModifiedContent, modified)
             .Add(c => c.FileName, "Big.mo")
             .Add(c => c.ViewMode, mode));
+
+        // The diff is computed off the dispatcher (B341), so the first render is the placeholder.
+        viewer.WaitForState(() => !viewer.Instance.IsPreparing);
+        return viewer;
     }
 
     private static int SyncCalls(BunitJSInterop interop) =>
@@ -129,6 +133,7 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
             .Add(c => c.ModifiedContent, "Real y;\n")
             .Add(c => c.FileName, "Small.mo")
             .Add(c => c.ViewMode, DiffViewMode.SideBySide));
+        viewer.WaitForState(() => !viewer.Instance.IsPreparing);
 
         // Markup, not FindAll: this is where bUnit re-raises whatever the render threw, so it is
         // the assertion that can actually fail if the exception escaped.

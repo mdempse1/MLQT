@@ -75,7 +75,6 @@ public partial class DiffViewer : IAsyncDisposable
     private int _addedCount = 0;
     private int _removedCount = 0;
     private bool _isModelicaFile = false;
-    private int _maxLineNumberDigits = 3;
     private string? _errorMessage;
 
     private ElementReference _leftPaneRef;
@@ -96,14 +95,73 @@ public partial class DiffViewer : IAsyncDisposable
         InvokeAsync(StateHasChanged);
     }
 
-    protected override void OnParametersSet()
+    /// <summary>
+    /// Builds the diff when — and only when — what it is a diff <em>of</em> has changed (B341).
+    ///
+    /// <para>This ran the whole thing on every parameter set: an O(m·n) LCS and a full parse of each
+    /// side for the colouring, on the dispatcher. The Code Review page re-renders for every findings
+    /// batch, baseline change and progress update, so during a background check each of those cost
+    /// two parses of an unchanged class. Now the expensive half is <see cref="Prepare"/>, keyed on
+    /// the two texts and whether they are Modelica, and run on the pool; the view mode and context
+    /// only re-lay-out what it produced, which is linear and stays here.</para>
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
     {
         _isModelicaFile = !string.IsNullOrEmpty(FileName) &&
             (FileName.EndsWith(".mo", StringComparison.OrdinalIgnoreCase) ||
              FileName.EndsWith(".mos", StringComparison.OrdinalIgnoreCase));
 
-        ComputeDiff();
+        var original = OriginalContent;
+        var modified = ModifiedContent;
+        var isModelica = _isModelicaFile;
+
+        if (DescribesTheSameContent(_prepared, original, modified, isModelica))
+        {
+            // Back to what is already prepared: whatever was on its way is for content no longer
+            // asked for, and must not land over this.
+            if (_preparing is not null)
+            {
+                _preparing = null;
+                _prepareGeneration++;
+            }
+        }
+        else
+        {
+            // Already on its way: the call that started it will lay it out when it lands.
+            if (_preparing is { } inFlight && DescribesTheSameContent(inFlight, original, modified, isModelica))
+                return;
+
+            var generation = ++_prepareGeneration;
+            _preparing = new PreparedDiff(original, modified, isModelica, [], [], [], null);
+            Preparations++;
+
+            var prepared = await Task.Run(() => Prepare(original, modified, isModelica));
+
+            // Superseded while it ran - by different content, which will lay itself out.
+            if (generation != _prepareGeneration)
+                return;
+
+            _preparing = null;
+            _prepared = prepared;
+        }
+
+        LayOut();
     }
+
+    /// <summary>Whether <paramref name="diff"/> was prepared from exactly these inputs.</summary>
+    private static bool DescribesTheSameContent(PreparedDiff? diff, string? original, string? modified, bool isModelica) =>
+        diff is not null
+        && diff.IsModelica == isModelica
+        && string.Equals(diff.Original, original, StringComparison.Ordinal)
+        && string.Equals(diff.Modified, modified, StringComparison.Ordinal);
+
+    /// <summary>
+    /// How many times the diff has been prepared, for a test to hold the memoisation to.
+    /// </summary>
+    internal int Preparations { get; private set; }
+
+    /// <summary>Whether the diff for the current content is still being prepared.</summary>
+    internal bool IsPreparing => _preparing is not null;
 
     /// <summary>
     /// Whether the two scrollable panes are on screen — which is not the same question as whether
@@ -123,7 +181,8 @@ public partial class DiffViewer : IAsyncDisposable
     /// two cannot come apart again.</para>
     /// </remarks>
     internal bool ShowsPanes =>
-        string.IsNullOrEmpty(_errorMessage)
+        !IsPreparing
+        && string.IsNullOrEmpty(_errorMessage)
         && !(string.IsNullOrEmpty(OriginalContent) && string.IsNullOrEmpty(ModifiedContent))
         && ViewMode is DiffViewMode.SideBySide or DiffViewMode.SideBySideFull;
 
@@ -163,7 +222,7 @@ public partial class DiffViewer : IAsyncDisposable
     {
         ViewMode = mode;
         ViewModeChanged.InvokeAsync(mode);
-        ComputeDiff();
+        LayOut();
     }
 
     private string GetContainerStyle()
@@ -173,6 +232,8 @@ public partial class DiffViewer : IAsyncDisposable
 
     private string GetDiffSummary()
     {
+        if (IsPreparing)
+            return "";
         if (_addedCount == 0 && _removedCount == 0)
             return "No changes";
 
@@ -226,29 +287,37 @@ public partial class DiffViewer : IAsyncDisposable
         return [.. plainLines.Select(l => System.Web.HttpUtility.HtmlEncode(l) ?? "")];
     }
 
-    private void ComputeDiff()
+    /// <summary>
+    /// The expensive, mode-independent half of a diff: the edit script, and each side's lines as
+    /// finished HTML. Carries the inputs it was made from, so it can say whether it is still the
+    /// answer.
+    /// </summary>
+    internal sealed record PreparedDiff(
+        string? Original, string? Modified, bool IsModelica,
+        string[] OriginalHtml, string[] ModifiedHtml, List<DiffOp> Ops, string? Error);
+
+    private PreparedDiff? _prepared;
+    private PreparedDiff? _preparing;
+    private int _prepareGeneration;
+    private (PreparedDiff Diff, DiffViewMode Mode, int Context)? _laidOut;
+
+    /// <summary>
+    /// Diffs the two texts and colours both sides. Static and pure, because it runs on the pool
+    /// (B341): everything it needs is passed in and everything it makes is returned.
+    /// </summary>
+    internal static PreparedDiff Prepare(string? original, string? modified, bool isModelica)
     {
-        _unifiedLines.Clear();
-        _leftLines.Clear();
-        _rightLines.Clear();
-        _addedCount = 0;
-        _removedCount = 0;
-        _errorMessage = null;
-
-        var originalLines = (OriginalContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
-        var modifiedLines = (ModifiedContent ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
-
-        int width = Math.Max(3, Math.Max(originalLines.Length, modifiedLines.Length));
-        _maxLineNumberDigits = width.ToString().Length;
+        var originalLines = (original ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var modifiedLines = (modified ?? "").Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
 
         // Check if the file is too large for the O(m*n) LCS algorithm
         long lcsCells = (long)(originalLines.Length + 1) * (modifiedLines.Length + 1);
         if (lcsCells > MaxLcsCells)
         {
             var maxLines = Math.Max(originalLines.Length, modifiedLines.Length);
-            _errorMessage = $"File is too large for detailed diff comparison ({maxLines:N0} lines). " +
-                "Try viewing a smaller section of the file, or compare using an external diff tool.";
-            return;
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"File is too large for detailed diff comparison ({maxLines:N0} lines). " +
+                "Try viewing a smaller section of the file, or compare using an external diff tool.");
         }
 
         try
@@ -256,33 +325,60 @@ public partial class DiffViewer : IAsyncDisposable
             // The diff is computed on the plain text and only then dressed up: comparing markup
             // would diff the colouring as well as the code, and a line that merely changed category
             // would read as a change.
-            var diffResult = ComputeLcsDiff(originalLines, modifiedLines);
+            var ops = ComputeLcsDiff(originalLines, modifiedLines);
 
-            var originalDisplay = DisplayLines(OriginalContent, originalLines, _isModelicaFile);
-            var modifiedDisplay = DisplayLines(ModifiedContent, modifiedLines, _isModelicaFile);
+            var originalHtml = DisplayLines(original, originalLines, isModelica)
+                .Select(l => ParseContent(l, isModelica)).ToArray();
+            var modifiedHtml = DisplayLines(modified, modifiedLines, isModelica)
+                .Select(l => ParseContent(l, isModelica)).ToArray();
 
-            if (ViewMode == DiffViewMode.SideBySideFull)
-            {
-                ComputeFullSideBySide(originalDisplay, modifiedDisplay, diffResult);
-            }
-            else if (ViewMode == DiffViewMode.SideBySide)
-            {
-                ComputeSideBySideWithContext(originalDisplay, modifiedDisplay, diffResult);
-            }
-            else
-            {
-                ComputeUnifiedWithContext(originalDisplay, modifiedDisplay, diffResult);
-            }
+            return new PreparedDiff(original, modified, isModelica, originalHtml, modifiedHtml, ops, null);
         }
         catch (OutOfMemoryException)
         {
-            _unifiedLines.Clear();
-            _leftLines.Clear();
-            _rightLines.Clear();
-            _errorMessage = $"Not enough memory to compute diff for this file " +
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"Not enough memory to compute diff for this file " +
                 $"({originalLines.Length:N0} / {modifiedLines.Length:N0} lines). " +
-                "Try viewing a smaller section, or compare using an external diff tool.";
+                "Try viewing a smaller section, or compare using an external diff tool.");
         }
+        catch (Exception ex)
+        {
+            // Off the dispatcher now, so an exception here would leave the viewer saying
+            // "Comparing…" for ever rather than taking the page down; say what happened instead.
+            LoggingService.Error("DiffViewer", "Could not compute the diff", ex);
+            return new PreparedDiff(original, modified, isModelica, [], [], [],
+                $"Could not compute the diff: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Lays the prepared diff out for the current view mode — linear in its length, and skipped when
+    /// neither the diff, the mode nor the context has changed since the last time.
+    /// </summary>
+    private void LayOut()
+    {
+        if (_prepared is not { } diff)
+            return;
+        if (_laidOut is { } last && ReferenceEquals(last.Diff, diff)
+            && last.Mode == ViewMode && last.Context == ContextLines)
+            return;
+        _laidOut = (diff, ViewMode, ContextLines);
+
+        _unifiedLines.Clear();
+        _leftLines.Clear();
+        _rightLines.Clear();
+        _addedCount = 0;
+        _removedCount = 0;
+        _errorMessage = diff.Error;
+        if (diff.Error is not null)
+            return;
+
+        if (ViewMode == DiffViewMode.SideBySideFull)
+            ComputeFullSideBySide(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+        else if (ViewMode == DiffViewMode.SideBySide)
+            ComputeSideBySideWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
+        else
+            ComputeUnifiedWithContext(diff.OriginalHtml, diff.ModifiedHtml, diff.Ops);
     }
 
     /// <summary>
@@ -583,7 +679,14 @@ public partial class DiffViewer : IAsyncDisposable
         };
     }
 
-    private string ParseContent(string content)
+    /// <summary>
+    /// A laid-out line's HTML. The file's own lines were turned into HTML when the diff was
+    /// prepared; what is left is the layout's own filler — an empty cell, or the <c>...</c> between
+    /// hunks.
+    /// </summary>
+    private static string Html(string content) => string.IsNullOrEmpty(content) ? "&nbsp;" : content;
+
+    private static string ParseContent(string content, bool isModelicaFile)
     {
         if (string.IsNullOrEmpty(content))
             return "&nbsp;";
@@ -596,7 +699,7 @@ public partial class DiffViewer : IAsyncDisposable
         }
 
         // Apply Modelica syntax highlighting (includes HTML encoding) or plain encoding
-        if (_isModelicaFile)
+        if (isModelicaFile)
         {
             content = ApplyModelicaSyntaxHighlighting(content);
         }
