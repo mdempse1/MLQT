@@ -108,7 +108,8 @@ public class DiffViewerPaneSyncTests : MlqtComponentTestBase
         var viewer = Render("Real x;\n", "Real y;\n", mode);
 
         Assert.Equal(2, viewer.FindAll(".diff-pane-content").Count);
-        Assert.True(SyncCalls(JSInterop) > 0);
+        // After the render that shows the panes, not during it: OnAfterRenderAsync makes the call.
+        viewer.WaitForAssertion(() => Assert.True(SyncCalls(JSInterop) > 0));
     }
 
     // ---------------------------------------------------------------- when the interop fails anyway
