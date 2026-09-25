@@ -95,37 +95,73 @@ internal static class DiagramImage
         var imports = Imports(node);
         var components = new List<DiagramComponent>();
 
-        foreach (var member in ClassElementResolver
-                     .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
-                     .Where(m => m.Element.Kind == ClassElementKind.Component))
+        foreach (var member in Members(libraries, node))
         {
             // No Placement means Modelica does not draw it either - a parameter, or a component the
             // author never put on the diagram.
-            if (!placements.TryGetValue(member.Element.Name, out var placement))
-                continue;
-
-            // Resolved in the scope of the class that DECLARED it, which for an inherited connector
-            // is the base class and not this one.
-            var scope = member.InheritedFrom is null ? imports : member.OwnerImports;
-            var type = TypeResolver.Resolve(
-                libraries.CombinedGraph, member.OwnerId, member.Element.Type, scope);
-
-            // What this instance's parameters are: the modification it was given, then the type's
-            // own default. It answers both the %references in the icon's text (B278) and whether a
-            // conditional connector on that icon is there at all (B277).
-            var valueOf = ComponentValues.For(
-                libraries.CombinedGraph, type, member.Element.Modifications);
-
-            components.Add(new DiagramComponent(
-                member.Element.Name, placement.Extent, placement.Rotation,
-                IconOf(libraries, member.OwnerId, member.Element.Type, scope),
-                member.Element.Type,
-                placement.RotationCentre,
-                type is null ? null : ConnectorsOn(libraries, type, valueOf),
-                valueOf));
+            if (placements.TryGetValue(member.Element.Name, out var placement))
+                components.Add(Build(libraries, member, placement, imports));
         }
 
         return components;
+    }
+
+    /// <summary>
+    /// One component of the class's diagram, built exactly as the image draws it, or null when it has
+    /// no placement in <paramref name="placements"/>.
+    ///
+    /// <para><b>The connection router asks this</b> rather than reading the declarations itself
+    /// (B314): a line has to end on the connector the picture shows, which is the type's icon-layer
+    /// placement in the icon's coordinate system, and the one way to guarantee that is for both to
+    /// work from the same <see cref="DiagramComponent"/>. A component the graph does not know yet -
+    /// declared in text mid-edit - is framed by its placement alone.</para>
+    /// </summary>
+    public static DiagramComponent? ComponentOn(
+        ILibraryDataService libraries, string classId,
+        IReadOnlyDictionary<string, DiagramGeometry.Placement> placements, string name)
+    {
+        if (!placements.TryGetValue(name, out var placement))
+            return null;
+
+        var node = libraries.GetModelById(classId);
+        var member = node is null
+            ? null
+            : Members(libraries, node).FirstOrDefault(m => string.Equals(m.Element.Name, name, StringComparison.Ordinal));
+
+        return member is null
+            ? new DiagramComponent(name, placement.Extent, placement.Rotation, null, null, placement.RotationCentre)
+            : Build(libraries, member, placement, Imports(node!));
+    }
+
+    /// <summary>The components that can appear on the class's own diagram, declared or inherited.</summary>
+    private static IEnumerable<ResolvedElement> Members(ILibraryDataService libraries, ModelNode node)
+        => ClassElementResolver
+            .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+            .Where(m => m.Element.Kind == ClassElementKind.Component);
+
+    private static DiagramComponent Build(
+        ILibraryDataService libraries, ResolvedElement member, DiagramGeometry.Placement placement,
+        IReadOnlyList<string> imports)
+    {
+        // Resolved in the scope of the class that DECLARED it, which for an inherited connector
+        // is the base class and not this one.
+        var scope = member.InheritedFrom is null ? imports : member.OwnerImports;
+        var type = TypeResolver.Resolve(
+            libraries.CombinedGraph, member.OwnerId, member.Element.Type, scope);
+
+        // What this instance's parameters are: the modification it was given, then the type's
+        // own default. It answers both the %references in the icon's text (B278) and whether a
+        // conditional connector on that icon is there at all (B277).
+        var valueOf = ComponentValues.For(
+            libraries.CombinedGraph, type, member.Element.Modifications);
+
+        return new DiagramComponent(
+            member.Element.Name, placement.Extent, placement.Rotation,
+            IconOf(libraries, member.OwnerId, member.Element.Type, scope),
+            member.Element.Type,
+            placement.RotationCentre,
+            type is null ? null : ConnectorsOn(libraries, type, valueOf),
+            valueOf);
     }
 
     /// <summary>

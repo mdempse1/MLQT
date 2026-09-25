@@ -35,6 +35,11 @@ public sealed record DiagramComponent(
 /// <param name="Color">RGB as [r,g,b], or null for the default connection colour.</param>
 public sealed record DiagramConnection(IReadOnlyList<double[]> Points, int[]? Color = null);
 
+/// <summary>Where a connection meets a component, in the coordinates the component is placed in.</summary>
+/// <param name="FacingX">The outward direction of the edge it sits on, as a unit vector along one
+/// axis; (0,0) for a point at the centre, which faces nowhere.</param>
+public readonly record struct DiagramPort(double X, double Y, double FacingX, double FacingY);
+
 /// <summary>
 /// Renders a class's diagram — its components drawn at their placements with their own icons, the
 /// connection lines between them, and whatever the class draws on its own diagram layer — as one SVG.
@@ -153,39 +158,22 @@ public static class DiagramSvgRenderer
             return;
         }
 
-        var icon = Normalize(component.Icon.CoordinateExtent);
-        var iconWidth = icon[2] - icon[0];
-        var iconHeight = icon[3] - icon[1];
-        if (iconWidth == 0 || iconHeight == 0)
+        if (FrameOf(component) is not { } frame)
             return;
 
-        // The placement extent is where the icon's coordinate system goes. A reversed pair gives a
-        // negative scale, which is Modelica's mirroring, so it is arithmetic rather than a case.
-        var scaleX = (extent[2] - extent[0]) / iconWidth;
-        var scaleY = (extent[3] - extent[1]) / iconHeight;
-        var iconCx = (icon[0] + icon[2]) / 2;
-        var iconCy = (icon[1] + icon[3]) / 2;
-
-        // Rotation turns about the transformation's origin, which is usually the centre of the
-        // placement box and is not obliged to be. Turning about the box centre instead moves a
-        // component that states an off-centre origin, rather than only turning it.
-        var (rx, ry) = component.RotationCentre is { Length: >= 2 } centre
-            ? (centre[0], centre[1])
-            : (cx, cy);
-
         svg.Append(indent).Append("<g transform=\"")
-            .Append($"translate({F(rx)},{F(ry)})");
+            .Append($"translate({F(frame.Rx)},{F(frame.Ry)})");
         if (component.Rotation != 0)
             svg.Append($" rotate({F(component.Rotation)})");
-        svg.Append($" translate({F(cx - rx)},{F(cy - ry)})")
-            .Append($" scale({F(scaleX)},{F(scaleY)}) translate({F(-iconCx)},{F(-iconCy)})")
+        svg.Append($" translate({F(frame.Cx - frame.Rx)},{F(frame.Cy - frame.Ry)})")
+            .Append($" scale({F(frame.ScaleX)},{F(frame.ScaleY)}) translate({F(-frame.IconCx)},{F(-frame.IconCy)})")
             .AppendLine("\">");
 
         // A non-uniform scale does not have one answer for what it does to a stroke; the geometric
         // mean is what SVG itself approximates with, and these scales are square in practice.
-        var inner = scale * Math.Sqrt(Math.Abs(scaleX * scaleY));
-        var innerMirrorX = mirrorX ^ (scaleX < 0);
-        var innerMirrorY = mirrorY ^ (scaleY < 0);
+        var inner = scale * Math.Sqrt(Math.Abs(frame.ScaleX * frame.ScaleY));
+        var innerMirrorX = mirrorX ^ (frame.ScaleX < 0);
+        var innerMirrorY = mirrorY ^ (frame.ScaleY < 0);
 
         Indent(svg, IconSvgRenderer.RenderPrimitives(
             component.Icon.Graphics.Select(g => WithText(g, component)), fileNameResolver,
@@ -197,6 +185,143 @@ public static class DiagramSvgRenderer
                             innerMirrorX, innerMirrorY, indent + "  ");
 
         svg.Append(indent).AppendLine("</g>");
+    }
+
+    // --- Where things land ---------------------------------------------------------------------
+
+    /// <summary>
+    /// How a component's icon coordinate system is put onto its parent: the transform
+    /// <see cref="AppendComponent"/> draws with, and the one every question about where a point of
+    /// the icon ends up must be answered with.
+    /// </summary>
+    /// <param name="Cx">The placement extent's centre, where the icon's centre goes before turning.</param>
+    /// <param name="Rx">The point the rotation turns about.</param>
+    /// <param name="ScaleX">Placement size over icon size; negative where the extent is reversed.</param>
+    /// <param name="IconCx">The centre of the icon's own coordinate system.</param>
+    private readonly record struct Frame(
+        double Cx, double Cy, double Rx, double Ry, double Rotation,
+        double ScaleX, double ScaleY, double IconCx, double IconCy, double IconHalfWidth, double IconHalfHeight);
+
+    /// <summary>
+    /// The component's frame, or null when its icon's coordinate system has no area. A component
+    /// with no icon is framed against Modelica's default system, which is what its connectors'
+    /// placements are written in when the type declares none.
+    /// </summary>
+    private static Frame? FrameOf(DiagramComponent component)
+    {
+        var extent = component.Extent;
+        if (extent.Length < 4)
+            return null;
+
+        var icon = Normalize(component.Icon?.CoordinateExtent ?? DefaultExtent);
+        var iconWidth = icon[2] - icon[0];
+        var iconHeight = icon[3] - icon[1];
+        if (iconWidth == 0 || iconHeight == 0)
+            return null;
+
+        var cx = (extent[0] + extent[2]) / 2;
+        var cy = (extent[1] + extent[3]) / 2;
+
+        // Rotation turns about the transformation's origin, which is usually the centre of the
+        // placement box and is not obliged to be. Turning about the box centre instead moves a
+        // component that states an off-centre origin, rather than only turning it.
+        var (rx, ry) = component.RotationCentre is { Length: >= 2 } centre
+            ? (centre[0], centre[1])
+            : (cx, cy);
+
+        // The placement extent is where the icon's coordinate system goes. A reversed pair gives a
+        // negative scale, which is Modelica's mirroring, so it is arithmetic rather than a case.
+        return new Frame(
+            cx, cy, rx, ry, component.Rotation,
+            (extent[2] - extent[0]) / iconWidth, (extent[3] - extent[1]) / iconHeight,
+            (icon[0] + icon[2]) / 2, (icon[1] + icon[3]) / 2, iconWidth / 2, iconHeight / 2);
+    }
+
+    /// <summary>
+    /// Where the point (<paramref name="x"/>, <paramref name="y"/>) of the component's icon lands in
+    /// the coordinates the component is placed in — the same arithmetic the drawing is made with.
+    /// </summary>
+    public static (double X, double Y) ToParent(DiagramComponent component, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+        if (FrameOf(component) is not { } frame)
+            return ((component.Extent[0] + component.Extent[2]) / 2, (component.Extent[1] + component.Extent[3]) / 2);
+        return ToParent(frame, x, y);
+    }
+
+    private static (double X, double Y) ToParent(Frame frame, double x, double y)
+    {
+        var (dx, dy) = Rotate(
+            frame.Cx - frame.Rx + frame.ScaleX * (x - frame.IconCx),
+            frame.Cy - frame.Ry + frame.ScaleY * (y - frame.IconCy),
+            frame.Rotation);
+        return (frame.Rx + dx, frame.Ry + dy);
+    }
+
+    /// <summary>
+    /// Where a connector the component shows on its icon (one of its <see cref="DiagramComponent.Children"/>)
+    /// is drawn, and which way it faces; null when the component shows no connector of that name.
+    ///
+    /// <para><b>This is what a connection line must end on</b> (B314). The connectors drawn on a
+    /// component are its type's icon-layer placements, in its icon's coordinate system, turned about
+    /// the placement's origin - and a line routed by any other reading of the same declaration ends
+    /// where nothing is drawn.</para>
+    /// </summary>
+    public static DiagramPort? PortOf(DiagramComponent component, string connectorName)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+        var child = component.Children?.FirstOrDefault(c => string.Equals(c.Name, connectorName, StringComparison.Ordinal));
+        if (child is null || FrameOf(component) is not { } frame)
+            return null;
+
+        var childFrame = FrameOf(child);
+        var (x, y) = childFrame is { } cf ? ToParent(cf, cf.IconCx, cf.IconCy) : ToParent(child, 0, 0);
+        return PortAt(frame, x, y);
+    }
+
+    /// <summary>
+    /// A port at a fraction of the component's icon: (<paramref name="nx"/>, <paramref name="ny"/>)
+    /// in [-1, 1] across its coordinate system, so (-1, 0) is the middle of the left edge and (0, 0)
+    /// its centre, which faces nowhere. For a connector the type does not place, whose edge can only
+    /// be guessed.
+    /// </summary>
+    public static DiagramPort PortOnEdge(DiagramComponent component, double nx, double ny)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+        if (FrameOf(component) is not { } frame)
+        {
+            var (x, y) = ToParent(component, 0, 0);
+            return new DiagramPort(x, y, 0, 0);
+        }
+
+        return PortAt(frame, frame.IconCx + nx * frame.IconHalfWidth, frame.IconCy + ny * frame.IconHalfHeight);
+    }
+
+    // A port at an icon point: where it lands, and the edge it sits nearest as an outward unit
+    // vector - chosen in the icon, where "left edge" means something, then turned with it.
+    private static DiagramPort PortAt(Frame frame, double x, double y)
+    {
+        var (px, py) = ToParent(frame, x, y);
+
+        var nx = (x - frame.IconCx) / frame.IconHalfWidth;
+        var ny = (y - frame.IconCy) / frame.IconHalfHeight;
+        if (nx == 0 && ny == 0)
+            return new DiagramPort(px, py, 0, 0);
+
+        var (ux, uy) = Math.Abs(nx) >= Math.Abs(ny) ? (Math.Sign(nx), 0) : (0, Math.Sign(ny));
+        var (fx, fy) = Rotate(Math.Sign(frame.ScaleX) * ux, Math.Sign(frame.ScaleY) * uy, frame.Rotation);
+        return new DiagramPort(px, py, Snap(fx), Snap(fy));
+
+        static double Snap(double v) => Math.Abs(v) < 0.5 ? 0 : Math.Sign(v);
+    }
+
+    private static (double X, double Y) Rotate(double x, double y, double degrees)
+    {
+        if (degrees == 0)
+            return (x, y);
+        var r = degrees * Math.PI / 180;
+        var (cos, sin) = (Math.Cos(r), Math.Sin(r));
+        return (x * cos - y * sin, x * sin + y * cos);
     }
 
     /// <summary>

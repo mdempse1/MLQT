@@ -1,6 +1,7 @@
 using ModelicaGraph.Analysis;
 using System.Text.RegularExpressions;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Icons;
 using ModelicaParser.Visitors;
 using MLQT.Services.Interfaces;
 
@@ -9,10 +10,10 @@ namespace MLQT.McpServer.Helpers;
 /// <summary>
 /// Computes an orthogonal (horizontal/vertical only) route for a <c>connect(a, b)</c> line that starts and
 /// ends at the actual connector positions on each component, leaving each connector in the direction of the
-/// edge it sits on. A connector's position is read from its Placement inside the component's type (mapped
-/// through the component's own Placement in the parent, honouring rotation); when the type has no positioned
-/// connector, the connector is inferred to sit on the left (an input) or right (an output) edge, else the
-/// component centre. If neither endpoint's component is positioned there is nothing to draw (null).
+/// edge it sits on. A connector is where get_diagram_image draws it - its icon-layer Placement inside the
+/// component's type, mapped through the component's own Placement by <see cref="DiagramSvgRenderer.PortOf"/>;
+/// when the type has no positioned connector, the connector is inferred to sit on the left (an input) or
+/// right (an output) edge, else the component centre. If neither endpoint's component is positioned there is nothing to draw (null).
 /// </summary>
 internal static class DiagramGeometry
 {
@@ -55,58 +56,53 @@ internal static class DiagramGeometry
 
     // --- Endpoint location -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Where a connection meets <paramref name="portRef"/>, and which way it leaves.
+    ///
+    /// <para><b>The connector is located on the component the image draws</b> (B314): the type's
+    /// icon-layer placement (<c>iconTransformation</c> first), in the type's icon coordinate system,
+    /// turned about the placement's <c>origin</c>. This used to be worked out here a second way - the
+    /// diagram-layer placement, the first <c>coordinateSystem</c> in the type's text and the extent's
+    /// centre - so a line ended where no connector was drawn, and <c>add_connection</c> wrote those
+    /// points into the user's file.</para>
+    /// </summary>
     private static (Pt Point, Facing Facing)? Locate(
         ILibraryDataService libraries, string classId, string classCode,
         IReadOnlyDictionary<string, Placement> placements, string portRef)
     {
         var root = Segment(portRef, 0);
-        if (!placements.TryGetValue(root, out var comp))
+        if (DiagramImage.ComponentOn(libraries, classId, placements, root) is not { } comp)
             return null; // component not positioned — cannot route to it
 
-        var centre = Centre(comp.Extent);
         var dot = portRef.IndexOf('.');
-        if (dot < 0)
-            return (centre, Facing.None); // the port is the component itself (unusual for connect)
+        var port = dot < 0
+            ? DiagramSvgRenderer.PortOnEdge(comp, 0, 0) // the port is the component itself (unusual for connect)
+            : DiagramSvgRenderer.PortOf(comp, portRef[(dot + 1)..].Split('.')[0])
+              ?? GuessedPort(libraries, classId, classCode, comp, root, portRef[(dot + 1)..].Split('.')[0]);
 
-        var connectorName = portRef[(dot + 1)..].Split('.')[0];
-        var (nx, ny) = ConnectorOffset(libraries, classCode, classId, root, connectorName);
-
-        var (ox, oy) = (nx * HalfWidth(comp.Extent), ny * HalfHeight(comp.Extent));
-        var (rx, ry) = Rotate(ox, oy, comp.Rotation);
-        var point = new Pt(centre.X + rx, centre.Y + ry);
-        return (point, EdgeFacing(nx, ny, comp.Rotation));
+        return (new Pt(port.X, port.Y), new Facing(port.FacingX, port.FacingY));
     }
 
-    // Normalised connector position within the component's icon coordinate system, roughly in [-1, 1].
-    private static (double Nx, double Ny) ConnectorOffset(
-        ILibraryDataService libraries, string classCode, string classId, string componentName, string connectorName)
+    // A connector the type does not place on its icon: infer its edge from causality (an input sits
+    // on the left, an output on the right), else the component centre.
+    private static DiagramPort GuessedPort(
+        ILibraryDataService libraries, string classId, string classCode, DiagramComponent comp,
+        string componentName, string connectorName)
     {
         var typeText = ComponentTypeText(classCode, componentName);
         var typeNode = typeText is null ? null : TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null);
-        if (typeNode is null)
-            return (0, 0);
+        var member = typeNode is null
+            ? null
+            : ClassElementResolver
+                .Collect(libraries.CombinedGraph, typeNode, includeProtected: false, includeInherited: true)
+                .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
+                                     string.Equals(m.Element.Name, connectorName, StringComparison.Ordinal));
 
-        var member = ClassElementResolver
-            .Collect(libraries.CombinedGraph, typeNode, includeProtected: false, includeInherited: true)
-            .FirstOrDefault(m => m.Element.Kind == ClassElementKind.Component &&
-                                 string.Equals(m.Element.Name, connectorName, StringComparison.Ordinal));
-        if (member is null)
-            return (0, 0);
-
-        // Prefer the connector's actual Placement (mapped through the icon coordinate system)...
-        var ownerCode = libraries.GetModelById(member.OwnerId)?.Definition.ModelicaCode;
-        if (ownerCode is not null && Placements(ownerCode).TryGetValue(connectorName, out var cp))
-        {
-            var c = Centre(cp.Extent);
-            var (icx, icy, ihw, ihh) = CoordinateSystem(typeNode.Definition.ModelicaCode);
-            return ((c.X - icx) / ihw, (c.Y - icy) / ihh);
-        }
-
-        // ...otherwise infer the edge from causality (an input sits on the left, an output on the right).
-        return CausalityOffset(libraries, member);
+        var (nx, ny) = member is null ? (0d, 0d) : CausalityOffset(member);
+        return DiagramSvgRenderer.PortOnEdge(comp, nx, ny);
     }
 
-    private static (double, double) CausalityOffset(ILibraryDataService libraries, ResolvedElement member)
+    private static (double, double) CausalityOffset(ResolvedElement member)
     {
         if (string.Equals(member.Element.Causality, "input", StringComparison.Ordinal)) return (-1, 0);
         if (string.Equals(member.Element.Causality, "output", StringComparison.Ordinal)) return (1, 0);
@@ -115,18 +111,6 @@ internal static class DiagramGeometry
         if (type.Contains("Input", StringComparison.Ordinal)) return (-1, 0);
         if (type.Contains("Output", StringComparison.Ordinal)) return (1, 0);
         return (0, 0); // acausal / unknown — treat as the component centre
-    }
-
-    // Which edge the connector sits on, as an outward unit vector, rotated by the component's rotation.
-    private static Facing EdgeFacing(double nx, double ny, double rotationDeg)
-    {
-        if (nx == 0 && ny == 0)
-            return Facing.None;
-        double dx, dy;
-        if (Math.Abs(nx) >= Math.Abs(ny)) { dx = Math.Sign(nx); dy = 0; }
-        else { dx = 0; dy = Math.Sign(ny); }
-        var (rx, ry) = Rotate(dx, dy, rotationDeg);
-        return new Facing(SnapUnit(rx), SnapUnit(ry));
     }
 
     // --- Orthogonal routing ------------------------------------------------------------------------
@@ -384,45 +368,10 @@ internal static class DiagramGeometry
         => ClassBodyLocator.Analyze(classCode).Components
             .FirstOrDefault(c => string.Equals(c.Name, componentName, StringComparison.Ordinal))?.TypeText;
 
-    // The icon coordinate system (centre + half extents); Modelica's default is {{-100,-100},{100,100}}.
-    private static (double Cx, double Cy, double Hw, double Hh) CoordinateSystem(string? typeCode)
-    {
-        if (typeCode is not null)
-        {
-            var idx = typeCode.IndexOf("coordinateSystem", StringComparison.Ordinal);
-            if (idx >= 0)
-            {
-                var m = ExtentRegex.Match(typeCode, idx);
-                if (m.Success)
-                {
-                    var x1 = Num(m.Groups[1].Value); var y1 = Num(m.Groups[2].Value);
-                    var x2 = Num(m.Groups[3].Value); var y2 = Num(m.Groups[4].Value);
-                    var hw = (x2 - x1) / 2; var hh = (y2 - y1) / 2;
-                    if (hw != 0 && hh != 0)
-                        return ((x1 + x2) / 2, (y1 + y2) / 2, hw, hh);
-                }
-            }
-        }
-        return (0, 0, 100, 100);
-    }
-
     // --- Small maths -------------------------------------------------------------------------------
 
     private static string Segment(string portRef, int i) => portRef.Split('.')[i];
-    private static Pt Centre(double[] e) => new((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
-    private static double HalfWidth(double[] e) => (e[2] - e[0]) / 2;
-    private static double HalfHeight(double[] e) => (e[3] - e[1]) / 2;
     private static double Distance(Pt a, Pt b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     private static double Num(string s) => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
-    private static double SnapUnit(double v) => Math.Abs(v) < 0.5 ? 0 : Math.Sign(v);
     private static bool Between(double a, double m, double b) => m >= Math.Min(a, b) && m <= Math.Max(a, b);
-
-    private static (double X, double Y) Rotate(double x, double y, double deg)
-    {
-        if (deg == 0)
-            return (x, y);
-        var r = deg * Math.PI / 180;
-        var (cos, sin) = (Math.Cos(r), Math.Sin(r));
-        return (x * cos - y * sin, x * sin + y * cos);
-    }
 }

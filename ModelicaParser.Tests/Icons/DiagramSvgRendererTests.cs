@@ -180,5 +180,162 @@ public class DiagramSvgRendererTests
     {
         Assert.Throws<ArgumentNullException>(() => DiagramSvgRenderer.Render(null, null!, []));
         Assert.Throws<ArgumentNullException>(() => DiagramSvgRenderer.Render(null, [], null!));
+        Assert.Throws<ArgumentNullException>(() => DiagramSvgRenderer.ToParent(null!, 0, 0));
+        Assert.Throws<ArgumentNullException>(() => DiagramSvgRenderer.PortOf(null!, "u"));
+        Assert.Throws<ArgumentNullException>(() => DiagramSvgRenderer.PortOnEdge(null!, 0, 0));
+    }
+
+    // --- Where a point of an icon lands (B314) --------------------------------------------------
+    //
+    // A connection line has to end on the connector the picture draws, so the router asks these
+    // rather than working the transform out a second time. They are held to the SVG transform the
+    // drawing is made with: the same component, asked both ways, must agree.
+
+    private static DiagramComponent Framed(
+        double[] extent, double rotation = 0, double[]? origin = null, IconData? icon = null,
+        IReadOnlyList<DiagramComponent>? children = null)
+        => new("f", extent, rotation, icon ?? Box(), null, origin, children);
+
+    private static void AssertPoint(double x, double y, (double X, double Y) actual)
+    {
+        Assert.Equal(x, actual.X, 9);
+        Assert.Equal(y, actual.Y, 9);
+    }
+
+    [Fact]
+    public void AnIconPointIsScaledIntoThePlacement()
+    {
+        AssertPoint(15, 8, DiagramSvgRenderer.ToParent(Framed([0, 0, 20, 20]), 50, -20));
+    }
+
+    [Fact]
+    public void AnIconPointTurnsAboutTheOrigin_NotTheExtentCentre()
+    {
+        // Extent centre (10,0), origin (0,0): the icon's right edge is 20 from the origin, and
+        // turned a quarter it is straight above it.
+        var turned = Framed([0, -10, 20, 10], rotation: 90, origin: [0, 0]);
+
+        AssertPoint(0, 20, DiagramSvgRenderer.ToParent(turned, 100, 0));
+        // With no origin it turns about its own centre.
+        AssertPoint(10, 10, DiagramSvgRenderer.ToParent(Framed([0, -10, 20, 10], rotation: 90), 100, 0));
+    }
+
+    [Fact]
+    public void AnIconPointIsMeasuredInTheIconsOwnCoordinateSystem()
+    {
+        var wide = new IconData
+        {
+            CoordinateExtent = [-200, -100, 200, 100],
+            Graphics = [new RectanglePrimitive { Extent = [-200, -100, 200, 100] }],
+        };
+
+        AssertPoint(20, 0, DiagramSvgRenderer.ToParent(Framed([-20, -10, 20, 10], icon: wide), 200, 0));
+    }
+
+    [Fact]
+    public void AComponentWithNoIconIsFramedByTheDefaultSystem()
+    {
+        var bare = new DiagramComponent("b", [-10, -10, 10, 10], 0, null);
+
+        AssertPoint(10, 0, DiagramSvgRenderer.ToParent(bare, 100, 0));
+    }
+
+    [Fact]
+    public void AnIconWithNoAreaLandsOnThePlacementsCentre()
+    {
+        var flat = new IconData { CoordinateExtent = [0, 0, 0, 0] };
+        var component = new DiagramComponent("z", [0, 0, 20, 40], 0, flat);
+
+        AssertPoint(10, 20, DiagramSvgRenderer.ToParent(component, 100, 100));
+        Assert.Equal(new DiagramPort(10, 20, 0, 0), DiagramSvgRenderer.PortOnEdge(component, 1, 0));
+    }
+
+    [Fact]
+    public void APortIsWhereItsConnectorIsDrawn_AndFacesItsEdge()
+    {
+        // The connector's box is centred on (0,90) of the icon: the top edge.
+        var top = new DiagramComponent("c", [-10, 80, 10, 100], 0, null);
+        var component = Framed([-10, -10, 10, 10], children: [top]);
+
+        var port = DiagramSvgRenderer.PortOf(component, "c");
+
+        Assert.NotNull(port);
+        Assert.Equal(0, port!.Value.X, 9);
+        Assert.Equal(9, port.Value.Y, 9);
+        Assert.Equal((0d, 1d), (port.Value.FacingX, port.Value.FacingY));
+    }
+
+    [Fact]
+    public void APortTurnsWithItsComponent_AndWithItsOwnPlacement()
+    {
+        // A connector placed with its own origin, off its extent's centre, and turned: it lands
+        // where its own icon's centre is drawn, not at its extent's centre.
+        var connector = new DiagramComponent("c", [80, -20, 120, 0], 180, Box(), null, [100, 0]);
+        var component = Framed([-10, -10, 10, 10], rotation: 90, children: [connector]);
+
+        var port = DiagramSvgRenderer.PortOf(component, "c")!.Value;
+
+        // Turned about (100,0) the connector's centre (100,-10) goes to (100,10); in the component
+        // that is (10,1), and a quarter turn takes it to (-1,10), facing up.
+        Assert.Equal(-1, port.X, 9);
+        Assert.Equal(10, port.Y, 9);
+        Assert.Equal((0d, 1d), (port.FacingX, port.FacingY));
+    }
+
+    [Fact]
+    public void AMirroredComponentsPortFacesTheOtherWay()
+    {
+        var right = new DiagramComponent("y", [90, -10, 110, 10], 0, null);
+        var mirrored = new DiagramComponent("m", [10, -10, -10, 10], 0, Box(), null, null, [right]);
+
+        var port = DiagramSvgRenderer.PortOf(mirrored, "y")!.Value;
+
+        Assert.Equal(-10, port.X, 9);
+        Assert.Equal((-1d, 0d), (port.FacingX, port.FacingY));
+    }
+
+    [Fact]
+    public void AConnectorTheComponentDoesNotShowHasNoPort()
+    {
+        Assert.Null(DiagramSvgRenderer.PortOf(Framed([-10, -10, 10, 10]), "u"));
+        Assert.Null(DiagramSvgRenderer.PortOf(
+            Framed([-10, -10, 10, 10], children: [new DiagramComponent("y", [90, -10, 110, 10], 0, null)]), "u"));
+        Assert.Null(DiagramSvgRenderer.PortOf(
+            new DiagramComponent("z", [0, 0, 1, 1], 0, new IconData { CoordinateExtent = [0, 0, 0, 0] }, null, null,
+                [new DiagramComponent("u", [0, 0, 1, 1], 0, null)]), "u"));
+    }
+
+    [Fact]
+    public void AConnectorWhoseIconHasNoAreaIsFoundAtItsPlacement()
+    {
+        var flat = new DiagramComponent("c", [-110, -10, -90, 10], 0, new IconData { CoordinateExtent = [5, 5, 5, 5] });
+
+        var port = DiagramSvgRenderer.PortOf(Framed([-10, -10, 10, 10], children: [flat]), "c")!.Value;
+
+        Assert.Equal(-10, port.X, 9);
+        Assert.Equal((-1d, 0d), (port.FacingX, port.FacingY));
+    }
+
+    [Fact]
+    public void AnEdgePortIsAFractionOfTheIcon_AndItsCentreFacesNowhere()
+    {
+        var component = Framed([0, 0, 20, 20], rotation: 180);
+
+        Assert.Equal(new DiagramPort(20, 10, 1, 0), Rounded(DiagramSvgRenderer.PortOnEdge(component, -1, 0)));
+        Assert.Equal(new DiagramPort(10, 10, 0, 0), Rounded(DiagramSvgRenderer.PortOnEdge(component, 0, 0)));
+        Assert.Equal(new DiagramPort(10, 0, 0, -1), Rounded(DiagramSvgRenderer.PortOnEdge(component, 0, 1)));
+    }
+
+    private static DiagramPort Rounded(DiagramPort p)
+        => new(Math.Round(p.X, 9) + 0, Math.Round(p.Y, 9) + 0, p.FacingX + 0, p.FacingY + 0);
+
+    [Fact]
+    public void TheDrawingAndThePortAgree()
+    {
+        // The whole point: the SVG transform and ToParent are one frame. A component turned about an
+        // off-centre origin writes translate(origin) rotate translate(centre - origin).
+        var svg = DiagramSvgRenderer.Render(null, [Framed([0, -10, 20, 10], rotation: 90, origin: [0, 0])], []);
+
+        Assert.Contains("translate(0,0) rotate(90) translate(10,0) scale(0.1,0.1)", svg);
     }
 }
