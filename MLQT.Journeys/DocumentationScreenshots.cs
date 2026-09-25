@@ -13,7 +13,7 @@ namespace MLQT.Journeys;
 /// <para>Off unless <c>MLQT_DOC_SCREENSHOTS</c> names a directory, so an ordinary run does not write
 /// to the repository. Run it with:</para>
 /// <code>
-/// $env:MLQT_DOC_SCREENSHOTS = "Documentation/Images"
+/// $env:MLQT_DOC_SCREENSHOTS = "C:\Projects\MLQT\Documentation\Images"   # absolute - see CLAUDE.md
 /// MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreenshots
 /// </code>
 ///

@@ -374,7 +374,7 @@ MLQT.Journeys/bin/Release/net10.0/MLQT.Journeys.exe --filter DocumentationScreen
 ```
 
 **Give it an absolute path.** A relative one resolves against the *test executable's* directory, not
-the repository, so `Documentation/Images` quietly writes 41 pictures into
+the repository, so `Documentation/Images` quietly writes 44 pictures into
 `MLQT.Journeys/bin/Release/net10.0/` and `git status` shows nothing changed — which reads as "the UI
 did not move" rather than as "the pictures went somewhere else".
 
@@ -670,13 +670,13 @@ dotnet tool install --global dotnet-stryker      # once
 ./build/run-mutation.ps1 -Mutate '**/ProjectNameRules.cs'
 ./build/run-mutation.ps1 -Project ModelicaParser -Mutate '**/Helpers/*.cs'
 
-# Every measured assembly, many hours, resumable - the audit
+# Every measured assembly, about an hour, resumable - the audit
 ./build/run-mutation.ps1 -All
 ./build/run-mutation.ps1 -Summarise          # rebuild the report from runs already done
 ```
 
 **For a single run, always pass `-Mutate`**: one file takes about three minutes, most of it the build
-and the baseline test run, and a whole assembly takes hours.
+and the baseline test run, and a whole assembly takes many times as long.
 
 **`-All`** mutates the same seven assemblies the coverage gate measures, smallest first so the early
 ones calibrate the machine before anything committing starts. **It takes about an hour**, not the

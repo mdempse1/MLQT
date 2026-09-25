@@ -163,7 +163,7 @@ if ($CoreOnly) {
 #
 # WebKit is the half this does not rescue: its ubuntu24.04 build links libicu74 and libvpx9, and
 # 26.04 ships neither, so it will not launch whatever the override says. That is why the WebKit
-# rehearsal is a CI job on ubuntu-latest (nightly-webkit.yml) rather than something run here.
+# rehearsal is a CI job on ubuntu-24.04 (nightly-webkit.yml, pinned by B256) rather than something run here.
 #
 # Bump $NewestPlaywrightUbuntu when Playwright adds a platform, and this stops applying by itself.
 

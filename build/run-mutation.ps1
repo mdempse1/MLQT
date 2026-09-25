@@ -29,13 +29,14 @@
 
 .PARAMETER Mutate
     One or more file patterns limiting what is mutated, e.g. '**/ProjectNameRules.cs' or
-    '**/Checking/*.cs'. STRONGLY RECOMMENDED for a single run. A whole assembly takes hours; one file
+    '**/Checking/*.cs'. STRONGLY RECOMMENDED for a single run. A whole assembly takes many times longer; one file
     takes about three minutes, almost all of it the initial build and baseline test run - which is
     why several files are worth passing in one call rather than one run each.
 
 .PARAMETER All
-    Mutate every measured assembly in turn and write one report over the lot. Takes many hours and is
-    resumable: a project whose report is already present is skipped.
+    Mutate every measured assembly in turn and write one report over the lot. Takes about an hour
+    (24,901 mutants in 52 minutes on 2026-09-22, since B267 judged each assembly by its own suite)
+    and is resumable: a project whose report is already present is skipped.
 
 .PARAMETER Summarise
     Rebuild the consolidated report from runs already on disk, mutating nothing.
@@ -290,7 +291,7 @@ try {
 
     if ($All) {
         Write-Host "Mutating every measured assembly into $Output" -ForegroundColor Cyan
-        Write-Host "This takes many hours. It is resumable: a project whose report is already there is" -ForegroundColor DarkGray
+        Write-Host "This takes about an hour. It is resumable: a project whose report is already there is" -ForegroundColor DarkGray
         Write-Host "skipped, so stopping with Ctrl-C and running again continues where it left off." -ForegroundColor DarkGray
         Write-Host ''
 
@@ -342,7 +343,7 @@ try {
 
     if ($Mutate.Count -eq 0) {
         Write-Host "No -Mutate filter given, so the whole of $Project will be mutated." -ForegroundColor Yellow
-        Write-Host "That takes hours. Ctrl-C now and pass -Mutate '**/SomeFile.cs' to scope it," -ForegroundColor Yellow
+        Write-Host "That takes many times longer than one file. Ctrl-C now and pass -Mutate '**/SomeFile.cs' to scope it," -ForegroundColor Yellow
         Write-Host "or -All to mutate everything deliberately." -ForegroundColor Yellow
     }
 
