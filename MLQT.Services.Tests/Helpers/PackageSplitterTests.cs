@@ -235,6 +235,113 @@ public class PackageSplitterTests : IDisposable
         Assert.True(Path.Exists(arrived), "what could not be deleted is still there");
     }
 
+    /// <summary>
+    /// Something standing where the save means to write a file, so that one write fails and the
+    /// rest succeed. A directory, for the reason the test above gives: it stops a write on every
+    /// platform, where an open handle does not.
+    /// </summary>
+    private static void Obstruct(string path)
+    {
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, "in the way"), "");
+    }
+
+    [Fact]
+    public async Task IfAClassCannotBeWritten_TheFileItLivesInIsKept()
+    {
+        // B303. The save logs a failed write and carries on, and the guard before the delete asked
+        // which classes had been *asked* to move — so Beta, written nowhere, counted as moved and
+        // the only copy of it was deleted with Arrived.mo.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "Beta.mo"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Lib.Arrived.Beta", result.Error!);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.Empty(result.RemovedFiles);
+    }
+
+    [Fact]
+    public async Task APartialSplitIsUndone()
+    {
+        // Leaving Alpha.mo and a package.mo beside Arrived.mo is a library that defines every class
+        // it managed to write twice. What the split wrote goes; what was there before it stays.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var obstruction = Path.Combine(lib, "Arrived", "Beta.mo");
+        Obstruct(obstruction);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.WrittenFiles);
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.order")));
+        Assert.True(File.Exists(Path.Combine(obstruction, "in the way")), "what was there before is not the split's to remove");
+    }
+
+    [Fact]
+    public async Task IfThePackageFileCannotBeWritten_NothingIsDeleted()
+    {
+        // The nested-class half of B303: a class that stays inline was reported as saved to the
+        // package.mo it lives in even when that package.mo was never written.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "with a class that has to stay inline"
+              replaceable model Inner "has to be inline"
+              end Inner;
+
+              model Alpha "movable"
+              end Alpha;
+            end Arrived;
+            """);
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "package.mo"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+    }
+
+    [Fact]
+    public async Task ADirectoryPackageThatCannotBeSplitWholeIsPutBackAsItWas()
+    {
+        // A directory package's package.mo is rewritten in place without its classes, so a class
+        // whose own file then fails is in neither: the package.mo has to come back as it was.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        var packageMo = Path.Combine(lib, "Sub", "package.mo");
+        File.WriteAllText(packageMo,
+            "within Lib;\r\npackage Sub \"a directory package with inline classes\"\r\n"
+            + "  model Alpha \"first\"\r\n  end Alpha;\r\n\r\n  model Beta \"second\"\r\n  end Beta;\r\nend Sub;\r\n");
+        var order = Path.Combine(lib, "Sub", "package.order");
+        File.WriteAllText(order, "Alpha\r\nBeta\r\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+
+        var packageBefore = File.ReadAllBytes(packageMo);
+        var orderBefore = File.ReadAllBytes(order);
+        Obstruct(Path.Combine(lib, "Sub", "Beta.mo"));
+
+        var result = Split(service, "Lib.Sub");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(packageBefore, File.ReadAllBytes(packageMo));
+        Assert.Equal(orderBefore, File.ReadAllBytes(order));
+        Assert.False(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
+    }
+
     [Fact]
     public void APackageWithNoFileIsRefusedRatherThanGuessed()
     {

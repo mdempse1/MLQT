@@ -422,6 +422,7 @@ public class ModelicaPackageSaver
             catch (Exception e)
             {
                 Error("ModelicaPackageSaver", $"Failed to write package file: {packageFile}", e);
+                result.FailedFiles.Add(packageFile);
             }
 
             // Update ModelicaCode with the rendered version to free the old source string.
@@ -450,6 +451,7 @@ public class ModelicaPackageSaver
                     catch (Exception e)
                     {
                         Error("ModelicaPackageSaver", $"Failed to write package.order: {packageOrderFile}", e);
+                        result.FailedFiles.Add(packageOrderFile);
                     }
                 }
             }
@@ -490,6 +492,7 @@ public class ModelicaPackageSaver
             catch (Exception e)
             {
                 Error("ModelicaPackageSaver", $"Failed to write model file: {filePath}", e);
+                result.FailedFiles.Add(filePath);
             }
 
             // Update ModelicaCode with the rendered version to free the old source string.
@@ -525,7 +528,11 @@ public class ModelicaPackageSaver
         SaveResult result)
     {
         savedModels.Add(model.Id);
-        result.ModelIdToFilePath[model.Id] = containingFilePath;
+
+        // Only a file that was written holds the class. Mapping it to one whose write failed told a
+        // caller the class was safely on disk when it was nowhere but the file it came from (B303).
+        if (result.WrittenFiles.Contains(containingFilePath))
+            result.ModelIdToFilePath[model.Id] = containingFilePath;
         if (renderedCode.TryRemove(model.Id, out var childCode))
         {
             model.Definition.ModelicaCode = WithinClause.Strip(childCode);

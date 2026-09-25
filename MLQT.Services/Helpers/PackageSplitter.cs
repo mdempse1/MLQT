@@ -94,6 +94,14 @@ public static class PackageSplitter
 
         var modelIds = SubtreeOf(graph, package);
 
+        // What is on disk where the save writes, so a save that does not finish can be taken back
+        // (B303). The save logs a failed write and carries on, and throws only for what it cannot
+        // carry on from — either way what it leaves is a half-written package beside the file the
+        // classes are still in, which the next load reads as every class defined twice.
+        var packageDirectory = Path.Combine(parentDirectory, package.Definition.Name);
+        var before = DiskSnapshot.Take(packageDirectory,
+            isDirectoryPackage ? [currentFile, Path.Combine(packageDirectory, "package.order")] : []);
+
         SaveResult saved;
         try
         {
@@ -103,7 +111,29 @@ public static class PackageSplitter
         catch (Exception ex)
         {
             Error(nameof(PackageSplitter), $"Failed to split {package.Id} into {parentDirectory}", ex);
-            return SplitResult.Failed($"Could not write the package: {ex.Message}");
+            return Undone(before, package, $"Could not write the package: {ex.Message}.");
+        }
+
+        // Every class has to be somewhere written before the file it came from can go. The save's
+        // own list of what it wrote is the only evidence of that: asking the graph which classes
+        // were *asked* to move counted a class whose write failed as moved, and deleted the only
+        // copy of it (B303).
+        var unwritten = modelIds
+            .Where(id => !saved.ModelIdToFilePath.ContainsKey(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        if (unwritten.Count > 0 || saved.FailedFiles.Count > 0)
+        {
+            var what = unwritten.Count switch
+            {
+                0 => Path.GetFileName(saved.FailedFiles.First()),
+                1 => unwritten[0],
+                _ => $"{unwritten[0]} and {unwritten.Count - 1} other class(es)",
+            };
+            Error(nameof(PackageSplitter),
+                $"Splitting {package.Id} wrote only part of it: {string.Join(", ", saved.FailedFiles)} "
+                + $"failed, leaving {unwritten.Count} class(es) unwritten");
+            return Undone(before, package, $"Could not write {what}.");
         }
 
         if (saved.WrittenFiles.Count == 0)
@@ -179,6 +209,120 @@ public static class PackageSplitter
         return others.Count == 1
             ? others[0]
             : $"{others[0]} and {others.Count - 1} other class(es)";
+    }
+
+    /// <summary>
+    /// The disk put back as it was before a split that did not finish, and a result saying so — or,
+    /// when even that failed, saying exactly what was left behind.
+    /// </summary>
+    private static SplitResult Undone(DiskSnapshot before, ModelNode package, string cause)
+    {
+        var leftBehind = before.Restore();
+        if (leftBehind.Count == 0)
+            return SplitResult.Failed(
+                $"{cause} The split of {package.Definition.Name} was undone and nothing was deleted; "
+                + "its classes are where they were.");
+
+        Error(nameof(PackageSplitter),
+            $"Could not undo the partial split of {package.Id}; left on disk: {string.Join(", ", leftBehind)}");
+        return new SplitResult(leftBehind, [],
+            $"{cause} Nothing was deleted, so {package.Definition.Name} is still in its original file, "
+            + $"but {leftBehind.Count} file(s) written for the split could not be removed again: "
+            + $"{string.Join(", ", leftBehind.Take(3).Select(Path.GetFileName))}"
+            + (leftBehind.Count > 3 ? ", ..." : "")
+            + ". Delete them by hand — until you do, the library holds those classes twice.");
+    }
+
+    /// <summary>
+    /// The state of the directory a split writes into, from before the split, and the means of
+    /// putting it back.
+    ///
+    /// <para>Everything the save creates is under one directory — the package's own — so what it
+    /// created is what is there afterwards and was not there before. The only files it rewrites
+    /// in place are a directory package's own <c>package.mo</c> and <c>package.order</c>, and those
+    /// are kept whole: a <c>package.mo</c> rewritten without its classes, when one of those classes
+    /// then failed to reach its own file, is the class lost.</para>
+    /// </summary>
+    private sealed class DiskSnapshot
+    {
+        private readonly string _directory;
+        private readonly bool _existed;
+        private readonly HashSet<string> _files = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _directories = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, byte[]> _contents = new(StringComparer.OrdinalIgnoreCase);
+
+        private DiskSnapshot(string directory)
+        {
+            _directory = directory;
+            _existed = Directory.Exists(directory);
+        }
+
+        public static DiskSnapshot Take(string directory, IEnumerable<string> keep)
+        {
+            var snapshot = new DiskSnapshot(directory);
+            if (snapshot._existed)
+            {
+                snapshot._files.UnionWith(Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories));
+                snapshot._directories.UnionWith(
+                    Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories));
+            }
+
+            // Bytes, not text: this is put back exactly as it was, encoding and line endings included.
+            foreach (var path in keep)
+                if (File.Exists(path))
+                    snapshot._contents[path] = File.ReadAllBytes(path);
+
+            return snapshot;
+        }
+
+        /// <summary>Puts the directory back; returns whatever could not be.</summary>
+        public List<string> Restore()
+        {
+            var failed = new List<string>();
+
+            foreach (var (path, bytes) in _contents)
+            {
+                try { File.WriteAllBytes(path, bytes); }
+                catch (Exception ex) { Keep(path, ex); }
+            }
+
+            if (!Directory.Exists(_directory))
+                return failed;
+
+            if (!_existed)
+            {
+                try { Directory.Delete(_directory, recursive: true); }
+                catch (Exception ex) { Keep(_directory, ex); }
+                return failed;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(_directory, "*", SearchOption.AllDirectories).ToList())
+            {
+                if (_files.Contains(file))
+                    continue;
+                try { File.Delete(file); }
+                catch (Exception ex) { Keep(file, ex); }
+            }
+
+            // Deepest first, and never recursively: only a directory the split created, and only
+            // once it is empty again.
+            foreach (var directory in Directory.EnumerateDirectories(_directory, "*", SearchOption.AllDirectories)
+                         .Where(d => !_directories.Contains(d))
+                         .OrderByDescending(d => d.Length)
+                         .ToList())
+            {
+                try { Directory.Delete(directory); }
+                catch (Exception ex) { Keep(directory, ex); }
+            }
+
+            return failed;
+
+            void Keep(string path, Exception ex)
+            {
+                Warn(nameof(PackageSplitter), $"Could not undo {path}: {ex.Message}");
+                failed.Add(path);
+            }
+        }
     }
 
     /// <summary>

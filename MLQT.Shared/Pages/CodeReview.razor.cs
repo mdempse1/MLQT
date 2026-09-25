@@ -2024,10 +2024,11 @@ document.head.appendChild(style);
 
         // It creates a directory and deletes a file, so it asks first. Everything it does is
         // recoverable from version control, but not by pressing the button again.
+        var sourceFile = CurrentFilePathOf(package);
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Split into files",
             $"Write {package.Definition.Name} as a directory with one file per class, and delete "
-            + $"{Path.GetFileName(CurrentFilePathOf(package) ?? "the single file")}?",
+            + $"{Path.GetFileName(sourceFile ?? "the single file")}?",
             yesText: "Split", cancelText: "Cancel");
         if (confirmed != true)
             return;
@@ -2046,11 +2047,13 @@ document.head.appendChild(style);
                 result = PackageSplitter.Split(
                     LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions());
 
-                if (result.Succeeded || result.WrittenFiles.Count > 0)
-                {
-                    var changed = result.WrittenFiles.Concat(result.RemovedFiles).ToList();
-                    await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
-                }
+                // The package's own file is always reloaded, whatever happened to it. Rendering
+                // rewrites each class's stored source as it goes, so after a split that was undone
+                // the graph holds text that is no longer what is on disk (B303).
+                var changed = result.WrittenFiles.Concat(result.RemovedFiles).ToList();
+                if (!string.IsNullOrEmpty(sourceFile) && !changed.Contains(sourceFile, StringComparer.OrdinalIgnoreCase))
+                    changed.Add(sourceFile);
+                await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
             }
             finally
             {

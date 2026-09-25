@@ -75,6 +75,9 @@ public class ModelicaFileAccessPolicyTests
 
         // Bytes, not text: there is no encoding to get wrong.
         ["MLQT.Services/LibraryDataService.cs"] = (1, "reads an image file's bytes for a data: URI"),
+        ["MLQT.Services/Helpers/PackageSplitter.cs"] = (2, "keeps a directory package's package.mo and "
+            + "package.order as bytes before a split and writes the same bytes back if the split cannot "
+            + "finish (B303) - never decoded, so there is no encoding or line ending to change"),
 
         // The picker reads a user-chosen file. PickModelicaFileAsync goes through the funnel (B239);
         // this is the other entry point, which takes a dictionary word list.
