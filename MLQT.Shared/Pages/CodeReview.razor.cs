@@ -54,7 +54,16 @@ public partial class CodeReview : IAsyncDisposable
     /// or null once it is checking them (B259).
     /// </summary>
     private string? _checkStatus;
-    private string _checkingToolName = "";
+
+    /// <summary>
+    /// The one external-tool check at a time, and only its events (B335). Null until the page has
+    /// initialised.
+    /// </summary>
+    private ExternalCheckSession? _externalChecks;
+    private string _checkingToolName => _externalChecks?.ToolName ?? "";
+
+    /// <summary>Both check buttons are disabled while either tool is still running.</summary>
+    private bool ExternalCheckRunning => _externalChecks?.IsAnyRunning ?? false;
     private bool _findingDetailsVisible = false;
     private LogMessage? _currentFinding = null;
     private string _searchString = "";
@@ -83,7 +92,6 @@ public partial class CodeReview : IAsyncDisposable
     /// debt in a file waiting to be committed. Off by default so nothing is hidden until asked for.
     /// </summary>
     private bool ShowChangesOnly = false;
-    private CancellationTokenSource? _checkCancellationTokenSource;
     private IReadOnlyList<string>? _suggestions = null;
     private HashSet<string>? _misspelledWords = null;
     private DotNetObjectReference<CodeReview>? _spellCheckRef;
@@ -164,11 +172,7 @@ public partial class CodeReview : IAsyncDisposable
     private void CloseCheckProgressDialog()
     {
         _checkProgressDialog = false;
-        _checkCancellationTokenSource?.Cancel();
-
-        // Also call StopChecking directly on services to ensure immediate cancellation
-        DymolaCheckingService.StopChecking();
-        OpenModelicaCheckingService.StopChecking();
+        _externalChecks?.Stop();
     }
 
     private void CloseFindingDialog() => _findingDetailsVisible = false;
@@ -186,13 +190,11 @@ public partial class CodeReview : IAsyncDisposable
         // always-mounted layout), so they are captured even when this page isn't open. This page just
         // reacts to OnLogMessagesChanged to refresh.
 
-        // Subscribe to model checking service events
-        DymolaCheckingService.OnProgressChanged += OnCheckProgressChanged;
-        DymolaCheckingService.OnModelChecked += OnModelChecked;
-        DymolaCheckingService.OnCheckingComplete += OnCheckingComplete;
-        OpenModelicaCheckingService.OnProgressChanged += OnCheckProgressChanged;
-        OpenModelicaCheckingService.OnModelChecked += OnModelChecked;
-        OpenModelicaCheckingService.OnCheckingComplete += OnCheckingComplete;
+        // Both tools' events, through the one session that knows whose run is current (B335).
+        _externalChecks = new ExternalCheckSession(DymolaCheckingService, OpenModelicaCheckingService);
+        _externalChecks.ProgressChanged += OnCheckProgressChanged;
+        _externalChecks.ModelChecked += OnModelChecked;
+        _externalChecks.Completed += OnCheckingComplete;
 
         base.OnInitialized();
     }
@@ -396,15 +398,14 @@ public partial class CodeReview : IAsyncDisposable
         CodeReviewService.OnLogMessagesChanged -= OnLogMessagesChanged;
         BaselineStatus.OnChanged -= OnBaselineStatusChanged;
 
-        // Unsubscribe from model checking service events
-        DymolaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
-        DymolaCheckingService.OnModelChecked -= OnModelChecked;
-        DymolaCheckingService.OnCheckingComplete -= OnCheckingComplete;
-        OpenModelicaCheckingService.OnProgressChanged -= OnCheckProgressChanged;
-        OpenModelicaCheckingService.OnModelChecked -= OnModelChecked;
-        OpenModelicaCheckingService.OnCheckingComplete -= OnCheckingComplete;
-
-        _checkCancellationTokenSource?.Dispose();
+        // The session unsubscribes from both tools' events as it is disposed.
+        if (_externalChecks != null)
+        {
+            _externalChecks.ProgressChanged -= OnCheckProgressChanged;
+            _externalChecks.ModelChecked -= OnModelChecked;
+            _externalChecks.Completed -= OnCheckingComplete;
+            _externalChecks.Dispose();
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -1241,9 +1242,8 @@ public partial class CodeReview : IAsyncDisposable
     {
         await InvokeAsync(() =>
         {
-            // Kept whatever the outcome, so the dialog at the end can report what the tool said
-            // about every class rather than only the ones that failed (B170).
-            _checkResults.Add(result);
+            // Kept whatever the outcome - by the session, in CheckResults - so the dialog at the end
+            // can report what the tool said about every class rather than only the failures (B170).
 
             // Only a verdict on the model is a finding. A check that ran out of time, or a tool that
             // would not start or went away, says nothing about the class - and filed as an Error
@@ -1268,9 +1268,6 @@ public partial class CodeReview : IAsyncDisposable
         await InvokeAsync(() =>
         {
             _checkProgressDialog = false;
-            _checkCancellationTokenSource?.Dispose();
-            _checkCancellationTokenSource = null;
-            _checkWasCancelled = progress.WasCancelled;
 
             // Say what happened, always. A check that passed used to produce nothing at all: no
             // window, no dialog, no finding — so the only evidence an OpenModelica check had run was
@@ -1283,10 +1280,10 @@ public partial class CodeReview : IAsyncDisposable
     }
 
     /// <summary>What the tool said about each class, for the dialog that reports it.</summary>
-    private readonly List<ModelCheckResult> _checkResults = new();
+    private IReadOnlyList<ModelCheckResult> _checkResults => _externalChecks?.Results ?? [];
 
     private bool _checkResultDialog;
-    private bool _checkWasCancelled;
+    private bool _checkWasCancelled => _externalChecks?.WasCancelled ?? false;
 
     /// <summary>The classes the tool found a problem with - not the ones it ran out of time on.</summary>
     private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => r.IsModelFailure);
@@ -1375,15 +1372,19 @@ public partial class CodeReview : IAsyncDisposable
 
     #endregion
 
-    private void CheckInDymola()
-    {
-        if (_currentModelNode == null)
-            return;
+    private void CheckInDymola() => StartExternalCheck(DymolaCheckingService);
 
-        _checkingToolName = DymolaCheckingService.ToolName;
-        _checkCancellationTokenSource = new CancellationTokenSource();
-        _checkResults.Clear();
-        _checkWasCancelled = false;
+    private void CheckInOpenModelica() => StartExternalCheck(OpenModelicaCheckingService);
+
+    /// <summary>
+    /// Starts <paramref name="service"/> on the current class, unless a check by either tool is still
+    /// running - the buttons are disabled then too, and a click that got through anyway must not
+    /// open a dialog for a run the service is going to refuse (B335).
+    /// </summary>
+    private void StartExternalCheck(IModelCheckingService service)
+    {
+        if (_currentModelNode == null || _externalChecks == null)
+            return;
 
         // Shown for one class as well as for a package. Nothing happens for several seconds
         // after the button is pressed - the tool has to start and the library has to be opened -
@@ -1394,41 +1395,7 @@ public partial class CodeReview : IAsyncDisposable
         _modelsChecked = 0;
         _checkingModel = "";
         _checkStatus = null;
-        _checkProgressDialog = true;
-
-        // StartCheckingAsync runs on background thread and returns immediately
-        _ = DymolaCheckingService.StartCheckingAsync(
-            _currentModelNode,
-            LibraryDataService.CombinedGraph,
-            _checkCancellationTokenSource.Token);
-    }
-
-    private void CheckInOpenModelica()
-    {
-        if (_currentModelNode == null)
-            return;
-
-        _checkingToolName = OpenModelicaCheckingService.ToolName;
-        _checkCancellationTokenSource = new CancellationTokenSource();
-        _checkResults.Clear();
-        _checkWasCancelled = false;
-
-        // Shown for one class as well as for a package. Nothing happens for several seconds
-        // after the button is pressed - the tool has to start and the library has to be opened -
-        // and for a single class there was nothing at all on screen during it. That is worse for
-        // OpenModelica, which has no window of its own to appear, so the only evidence the check
-        // was running was that the button had been pressed (B259).
-        _modelsToCheck = 0;
-        _modelsChecked = 0;
-        _checkingModel = "";
-        _checkStatus = null;
-        _checkProgressDialog = true;
-
-        // StartCheckingAsync runs on background thread and returns immediately
-        _ = OpenModelicaCheckingService.StartCheckingAsync(
-            _currentModelNode,
-            LibraryDataService.CombinedGraph,
-            _checkCancellationTokenSource.Token);
+        _checkProgressDialog = _externalChecks.TryStart(service, _currentModelNode, LibraryDataService.CombinedGraph);
     }
 
     /// <summary>

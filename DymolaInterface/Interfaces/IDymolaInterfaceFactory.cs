@@ -8,7 +8,10 @@ public interface IDymolaInterfaceFactory
     /// <summary>
     /// Gets or creates the singleton DymolaInterface instance.
     /// </summary>
-    Task<IDymolaInterface> GetOrCreateAsync();
+    /// <param name="cancellationToken">Stops the wait - for the factory, for a busy Dymola's
+    /// connection window, or for one being started. A Dymola already launched is left running.</param>
+    /// <exception cref="OperationCanceledException">The token fired.</exception>
+    Task<IDymolaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks if an instance exists and is connected.

@@ -280,7 +280,7 @@ public class DymolaCheckingServiceTests
             throw new InvalidOperationException("no Dymola in a unit test");
         }
 
-        mockFactory.Setup(f => f.GetOrCreateAsync()).Returns(BlockThenFail);
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>())).Returns(BlockThenFail);
 
         var service = new DymolaCheckingService(mockFactory.Object);
         var (graph, modelNode) = CreateSimpleModelGraph();
@@ -315,7 +315,7 @@ public class DymolaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => throw new Exception("Not connected"));
 
         var service = new DymolaCheckingService(mockFactory.Object);
@@ -339,7 +339,7 @@ public class DymolaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Dymola not available"));
 
         var service = new DymolaCheckingService(mockFactory.Object);
@@ -363,7 +363,7 @@ public class DymolaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Dymola not available"));
 
         var service = new DymolaCheckingService(mockFactory.Object);
@@ -383,7 +383,7 @@ public class DymolaCheckingServiceTests
         // This test requires a mock DymolaInterface that returns false for OpenModelAsync
         // For now, we'll just verify error handling when factory throws
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Connection failed"));
 
         var service = new DymolaCheckingService(mockFactory.Object);

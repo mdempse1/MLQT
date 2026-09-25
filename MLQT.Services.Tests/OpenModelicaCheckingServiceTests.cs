@@ -281,7 +281,7 @@ public class OpenModelicaCheckingServiceTests
             throw new InvalidOperationException("no OpenModelica in a unit test");
         }
 
-        mockFactory.Setup(f => f.GetOrCreateAsync()).Returns(BlockThenFail);
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>())).Returns(BlockThenFail);
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
         var (graph, modelNode) = CreateSimpleModelGraph();
@@ -316,7 +316,7 @@ public class OpenModelicaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => throw new Exception("Not connected"));
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
@@ -340,7 +340,7 @@ public class OpenModelicaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("OpenModelica not available"));
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
@@ -364,7 +364,7 @@ public class OpenModelicaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("OpenModelica not available"));
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
@@ -383,7 +383,7 @@ public class OpenModelicaCheckingServiceTests
     {
         // This test verifies error handling when factory throws
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Connection failed"));
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);
@@ -438,7 +438,7 @@ public class OpenModelicaCheckingServiceTests
     {
         // Arrange
         var mockFactory = CreateMockFactory();
-        mockFactory.Setup(f => f.GetOrCreateAsync())
+        mockFactory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => throw new Exception("Not connected"));
 
         var service = new OpenModelicaCheckingService(mockFactory.Object);

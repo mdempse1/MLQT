@@ -8,7 +8,10 @@ public interface IOpenModelicaInterfaceFactory
     /// <summary>
     /// Gets or creates a singleton OpenModelica interface instance.
     /// </summary>
-    Task<IOpenModelicaInterface> GetOrCreateAsync();
+    /// <param name="cancellationToken">Stops the wait for the factory or for omc to start; an omc
+    /// cancelled while starting is stopped.</param>
+    /// <exception cref="OperationCanceledException">The token fired.</exception>
+    Task<IOpenModelicaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets whether the OpenModelica interface is currently connected.

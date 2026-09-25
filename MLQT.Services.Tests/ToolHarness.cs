@@ -290,6 +290,9 @@ public abstract class ToolHarness
 
     /// <summary>Makes the tool unavailable, as an uninstalled one is.</summary>
     public abstract void FailToConnect(Exception failure);
+
+    /// <summary>Makes the tool take for ever to start: only the caller's token ends the wait.</summary>
+    public abstract void StartSlowly();
 }
 
 public sealed class DymolaHarness : ToolHarness
@@ -310,19 +313,23 @@ public sealed class DymolaHarness : ToolHarness
     public override int Connections => _factory.Connections;
     public override int Resets => _factory.Resets;
     public override void FailToConnect(Exception failure) => _factory.Failure = failure;
+    public override void StartSlowly() => _factory.Slow = true;
 
     private sealed class Factory(IDymolaInterface session) : IDymolaInterfaceFactory
     {
         public Exception? Failure;
+        public bool Slow;
         public int Connections;
         public int Resets;
 
         public bool IsConnected => Failure is null;
 
-        public Task<IDymolaInterface> GetOrCreateAsync()
+        public async Task<IDymolaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default)
         {
             Connections++;
-            return Failure is null ? Task.FromResult(session) : Task.FromException<IDymolaInterface>(Failure);
+            if (Slow)
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            return Failure is null ? session : throw Failure;
         }
 
         public Task ResetAsync()
@@ -353,21 +360,23 @@ public sealed class OpenModelicaHarness : ToolHarness
     public override int Connections => _factory.Connections;
     public override int Resets => _factory.Resets;
     public override void FailToConnect(Exception failure) => _factory.Failure = failure;
+    public override void StartSlowly() => _factory.Slow = true;
 
     private sealed class Factory(IOpenModelicaInterface session) : IOpenModelicaInterfaceFactory
     {
         public Exception? Failure;
+        public bool Slow;
         public int Connections;
         public int Resets;
 
         public bool IsConnected => Failure is null;
 
-        public Task<IOpenModelicaInterface> GetOrCreateAsync()
+        public async Task<IOpenModelicaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default)
         {
             Connections++;
-            return Failure is null
-                ? Task.FromResult(session)
-                : Task.FromException<IOpenModelicaInterface>(Failure);
+            if (Slow)
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            return Failure is null ? session : throw Failure;
         }
 
         public Task ResetAsync()

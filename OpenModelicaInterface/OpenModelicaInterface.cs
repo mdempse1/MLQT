@@ -68,7 +68,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// <summary>
     /// Starts the OMC process and establishes ZMQ connection.
     /// </summary>
-    public async Task StartAsync()
+    /// <param name="cancellationToken">Gives up on the start; omc is stopped.</param>
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         if (IsConnected)
         {
@@ -119,11 +120,16 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         string version;
         try
         {
-            version = UnquoteString(await SendCommandAsync("getVersion()", StartupTimeout, "start"));
+            version = UnquoteString(await SendCommandAsync("getVersion()", StartupTimeout, "start", cancellationToken));
         }
         catch (TimeoutException)
         {
             throw;   // already says what happened, and the session has been closed
+        }
+        catch (OperationCanceledException)
+        {
+            Abandon();   // not left half-started: the next start would find the port taken
+            throw;
         }
         catch (Exception ex)
         {
@@ -359,12 +365,13 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// </summary>
     /// <param name="libraryName">Name of the library (e.g., "Modelica")</param>
     /// <param name="version">Optional version string (e.g., "4.0.0")</param>
-    public async Task<bool> LoadModelAsync(string libraryName, string? version = null)
+    public async Task<bool> LoadModelAsync(string libraryName, string? version = null,
+        CancellationToken cancellationToken = default)
     {
         var command = version != null
             ? $"loadModel({libraryName}, {{\"{version}\"}})"
             : $"loadModel({libraryName})";
-        var response = await SendCommandAsync(command);
+        var response = await SendCommandAsync(command, cancellationToken);
         return ParseBoolean(response);
     }
 

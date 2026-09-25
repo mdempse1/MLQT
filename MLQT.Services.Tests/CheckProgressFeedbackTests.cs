@@ -55,7 +55,7 @@ public class CheckProgressFeedbackTests
     {
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factory = new Mock<IOpenModelicaInterfaceFactory>();
-        factory.Setup(f => f.GetOrCreateAsync()).Returns(async () =>
+        factory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>())).Returns(async () =>
         {
             await gate.Task;
             throw new InvalidOperationException("no OpenModelica in a unit test");
@@ -87,7 +87,7 @@ public class CheckProgressFeedbackTests
     {
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factory = new Mock<IDymolaInterfaceFactory>();
-        factory.Setup(f => f.GetOrCreateAsync()).Returns(async () =>
+        factory.Setup(f => f.GetOrCreateAsync(It.IsAny<CancellationToken>())).Returns(async () =>
         {
             await gate.Task;
             throw new InvalidOperationException("no Dymola in a unit test");

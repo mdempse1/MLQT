@@ -56,9 +56,12 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// Dymola; a gone one is detached before it is dropped, so even a process that is somehow still
     /// running is left to the user.</para>
     /// </remarks>
-    public async Task<IDymolaInterface> GetOrCreateAsync()
+    public async Task<IDymolaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync();
+        // Stop reaches a check that is still starting Dymola, which can be a minute: the connection
+        // window and the start each take up to thirty seconds, and a token that arrived only with the
+        // first class left Stop doing nothing throughout (B335).
+        await _lock.WaitAsync(cancellationToken);
         try
         {
             var settings = _dymolaSettings;
@@ -88,7 +91,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                         // The Dymola it launched has not come up yet: wait for that one rather than
                         // launching another beside it on the same port.
                         var starting = _instance;
-                        await Task.Run(() => starting.StartDymolaProcessAsync());
+                        await Task.Run(() => starting.StartDymolaProcessAsync(cancellationToken), cancellationToken);
                         break;
 
                     default:
@@ -111,7 +114,10 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // an uncontended lock is taken without yielding. Starting Dymola is the same wait in
             // another form: its loop resumes on the caller's context after each delay and then
             // probes synchronously. Either one froze the window.
-            var created = await Task.Run(() => _createSession(settings));
+            // Abandoned rather than interrupted when cancelled: the constructor's wait is synchronous.
+            // A session left behind that way holds a client and no process.
+            var created = await Task.Run(() => _createSession(settings), cancellationToken)
+                .WaitAsync(cancellationToken);
             _instance = created;
             created.CommandTimeout = settings.CommandTimeout;
 
@@ -124,7 +130,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                 if (await created.GetSessionStateAsync() is DymolaSessionState.Busy)
                     created.SetOfflineMode(false);
                 else
-                    await Task.Run(() => created.StartDymolaProcessAsync());
+                    await Task.Run(() => created.StartDymolaProcessAsync(cancellationToken), cancellationToken);
             }
 
             return created;

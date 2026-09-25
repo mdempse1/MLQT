@@ -76,7 +76,7 @@ public class TimeLimitTests
     {
         using var omc = new OpenModelicaInterface(OmcPath, 13134) { StartupTimeout = TimeSpan.FromMilliseconds(1) };
 
-        await Assert.ThrowsAsync<TimeoutException>(omc.StartAsync);
+        await Assert.ThrowsAsync<TimeoutException>(() => omc.StartAsync());
 
         Assert.False(omc.IsConnected);
     }

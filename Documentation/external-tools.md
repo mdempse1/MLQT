@@ -54,7 +54,8 @@ The two tools are left in different states, and the result says which:
 - **OpenModelica's session is closed**, because its connection cannot be reused once a reply has
   been given up on. The next check starts a fresh session, which takes a second or two.
 
-**Stop** now ends a check that is already running, not only the ones still waiting their turn. The
+**Stop** now ends a check that is already running, not only the ones still waiting their turn — and
+a check that is still starting the tool, which for Dymola can take a minute. The
 tools themselves are interrupted in the same way as above: Dymola finishes the check it was given,
 and OpenModelica's session is closed.
 
@@ -203,4 +204,6 @@ It can be valuable to check with both tools if you need your library to be compa
 - The tool must be able to start and accept commands via its communication interface
 - Large libraries may take significant time to check (the progress dialog helps track this)
 - MLQT does not modify your models based on tool results — it only reports errors
-- Only one tool check can run at a time
+- Only one tool check can run at a time. Both check buttons are disabled while one is running,
+  including a check you have stopped that is still winding down (Dymola finishing the class it was
+  given, for instance)

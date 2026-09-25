@@ -20,9 +20,10 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
 
     public bool IsConnected => _instance?.IsConnected ?? false;
 
-    public async Task<IOpenModelicaInterface> GetOrCreateAsync()
+    public async Task<IOpenModelicaInterface> GetOrCreateAsync(CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync();
+        // Stop reaches a check that is still starting omc and loading the standard library (B335).
+        await _lock.WaitAsync(cancellationToken);
         try
         {
             if (_instance != null)
@@ -55,12 +56,12 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
             // Start OMC process
             if (!_instance.IsConnected)
             {
-                await _instance.StartAsync();
+                await _instance.StartAsync(cancellationToken);
 
                 // Optionally load Modelica standard library
                 if (_omcSettings.AutoLoadModelicaLibrary)
                 {
-                    await _instance.LoadModelAsync("Modelica");
+                    await _instance.LoadModelAsync("Modelica", cancellationToken: cancellationToken);
                 }
             }
 

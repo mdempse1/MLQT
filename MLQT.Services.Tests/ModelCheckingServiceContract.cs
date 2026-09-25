@@ -963,6 +963,72 @@ public abstract class ModelCheckingServiceContract
         Assert.Equal("Failed to load library", result.Summary);
     }
 
+    // ── Stop while the tool is starting, and the run ending before it says so (B335) ──
+
+    /// <summary>
+    /// B335: the factory took no token, and starting Dymola can take a minute - so Stop closed the
+    /// dialog and the run went on starting the tool, then checked anyway.
+    /// </summary>
+    [Fact]
+    public async Task StopReachesARunThatIsStillStartingTheTool()
+    {
+        var harness = NewHarness();
+        var (graph, package) = Package(3);
+        harness.StartSlowly();
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+        ModelCheckProgress? completed = null;
+        harness.Service.OnCheckingComplete += p => completed = p;
+
+        await harness.Service.StartCheckingAsync(package, graph);
+        await WaitUntilAsync(() => harness.Connections > 0, "the run never asked for the tool");
+
+        harness.Service.StopChecking();
+        await WaitUntilAsync(() => !harness.Service.IsRunning, "Stop did not reach a run starting the tool");
+
+        Assert.NotNull(completed);
+        Assert.True(completed.WasCancelled, "a stop while starting read as something other than a stop");
+        Assert.Empty(reported);   // not "could not be started": nobody failed, the user stopped it
+        Assert.Equal(0, harness.Tool.ChecksRun);
+    }
+
+    /// <summary>
+    /// B335: the running flag was cleared in a <c>finally</c> after the completion event, so a page
+    /// re-rendering on that event still saw the service running and a check started from it was
+    /// refused without a word.
+    /// </summary>
+    [Fact]
+    public async Task ARunHasEndedByTheTimeItSaysItHasFinished()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        bool? runningWhenComplete = null;
+        harness.Service.OnCheckingComplete += _ => runningWhenComplete = harness.Service.IsRunning;
+
+        await RunToCompletion(harness, model, graph);
+
+        Assert.False(runningWhenComplete, "the service still said it was running when it said it had finished");
+    }
+
+    [Fact]
+    public async Task ACheckStartedFromTheCompletionHandlerIsNotRefused()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        var runs = 0;
+        harness.Service.OnCheckingComplete += _ =>
+        {
+            if (Interlocked.Increment(ref runs) == 1)
+                harness.Service.StartCheckingAsync(model, graph);
+        };
+
+        await harness.Service.StartCheckingAsync(model, graph);
+        await WaitUntilAsync(() => Volatile.Read(ref runs) >= 2, "the second check was refused");
+
+        Assert.Equal(2, harness.Tool.ChecksRun);
+    }
+
     // ── the tool going away partway through (B334) ────────────────────────────────
 
     /// <summary>

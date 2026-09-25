@@ -53,13 +53,13 @@
                 </MudTooltip>
                 @if (!string.IsNullOrEmpty(_settings.Dymola.DymolaPath)) {
                     <MudTooltip Text="Check this class using Dymola" Arrow="true" Placement="Placement.Bottom">
-                        <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
+                        <MudIconButton Icon="@_dymolaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled="@(string.IsNullOrEmpty(NavState.ModelID) || ExternalCheckRunning)"
                                     OnClick="CheckInDymola" Size="Size.Small" />
                     </MudTooltip>
                 }
                 @if (!string.IsNullOrEmpty(_settings.OpenModelica.OmcPath)) {
                     <MudTooltip Text="Check this class using OpenModelica" Arrow="true" Placement="Placement.Bottom">
-                        <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled=string.IsNullOrEmpty(NavState.ModelID)
+                        <MudIconButton Icon="@_openModelicaLogo" Color="Color.Primary" Variant="Variant.Outlined" Disabled="@(string.IsNullOrEmpty(NavState.ModelID) || ExternalCheckRunning)"
                                     OnClick="CheckInOpenModelica" Size="Size.Small" />
                     </MudTooltip>
                 }    
