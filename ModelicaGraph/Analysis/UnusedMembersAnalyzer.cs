@@ -14,7 +14,8 @@ namespace ModelicaGraph.Analysis;
 /// could reference it lexically). Within such a class a protected name that appears only at its own
 /// declaration is unused. Uses the shared resolver to determine "is extended", so it needs no
 /// dependency analysis — but when the edges are there it asks only the classes that use a candidate
-/// rather than every class in the graph (B281).
+/// rather than every class in the graph (B281), and trusts them to be current (see
+/// <c>ExtendedAmong</c>, B351).
 /// </summary>
 public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
 {
@@ -61,6 +62,17 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
     /// measured before being relied on: over the Claytex repository with the Dymola 2026x library folder,
     /// all 16,226 extends clauses into the checked set carried an edge, and the extended set came out
     /// the same 2,264 classes either way. Without the edges the whole graph is scanned, as it was.</para>
+    ///
+    /// <para><b>The limit, stated rather than declared (B351).</b> This analyzer does not set
+    /// <see cref="IGraphAnalyzer.NeedsDependencyAnalysis"/>, because it does not need the edges: without
+    /// them it is exact, only slower, and declaring the need would skip the rule where there are none
+    /// and make the CLI run a whole dependency analysis for it. With them it trusts them to be current,
+    /// as <see cref="UnusedClassAnalyzer"/> does. Every incremental path keeps them so - a reload is
+    /// followed by a refresh of the classes it touched (B290) and of the ones below a package whose
+    /// imports changed (B347) - but a graph analysis that runs between a reload and that refresh sees a
+    /// subclass's missing <c>extends</c> edge, and can report its base's protected members unused until
+    /// the next check. The reverse edges are copied under the graph lock, because that refresh can be
+    /// writing them while this reads.</para>
     /// </remarks>
     private static HashSet<string> ExtendedAmong(GraphAnalysisContext context, List<ModelNode> candidates)
     {
@@ -69,7 +81,7 @@ public sealed class UnusedMembersAnalyzer : IGraphAnalyzer
         {
             var users = new HashSet<string>(StringComparer.Ordinal);
             foreach (var candidate in candidates)
-                users.UnionWith(candidate.UsedByModelIds);
+                users.UnionWith(context.Graph.GetUsedByModelIds(candidate.Id));
             askers = users
                 .Select(id => context.Graph.GetNode<ModelNode>(id))
                 .Where(n => n is not null)

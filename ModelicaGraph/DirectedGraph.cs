@@ -359,9 +359,14 @@ public class DirectedGraph
         if (usingModel == null || usedModel == null)
             throw new ArgumentException("Both model nodes must exist.");
 
-        usingModel.AddUsedModel(usedModelId);
-        usedModel.AddUsedByModel(usingModelId);
-        AddEdge(usingModelId, usedModelId);
+        // Under the lock, so a reader taking GetUsedByModelIds never sees one end of the edge
+        // without the other, nor a set being added to while it is copied (B351).
+        lock (_lock)
+        {
+            usingModel.AddUsedModel(usedModelId);
+            usedModel.AddUsedByModel(usingModelId);
+            AddEdge(usingModelId, usedModelId);
+        }
     }
 
     /// <summary>
@@ -409,14 +414,30 @@ public class DirectedGraph
     /// </summary>
     public IEnumerable<ModelNode> GetModelUsedBy(string modelNodeId)
     {
-        var modelNode = GetNode<ModelNode>(modelNodeId);
-        if (modelNode == null)
-            return Enumerable.Empty<ModelNode>();
-
-        return modelNode.UsedByModelIds
+        return GetUsedByModelIds(modelNodeId)
             .Select(id => GetNode<ModelNode>(id))
             .Where(node => node != null)
             .Cast<ModelNode>();
+    }
+
+    /// <summary>
+    /// The ids of the models that use <paramref name="modelNodeId"/>, copied under the graph lock.
+    /// </summary>
+    /// <remarks>
+    /// A copy rather than the live <see cref="ModelNode.UsedByModelIds"/>: an incremental dependency
+    /// analysis adds to and removes from those sets from its own thread while a check may be reading
+    /// them, and enumerating a <see cref="HashSet{T}"/> that changes underneath throws (B351). Read
+    /// the reverse edges through this from anything that can run beside a reload.
+    /// </remarks>
+    public string[] GetUsedByModelIds(string modelNodeId)
+    {
+        if (GetNode<ModelNode>(modelNodeId) is not { } modelNode)
+            return [];
+
+        lock (_lock)
+        {
+            return [.. modelNode.UsedByModelIds];
+        }
     }
 
     #region Resource Node Management

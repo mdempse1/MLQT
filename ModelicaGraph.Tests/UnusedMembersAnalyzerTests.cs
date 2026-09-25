@@ -145,4 +145,40 @@ public class UnusedMembersAnalyzerTests
 
         Assert.Equal(models.Select(m => m.Id), order);
     }
+
+    [Fact]
+    public void ReadingTheEdges_WhileAnIncrementalAnalysisRewritesThem_DoesNotThrow()
+    {
+        // The GUI's refresh adds and removes reverse edges from its own thread while a check may be
+        // running this analyzer. Enumerating the live UsedByModelIds set then threw "Collection was
+        // modified" (B351); the edges are copied under the graph lock now.
+        var graph = new DirectedGraph();
+        var baseC = Model("Base", "model Base\nprotected\n  Real helper;\nend Base;");
+        graph.AddNode(baseC);
+        var users = Enumerable.Range(0, 64).Select(i => $"U{i}").ToArray();
+        foreach (var id in users)
+            graph.AddNode(Model(id, $"model {id}\nend {id};"));
+        graph.MarkDependenciesAnalyzed();
+        var ctx = new GraphAnalysisContext(graph, new StyleCheckingSettings { CheckUnusedMembers = true }, [baseC]);
+
+        using var stop = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(1.5));
+        var writer = System.Threading.Tasks.Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                foreach (var id in users) graph.AddModelUsesModel(id, "Base");
+                foreach (var id in users) graph.RemoveModelDependencyEdges(id);
+            }
+        });
+
+        var reads = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            _ = new UnusedMembersAnalyzer().Analyze(ctx).ToList();
+            reads++;
+        }
+        writer.Wait();
+
+        Assert.True(reads > 0);
+    }
 }

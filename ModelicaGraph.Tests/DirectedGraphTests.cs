@@ -463,6 +463,22 @@ public class DirectedGraphTests
     }
 
     [Fact]
+    public void GetUsedByModelIds_IsACopy_AndEmptyForAnUnknownModel()
+    {
+        var graph = new DirectedGraph();
+        graph.AddNode(new ModelNode("a", "A"));
+        graph.AddNode(new ModelNode("b", "B"));
+        graph.AddModelUsesModel("a", "b");
+
+        var users = graph.GetUsedByModelIds("b");
+        graph.RemoveModelDependencyEdges("a");
+
+        Assert.Equal(["a"], users);
+        Assert.Empty(graph.GetUsedByModelIds("b"));
+        Assert.Empty(graph.GetUsedByModelIds("missing"));
+    }
+
+    [Fact]
     public void Clear_RemovesAllNodesAndEdges()
     {
         // Arrange
