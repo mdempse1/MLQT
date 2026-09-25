@@ -405,22 +405,7 @@ public static class DiagramSvgRenderer
         var view = (double[])declared.Clone();
 
         foreach (var component in components)
-        {
-            // A rotated component sweeps outside its own extent; its bounding circle is the cheap
-            // answer and never cuts anything off.
-            var e = Normalize(component.Extent);
-            if (component.Rotation % 180 == 0)
-            {
-                Grow(view, e[0], e[1]);
-                Grow(view, e[2], e[3]);
-            }
-            else
-            {
-                var r = Math.Sqrt(Math.Pow(e[2] - e[0], 2) + Math.Pow(e[3] - e[1], 2)) / 2;
-                Grow(view, (e[0] + e[2]) / 2 - r, (e[1] + e[3]) / 2 - r);
-                Grow(view, (e[0] + e[2]) / 2 + r, (e[1] + e[3]) / 2 + r);
-            }
-        }
+            GrowBy(view, component, (x, y) => (x, y));
 
         foreach (var point in connections.SelectMany(c => c.Points))
             Grow(view, point[0], point[1]);
@@ -433,8 +418,53 @@ public static class DiagramSvgRenderer
         return [view[0] - margin, view[1] - margin, view[2] + margin, view[3] + margin];
     }
 
+    /// <summary>
+    /// Grows the view by what <paramref name="component"/> draws, measured through the transform it
+    /// is drawn with (B319): its icon's coordinate system turned about its <c>origin</c> - not about
+    /// the extent's centre, which is somewhere else when the two differ - and the connectors it
+    /// carries, which MSL places outside the icon's system (the input and output triangles sit at
+    /// x = ±100..±120). Measuring the extent alone cut those off a block flush with the canvas edge.
+    /// </summary>
+    /// <param name="toView">Takes a point in the coordinates <paramref name="component"/> is placed
+    /// in to the view's.</param>
+    private static void GrowBy(
+        double[] view, DiagramComponent component, Func<double, double, (double X, double Y)> toView)
+    {
+        // A placeholder is drawn as its extent, unturned; so is a component whose icon has no area.
+        if (component.Icon is not { HasGraphics: true } || FrameOf(component) is not { } frame)
+        {
+            var e = Normalize(component.Extent);
+            foreach (var (x, y) in new[] { (e[0], e[1]), (e[2], e[1]), (e[0], e[3]), (e[2], e[3]) })
+            {
+                var (vx, vy) = toView(x, y);
+                Grow(view, vx, vy);
+            }
+            return;
+        }
+
+        (double X, double Y) Inner(double x, double y)
+        {
+            var (px, py) = ToParent(frame, x, y);
+            return toView(px, py);
+        }
+
+        var (left, bottom) = (frame.IconCx - frame.IconHalfWidth, frame.IconCy - frame.IconHalfHeight);
+        var (right, top) = (frame.IconCx + frame.IconHalfWidth, frame.IconCy + frame.IconHalfHeight);
+        foreach (var (x, y) in new[] { (left, bottom), (right, bottom), (left, top), (right, top) })
+        {
+            var (vx, vy) = Inner(x, y);
+            Grow(view, vx, vy);
+        }
+
+        foreach (var child in component.Children ?? [])
+            GrowBy(view, child, Inner);
+    }
+
     private static void Grow(double[] view, double x, double y)
     {
+        // Turned points carry rounding: a corner turned onto the canvas edge must not read as past it.
+        x = Math.Round(x, 6);
+        y = Math.Round(y, 6);
         view[0] = Math.Min(view[0], x);
         view[1] = Math.Min(view[1], y);
         view[2] = Math.Max(view[2], x);

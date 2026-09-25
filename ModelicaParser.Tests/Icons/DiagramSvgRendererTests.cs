@@ -138,6 +138,58 @@ public class DiagramSvgRendererTests
         Assert.Contains(CanvasOutline, turned);
     }
 
+    /// <summary>
+    /// A block flush with the canvas edge still has its ports on the picture (B319). MSL puts a
+    /// block's input and output triangles outside its icon's coordinate system, at x = ±100..±120;
+    /// measuring the placement extent alone cut them off.
+    /// </summary>
+    [Fact]
+    public void TheConnectorsAComponentCarriesAreInTheView()
+    {
+        var port = new DiagramComponent("y", [100, -10, 120, 10], 0, Box());
+        var flush = new DiagramComponent("b", [80, -10, 100, 10], 0, Box(), null, null, [port]);
+
+        var svg = DiagramSvgRenderer.Render(null, [flush], []);
+
+        Assert.Contains(CanvasOutline, svg);
+        Assert.DoesNotContain("viewBox=\"-100 -100 200 200\"", svg);
+    }
+
+    /// <summary>
+    /// A component turned about an origin far from its extent is drawn far from its extent, and the
+    /// view has to follow it there rather than measure a circle round the extent's centre (B319).
+    /// </summary>
+    [Fact]
+    public void AComponentTurnedAboutADistantOriginIsMeasuredWhereItIsDrawn()
+    {
+        // Extent 0..20 turned half a revolution about (-90,0) is drawn at -200..-180.
+        var turned = new DiagramComponent("t", [0, -10, 20, 10], 180, Box(), null, [-90, 0]);
+
+        var svg = DiagramSvgRenderer.Render(null, [turned], []);
+
+        Assert.Contains(CanvasOutline, svg);
+        Assert.Matches("viewBox=\"-20[0-9.]* ", svg);
+    }
+
+    [Fact]
+    public void AComponentTurnedOntoTheCanvasEdgeIsNotPastIt()
+    {
+        // Corners landing on x = ±100 after a quarter turn carry rounding, which is not "outside".
+        var edge = new DiagramComponent("e", [80, -10, 100, 10], 90, Box(), null, [90, 0]);
+
+        Assert.Contains("viewBox=\"-100 -100 200 200\"", DiagramSvgRenderer.Render(null, [edge], []));
+    }
+
+    [Fact]
+    public void APlaceholderIsMeasuredByItsExtent()
+    {
+        // Drawn as its box, unturned, and its connectors are not drawn at all - so neither counts.
+        var port = new DiagramComponent("y", [100, -10, 400, 10], 0, null);
+        var bare = new DiagramComponent("b", [80, -10, 100, 10], 90, null, null, null, [port]);
+
+        Assert.Contains("viewBox=\"-100 -100 200 200\"", DiagramSvgRenderer.Render(null, [bare], []));
+    }
+
     [Fact]
     public void TheClassesOwnDiagramGraphicsAreDrawnUnderTheComponents()
     {
