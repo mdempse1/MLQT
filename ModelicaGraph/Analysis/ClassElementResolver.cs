@@ -183,6 +183,44 @@ public static class ClassElementResolver
         }
     }
 
+    /// <summary>
+    /// Every class <paramref name="node"/> inherits from, transitively, in the order their layers are
+    /// drawn: each base after the bases it extends itself, and the first <c>extends</c> clause's
+    /// before the second's. The class itself is not included, and a base reached twice (a diamond)
+    /// is listed once. A clause whose base is not loaded is skipped.
+    ///
+    /// <para>For what a class inherits that is not an element: its Diagram layer and its
+    /// <c>connect</c> equations (B316).</para>
+    /// </summary>
+    public static List<ModelNode> BaseClasses(DirectedGraph graph, ModelNode node)
+    {
+        var result = new List<ModelNode>();
+        var visited = new HashSet<string>(StringComparer.Ordinal) { node.Id };
+        WalkBases(graph, node, result, visited, depth: 0);
+        return result;
+    }
+
+    private static void WalkBases(
+        DirectedGraph graph, ModelNode node, List<ModelNode> result, HashSet<string> visited, int depth)
+    {
+        if (depth > MaxDepth || InterfaceCache.Extract(node) is not { } iface)
+            return;
+
+        var imports = iface.Elements
+            .Where(e => e.Kind == ClassElementKind.Import)
+            .Select(e => e.Name)
+            .ToList();
+
+        foreach (var ext in iface.Elements.Where(e => e.Kind == ClassElementKind.Extends))
+        {
+            var baseNode = TypeResolver.Resolve(graph, node.Id, ext.Type, imports);
+            if (baseNode is null || !visited.Add(baseNode.Id))
+                continue;
+            WalkBases(graph, baseNode, result, visited, depth + 1);
+            result.Add(baseNode);
+        }
+    }
+
     // Modifications applying to a base's members: this extends clause's, with any already-accumulated
     // (more-derived) modification winning on a key clash.
     private static IReadOnlyDictionary<string, string> MergeMods(

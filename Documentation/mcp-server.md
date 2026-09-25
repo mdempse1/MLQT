@@ -141,7 +141,9 @@ What it draws is what a Modelica tool draws, which took getting several things r
 miss and are invisible until a render is put beside one: a Placement's `extent` is stated **relative
 to its `origin`**; the components on a diagram include the **inherited** ones (a block usually gets
 its `u` and `y` from a base class and declares no connector of its own) and the **protected** ones
-(protection hides a component from the class's users, not from its diagram); a **connector placed on a
+(protection hides a component from the class's users, not from its diagram), and a base's
+**connections, diagram graphics and coordinate system are inherited** with them, so `extends PartialX`
+is drawn wired; a **connector placed on a
 diagram is drawn with its diagram layer, not its icon layer**, which are different drawings; a
 component shows **its own type's connectors on its icon**, which is what makes a diagram look wired
 rather than like a row of boxes; **line thickness and arrow size are millimetres**, so the units they

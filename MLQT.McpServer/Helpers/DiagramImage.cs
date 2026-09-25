@@ -47,10 +47,19 @@ internal static class DiagramImage
         if (tree is null)
             return null;
 
+        // A diagram is inherited as the element list is: the base's connect equations and its
+        // Diagram layer are part of what the derived class draws (B316). Reading them from the
+        // class's own text drew `extends PartialX` as the base's components with no wires and no
+        // background - a model that looks as though nobody had connected it.
+        var bases = ClassElementResolver.BaseClasses(libraries.CombinedGraph, node);
+
         var placements = DiagramGeometry.Placements(libraries, node.Id, code);
         var components = Components(libraries, node, placements);
-        var connections = Connections(libraries, node.Id, code, placements);
-        var diagramLayer = IconExtractor.ExtractDiagram(tree);
+        var connections = Connections(libraries, node.Id, code, code);
+        foreach (var baseNode in bases)
+            if (baseNode.Definition.ModelicaCode is { Length: > 0 } baseCode)
+                connections.AddRange(Connections(libraries, node.Id, code, baseCode));
+        var diagramLayer = InheritedDiagram(bases, node);
 
         if (components.Count == 0 && connections.Count == 0 && diagramLayer is not { HasGraphics: true })
             return null;
@@ -194,7 +203,7 @@ internal static class DiagramImage
             return null;
 
         if (string.Equals(type.ClassType, "connector", StringComparison.Ordinal)
-            && DiagramLayerOf(type) is { } diagram)
+            && DiagramLayerOf(libraries, type) is { } diagram)
             return diagram;
 
         var dot = type.Id.LastIndexOf('.');
@@ -278,15 +287,40 @@ internal static class DiagramImage
     }
 
     /// <summary>
-    /// A connector's own diagram layer, or null when it has none and the icon layer must stand in.
-    /// Not merged down the extends chain: a diagram is what a class draws itself, where an icon is
-    /// composed from what it inherits.
+    /// A connector's diagram layer, merged down its extends chain as any class's is, or null when it
+    /// draws none and the icon layer must stand in.
     /// </summary>
-    private static IconData? DiagramLayerOf(ModelNode type)
+    private static IconData? DiagramLayerOf(ILibraryDataService libraries, ModelNode type)
     {
-        var tree = type.Definition.EnsureParsed();
-        var diagram = tree is null ? null : IconExtractor.ExtractDiagram(tree);
+        var diagram = InheritedDiagram(ClassElementResolver.BaseClasses(libraries.CombinedGraph, type), type);
         return diagram is { HasGraphics: true } ? diagram : null;
+    }
+
+    /// <summary>
+    /// The Diagram layer a class draws: each base's graphics beneath the next, the class's own on
+    /// top, and the coordinate system of the most derived class that states one. Null when neither
+    /// the class nor any base has a Diagram annotation.
+    /// </summary>
+    /// <param name="bases">The class's bases in drawing order, deepest first
+    /// (<see cref="ClassElementResolver.BaseClasses"/>).</param>
+    private static IconData? InheritedDiagram(IReadOnlyList<ModelNode> bases, ModelNode node)
+    {
+        var layers = bases.Append(node)
+            .Select(n => n.Definition.Borrow(IconExtractor.ExtractDiagram))
+            .OfType<IconData>()
+            .ToList();
+        if (layers.Count == 0)
+            return null;
+
+        var system = layers.LastOrDefault(l => l.DeclaresExtent) ?? layers[^1];
+        return new IconData
+        {
+            CoordinateExtent = system.CoordinateExtent,
+            DeclaresExtent = system.DeclaresExtent,
+            PreserveAspectRatio = system.PreserveAspectRatio,
+            InitialScale = system.InitialScale,
+            Graphics = [.. layers.SelectMany(l => l.Graphics)],
+        };
     }
 
     private static ModelNode? Resolve(ILibraryDataService libraries, string fromId, string name)
@@ -310,13 +344,15 @@ internal static class DiagramImage
     /// annotation is routed the same way <c>add_connection</c> would route it, so a model assembled
     /// by an agent draws before it has been annotated.
     /// </summary>
+    /// <param name="code">The class being drawn, which routing positions against.</param>
+    /// <param name="source">The class whose <c>connect</c> equations to read: the class itself, or
+    /// one of its bases - an inherited connection names the same components the class has.</param>
     private static List<DiagramConnection> Connections(
-        ILibraryDataService libraries, string classId, string code,
-        IReadOnlyDictionary<string, DiagramGeometry.Placement> placements)
+        ILibraryDataService libraries, string classId, string code, string source)
     {
         var connections = new List<DiagramConnection>();
 
-        var composition = ModelicaParserHelper.Parse(code)?.class_definition()?.FirstOrDefault()
+        var composition = ModelicaParserHelper.Parse(source)?.class_definition()?.FirstOrDefault()
             ?.class_specifier()?.long_class_specifier()?.composition();
         if (composition?.children is null)
             return connections;
@@ -330,7 +366,7 @@ internal static class DiagramImage
             if (refs.Length < 2)
                 continue;
 
-            var annotated = FromAnnotation(code, equation);
+            var annotated = FromAnnotation(source, equation);
             if (annotated is not null)
             {
                 connections.Add(annotated);

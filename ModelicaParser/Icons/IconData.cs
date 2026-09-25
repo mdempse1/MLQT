@@ -12,6 +12,13 @@ public class IconData
     public double[] CoordinateExtent { get; set; } = { -100, -100, 100, 100 };
 
     /// <summary>
+    /// Whether the annotation stated its coordinate system's extent, rather than leaving the default.
+    /// A class that does not state one inherits its base's, which is a question only this answers:
+    /// a stated {{-100,-100},{100,100}} and the default look the same (B316).
+    /// </summary>
+    public bool DeclaresExtent { get; set; }
+
+    /// <summary>
     /// Whether to preserve aspect ratio (default true).
     /// </summary>
     public bool PreserveAspectRatio { get; set; } = true;

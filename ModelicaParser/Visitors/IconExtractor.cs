@@ -42,10 +42,12 @@ public class IconExtractor : modelicaBaseVisitor<object?>
     /// Extracts the <c>Diagram</c> layer instead of the <c>Icon</c> layer — the graphics a class
     /// draws on its own diagram, and the coordinate system its components are placed in.
     ///
-    /// <para>Diagram graphics are <b>not inherited the way an icon is</b>, which is why this is a
-    /// separate entry point rather than a flag on the ones above: an icon is merged down the
-    /// extends chain because that is how Modelica composes what a component looks like, and a
-    /// diagram is the class's own drawing.</para>
+    /// <para><b>This is the class's own layer only.</b> Modelica inherits the Diagram layer as it
+    /// inherits the Icon layer - a base's diagram graphics are drawn beneath the derived class's, and
+    /// a class that states no coordinate system uses its base's - so a caller drawing a whole
+    /// diagram merges this over the class's bases, as the MCP server's <c>DiagramImage</c> does
+    /// (B316). It is a separate entry point because the two layers are separate questions, not
+    /// because only one of them is inherited.</para>
     /// </summary>
     public static IconData? ExtractDiagram(modelicaParser.Stored_definitionContext parseTree)
         => ExtractLayer(parseTree, DiagramLayer)?.Icon;
@@ -241,6 +243,7 @@ public class IconExtractor : modelicaBaseVisitor<object?>
                 {
                     case "extent":
                         _currentIcon.CoordinateExtent = ParseExtent(exprText);
+                        _currentIcon.DeclaresExtent = true;
                         break;
                     case "preserveAspectRatio":
                         _currentIcon.PreserveAspectRatio = exprText?.ToLower() == "true";

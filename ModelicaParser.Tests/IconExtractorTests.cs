@@ -1082,5 +1082,22 @@ end Test;";
         Assert.Null(diagram);
     }
 
+    /// <summary>
+    /// A class that states no coordinate system inherits its base's, so whether it stated one is a
+    /// question of its own - a stated {{-100,-100},{100,100}} and the default are equal (B316).
+    /// </summary>
+    [Fact]
+    public void DeclaresExtent_SaysWhetherTheExtentWasStated()
+    {
+        var stated = IconExtractor.ExtractDiagram(ModelicaParserHelper.Parse(
+            "model T annotation (Diagram(coordinateSystem(extent={{-100,-100},{100,100}}))); end T;"));
+        var unstated = IconExtractor.ExtractDiagram(ModelicaParserHelper.Parse(
+            "model T annotation (Diagram(coordinateSystem(preserveAspectRatio=false), graphics={Rectangle(extent={{-1,-1},{1,1}})})); end T;"));
+
+        Assert.True(stated!.DeclaresExtent);
+        Assert.False(unstated!.DeclaresExtent);
+        Assert.Equal(stated.CoordinateExtent, unstated.CoordinateExtent);
+    }
+
     #endregion
 }

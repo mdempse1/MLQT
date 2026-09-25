@@ -90,7 +90,9 @@ internal static class DiagramGeometry
         string componentName, string connectorName)
     {
         var typeText = ComponentTypeText(classCode, componentName);
-        var typeNode = typeText is null ? null : TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null);
+        var typeNode = typeText is not null
+            ? TypeResolver.Resolve(libraries.CombinedGraph, classId, typeText, null)
+            : InheritedComponentType(libraries, classId, componentName);
         var member = typeNode is null
             ? null
             : ClassElementResolver
@@ -100,6 +102,20 @@ internal static class DiagramGeometry
 
         var (nx, ny) = member is null ? (0d, 0d) : CausalityOffset(member);
         return DiagramSvgRenderer.PortOnEdge(comp, nx, ny);
+    }
+
+    // The type of a component the class inherits, resolved in the scope of the base that declares
+    // it - an inherited connection (B316) names components the class's own text does not.
+    private static ModelicaGraph.DataTypes.ModelNode? InheritedComponentType(
+        ILibraryDataService libraries, string classId, string componentName)
+    {
+        if (libraries.GetModelById(classId) is not { } node)
+            return null;
+        var member = DiagramImage.Members(libraries, node)
+            .FirstOrDefault(m => string.Equals(m.Element.Name, componentName, StringComparison.Ordinal));
+        return member is null
+            ? null
+            : TypeResolver.Resolve(libraries.CombinedGraph, member.OwnerId, member.Element.Type, member.OwnerImports);
     }
 
     private static (double, double) CausalityOffset(ResolvedElement member)
