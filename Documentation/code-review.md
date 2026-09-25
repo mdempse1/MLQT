@@ -76,6 +76,9 @@ than the findings list. The count beside it says which match you are on and how 
 the arrows step through them, wrapping at both ends so the last match steps back to the first.
 
 The box is disabled until a class is open, and the count appears only once you have typed something.
+It is also disabled while a diff view is showing: it searches the single view, so switch back to
+that to use it. Clicking a finding while the diff is showing does the same — the line it names is
+scrolled to when you switch back.
 
 ### External Tool Checking
 
