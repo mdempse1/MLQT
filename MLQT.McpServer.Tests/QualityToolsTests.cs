@@ -485,6 +485,30 @@ B
     }
 
     [Fact]
+    public void CorrectSpelling_AFileWithNoFinalNewline_GetsOne_AndThePreviewSaysSo()
+    {
+        // Every write ends a file with a newline (ModelicaFileEncoding.EnsureFinalNewline, B236), this
+        // one included. The tool used to promise the file kept its trailing newline — true only of a
+        // file that had one — and its preview returned the text without the newline the write then
+        // added, so what an agent was shown was not what landed on disk.
+        using var host = new TestHost();
+        var original = "model Foo \"The postion\"\r\n  Real x;\r\nequation\r\n  x=1;\r\nend Foo;";
+        var path = host.WriteMoFile("Foo.mo", original);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var spelling = Spelling(host);
+
+        var preview = ToolAssert.Ok<CorrectSpellingResult>(
+            spelling.CorrectSpelling("Foo", "postion", "position", preview: true).GetAwaiter().GetResult());
+        var written = ToolAssert.Ok<CorrectSpellingResult>(
+            spelling.CorrectSpelling("Foo", "postion", "position").GetAwaiter().GetResult());
+
+        var onDisk = File.ReadAllText(path);
+        Assert.Equal(original.Replace("postion", "position") + "\r\n", onDisk);
+        Assert.Equal(onDisk, preview.Source);
+        Assert.Equal(onDisk, written.Source);
+    }
+
+    [Fact]
     public void CorrectSpelling_NoMatch_ReturnsZero()
     {
         using var host = new TestHost();

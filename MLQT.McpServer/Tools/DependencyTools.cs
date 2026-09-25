@@ -50,7 +50,9 @@ public sealed class DependencyTools
             return new ToolError("No libraries loaded. Load one first with load_library or load_repository.");
 
         var graph = _libraries.CombinedGraph;
-        var libraryInfos = BuildLibraryInfos();
+        // The service's list, not a copy of it: the copy this tool kept never marked an encrypted
+        // library as one, so the MCP server analysed with a different view of it than the app (B369).
+        var libraryInfos = _libraries.GetLibraryInfos();
 
         var sw = Stopwatch.StartNew();
         await GraphBuilder.AnalyzeDependenciesAsync(graph, libraryInfos);
@@ -146,14 +148,6 @@ public sealed class DependencyTools
             classIds, _session.DependenciesAnalyzed, result.ImpactedModelsCount,
             page.Count, ordered.Count > offset + page.Count, page);
     }
-
-    private List<LibraryInfo> BuildLibraryInfos() => _libraries.Libraries.Select(lib =>
-    {
-        var rootPath = lib.SourceType == LibrarySourceType.File
-            ? Path.GetDirectoryName(lib.SourcePath) ?? lib.SourcePath
-            : lib.SourcePath;
-        return new LibraryInfo(lib.Name, rootPath);
-    }).ToList();
 
     private static ClassRef ToRef(ModelNode n) => new(n.Id, n.Name, n.ClassType);
 }

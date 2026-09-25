@@ -129,7 +129,8 @@ public sealed class SpellingTools
                 "Documentation prose of the file containing the given class (whole-word, case-sensitive; " +
                 "HTML tags, hyperlink hrefs and code/pre blocks are left untouched). The word is the only " +
                 "change made to the file: its layout and line endings are left alone, so the edit is a " +
-                "one-word diff. By default the corrected file is written to disk and the graph refreshed; " +
+                "one-word diff (except that, as with every MLQT write, a file with no final newline gets " +
+                "one). By default the corrected file is written to disk and the graph refreshed; " +
                 "set preview=true to return the corrected file text without writing. Returns the number of " +
                 "replacements made (0 means the word was not found). Use format_class to reformat a file.")]
     public async Task<object> CorrectSpelling(
@@ -176,11 +177,15 @@ public sealed class SpellingTools
         if (parseErrors.Any(e => e.Severity == ModelicaParser.DataTypes.ParserErrorSeverity.FatalParseFailure))
             return new ToolError("Correction was not applied: the result failed to parse.");
 
-        // The word is the only change: the file keeps its own line endings and trailing newline, so
+        // The word is the only change: the file keeps its own line endings and trailing whitespace, so
         // the edit reads as a one-word diff rather than a reformat of the whole file. Reformatting is
         // what format_class is for, and doing it here meant an agent's spelling fix and a user's
-        // produced different diffs for the same correction.
-        corrected = SpellingCorrector.MatchFileEnding(fileText, corrected);
+        // produced different diffs for the same correction. The one exception is the rule every write
+        // in MLQT keeps (ModelicaFileEncoding.ForFile, B236): a file that did not end with a newline
+        // gets one. ForFile is applied here, not left to the write, so the preview is the text that
+        // would land on disk rather than the text before the write adds to it.
+        corrected = ModelicaFileEncoding.ForFile(
+            ctx.FilePath, SpellingCorrector.MatchFileEnding(fileText, corrected));
 
         if (preview)
             return new CorrectSpellingResult(classId, ctx.FilePath, replacements, Changed: false, PreviewOnly: true, corrected);

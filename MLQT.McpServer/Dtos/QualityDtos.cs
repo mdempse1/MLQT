@@ -122,13 +122,6 @@ public sealed class StyleSettingsInput
                 s.SetRuleEnabled(toggle.RuleId, enabled);
         }
 
-        // Not a rule — a formatter flag, so it is not in the toggle table.
-        if (ComponentsBeforeClasses is { } componentsFirst)
-            s.ComponentsBeforeClasses = componentsFirst;
-
-        if (DeclarationOrder is { } declarationOrder)
-            s.DeclarationOrder = declarationOrder;
-
         if (SpellCheckLanguages is { Count: > 0 })
             s.SpellCheckLanguages = SpellCheckLanguages.ToList();
     }
@@ -156,12 +149,7 @@ public sealed class StyleSettingsInput
     /// </summary>
     public static StyleSettingsInput From(StyleCheckingSettings s)
     {
-        var input = new StyleSettingsInput
-        {
-            ComponentsBeforeClasses = s.ComponentsBeforeClasses,
-            DeclarationOrder = s.DeclarationOrder,
-            SpellCheckLanguages = s.SpellCheckLanguages?.ToList(),
-        };
+        var input = new StyleSettingsInput { SpellCheckLanguages = s.SpellCheckLanguages?.ToList() };
 
         foreach (var toggle in _toggles)
             toggle.Write(input, s.IsRuleSwitchedOn(toggle.RuleId));

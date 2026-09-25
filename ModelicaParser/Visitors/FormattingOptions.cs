@@ -22,8 +22,9 @@ namespace ModelicaParser.Visitors;
 /// </param>
 /// <param name="ImportsFirst">Put <c>import</c> statements first in each section, then <c>extends</c>.</param>
 /// <param name="ComponentsBeforeClasses">
-/// Put component declarations before nested class definitions. A formatter-only choice — no rule
-/// checks it, so it never produces a finding and CI cannot see it.
+/// Put component declarations before nested class definitions. The layout
+/// <c>MLQT.Style.ComponentsBeforeClasses</c> checks: it has been a rule since B181, so a class written
+/// out of this order is a finding and CI can gate on it.
 ///
 /// <para><b>It refines <see cref="ImportsFirst"/> rather than competing with it.</b> The renderer
 /// reads this option only inside the branch <see cref="ImportsFirst"/> selects, so with imports-first

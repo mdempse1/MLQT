@@ -885,8 +885,11 @@ public class StyleCheckingService : IStyleCheckingService
             else
             {
                 // Classes outside every repository — a library loaded only for reference. Nothing has
-                // set rules for them, so nothing is checked.
-                settings = new StyleCheckingSettings();
+                // set rules for them, so nothing is checked. NothingEnabled, not a fresh object: that
+                // stopped meaning "nothing on" when B241 made SingleFilePackage default-on, and it is
+                // only by that rule running over the graph rather than per class that a fresh object
+                // happened to check nothing here.
+                settings = StyleCheckingSettings.NothingEnabled();
             }
 
             var workerName = repo?.Name ?? "unknown";
