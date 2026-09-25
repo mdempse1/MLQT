@@ -9,7 +9,7 @@ public class QualityToolsTests
         => new(h.Libraries, h.CodeReview, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Session);
     private static SpellingTools Spelling(TestHost h)
         => new(h.Libraries, h.Repositories, h.CustomDictionary, h.DictionaryManager, h.Resources, h.Session);
-    private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Resources, h.Session);
+    private static FormattingTools Formatting(TestHost h) => new(h.Libraries, h.Repositories, h.Resources, h.Session);
 
     private static void LoadSingle(TestHost h, string file, string content)
         => h.Libraries.AddLibraryFromFileAsync(h.WriteMoFile(file, content)).GetAwaiter().GetResult();
@@ -570,5 +570,94 @@ B
         var err = ToolAssert.Error(Formatting(host).FormatClass("Bad").GetAwaiter().GetResult());
         Assert.Contains("syntax", err.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(before, File.ReadAllText(path)); // file left untouched
+    }
+
+    // ----- formatting: exclusions and declaration order (B313) -----
+
+    /// <summary>A class written out of every order the formatter knows.</summary>
+    private const string Jumbled =
+        "model Foo \"d\"\n  Real x;\n  parameter Real p = 1;\nequation\n  x = p;\nequation\nend Foo;\n";
+
+    [Fact]
+    public void FormatClass_LeavesAClassThatOptsOutInItsSource_Alone()
+    {
+        // format_class rendered through its own options and never asked FormattingExclusion, so it
+        // rewrote exactly the class __MLQT(format=false) was written on.
+        using var host = new TestHost();
+        var source = Jumbled.Replace("end Foo;", "  annotation(__MLQT(format=false));\nend Foo;");
+        var path = host.WriteMoFile("Foo.mo", source);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+
+        var err = ToolAssert.Error(Formatting(host)
+            .FormatClass("Foo", oneOfEachSection: true, componentsBeforeClasses: true, declarationOrder: true)
+            .GetAwaiter().GetResult());
+
+        Assert.Contains("excluded from formatting", err.Error);
+        Assert.Equal(source, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void FormatClass_LeavesAClassOnTheRepositorysExcludedList_Alone()
+    {
+        using var host = new TestHost();
+        var root = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["P/package.mo"] = "within;\npackage P \"p\"\nend P;\n",
+            ["P/Foo.mo"] = "within P;\n" + Jumbled,
+            ["P/package.order"] = "Foo\n",
+        });
+        var file = Path.Combine(root, "P", "Foo.mo");
+        var repository = host.Repositories.AddRepositoryAsync(root, startMonitoring: false)
+            .GetAwaiter().GetResult().Repository!;
+        host.Repositories.LoadLibrariesAsync(repository.Id).GetAwaiter().GetResult();
+        Assert.NotNull(host.Libraries.GetModelById("P.Foo"));
+        repository.StyleSettings!.FormattingExcludedModels.Add("P.Foo");
+        var before = File.ReadAllText(file);
+
+        var err = ToolAssert.Error(Formatting(host)
+            .FormatClass("P.Foo", oneOfEachSection: true).GetAwaiter().GetResult());
+
+        Assert.Contains("excluded from formatting", err.Error);
+        Assert.Equal(before, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void FormatCode_CanWriteDeclarationsInOrder()
+    {
+        using var host = new TestHost();
+        var res = ToolAssert.Ok<FormatCodeResult>(Formatting(host).FormatCode(Jumbled,
+            oneOfEachSection: true, importStatementsFirst: true, componentsBeforeClasses: true, declarationOrder: true));
+
+        Assert.True(res.Source.IndexOf("parameter Real p", StringComparison.Ordinal)
+                    < res.Source.IndexOf("Real x;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FormatClass_ClearsWhatCheckClassReportsAsOutOfOrder()
+    {
+        // The two have to agree, or an agent is shown findings no tool can clear - which is what
+        // settings-reference.md promises cannot happen. A derived simple type is the case that
+        // needs the graph: without the same lookup the checker uses, `Length` stays a component.
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = "within;\npackage P \"p\"\n  type Length = Real;\n  model R \"r\"\n  end R;\n" +
+                             "  model Foo \"f\"\n    R r;\n    Length l;\n  end Foo;\nend P;\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var rules = new StyleSettingsInput
+        {
+            OneOfEachSection = true, ImportStatementsFirst = true,
+            ComponentsBeforeClasses = true, DeclarationOrder = true,
+        };
+        var before = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("P.Foo", rules));
+        Assert.Contains(before.Findings, f => f.Summary.Contains("'l'"));
+
+        ToolAssert.Ok<FormatClassResult>(Formatting(host).FormatClass("P.Foo",
+            oneOfEachSection: true, importStatementsFirst: true,
+            componentsBeforeClasses: true, declarationOrder: true).GetAwaiter().GetResult());
+
+        var after = ToolAssert.Ok<CheckResult>(Style(host).CheckClass("P.Foo", rules));
+        Assert.DoesNotContain(after.Findings, f => f.Summary.Contains("'l'"));
     }
 }

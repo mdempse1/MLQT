@@ -420,16 +420,10 @@ public sealed class StyleTools
     }
 
     private StyleCheckingSettings RepoSettingsForClass(string classId)
-    {
-        var library = _libraries.GetOwningLibrary(classId);
-        return library is not null ? RepoSettingsForLibrary(library) : new StyleCheckingSettings();
-    }
+        => RepositorySettings.ForClass(_libraries, _repositories, classId) ?? new StyleCheckingSettings();
 
     private StyleCheckingSettings RepoSettingsForLibrary(LoadedLibrary library)
-    {
-        var repo = library.RepositoryId is { } rid ? _repositories.GetRepository(rid) : null;
-        return repo?.StyleSettings ?? new StyleCheckingSettings();
-    }
+        => RepositorySettings.ForLibrary(_repositories, library) ?? new StyleCheckingSettings();
 
     /// <summary>
     /// The one loaded repository, or null when there is not exactly one — the scope a stateless

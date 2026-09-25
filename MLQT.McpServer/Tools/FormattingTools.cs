@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaGraph;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
@@ -20,12 +21,15 @@ namespace MLQT.McpServer.Tools;
 public sealed class FormattingTools
 {
     private readonly ILibraryDataService _libraries;
+    private readonly IRepositoryService _repositories;
     private readonly IExternalResourceService _resources;
     private readonly SessionState _session;
 
-    public FormattingTools(ILibraryDataService libraries, IExternalResourceService resources, SessionState session)
+    public FormattingTools(ILibraryDataService libraries, IRepositoryService repositories,
+        IExternalResourceService resources, SessionState session)
     {
         _libraries = libraries;
+        _repositories = repositories;
         _resources = resources;
         _session = session;
     }
@@ -47,6 +51,9 @@ public sealed class FormattingTools
         [Description("Move import statements to the top; default false.")] bool importStatementsFirst = false,
         [Description("Order component declarations before nested class definitions; default false.")]
         bool componentsBeforeClasses = false,
+        [Description(DeclarationOrderDescription + " With no library behind it, only Real, Integer, " +
+                     "Boolean and String are known to be variables - the same answer check_style gives.")]
+        bool declarationOrder = false,
         [Description("Maximum line length before wrapping; default 100.")] int maxLineLength = 100)
     {
         if (string.IsNullOrWhiteSpace(source))
@@ -74,7 +81,8 @@ public sealed class FormattingTools
                 formatting: new FormattingOptions(
                     OneOfEachSection: oneOfEachSection,
                     ImportsFirst: importStatementsFirst,
-                    ComponentsBeforeClasses: componentsBeforeClasses));
+                    ComponentsBeforeClasses: componentsBeforeClasses,
+                    DeclarationOrder: declarationOrder));
             renderer.VisitStored_definition(parseTree);
             var formatted = string.Join("\n", renderer.Code);
 
@@ -109,6 +117,9 @@ public sealed class FormattingTools
         [Description("Move import statements to the top; default false.")] bool importStatementsFirst = false,
         [Description("Order component declarations before nested class definitions; default false.")]
         bool componentsBeforeClasses = false,
+        [Description(DeclarationOrderDescription + " Types are resolved through the loaded libraries, " +
+                     "exactly as check_class resolves them, so what this writes is what that rule asks for.")]
+        bool declarationOrder = false,
         [Description("Return the formatted text without writing to disk or updating the graph; default false.")]
         bool preview = false)
     {
@@ -137,6 +148,19 @@ public sealed class FormattingTools
         if (!File.Exists(ctx.FilePath))
             return new ToolError($"'{classId}' has no file on disk to format.");
 
+        // A file is reformatted whole or not at all, so one class in it that opted out - by
+        // __MLQT(format=false) / preserveOrder=true, or by its repository's excluded list - keeps the
+        // whole file as it is. The same rule and the same method the GUI's incremental format uses;
+        // this tool asked neither, and rewrote exactly the classes that had said not to (B313).
+        var settings = RepositorySettings.ForClass(_libraries, _repositories, classId);
+        var excluded = _libraries.CombinedGraph.GetModelsInFile(node.ContainingFileId!)
+            .FirstOrDefault(m => FormattingExclusion.Excludes(m, settings));
+        if (excluded is not null)
+            return new ToolError(
+                $"'{ctx.FilePath}' was not formatted: '{excluded.Id}' in it is excluded from formatting " +
+                "(__MLQT(format=false) or preserveOrder=true in its source, or its repository's " +
+                "FormattingExcludedModels list). Nothing was written.");
+
         var original = await ModelicaFileEncoding.ReadAllTextOnlyAsync(ctx.FilePath);
 
         // Format the file as it is on disk, not the owner's stored source. Style checking trims a
@@ -150,12 +174,16 @@ public sealed class FormattingTools
         string rendered;
         try
         {
+            // The same lookup check_class gives MLQT.Style.DeclarationOrder, keyed by the same class,
+            // so the order written here is the order the rule asks for.
             rendered = ModelicaPackageSaver.RenderFileOwnerModel(
                 owner,
                 new FormattingOptions(
                     OneOfEachSection: oneOfEachSection,
                     ImportsFirst: importStatementsFirst,
-                    ComponentsBeforeClasses: componentsBeforeClasses));
+                    ComponentsBeforeClasses: componentsBeforeClasses,
+                    DeclarationOrder: declarationOrder),
+                isSimpleType: declarationOrder ? StyleChecking.CreateSimpleTypeLookup(_libraries.CombinedGraph) : null);
         }
         catch (Exception ex)
         {
@@ -194,6 +222,12 @@ public sealed class FormattingTools
 
         return new FormatClassResult(classId, PreviewOnly: false, Changed: changed, ctx.FilePath, rendered);
     }
+
+    private const string DeclarationOrderDescription =
+        "Write declarations in the order inputs and outputs, constants, parameters, variables, " +
+        "components (MLQT.Style.DeclarationOrder); only takes effect with oneOfEachSection, " +
+        "importStatementsFirst and componentsBeforeClasses all on. A record keeps its fields in source order, since that is its constructor's " +
+        "signature. Default false.";
 
     private static string DescribeErrors(IReadOnlyList<ParserError> errors)
     {

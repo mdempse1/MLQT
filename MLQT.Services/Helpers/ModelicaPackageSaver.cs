@@ -141,7 +141,11 @@ public class ModelicaPackageSaver
     /// from its current <c>ModelicaCode</c> so a caller can mutate the source first.
     /// </para>
     /// </summary>
-    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting)
+    /// <param name="isSimpleType">The lookup that tells a variable from a component, for
+    /// <see cref="FormattingOptions.DeclarationOrder"/> — the checker's, keyed from
+    /// <paramref name="fileOwner"/>'s id, so the two cannot order a class differently.</param>
+    public static string RenderFileOwnerModel(ModelNode fileOwner, FormattingOptions formatting,
+        Func<string, string, bool>? isSimpleType = null)
     {
         // The stored ModelicaCode is the extracted class body without a 'within' clause.
         // The file written to disk must carry the within clause so that, when the library is
@@ -154,7 +158,8 @@ public class ModelicaPackageSaver
         var (parseTree, _) = ModelicaParserHelper.ParseWithErrors(sourceCode);
         fileOwner.Definition.ParsedCode = parseTree;
 
-        return RenderStoredDefinition(parseTree, formatting);
+        return RenderStoredDefinition(parseTree, formatting,
+            rootClassId: isSimpleType is null ? null : fileOwner.Id, isSimpleType);
     }
 
     /// <summary>

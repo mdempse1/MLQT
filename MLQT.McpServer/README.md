@@ -54,6 +54,10 @@ directed by each tool's method signature, so a parameter that is genuinely a str
   write the `.mo` file to disk (unless `preview: true`). `correct_spelling` changes the word and
   nothing else — the file keeps its layout and line endings, so the edit is a one-word diff; use
   `format_class` when reformatting is what you want. `format_code` / `check_style` are stateless.
+  `format_class` refuses a file holding a class excluded from formatting (`__MLQT(format=false)`,
+  `preserveOrder=true`, or the repository's excluded list), as the desktop app's formatter does, and
+  its `declarationOrder` option resolves types the way `check_class` does, so it clears exactly the
+  `MLQT.Style.DeclarationOrder` findings that tool reports.
 - **VCS.** Only two, Modelica-aware, read-only tools are provided. Generic git/svn (commit, log,
   push, branch) is left to the CLI.
 - Call **`get_guidance`** (optionally with a topic) for workflow recipes.
