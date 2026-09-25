@@ -327,6 +327,10 @@ public class RepositoryService : IRepositoryService
             // that reloads, re-analyses and reformats — so a vendor's checkout being updated outside
             // MLQT ended in MLQT writing to it. The encrypted-library design note lists this guard
             // and it was not built.
+            //
+            // The repository's own folder is its scope within that, so a change is recorded for
+            // the library it belongs to and not for every one checked out beside it (B325).
+            _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
             if (startMonitoring && !repository.IsReferenceOnly)
             {
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
@@ -623,8 +627,9 @@ public class RepositoryService : IRepositoryService
             _repositories.Remove(repository);
         }
 
-        // Stop file monitoring for this repository
+        // Stop file monitoring for this repository, and forget it
         _fileMonitoringService.StopMonitoring(repositoryId);
+        _fileMonitoringService.SetRepositoryScope(repositoryId, null);
 
         if (unloadLibraries)
         {
@@ -1231,6 +1236,7 @@ public class RepositoryService : IRepositoryService
                 // Reference-only repositories are not watched — see AddRepositoryAsync.
                 if (repository.IsReferenceOnly)
                     continue;
+                _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
                 _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
                 started++;
             }

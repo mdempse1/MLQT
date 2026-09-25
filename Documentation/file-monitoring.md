@@ -13,6 +13,10 @@ MLQT monitors each loaded repository's directory tree for:
 
 Other file types (data files, images, documentation) are not monitored for the library browser, but are tracked separately by the [External Resources](external-resources.md) system.
 
+When several libraries are checked out in one working copy, MLQT watches the working copy once and
+records each change against the library whose folder it is in, so a change is formatted with that
+library's settings. A change outside every library's folder is not recorded as a pending change.
+
 ### What Is Ignored
 
 The file monitor skips:

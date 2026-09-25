@@ -206,12 +206,120 @@ public class SharedWatchPathTests : IDisposable
     {
         // Pending changes stay per repository, which is what the fan-out preserves: two repositories
         // sharing a directory each get their own record of an edit, and clearing one does not clear
-        // the other.
+        // the other. Asserted on the records now - this used to say so and check only that the
+        // other was still monitored (B325).
         _service.StartMonitoring("repo-a", _root);
         _service.StartMonitoring("repo-b", _root);
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "Shared.mo"), FileChangeType.Modified);
+
+        Assert.Single(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Single(_service.GetPendingChangesForRepository("repo-b"));
 
         _service.ClearPendingChanges("repo-a");
 
-        Assert.True(_service.IsMonitoringRepository("repo-b"));
+        Assert.Empty(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Single(_service.GetPendingChangesForRepository("repo-b"));
+    }
+
+    // ---- Whose change it is (B325) ----------------------------------------------------------------
+    //
+    // Two libraries checked out in one tree share one watcher. The change used to be offered to both
+    // and recorded against one - whichever was offered it last, because the record was looked up by
+    // path alone - so library B's edit could be formatted with library A's settings, and A's
+    // formatter writes became B's pending changes. With each repository's own folder as its scope,
+    // a change is recorded for the library it is in.
+
+    private string Library(string name)
+    {
+        var folder = Path.Combine(_root, name);
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    [Fact]
+    public void AChangeIsRecordedForTheLibraryItIsIn_AndNoOther()
+    {
+        _service.SetRepositoryScope("repo-a", Library("LibA"));
+        _service.SetRepositoryScope("repo-b", Library("LibB"));
+        _service.StartMonitoring("repo-a", _root);
+        _service.StartMonitoring("repo-b", _root);
+
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "LibB", "Pump.mo"), FileChangeType.Modified);
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "LibA", "Valve.mo"), FileChangeType.Modified);
+
+        Assert.Equal([Path.Combine(_root, "LibA", "Valve.mo")],
+            _service.GetPendingChangesForRepository("repo-a").Select(c => c.FilePath));
+        Assert.Equal([Path.Combine(_root, "LibB", "Pump.mo")],
+            _service.GetPendingChangesForRepository("repo-b").Select(c => c.FilePath));
+    }
+
+    [Fact]
+    public void AChangeOutsideEveryLibrary_IsNobodysPendingChange_ButIsStillActivity()
+    {
+        _service.SetRepositoryScope("repo-a", Library("LibA"));
+        _service.SetRepositoryScope("repo-b", Library("LibB"));
+        _service.StartMonitoring("repo-a", _root);
+        _service.StartMonitoring("repo-b", _root);
+        var activity = new List<string>();
+        _service.OnRepositoryFileActivity += activity.Add;
+
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "Scripts", "build.mo"), FileChangeType.Added);
+
+        Assert.Empty(_service.PendingChanges);
+        Assert.Equal(["repo-a", "repo-b"], activity.Order());
+    }
+
+    [Fact]
+    public void ALibraryInsideAnotherRepositorysFolder_OwnsItsOwnChanges()
+    {
+        // A repository registered at the checkout root and one at a library below it: the library's
+        // file is the library's, and a file elsewhere in the tree is the outer repository's.
+        _service.SetRepositoryScope("repo-root", _root);
+        _service.SetRepositoryScope("repo-b", Library("LibB"));
+        _service.StartMonitoring("repo-root", _root);
+        _service.StartMonitoring("repo-b", _root);
+
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "LibB", "Pump.mo"), FileChangeType.Modified);
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "Other.mo"), FileChangeType.Modified);
+
+        Assert.Equal([Path.Combine(_root, "Other.mo")],
+            _service.GetPendingChangesForRepository("repo-root").Select(c => c.FilePath));
+        Assert.Equal([Path.Combine(_root, "LibB", "Pump.mo")],
+            _service.GetPendingChangesForRepository("repo-b").Select(c => c.FilePath));
+    }
+
+    [Fact]
+    public void AClassMovedBetweenLibraries_IsAChangeToBoth()
+    {
+        _service.SetRepositoryScope("repo-a", Library("LibA"));
+        _service.SetRepositoryScope("repo-b", Library("LibB"));
+        _service.StartMonitoring("repo-a", _root);
+        _service.StartMonitoring("repo-b", _root);
+
+        _service.OnFileSystemRenamedEvent(_root,
+            Path.Combine(_root, "LibA", "Pump.mo"), Path.Combine(_root, "LibB", "Pump.mo"));
+
+        Assert.Single(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Single(_service.GetPendingChangesForRepository("repo-b"));
+    }
+
+    [Fact]
+    public void AScopeOutlivesAPause()
+    {
+        // StopMonitoring is how every VCS operation pauses a repository; the scope must still be
+        // there when it starts again, or the first edit after an update goes to both libraries.
+        _service.SetRepositoryScope("repo-a", Library("LibA"));
+        _service.SetRepositoryScope("repo-b", Library("LibB"));
+        _service.StartMonitoring("repo-a", _root);
+        _service.StartMonitoring("repo-b", _root);
+
+        _service.StopMonitoring("repo-a");
+        _service.StopMonitoring("repo-b");
+        _service.StartMonitoring("repo-a", _root);
+        _service.StartMonitoring("repo-b", _root);
+        _service.OnFileSystemEvent(_root, Path.Combine(_root, "LibB", "Pump.mo"), FileChangeType.Modified);
+
+        Assert.Empty(_service.GetPendingChangesForRepository("repo-a"));
+        Assert.Single(_service.GetPendingChangesForRepository("repo-b"));
     }
 }

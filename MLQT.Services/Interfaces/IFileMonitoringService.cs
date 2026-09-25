@@ -40,6 +40,23 @@ public interface IFileMonitoringService
     void StartMonitoring(string repositoryId, string localPath);
 
     /// <summary>
+    /// Says which part of the watched directory is this repository's own - its <c>LocalPath</c> -
+    /// so a change is recorded only for the repository it belongs to (B325). Null forgets it.
+    /// </summary>
+    /// <remarks>
+    /// <para>A repository is watched at its VCS root, so two libraries checked out in one tree share
+    /// one watcher, and every edit under it used to be offered to both. Recorded against whichever
+    /// asked last, a change to library B's file could be formatted with library A's settings, and
+    /// A's own formatter writes became B's pending changes.</para>
+    ///
+    /// <para>With a scope, a change is recorded for the repositories whose scope holds it - the
+    /// deepest, where one repository's folder is inside another's - and for none when it is outside
+    /// all of them. Kept across <see cref="StopMonitoring"/>, which pauses a repository rather than
+    /// forgetting it; a repository with no scope is offered everything under its watched path.</para>
+    /// </remarks>
+    void SetRepositoryScope(string repositoryId, string? scopePath);
+
+    /// <summary>
     /// Stops monitoring a specific repository.
     /// </summary>
     /// <param name="repositoryId">ID of the repository to stop monitoring.</param>

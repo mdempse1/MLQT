@@ -28,6 +28,10 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
     private readonly Dictionary<string, HashSet<string>> _subscribers = new(PathComparer); // path -> repositoryIds
     private readonly Dictionary<string, string> _repositoryPaths = new(); // repositoryId -> watched path
 
+    // repositoryId -> the part of the watched path that is its own (B325). Kept across a stop, which
+    // is a pause; see SetRepositoryScope.
+    private readonly Dictionary<string, string> _repositoryScopes = new();
+
     private readonly List<FileChangeInfo> _pendingChanges = new();
     private readonly object _lock = new();
 
@@ -199,6 +203,18 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void SetRepositoryScope(string repositoryId, string? scopePath)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrEmpty(scopePath))
+                _repositoryScopes.Remove(repositoryId);
+            else
+                _repositoryScopes[repositoryId] = NormalizePath(scopePath);
+        }
+    }
+
     public void StopMonitoring(string repositoryId)
     {
         lock (_lock)
@@ -314,7 +330,47 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
         }
     }
 
-    private void OnFileSystemEvent(string watchedPath, string fullPath, FileChangeType changeType)
+    /// <summary>
+    /// The repositories among <paramref name="repositories"/> a change to any of
+    /// <paramref name="paths"/> belongs to (B325).
+    /// </summary>
+    /// <remarks>
+    /// Those whose scope holds one of the paths, and of those the deepest - a library folder inside
+    /// another repository's folder is the inner repository's. A repository with no scope is taken to
+    /// own everything under the path it watches, which is what it was offered before scopes.
+    /// </remarks>
+    private List<string> OwnersOf(string watchedPath, List<string> repositories, params string[] paths)
+    {
+        var holding = new List<(string RepositoryId, int Depth)>();
+        lock (_lock)
+        {
+            foreach (var repositoryId in repositories)
+            {
+                var scope = _repositoryScopes.GetValueOrDefault(repositoryId) ?? watchedPath;
+                if (paths.Any(path => IsUnder(path, scope)))
+                    holding.Add((repositoryId, scope.Length));
+            }
+        }
+
+        if (holding.Count == 0)
+            return [];
+
+        var deepest = holding.Max(h => h.Depth);
+        return holding.Where(h => h.Depth == deepest).Select(h => h.RepositoryId).ToList();
+    }
+
+    /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it.</summary>
+    private static bool IsUnder(string path, string folder)
+    {
+        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var full = NormalizePath(path);
+        return full.Equals(folder, comparison)
+               || full.StartsWith(folder + Path.DirectorySeparatorChar, comparison)
+               || full.StartsWith(folder + Path.AltDirectorySeparatorChar, comparison);
+    }
+
+    // Internal so a test can raise an event without a FileSystemWatcher, whose timing is its own.
+    internal void OnFileSystemEvent(string watchedPath, string fullPath, FileChangeType changeType)
     {
         var repositories = SubscribersOf(watchedPath);
 
@@ -345,11 +401,12 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
             ? Directory.Exists(fullPath)
             : !Path.HasExtension(fullPath);
 
-        // One debounce decision per edit, then one change per subscribed repository. The debounce
+        // One debounce decision per edit, then one change per repository it belongs to. The debounce
         // above is keyed by path alone, so doing it per repository - which is what two watchers over
         // one tree amounted to - meant the first repository's event consumed the entry and the
-        // second repository's identical event was discarded as a duplicate of it (B168).
-        foreach (var repositoryId in repositories)
+        // second repository's identical event was discarded as a duplicate of it (B168). Every
+        // subscriber still hears of the activity above; only the owner records the change (B325).
+        foreach (var repositoryId in OwnersOf(watchedPath, repositories, fullPath))
         {
             AddOrUpdateChange(new FileChangeInfo
             {
@@ -361,12 +418,13 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
         }
     }
 
-    private void OnFileSystemRenamedEvent(string watchedPath, string oldPath, string newPath)
+    internal void OnFileSystemRenamedEvent(string watchedPath, string oldPath, string newPath)
     {
         if (!ShouldTrackPath(newPath, FileChangeType.Renamed) && !ShouldTrackPath(oldPath, FileChangeType.Renamed))
             return;
 
-        foreach (var repositoryId in SubscribersOf(watchedPath))
+        // Owned by the repository at either end: a class moved out of a library is a change to it.
+        foreach (var repositoryId in OwnersOf(watchedPath, SubscribersOf(watchedPath), newPath, oldPath))
         {
             AddOrUpdateChange(new FileChangeInfo
             {
@@ -432,9 +490,12 @@ public class FileMonitoringService : IFileMonitoringService, IDisposable
     {
         lock (_lock)
         {
-            // Look for existing change for this file path
+            // Look for an existing change to this file for this repository. The path alone found
+            // whichever repository's record came first, so a change fanned out to two of them was
+            // consolidated into one record and left under whichever was offered it last (B325).
             var existingIndex = _pendingChanges.FindIndex(c =>
-                c.FilePath.Equals(change.FilePath, StringComparison.OrdinalIgnoreCase));
+                c.RepositoryId == change.RepositoryId
+                && c.FilePath.Equals(change.FilePath, StringComparison.OrdinalIgnoreCase));
 
             if (existingIndex >= 0)
             {
