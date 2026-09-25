@@ -222,9 +222,7 @@ public partial class MainLayout : IDisposable
             if (newProjectName != null)
             {
                 var newProject = await RepositoryService.CreateAndSelectProjectAsync(newProjectName);
-                await RepositoryService.LoadRepositorySettingsAsync(newProject.Id);
-                _currentProjectName = RepositoryService.GetActiveProject()?.Name;
-                await InvokeAsync(StateHasChanged);
+                await OpenProjectWithNothingToAnalyseAsync(newProject.Id);
                 return;
             }
 
@@ -244,9 +242,7 @@ public partial class MainLayout : IDisposable
                 bool hasLegacyRepos = savedSettings.Projects.Count == 0 && savedSettings.Repositories.Count > 0;
                 if (!hasLegacyRepos && (checkProject == null || checkProject.Repositories.Count == 0))
                 {
-                    await RepositoryService.LoadRepositorySettingsAsync(selectedProjectId);
-                    _currentProjectName = RepositoryService.GetActiveProject()?.Name;
-                    await InvokeAsync(StateHasChanged);
+                    await OpenProjectWithNothingToAnalyseAsync(selectedProjectId);
                     return;
                 }
             }
@@ -461,6 +457,27 @@ public partial class MainLayout : IDisposable
             _startupProcessRunning = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// Opens a project that has no repositories - a new one, or an empty one - without the startup
+    /// dialog, since there is nothing to format or analyse.
+    /// </summary>
+    /// <remarks>
+    /// The Reference Libraries setting belongs to no project, so it is loaded here too (B355). These
+    /// two paths returned before the main path reached it, and adding a repository afterwards does
+    /// not load it, so an empty project resolved nothing against them all session - B280's symptom on
+    /// the sibling path, while switching <i>to</i> the same project did load them.
+    /// </remarks>
+    private async Task OpenProjectWithNothingToAnalyseAsync(string? projectId)
+    {
+        await RepositoryService.LoadRepositorySettingsAsync(projectId);
+        using (LibraryDataService.SuppressTreeDataChanged())
+        {
+            await LoadReferenceLibrariesAsync();
+        }
+        _currentProjectName = RepositoryService.GetActiveProject()?.Name;
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
