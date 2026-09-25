@@ -1771,12 +1771,12 @@ public partial class MainLayout : IDisposable
                         NavState.ChangeModelID(NavState.ModelID);
                     });
 
-                await InvokeAsync(() => Snackbar.Add("Revert analysis complete.", Severity.Success));
+                await InvokeAsync(() => Snackbar.Add("Analysis of the changed classes is complete.", Severity.Success));
             }
             catch (Exception ex)
             {
                 Error("MainLayout", "Error processing reverted models", ex);
-                await InvokeAsync(() => Snackbar.Add($"Error after revert: {ex.Message}", Severity.Error));
+                await InvokeAsync(() => Snackbar.Add($"Error re-analysing the changed classes: {ex.Message}", Severity.Error));
             }
         });
     }

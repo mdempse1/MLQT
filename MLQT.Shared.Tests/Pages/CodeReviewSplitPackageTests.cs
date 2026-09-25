@@ -1,4 +1,7 @@
 using MLQT.Services.DataTypes;
+using MLQT.Services.Interfaces;
+using MLQT.Shared.Models;
+using Moq;
 using MLQT.Shared.Pages;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
@@ -89,6 +92,50 @@ public class CodeReviewSplitPackageTests
     public void AnArchiveIsNeverWritten()
     {
         Assert.NotNull(CodeReview.WhyNotSplit(Library(LibrarySourceType.Zip, "lib.zip"), "MyLib"));
+    }
+
+    // ── B307: what the split tells the rest of the application ────────────────────
+
+    [Fact]
+    public void ASplitAnnouncesTheClassesItReloadedAndNothingElse()
+    {
+        // It announced the whole library, so the layout dropped every finding in it and re-checked
+        // all of it. Only the classes the reload touched need that.
+        var state = new AppState();
+        var monitor = new Mock<IFileMonitoringService>();
+        IReadOnlyList<string>? reanalysed = null;
+        IReadOnlyCollection<string>? contentChanged = null;
+        state.OnVcsModelsChanged += (_, models) => reanalysed = models;
+        state.OnModelContentChanged += models => contentChanged = models;
+
+        CodeReview.AnnounceReloadedModels(state, monitor.Object, "repo", ["Lib.P", "Lib.P.A"]);
+
+        Assert.Equal(["Lib.P", "Lib.P.A"], reanalysed);
+        Assert.Equal(["Lib.P", "Lib.P.A"], contentChanged);
+    }
+
+    [Fact]
+    public void ASplitIsFileActivity()
+    {
+        // The monitor was paused across the write, so without this the library browser's VCS status
+        // and the baseline never hear about the files the split created and deleted.
+        var monitor = new Mock<IFileMonitoringService>();
+
+        CodeReview.AnnounceReloadedModels(new AppState(), monitor.Object, "repo", ["Lib.P"]);
+
+        monitor.Verify(m => m.NotifyFileActivity("repo"), Times.Once);
+    }
+
+    [Fact]
+    public void NothingReloadedIsNothingToReanalyse()
+    {
+        var state = new AppState();
+        var raised = false;
+        state.OnVcsModelsChanged += (_, _) => raised = true;
+
+        CodeReview.AnnounceReloadedModels(state, new Mock<IFileMonitoringService>().Object, "repo", []);
+
+        Assert.False(raised);
     }
 
     [Fact]

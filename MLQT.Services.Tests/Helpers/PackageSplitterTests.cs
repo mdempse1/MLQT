@@ -448,6 +448,22 @@ public class PackageSplitterTests : IDisposable
     }
 
     [Fact]
+    public async Task TheReloadAfterASplitNamesTheMovedClassesNotTheLibrary()
+    {
+        // B307: the page announces what this returns for re-analysis. It announced the whole
+        // library instead, and re-checked a class the split never touched.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+
+        var result = Split(service, "Lib.Arrived");
+        var affected = await service.UpdateChangedFilesAsync(
+            [.. result.WrittenFiles, .. result.RemovedFiles], lib);
+
+        Assert.Contains("Lib.Arrived.Alpha", affected);
+        Assert.Contains("Lib.Arrived.Beta", affected);
+        Assert.DoesNotContain("Lib.Existing", affected);
+    }
+
+    [Fact]
     public void APackageWithNoFileIsRefusedRatherThanGuessed()
     {
         // A node with no file behind it cannot be written anywhere. Saying so beats picking a

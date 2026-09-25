@@ -2080,6 +2080,7 @@ document.head.appendChild(style);
             // otherwise the new files come back as external changes to process.
             FileMonitoringService.StopMonitoring(repository.Id);
             PackageSplitter.SplitResult result;
+            IReadOnlyCollection<string> affected;
             try
             {
                 result = PackageSplitter.Split(
@@ -2091,7 +2092,7 @@ document.head.appendChild(style);
                 var changed = result.WrittenFiles.Concat(result.RemovedFiles).ToList();
                 if (!string.IsNullOrEmpty(sourceFile) && !changed.Contains(sourceFile, StringComparer.OrdinalIgnoreCase))
                     changed.Add(sourceFile);
-                await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
+                affected = await LibraryDataService.UpdateChangedFilesAsync(changed, library.SourcePath);
             }
             finally
             {
@@ -2099,6 +2100,10 @@ document.head.appendChild(style);
                 if (!string.IsNullOrEmpty(repository.VcsRootPath))
                     FileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
             }
+
+            // Whether or not the split went through, the file was reloaded and its classes are new
+            // nodes, so they are announced either way.
+            AnnounceReloadedModels(NavState, FileMonitoringService, repository.Id, affected);
 
             if (!result.Succeeded)
             {
@@ -2112,7 +2117,6 @@ document.head.appendChild(style);
                 m => m.RuleId == RuleIds.SingleFilePackage
                      && string.Equals(m.ModelName, package.Id, StringComparison.Ordinal));
 
-            NavState.VcsModelsChanged(repository.Id, library.ModelIds.ToList());
             OnModelSelected();
             Snackbar.Add(
                 $"{package.Definition.Name} is now a directory with {result.WrittenFiles.Count} file(s).",
@@ -2128,6 +2132,29 @@ document.head.appendChild(style);
             _splitting = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// Tells the rest of the application that MLQT rewrote these classes' files itself, with the
+    /// monitor paused so nothing else noticed (B307) — the same three things a save on this page
+    /// says.
+    ///
+    /// <para><b>The classes the reload touched, not the library.</b> Split into files announced
+    /// every class in the library, so the layout dropped every finding in it and re-ran dependency
+    /// analysis and style checking over all of it — minutes on a library the size of MSL, for one
+    /// package moved. File activity is what the library browser's VCS status and the baseline listen
+    /// to for new and deleted files, and a content change is what makes this page drop its cached
+    /// render of a class that is no longer where it was.</para>
+    /// </summary>
+    internal static void AnnounceReloadedModels(
+        AppState state, IFileMonitoringService monitor, string repositoryId, IReadOnlyCollection<string> modelIds)
+    {
+        monitor.NotifyFileActivity(repositoryId);
+        if (modelIds.Count == 0)
+            return;
+
+        state.ModelContentChanged(modelIds);
+        state.VcsModelsChanged(repositoryId, modelIds.ToList());
     }
 
     private string? CurrentFilePathOf(ModelNode model) =>
