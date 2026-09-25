@@ -67,6 +67,19 @@ internal static class SvnCli
     }
 
     /// <summary>
+    /// How long svn may go without writing anything before it is taken to have stalled and is
+    /// stopped (B297).
+    /// </summary>
+    /// <remarks>
+    /// Silence, not running time. A checkout or update of a large repository can legitimately take
+    /// longer than any fixed limit, but svn reports each file as it goes, so a command that is still
+    /// working is a command that is still writing. What this catches is a server that accepted the
+    /// connection and then stopped answering - which used to block update, commit, switch or merge,
+    /// and the dialog waiting on it, for good.
+    /// </remarks>
+    internal static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Runs svn and returns standard output as the bytes svn wrote, not as text.
     /// </summary>
     /// <remarks>
@@ -80,51 +93,8 @@ internal static class SvnCli
     /// </remarks>
     internal static BytesResult RunForBytes(params string[] args)
     {
-        var exe = RequireSvn();
-
-        var psi = new ProcessStartInfo(exe)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        foreach (var a in args)
-            psi.ArgumentList.Add(a);
-        psi.ArgumentList.Add("--non-interactive");
-
-        Process process;
-        try
-        {
-            process = Process.Start(psi)!;
-        }
-        catch (Win32Exception ex)
-        {
-            throw new SvnCliException("start-svn", -1,
-                $"Failed to start svn executable '{exe}': {ex.Message}");
-        }
-
-        using (process)
-        {
-            // The raw stream, not the reader: reading through StandardOutput would decode, which is
-            // the whole thing this avoids. Both streams are still consumed concurrently, or a file
-            // larger than the pipe buffer deadlocks.
-            using var buffer = new MemoryStream();
-            var stdoutTask = process.StandardOutput.BaseStream.CopyToAsync(buffer);
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            process.WaitForExit();
-            stdoutTask.GetAwaiter().GetResult();
-            var stderr = stderrTask.GetAwaiter().GetResult();
-
-            return new BytesResult
-            {
-                ExitCode = process.ExitCode,
-                StdOut = buffer.ToArray(),
-                StdErr = stderr,
-            };
-        }
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText: null, IdleTimeout);
+        return new BytesResult { ExitCode = raw.ExitCode, StdOut = raw.StdOut, StdErr = raw.StdErr };
     }
 
     /// <summary>
@@ -139,23 +109,46 @@ internal static class SvnCli
     /// </summary>
     internal static Result Run(IEnumerable<string> args, string? stdinText = null)
     {
-        var exe = RequireSvn();
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText, IdleTimeout);
+        return new Result { ExitCode = raw.ExitCode, StdOut = Decode(raw.StdOut), StdErr = raw.StdErr };
+    }
 
+    // Global option; svn accepts it after positional arguments. Appending keeps the caller's
+    // argument list focused on the subcommand and its operands.
+    private static IEnumerable<string> WithNonInteractive(IEnumerable<string> args) =>
+        args.Append("--non-interactive");
+
+    /// <summary>What <see cref="Execute"/> captured: stdout as bytes, for the caller to decode or not.</summary>
+    internal sealed record RawResult(int ExitCode, byte[] StdOut, string StdErr);
+
+    /// <summary>
+    /// Runs a command to completion, and never waits on something that will not come (B297).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Both streams are read at once</b>, or output larger than the pipe buffer deadlocks -
+    /// <c>svn log</c> over thousands of revisions, <c>svn status</c> on a big working copy, a large
+    /// file from <c>svn cat</c>. Read as bytes, so <c>cat</c> can keep them (B264) and so every read
+    /// counts as a sign of life.</para>
+    ///
+    /// <para><b>Stdin is always redirected and closed</b>, after <paramref name="stdinText"/> if
+    /// there is any. It used to be inherited whenever nothing was piped in.</para>
+    ///
+    /// <para><b>A command silent for <paramref name="idleLimit"/> is stopped</b>, with everything it
+    /// started, and reported as a failure that says so. Takes the executable rather than finding svn
+    /// itself so a test can drive it with something that stalls on purpose.</para>
+    /// </remarks>
+    internal static RawResult Execute(string exe, IEnumerable<string> args, string? stdinText, TimeSpan idleLimit)
+    {
         var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = stdinText != null,
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (var a in args)
             psi.ArgumentList.Add(a);
-        // Global option; svn accepts it after positional arguments. Appending keeps the
-        // caller's argument list focused on the subcommand and its operands.
-        psi.ArgumentList.Add("--non-interactive");
 
         Process process;
         try
@@ -170,23 +163,73 @@ internal static class SvnCli
 
         using (process)
         {
-            // Read both streams concurrently to avoid a pipe-buffer deadlock on large output
-            // (e.g. `svn log` over thousands of revisions, or `svn status` on a big wc).
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            long lastActivity = Environment.TickCount64;
+            void Touched() => Interlocked.Exchange(ref lastActivity, Environment.TickCount64);
 
-            if (stdinText != null)
+            using var stdout = new MemoryStream();
+            using var stderr = new MemoryStream();
+            var stdoutTask = Drain(process.StandardOutput.BaseStream, stdout, Touched);
+            var stderrTask = Drain(process.StandardError.BaseStream, stderr, Touched);
+
+            try
             {
-                process.StandardInput.Write(stdinText);
+                if (stdinText != null)
+                    process.StandardInput.Write(stdinText);
                 process.StandardInput.Close();
             }
+            catch (IOException)
+            {
+                // It exited without reading its input; the exit code says what happened.
+            }
 
+            while (!process.WaitForExit(250))
+            {
+                if (Environment.TickCount64 - Interlocked.Read(ref lastActivity) < idleLimit.TotalMilliseconds)
+                    continue;
+
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // It finished between the check and the kill.
+                }
+
+                // Bounded: a descendant that escaped the kill can hold the pipes open.
+                Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(5));
+                var said = stderrTask.IsCompleted ? Encoding.UTF8.GetString(stderr.ToArray()).Trim() : "";
+                var message = $"svn produced no output for {idleLimit.TotalMinutes:0.##} minutes and was stopped.";
+                return new RawResult(-1,
+                    stdoutTask.IsCompleted ? stdout.ToArray() : [],
+                    string.IsNullOrEmpty(said) ? message : $"{message}{Environment.NewLine}{said}");
+            }
+
+            // The overload without a limit also waits for the redirected streams to be drained.
             process.WaitForExit();
-            var stdout = stdoutTask.GetAwaiter().GetResult();
-            var stderr = stderrTask.GetAwaiter().GetResult();
-
-            return new Result { ExitCode = process.ExitCode, StdOut = stdout, StdErr = stderr };
+            stdoutTask.GetAwaiter().GetResult();
+            stderrTask.GetAwaiter().GetResult();
+            return new RawResult(process.ExitCode, stdout.ToArray(), Encoding.UTF8.GetString(stderr.ToArray()));
         }
+    }
+
+    private static async Task Drain(Stream source, MemoryStream into, Action onRead)
+    {
+        var buffer = new byte[16 * 1024];
+        int read;
+        while ((read = await source.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+        {
+            into.Write(buffer, 0, read);
+            onRead();
+        }
+    }
+
+    // Decoded as a StreamReader decodes, which is what reading StandardOutput used to do - so a byte
+    // order mark is taken as one rather than kept as a character.
+    private static string Decode(byte[] bytes)
+    {
+        using var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
     }
 
     /// <summary>
