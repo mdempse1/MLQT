@@ -186,6 +186,88 @@ public class ClassSourceTests
         }
     }
 
+    // ── the file changed after the offsets were taken (B343) ────────────────────────
+
+    private static readonly string PackageWithInlineChild = Lf("""
+        package P "a package"
+          model A "a child stored inline"
+            Real x;
+          end A;
+          constant Real k = 1;
+        end P;
+        """);
+
+    [Fact]
+    public void ATrimmedPackageStillReadsItsFileWhileTheFileIsUnchanged()
+    {
+        // The control for the next test: the check must not refuse the ordinary case.
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, PackageWithInlineChild.Replace("\n", "\r\n"));
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, PackageWithInlineChild);
+            var package = graph.GetNode<ModelNode>("P")!;
+            PackageCodeTrimmer.TrimStandaloneChildren(graph);
+            Assert.NotNull(package.TrimElision);
+
+            Assert.Equal(PackageWithInlineChild, ClassSource.For(package, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ATrimmedPackageWhoseFileWasEditedShowsItsStoredTextNotAChunkOfTheNewFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, PackageWithInlineChild);
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, PackageWithInlineChild);
+            var package = graph.GetNode<ModelNode>("P")!;
+            PackageCodeTrimmer.TrimStandaloneChildren(graph);
+            var stored = package.Definition.ModelicaCode;
+
+            // Edited outside MLQT, and not yet reloaded: the offsets from load time now cut out
+            // something else - here starting three characters into the class.
+            System.IO.File.WriteAllText(path, "// x\n" + PackageWithInlineChild);
+
+            Assert.Equal(stored, ClassSource.For(package, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ARewrittenClassWhoseFileWasEditedShowsItsStoredTextNotAChunkOfTheNewFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ClassSourceTests_{Guid.NewGuid():N}.mo");
+        System.IO.File.WriteAllText(path, File);
+        try
+        {
+            var graph = new DirectedGraph();
+            GraphBuilder.LoadModelicaFile(graph, path, File);
+            var model = graph.GetNode<ModelNode>("Some.Package.Second")!;
+            model.Definition.ModelicaCode = "model Second \"rewritten\" end Second;";
+            model.SourceMatchesFile = false;
+
+            // `First` grew by a line, so Second's offsets now land inside First and Second.
+            System.IO.File.WriteAllText(path, File.Replace("  Real x;", "  Real x;\n  Real extra;"));
+
+            Assert.Equal("model Second \"rewritten\" end Second;", ClassSource.For(model, graph));
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
     [Fact]
     public void AFileThatIsNoLongerThereLeavesTheStoredTextShowing()
     {

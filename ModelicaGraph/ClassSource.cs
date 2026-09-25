@@ -35,8 +35,10 @@ public static class ClassSource
 {
     /// <summary>
     /// The class's source to show: the stored text while it is still the file's, otherwise the file
-    /// sliced afresh. Falls back to the stored text whenever the file cannot be read or the offsets
-    /// are not populated — a class shown from slightly stale text beats a blank pane.
+    /// sliced afresh. Falls back to the stored text whenever the file cannot be read, the offsets
+    /// are not populated, or the file has changed since they were taken so that they no longer cut
+    /// out the class — a class shown from slightly stale text beats a blank pane, and beats a chunk
+    /// of some other code.
     /// </summary>
     public static string For(ModelNode model, DirectedGraph graph)
     {
@@ -53,8 +55,8 @@ public static class ClassSource
 
         try
         {
-            return SliceFromFile(ModelicaFileEncoding.ReadAllTextOnly(path), model.StartIndex, model.StopIndex)
-                   ?? stored;
+            var slice = SliceFromFile(ModelicaFileEncoding.ReadAllTextOnly(path), model.StartIndex, model.StopIndex);
+            return slice is not null && IsStillTheClass(model, slice, stored) ? slice : stored;
         }
         catch (IOException)
         {
@@ -64,6 +66,45 @@ public static class ClassSource
         {
             return stored;
         }
+    }
+
+    /// <summary>
+    /// Whether a slice of the file <em>as it is now</em>, taken at offsets recorded when it was
+    /// loaded, is still the class (B343).
+    ///
+    /// <para>The offsets are from load time and the file is read now. After an edit outside MLQT
+    /// the monitor holds the change until Refresh, and meanwhile a trimmed package was shown as an
+    /// arbitrary chunk of the new file — possibly starting mid-token — and the diff compared that
+    /// chunk with HEAD. Two checks, as strong as what is known allows:</para>
+    /// <list type="bullet">
+    /// <item>A trimmed package whose stored text is still the file's own lines has an exact answer:
+    /// dropping the trimmed lines from the slice has to give back the stored text, character for
+    /// character, because that is how the stored text was made.</item>
+    /// <item>Text something rewrote cannot be compared that way — being different from the file is
+    /// why it is read — so the slice has only to name the class on its first line and, where it ends
+    /// with <c>end X</c>, to end it: a chunk from somewhere else in the file does neither.</item>
+    /// </list>
+    /// </summary>
+    private static bool IsStillTheClass(ModelNode model, string slice, string stored)
+    {
+        if (model.TrimElision is { } trim && model.SourceMatchesFile)
+        {
+            var kept = trim.Apply(slice.Split('\n'));
+            return string.Equals(string.Join("\n", kept),
+                ModelicaParserHelper.NormalizeLineEndings(stored), StringComparison.Ordinal);
+        }
+
+        var name = System.Text.RegularExpressions.Regex.Escape(model.Definition.Name ?? "");
+        if (name.Length == 0)
+            return false;
+
+        var text = slice.TrimStart();
+        var firstLine = text.Split('\n', 2)[0];
+        if (!System.Text.RegularExpressions.Regex.IsMatch(firstLine, $@"(?<![\w.']){name}(?![\w'])"))
+            return false;
+
+        var end = System.Text.RegularExpressions.Regex.Match(text, @"\bend\s+([\w.']+)\s*;?\s*$");
+        return !end.Success || end.Groups[1].Value == model.Definition.Name;
     }
 
     /// <summary>
