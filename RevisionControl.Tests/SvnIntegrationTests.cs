@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 
 namespace RevisionControl.Tests;
 
@@ -603,6 +605,56 @@ public class SvnIntegrationTests : IDisposable
     {
         var result = _svn.GetCurrentBranch(_repoRoot);
         Assert.Null(result);
+    }
+
+    #endregion
+
+    #region A server that stops answering (B330)
+
+    /// <summary>
+    /// A small question of a server that accepts the connection and never answers is stopped at the
+    /// limit it was given, not at the update's ten minutes. After an update a stalled server stopped,
+    /// the revision description asked for next waited out a second ten minutes behind a progress bar.
+    /// </summary>
+    [Fact]
+    public void AQueryOfAServerThatNeverAnswers_IsStoppedAtItsOwnLimit()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var held = new List<TcpClient>();
+        _ = Task.Run(async () =>
+        {
+            try { while (true) held.Add(await listener.AcceptTcpClientAsync()); }
+            catch (ObjectDisposedException) { }
+            catch (SocketException) { }
+        });
+
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            var result = SvnCli.Run(
+                ["log", $"svn://127.0.0.1:{port}/repo", "-r", "1", "-l", "1", "--xml"],
+                stdinText: null, TimeSpan.FromSeconds(2));
+            clock.Stop();
+
+            Assert.True(result.Stopped, "svn was not stopped for going silent");
+            Assert.False(result.Success);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"took {clock.Elapsed}");
+        }
+        finally
+        {
+            listener.Stop();
+            foreach (var client in held)
+                client.Dispose();
+        }
+    }
+
+    [Fact]
+    public void TheRevisionLabelsLimit_IsFarShorterThanAnUpdates()
+    {
+        Assert.True(SvnCli.QueryIdleTimeout <= TimeSpan.FromMinutes(1));
+        Assert.True(SvnCli.QueryIdleTimeout < SvnCli.IdleTimeout);
     }
 
     #endregion

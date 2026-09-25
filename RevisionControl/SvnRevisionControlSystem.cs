@@ -127,7 +127,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (info == null) return null;
 
             var rev = SvnCli.NormalizeRevision(revision);
-            var doc = SvnCli.RunXml("log", info.RepositoryRoot, "-r", rev, "-l", "1");
+            // A label, asked of the server after every update: a short limit, so a server that
+            // stalled the update does not hold the reload after it for a second ten minutes (B330).
+            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", info.RepositoryRoot, "-r", rev, "-l", "1");
             var logEntry = doc?.Root?.Element("logentry");
             if (logEntry == null) return null;
 

@@ -98,6 +98,19 @@ internal static class SvnCli
     internal static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// The silence allowed a small read-only question of the server - one log entry for a label -
+    /// where <see cref="IdleTimeout"/> is sized for an update that may be busy for minutes.
+    /// </summary>
+    /// <remarks>
+    /// A server that stalls an update stalls the question that follows it too, and after an update
+    /// MLQT asks for the new revision's description before it reloads the libraries. Under the
+    /// update's limit that was a second ten minutes of a progress bar with nothing to say why, after
+    /// the update had already been stopped and reported (B330). An answer this small either comes
+    /// in seconds or is not coming.
+    /// </remarks>
+    internal static readonly TimeSpan QueryIdleTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Runs svn and returns standard output as the bytes svn wrote, not as text.
     /// </summary>
     /// <remarks>
@@ -125,9 +138,15 @@ internal static class SvnCli
     /// <summary>
     /// Runs svn with an explicit argument list and, optionally, text piped to stdin.
     /// </summary>
-    internal static Result Run(IEnumerable<string> args, string? stdinText = null)
+    internal static Result Run(IEnumerable<string> args, string? stdinText = null) =>
+        Run(args, stdinText, IdleTimeout);
+
+    /// <summary>
+    /// Runs svn, stopping it once it has been silent for <paramref name="idleLimit"/>.
+    /// </summary>
+    internal static Result Run(IEnumerable<string> args, string? stdinText, TimeSpan idleLimit)
     {
-        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText, IdleTimeout);
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText, idleLimit);
         return new Result { ExitCode = raw.ExitCode, StdOut = Decode(raw.StdOut), StdErr = raw.StdErr, Stopped = raw.Stopped };
     }
 
@@ -296,10 +315,14 @@ internal static class SvnCli
     /// <see cref="XDocument"/>. Returns null when the command fails (the caller decides
     /// whether that is an error or an expected "doesn't exist" outcome).
     /// </summary>
-    internal static XDocument? RunXml(params string[] args)
+    internal static XDocument? RunXml(params string[] args) => RunXml(IdleTimeout, args);
+
+    /// <summary><see cref="RunXml(string[])"/>, stopping svn once it has been silent for
+    /// <paramref name="idleLimit"/>.</summary>
+    internal static XDocument? RunXml(TimeSpan idleLimit, params string[] args)
     {
         var withXml = new List<string>(args) { "--xml" };
-        var result = Run(withXml);
+        var result = Run(withXml, stdinText: null, idleLimit);
         if (!result.Success || string.IsNullOrWhiteSpace(result.StdOut))
             return null;
         try
