@@ -91,6 +91,30 @@ public class SubversionContentUrlTests
         Assert.Single(urls);
     }
 
+    // ---- Peg revisions (B328) -------------------------------------------------------------------
+    //
+    // An unpegged URL is pegged at HEAD, so `svn cat -r N url` asks for the file now at that path as
+    // it was at N - and a file deleted or moved since is at no path now. The server fallback exists
+    // for exactly that file, so it pegs at the revision it was asked for.
+
+    [Fact]
+    public void ATargetIsPeggedAtTheRevisionNamed()
+    {
+        Assert.Equal(Root + "/trunk/Foo.mo@1234", SvnRevisionControlSystem.Pegged(Root + "/trunk/Foo.mo", "1234"));
+    }
+
+    [Fact]
+    public void AnAtSignInAFileNameCannotBeTakenForAPeg()
+    {
+        // svn reads the last '@' as the start of the peg revision. In a URL the file's own '@' is
+        // escaped, and the peg added after it is the last one either way.
+        var url = SvnRevisionControlSystem.ContentUrls(Root, WorkingCopy, "trunk/Data/sensor@2x.mo")[0];
+        var pegged = SvnRevisionControlSystem.Pegged(url, "7");
+
+        Assert.Equal(Root + "/trunk/Data/sensor%402x.mo@7", pegged);
+        Assert.Equal("7", pegged[(pegged.LastIndexOf('@') + 1)..]);
+    }
+
     [Fact]
     public void AnEmptyPathIsNoUrlAtAll()
     {

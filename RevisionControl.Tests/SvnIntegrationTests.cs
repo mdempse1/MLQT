@@ -305,6 +305,39 @@ public class SvnIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// A file deleted since the revision being looked at can still be shown at that revision
+    /// (B328) - the case B265's server fallback was said to cover and did not.
+    /// </summary>
+    /// <remarks>
+    /// The path is repository-root-relative, as <c>svn log</c> reports it and the history view
+    /// passes it back, and the working copy is up to date - so the file is gone from disk and from
+    /// HEAD, and the only route to it is the server, pegged at the revision it existed in. Unpegged,
+    /// the URL is pegged at HEAD, where nothing is at that path.
+    /// </remarks>
+    [Fact]
+    public void GetFileBytesAtRevision_FindsAFileDeletedSince()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        var file = Path.Combine(workingDir, "Gone.mo");
+        var content = "model Gone\nend Gone;\n"u8.ToArray();
+        File.WriteAllBytes(file, content);
+        RunSvn($"add \"{file}\"");
+        RunSvn($"commit \"{workingDir}\" -m \"add a file\"");
+        var existed = _svn.GetCurrentRevision(_trunkUrl);
+        Assert.NotNull(existed);
+
+        RunSvn($"delete \"{_trunkUrl}/Gone.mo\" -m \"delete it\"");
+        RunSvn($"update \"{workingDir}\"");
+        Assert.False(File.Exists(file));
+
+        var bytes = _svn.GetFileBytesAtRevision(workingDir, "trunk/Gone.mo", existed);
+
+        Assert.Equal(content, bytes);
+    }
+
+    /// <summary>
     /// Committing a file that already matches the repository says so, rather than reporting a
     /// failure for a command that succeeded (B266).
     /// </summary>

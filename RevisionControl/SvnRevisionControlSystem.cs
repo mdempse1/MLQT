@@ -1063,14 +1063,16 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // RunForBytes, not Run: `svn cat` writes a file, and a file's encoding is its own
             // business - decoding it as UTF-8 loses a Windows-1252 library's accented characters
             // before any caller can say otherwise (B264).
+            // Pegged even here, with nothing to follow: a path containing '@' is otherwise read as
+            // one carrying a peg revision, and a file called "a@b.mo" is not found.
             if (useBase)
-                return SvnCli.RunForBytes("cat", "-r", "BASE", fullPath) is { Success: true } b ? b.StdOut : null;
+                return SvnCli.RunForBytes("cat", Pegged(fullPath, "BASE")) is { Success: true } b ? b.StdOut : null;
 
             if (File.Exists(fullPath))
             {
                 // Peg at HEAD to identify the file, operate at the requested revision so SVN
                 // follows copy history (e.g. a branch created from trunk).
-                var local = SvnCli.RunForBytes("cat", "-r", revision!, $"{fullPath}@HEAD");
+                var local = SvnCli.RunForBytes("cat", "-r", revision!, Pegged(fullPath, "HEAD"));
                 if (local.Success)
                     return local.StdOut;
             }
@@ -1081,9 +1083,15 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // than the revision being looked at, so the file is not there yet; or the file may have
             // been deleted since. Asking the server by URL answers all three, and the revision the
             // caller named is a server revision in any case (B265).
+            //
+            // Pegged at that revision, not left to default: an unpegged URL is pegged at HEAD, which
+            // asks for "the file now at this path, as it was then" - and a file deleted or moved
+            // since has nothing at this path now, so the one case the fallback exists for failed
+            // (B328). The path came from `svn log` for that revision, so that revision is where it
+            // is to be found.
             foreach (var url in ContentUrlCandidates(repositoryPath, filePath))
             {
-                var remote = SvnCli.RunForBytes("cat", "-r", revision!, url);
+                var remote = SvnCli.RunForBytes("cat", Pegged(url, revision!));
                 if (remote.Success)
                     return remote.StdOut;
             }
@@ -1096,6 +1104,16 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             return null;
         }
     }
+
+    /// <summary>
+    /// A path or URL with an explicit peg revision: <c>target@revision</c>.
+    /// </summary>
+    /// <remarks>
+    /// svn takes the <b>last</b> '@' of a target as the start of its peg revision, so always adding
+    /// one is also what makes a target that contains an '@' of its own safe - its '@' is no longer
+    /// the last. A URL's own '@' is escaped as <c>%40</c> by <see cref="ContentUrls"/> in any case.
+    /// </remarks>
+    internal static string Pegged(string target, string revision) => $"{target}@{revision}";
 
     /// <summary>
     /// The URLs a file path might mean, most likely first.
