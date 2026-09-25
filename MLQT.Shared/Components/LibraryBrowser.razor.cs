@@ -1024,6 +1024,11 @@ public partial class LibraryBrowser : IDisposable
         // children have never been fetched renders open and empty.
         await RestoreExpansionStateAsync(TreeItems);
 
+        // Under a change filter the view is the filtered tree, whose items were opened when it was
+        // built - so it is built again from the expansion record just updated, or the reveal opens
+        // the tree the user is not looking at (B358).
+        RefreshFilteredTree();
+
         var model = LibraryDataService.GetModelById(modelId);
         if (model is not null)
             _selectedNodes = [model];
