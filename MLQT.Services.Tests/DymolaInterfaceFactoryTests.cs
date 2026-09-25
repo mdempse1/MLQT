@@ -187,6 +187,58 @@ public class DymolaInterfaceFactoryTests
         Assert.Equal(TimeSpan.FromSeconds(42), first.CommandTimeout);
     }
 
+    /// <summary>
+    /// B336: only the time limit reached a running session, so a new port or Dymola version did
+    /// nothing until the session died or MLQT restarted.
+    /// </summary>
+    [Fact]
+    public async Task ChangingThePortBuildsANewSessionWithoutEndingTheOldDymola()
+    {
+        var first = new FakeSession();
+        var sessions = new Sessions(first);
+        var factory = new DymolaInterfaceFactory(sessions.Create);
+        factory.UpdateSettings(new DymolaSettings { DymolaPath = "dymola.exe", PortNumber = 8082 });
+        await factory.GetOrCreateAsync();
+
+        factory.UpdateSettings(new DymolaSettings { DymolaPath = "dymola.exe", PortNumber = 8083 });
+        var second = await factory.GetOrCreateAsync();
+
+        Assert.NotSame(first, second);
+        Assert.False(first.Killed, "changing the port killed the Dymola the old session started");
+    }
+
+    [Fact]
+    public async Task ChangingThePathBuildsANewSession()
+    {
+        var first = new FakeSession();
+        var sessions = new Sessions(first);
+        var factory = new DymolaInterfaceFactory(sessions.Create);
+        factory.UpdateSettings(new DymolaSettings { DymolaPath = "Dymola 2025x/dymola.exe" });
+        await factory.GetOrCreateAsync();
+
+        factory.UpdateSettings(new DymolaSettings { DymolaPath = "Dymola 2026x/dymola.exe" });
+        await factory.GetOrCreateAsync();
+
+        Assert.Equal(2, sessions.Created.Count);
+    }
+
+    [Fact]
+    public async Task EditingTheSameSettingsObjectInPlaceIsSeenToo()
+    {
+        // The dialog edits the settings it was given; comparing against the object would see no change.
+        var first = new FakeSession();
+        var sessions = new Sessions(first);
+        var factory = new DymolaInterfaceFactory(sessions.Create);
+        var settings = new DymolaSettings { DymolaPath = "dymola.exe", PortNumber = 8082 };
+        factory.UpdateSettings(settings);
+        await factory.GetOrCreateAsync();
+
+        settings.PortNumber = 9000;
+        await factory.GetOrCreateAsync();
+
+        Assert.Equal(2, sessions.Created.Count);
+    }
+
     [Fact]
     public async Task ResettingForgetsTheSessionWithoutEndingDymola()
     {

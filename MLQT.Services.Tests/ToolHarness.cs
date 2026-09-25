@@ -32,6 +32,9 @@ public abstract class FakeTool
     /// <summary>Whether a given file opens. Everything opens by default.</summary>
     public Func<string, bool>? Opens;
 
+    /// <summary>What opening a given file adds to the log. Nothing by default.</summary>
+    public Func<string, string>? OpenSays;
+
     /// <summary>Thrown from the check, after whatever <see cref="Says"/> produced has been logged.</summary>
     public Exception? ThrowOnCheck;
 
@@ -65,6 +68,7 @@ public abstract class FakeTool
     protected bool Open(string path)
     {
         Calls.Add("open");
+        Buffer += OpenSays?.Invoke(path) ?? "";
         return Opens?.Invoke(path) ?? true;
     }
 

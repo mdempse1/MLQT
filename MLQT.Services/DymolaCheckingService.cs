@@ -79,8 +79,10 @@ public class DymolaCheckingService : IModelCheckingService
             {
                 if (File.Exists(filePath))
                 {
-                    // File exists so maybe Dymola already had a version open
+                    // File exists so maybe Dymola already had a version open. The log is cleared too, so
+                    // what Dymola says about the retry is about the retry.
                     await _dymola.ClearAsync();
+                    await SafeClearLogAsync();
                     isOpen = await _dymola.OpenModelAsync(filePath, false, false, cancellationToken: token);
                     if (!isOpen && Interrupted(filePath) is { } interruptedAgain)
                         return interruptedAgain;
@@ -92,7 +94,7 @@ public class DymolaCheckingService : IModelCheckingService
 
                     if (!isOpen)
                     {
-                        return LibraryLoad.Failed("Could not get Dymola to open the file for this Modelica model");
+                        return LibraryLoad.Failed(LibraryLoad.WouldNotOpen(ToolName, await SafeLastErrorAsync()));
                     }
                 }
                 else

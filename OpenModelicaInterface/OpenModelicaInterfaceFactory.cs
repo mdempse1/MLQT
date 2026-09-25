@@ -13,6 +13,10 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
     private readonly SemaphoreSlim _lock = new(1, 1);
     private OpenModelicaSettings _omcSettings = new();
 
+    /// <summary>The path and port the cached session was started with - copied, because the settings
+    /// object is edited in place.</summary>
+    private (string Path, int Port) _instanceBuiltFor;
+
     public void UpdateSettings(OpenModelicaSettings settings)
     {
         _omcSettings = settings;
@@ -26,6 +30,16 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
         await _lock.WaitAsync(cancellationToken);
         try
         {
+            // A session started from another omc or on another port is not the one asked for. Only the
+            // time limit used to reach a running session, so B263's "the path and port set in the tab
+            // never reached omc" stayed half true until the session died or MLQT restarted (B336).
+            if (_instance != null && _instanceBuiltFor != (_omcSettings.OmcPath, _omcSettings.PortNumber))
+            {
+                try { await _instance.ExitAsync(); } catch { /* ending it regardless */ }
+                _instance.Dispose();
+                _instance = null;
+            }
+
             if (_instance != null)
             {
                 // A session a timed-out command closed is not handed back: its socket is gone and omc
@@ -52,6 +66,7 @@ public class OpenModelicaInterfaceFactory : IOpenModelicaInterfaceFactory, IDisp
                 CommandTimeout = _omcSettings.CommandTimeout,
                 StartupTimeout = _omcSettings.StartupTimeout,
             };
+            _instanceBuiltFor = (_omcSettings.OmcPath, _omcSettings.PortNumber);
 
             // Start OMC process
             if (!_instance.IsConnected)

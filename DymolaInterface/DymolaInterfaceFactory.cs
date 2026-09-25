@@ -14,6 +14,10 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     private DymolaSettings _dymolaSettings = new();
     private readonly Func<DymolaSettings, IDymolaSession> _createSession;
 
+    /// <summary>The path, port and host the cached session was built for - copied, because the
+    /// settings object is edited in place.</summary>
+    private (string Path, int Port, string Host) _instanceBuiltFor;
+
     /// <summary>
     /// A factory that connects to - or starts - a real Dymola.
     /// </summary>
@@ -65,6 +69,14 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
         try
         {
             var settings = _dymolaSettings;
+
+            // A session built for another path or port is not the one asked for. Only the time limit
+            // used to reach a running session, so a new Dymola version or port did nothing until the
+            // session died or MLQT restarted (B336). Dropped, not ended: that Dymola is the user's.
+            // A new path against a Dymola still serving the same port attaches to that one - two
+            // cannot share a port - and takes effect once it is closed.
+            if (_instance != null && _instanceBuiltFor != BuiltFor(settings))
+                Drop();
 
             // A cached session is only worth having if it is still there. Closing Dymola's window
             // ends its process and its JSON-RPC server, and nothing told this object — so the first
@@ -119,6 +131,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             var created = await Task.Run(() => _createSession(settings), cancellationToken)
                 .WaitAsync(cancellationToken);
             _instance = created;
+            _instanceBuiltFor = BuiltFor(settings);
             created.CommandTimeout = settings.CommandTimeout;
 
             if (created.IsOfflineMode())
@@ -140,6 +153,9 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             _lock.Release();
         }
     }
+
+    private static (string Path, int Port, string Host) BuiltFor(DymolaSettings settings) =>
+        (settings.DymolaPath, settings.PortNumber, settings.HostAddress);
 
     /// <summary>
     /// Forgets the cached session without ending the Dymola behind it: detached first, so disposing

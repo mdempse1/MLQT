@@ -17,6 +17,14 @@ internal readonly record struct LibraryLoad(bool Success, string? ErrorMessage, 
 {
     public static LibraryLoad Loaded => new(true, null);
 
+    /// <summary>
+    /// The message for a library the tool refused twice, with the tool's own reason when it gave one:
+    /// "could not open the file" sends the user to the tool to find out why.
+    /// </summary>
+    public static string WouldNotOpen(string tool, string? reason) =>
+        $"Could not get {tool} to open the file for this Modelica model" +
+        (string.IsNullOrWhiteSpace(reason) ? "" : $": {reason.Trim()}");
+
     public static LibraryLoad Failed(string message) => new(false, message);
 
     public static LibraryLoad RanOutOfTime(string message) => new(false, message, TimedOut: true);

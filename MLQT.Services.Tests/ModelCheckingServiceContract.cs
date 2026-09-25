@@ -327,6 +327,26 @@ public abstract class ModelCheckingServiceContract
     }
 
     /// <summary>
+    /// The tool's own reason for refusing, rather than only that it did - and the reason for the
+    /// retry, not the first attempt. OpenModelica's was read into a variable nothing looked at (B336).
+    /// </summary>
+    [Fact]
+    public async Task ALibraryThatWillNotOpenCarriesTheToolsOwnReason()
+    {
+        var harness = NewHarness();
+        harness.Tool.Opens = _ => false;
+        var attempt = 0;
+        harness.Tool.OpenSays = _ => ++attempt == 1 ? "[first attempt]" : "Error: package.mo has a syntax error";
+
+        var (success, error) = await harness.Service.EnsureLibraryLoadedAsync(ThisFile());
+
+        Assert.False(success);
+        Assert.Contains("open the file", error);
+        Assert.Contains("syntax error", error);
+        Assert.DoesNotContain("[first attempt]", error);
+    }
+
+    /// <summary>
     /// A file that is not there is a different answer from a file the tool refused, and worth
     /// separating: one is the user's path, the other is the tool's state.
     /// </summary>

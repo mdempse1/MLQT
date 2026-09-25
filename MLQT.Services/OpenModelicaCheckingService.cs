@@ -75,7 +75,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
             var isOpen = await _omc.LoadFileAsync(filePath, token);
             if (!isOpen)
             {
-                var error = await _omc.GetErrorStringAsync();
+                // Drained, so what omc says after the retry is about the retry. This read used to be
+                // kept in a variable nothing looked at (B336).
+                _ = await SafeErrorStringAsync();
                 if (File.Exists(filePath))
                 {
                     // File exists so maybe OpenModelica already had a version open
@@ -83,7 +85,7 @@ public class OpenModelicaCheckingService : IModelCheckingService
                     isOpen = await _omc.LoadFileAsync(filePath, token);
                     if (!isOpen)
                     {
-                        return LibraryLoad.Failed("Could not get OpenModelica to open the file for this Modelica model");
+                        return LibraryLoad.Failed(LibraryLoad.WouldNotOpen(ToolName, await SafeErrorStringAsync()));
                     }
                 }
                 else

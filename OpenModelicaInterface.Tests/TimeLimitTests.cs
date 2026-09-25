@@ -132,6 +132,33 @@ public class TimeLimitTests
     }
 
     /// <summary>
+    /// B336: only the time limit reached a running session; a new port or omc did nothing until the
+    /// session died or MLQT restarted.
+    /// </summary>
+    [Fact]
+    public async Task TheFactoryStartsANewSessionWhenThePortChanges()
+    {
+        var factory = new OpenModelicaInterfaceFactory();
+        var settings = new OpenModelicaSettings(OmcPath) { PortNumber = 13138, StartupTimeoutMs = 30_000 };
+        factory.UpdateSettings(settings);
+        try
+        {
+            var first = (OpenModelicaInterface)await factory.GetOrCreateAsync(Test);
+
+            settings.PortNumber = 13139;   // edited in place, as the settings dialog does
+            var second = (OpenModelicaInterface)await factory.GetOrCreateAsync(Test);
+
+            Assert.NotSame(first, second);
+            Assert.False(first.IsConnected);
+            Assert.True(second.IsConnected);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    /// <summary>
     /// B334: omc dying under a command. A REQ socket gives no sign its peer has gone, so this waited
     /// out the whole time limit and reported a timeout - and with no limit, as here, it waited until
     /// somebody pressed Stop. The wait watches the process now.
