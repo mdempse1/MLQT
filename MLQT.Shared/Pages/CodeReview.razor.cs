@@ -1245,7 +1245,11 @@ public partial class CodeReview : IAsyncDisposable
             // about every class rather than only the ones that failed (B170).
             _checkResults.Add(result);
 
-            if (!result.Success)
+            // Only a verdict on the model is a finding. A check that ran out of time, or a tool that
+            // would not start or went away, says nothing about the class - and filed as an Error
+            // against it, it sent the user to their code for what was a setting or a closed window
+            // (B333). Those are in the result dialog instead, which says what happened.
+            if (result.IsModelFailure)
             {
                 var finding = new LogMessage(
                     result.ModelId,
@@ -1284,7 +1288,17 @@ public partial class CodeReview : IAsyncDisposable
     private bool _checkResultDialog;
     private bool _checkWasCancelled;
 
-    private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => !r.Success);
+    /// <summary>The classes the tool found a problem with - not the ones it ran out of time on.</summary>
+    private IEnumerable<ModelCheckResult> FailedChecks => _checkResults.Where(r => r.IsModelFailure);
+
+    /// <summary>
+    /// What stopped the run before it reached every class: a timeout, or a tool that was not there.
+    /// Both end a run at once, so there is at most one.
+    /// </summary>
+    private ModelCheckResult? CheckEndedBy => EndedBy(_checkResults);
+
+    internal static ModelCheckResult? EndedBy(IEnumerable<ModelCheckResult> results) =>
+        results.LastOrDefault(r => r.TimedOut || r.ToolUnavailable);
 
     /// <summary>
     /// The results worth listing under the headline: every failure, and any clean check the tool
@@ -1314,13 +1328,31 @@ public partial class CodeReview : IAsyncDisposable
     /// <summary>
     /// The headline: what was checked and how it went, in one sentence a user can act on.
     /// </summary>
-    internal static string CheckOutcomeSummary(string tool, int passed, int failed, bool cancelled)
+    /// <param name="endedBy">The result that stopped the run early - a timeout, or a tool that was not
+    /// there - which is counted in neither <paramref name="passed"/> nor <paramref name="failed"/>:
+    /// it is not a verdict on the class (B333).</param>
+    internal static string CheckOutcomeSummary(string tool, int passed, int failed, bool cancelled,
+        ModelCheckResult? endedBy = null)
     {
         static string Classes(int n) => n == 1 ? "1 class" : $"{n} classes";
 
         var checkedCount = passed + failed;
+        var problems = failed == 0 ? "" : $" ({failed} with problems)";
         if (cancelled)
             return $"{tool} check stopped after {Classes(checkedCount)}.";
+
+        // A run that stopped short must never read like one that finished: before these, a timeout
+        // read as "reported a problem with it" and a tool that would not start as "checked nothing"
+        // in a success-coloured alert (B332, B333).
+        if (endedBy is { ToolUnavailable: true })
+            return checkedCount == 0
+                ? $"{tool} was not available, so nothing was checked."
+                : $"{tool} stopped answering after {Classes(checkedCount)}{problems}, so the rest were not checked.";
+        if (endedBy is { TimedOut: true })
+            return checkedCount == 0
+                ? $"{tool} ran out of time on {endedBy.ModelId}, so the check stopped there."
+                : $"{tool} checked {Classes(checkedCount)}{problems}, then ran out of time on {endedBy.ModelId} and stopped there.";
+
         if (checkedCount == 0)
             return $"{tool} checked nothing.";
         if (failed == 0)
@@ -1328,6 +1360,17 @@ public partial class CodeReview : IAsyncDisposable
         if (passed == 0)
             return $"{tool} reported a problem with {(failed == 1 ? "it" : $"all {failed}")}.";
         return $"{tool} reported problems with {failed} of {Classes(checkedCount)}.";
+    }
+
+    /// <summary>
+    /// The headline's colour. Success only for a run that reached every class and found nothing -
+    /// a run the user stopped is Info, and one with a problem or cut short by the tool is a Warning.
+    /// </summary>
+    internal static Severity CheckOutcomeSeverity(int failed, bool cancelled, ModelCheckResult? endedBy)
+    {
+        if (failed > 0 || endedBy != null)
+            return Severity.Warning;
+        return cancelled ? Severity.Info : Severity.Success;
     }
 
     #endregion

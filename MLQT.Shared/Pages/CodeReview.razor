@@ -422,8 +422,8 @@
         <MudText Typo="Typo.h6">@_checkingToolName check</MudText>
     </TitleContent>
     <DialogContent>
-        <MudAlert Severity="@(FailedChecks.Any() ? Severity.Warning : Severity.Success)" Dense="true">
-            @CheckOutcomeSummary(_checkingToolName, PassedCheckCount, FailedChecks.Count(), _checkWasCancelled)
+        <MudAlert Severity="@CheckOutcomeSeverity(FailedChecks.Count(), _checkWasCancelled, CheckEndedBy)" Dense="true">
+            @CheckOutcomeSummary(_checkingToolName, PassedCheckCount, FailedChecks.Count(), _checkWasCancelled, CheckEndedBy)
         </MudAlert>
 
         @* The tool's own words, not a paraphrase. A summary that says "check failed" sends the user

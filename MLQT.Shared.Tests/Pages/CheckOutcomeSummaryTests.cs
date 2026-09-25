@@ -1,3 +1,4 @@
+using MLQT.Services.DataTypes;
 using MLQT.Shared.Pages;
 using Xunit;
 
@@ -86,6 +87,83 @@ public class CheckOutcomeSummaryTests
                 Assert.StartsWith(tool, CodeReview.CheckOutcomeSummary(tool, passed, failed, cancelled));
             }
     }
+
+    #region B332, B333 - a run cut short by the tool is neither a pass nor a failed model
+
+    private static ModelCheckResult TimedOut(string id = "Lib.Big") =>
+        new() { ModelId = id, Success = false, TimedOut = true, Summary = "Dymola ran out of time" };
+
+    private static ModelCheckResult Unavailable(string id = "Lib.Model") =>
+        new() { ModelId = id, Success = false, ToolUnavailable = true, Summary = "Dymola could not be started" };
+
+    [Fact]
+    public void ATimeoutIsNotReportedAsAProblemWithTheModel()
+    {
+        // What it said before: "Dymola reported a problem with it." - for a model that may be sound
+        // and merely large.
+        var summary = CodeReview.CheckOutcomeSummary("Dymola", passed: 0, failed: 0, cancelled: false,
+            endedBy: TimedOut());
+
+        Assert.Equal("Dymola ran out of time on Lib.Big, so the check stopped there.", summary);
+        Assert.DoesNotContain("problem", summary);
+    }
+
+    [Fact]
+    public void ATimeoutPartWayThroughAPackageSaysWhereItStopped()
+    {
+        Assert.Equal("Dymola checked 5 classes (1 with problems), then ran out of time on Lib.Big and stopped there.",
+            CodeReview.CheckOutcomeSummary("Dymola", passed: 4, failed: 1, cancelled: false, endedBy: TimedOut()));
+    }
+
+    [Fact]
+    public void AToolThatWouldNotStartDoesNotSayItCheckedNothing()
+    {
+        // "Dymola checked nothing." in a success-coloured alert was the whole report (B332).
+        Assert.Equal("Dymola was not available, so nothing was checked.",
+            CodeReview.CheckOutcomeSummary("Dymola", passed: 0, failed: 0, cancelled: false, endedBy: Unavailable()));
+    }
+
+    [Fact]
+    public void AToolThatWentAwayPartWaySaysTheRestWereNotChecked()
+    {
+        Assert.Equal("OpenModelica stopped answering after 3 classes, so the rest were not checked.",
+            CodeReview.CheckOutcomeSummary("OpenModelica", passed: 3, failed: 0, cancelled: false,
+                endedBy: Unavailable()));
+    }
+
+    [Fact]
+    public void OnlyACompleteCleanRunIsCalledASuccess()
+    {
+        Assert.Equal(MudBlazor.Severity.Success, CodeReview.CheckOutcomeSeverity(failed: 0, cancelled: false, endedBy: null));
+        Assert.Equal(MudBlazor.Severity.Warning, CodeReview.CheckOutcomeSeverity(failed: 1, cancelled: false, endedBy: null));
+        Assert.Equal(MudBlazor.Severity.Warning, CodeReview.CheckOutcomeSeverity(failed: 0, cancelled: false, endedBy: TimedOut()));
+        Assert.Equal(MudBlazor.Severity.Warning, CodeReview.CheckOutcomeSeverity(failed: 0, cancelled: false, endedBy: Unavailable()));
+        Assert.Equal(MudBlazor.Severity.Info, CodeReview.CheckOutcomeSeverity(failed: 0, cancelled: true, endedBy: null));
+    }
+
+    [Fact]
+    public void WhatEndedTheRunIsTheTimeoutOrTheMissingTool_NotAnOrdinaryFailure()
+    {
+        var failed = new ModelCheckResult { ModelId = "Lib.A", Success = false, Summary = "Dymola Check Failed" };
+        var passed = new ModelCheckResult { ModelId = "Lib.B", Success = true };
+
+        var timedOut = TimedOut();
+
+        Assert.Null(CodeReview.EndedBy([passed, failed]));
+        Assert.Same(timedOut, CodeReview.EndedBy([passed, failed, timedOut]));
+    }
+
+    [Fact]
+    public void OnlyAVerdictOnTheModelIsAFinding()
+    {
+        // The rule OnModelChecked applies before filing an Error against the class.
+        Assert.True(new ModelCheckResult { Success = false }.IsModelFailure);
+        Assert.False(new ModelCheckResult { Success = true }.IsModelFailure);
+        Assert.False(TimedOut().IsModelFailure);
+        Assert.False(Unavailable().IsModelFailure);
+    }
+
+    #endregion
 
     #region B259 - the title while it is still running
 

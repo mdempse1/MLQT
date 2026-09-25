@@ -910,6 +910,59 @@ public abstract class ModelCheckingServiceContract
         Assert.Equal(0, harness.Tool.Clears);
     }
 
+    /// <summary>
+    /// B333: a library that runs out of time opening is a timeout like any other, not "Failed to load
+    /// library" - which the UI reported as a problem with the user's code, for what is most often a
+    /// large library on its first check.
+    /// </summary>
+    [Fact]
+    public async Task ALibraryThatRunsOutOfTimeToOpenEndsTheRunAsTimedOut()
+    {
+        var harness = NewHarness();
+        var (graph, package) = PackageInAFile(2);
+        harness.Tool.OpenTimesOut = _ => true;
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+
+        await RunToCompletion(harness, package, graph);
+
+        var result = Assert.Single(reported);
+        Assert.True(result.TimedOut);
+        Assert.False(result.IsModelFailure);
+        Assert.Contains("ran out of time", result.Summary);
+        Assert.Contains(MLQT.Services.Helpers.ToolTimeLimit.SettingName, result.ErrorMessage);
+        Assert.Equal(0, harness.Tool.ChecksRun);
+    }
+
+    [Fact]
+    public async Task ALibraryThatRunsOutOfTimeToOpenIsTimedOutForOneClassToo()
+    {
+        var harness = NewHarness();
+        var (graph, package) = PackageInAFile(1);
+        harness.Tool.OpenTimesOut = _ => true;
+
+        var result = await harness.Service.CheckModelAsync(package, graph);
+
+        Assert.True(result.TimedOut);
+        Assert.False(result.IsModelFailure);
+    }
+
+    [Fact]
+    public async Task ALibraryThatIsRefusedIsStillAFailureRatherThanATimeout()
+    {
+        // The other side: a refusal is the tool's answer about the library, and stays a failure.
+        var harness = NewHarness();
+        var (graph, package) = PackageInAFile(1);
+        harness.Tool.Opens = _ => false;
+
+        var result = await harness.Service.CheckModelAsync(package, graph);
+
+        Assert.False(result.TimedOut);
+        Assert.True(result.IsModelFailure);
+        Assert.Equal("Failed to load library", result.Summary);
+    }
+
     private protected static (DirectedGraph graph, ModelNode package) Package(int children)
     {
         var graph = new DirectedGraph();

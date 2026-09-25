@@ -60,11 +60,13 @@ public class DymolaCheckingService : IModelCheckingService
         _dymolaFactory.UpdateSettings(settings);
     }
 
-    public Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
-        => EnsureLibraryLoadedAsync(filePath, CancellationToken.None);
+    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    {
+        var load = await LoadLibraryAsync(filePath, CancellationToken.None);
+        return (load.Success, load.ErrorMessage);
+    }
 
-    private async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(
-        string filePath, CancellationToken token)
+    private async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
     {
         try
         {
@@ -72,7 +74,7 @@ public class DymolaCheckingService : IModelCheckingService
 
             var isOpen = await _dymola.OpenModelAsync(filePath, false, false, cancellationToken: token);
             if (!isOpen && Interrupted(filePath) is { } interrupted)
-                return (false, interrupted);
+                return interrupted;
 
             if (!isOpen)
             {
@@ -82,25 +84,25 @@ public class DymolaCheckingService : IModelCheckingService
                     await _dymola.ClearAsync();
                     isOpen = await _dymola.OpenModelAsync(filePath, false, false, cancellationToken: token);
                     if (!isOpen && Interrupted(filePath) is { } interruptedAgain)
-                        return (false, interruptedAgain);
+                        return interruptedAgain;
 
                     if (!isOpen)
                     {
-                        return (false, "Could not get Dymola to open the file for this Modelica model");
+                        return LibraryLoad.Failed("Could not get Dymola to open the file for this Modelica model");
                     }
                 }
                 else
                 {
-                    return (false, $"File not found: {filePath}");
+                    return LibraryLoad.Failed($"File not found: {filePath}");
                 }
             }
 
-            return (true, null);
+            return LibraryLoad.Loaded;
         }
         catch (Exception ex)
         {
             Error("DymolaCheckingService", "Error connecting to Dymola", ex);
-            return (false, $"Error connecting to Dymola: {ex.Message}");
+            return LibraryLoad.Failed($"Error connecting to Dymola: {ex.Message}");
         }
     }
 
@@ -109,10 +111,11 @@ public class DymolaCheckingService : IModelCheckingService
     /// answered, or the user cancelled. Asked before retrying, because a retry after a timeout waits
     /// out the whole limit again against a Dymola still busy with the first attempt.
     /// </summary>
-    private string? Interrupted(string filePath) => _dymola?.LastOutcome switch
+    private LibraryLoad? Interrupted(string filePath) => _dymola?.LastOutcome switch
     {
-        CommandOutcome.Cancelled => "Cancelled",
-        CommandOutcome.TimedOut => ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, StillBusy),
+        CommandOutcome.Cancelled => LibraryLoad.Failed("Cancelled"),
+        CommandOutcome.TimedOut => LibraryLoad.RanOutOfTime(
+            ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, StillBusy)),
         _ => null,
     };
 
@@ -165,17 +168,9 @@ public class DymolaCheckingService : IModelCheckingService
             var rootFile = LibraryRootFile.For(graph, modelNode);
             if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
-                if (!loadSuccess)
-                {
-                    return new ModelCheckResult
-                    {
-                        ModelId = modelNode.Id,
-                        Success = false,
-                        Summary = "Failed to load library",
-                        ErrorMessage = loadError
-                    };
-                }
+                var load = await LoadLibraryAsync(rootFile, CancellationToken.None);
+                if (!load.Success)
+                    return load.FailureFor(modelNode.Id, ToolName);
             }
         }
         catch (Exception ex)
@@ -235,22 +230,16 @@ public class DymolaCheckingService : IModelCheckingService
             if (rootFile != null)
             {
                 ReportStatus($"Opening {Path.GetFileName(rootFile)} in {ToolName}…");
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile, token);
-                if (!loadSuccess && token.IsCancellationRequested)
+                var load = await LoadLibraryAsync(rootFile, token);
+                if (!load.Success && token.IsCancellationRequested)
                 {
                     CompleteCancelled();
                     return;
                 }
 
-                if (!loadSuccess)
+                if (!load.Success)
                 {
-                    EndWithoutChecking(new ModelCheckResult
-                    {
-                        ModelId = modelNode.Id,
-                        Success = false,
-                        Summary = "Failed to load library",
-                        ErrorMessage = loadError
-                    });
+                    EndWithoutChecking(load.FailureFor(modelNode.Id, ToolName));
                     return;
                 }
             }

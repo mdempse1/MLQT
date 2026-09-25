@@ -61,11 +61,13 @@ public class OpenModelicaCheckingService : IModelCheckingService
         _omcFactory.UpdateSettings(settings);
     }
 
-    public Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
-        => EnsureLibraryLoadedAsync(filePath, CancellationToken.None);
+    public async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(string filePath)
+    {
+        var load = await LoadLibraryAsync(filePath, CancellationToken.None);
+        return (load.Success, load.ErrorMessage);
+    }
 
-    private async Task<(bool Success, string? ErrorMessage)> EnsureLibraryLoadedAsync(
-        string filePath, CancellationToken token)
+    private async Task<LibraryLoad> LoadLibraryAsync(string filePath, CancellationToken token)
     {
         try
         {
@@ -82,33 +84,34 @@ public class OpenModelicaCheckingService : IModelCheckingService
                     isOpen = await _omc.LoadFileAsync(filePath, token);
                     if (!isOpen)
                     {
-                        return (false, "Could not get OpenModelica to open the file for this Modelica model");
+                        return LibraryLoad.Failed("Could not get OpenModelica to open the file for this Modelica model");
                     }
                 }
                 else
                 {
-                    return (false, $"File not found: {filePath}");
+                    return LibraryLoad.Failed($"File not found: {filePath}");
                 }
             }
 
-            return (true, null);
+            return LibraryLoad.Loaded;
         }
         catch (OperationCanceledException)
         {
             // Sent and abandoned closes the session; dropped here so the next request asks the
             // factory, which replaces a closed one.
             _omc = null;
-            return (false, "Cancelled");
+            return LibraryLoad.Failed("Cancelled");
         }
         catch (TimeoutException)
         {
             _omc = null;
-            return (false, ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, SessionClosed));
+            return LibraryLoad.RanOutOfTime(
+                ToolTimeLimit.LoadTimedOut(ToolName, filePath, _commandTimeout, SessionClosed));
         }
         catch (Exception ex)
         {
             Error("OpenModelicaCheckingService", "Error connecting to OpenModelica", ex);
-            return (false, $"Error connecting to OpenModelica: {ex.Message}");
+            return LibraryLoad.Failed($"Error connecting to OpenModelica: {ex.Message}");
         }
     }
 
@@ -145,17 +148,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
             var rootFile = LibraryRootFile.For(graph, modelNode);
             if (rootFile != null)
             {
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile);
-                if (!loadSuccess)
-                {
-                    return new ModelCheckResult
-                    {
-                        ModelId = modelNode.Id,
-                        Success = false,
-                        Summary = "Failed to load library",
-                        ErrorMessage = loadError
-                    };
-                }
+                var load = await LoadLibraryAsync(rootFile, CancellationToken.None);
+                if (!load.Success)
+                    return load.FailureFor(modelNode.Id, ToolName);
             }
         }
         catch (Exception ex)
@@ -216,22 +211,16 @@ public class OpenModelicaCheckingService : IModelCheckingService
             if (rootFile != null)
             {
                 ReportStatus($"Opening {Path.GetFileName(rootFile)} in {ToolName}…");
-                var (loadSuccess, loadError) = await EnsureLibraryLoadedAsync(rootFile, token);
-                if (!loadSuccess && token.IsCancellationRequested)
+                var load = await LoadLibraryAsync(rootFile, token);
+                if (!load.Success && token.IsCancellationRequested)
                 {
                     CompleteCancelled();
                     return;
                 }
 
-                if (!loadSuccess)
+                if (!load.Success)
                 {
-                    EndWithoutChecking(new ModelCheckResult
-                    {
-                        ModelId = modelNode.Id,
-                        Success = false,
-                        Summary = "Failed to load library",
-                        ErrorMessage = loadError
-                    });
+                    EndWithoutChecking(load.FailureFor(modelNode.Id, ToolName));
                     return;
                 }
             }

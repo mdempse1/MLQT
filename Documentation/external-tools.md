@@ -118,11 +118,21 @@ dialog names the tool and says how it went:
 Dymola checked 27 classes with no problems reported.
 OpenModelica reported problems with 3 of 27 classes.
 Dymola check stopped after 5 classes.
+Dymola checked 12 classes, then ran out of time on MyLib.BigModel and stopped there.
+OpenModelica was not available, so nothing was checked.
 ```
+
+A run the tool cut short — a class that ran out of time, a tool that would not start, or one that
+stopped answering partway through — says so in the headline and never reads as a clean pass. The
+result underneath gives the reason: the time limit and where to raise it, or the tool's own error
+for a start that failed (a wrong path, say).
 
 Where something failed, the dialog quotes the tool's own message for each class rather than
 paraphrasing it — a summary saying "check failed" only sends you to the tool to find out why. Those
 same failures are added to the findings table, so they are still there after the dialog is closed.
+Only a verdict on a model goes there: a class that ran out of time, or a tool that was not there to
+ask, says nothing about your code, so it is reported in the dialog and not filed as an error against
+the class.
 
 **A clean check can still have something to say.** Dymola's `checkModel` returns true for a model
 that is fine and for one that is fine apart from six warnings, so MLQT reads the tool's log either
@@ -138,7 +148,7 @@ not control.
 
 Errors from external tools appear in the Code Review findings table with:
 - **Model**: The fully qualified name of the model that failed
-- **Description**: "<Tool> Check Failed" (for example "Dymola Check Failed"), "<Tool> ran out of time" when the check hit its time limit, or a summary of the error
+- **Description**: "<Tool> Check Failed" (for example "Dymola Check Failed"), "Failed to load library", or a summary of the error
 - **Type**: "Error"
 - **Details**: The full error message from the tool (visible by clicking the row)
 
