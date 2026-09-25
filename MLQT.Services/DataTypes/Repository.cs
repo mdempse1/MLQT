@@ -125,4 +125,12 @@ public class Repository
     /// (e.g. due to permissions). The repository still functions using global settings.
     /// </summary>
     public bool IsSettingsReadOnly { get; set; }
+
+    /// <summary>
+    /// <see cref="StyleSettings"/> as they were last read from or written to
+    /// <c>.mlqt/settings.json</c>, serialized — null when there is no file. The file is committed, so
+    /// it is written only when the settings differ from this: a load, a reorder or a project switch
+    /// that changed nothing must not leave a modified file for someone to explain (B310).
+    /// </summary>
+    internal string? SettingsOnDisk { get; set; }
 }

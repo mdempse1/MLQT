@@ -61,7 +61,7 @@ public class ModelicaFileAccessPolicyTests
         ["MLQT.Services/Helpers/MetricsHistoryStore.cs"] = (2, "reads and writes the metrics history JSON"),
         ["MLQT.Services/JsonSettingsService.cs"] = (2, "reads and writes the application settings JSON"),
         ["MLQT.Services/MauiPreferencesFile.cs"] = (1, "reads the retired MAUI host's preferences JSON, once, on first run"),
-        ["MLQT.Services/RepositoryService.cs"] = (2, "reads and writes a repository's .mlqt/settings.json"),
+        ["MLQT.Services/RepositoryService.cs"] = (3, "reads and writes a repository's .mlqt/settings.json, reading it again before a write so an unchanged file is left alone (B310)"),
         ["MLQT.Services/StaticWebAssetManifest.cs"] = (1, "reads the RCL static web asset manifest JSON"),
 
         // Logs and word lists.

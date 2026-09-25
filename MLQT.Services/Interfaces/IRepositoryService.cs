@@ -138,9 +138,19 @@ public interface IRepositoryService
     Repository? GetRepositoryForLibrary(string libraryId);
 
     /// <summary>
-    /// Saves repository configurations to settings.
+    /// Saves repository configurations to settings: the project list, and each repository's
+    /// committed <c>.mlqt/settings.json</c> <b>only where its settings changed</b> since the file was
+    /// read or last written (or where there is no file yet). Called after loads, reorders and project
+    /// switches, none of which may leave a modified file in a repository (B310).
     /// </summary>
     Task SaveRepositorySettingsAsync();
+
+    /// <summary>
+    /// The user applied <paramref name="repositoryId"/>'s settings: records the default-on rules in
+    /// them explicitly (B244), then saves as <see cref="SaveRepositorySettingsAsync"/> does. The one
+    /// path that adds anything to a committed settings file the user did not set themselves.
+    /// </summary>
+    Task ApplyRepositorySettingsAsync(string repositoryId);
 
     /// <summary>
     /// Loads repositories from saved settings and auto-loads if configured.

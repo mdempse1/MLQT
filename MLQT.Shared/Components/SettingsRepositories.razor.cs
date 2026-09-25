@@ -343,7 +343,7 @@ public partial class SettingsRepositories : IDisposable
         var (formattingChanged, styleSettingsChanged) = EffectOfEdit(oldSettings, SelectedSettings);
 
         _editRepository = false;
-        await RepositoryService.SaveRepositorySettingsAsync();
+        await RepositoryService.ApplyRepositorySettingsAsync(_selectedItem.Id);
 
         if (styleSettingsChanged || formattingChanged)
             NavState.RepositorySettingsApplied(_selectedItem.Id, formattingChanged, styleSettingsChanged);

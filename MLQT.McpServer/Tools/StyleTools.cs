@@ -100,7 +100,7 @@ public sealed class StyleTools
 
         repo!.StyleSettings ??= new StyleCheckingSettings();
         settings.ApplyTo(repo.StyleSettings);
-        await _repositories.SaveRepositorySettingsAsync();
+        await _repositories.ApplyRepositorySettingsAsync(repo.Id);
 
         var persisted = !repo.IsSettingsReadOnly;
         return new SetStyleSettingsResult(

@@ -295,6 +295,11 @@ public class RepositoryService : IRepositoryService
                     Warn("RepositoryService",
                         $"Could not read .mlqt/settings.json for '{repository.Name}': {ex.Message}. Using defaults.");
                 }
+
+                // What is on disk now, so the saves that follow a load write nothing unless something
+                // changes. For a file that did not parse this is the defaults being used in its place:
+                // overwriting the user's file with them would lose whatever they meant (B310).
+                repository.SettingsOnDisk = SerializeSettings(repository.StyleSettings);
             }
             else
             {
@@ -709,6 +714,80 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc />
+    public async Task ApplyRepositorySettingsAsync(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository is { IsReferenceOnly: false })
+        {
+            // A rule that is on by default is on whether or not the file mentions it, and a file that
+            // does not mention it hides a gate from everyone reading the repository. Writing it down
+            // is what makes a saved settings file the whole answer for that repository (B244) - and
+            // it is done here, when the user applies this repository's settings, rather than on
+            // every save, where it rewrote every committed file on the first launch after it
+            // arrived (B310).
+            lock (_lock)
+                repository.StyleSettings?.RecordDefaults();
+        }
+
+        await SaveRepositorySettingsAsync();
+    }
+
+    private static readonly JsonSerializerOptions SettingsJsonOptions = new() { WriteIndented = true, NewLine = "\n" };
+
+    /// <summary>The settings as they are compared against <see cref="Repository.SettingsOnDisk"/>.</summary>
+    private static string SerializeSettings(StyleCheckingSettings? settings)
+        => JsonSerializer.Serialize(settings, SettingsJsonOptions);
+
+    /// <summary>
+    /// Writes <paramref name="repo"/>'s <c>.mlqt/settings.json</c> if, and only if, its settings
+    /// differ from what was last read from or written to it — or there is no file yet, in which case
+    /// the defaults are recorded in the new one (B244): creating a file rewrites nothing anybody
+    /// committed.
+    ///
+    /// <para><b>Written in the file's own line endings</b> and with its own final newline, so a change
+    /// to one setting is a one-line diff on every platform rather than a whole-file one: the
+    /// serializer's default is <c>Environment.NewLine</c>, which flipped a file between the endings of
+    /// whichever machine saved it last.</para>
+    /// </summary>
+    private static void WriteSettingsFileIfChanged(Repository repo)
+    {
+        var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
+        try
+        {
+            var existing = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+            if (existing is null)
+                repo.StyleSettings?.RecordDefaults();
+
+            var json = SerializeSettings(repo.StyleSettings);
+            if (existing is not null && json == repo.SettingsOnDisk)
+                return;
+
+            var newline = existing?.Contains("\r\n") == true ? "\r\n" : "\n";
+            var text = json.Replace("\n", newline);
+            if (existing is null || existing.EndsWith('\n'))
+                text += newline;
+
+            // Nothing to write if the file already says exactly this, whoever wrote it.
+            if (text != existing)
+            {
+                var settingsDir = Path.GetDirectoryName(settingsPath);
+                if (settingsDir != null && !Directory.Exists(settingsDir))
+                    Directory.CreateDirectory(settingsDir);
+                File.WriteAllText(settingsPath, text);
+            }
+
+            repo.SettingsOnDisk = json;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Warn("RepositoryService",
+                $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
+                "Repository will use global settings.");
+            repo.IsSettingsReadOnly = true;
+        }
+    }
+
     public async Task SaveRepositorySettingsAsync()
     {
         var settings = new RepositorySettingsCollection();
@@ -739,30 +818,9 @@ public class RepositoryService : IRepositoryService
                 if (repo.IsReferenceOnly)
                     continue;
 
-                //Save the formatting settings into the repository so that every user gets the same
-                try
-                {
-                    var settingsPath = Path.Combine(repo.LocalPath, ".mlqt", "settings.json");
-
-                    // A rule that is on by default is on whether or not the file mentions it, and a
-                    // file that does not mention it hides a gate from everyone reading the
-                    // repository. Writing it down here is what makes a saved settings file the whole
-                    // answer for that repository (B244).
-                    repo.StyleSettings?.RecordDefaults();
-
-                    var json = JsonSerializer.Serialize(repo.StyleSettings, new JsonSerializerOptions { WriteIndented = true });
-                    var settingsDir = Path.GetDirectoryName(settingsPath);
-                    if (settingsDir != null && !Directory.Exists(settingsDir))
-                        Directory.CreateDirectory(settingsDir);
-                    File.WriteAllText(settingsPath, json);
-                }
-                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-                {
-                    Warn("RepositoryService",
-                        $"Could not write .mlqt/settings.json for '{repo.Name}': {ex.Message}. " +
-                        "Repository will use global settings.");
-                    repo.IsSettingsReadOnly = true;
-                }
+                // Save the formatting settings into the repository so that every user gets the same
+                // - but only if they changed (B310).
+                WriteSettingsFileIfChanged(repo);
             }
 
             // Ensure at least a default project exists
