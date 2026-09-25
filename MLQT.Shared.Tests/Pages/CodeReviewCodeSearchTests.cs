@@ -111,8 +111,8 @@ public class CodeReviewCodeSearchTests
     [Fact]
     public void SearchingForMarkupCharactersFindsTheTextNotTheTags()
     {
-        // The term is encoded before it is matched, because the content it is matched against has
-        // been. Without that, searching for `<html>` inside a documentation string finds nothing.
+        // The term is matched against the raw text, before anything is encoded (B340), so
+        // searching for `<html>` inside a documentation string finds it.
         var html = CodeViewer.ToHtml(Markup, null, "<html>");
 
         Assert.Contains("code-search-match", html[3]);

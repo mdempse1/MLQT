@@ -1751,18 +1751,12 @@ document.head.appendChild(style);
         var matches = new List<int>();
         for (var i = 0; i < displayLines.Count; i++)
         {
-            if (PlainTextOf(displayLines[i]).Contains(term, StringComparison.OrdinalIgnoreCase))
+            if (CodeViewer.VisibleText(displayLines[i]).Contains(term, StringComparison.OrdinalIgnoreCase))
                 matches.Add(i + 1);
         }
 
         return matches;
     }
-
-    private static readonly Regex MarkupTagRegex =
-        new(@"</?(KEYWORD|IDENT|NAME|TYPE|OPERATOR|NUMBER|STRING|COMMENT|FUNCTION)>", RegexOptions.Compiled);
-
-    private static string PlainTextOf(string markupLine) =>
-        System.Net.WebUtility.HtmlDecode(MarkupTagRegex.Replace(markupLine, ""));
 
     /// <summary>
     /// Re-finds the matches against whatever is now on screen. Called whenever the displayed lines
