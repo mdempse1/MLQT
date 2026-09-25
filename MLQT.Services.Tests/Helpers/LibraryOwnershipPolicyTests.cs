@@ -60,7 +60,9 @@ public class LibraryOwnershipPolicyTests
         && !relative.StartsWith("MLQT.TestHost/", StringComparison.Ordinal)
         && !relative.StartsWith("TestSupport/", StringComparison.Ordinal)
         && !relative.Contains("/bin/", StringComparison.Ordinal)
-        && !relative.Contains("/obj/", StringComparison.Ordinal);
+        && !relative.Contains("/obj/", StringComparison.Ordinal)
+        // Claude Code's agent worktrees: whole copies of the repository, each checked on its own.
+        && !relative.StartsWith(".claude/", StringComparison.Ordinal);
 
     /// <summary>Comment-only lines removed, so the prose explaining this rule — the interface's own
     /// documentation quotes the search it forbids — does not count as a use of it.</summary>

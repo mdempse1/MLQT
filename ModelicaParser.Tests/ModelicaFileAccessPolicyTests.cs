@@ -119,6 +119,8 @@ public class ModelicaFileAccessPolicyTests
         && !relative.StartsWith("MLQT.TestHost/", StringComparison.Ordinal)
         && !relative.Contains("/bin/", StringComparison.Ordinal)
         && !relative.Contains("/obj/", StringComparison.Ordinal)
+        // Claude Code's agent worktrees: whole copies of the repository, each checked on its own.
+        && !relative.StartsWith(".claude/", StringComparison.Ordinal)
         // The funnel itself, which is the one place allowed to call the OS.
         && relative != "ModelicaParser/Helpers/ModelicaFileEncoding.cs";
 
