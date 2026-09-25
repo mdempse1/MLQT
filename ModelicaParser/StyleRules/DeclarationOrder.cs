@@ -43,7 +43,9 @@ public class DeclarationOrder : VisitorWithModelNameTracking
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        if (context.children != null)
+        // A record's field order is its constructor's signature; the renderer leaves it alone, so
+        // this must not ask for anything else (B304).
+        if (context.children != null && !DeclarationKinds.KeepsSourceOrder(context))
         {
             foreach (var child in context.children)
             {

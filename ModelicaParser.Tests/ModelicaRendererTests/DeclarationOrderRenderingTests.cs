@@ -213,4 +213,55 @@ public class DeclarationOrderRenderingTests
 
         Assert.Empty(rule.RuleFindings);
     }
+
+    [Theory]
+    [InlineData("record")]
+    [InlineData("operator record")]
+    public void ARecordsFields_KeepTheirSourceOrder(string restriction)
+    {
+        // B304: the order a record declares its fields in is the order its constructor takes them
+        // (Modelica 12.6), so writing `a` first would make every R(2.0) in the library set `a`
+        // instead of `b`, with no error anywhere.
+        var source = $"""
+            {restriction} R
+              Real b;
+              parameter Real a;
+              constant Real c;
+            end R;
+            """;
+
+        TestHelpers.AssertClass(source, onlyOneOfEachSection: true, declarationOrder: true);
+    }
+
+    [Fact]
+    public void ARecordNestedInAModel_KeepsItsOrder_WhileTheModelIsOrdered()
+    {
+        // The exemption belongs to the record, not to whatever file it is written in.
+        var source = """
+            model Test
+              Real x;
+              parameter Real m;
+
+              record R
+                Real b;
+                parameter Real a;
+              end R;
+            end Test;
+            """;
+
+        var expected = """
+            model Test
+              parameter Real m;
+              Real x;
+
+              record R
+                Real b;
+                parameter Real a;
+              end R;
+            end Test;
+            """;
+
+        TestHelpers.AssertClass(source, expectedOutput: expected,
+            onlyOneOfEachSection: true, declarationOrder: true);
+    }
 }

@@ -35,6 +35,11 @@ its alias chain, which needs the library loaded — so a check with nothing load
 goes. **The formatter is told exactly the same thing**, so what it writes is always what the rule
 asks for.
 
+**A record keeps its fields in the order they are written**, whatever this option says, and the rule
+does not report them. A record's field order is its constructor's signature — `R(2.0)` sets the
+first field declared — so sorting it would silently change what every positional call in the
+library sets. The same goes for an `operator record`.
+
 **One of each section is the master switch for layout.** With it off the formatter writes the class in
 source order and moves nothing at all — so the other switches are **switched off with it**, both as
 formatting transforms and as style rules. Enabling *imports first* on its own would report

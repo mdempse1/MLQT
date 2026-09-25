@@ -225,4 +225,38 @@ end M;
         var finding = Assert.Single(CheckRule(code));
         Assert.Contains("'a'", finding.Summary);
     }
+
+    [Theory]
+    [InlineData("record")]
+    [InlineData("operator record")]
+    public void ARecordsFields_AreNotReported(string restriction)
+    {
+        // B304: a record's declaration order is its constructor's signature (Modelica 12.6), so
+        // R(2.0) binds the first field declared. Reordering the fields silently changes what every
+        // positional call sets, and a finding asking for it leads the user straight into that.
+        var code = $"""
+{restriction} R
+  Real b;
+  parameter Real a = 1;
+  constant Real c = 2;
+end R;
+""";
+
+        Assert.Empty(CheckRule(code));
+    }
+
+    [Fact]
+    public void AConnectorIsStillChecked()
+    {
+        // Only a record has a positional constructor. A connector's members are matched by name in a
+        // connection, so ordering them changes nothing a model can observe.
+        var code = """
+connector C
+  Real v;
+  parameter Real a = 1;
+end C;
+""";
+
+        Assert.Single(CheckRule(code));
+    }
 }

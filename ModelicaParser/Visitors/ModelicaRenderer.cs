@@ -739,9 +739,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// One call site per section so the public and protected halves cannot be given different
     /// conventions — which is how the two initial-section orderings came to need
     /// <see cref="WriteInitialSections"/>.
+    ///
+    /// <para>A record is always written in source order, because its field order is its
+    /// constructor's signature — see <see cref="DeclarationKinds.KeepsSourceOrder"/>, which the rule
+    /// asks too (B304).</para>
     /// </summary>
-    private IEnumerable<Element> DeclarationGroupPasses()
-        => _declarationOrder ? DeclarationPasses : new[] { Element.Components };
+    private IEnumerable<Element> DeclarationGroupPasses(modelicaParser.CompositionContext context)
+        => _declarationOrder && !DeclarationKinds.KeepsSourceOrder(context)
+            ? DeclarationPasses
+            : new[] { Element.Components };
 
     /// <summary>
     /// Writes the <c>initial equation</c> and <c>initial algorithm</c> sections. Called either before
@@ -932,7 +938,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     //Public section
                     WriteComposition(context, CodeSection.Public, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        foreach (var pass in DeclarationGroupPasses())
+                        foreach (var pass in DeclarationGroupPasses(context))
                             WriteComposition(context, CodeSection.Public, pass);
                         _writeFinalComments = true;
                         WriteComposition(context, CodeSection.Public, Element.Classes);
@@ -950,7 +956,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (_importsFirst) {
                     var alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, Element.Extends);
                     if (_componentsBeforeClasses) {
-                        foreach (var pass in DeclarationGroupPasses())
+                        foreach (var pass in DeclarationGroupPasses(context))
                             alreadyWrittenSectionMarker = WriteComposition(context, CodeSection.Protected, pass, alreadyWrittenSectionMarker);
                         _writeFinalComments = true;
                         WriteComposition(context, CodeSection.Protected, Element.Classes, alreadyWrittenSectionMarker);

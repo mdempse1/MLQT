@@ -84,6 +84,30 @@ public static class DeclarationKinds
         _ => ("Component", "components")
     };
 
+    /// <summary>
+    /// Whether the class owning <paramref name="composition"/> must keep its declarations in source
+    /// order whatever the convention says — <b>true for a <c>record</c> and an <c>operator record</c></b>,
+    /// and asked by both the rule and the renderer so they cannot disagree about it (B304).
+    ///
+    /// <para>A record's declaration order is its constructor's signature (Modelica §12.6): the
+    /// constructor's inputs are its fields in the order they are declared, so <c>R(2.0)</c> binds the
+    /// first. Writing a parameter ahead of the variable above it makes every positional call in the
+    /// library set a different field, silently. Nothing else has that property — a function's
+    /// signature is inputs and outputs, which are one group; a connector's members are matched by name
+    /// in a connection; a model, block or class is never called positionally — so the exemption is the
+    /// record's alone.</para>
+    /// </summary>
+    public static bool KeepsSourceOrder(modelicaParser.CompositionContext composition)
+    {
+        for (var node = composition.Parent; node is not null; node = node.Parent)
+        {
+            if (node is modelicaParser.Class_definitionContext definition)
+                return definition.class_prefixes()?.children?.Any(c => c.GetText() == "record") == true;
+        }
+
+        return false;
+    }
+
     /// <param name="isSimpleType">Given a declared type name as written, says whether it resolves to
     /// a simple type rather than to a structured class. Null when the caller has no graph.</param>
     public static DeclarationKind KindOf(
