@@ -126,6 +126,50 @@ public class WorkingCopyQuerySharingTests : IDisposable
         Assert.Equal(2, queries);
     }
 
+    /// <summary>
+    /// B330: two libraries in one checkout are one working copy, and one status query answers both.
+    /// Two ran at once before, and for Git each slow one is followed by an index refresh that takes
+    /// <c>index.lock</c> - so the two raced for the lock.
+    /// </summary>
+    [Fact]
+    public async Task TwoLibrariesInOneCheckout_ShareOneQuery_AndOneInvalidation()
+    {
+        Directory.CreateDirectory(_directory);
+        foreach (var library in new[] { "LibA", "LibB" })
+        {
+            Directory.CreateDirectory(Path.Combine(_directory, library));
+            File.WriteAllText(Path.Combine(_directory, library, "package.mo"), $"package {library}\nend {library};\n");
+        }
+        Git("init");
+
+        var service = new RepositoryService(new LibraryDataService(), new InMemorySettingsService(), new FileMonitoringService());
+        var a = (await service.AddRepositoryAsync(Path.Combine(_directory, "LibA"), startMonitoring: false)).Repository!;
+        var b = (await service.AddRepositoryAsync(Path.Combine(_directory, "LibB"), startMonitoring: false)).Repository!;
+        Assert.Equal(a.VcsRootPath, b.VcsRootPath);
+        service.InvalidateWorkingCopyCache();
+
+        var queries = 0;
+        service.QueryWorkingCopy = _ =>
+        {
+            Interlocked.Increment(ref queries);
+            Thread.Sleep(500);
+            return [new VcsWorkingCopyFile { Path = "LibA/package.mo", Status = VcsFileStatus.Modified }];
+        };
+
+        const int callers = 20;
+        var answers = new List<VcsWorkingCopyFile>[callers];
+        Parallel.For(0, callers, new ParallelOptions { MaxDegreeOfParallelism = callers },
+            i => answers[i] = service.GetWorkingCopyChanges(i % 2 == 0 ? a.Id : b.Id));
+
+        Assert.Equal(1, queries);
+        Assert.All(answers, answer => Assert.Same(answers[0], answer));
+
+        // A change announced for one of them is a change to the checkout both are in.
+        service.InvalidateWorkingCopyCache(a.Id);
+        service.GetWorkingCopyChanges(b.Id);
+        Assert.Equal(2, queries);
+    }
+
     [Fact]
     public async Task AQueryThatFails_IsNotSharedWithTheNextCaller()
     {

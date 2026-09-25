@@ -28,6 +28,12 @@ internal static class SvnCli
         public bool Success => ExitCode == 0;
 
         /// <summary>
+        /// Whether svn was stopped for going silent (B297) rather than finishing. A stopped svn was
+        /// killed, and a command that writes to a working copy leaves it locked (B330).
+        /// </summary>
+        public bool Stopped { get; init; }
+
+        /// <summary>
         /// What to tell the user about a failure: svn's own message when it gave one, otherwise
         /// <paramref name="fallback"/>.
         /// </summary>
@@ -122,7 +128,47 @@ internal static class SvnCli
     internal static Result Run(IEnumerable<string> args, string? stdinText = null)
     {
         var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText, IdleTimeout);
-        return new Result { ExitCode = raw.ExitCode, StdOut = Decode(raw.StdOut), StdErr = raw.StdErr };
+        return new Result { ExitCode = raw.ExitCode, StdOut = Decode(raw.StdOut), StdErr = raw.StdErr, Stopped = raw.Stopped };
+    }
+
+    /// <summary>
+    /// Runs a command that writes to <paramref name="workingCopy"/>, and if it had to be stopped,
+    /// releases the lock it left there (B330).
+    /// </summary>
+    /// <remarks>
+    /// <para>A stalled svn is killed (B297), and a kill gives svn no chance to release the working
+    /// copy's lock or finish its work queue. Every later command on it then fails with E155004 -
+    /// "run 'svn cleanup'" - and nothing in MLQT said so, or ran it. <c>svn cleanup</c> is local,
+    /// so it does not wait on the server that stalled.</para>
+    ///
+    /// <para>Where the cleanup fails too, the message says what the user has to do.</para>
+    /// </remarks>
+    internal static Result RunOnWorkingCopy(string workingCopy, params string[] args) =>
+        RunOnWorkingCopy(Run, workingCopy, args);
+
+    /// <summary><see cref="RunOnWorkingCopy(string, string[])"/> with the runner given, so a test can
+    /// stall a command without a server that stalls.</summary>
+    internal static Result RunOnWorkingCopy(Func<string[], Result> run, string workingCopy, string[] args)
+    {
+        var result = run(args);
+        if (!result.Stopped)
+            return result;
+
+        var cleanup = run(["cleanup", workingCopy]);
+        var said = cleanup.Success
+            ? "The lock it left on the working copy was released with 'svn cleanup'."
+            : $"It left the working copy locked, and 'svn cleanup' could not release it " +
+              $"({cleanup.FailureMessage("no reason given")}). Run 'svn cleanup' on {workingCopy} " +
+              "(TortoiseSVN: Clean up) before trying again.";
+        RevisionControlLogger.Info($"svn {args.FirstOrDefault()} on {workingCopy} was stopped; {said}");
+
+        return new Result
+        {
+            ExitCode = result.ExitCode,
+            StdOut = result.StdOut,
+            StdErr = $"{result.StdErr.TrimEnd()}{Environment.NewLine}{said}",
+            Stopped = true,
+        };
     }
 
     // Global option; svn accepts it after positional arguments. Appending keeps the caller's
@@ -131,7 +177,7 @@ internal static class SvnCli
         args.Append("--non-interactive");
 
     /// <summary>What <see cref="Execute"/> captured: stdout as bytes, for the caller to decode or not.</summary>
-    internal sealed record RawResult(int ExitCode, byte[] StdOut, string StdErr);
+    internal sealed record RawResult(int ExitCode, byte[] StdOut, string StdErr, bool Stopped = false);
 
     /// <summary>
     /// Runs a command to completion, and never waits on something that will not come (B297).
@@ -214,7 +260,8 @@ internal static class SvnCli
                 var message = $"svn produced no output for {idleLimit.TotalMinutes:0.##} minutes and was stopped.";
                 return new RawResult(-1,
                     stdoutTask.IsCompleted ? stdout.ToArray() : [],
-                    string.IsNullOrEmpty(said) ? message : $"{message}{Environment.NewLine}{said}");
+                    string.IsNullOrEmpty(said) ? message : $"{message}{Environment.NewLine}{said}",
+                    Stopped: true);
             }
 
             // The overload without a limit also waits for the redirected streams to be drained.

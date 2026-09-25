@@ -2093,6 +2093,9 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         using var process = new System.Diagnostics.Process();
         process.StartInfo = GitStartInfo(workingDirectory, arguments);
 
+        // Taken before the start and a little early, so a lock this command creates is certainly
+        // newer - see RemoveLocksLeftBehind.
+        var started = DateTime.UtcNow.AddSeconds(-1);
         process.Start();
         process.StandardInput.Close();
 
@@ -2113,7 +2116,8 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             // Bounded: a descendant that escaped the kill can hold the pipes open.
             Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(5));
             var partial = stderrTask.IsCompletedSuccessfully ? stderrTask.Result.Trim() : "";
-            var message = $"git {arguments} did not finish within {limit.TotalMinutes:0.##} minutes and was stopped.";
+            var message = $"git {arguments} did not finish within {limit.TotalMinutes:0.##} minutes and was stopped."
+                + RemoveLocksLeftBehind(workingDirectory, started);
             return (-1,
                 stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : "",
                 string.IsNullOrEmpty(partial) ? message : $"{message}{Environment.NewLine}{partial}");
@@ -2122,6 +2126,84 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         // The overload without a limit also waits for the redirected streams to be drained.
         process.WaitForExit();
         return (process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
+    }
+
+    /// <summary>
+    /// Removes the lock files a git command stopped by <see cref="RunGitCommand"/> left in the
+    /// repository, and says what it did - or, where it could not, what the user has to do (B330).
+    /// </summary>
+    /// <remarks>
+    /// <para>The stop is a kill - TerminateProcess, SIGKILL - so git gets no chance to remove the
+    /// <c>.lock</c> it writes beside a file it is replacing. A killed <c>update-index --refresh</c>,
+    /// which every slow status runs (B298), left <c>.git/index.lock</c>, and every later commit,
+    /// switch or status refresh failed with "Unable to create '.git/index.lock': File exists" until
+    /// someone found and deleted it by hand.</para>
+    ///
+    /// <para><b>Only a lock written since the command started</b>, in the git directory itself or
+    /// under <c>refs/</c> - which is where index, HEAD, packed-refs and ref locks live. One older
+    /// than that was not this command's, and may be another git's that is still working.</para>
+    /// </remarks>
+    internal static string RemoveLocksLeftBehind(string workingDirectory, DateTime startedUtc)
+    {
+        string? gitDirectory;
+        try
+        {
+            gitDirectory = Repository.Discover(workingDirectory);
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+            return "";
+        }
+
+        if (string.IsNullOrEmpty(gitDirectory) || !Directory.Exists(gitDirectory))
+            return "";
+
+        List<string> candidates;
+        try
+        {
+            var found = Directory.EnumerateFiles(gitDirectory, "*.lock", SearchOption.TopDirectoryOnly);
+            var refs = Path.Combine(gitDirectory, "refs");
+            if (Directory.Exists(refs))
+                found = found.Concat(Directory.EnumerateFiles(refs, "*.lock", SearchOption.AllDirectories));
+            candidates = found.ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+            return "";
+        }
+
+        var removed = new List<string>();
+        var left = new List<string>();
+        foreach (var lockFile in candidates)
+        {
+            if (File.GetLastWriteTimeUtc(lockFile) < startedUtc)
+                continue;
+
+            var name = Path.GetRelativePath(gitDirectory, lockFile).Replace('\\', '/');
+            try
+            {
+                File.Delete(lockFile);
+                removed.Add(name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RevisionControlLogger.Error("RemoveLocksLeftBehind", ex);
+                left.Add(lockFile);
+            }
+        }
+
+        if (removed.Count > 0)
+            RevisionControlLogger.Info($"Removed {string.Join(", ", removed)} left in {gitDirectory} by a stopped git command");
+
+        var said = removed.Count == 0 ? "" : $" The lock it left behind ({string.Join(", ", removed)}) was removed.";
+        if (left.Count > 0)
+        {
+            said += $" It left {string.Join(", ", left)} behind, which could not be removed: once no other git " +
+                    "program is running, delete it, or every later git operation will fail.";
+        }
+        return said;
     }
 
     /// <summary>

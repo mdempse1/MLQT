@@ -59,6 +59,31 @@ public class GitCommandRunnerTests : IDisposable
             $"stopping it took {elapsed.Elapsed.TotalSeconds:0}s — the kill did not reach what git started");
     }
 
+    /// <summary>
+    /// B330: the stop is a kill, so git never removes the lock it was holding - and a leftover
+    /// <c>index.lock</c> fails every later commit, switch and status refresh. The one the stopped
+    /// command wrote is removed; one that was already there before it started is someone else's and
+    /// is left alone.
+    /// </summary>
+    [Fact]
+    public async Task ALockLeftByAStoppedGit_IsRemoved_AndAnOlderOneIsNot()
+    {
+        var (initExit, _, initErr) = GitRevisionControlSystem.RunGitCommand(_directory, "init");
+        Assert.True(initExit == 0, initErr);
+
+        var gitDirectory = Path.Combine(_directory, ".git");
+        var older = Path.Combine(gitDirectory, "packed-refs.lock");
+        File.WriteAllText(older, "");
+        File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddMinutes(-5));
+
+        var (exitCode, _, stderr) = await RunAlias("touch .git/index.lock && sleep 120", limit: TimeSpan.FromSeconds(3));
+
+        Assert.NotEqual(0, exitCode);
+        Assert.False(File.Exists(Path.Combine(gitDirectory, "index.lock")), "the stopped command's lock is still there");
+        Assert.Contains("index.lock", stderr);
+        Assert.True(File.Exists(older), "a lock older than the command was removed");
+    }
+
     [Fact]
     public async Task SomethingThatReadsStdin_SeesItsEnd()
     {

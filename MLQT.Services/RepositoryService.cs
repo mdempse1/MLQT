@@ -1403,6 +1403,12 @@ public class RepositoryService : IRepositoryService
     /// began before it may have read the working copy before the change it was told about, so an
     /// invalidation makes the next caller start afresh - and only that one; the rest join it. For
     /// the same reason a query's answer is cached only if nothing was invalidated while it ran.</para>
+    ///
+    /// <para><b>One per working copy, not per repository</b> (B330). The query is of the checkout,
+    /// so two libraries checked out in one tree asked the same question twice, at once - and for Git
+    /// each slow status is followed by an index refresh that takes <c>index.lock</c>, so the two
+    /// raced for it. The cache, the query in flight and the invalidations are all keyed by
+    /// <see cref="WorkingCopyKey"/>.</para>
     /// </remarks>
     public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryId)
     {
@@ -1410,14 +1416,17 @@ public class RepositoryService : IRepositoryService
         Task<List<VcsWorkingCopyFile>>? joined = null;
         long generation;
 
+        // Worked out before the cache lock is taken: it takes the repository list's own lock.
+        var key = WorkingCopyKey(repositoryId);
+
         lock (_workingCopyCacheLock)
         {
-            if (_workingCopyCache.TryGetValue(repositoryId, out var cached)
+            if (_workingCopyCache.TryGetValue(key, out var cached)
                 && Environment.TickCount64 - cached.Ticks < WorkingCopyCacheLifetimeMs)
                 return cached.Changes;
 
-            generation = WorkingCopyGeneration(repositoryId);
-            if (_workingCopyQueries.TryGetValue(repositoryId, out var inFlight) && inFlight.Generation == generation)
+            generation = WorkingCopyGeneration(key);
+            if (_workingCopyQueries.TryGetValue(key, out var inFlight) && inFlight.Generation == generation)
             {
                 joined = inFlight.Query;
             }
@@ -1426,7 +1435,7 @@ public class RepositoryService : IRepositoryService
                 // Asynchronous continuations, so nothing waiting on this runs on the owner's thread
                 // before the owner has finished with its own answer.
                 owned =new TaskCompletionSource<List<VcsWorkingCopyFile>>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _workingCopyQueries[repositoryId] = (owned.Task, generation);
+                _workingCopyQueries[key] = (owned.Task, generation);
             }
         }
 
@@ -1444,8 +1453,8 @@ public class RepositoryService : IRepositoryService
 
             lock (_workingCopyCacheLock)
             {
-                if (WorkingCopyGeneration(repositoryId) == generation)
-                    _workingCopyCache[repositoryId] = (changes, Environment.TickCount64);
+                if (WorkingCopyGeneration(key) == generation)
+                    _workingCopyCache[key] = (changes, Environment.TickCount64);
             }
 
             owned.SetResult(changes);
@@ -1460,26 +1469,43 @@ public class RepositoryService : IRepositoryService
         {
             lock (_workingCopyCacheLock)
             {
-                if (_workingCopyQueries.TryGetValue(repositoryId, out var current) && current.Query == owned.Task)
-                    _workingCopyQueries.Remove(repositoryId);
+                if (_workingCopyQueries.TryGetValue(key, out var current) && current.Query == owned.Task)
+                    _workingCopyQueries.Remove(key);
             }
         }
     }
 
-    /// <summary>How many times this repository's working-copy status has been invalidated. Read and
-    /// changed only under <see cref="_workingCopyCacheLock"/>.</summary>
-    private long WorkingCopyGeneration(string repositoryId) =>
-        _allWorkingCopiesGeneration + _workingCopyGenerations.GetValueOrDefault(repositoryId);
+    /// <summary>How many times this working copy's status has been invalidated. Read and changed
+    /// only under <see cref="_workingCopyCacheLock"/>.</summary>
+    private long WorkingCopyGeneration(string key) =>
+        _allWorkingCopiesGeneration + _workingCopyGenerations.GetValueOrDefault(key);
+
+    /// <summary>
+    /// What a repository's working-copy status is cached and shared under: its checkout, for a
+    /// repository under version control, so every library in one tree shares one answer (B330). A
+    /// local repository, or one no longer known, is its own.
+    /// </summary>
+    /// <remarks>
+    /// Case-insensitive, as <see cref="GetRepositoriesSharingWorkingCopy"/> matches roots.
+    /// </remarks>
+    private string WorkingCopyKey(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        return repository == null || repository.VcsType == RepositoryVcsType.Local || string.IsNullOrEmpty(repository.VcsRootPath)
+            ? $"repository:{repositoryId}"
+            : $"{repository.VcsType}:{repository.VcsRootPath.ToUpperInvariant()}";
+    }
 
     /// <inheritdoc/>
     public void InvalidateWorkingCopyCache(string? repositoryId = null)
     {
+        var key = repositoryId == null ? null : WorkingCopyKey(repositoryId);
         lock (_workingCopyCacheLock)
         {
-            if (repositoryId != null)
+            if (key != null)
             {
-                _workingCopyCache.Remove(repositoryId);
-                _workingCopyGenerations[repositoryId] = _workingCopyGenerations.GetValueOrDefault(repositoryId) + 1;
+                _workingCopyCache.Remove(key);
+                _workingCopyGenerations[key] = _workingCopyGenerations.GetValueOrDefault(key) + 1;
             }
             else
             {

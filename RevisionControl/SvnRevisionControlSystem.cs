@@ -211,7 +211,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
                 RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
-                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
+                if (!SvnCli.RunOnWorkingCopy(checkoutPath, "switch", targetUrl, checkoutPath).Success)
                 {
                     RevisionControlLogger.Error("UpdateExistingCheckout",
                         new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
@@ -220,7 +220,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             }
 
             var rev = SvnCli.NormalizeRevision(revision);
-            return SvnCli.Run("update", "-r", rev, checkoutPath).Success;
+            return SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, checkoutPath).Success;
         }
         catch (Exception ex)
         {
@@ -267,7 +267,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (wcInfo != null && !UrlEquals(wcInfo.Url, targetUrl))
             {
                 RevisionControlLogger.Debug($"Switching workspace from {wcInfo.Url} to {targetUrl}");
-                if (!SvnCli.Run("switch", targetUrl, checkoutPath).Success)
+                if (!SvnCli.RunOnWorkingCopy(checkoutPath, "switch", targetUrl, checkoutPath).Success)
                 {
                     RevisionControlLogger.Error("UpdateRevisionInPlace",
                         new InvalidOperationException($"SVN switch from {wcInfo.Url} to {targetUrl} failed"));
@@ -280,7 +280,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             //    with one line per file on a 30000-file working copy.
             updateSw.Start();
             var rev = SvnCli.NormalizeRevision(revision);
-            var update = SvnCli.Run("update", "-r", rev, "--quiet", checkoutPath);
+            var update = SvnCli.RunOnWorkingCopy(checkoutPath, "update", "-r", rev, "--quiet", checkoutPath);
             updateSw.Stop();
 
             if (!update.Success)
@@ -322,7 +322,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return false;
 
             // Revert all changes recursively.
-            SvnCli.Run("revert", "-R", checkoutPath);
+            SvnCli.RunOnWorkingCopy(checkoutPath, "revert", "-R", checkoutPath);
 
             // Remove all unversioned files and directories (deeper paths first).
             var unversioned = GetStatusEntries(checkoutPath)
@@ -378,7 +378,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             result.OldRevision = info.Revision.ToString();
 
-            var update = SvnCli.Run("update", "-r", "HEAD", repositoryPath);
+            var update = SvnCli.RunOnWorkingCopy(repositoryPath, "update", "-r", "HEAD", repositoryPath);
             if (!update.Success)
             {
                 result.ErrorMessage = update.FailureMessage("SVN update failed.");
@@ -429,7 +429,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 }
                 else
                 {
-                    SvnCli.Run("revert", fullPath);
+                    SvnCli.RunOnWorkingCopy(repositoryPath, "revert", fullPath);
                 }
             }
 
@@ -932,7 +932,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            var switched = SvnCli.Run("switch", branchUrl, repositoryPath);
+            var switched = SvnCli.RunOnWorkingCopy(repositoryPath, "switch", branchUrl, repositoryPath);
             if (!switched.Success)
             {
                 result.ErrorMessage = switched.FailureMessage("SVN switch failed.");
@@ -1411,7 +1411,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             try
             {
                 File.WriteAllLines(targetsFile, pathsToCommit);
-                commit = SvnCli.Run("commit", "--targets", targetsFile, "-m", message);
+                commit = SvnCli.RunOnWorkingCopy(repositoryPath, "commit", "--targets", targetsFile, "-m", message);
             }
             finally
             {
@@ -1502,7 +1502,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Postpone all conflicts; the user resolves them via the dialog. With --accept
             // postpone the CLI exits 0 even when conflicts occur, so we classify the outcome
             // from the working-copy status afterwards rather than from an exception.
-            var merge = SvnCli.Run("merge", sourceUrl, repositoryPath, "--accept", "postpone");
+            var merge = SvnCli.RunOnWorkingCopy(repositoryPath, "merge", sourceUrl, repositoryPath, "--accept", "postpone");
 
             var textConflictedFiles = new List<string>();
             var treeConflictedFiles = new List<string>();
@@ -1569,7 +1569,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 _ => "postpone"
             };
 
-            var resolve = SvnCli.Run("resolve", "--accept", accept, filePath);
+            var resolve = SvnCli.RunOnWorkingCopy(repositoryPath, "resolve", "--accept", accept, filePath);
             result.Success = resolve.Success;
             if (!result.Success)
                 result.ErrorMessage = resolve.FailureMessage("SVN resolve returned false.");
