@@ -79,6 +79,69 @@ public class CodeReviewDiffSourceTests
         Assert.Equal(model.Definition.ModelicaCode, CodeReview.WorkingCopyText(model, graph));
     }
 
+    // ── the HEAD side (B344) ──────────────────────────────────────────────────────
+
+    /// <summary>Two nested classes of one short name, the shape of MSL's <c>Media/package.mo</c>.</summary>
+    private static readonly string TwoOfOneName = Lf("""
+        package Media "media"
+          package Air "air"
+            function setState "air's"
+              input Real p;
+            end setState;
+          end Air;
+          package Water "water"
+            function setState "water's"
+              input Real p;
+            end setState;
+          end Water;
+        end Media;
+        """);
+
+    [Theory]
+    [InlineData("Media.Air.setState", "air's")]
+    [InlineData("Media.Water.setState", "water's")]
+    public void TheHeadSideIsTheClassOfTheSameFullName(string id, string description)
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", TwoOfOneName);
+        var node = graph.GetNode<ModelNode>(id)!;
+
+        var head = CodeReview.HeadSideOf(TwoOfOneName, node);
+
+        Assert.StartsWith("function setState \"" + description + "\"", head);
+    }
+
+    [Fact]
+    public void AClassMovedSinceHeadIsFoundByItsShortNameWhenThatIsUnambiguous()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "package.mo", Lf("""
+            package Q
+              model M "moved here"
+              end M;
+            end Q;
+            """));
+        var node = graph.GetNode<ModelNode>("Q.M")!;
+
+        var head = CodeReview.HeadSideOf(Lf("""
+            package P
+              model M "was here"
+              end M;
+            end P;
+            """), node);
+
+        Assert.StartsWith("model M \"was here\"", head);
+    }
+
+    [Fact]
+    public void ANewFileHasAnEmptyHeadSide()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "M.mo", "model M end M;");
+
+        Assert.Equal("", CodeReview.HeadSideOf(null, graph.ModelNodes.First()));
+    }
+
     [Fact]
     public void AnElementPrefixIsPutBackOnBothForTheDiff()
     {

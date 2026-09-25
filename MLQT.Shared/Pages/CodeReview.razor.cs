@@ -149,6 +149,9 @@ public partial class CodeReview : IAsyncDisposable
     private string? _originalModelCode;
     private string? _modifiedModelCode;
     private bool _isLoadingDiff;
+
+    /// <summary>The class the latest diff load is for — the one whose finishing clears the spinner.</summary>
+    private ModelNode? _diffLoadNode;
     private DiffViewMode _diffViewMode = DiffViewMode.Unified;
     private string? _currentRepositoryId;
     private string? _currentRelativeFilePath;
@@ -811,60 +814,93 @@ public partial class CodeReview : IAsyncDisposable
         _isLoadingDiff = true;
         StateHasChanged();
 
+        // Everything the load reads is taken now, on the dispatcher (B344). The task used to read
+        // _currentModelNode as it ran, so switching class mid-load diffed the new class's name
+        // against the old class's file - and wrote the old class's HEAD into _originalModelCode
+        // after the switch had cleared it, so the next SetViewMode found it set and did not reload.
+        var node = _currentModelNode;
+        _diffLoadNode = node;
+        var repositoryId = _currentRepositoryId;
+        var relativePath = _currentRelativeFilePath;
+        var graph = LibraryDataService.CombinedGraph;
+
+        string original;
+        string modified;
         try
         {
-            await Task.Run(() =>
+            (original, modified) = await Task.Run(() =>
             {
-                // Get the file content at HEAD
-                var headFileContent = RepositoryService.GetFileContentAtRevision(
-                    _currentRepositoryId, _currentRelativeFilePath, "HEAD");
-
-                // Extract the raw original model code from HEAD
-                if (!string.IsNullOrEmpty(headFileContent))
-                {
-                    try
-                    {
-                        // Parse the HEAD file and find the specific model by name
-                        var headModels = ModelicaParserHelper.ExtractModels(headFileContent);
-                        var matchingModel = headModels.FirstOrDefault(m =>
-                            m.Name == _currentModelNode.Definition.Name);
-
-                        if (matchingModel != null)
-                        {
-                            var prefix = matchingModel.ElementPrefix;
-                            _originalModelCode = string.IsNullOrEmpty(prefix)
-                                ? matchingModel.SourceCode
-                                : prefix + " " + matchingModel.SourceCode;
-                        }
-                        else
-                        {
-                            _originalModelCode = headFileContent;
-                        }
-                    }
-                    catch
-                    {
-                        // HEAD version may not parse correctly
-                        _originalModelCode = headFileContent;
-                    }
-                }
-                else
-                {
-                    // File doesn't exist at HEAD (new file)
-                    _originalModelCode = "";
-                }
-
-                _modifiedModelCode = WorkingCopyText(_currentModelNode, LibraryDataService.CombinedGraph);
+                var headFileContent = RepositoryService.GetFileContentAtRevision(repositoryId, relativePath, "HEAD");
+                return (HeadSideOf(headFileContent, node), WorkingCopyText(node, graph));
             });
         }
         catch (Exception ex)
         {
-            _originalModelCode = $"Error loading HEAD version: {ex.Message}";
-            _modifiedModelCode = _currentModelNode?.Definition.ModelicaCode ?? "";
+            original = $"Error loading HEAD version: {ex.Message}";
+            modified = node.Definition.ModelicaCode ?? "";
         }
-        finally
+
+        await InvokeAsync(() =>
         {
-            _isLoadingDiff = false;
-            await InvokeAsync(StateHasChanged);
+            // The spinner belongs to the latest load, whichever class that is for.
+            if (ReferenceEquals(_diffLoadNode, node))
+            {
+                _diffLoadNode = null;
+                _isLoadingDiff = false;
+            }
+
+            // The user has moved on: this is the diff of a class no longer shown, and it must not
+            // be taken for the one that is.
+            if (ReferenceEquals(_currentModelNode, node))
+            {
+                _originalModelCode = original;
+                _modifiedModelCode = modified;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>
+    /// The HEAD side of a class diff: <paramref name="node"/> as it was in its file at HEAD.
+    ///
+    /// <para><b>Matched by full name within the file</b> (B344). It was matched on the short name,
+    /// so in a file with several nested classes of one name — MSL's <c>Media/package.mo</c> has a
+    /// <c>setState_pTX</c> in each medium — the diff was against whichever came first. Only when
+    /// the full name is not there (the class was moved or renamed since) does a short name stand
+    /// in, and then only if it is unambiguous.</para>
+    ///
+    /// <para>Empty when the file is not at HEAD, which is a new file; the whole file when the class
+    /// cannot be found in it or the file does not parse, so the user still sees what HEAD had.</para>
+    /// </summary>
+    internal static string HeadSideOf(string? headFileContent, ModelNode node)
+    {
+        if (string.IsNullOrEmpty(headFileContent))
+            return "";
+
+        try
+        {
+            var headModels = ModelicaParserHelper.ExtractModels(headFileContent);
+            var match = headModels.FirstOrDefault(m =>
+                string.Equals(GraphBuilder.GenerateModelId(m.ParentModelName, m.Name), node.Id, StringComparison.Ordinal));
+
+            if (match is null)
+            {
+                var sameName = headModels.Where(m => m.Name == node.Definition.Name).Take(2).ToList();
+                match = sameName.Count == 1 ? sameName[0] : null;
+            }
+
+            if (match is null)
+                return headFileContent;
+
+            return string.IsNullOrEmpty(match.ElementPrefix)
+                ? match.SourceCode
+                : match.ElementPrefix + " " + match.SourceCode;
+        }
+        catch
+        {
+            // HEAD version may not parse correctly
+            return headFileContent;
         }
     }
 
