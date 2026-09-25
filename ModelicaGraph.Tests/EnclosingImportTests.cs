@@ -107,6 +107,97 @@ public class EnclosingImportTests
         Assert.Contains("Modelica.Units.SI.Time", Dependencies(graph, "Modelica.Blocks.Continuous.LimPID"));
     }
 
+    // ── a list import makes the listed names visible and no others (B348) ──
+
+    /// <summary><see cref="Msl"/> with <c>Current</c> beside <c>Time</c> in SI, and Blocks importing
+    /// only <c>Time</c> from it.</summary>
+    private static DirectedGraph MslWithListImport(string limPidBody)
+    {
+        var graph = Msl(limPidBody);
+        graph.AddNode(new ModelNode("Modelica.Units.SI.Current", "Current", "type Current = Real;"));
+        graph.GetNode<ModelNode>("Modelica.Blocks")!.Definition.ModelicaCode =
+            "package Blocks\n  import Modelica.Units.SI.{Time};\nend Blocks;";
+        return graph;
+    }
+
+    [Fact]
+    public void AListImport_ResolvesTheListedName_ThroughBothResolvers()
+    {
+        // The positive control for the two below.
+        var graph = MslWithListImport("block LimPID\n  parameter Time Ti = 0.5;\nend LimPID;");
+
+        Assert.Equal("Modelica.Units.SI.Time",
+            TypeResolver.Resolve(graph, "Modelica.Blocks.Continuous.LimPID", "Time")?.Id);
+        Assert.Contains("Modelica.Units.SI.Time", Dependencies(graph, "Modelica.Blocks.Continuous.LimPID"));
+    }
+
+    [Fact]
+    public void AListImport_DoesNotMakeAnUnlistedNameVisible()
+    {
+        // Read as a wildcard, `import SI.{Time};` made SI.Current visible as Current.
+        var graph = MslWithListImport("block LimPID\n  parameter Current i = 0.5;\nend LimPID;");
+
+        Assert.Null(TypeResolver.Resolve(graph, "Modelica.Blocks.Continuous.LimPID", "Current"));
+        Assert.DoesNotContain("Modelica.Units.SI.Current", Dependencies(graph, "Modelica.Blocks.Continuous.LimPID"));
+    }
+
+    [Fact]
+    public void AnEnclosingListImport_DoesNotCaptureANameThatBelongsFurtherOut()
+    {
+        // Modelica.Current is what Current means in LimPID; Blocks' list import names only Time.
+        var graph = MslWithListImport("block LimPID\n  parameter Current i = 0.5;\nend LimPID;");
+        graph.AddNode(new ModelNode("Modelica.Current", "Current", "type Current = Real;"));
+
+        Assert.Equal("Modelica.Current",
+            TypeResolver.Resolve(graph, "Modelica.Blocks.Continuous.LimPID", "Current")?.Id);
+        var dependencies = Dependencies(graph, "Modelica.Blocks.Continuous.LimPID");
+        Assert.Contains("Modelica.Current", dependencies);
+        Assert.DoesNotContain("Modelica.Units.SI.Current", dependencies);
+    }
+
+    [Fact]
+    public void AListImport_ReachesBelowAListedName()
+    {
+        // `import Modelica.Units.{SI};` makes SI visible, and SI.Time with it.
+        var graph = Msl("block LimPID\nend LimPID;");
+        graph.GetNode<ModelNode>("Modelica.Blocks")!.Definition.ModelicaCode =
+            "package Blocks\n  import Modelica.Units.{SI};\nend Blocks;";
+
+        Assert.Equal("Modelica.Units.SI.Time",
+            TypeResolver.Resolve(graph, "Modelica.Blocks.Continuous.LimPID", "SI.Time")?.Id);
+    }
+
+    // ── dependency analysis reads the class's own imports, and only its own (B348) ──
+
+    [Fact]
+    public void AnImportWrittenBelowTheReference_StillApplies()
+    {
+        // An import is in scope for the whole class. Collected as the visit reached it, SI.Time was
+        // resolved before the class's own `import SI = Other;` was seen, through Blocks' SI instead.
+        var graph = Msl("block LimPID\n  parameter SI.Time Ti = 0.5;\n  import SI = Other;\nend LimPID;");
+        graph.AddNode(new ModelNode("Other", "Other", "package Other\nend Other;"));
+        graph.AddNode(new ModelNode("Other.Time", "Time", "type Time = Real;"));
+
+        var dependencies = Dependencies(graph, "Modelica.Blocks.Continuous.LimPID");
+
+        Assert.Contains("Other.Time", dependencies);
+        Assert.DoesNotContain("Modelica.Units.SI.Time", dependencies);
+    }
+
+    [Fact]
+    public void ANestedClassesImport_DoesNotLeakIntoTheEnclosingClass()
+    {
+        var graph = Msl(
+            "block LimPID\n  model Inner\n    import SI = Other;\n  end Inner;\n  parameter SI.Time Ti = 0.5;\nend LimPID;");
+        graph.AddNode(new ModelNode("Other", "Other", "package Other\nend Other;"));
+        graph.AddNode(new ModelNode("Other.Time", "Time", "type Time = Real;"));
+
+        var dependencies = Dependencies(graph, "Modelica.Blocks.Continuous.LimPID");
+
+        Assert.Contains("Modelica.Units.SI.Time", dependencies);
+        Assert.DoesNotContain("Other.Time", dependencies);
+    }
+
     [Fact]
     public void AnAlias_IsMatchedAsAWholeSegment()
     {

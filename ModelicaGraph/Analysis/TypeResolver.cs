@@ -205,10 +205,22 @@ public static class TypeResolver
         if (stmt.EndsWith(".*", StringComparison.Ordinal))
             return graph.GetNode<ModelNode>($"{stmt[..^2]}.{name}");
 
-        // Explicit list: "Modelica.Units.SI.{Voltage, Current}"
+        // Explicit list: "Modelica.Units.SI.{Voltage, Current}" is `import Modelica.Units.SI.Voltage;
+        // import Modelica.Units.SI.Current;`, and makes those two names visible and no others. Read as
+        // a wildcard it made every class in SI visible, so an enclosing package's list import captured
+        // names that belong further out, and the rules disagreed with dependency analysis, whose
+        // ReferenceResolver.AddImport has always expanded the list exactly (B348).
         var listIdx = stmt.IndexOf(".{", StringComparison.Ordinal);
         if (listIdx >= 0)
-            return graph.GetNode<ModelNode>($"{stmt[..listIdx]}.{name}");
+        {
+            var package = stmt[..listIdx];
+            var members = stmt[(listIdx + 2)..].TrimEnd('}')
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            foreach (var member in members)
+                if (ModelicaName.ReRoot(name, member, $"{package}.{member}") is { } listed)
+                    return graph.GetNode<ModelNode>(listed);
+            return null;
+        }
 
         // Plain: "Modelica.Units.SI" — the last segment becomes the implicit alias.
         var lastDot = stmt.LastIndexOf('.');

@@ -91,24 +91,23 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
         _classDepth++;
         try
         {
+            // The class's own imports, read before anything in it is visited. An import is in scope
+            // for the whole class wherever it is written, and a nested class's imports are that
+            // class's scope, not this one's. Collected as the visit reached them, a reference written
+            // above its import missed it and a nested class's import leaked out to every reference
+            // after it (B348).
+            if (_classDepth == 1)
+            {
+                _imports.Clear();
+                _imports.AddRange(ReferenceResolver.CollectClassImports(context));
+            }
+
             return base.VisitClass_definition(context);
         }
         finally
         {
             _classDepth--;
         }
-    }
-
-    /// <summary>
-    /// Visit import clauses to build the import list for dependency resolution.
-    /// </summary>
-    public override object? VisitImport_clause([NotNull] modelicaParser.Import_clauseContext context)
-    {
-        // The shared reading, so dependency analysis and the reference locator agree on what an
-        // import makes visible - this was a copy of it, and it missed the list form.
-        ReferenceResolver.AddImport(_imports, context);
-
-        return base.VisitImport_clause(context);
     }
 
     /// <summary>
