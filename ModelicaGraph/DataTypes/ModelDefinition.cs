@@ -102,6 +102,17 @@ public class ModelDefinition
     public bool IconRendered { get; set; }
 
     /// <summary>
+    /// Which generation of the loaded libraries <see cref="IconSvg"/> was rendered against (B349).
+    /// </summary>
+    /// <remarks>
+    /// An icon is drawn from the class's base classes as well as its own code, often in another
+    /// library, so the answer also goes stale when a library arrives or leaves or any class is
+    /// reloaded - which this class's code setter cannot see. The library data service counts those
+    /// and treats an icon stamped with an older count as not rendered.
+    /// </remarks>
+    public int IconGeneration { get; set; }
+
+    /// <summary>
     /// Antlr4 code context for the class definition.
     /// Lazily parsed on first access via <see cref="EnsureParsed"/>.
     /// </summary>

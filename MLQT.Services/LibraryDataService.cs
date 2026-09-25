@@ -84,6 +84,10 @@ public class LibraryDataService : ILibraryDataService
             _descendantParserErrorsGeneration++;
         }
 
+        // Every rendered icon too: an icon is drawn from base classes that may be in the library
+        // that just arrived or left, or in the class just reloaded (B349).
+        Interlocked.Increment(ref _iconGeneration);
+
         if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
     }
@@ -1178,6 +1182,9 @@ public class LibraryDataService : ILibraryDataService
     private int _descendantParserErrorsGeneration;
     private readonly object _descendantParserErrorsLock = new();
 
+    /// <summary>Counts the changes that can make a rendered icon stale (B349).</summary>
+    private int _iconGeneration;
+
     /// <summary>A test's way in between the snapshot and the assignment.</summary>
     internal Action? AfterParserErrorSnapshot { get; set; }
 
@@ -1299,7 +1306,13 @@ public class LibraryDataService : ILibraryDataService
         // real project: 1,477ms of a 1,522ms refresh, repeatedly, which is the startup stutter
         // (B258). The answer is kept on the definition and discarded with the rest of the derived
         // state when the class's code changes.
-        if (model.Definition.IconRendered)
+        //
+        // Kept against a generation as well as the class's own code (B349): the render resolves
+        // base classes, often in other libraries, so a library arriving or leaving or any class being
+        // reloaded can change the answer. Only the classes a tree actually shows are rendered again.
+        var generation = Volatile.Read(ref _iconGeneration);
+        var definition = model.Definition;
+        if (definition.IconRendered && definition.IconGeneration == generation)
         {
             model.LibraryId = library.Id;
             return;
@@ -1321,15 +1334,18 @@ public class LibraryDataService : ILibraryDataService
             var dotIdx = model.Id.LastIndexOf('.');
             var initialPackageContext = dotIdx > 0 ? model.Id[..dotIdx] : null;
 
-            iconSvg = model.Definition.ParsedCode != null
+            // Read once: a concurrent release can null the tree between a check and a second read
+            // (B291's shape), and the render then throws.
+            var parsed = definition.ParsedCode;
+            iconSvg = parsed != null
                 ? IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-                    model.Definition.ParsedCode,
+                    parsed,
                     baseClassName => ResolveBaseClass(baseClassName, model),
                     size: 20,
                     fileNameResolver: fileName => ResolveImageFileName(fileName, library),
                     initialPackageContext: initialPackageContext)
                 : IconSvgRenderer.ExtractAndRenderIconWithInheritance(
-                    model.Definition.ModelicaCode,
+                    definition.ModelicaCode,
                     baseClassName => ResolveBaseClass(baseClassName, model),
                     size: 20,
                     fileNameResolver: fileName => ResolveImageFileName(fileName, library),
@@ -1337,12 +1353,16 @@ public class LibraryDataService : ILibraryDataService
         }
         catch (Exception ex)
         {
-            // Icon extraction failed, will use default icon
+            // Not remembered as "no icon" (B349): a render that threw has no answer, and the next
+            // refresh tries again. Whatever was drawn before stays on screen meanwhile.
             Debug("LibraryDataService", $"Icon extraction failed for model {model.Id}: {ex.Message}");
+            model.LibraryId = library.Id;
+            return;
         }
 
         model.IconSvg = iconSvg;
-        model.Definition.IconRendered = true;
+        definition.IconGeneration = generation;
+        definition.IconRendered = true;
         model.LibraryId = library.Id;
     }
 
