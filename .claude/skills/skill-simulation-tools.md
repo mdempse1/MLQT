@@ -126,6 +126,15 @@ other Dymola on the same port. The factory builds the session and starts Dymola 
 the constructor can wait out a busy Dymola for 30 seconds, synchronously, and a caller on the UI thread
 used to arrive there holding the window.
 
+**Change both tools in one piece, and use the result before calling it done.** A question answered
+for one tool and left alone for its sibling reads as agreement — that is how B170 was reported three
+times in two days, and why the time limit (B263) was built across both at once. And the live-tool
+suites run in no CI job, so the fakes prove the services' promises but not that a tool does what the
+fake says: the day after B170/B171 shipped, pressing the button found four more defects (a clean
+Dymola check reporting it had checked nothing, omc handed a class's own file instead of the library's
+`package.mo`, seconds of silence after the click, a headless `omc` outliving MLQT). Run
+`build/run-all-tests.ps1` on a machine with the tools, and then use the feature.
+
 ### The factory never ends a Dymola (B331)
 `DymolaInterfaceFactory` (what MLQT registers) asks a cached session `GetSessionStateAsync()` —
 `Answering`, `Busy`, `Starting` or `Gone` — never a bare ping: a Dymola still working on a check

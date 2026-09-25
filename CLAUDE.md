@@ -399,7 +399,8 @@ status after a VCS operation *in the application*), and anything showing the win
 ## Planning and Design Notes
 
 In `Design/`, deliberately outside `Documentation/`: these are not user documentation, they are the
-forward plan and the working list. **Read both before starting anything substantial.**
+forward plan and the working list. **Read both before starting anything substantial.** These three
+are the whole of `Design/` — no phase is being planned in a note of its own at present.
 
 | Document | Covers |
 |----------|--------|
@@ -415,8 +416,12 @@ file's table structure and id uniqueness.
 **The per-phase design notes were retired on 2026-09-17**, once phases 1–7 had all shipped. What
 they held that outlives them is now in the code, in `CODING_GUIDELINES.md`, and in the skill files —
 `skill-encrypted-libraries.md`, `skill-desktop-host.md` and `skill-gui-testing.md` are the three
-written specifically to carry that material. Git history has the notes themselves if the reasoning
-behind a delivered decision is ever needed.
+written specifically to carry that material. **Phase 1 (release feedback) followed on 2026-09-25**:
+its plan (`phase-1-release-feedback.md`) and the viewer-fidelity analysis behind its central decision
+(`analysis-viewer-fidelity.md`) were retired into `CODING_GUIDELINES.md` (§Testing and §Working a
+Defect), the skills, and the code — the classifier, `ClassSource` and `CodeReview.Show` carry their
+own measurements. Git history has the notes themselves if the reasoning behind a delivered decision
+is ever needed.
 
 **Write a design note for a phase that has not shipped**, not for one that has: a note describing
 what was planned rather than what exists is worse than no note, and every review of this repository

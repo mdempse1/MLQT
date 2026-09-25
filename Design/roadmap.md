@@ -15,10 +15,30 @@ Dymola/OpenModelica remains the only touch-point with those tools, and it stays 
 
 ---
 
-## Where we are (2026-09-17)
+## Where we are (2026-09-25)
 
-**Phases 1–7 of the original sequencing are shipped.** The CI/CD toolchain is finished and the
-desktop host migration is done:
+**Phase 1, release feedback, has shipped.** It took the first end-to-end use of the Photino release
+(B168–B203) and everything that working on it opened (B204–B301), grouped into work packages WP0–WP16
+by shared root cause; all sixteen are complete. What it delivered:
+
+| Delivered | What it means now |
+|---|---|
+| **The viewer shows the file** | Code Review, both diff views and the MCP source tool show the user's own text coloured in place by `ModelicaTokenClassifier`; `ModelicaRenderer` runs on the save path only. A finding's line is the viewer's line, and hiding annotations or nested classes is `SourceElision` |
+| **A usable Code Review page** | Resizable panes, a virtualised findings list, AND search with a rule filter, reveal-in-tree, back/forward over the selection, a count of what the filters left, and the first paint of a very large class without waiting for its parse |
+| **The kind of change** | `ModelicaParser/Comparison/` tells a simulation-affecting edit from a graphical or documentation one; the library browser marks **M** / **G** and filters by it |
+| **Correctness under the graph** | An unparseable file keeps a placeholder and its diagnostic; one watcher per watched path; `modelica://` resolves against the referencing library's copy, then the readable one; an encrypted library is never loaded beside source for the same library; `ModelicaLanguage` keeps the built-ins out of the graph |
+| **Rules and formatting** | `ComponentsBeforeClasses`, `DeclarationOrder`, `SingleFilePackage` and a match-Dymola package-order option; excision instead of re-rendering in the trimmer; every write keeps its file's final newline and line endings; formatting exclusion written as `__MLQT(format=false)` |
+| **Performance** | A Claytex check went from 6m51s to about 65s with identical findings: cached ancestry and unit lookups shared by the rule and coverage, keyword reads from terminals only, a linear grammar for comment runs, server GC in every host, and a narrowed second `loadSelector` pass |
+| **External tools and revision control** | A result dialog, dead-session recovery, a time limit per tool and Cancel reaching a running check, for both Dymola and OpenModelica; tags and detached HEAD, history diffs against the predecessor, and revision content decoded by MLQT's encoding funnel |
+| **MCP** | `get_diagram_image` renders a whole diagram so an agent can see what it drew; an encrypted class returns the members recovered from its documentation; `get_class_source` elides rather than re-renders, so its lines match the findings |
+| **A suite that tells the truth** | One settings double held to a contract, `build/run-mutation.ps1` and `survivor-map.py`, a journey host that isolates journeys, and CI pinned off the floating Ubuntu label |
+
+**Then the end-of-branch review of 2026-09-25 opened B302–B369** — eight reviewers reading the whole
+branch against `main`, one per area. Those items are being worked through now, before the branch
+merges; the list and each item's state are in [backlog.md](backlog.md).
+
+**Phases 1–7 of the original sequencing shipped before that.** The CI/CD toolchain is finished and
+the desktop host migration is done:
 
 | Delivered | What it means now |
 |---|---|
@@ -32,11 +52,14 @@ desktop host migration is done:
 | **Photino desktop host** | MLQT runs on **Windows and Linux** from one `net10.0` project with no .NET workload; MAUI is deleted; one installer per platform carries the GUI, the CLI and the MCP server |
 
 Seventeen end-to-end reviews of the CI/CD work and the two phase-7 branches opened and closed
-**B1–B167**. Three of those ids are carried forward in [backlog.md](backlog.md) with work still
-attached; everything else is done. The per-phase design notes were retired on 2026-09-17 once every
-phase they described had shipped — what outlives them is in the code, in
-[CODING_GUIDELINES.md](../CODING_GUIDELINES.md), and in `.claude/skills/`
-(`skill-encrypted-libraries.md`, `skill-desktop-host.md`, `skill-gui-testing.md`).
+**B1–B167**. Two of those ids are carried forward in [backlog.md](backlog.md) — B152 (the
+screenshots that stay photographs) and B166 (a finding-count variance that has not recurred) — and
+everything else is done. From phase 1, only B198 (a repository that once did not load until restart,
+not reproduced since) is still open. The per-phase design notes were retired on 2026-09-17 once every
+phase they described had shipped, and phase 1's plan and its viewer-fidelity analysis followed on
+2026-09-25 — git history has both. What outlives them is in the code, in
+[CODING_GUIDELINES.md](../CODING_GUIDELINES.md) (its Testing and Working a Defect sections), and in
+`.claude/skills/`.
 
 **What is not done from phase 7:** macOS (7b-9), deferred and unsized — nothing in the plan assumed
 it and no macOS machine has been mentioned as available. Code signing (no supplier decided, so both
@@ -52,72 +75,36 @@ release testing produced a list of its own. The delivered phases have been remov
 renumbered. **Phase numbers and the `§` theme numbers below are separate** — a phase is an agreed
 slice of work in time, a theme is a place to file a candidate.
 
-### 1. Release feedback — issues found testing the new build
+### 1. Release feedback — ✅ shipped 2026-09-24
 
-**The next phase, and it comes before the Wave-2 analyses deliberately.** The Photino release was the
-first build a user exercised end to end on both platforms, and it produced 36 items: mostly UI, not
-exclusively. Several are correctness defects with no UI in them at all — a file that fails to parse
-disappearing from the graph without a diagnostic, external resources attaching to the wrong
-directory, a newly added repository not loading its library.
+Taken before the Wave-2 analyses deliberately, for the reason that put the CI toolchain ahead of the
+migration: finish what is in front of the user before adding to it. A new analysis wave would have
+landed on a Code Review page whose findings list ran off the screen, did not scroll to the line it
+named and could not be filtered by rule. What it delivered is summarised under *Where we are*; the
+items are in [backlog.md](backlog.md), and the plan that grouped them into WP0–WP16 was retired on
+2026-09-25 (git history has it).
 
-The argument for going first is the same one that put the CI toolchain ahead of the migration:
-finish what is in front of the user before adding to it. A new analysis wave lands on a Code Review
-page whose findings list runs off the bottom of the screen, does not scroll to the line it names, and
-cannot be filtered by rule — every new rule makes that worse.
+What it leaves as candidates rather than work:
 
-The items are **B168–B203** in [backlog.md](backlog.md), grouped by area: findings and the Code
-Review page; library browser and navigation; projects, repositories and startup; analysis
-correctness; rules and formatting; external tools; MCP; revision control; the build. **B143 was dealt
-with first and separately** — `nightly-webkit.yml` was triggered by hand on 2026-09-17, having never
-run at all, and passed with 57 WebKit journeys executed and none skipped.
+- **A formatting preview beside *Format All Files*.** The viewer deliberately has no formatted mode
+  (the reasoning is on `CodeReview.Show`); the one question such a mode answered — *what will turning
+  formatting on do to my files?* — belongs in repository settings, if anywhere. A `mlqt` run and a
+  diff answer it today.
+- **More callers of the change classifier.** `ModelicaParser/Comparison/` was built for the browser's
+  marker; the pull-request review, the CLI and the MCP server are the obvious next ones.
+- **The peek half of B197** — hovering an identifier to see its class. The classifier's `TYPE` and
+  `NAME` tags make it possible; nothing resolves a token to a class yet.
 
-**The plan is [phase-1-release-feedback.md](phase-1-release-feedback.md)**, which regroups those items
-into work packages by shared root cause rather than by area (WP0–WP16; WP0–WP5, WP7, WP8 and WP10–WP16 are done, WP13–WP15 were added on 2026-09-21, and WP16 on 2026-09-24), and records the eleven root causes established while planning — two of which change what the
-fix is.
+**How a phase is kept whole**, which this one learned twice: every open item names a work package or
+is a roadmap candidate. An item filed as "separable at any point" is never scheduled once the package
+beside it ships, and one named only in a package's prose is counted by no item list — B257, B267 and
+B268 each escaped one of those two ways. Check it when items are opened, not only when a package
+closes.
 
-The phase has grown since: **B204–B212** while fixing and confirming the first set, **B213–B218**
-on 2026-09-18 from the one decision that shapes it, **B230–B237** on 2026-09-19 from running it, and
-**B238–B250** on 2026-09-19/20 — half from the work itself and half from a user exercising what it
-had just shipped, which is the more useful half.
+### 2. Wave-2 analyses — next
 
-**B233 was outside the phase until 2026-09-20**, when using the feature showed the case it leaves
-behind is the common one: a `connect(...)` equation carries its annotation on the same line, so
-hiding annotations changes nothing in an equation section. **✅ Shipped the same day in WP11**, and
-the measurement that decided it is worth keeping: over 8,367 files, 31.6% of non-blank
-equation-section lines carry an annotation and 62% of those were left on screen. What follows is the
-reasoning that put it outside the phase, which the numbers overturned.
-
-**B233** — an annotation sharing a line with real
-code survives "hide annotations", because `ElisionFinder` removes a construct as a unit or not at
-all. That default is right (dropping whole lines would leave the user reading
-`Real x "d" annotation (Placement(`), and it already hides the bulk: 41–44% of lines sit wholly
-inside an annotation. What remains is the inline `Placement` on declarations, which is exactly the
-noise the toggle was asked about. Doing it properly means splicing **markup rather than source** —
-the elision applies to highlighted lines, so a cut at a character offset can land inside a tag — and
-the likely shape is the classifier exposing where each token's markup begins so a line can be
-rebuilt from whole tags. **Measure what fraction of annotations this actually leaves before
-committing to that**, which is why it is a candidate here and not a phase-1 item.
-
-Three of the items are larger than the rest and worth naming here rather than only in the table:
-
-- **B213–B215 — the Code Review page shows the file, not a reformat of it.** `ModelicaRenderer` runs
-  on the save path only, when the repository has Apply Formatting on; everything the user reads —
-  the viewer and both diff views — is the bytes on disk or in the revision, coloured by a token
-  classifier driven from the original source. Measured in
-  [analysis-viewer-fidelity.md](analysis-viewer-fidelity.md): ~95% of displayed lines are currently
-  not where the user's editor puts them, the colouring survives without the reformat at 99.8%+, and
-  the fidelity path is ~45% cheaper. It closes B182, B183, B185 and B178 as consequences rather than
-  as work, and WP2 is now built on it.
-- **B184 — make `--changed-from` check only what changed.** Everything still has to be loaded, but
-  re-checking everything then filtering is the largest available win on CI check time.
-- **B191 ✅ — distinguish the kind of change a model carries.** Marking a model as modified is small;
-  telling a simulation-affecting edit from a graphical or documentation one needs a comparison of the
-  parsed classes, and that capability is useful well beyond the marker. **Shipped 2026-09-21 as
-  `ModelicaParser/Comparison/`**, which reduces a class to what it means and what it says and
-  compares the two against its committed self. The marker is one caller of it; the pull-request
-  review, the CLI and the MCP server are the obvious others.
-
-### 2. Wave-2 analyses
+**The next phase**, once the review items opened on 2026-09-25 (B302–B369) are worked through and
+the branch has merged.
 
 The confidence-aware resolver, then broken references, connection integrity, deprecated-API usage,
 cyclic-dependency detection and external-resource validation. See §2 below for the three-state

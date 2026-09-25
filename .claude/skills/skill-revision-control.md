@@ -10,6 +10,15 @@ The RevisionControl project is a standalone, reusable library for integrating wi
 - Enable comparing different revisions of a Modelica library from version control
 - Provide a reusable component for Git and SVN operations
 
+**It has no project references, deliberately** — it is the one assembly that knows nothing about
+Modelica. So file content at a revision, and a conflict's two sides, come back as **bytes**
+(`GetFileBytesAtRevision`, `GetConflictVersions`), and MLQT decodes them in
+`MLQT.Services.Helpers.VcsFileText` through the same `ModelicaFileEncoding` funnel it uses on disk
+(B240). A version control system stores bytes and what they mean is the caller's question; decoding
+inside this assembly (`File.ReadAllText` on SVN's sidecars, `Blob.GetContentText()` in Git) showed a
+Windows-1252 library's accented characters as replacement characters. Do not add a member that
+returns a file's content as a string.
+
 ## Key Interface
 
 ```csharp

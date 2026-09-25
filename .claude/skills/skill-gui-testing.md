@@ -76,6 +76,10 @@ Concretely, and each of these was real:
   regex, and both tests still passed. A heredoc is not a safe way to write source containing
   backslashes, and the failure is silent exactly where the result still compiles (B115, B124).
 
+- **MudTooltip text is not in the rendered markup.** A B200 test asserted on `"Switch branch"` and
+  passed with the buttons present *and* absent; only the positive control caught it. Find a MudBlazor
+  button by its **icon path constant** (`LibraryBrowserReferenceOnlyTests` does).
+
 **Always write the positive control beside the guard**, so the guard cannot be the reason nothing ran.
 For an exclusion test: assert the fixture still reports *without* the exclusion, or the pair rots into
 two empty sets matching.
@@ -148,6 +152,17 @@ building it **before** a migration rather than during one:
   (B154) was named by it immediately.
 - **An unrecognised `MLQT_JOURNEY_BROWSER` throws rather than falling back**, because a typo that
   silently reverts to Chromium produces a green run that tested nothing.
+- **The journeys share one host, and `AppState` is a singleton across all of them.** Every fixture
+  library is called `Lib`, so every journey produces the same class ids, and every page left open is
+  a live circuit reacting to the next journey's events. That is why a class would not open once
+  other journeys had run (B237). A journey that opens a class calls `ResetLibrariesAsync` first, and
+  `NewPageAsync` closes the page it handed out last — see `TestHostFixture`. The desktop host has
+  one circuit, so none of this is reachable in the product; do not "fix" it there.
+- **When a journey fails, ask what it is looking at before changing what it is looking at.**
+  MainLayout's splitter is on every page and nests around a page's own, so a `.First` locator dragged
+  the outer one and reported the inner one broken (B186). A probe that printed the DOM settled in one
+  run what two rounds of guessing had not. A layout that looks right in a screenshot can still not
+  work — drive it.
 
 ### Playwright's platform gap
 

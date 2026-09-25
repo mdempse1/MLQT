@@ -1295,6 +1295,15 @@ public partial class CodeReview : IAsyncDisposable
     /// colouring never needed the rewrite: it comes from the parse tree, and
     /// <see cref="ModelicaTokenClassifier"/> reads the same tree without touching the text.</para>
     ///
+    /// <para><b>There is deliberately no "formatted" mode</b>, and the rendered path was deleted
+    /// rather than left behind a toggle (decided 2026-09-18). With Apply Formatting on, the file
+    /// already <em>is</em> the renderer's output — a library MLQT has formatted renders 400 of 400
+    /// files byte-identical — so such a mode would only say something new to a user about to turn
+    /// formatting on. That question is "what will this do to my files?", and a preview answering it
+    /// belongs beside <em>Format All Files</em> in repository settings, not here. Findings are not
+    /// shown against a preview, so it would need no line map. The visible cost was accepted
+    /// knowingly: the file's own long lines, tabs and trailing whitespace are shown as they are.</para>
+    ///
     /// <para>With <paramref name="parse"/> false the categories come from the token stream alone:
     /// the text is identical and only the tree's knowledge is missing, so an identifier is not yet
     /// known to be a type or a call and nothing can be hidden. That is the first paint of a class
