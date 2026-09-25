@@ -21,6 +21,12 @@ public class TimeLimitTests
     private const string OmcPath = @"C:\Program Files\OpenModelica1.26.0-64bit\bin\omc.exe";
     private static CancellationToken Test => TestContext.Current.CancellationToken;
 
+    /// <summary>A command that keeps omc busy for half a minute whatever it has cached - loading the
+    /// standard library can take barely a second once it is warm.</summary>
+    private static string LongCommand => OperatingSystem.IsWindows()
+        ? "system(\"ping -n 30 127.0.0.1\")"
+        : "system(\"sleep 30\")";
+
     private static async Task<OpenModelicaInterface> StartedAsync(int port)
     {
         var omc = new OpenModelicaInterface(OmcPath, port) { StartupTimeout = TimeSpan.FromSeconds(30) };
@@ -159,6 +165,32 @@ public class TimeLimitTests
     }
 
     /// <summary>
+    /// B369: disposing a session with a command in flight disposed the socket and the lock under it,
+    /// so its exchange failed on a disposed socket and its release threw on a disposed lock. The
+    /// command is stopped and gives them back first, and says the session was disposed.
+    /// </summary>
+    [Fact]
+    public async Task DisposingWithACommandInFlight_StopsTheCommandFirst()
+    {
+        var omc = await StartedAsync(13140);
+        omc.CommandTimeout = Timeout.InfiniteTimeSpan;
+        var command = omc.SendCommandAsync(LongCommand, Test);
+        await Task.Delay(200, Test);
+
+        var clock = Stopwatch.StartNew();
+        await Task.Run(omc.Dispose, Test);
+        clock.Stop();
+
+        // Disposed by the session, not by a lock or socket pulled from under it: before the fix this
+        // was the SemaphoreSlim's own ObjectDisposedException, thrown from the release in the finally.
+        var failure = await Record.ExceptionAsync(() => command);
+        var disposed = Assert.IsType<ObjectDisposedException>(failure);
+        Assert.Equal(nameof(OpenModelicaInterface), disposed.ObjectName);
+        Assert.False(omc.IsConnected);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"Dispose took {clock.Elapsed}");
+    }
+
+    /// <summary>
     /// B334: omc dying under a command. A REQ socket gives no sign its peer has gone, so this waited
     /// out the whole time limit and reported a timeout - and with no limit, as here, it waited until
     /// somebody pressed Stop. The wait watches the process now.
@@ -171,7 +203,7 @@ public class TimeLimitTests
         var pid = omc.ProcessId ?? throw new InvalidOperationException("omc has no process");
 
         var clock = Stopwatch.StartNew();
-        var command = omc.SendCommandAsync("loadModel(Modelica)", Test);
+        var command = omc.SendCommandAsync(LongCommand, Test);
         await Task.Delay(200, Test);
         Process.GetProcessById(pid).Kill();
 

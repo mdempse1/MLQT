@@ -19,6 +19,12 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     private RequestSocket? _socket;
     private bool _isDisposed;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
+
+    /// <summary>
+    /// Cancelled by <see cref="Dispose"/>, so a command still waiting on omc lets go of the socket
+    /// before it is disposed rather than being torn down underneath (B369).
+    /// </summary>
+    private readonly CancellationTokenSource _lifetime = new();
     private const int DefaultPort = 13027;
     private readonly int _port;
 
@@ -192,10 +198,26 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             throw new InvalidOperationException("Not connected to OMC. Call StartAsync() first.");
         }
 
+        // One token for the caller and for the session's own end: disposing it must be able to stop
+        // a command that would otherwise wait on omc for as long as its limit allows.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+
         // Cancelled while queued: nothing has been sent, so the session is untouched.
-        await _commandLock.WaitAsync(cancellationToken);
         try
         {
+            await _commandLock.WaitAsync(stopping.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(OpenModelicaInterface));
+        }
+
+        try
+        {
+            // Asked again under the lock: the session may have been closed while this waited for it.
+            if (!IsConnected)
+                throw new ObjectDisposedException(nameof(OpenModelicaInterface));
+
             var socket = _socket!;
             var process = _omcProcess;
 
@@ -205,10 +227,12 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             // that never binds its port - or one still starting - held a bare send for as long as it
             // took, and a start-up limit on the receive alone bounded nothing.
             var response = await Task.Run(() => Exchange(
-                socket, command, timeout, cancellationToken, () => process is { HasExited: true }));
+                socket, command, timeout, stopping.Token, () => process is { HasExited: true }));
             if (response is null)
             {
                 Abandon();
+                if (_lifetime.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    throw new ObjectDisposedException(nameof(OpenModelicaInterface));
                 cancellationToken.ThrowIfCancellationRequested();
                 throw new TimeoutException(what == "start"
                     ? $"OpenModelica did not start and answer within {timeout.TotalSeconds:0.#}s; it has been stopped."
@@ -222,7 +246,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             Abandon();
             throw;
         }
-        catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException)
+        catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException
+                                       and not ObjectDisposedException)
         {
             throw new InvalidOperationException($"Failed to send command to OMC: {command}", ex);
         }
@@ -660,22 +685,39 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
 
         _isDisposed = true;
 
-        _socket?.Dispose();
-
-        if (_omcProcess != null && !_omcProcess.HasExited)
+        // A command still in flight - one with no time limit, say, which quit() above could not get
+        // past - is stopped, and the socket and lock are taken from it before they go. Disposing them
+        // underneath it made its exchange fail on a disposed socket and its release throw on a
+        // disposed lock (B369). A slice is 100 ms, so this wait is short.
+        _lifetime.Cancel();
+        var held = _commandLock.Wait(TimeSpan.FromSeconds(2));
+        try
         {
-            try
+            _socket?.Dispose();
+            _socket = null;
+
+            if (_omcProcess != null && !_omcProcess.HasExited)
             {
-                _omcProcess.Kill();
-                _omcProcess.WaitForExit(5000);
+                try
+                {
+                    _omcProcess.Kill();
+                    _omcProcess.WaitForExit(5000);
+                }
+                catch
+                {
+                    // Ignore
+                }
+                _omcProcess.Dispose();
             }
-            catch
-            {
-                // Ignore
-            }
-            _omcProcess.Dispose();
+        }
+        finally
+        {
+            if (held)
+                _commandLock.Release();
         }
 
-        _commandLock.Dispose();
+        // The lock is not disposed: a caller that reached it just as this ran must be able to take
+        // and release it, and learn from IsConnected that the session has gone. It holds nothing that
+        // needs disposing unless its wait handle is asked for, which nothing here does.
     }
 }
