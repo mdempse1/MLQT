@@ -93,13 +93,22 @@ public partial class SettingsUI : IDisposable
         }
     }
 
-    private async Task ApplyPresetUITheme(string themeName)
+    /// <summary>
+    /// Applies a UI preset, re-derives the syntax colours for its light or dark mode, and saves both.
+    /// </summary>
+    /// <remarks>
+    /// Both, because Code Review reads <c>"SyntaxHighlighting"</c> from disk when its tab opens: saving
+    /// only the UI showed light syntax colours after picking Dark, lost the re-derived ones if Save
+    /// Settings was then pressed on another tab, and left the two disagreeing after a restart (B360).
+    /// </remarks>
+    internal async Task ApplyPresetUITheme(string themeName)
     {
         _customUIStyles = ThemePresets.ApplyUiPreset(themeName, _settings.UI);
 
         NavState.ThemeChanged(_settings.UI);
         await ApplyPresetSyntaxTheme(_settings.SyntaxHighlighting.ThemeName);
         await SettingsService.SetAsync("UI", _settings.UI);
+        await SettingsService.SetAsync("SyntaxHighlighting", _settings.SyntaxHighlighting);
     }
 
     // Individual color change handlers — method references are stable across Blazor renders,
