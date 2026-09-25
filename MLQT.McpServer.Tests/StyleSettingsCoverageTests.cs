@@ -147,6 +147,27 @@ public class StyleSettingsCoverageTests
     }
 
     [Fact]
+    public void ToSettings_TreatsAnUnmentionedDefaultOnRuleAsOffToo()
+    {
+        // B322: "a blank settings object" stopped meaning all-off when B241 made SingleFilePackage
+        // default-on, so an explicit rule set ran one rule the caller never asked for. Every
+        // default-on rule, so the next one cannot arrive the same way.
+        var settings = new StyleSettingsInput { ClassHasDescription = true }.ToSettings();
+
+        var defaultOn = RuleCatalog.Configurable.Where(d => d.EnabledByDefault).ToList();
+        Assert.NotEmpty(defaultOn);
+        Assert.All(defaultOn, d => Assert.False(settings.IsRuleSwitchedOn(d.Id), d.Id));
+    }
+
+    [Fact]
+    public void ToSettings_StillSwitchesOnADefaultOnRuleThatIsAskedFor()
+    {
+        var settings = new StyleSettingsInput { CheckSingleFilePackage = true }.ToSettings();
+
+        Assert.True(settings.IsRuleSwitchedOn(RuleIds.SingleFilePackage));
+    }
+
+    [Fact]
     public async Task SetStyleSettings_EnablingOneRuleDoesNotSwitchOffTheRest()
     {
         using var host = new TestHost();

@@ -128,7 +128,9 @@ public sealed class StyleTools
         // the words reports a term the team has accepted as a misspelling; see spell_check, which
         // answers this the same way.
         var repository = SingleRepository();
-        var effective = settings?.ToSettings() ?? repository?.StyleSettings ?? new StyleCheckingSettings();
+        // All-off with neither, as the description says - which a blank settings object is not once a
+        // rule is on by default (B322).
+        var effective = settings?.ToSettings() ?? repository?.StyleSettings ?? StyleCheckingSettings.NothingEnabled();
         var context = StyleCheckContext.BuildStateless(
             effective, _customDictionary, _dictionaryManager, repository?.LocalPath);
         var findings = StyleCheckRunner.RunStateless(source, effective, context);

@@ -134,10 +134,13 @@ public sealed class StyleSettingsInput
     }
 
     /// <summary>A fresh, full settings object from this input (default naming/SVN config). Rules the
-    /// input does not mention stay off, which is what a one-off check of an explicit rule set means.</summary>
+    /// input does not mention stay off, which is what a one-off check of an explicit rule set means —
+    /// <b>including a rule that is on by default</b>. <c>new StyleCheckingSettings()</c> stopped meaning
+    /// "nothing on" when B241 made <c>SingleFilePackage</c> default-on, and every explicit rule set then
+    /// ran it as well (B322); <see cref="StyleCheckingSettings.NothingEnabled"/> is what says it.</summary>
     public StyleCheckingSettings ToSettings()
     {
-        var s = new StyleCheckingSettings();
+        var s = StyleCheckingSettings.NothingEnabled();
         ApplyTo(s);
         return s;
     }
