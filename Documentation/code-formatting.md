@@ -203,7 +203,8 @@ because what changes is where the package is stored, not what it is called.
 The classes are laid out as the rest of MLQT would lay them out. With formatting switched off for
 the repository they are moved exactly as written, and so is any class excluded from formatting,
 whether by `__MLQT(format=false)` or by the name list. A class of the package that already has a
-file of its own is left as it is. If any class cannot be written - a full disk, a name that is not
+file of its own is left as it is. The new files keep the encoding and line endings of the file
+they came from. If any class cannot be written - a full disk, a name that is not
 a legal file name - the split is undone and the single file is kept: it is deleted only once every
 class in it has been written somewhere else.
 

@@ -1,6 +1,7 @@
 using ModelicaGraph;
 using ModelicaGraph.Analysis;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Helpers;
 using ModelicaParser.Visitors;
 using static MLQT.Services.LoggingService;
 
@@ -109,12 +110,16 @@ public static class PackageSplitter
         var before = DiskSnapshot.Take(packageDirectory,
             isDirectoryPackage ? [currentFile, Path.Combine(packageDirectory, "package.order")] : []);
 
+        // The files the split creates are written the way the one they came from was: the same
+        // encoding and the same line endings, rather than UTF-8 LF beside a CRLF library (B308).
+        var sourceStyle = ModelicaFileEncoding.StyleOf(currentFile);
+
         SaveResult saved;
         try
         {
             saved = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
                 graph, modelIds, parentDirectory, showAnnotations: true, formatting: formatting,
-                settings: settings);
+                settings: settings, newFileStyle: sourceStyle);
         }
         catch (Exception ex)
         {

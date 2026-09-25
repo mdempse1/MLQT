@@ -115,6 +115,45 @@ public static class ModelicaFileEncoding
     }
 
     /// <summary>
+    /// How an existing file is written — its encoding and its line ending — so a file made from its
+    /// text can be written the same way.
+    /// </summary>
+    /// <param name="Encoding">The file's encoding, as <see cref="DetectExisting"/> reads it.</param>
+    /// <param name="Newline">The line ending the file mostly uses; a line feed when it has none.</param>
+    public sealed record FileStyle(Encoding Encoding, string Newline);
+
+    /// <summary>
+    /// The encoding and line ending of <paramref name="path"/>, or null when there is no such file.
+    /// </summary>
+    public static FileStyle? StyleOf(string path) =>
+        File.Exists(path) ? new FileStyle(DetectExisting(path), ExistingNewline(path) ?? "\n") : null;
+
+    /// <summary>
+    /// <see cref="WriteAllText"/>, except that a file which does not exist yet is written in
+    /// <paramref name="newFileStyle"/> instead of as UTF-8 with the renderer's line feeds.
+    ///
+    /// <para><b>For a file made out of another one</b> (B308). A file that exists keeps its own
+    /// encoding and line endings, which is the rule this class is for; one that does not has nothing
+    /// on disk to follow, and splitting a Windows-1252 CRLF package into files wrote UTF-8 LF files
+    /// beside the CRLF ones it came from. The file the text came from is the answer to follow.</para>
+    /// </summary>
+    public static void WriteAllTextLike(string path, string text, FileStyle? newFileStyle)
+    {
+        if (newFileStyle is null || File.Exists(path))
+        {
+            WriteAllText(path, text);
+            return;
+        }
+
+        text = WithNewline(EnsureFinalNewline(NormalizeToLf(text)), newFileStyle.Newline);
+        File.WriteAllText(path, text, newFileStyle.Encoding);
+    }
+
+    /// <summary><see cref="WriteAllLines"/>, with a new file written as <see cref="WriteAllTextLike"/> writes one.</summary>
+    public static void WriteAllLinesLike(string path, IEnumerable<string> lines, FileStyle? newFileStyle) =>
+        WriteAllTextLike(path, string.Join('\n', lines), newFileStyle);
+
+    /// <summary>
     /// <paramref name="text"/> as this file should hold it: ended with a newline, and written with
     /// the line endings the file already uses.
     ///

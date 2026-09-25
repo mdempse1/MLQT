@@ -507,6 +507,82 @@ public class ModelicaFileEncodingTests : IDisposable
 
     #endregion
 
+    #region A new file written like an existing one (B308)
+
+    [Fact]
+    public void StyleOf_ReadsTheEncodingAndTheLineEnding()
+    {
+        var path = Write("latin1-crlf.mo", Latin1(Text.Replace("\n", "\r\n")));
+
+        var style = ModelicaFileEncoding.StyleOf(path)!;
+
+        Assert.Equal(Encoding.Latin1.CodePage, style.Encoding.CodePage);
+        Assert.Equal("\r\n", style.Newline);
+    }
+
+    [Fact]
+    public void StyleOf_AFileWithNoLineEndingsIsLineFeed()
+    {
+        var style = ModelicaFileEncoding.StyleOf(Write("one-line.mo", Utf8NoBom("package P end P;")))!;
+
+        Assert.Equal("\n", style.Newline);
+    }
+
+    [Fact]
+    public void StyleOf_NoFileIsNoStyle()
+    {
+        Assert.Null(ModelicaFileEncoding.StyleOf(Path.Combine(_root, "never-written.mo")));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_ANewFileTakesTheStyleItWasGiven()
+    {
+        // The renderer's text is LF and UTF-8 would be the default; the file it came from was
+        // neither, and the new one should match that file rather than the default.
+        var style = new ModelicaFileEncoding.FileStyle(Encoding.Latin1, "\r\n");
+        var path = Path.Combine(_root, "split-child.mo");
+
+        ModelicaFileEncoding.WriteAllTextLike(path, Text, style);
+
+        Assert.Equal(Latin1(Text.Replace("\n", "\r\n")), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_AnExistingFileKeepsItsOwnStyle()
+    {
+        // The rule the rest of this class is for: a file that exists is written back as it was,
+        // whatever style a caller offers for new ones.
+        var path = Write("existing.mo", Utf8NoBom("package Q\nend Q;\n"));
+
+        ModelicaFileEncoding.WriteAllTextLike(path, Text,
+            new ModelicaFileEncoding.FileStyle(Encoding.Latin1, "\r\n"));
+
+        Assert.Equal(Utf8NoBom(Text), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllTextLike_WithNoStyleIsWriteAllText()
+    {
+        var path = Path.Combine(_root, "plain.mo");
+
+        ModelicaFileEncoding.WriteAllTextLike(path, "package P\nend P;", null);
+
+        Assert.Equal(Utf8NoBom("package P\nend P;\n"), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void WriteAllLinesLike_EndsEachLineInTheStyle()
+    {
+        var path = Path.Combine(_root, "package.order");
+
+        ModelicaFileEncoding.WriteAllLinesLike(path, ["A", "B"],
+            new ModelicaFileEncoding.FileStyle(ModelicaFileEncoding.Default, "\r\n"));
+
+        Assert.Equal("A\r\nB\r\n", File.ReadAllText(path));
+    }
+
+    #endregion
+
     [Fact]
     public void WhenTheFileCannotBeOpenedAtAll_TheFailureIsTheWritesNotTheGuess()
     {

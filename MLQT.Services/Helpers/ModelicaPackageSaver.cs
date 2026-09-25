@@ -32,8 +32,13 @@ public class ModelicaPackageSaver
     /// each one <see cref="FormattingExclusion.Excludes"/> names — the name list and
     /// <c>__MLQT(format=false)</c> alike. Null asks only the source, for a caller with no repository.
     /// </param>
+    /// <param name="newFileStyle">
+    /// The encoding and line ending for a file the save creates. A file that already exists keeps its
+    /// own either way; null writes a new one as UTF-8 with line feeds. Split into files passes the
+    /// style of the file the package came from, so its new files match it (B308).
+    /// </param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null, ModelicaFileEncoding.FileStyle? newFileStyle = null)
     {
         var result = new SaveResult();
 
@@ -115,7 +120,7 @@ public class ModelicaPackageSaver
         foreach (var model in topLevelModels)
         {
             WriteModelFiles(model, rootDirectory, allModels, savedModels, childrenByParent,
-                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result);
+                standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result, newFileStyle);
         }
 
         return result;
@@ -387,7 +392,8 @@ public class ModelicaPackageSaver
         HashSet<string> shortClassIds,
         Dictionary<string, List<string>> preComputedElementNames,
         ConcurrentDictionary<string, string> renderedCode,
-        SaveResult result)
+        SaveResult result,
+        ModelicaFileEncoding.FileStyle? newFileStyle)
     {
         if (savedModels.Contains(model.Id))
             return;
@@ -417,7 +423,7 @@ public class ModelicaPackageSaver
             var packageFile = Path.Combine(packageDir, "package.mo");
             try
             {
-                ModelicaFileEncoding.WriteAllText(packageFile, code);
+                ModelicaFileEncoding.WriteAllTextLike(packageFile, code, newFileStyle);
                 result.WrittenFiles.Add(packageFile);
                 result.ModelIdToFilePath[model.Id] = packageFile;
             }
@@ -447,7 +453,7 @@ public class ModelicaPackageSaver
                 {
                     try
                     {
-                        ModelicaFileEncoding.WriteAllLines(packageOrderFile, packageOrderList);
+                        ModelicaFileEncoding.WriteAllLinesLike(packageOrderFile, packageOrderList, newFileStyle);
                         result.WrittenFiles.Add(packageOrderFile);
                     }
                     catch (Exception e)
@@ -469,7 +475,8 @@ public class ModelicaPackageSaver
                 {
                     // Recursively write standalone child
                     WriteModelFiles(child, packageDir, allModels, savedModels, childrenByParent,
-                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result);
+                        standaloneChildren, shortClassIds, preComputedElementNames, renderedCode, result,
+                        newFileStyle);
                 }
                 else
                 {
@@ -487,7 +494,7 @@ public class ModelicaPackageSaver
             var filePath = Path.Combine(parentDirectory, fileName);
             try
             {
-                ModelicaFileEncoding.WriteAllText(filePath, code);
+                ModelicaFileEncoding.WriteAllTextLike(filePath, code, newFileStyle);
                 result.WrittenFiles.Add(filePath);
                 result.ModelIdToFilePath[model.Id] = filePath;
             }

@@ -464,6 +464,37 @@ public class PackageSplitterTests : IDisposable
     }
 
     [Fact]
+    public async Task TheNewFilesAreWrittenTheWayTheOldOneWas()
+    {
+        // B308: a Windows-1252 CRLF package came out as UTF-8 LF files, beside the CRLF files of the
+        // rest of the library. Every one of them is new, so there was nothing on disk to follow.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        File.WriteAllBytes(arrived, System.Text.Encoding.Latin1.GetBytes(
+            "within Lib;\r\npackage Arrived \"from Krüger's tool\"\r\n"
+            + "  model Alpha \"first\"\r\n    Real a;\r\n  end Alpha;\r\n\r\n"
+            + "  model Beta \"second\"\r\n    Real b;\r\n  end Beta;\r\nend Arrived;\r\n"));
+        await service.UpdateChangedFilesAsync([arrived], lib);
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.True(result.Succeeded, result.Error);
+        foreach (var file in result.WrittenFiles)
+        {
+            var bytes = File.ReadAllBytes(file);
+            var text = System.Text.Encoding.Latin1.GetString(bytes);
+            Assert.DoesNotContain("\n", text.Replace("\r\n", ""));
+            Assert.Contains("\r\n", text);
+        }
+
+        // Latin-1, not UTF-8: the ü is one byte.
+        var package = File.ReadAllBytes(Path.Combine(lib, "Arrived", "package.mo"));
+        Assert.Contains((byte)0xFC, package);
+        Assert.Contains("Krüger", ModelicaParser.Helpers.ModelicaFileEncoding.ReadAllTextOnly(
+            Path.Combine(lib, "Arrived", "package.mo")));
+    }
+
+    [Fact]
     public void APackageWithNoFileIsRefusedRatherThanGuessed()
     {
         // A node with no file behind it cannot be written anywhere. Saying so beats picking a
