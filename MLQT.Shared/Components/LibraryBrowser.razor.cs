@@ -109,6 +109,7 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged += OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged += OnRepositoryLoadStateChanged;
+        RepositoryService.OnRepositoriesChanged += OnRepositoriesChanged;
         FileMonitoringService.OnRepositoryFileActivity += OnRepositoryFileActivity;
         base.OnInitialized();
     }
@@ -125,9 +126,34 @@ public partial class LibraryBrowser : IDisposable
         _isInitialized = true;
         _lastLibraryOnly = LibraryOnly;
         _lastRepositoryId = repoId;
+        _lastReferenceOnly = Repository?.IsReferenceOnly ?? false;
 
         await CheckForUncommittedChangesAsync();
         await RefreshTreeItems();
+    }
+
+    /// <summary>
+    /// Whether <see cref="Repository"/> was reference only when its status was last asked for.
+    /// </summary>
+    private bool _lastReferenceOnly;
+
+    /// <summary>
+    /// A repository ticked or unticked "Reference only" has had its status withheld or needs it back,
+    /// and the flag is changed on the same object, so no parameter says so (B354). Without this,
+    /// unticking it left Commit and Revert disabled and no markers until something unrelated
+    /// refreshed.
+    /// </summary>
+    private void OnRepositoriesChanged()
+    {
+        if (Repository is not { } repository || repository.IsReferenceOnly == _lastReferenceOnly)
+            return;
+
+        _lastReferenceOnly = repository.IsReferenceOnly;
+        _ = InvokeAsync(async () =>
+        {
+            await CheckForUncommittedChangesAsync();
+            StateHasChanged();
+        });
     }
 
     /// <summary>
@@ -550,6 +576,7 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged -= OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged -= OnRepositoryLoadStateChanged;
+        RepositoryService.OnRepositoriesChanged -= OnRepositoriesChanged;
         FileMonitoringService.OnRepositoryFileActivity -= OnRepositoryFileActivity;
     }
 

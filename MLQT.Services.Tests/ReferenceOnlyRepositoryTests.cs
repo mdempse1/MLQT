@@ -251,6 +251,38 @@ public class ReferenceOnlyRepositoryTests : IDisposable
         Assert.True(h.Monitoring.IsMonitoringRepository(ours.Repository!.Id));
     }
 
+    /// <summary>
+    /// B354: ticking or unticking "Reference only" mid-session used to set the flag and nothing else,
+    /// so a repository marked reference only went on being watched, and one unmarked was never
+    /// watched again until the project was reloaded.
+    /// </summary>
+    [Fact]
+    public async Task SetReferenceOnly_StartsAndStopsTheWatch_AndSaysTheRepositoriesChanged()
+    {
+        var h = Build();
+        var added = await h.Repositories.AddRepositoryAsync(
+            WriteLibrary("Ours"), startMonitoring: true, isReferenceOnly: false);
+        var id = added.Repository!.Id;
+        Assert.True(h.Monitoring.IsMonitoringRepository(id));
+
+        var changed = 0;
+        h.Repositories.OnRepositoriesChanged += () => changed++;
+
+        h.Repositories.SetReferenceOnly(id, true);
+        Assert.True(added.Repository.IsReferenceOnly);
+        Assert.False(h.Monitoring.IsMonitoringRepository(id));
+        Assert.Equal(1, changed);
+
+        h.Repositories.SetReferenceOnly(id, false);
+        Assert.False(added.Repository.IsReferenceOnly);
+        Assert.True(h.Monitoring.IsMonitoringRepository(id));
+        Assert.Equal(2, changed);
+
+        // Setting what is already set announces nothing.
+        h.Repositories.SetReferenceOnly(id, false);
+        Assert.Equal(2, changed);
+    }
+
     [Fact]
     public async Task NothingIsWrittenIntoAReferenceRepository()
     {

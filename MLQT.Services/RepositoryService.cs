@@ -1244,6 +1244,32 @@ public class RepositoryService : IRepositoryService
         Info("RepositoryService", $"Started file monitoring for {started} repositories");
     }
 
+    /// <inheritdoc/>
+    public void SetReferenceOnly(string repositoryId, bool isReferenceOnly)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository is null || repository.IsReferenceOnly == isReferenceOnly)
+            return;
+
+        lock (_lock)
+            repository.IsReferenceOnly = isReferenceOnly;
+
+        // Watched exactly when it is the user's own code - see AddRepositoryAsync.
+        if (isReferenceOnly)
+        {
+            _fileMonitoringService.StopMonitoring(repository.Id);
+        }
+        else
+        {
+            _fileMonitoringService.SetRepositoryScope(repository.Id, repository.LocalPath);
+            _fileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+        }
+
+        // Nothing kept for it while it was reference only is worth keeping now, in either direction.
+        InvalidateWorkingCopyCache(repository.Id);
+        OnRepositoriesChanged?.Invoke();
+    }
+
     public void ClearAllRepositories()
     {
         List<Repository> repositoriesToClear;

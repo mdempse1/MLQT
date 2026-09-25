@@ -171,6 +171,17 @@ public interface IRepositoryService
     void StartMonitoringAllRepositories();
 
     /// <summary>
+    /// Marks a repository reference only, or not, and makes the rest of the session agree (B354).
+    /// </summary>
+    /// <remarks>
+    /// A reference-only repository is not watched and has no working-copy status shown for it, so
+    /// the flag alone is not the change: this starts or stops its file monitoring with it, discards
+    /// its cached status, and raises <see cref="OnRepositoriesChanged"/> so a browser showing it asks
+    /// again. It does not save; Apply in the settings dialog does that.
+    /// </remarks>
+    void SetReferenceOnly(string repositoryId, bool isReferenceOnly);
+
+    /// <summary>
     /// Event fired when repositories change (added, removed, updated).
     /// </summary>
     event Action? OnRepositoriesChanged;

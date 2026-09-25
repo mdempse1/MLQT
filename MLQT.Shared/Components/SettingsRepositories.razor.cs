@@ -18,13 +18,15 @@ public partial class SettingsRepositories : IDisposable
     /// Marking a repository reference only takes it out of checking, coverage and formatting, and
     /// stops MLQT writing into it. Applied to the live repository at once so the rest of the app stops
     /// treating it as the user's own code without waiting for Apply — which is also what makes the
-    /// panel below it disappear.
+    /// panel below it disappear. Through the service, which starts or stops the repository's file
+    /// monitoring with the flag and has its browser ask for its status again (B354).
     /// </summary>
-    private void OnReferenceOnlyChanged(bool value)
+    internal void OnReferenceOnlyChanged(bool value)
     {
         if (_selectedItem is null)
             return;
 
+        RepositoryService.SetReferenceOnly(_selectedItem.Id, value);
         _selectedItem.IsReferenceOnly = value;
         StateHasChanged();
     }
@@ -304,7 +306,7 @@ public partial class SettingsRepositories : IDisposable
             OnRepoClick(args.Item);
     }
 
-    private void OnRepoClick(Repository repo)
+    internal void OnRepoClick(Repository repo)
     {
         _selectedItem = repo;
         _ = SelectedSettings; // ensure StyleSettings is initialized before CloneDeep
