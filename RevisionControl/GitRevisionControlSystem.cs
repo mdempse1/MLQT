@@ -830,6 +830,17 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// A working-copy status slower than this is taken to have found git's index out of date, and
+    /// the index is refreshed after it (B298).
+    /// </summary>
+    /// <remarks>
+    /// Measured on a clone of MSL, 10,231 files: 200-250 ms with a fresh index, 7 seconds on every
+    /// call once each file's timestamp has moved. Well clear of both, so a large repository's
+    /// ordinary status does not refresh every time, and a stale one is caught on its first query.
+    /// </remarks>
+    internal TimeSpan SlowStatusThreshold { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Gets the list of files with uncommitted changes in the working copy.
     /// </summary>
     public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryPath)
@@ -844,11 +855,16 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             using var repo = new Repository(repositoryPath);
+            var timer = System.Diagnostics.Stopwatch.StartNew();
             var status = repo.RetrieveStatus(new StatusOptions
             {
                 IncludeUntracked = true,
                 RecurseUntrackedDirs = true
             });
+            timer.Stop();
+
+            if (timer.Elapsed >= SlowStatusThreshold)
+                RefreshIndexTimestamps(repositoryPath, timer.Elapsed);
 
             foreach (var item in status)
             {
@@ -1910,6 +1926,42 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Brings git's index up to date with the working copy's timestamps, so the next status is fast
+    /// again (B298).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why a status can be slow for ever.</b> Git's index keeps each file's size and
+    /// timestamp so a status can skip reading any file that matches. Format All and a revert rewrite
+    /// every file with the same content and a new timestamp, and after that nothing matches: each
+    /// file has to be read and hashed to find it unchanged. <c>git status</c> writes what it learns
+    /// back to the index; LibGit2Sharp's <c>RetrieveStatus</c> does not, so every later query pays
+    /// the whole cost again. Measured on MSL: 7 seconds a query, every query, until something else
+    /// rewrote the index - and 22 seconds each for eight at once, which is how 55 of them froze the
+    /// window for minutes (B293).</para>
+    ///
+    /// <para><c>git update-index --refresh</c> is that write-back on its own: 0.9 seconds on MSL, after
+    /// which a status took 232 ms. Only the timestamps change - nothing is staged, and a file that
+    /// really changed is still reported as changed. <c>-q</c> because it exits non-zero when any file
+    /// did change, which is not a failure here; one that does fail - no git on the path, the index
+    /// locked by a commit - costs the next status its speed and nothing else.</para>
+    /// </remarks>
+    private static void RefreshIndexTimestamps(string repositoryPath, TimeSpan statusTook)
+    {
+        try
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var (exitCode, _, stderr) = RunGitCommand(repositoryPath, "update-index -q --refresh", TimeSpan.FromMinutes(2));
+            RevisionControlLogger.Info(
+                $"Working-copy status of {repositoryPath} took {statusTook.TotalSeconds:0.0}s; refreshed git's index " +
+                $"in {timer.Elapsed.TotalSeconds:0.0}s" + (exitCode == 0 || string.IsNullOrWhiteSpace(stderr) ? "" : $" ({stderr.Trim()})"));
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("RefreshIndexTimestamps", ex);
+        }
     }
 
     /// <summary>
