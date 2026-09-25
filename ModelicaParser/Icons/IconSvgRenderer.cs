@@ -605,7 +605,6 @@ public static class IconSvgRenderer
         var width = Math.Abs(x2 - x1);
         var height = Math.Abs(y2 - y1);
 
-        var transform = GetTransformAttribute(text.Origin, text.Rotation);
         var fontSize = text.FontSize > 0 ? text.FontSize : height * 0.8;
 
         // Handle text alignment
@@ -639,9 +638,18 @@ public static class IconSvgRenderer
         var flipX = context.MirrorX ? -1 : 1;
         var flipY = context.MirrorY ? 1 : -1;
 
+        // The text's own origin and rotation come first - outermost - so they act in the icon's
+        // coordinates as every other primitive's do, and the counter-flip only rights the letters.
+        // They were computed and then dropped (B320): a label written with origin= sat at the
+        // icon's centre instead, and a rotated one - a vertical axis label - lay flat.
+        var placement = TransformList(text.Origin, text.Rotation);
+        var transform = placement.Length > 0
+            ? $"{placement} scale({flipX},{flipY})"
+            : $"scale({flipX},{flipY})";
+
         return $"<text x=\"{F(x * flipX)}\" y=\"{F(-cy * -flipY)}\" font-size=\"{F(fontSize)}\" "
              + $"text-anchor=\"{anchor}\" dominant-baseline=\"middle\" fill=\"{fillColor}\" "
-             + $"transform=\"scale({flipX},{flipY})\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
+             + $"transform=\"{transform}\"{fontFamily}{fontWeight}{fontStyle}{textDecoration}>{displayText}</text>";
     }
 
     private static string RenderBitmap(BitmapPrimitive bitmap, Func<string, string?>? fileNameResolver)
@@ -715,6 +723,13 @@ public static class IconSvgRenderer
 
     private static string GetTransformAttribute(double[] origin, double rotation)
     {
+        var transforms = TransformList(origin, rotation);
+        return transforms.Length > 0 ? $" transform=\"{transforms}\"" : "";
+    }
+
+    /// <summary>A primitive's origin and rotation as an SVG transform list; empty for neither.</summary>
+    private static string TransformList(double[] origin, double rotation)
+    {
         var transforms = new List<string>();
 
         if (origin[0] != 0 || origin[1] != 0)
@@ -727,11 +742,7 @@ public static class IconSvgRenderer
             transforms.Add($"rotate({F(rotation)})");
         }
 
-        if (transforms.Count > 0)
-        {
-            return $" transform=\"{string.Join(" ", transforms)}\"";
-        }
-        return "";
+        return string.Join(" ", transforms);
     }
 
     private static string GetStyleAttribute(GraphicsPrimitive primitive, GraphicsContext context)

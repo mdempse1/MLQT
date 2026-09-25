@@ -1155,6 +1155,50 @@ end Derived;";
         Assert.Contains("font-family=\"Arial\"", result);
     }
 
+    /// <summary>
+    /// A Text's origin and rotation place it, as they place every other primitive (B320). They were
+    /// computed and dropped, leaving only the counter-flip: 43 MSL texts use <c>origin=</c> - the
+    /// <c>SpringDamper</c> label in <c>PID_Controller</c> among them - and each sat at the icon's
+    /// centre, and a rotated label lay flat, in the library tree's icons as well as the diagrams.
+    /// </summary>
+    [Fact]
+    public void RenderToSvg_TextWithOriginAndRotation_IsPlacedAndTurnedBeforeItIsRighted()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new TextPrimitive
+        {
+            Extent = [-40, -10, 40, 10],
+            Origin = [60, -20],
+            Rotation = 90,
+            TextString = "turned",
+        });
+
+        var result = IconSvgRenderer.RenderToSvg(icon);
+
+        // Outermost, so they act in the icon's coordinates; the counter-flip only rights the letters.
+        Assert.Contains("transform=\"translate(60,-20) rotate(90) scale(1,-1)\">turned<", result);
+    }
+
+    [Fact]
+    public void RenderPrimitives_MirroredTextWithAnOrigin_KeepsBothTheOriginAndTheCounterMirror()
+    {
+        var text = new TextPrimitive { Extent = [-40, -10, 40, 10], Origin = [5, 0], TextString = "m" };
+
+        var result = IconSvgRenderer.RenderPrimitives(
+            [text], null, new IconSvgRenderer.GraphicsContext { MirrorX = true });
+
+        Assert.Contains("transform=\"translate(5,0) scale(-1,-1)\"", result);
+    }
+
+    [Fact]
+    public void RenderToSvg_TextWithNoOriginOrRotation_IsOnlyRighted()
+    {
+        var icon = new IconData();
+        icon.Graphics.Add(new TextPrimitive { Extent = [-40, -10, 40, 10], TextString = "plain" });
+
+        Assert.Contains("transform=\"scale(1,-1)\">plain<", IconSvgRenderer.RenderToSvg(icon));
+    }
+
     [Fact]
     public void RenderToSvg_PrimitiveWithRotationAndOrigin_ContainsTransform()
     {
