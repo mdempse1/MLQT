@@ -42,14 +42,14 @@
                                                                                     "reason":  "25%, and new debt this branch created rather than inherited: 7a-4 moved both formatting paths here out of MainLayout. FormatChangedFilesAsync and FormatModifiedFilesAsync are tested against a temp directory, and the decisions inside the full save are tested separately (IncrementalFormatter, OrphanedFileSelector, ResolveSaveDirectory, EmptyDirectoryCleaner, FileNodeReconciler). What is uncovered is the 250-line sequencing of SaveAllLibrariesWithFormattingAsync itself, which needs a library on disk with a real file layout to restructure - a fixture, not a mock. Worth writing: it is the path Format All Files takes."
                                                                                 },
                     "MLQT.Shared::MLQT.Shared.Components.ChangeReview":  {
-                                                                             "coverage":  29.4,
+                                                                             "coverage":  50.5,
                                                                              "lines":  180,
                                                                              "bar":  80,
                                                                              "reason":  "29%: the file-tree building is tested. The rest is tree selection state and the folder check-state cascade, which are MudTreeView interactions and need a render tree."
                                                                          },
                     "MLQT.Shared::MLQT.Shared.Components.LibraryBrowser":  {
-                                                                               "coverage":  48.5,
-                                                                               "lines":  566,
+                                                                               "coverage":  57,
+                                                                               "lines":  633,
                                                                                "bar":  80,
                                                                                "reason":  "The tree building, the lazy-load selection regression, the reference-only labelling and the change markers are covered, all by bUnit tests written for them specifically - B200 added the repository-mode render, which moved this from 22% to 34%, and B191\u0027s markers and change filter took it to 48.5%. The rest is VCS operation UI - refresh, switch branch, merge, commit - which opens dialogs and needs a working copy."
                                                                            },
@@ -60,8 +60,8 @@
                                                                                   "reason":  "36%: the pattern validation is tested, which is the part that can accept something that later throws. The rest is the MudBlazor select and the pattern list\u0027s add/remove."
                                                                               },
                     "MLQT.Shared::MLQT.Shared.Components.SettingsExternalTools":  {
-                                                                                      "coverage":  0,
-                                                                                      "lines":  56,
+                                                                                      "coverage":  27.8,
+                                                                                      "lines":  61,
                                                                                       "bar":  80,
                                                                                       "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                                   },
@@ -72,8 +72,8 @@
                                                                                            "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                                        },
                     "MLQT.Shared::MLQT.Shared.Components.SettingsRepositories":  {
-                                                                                     "coverage":  24.4,
-                                                                                     "lines":  258,
+                                                                                     "coverage":  26.6,
+                                                                                     "lines":  259,
                                                                                      "bar":  80,
                                                                                      "reason":  "The change detection that decides whether a reformat runs is tested - it is the part that matters. The rest is a settings panel: repository add/remove/edit, project switching and the dialogs they raise."
                                                                                  },
@@ -96,10 +96,10 @@
                                                                                  "reason":  "A wizard over a native folder picker and a clone/checkout. Neither can be driven from a unit test; the picker is faked in the 7a-6 test host, which is where this gets covered. 44.9% -\u003e 44.3% is B206 adding six lines here and no test reaching them: the warning for libraries that were discovered but none of which loaded needs a repository whose load fails, which is a test-host scenario rather than a unit one. The sibling case - nothing discovered at all - is in the service and is covered there."
                                                                              },
                     "MLQT.Shared::MLQT.Shared.Dialogs.CommitChangesDialog":  {
-                                                                                 "coverage":  10.3,
-                                                                                 "lines":  77,
+                                                                                 "coverage":  73.1,
+                                                                                 "lines":  82,
                                                                                  "bar":  80,
-                                                                                 "reason":  "10%: the commit-message policy is tested - when a commit is allowed and where the issue number goes - and it is the only implementation of that policy in the solution. The rest performs the commit, which needs a working copy."
+                                                                                 "reason":  "73%: the commit-message policy, and the commit itself with the VCS mocked - including the update an out-of-date SVN working copy needs first, which has to hold off the monitor and tell the caller to reload (B296). What is left is the skipped-files retry and the error paths."
                                                                              },
                     "MLQT.Shared::MLQT.Shared.Dialogs.CreatePullRequestDialog":  {
                                                                                      "coverage":  0,
@@ -108,20 +108,20 @@
                                                                                      "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                                  },
                     "MLQT.Shared::MLQT.Shared.Dialogs.GitMergeBranchDialog":  {
-                                                                                  "coverage":  0,
-                                                                                  "lines":  111,
+                                                                                  "coverage":  31.8,
+                                                                                  "lines":  116,
                                                                                   "bar":  80,
-                                                                                  "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                                  "reason":  "32%: driven into its conflict phase and cancelled with the VCS mocked (B296), which is where the monitor and the outcome go wrong. The resolve, commit and push paths are not driven."
                                                                               },
                     "MLQT.Shared::MLQT.Shared.Dialogs.GitRebaseDialog":  {
-                                                                             "coverage":  0,
-                                                                             "lines":  127,
+                                                                             "coverage":  36,
+                                                                             "lines":  133,
                                                                              "bar":  80,
-                                                                             "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                             "reason":  "36%: driven into its conflict phase and cancelled, and aborted, with the VCS mocked (B296), which is where the monitor and the outcome go wrong. The continue and force-push paths are not driven."
                                                                          },
                     "MLQT.Shared::MLQT.Shared.Dialogs.MergeBranchDialog":  {
                                                                                "coverage":  0,
-                                                                               "lines":  114,
+                                                                               "lines":  120,
                                                                                "bar":  80,
                                                                                "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                            },
@@ -132,26 +132,26 @@
                                                                                 "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                             },
                     "MLQT.Shared::MLQT.Shared.Dialogs.SwitchBranchDialog":  {
-                                                                                "coverage":  29,
-                                                                                "lines":  31,
+                                                                                "coverage":  70.5,
+                                                                                "lines":  34,
                                                                                 "bar":  80,
-                                                                                "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
+                                                                                "reason":  "70%: driven through a switch with the VCS mocked, which is what holds the monitor off for the checkout (B296). What is left is the failure and cancel paths."
                                                                             },
                     "MLQT.Shared::MLQT.Shared.Dialogs.VCSHistory":  {
                                                                         "coverage":  0,
-                                                                        "lines":  230,
+                                                                        "lines":  237,
                                                                         "bar":  80,
                                                                         "reason":  "A VCS dialog: parameter in, DialogResult out, with the work done by an operation that needs a real working copy. Its validation is tested where it has any; driving the operation itself is a Layer 2 journey with a LibGit2Sharp fixture (7a-6), not a unit test."
                                                                     },
                     "MLQT.Shared::MLQT.Shared.Layout.MainLayout":  {
                                                                        "coverage":  0.1,
-                                                                       "lines":  1101,
+                                                                       "lines":  1066,
                                                                        "bar":  80,
                                                                        "reason":  "What 7a-4 deliberately left behind: the startup sequence, the four deferred-analysis runs and the VCS reaction path, each of which is now guard-a-flag, raise-the-progress-dialog, call-a-service, set-a-step-colour. Every decision they used to contain has been extracted and tested (MlqtTheme, ModelScope, VcsChangeResolver, IncrementalFormatter, FileNodeReconciler, OrphanedFileSelector, CombinedStyleCheckPass, IFormattingPipeline). The sequencing itself is UI and is covered by the Layer 2 journeys in 7a-6/7a-7."
                                                                    },
                     "MLQT.Shared::MLQT.Shared.Pages.CodeReview":  {
                                                                       "coverage":  8.6,
-                                                                      "lines":  1230,
+                                                                      "lines":  1234,
                                                                       "bar":  80,
                                                                       "reason":  "The largest page, and its decisions are now extracted and tested elsewhere: the finding decisions (FileLineOf, CanSuppressRule, ReportPathOf) in 7a-3, and in B119 the findings export (FindingExport), how far a rule waiver reaches (SuppressionScope) and what an accepted spelling covers (SpellingAcceptance). What is left here is orchestration that needs a render tree - the file picker, the snackbar, the re-render and the scroll restoration around each action - which the Layer 2 journeys cover and which a unit test could only assert mocks for."
                                                                   },
@@ -162,14 +162,14 @@
                                                                         "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                     },
                     "MLQT.Shared::MLQT.Shared.Pages.ExternalResources":  {
-                                                                             "coverage":  12.8,
-                                                                             "lines":  350,
+                                                                             "coverage":  13.3,
+                                                                             "lines":  352,
                                                                              "bar":  80,
                                                                              "reason":  "Reachable only by rendering. Phase 7a-1 moved this out of an @code block and 7a-3 tested the decisions inside it; what is left is the wiring around them - lifecycle, event subscriptions, dialog state and StateHasChanged - which needs a render tree. The Layer 2 journeys in 7a-6/7a-7 are what will cover it."
                                                                          },
                     "MLQT.Shared::MLQT.Shared.Pages.MetricsDashboard":  {
-                                                                            "coverage":  3.5,
-                                                                            "lines":  363,
+                                                                            "coverage":  23.5,
+                                                                            "lines":  391,
                                                                             "bar":  80,
                                                                             "reason":  "Scope matching, sub-package listing and the debt predicate are tested; so, since B119, are where a snapshot is stored, which repository owns a scope and which history files the trend reads (MetricsStorage), and aggregating same-timestamp points (MetricsSnapshot). What is left is the chart and table assembly around them, which needs a render tree."
                                                                         },
@@ -205,7 +205,7 @@
                                                                                         },
                     "RevisionControl::RevisionControl.SvnCli":  {
                                                                     "coverage":  27.3,
-                                                                    "lines":  95,
+                                                                    "lines":  91,
                                                                     "bar":  80,
                                                                     "reason":  "Drives the svn executable. Same reason as SvnRevisionControlSystem: no svn on the runner. **This figure has to come from a CI run, not from a developer machine.** How much of this class is covered depends on whether an svn client is on PATH, not on which tests ran: the Code Coverage job is windows-latest with no svn installed, and a machine that has one covers roughly twice as much. Re-recording the baseline locally put this at 51.5% and the gate then failed on CI at 27.3%, which is what the warning in check-coverage.ps1 now exists to stop."
                                                                 },
