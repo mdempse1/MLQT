@@ -92,6 +92,64 @@ public class DescendantParserErrorsTests : IDisposable
         Assert.Contains("Other", after);
     }
 
+    /// <summary>
+    /// B356: a library that arrives while the set is being built - a bulk load drops the cache per
+    /// library - must not leave the set built before it cached for the announcement at the end.
+    /// </summary>
+    [Fact]
+    public async Task ALibraryLoadedWhileTheSetIsBuilt_IsNotLeftOutOfTheCachedSet()
+    {
+        var service = await WithABrokenClassAsync();
+
+        var second = Path.Combine(_dir, "Other.mo");
+        await File.WriteAllTextAsync(second, """
+            package Other "another"
+              model AlsoBroken "will not parse"
+                Real y = ;
+              end AlsoBroken;
+            end Other;
+            """.Replace("\r\n", "\n"));
+
+        // Between the snapshot of the models and the assignment, the way a parallel load lands.
+        service.AfterParserErrorSnapshot = () =>
+        {
+            service.AfterParserErrorSnapshot = null;
+            service.AddLibraryFromFileAsync(second, File.ReadAllText(second)).GetAwaiter().GetResult();
+        };
+
+        var during = service.ModelsWithDescendantParserErrors();
+        Assert.DoesNotContain("Other", during);   // the snapshot predates it, and that is fine once
+
+        Assert.Contains("Other", service.ModelsWithDescendantParserErrors());
+    }
+
+    /// <summary>
+    /// B356: climbed by containment. A quoted identifier carries dots of its own, and splitting the
+    /// id at them named a package that does not exist.
+    /// </summary>
+    [Fact]
+    public async Task AQuotedPackageName_IsNotSplitIntoPackagesThatDoNotExist()
+    {
+        var service = new LibraryDataService();
+        var file = Path.Combine(_dir, "Quoted.mo");
+        await File.WriteAllTextAsync(file, """
+            package Lib "a library"
+              package 'P.Q' "a quoted package"
+                model Broken "will not parse"
+                  Real x = ;
+                end Broken;
+              end 'P.Q';
+            end Lib;
+            """.Replace("\r\n", "\n"));
+        await service.AddLibraryFromFileAsync(file, await File.ReadAllTextAsync(file));
+
+        var packages = service.ModelsWithDescendantParserErrors();
+
+        Assert.Contains("Lib", packages);
+        Assert.Contains("Lib.'P.Q'", packages);
+        Assert.DoesNotContain("Lib.'P", packages);
+    }
+
     [Fact]
     public async Task ALibraryThatParsesNamesNothing()
     {

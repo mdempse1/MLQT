@@ -78,7 +78,11 @@ public class LibraryDataService : ILibraryDataService
         // Dropped whether or not the announcement is suppressed: a bulk load is exactly when the
         // answer goes stale, and the one announcement at the end of it must not be served a set
         // built before the libraries arrived.
-        _descendantParserErrors = null;
+        lock (_descendantParserErrorsLock)
+        {
+            _descendantParserErrors = null;
+            _descendantParserErrorsGeneration++;
+        }
 
         if (Volatile.Read(ref _treeNotificationDepth) == 0)
             OnTreeDataChanged?.Invoke();
@@ -1166,29 +1170,56 @@ public class LibraryDataService : ILibraryDataService
 
     private IReadOnlySet<string>? _descendantParserErrors;
 
+    /// <summary>
+    /// Counts the invalidations of <see cref="_descendantParserErrors"/>, so a set built from a
+    /// snapshot that a library change has since overtaken is returned to its caller but not kept
+    /// (B356).
+    /// </summary>
+    private int _descendantParserErrorsGeneration;
+    private readonly object _descendantParserErrorsLock = new();
+
+    /// <summary>A test's way in between the snapshot and the assignment.</summary>
+    internal Action? AfterParserErrorSnapshot { get; set; }
+
     /// <inheritdoc/>
     public IReadOnlySet<string> ModelsWithDescendantParserErrors()
     {
-        if (_descendantParserErrors is { } cached)
+        if (Volatile.Read(ref _descendantParserErrors) is { } cached)
             return cached;
 
+        var generation = Volatile.Read(ref _descendantParserErrorsGeneration);
+        var models = GetAllModels();
+        AfterParserErrorSnapshot?.Invoke();
+
         var descendants = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var model in GetAllModels())
+        foreach (var model in models)
         {
             if (!model.HasParserErrors)
                 continue;
 
             // Every package above it, so the warning is visible from the root without expanding.
-            var lastDot = model.Id.LastIndexOf('.');
-            while (lastDot > 0)
+            // Climbed by containment rather than by splitting the id: a quoted identifier carries
+            // dots of its own, and the split named packages that do not exist (B356, as B189 and
+            // B191 found for the reveal and the change markers).
+            var seen = new HashSet<string>(StringComparer.Ordinal) { model.Id };
+            var parentId = model.ParentModelName;
+            while (!string.IsNullOrEmpty(parentId) && seen.Add(parentId))
             {
-                var parentId = model.Id[..lastDot];
                 descendants.Add(parentId);
-                lastDot = parentId.LastIndexOf('.');
+                parentId = GetModelById(parentId)?.ParentModelName;
             }
         }
 
-        _descendantParserErrors = descendants;
+        // Kept only if no library arrived or left while it was being built. A bulk load drops the
+        // cache per library and announces once at the end, and a set built from a snapshot taken
+        // before the last library landed would otherwise be served to every tree for that one
+        // announcement - and kept until the next.
+        lock (_descendantParserErrorsLock)
+        {
+            if (_descendantParserErrorsGeneration == generation)
+                _descendantParserErrors = descendants;
+        }
+
         return descendants;
     }
 
