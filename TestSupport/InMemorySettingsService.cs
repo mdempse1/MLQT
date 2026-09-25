@@ -22,7 +22,10 @@ namespace MLQT.TestSupport;
 /// object as the value read back afterwards.</para>
 ///
 /// <para><see cref="MLQT.TestSupport.SettingsServiceContract"/> is what holds this and every other
-/// implementation to the same behaviour.</para>
+/// implementation to the same behaviour. <c>MLQT.TestHost</c> links this file too, so every journey
+/// runs on it; its own copy outlived B205 unchecked until B365, and
+/// <c>SettingsDoublePolicyTests</c> now fails on a second implementation of the same name or on one
+/// no contract subclass constructs.</para>
 /// </remarks>
 public sealed class InMemorySettingsService : ISettingsService
 {
