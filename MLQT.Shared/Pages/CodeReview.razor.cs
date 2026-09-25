@@ -134,13 +134,107 @@ public partial class CodeReview : IAsyncDisposable
 
     // Code rendering state
     private bool _isLoadingCode = false;
-    private record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
+    internal record RenderCacheKey(string ModelId, bool ShowAnnotations, bool ShowHighlighted, bool ExcludeClassDefs);
 
     /// <summary>The lines on screen and what was hidden to produce them — one without the other
     /// cannot answer which line of the class a displayed line is.</summary>
     internal record ShownClass(List<string> Lines, SourceElision Elision);
 
     private readonly Dictionary<RenderCacheKey, ShownClass> _renderCache = new();
+
+    /// <summary>
+    /// Which render of the class was asked for last. Each background render carries the number it
+    /// was started with and lands only if it is still this one - so a slow render for a class the
+    /// user has left, or for this class with annotations the other way round, cannot overwrite the
+    /// one asked for since (B345). Checking the model id alone let a Hide render, which parses
+    /// twice, land after the Show the user clicked while it ran.
+    /// </summary>
+    private int _renderGeneration;
+
+    /// <summary>
+    /// Whether what is on screen is the lexer's first paint of a large class (B185) rather than
+    /// the class as it will stay: not yet coloured from the tree, and with nothing hidden, because
+    /// hiding needs the tree too.
+    /// </summary>
+    private bool _showingQuickPaint;
+
+    /// <summary>
+    /// Whether the class on screen is laid out as it will stay, so a pending scroll can be aimed
+    /// at it. Not while the spinner is up, and <b>not over the lexer's first paint</b> (B342): its
+    /// lines are the unelided class, so a finding's line mapped through its empty elision scrolled
+    /// to the wrong place, and the page then swapped the elided text in underneath.
+    /// </summary>
+    internal bool ReadyForPendingScrolls =>
+        !_isLoadingCode && !_showingQuickPaint && _highlightedCode is { Count: > 0 };
+
+    /// <summary>Starts a render of the current class, and returns its number.</summary>
+    internal int BeginRender() => ++_renderGeneration;
+
+    /// <summary>
+    /// Puts a class on screen as it will stay, and re-finds the search against it, because the
+    /// match list is line numbers into what is shown.
+    /// </summary>
+    private void ApplyShown(ShownClass shown)
+    {
+        _highlightedCode = shown.Lines;
+        _elision = shown.Elision;
+        _isLoadingCode = false;
+        _showingQuickPaint = false;
+        RecomputeCodeMatches();
+    }
+
+    /// <summary>
+    /// Shows the lexer's first paint for render <paramref name="generation"/>, unless a later
+    /// render has been asked for or the parse got here first. The search is re-found against it -
+    /// the count otherwise went on describing the previous class (B342) - but pending scrolls wait
+    /// for the render that follows; see <see cref="ReadyForPendingScrolls"/>.
+    /// </summary>
+    internal bool TryApplyQuickPaint(int generation, ShownClass quick)
+    {
+        if (generation != _renderGeneration || !_isLoadingCode)
+            return false;
+
+        _highlightedCode = quick.Lines;
+        _elision = quick.Elision;
+
+        // Clearing this is the point of the exercise: while it is set the page shows a spinner in
+        // place of the viewer, so painting the lines without it would change nothing the user can
+        // see.
+        _isLoadingCode = false;
+        _showingQuickPaint = true;
+        RecomputeCodeMatches();
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps render <paramref name="generation"/> for next time, and shows it if it is still the
+    /// render asked for last (B345).
+    /// </summary>
+    internal bool TryApplyRender(int generation, RenderCacheKey key, ShownClass shown)
+    {
+        _renderCache[key] = shown;
+        if (generation != _renderGeneration)
+            return false;
+
+        ApplyShown(shown);
+        return true;
+    }
+
+    /// <summary>The lines on screen.</summary>
+    internal IReadOnlyList<string>? DisplayedLines => _highlightedCode;
+
+    /// <summary>What the code is being searched for.</summary>
+    internal string CodeSearch
+    {
+        get => _codeSearch;
+        set => _codeSearch = value;
+    }
+
+    /// <summary>How many lines on screen hold what the code is being searched for.</summary>
+    internal int CodeMatchCount => _codeMatches.Count;
+
+    /// <summary>Marks the class as loading, as a cache miss does before it starts a render.</summary>
+    internal void BeginLoading() => _isLoadingCode = true;
 
     // Diff view state
     private bool _isDiffMode = false;
@@ -281,7 +375,7 @@ public partial class CodeReview : IAsyncDisposable
         // Any render of the old content that fires between capture and the re-render keeps the same
         // reference and is correctly skipped. (Catching the transient loading spinner instead is
         // unreliable: for small files the spinner render coalesces away before OnAfterRender runs.)
-        if (_pendingScroll is { } scroll && !_isLoadingCode && _highlightedCode is { Count: > 0 }
+        if (_pendingScroll is { } scroll && ReadyForPendingScrolls
             && !ReferenceEquals(_highlightedCode, _scrollBaselineCode))
         {
             _pendingScroll = null;
@@ -300,7 +394,7 @@ public partial class CodeReview : IAsyncDisposable
         // word into view once the (possibly newly selected) model's content has rendered. The JS
         // helper retries across frames, so it tolerates the highlight spans appearing slightly
         // after the code lines (RecomputeMisspelledWords runs just after the render).
-        if (_pendingScrollWord is { Length: > 0 } word && !_isLoadingCode && _highlightedCode is { Count: > 0 })
+        if (_pendingScrollWord is { Length: > 0 } word && ReadyForPendingScrolls)
         {
             _pendingScrollWord = null;
             try
@@ -317,7 +411,7 @@ public partial class CodeReview : IAsyncDisposable
         // possible now that the viewer shows the class itself: a finding's line is counted against
         // the class's own source, and until B215 the page showed a reformatted copy of it that was
         // 17-24% longer, so the number pointed at whatever happened to be there (B182, B183).
-        if (_pendingScrollLine is { } pending && !_isLoadingCode && _highlightedCode is { Count: > 0 })
+        if (_pendingScrollLine is { } pending && ReadyForPendingScrolls)
         {
             _pendingScrollLine = null;
             var displayLine = DisplayLineOfFinding(pending, _currentModelNode, _elision);
@@ -908,6 +1002,11 @@ public partial class CodeReview : IAsyncDisposable
 
     private async void OnModelSelected()
     {
+        // Whatever render is still on its way was asked for before this one, and must not land
+        // over it - whether it is for another class or for this class with annotations the other
+        // way round (B345).
+        var generation = BeginRender();
+
         if (string.IsNullOrEmpty(NavState.ModelID))
             return;
 
@@ -933,10 +1032,7 @@ public partial class CodeReview : IAsyncDisposable
             // Cache hit — set code and render immediately BEFORE any await.
             // Any await would yield to the Blazor sync context which is blocked
             // by MainLayout/LibraryBrowser re-rendering 27K tree nodes.
-            _highlightedCode = cachedCode.Lines;
-            _elision = cachedCode.Elision;
-            _isLoadingCode = false;
-            RecomputeCodeMatches();
+            ApplyShown(cachedCode);
 
             LoggingService.Debug("CodeReview", $"Cache hit for {selectedModelId}");
 
@@ -976,7 +1072,7 @@ public partial class CodeReview : IAsyncDisposable
             LoggingService.Debug("CodeReview",
                 $"Rendering {selectedModelId}: {codeLength} chars, ParsedCode cached={hadParsedCode}, classType={_currentModelNode.ClassType}");
 
-            _isLoadingCode = true;
+            BeginLoading();
             StateHasChanged();
 
             var modelNode = _currentModelNode;
@@ -1002,22 +1098,14 @@ public partial class CodeReview : IAsyncDisposable
                                         excludeClassDefs, parse: false))
                     .ContinueWith(async quick =>
                     {
-                        // Dropped if the user has moved on, or if the parse beat it here.
-                        if (NavState.ModelID != selectedModelId || !_isLoadingCode || !quick.IsCompletedSuccessfully)
+                        if (!quick.IsCompletedSuccessfully)
                             return;
 
                         await InvokeAsync(() =>
                         {
-                            if (NavState.ModelID != selectedModelId || !_isLoadingCode)
+                            // Dropped if a later render was asked for, or if the parse beat it here.
+                            if (!TryApplyQuickPaint(generation, quick.Result))
                                 return;
-
-                            _highlightedCode = quick.Result.Lines;
-                            _elision = quick.Result.Elision;
-
-                            // Clearing this is the point of the exercise: while it is set the page
-                            // shows a spinner in place of the viewer, so painting the lines without
-                            // it would change nothing the user can see.
-                            _isLoadingCode = false;
 
                             LoggingService.Debug("CodeReview",
                                 $"  First paint from the lexer: {quick.Result.Lines.Count} lines");
@@ -1033,9 +1121,6 @@ public partial class CodeReview : IAsyncDisposable
                 LoggingService.Debug("CodeReview",
                     $"  ContinueWith fired at {totalSw.ElapsedMilliseconds}ms");
 
-                if (NavState.ModelID != selectedModelId)
-                    return;
-
                 try
                 {
                     var shown = renderTask.Result;
@@ -1049,13 +1134,10 @@ public partial class CodeReview : IAsyncDisposable
                         LoggingService.Debug("CodeReview",
                             $"  InvokeAsync started after {invokeAsyncSw.ElapsedMilliseconds}ms wait");
 
-                        _highlightedCode = shown.Lines;
-                        _elision = shown.Elision;
-                        _isLoadingCode = false;
-                        RecomputeCodeMatches();
-
-                        // Store in cache for future clicks
-                        _renderCache[cacheKey] = shown;
+                        // Cached whether or not it is still wanted - it is right for its key - but
+                        // shown only if no later render has been asked for since (B345).
+                        if (!TryApplyRender(generation, cacheKey, shown))
+                            return;
 
                         OnFindingsScopeChanged(FindingsScopeAllModels);
                         StateHasChanged();
@@ -1071,9 +1153,12 @@ public partial class CodeReview : IAsyncDisposable
                         $"Failed to render {selectedModelId}", ex);
                     await InvokeAsync(() =>
                     {
-                        if (NavState.ModelID == selectedModelId)
+                        if (generation == _renderGeneration)
                         {
+                            // Whatever is on screen - the lexer's paint, or nothing - is now all
+                            // there will be, so anything waiting for the class may have it.
                             _isLoadingCode = false;
+                            _showingQuickPaint = false;
                             StateHasChanged();
                         }
                     });
