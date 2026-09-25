@@ -76,7 +76,10 @@ call returns at once. Two consequences worth designing around: anything synchron
 UI thread starves the thread pool too (it grows by about a thread a second, which is what the gaps
 look like in the log), and a lock held while raising an event whose handler calls `InvokeAsync` is a
 deadlock waiting for the UI thread to want that lock. B293 was 55 working-copy status scans behind
-one that was running on the UI thread; B299 is a handler still in that shape.
+one that was running on the UI thread. The corollary B299 found: wrapping a handler's work in
+`InvokeAsync` makes it thread-safe but does **not** free whoever raised the event — the raiser still
+waits for the work, inline or through `SendMessage` — so work that is slow as well goes to `Task.Run`
+first and only its result is applied through `InvokeAsync`.
 
 **Webview chrome settings go in before `Run`.** `SetContextMenuEnabled(false)` and
 `SetDevToolsEnabled(...)` turn off the engine's own right-click menu and its **Inspect** entry, which
