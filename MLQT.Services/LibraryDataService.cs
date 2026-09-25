@@ -773,17 +773,7 @@ public class LibraryDataService : ILibraryDataService
         if (library == null)
         {
             lock (_lock)
-            {
-                foreach (var lib in _libraries)
-                {
-                    if (!string.IsNullOrEmpty(lib.SourcePath) &&
-                        filePath.StartsWith(lib.SourcePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        library = lib;
-                        break;
-                    }
-                }
-            }
+                library = LibraryContainingPath(filePath);
         }
 
         // Before the old classes go: what they import on behalf of classes below them in other files.
@@ -852,6 +842,29 @@ public class LibraryDataService : ILibraryDataService
         return affectedModelIds.Distinct(StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>
+    /// The loaded library whose source a file lies in, by path — for a file the graph has no classes
+    /// from yet, so no class can say. Asked with <see cref="PathContainment.IsWithin"/>, not a bare
+    /// <c>StartsWith</c>: <c>…/Lib</c> is a prefix of <c>…/LibExtra/New.mo</c>, and the prefix test
+    /// gave a new class in <c>LibExtra</c> to <c>Lib</c> whenever <c>Lib</c> was loaded first
+    /// (B323 follow-up). The nearest root wins, so a library nested inside another gets its own
+    /// files. Callers hold <c>_lock</c>.
+    /// </summary>
+    private LoadedLibrary? LibraryContainingPath(string filePath)
+    {
+        LoadedLibrary? nearest = null;
+        foreach (var lib in _libraries)
+        {
+            if (string.IsNullOrEmpty(lib.SourcePath) || !PathContainment.IsWithin(filePath, lib.SourcePath))
+                continue;
+
+            if (nearest is null || lib.SourcePath.Length > nearest.SourcePath.Length)
+                nearest = lib;
+        }
+
+        return nearest;
+    }
+
     /// <inheritdoc/>
     public async Task<HashSet<string>> UpdateChangedFilesAsync(
         IReadOnlyCollection<string> changedFilePaths, string rootPath)
@@ -909,17 +922,7 @@ public class LibraryDataService : ILibraryDataService
                 {
                     var fileNode = _combinedGraph.GetNode<FileNode>(model.ContainingFileId);
                     if (fileNode != null)
-                    {
-                        foreach (var lib in _libraries)
-                        {
-                            if (!string.IsNullOrEmpty(lib.SourcePath) &&
-                                fileNode.FilePath.StartsWith(lib.SourcePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                library = lib;
-                                break;
-                            }
-                        }
-                    }
+                        library = LibraryContainingPath(fileNode.FilePath);
                 }
 
                 if (library == null) continue;

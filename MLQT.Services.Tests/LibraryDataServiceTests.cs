@@ -1091,6 +1091,66 @@ end TestPkg;
         }
     }
 
+    /// <summary>
+    /// Two libraries side by side whose directory names share a prefix, <c>Lib</c> loaded first, and
+    /// a new file arriving in <c>LibExtra</c>. A file the graph has not seen yet is given to a library
+    /// by its path, and that used to be a bare <c>StartsWith</c>: <c>…/Lib</c> is a prefix of
+    /// <c>…/LibExtra/New.mo</c>, so the new class was indexed under <c>Lib</c> (B323 follow-up).
+    /// </summary>
+    private static async Task<(LibraryDataService Service, LoadedLibrary Lib, LoadedLibrary Extra, string Root, string NewFile)>
+        SiblingLibrariesWithANewFileAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"mlqt-siblings-{Guid.NewGuid():N}");
+        var lib = Path.Combine(root, "Lib");
+        var extra = Path.Combine(root, "LibExtra");
+        Directory.CreateDirectory(lib);
+        Directory.CreateDirectory(extra);
+        await File.WriteAllTextAsync(Path.Combine(lib, "package.mo"), "package Lib\nend Lib;\n");
+        await File.WriteAllTextAsync(Path.Combine(extra, "package.mo"), "package LibExtra\nend LibExtra;\n");
+
+        var service = new LibraryDataService();
+        var libLibrary = await service.AddLibraryFromDirectoryAsync(lib);
+        var extraLibrary = await service.AddLibraryFromDirectoryAsync(extra);
+
+        var newFile = Path.Combine(extra, "New.mo");
+        await File.WriteAllTextAsync(newFile, "within LibExtra;\nmodel New\nend New;\n");
+        return (service, libLibrary, extraLibrary, root, newFile);
+    }
+
+    [Fact]
+    public async Task ReloadFileAsync_ANewFile_BelongsToItsOwnLibrary_NotOneWhosePathIsAPrefix()
+    {
+        var (service, lib, extra, root, newFile) = await SiblingLibrariesWithANewFileAsync();
+        try
+        {
+            await service.ReloadFileAsync(newFile);
+
+            Assert.Contains("LibExtra.New", extra.ModelIds);
+            Assert.DoesNotContain("LibExtra.New", lib.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateChangedFilesAsync_ANewFile_BelongsToItsOwnLibrary_NotOneWhosePathIsAPrefix()
+    {
+        var (service, lib, extra, root, newFile) = await SiblingLibrariesWithANewFileAsync();
+        try
+        {
+            await service.UpdateChangedFilesAsync([newFile], root);
+
+            Assert.Contains("LibExtra.New", extra.ModelIds);
+            Assert.DoesNotContain("LibExtra.New", lib.ModelIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // ============================================================================
     // RefreshDependenciesAsync - a reload takes the file's dependency edges (B290)
     // ============================================================================
