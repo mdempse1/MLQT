@@ -1998,6 +1998,38 @@ document.head.appendChild(style);
            && finding.RuleId == RuleIds.SingleFilePackage;
 
     /// <summary>
+    /// Why a package in <paramref name="library"/> cannot be split where it is, or null when it can
+    /// (B306).
+    ///
+    /// <para>A library loaded from one <c>.mo</c> file has that file as its root: every path in it
+    /// is resolved against the file, and the files a split writes are a directory beside it that the
+    /// library does not contain. Splitting its top-level package deleted the file the library was
+    /// loaded from and left the graph describing it — the new files resolved to <c>../MyLib/…</c>,
+    /// the old classes were never removed, and every later edit on the page reported it could not
+    /// find the file. A library that is a single file can only hold packages in that file, so the
+    /// refusal is for all of them.</para>
+    ///
+    /// <para><b>Asked of the path, not the source type.</b> A library found in a repository has its
+    /// source type overwritten with Git or SVN whatever shape it has on disk, so
+    /// <see cref="LibrarySourceType.File"/> is only what a library opened on its own says.</para>
+    /// </summary>
+    internal static string? WhyNotSplit(LoadedLibrary library, string packageName)
+    {
+        if (library.SourceType == LibrarySourceType.Zip)
+            return $"{packageName} is in a library read from an archive, which MLQT does not write to.";
+
+        var isSingleFile = library.SourceType == LibrarySourceType.File
+            || (library.SourcePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
+                && !Directory.Exists(library.SourcePath));
+
+        return isSingleFile
+            ? $"{packageName} cannot be split here: the library is loaded from the single file "
+              + $"{Path.GetFileName(library.SourcePath)}, and splitting it would change what the library "
+              + "is loaded from. Split it outside MLQT, then open the library as a directory."
+            : null;
+    }
+
+    /// <summary>
     /// Writes the package this finding names as a directory with a file per class, and reloads the
     /// files that changed.
     /// </summary>
@@ -2019,6 +2051,12 @@ document.head.appendChild(style);
         if (repository is null || library is null)
         {
             Snackbar.Add("That package is not in a repository MLQT can write to.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        if (WhyNotSplit(library, package.Definition.Name) is { } refusal)
+        {
+            Snackbar.Add(refusal, MudBlazor.Severity.Warning);
             return;
         }
 

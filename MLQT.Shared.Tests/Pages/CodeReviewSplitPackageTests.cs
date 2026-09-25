@@ -1,3 +1,4 @@
+using MLQT.Services.DataTypes;
 using MLQT.Shared.Pages;
 using ModelicaParser.DataTypes;
 using ModelicaParser.StyleRules;
@@ -50,6 +51,44 @@ public class CodeReviewSplitPackageTests
     public void NothingIsNotAFinding()
     {
         Assert.False(CodeReview.CanSplitPackage(null));
+    }
+
+    // ── B306: a library that is one file ──────────────────────────────────────────
+
+    private static LoadedLibrary Library(LibrarySourceType type, string sourcePath) =>
+        new() { SourceType = type, SourcePath = sourcePath };
+
+    [Theory]
+    [InlineData(LibrarySourceType.Git)]
+    [InlineData(LibrarySourceType.SVN)]
+    [InlineData(LibrarySourceType.File)]
+    public void ALibraryLoadedFromOneFileIsNotSplitInPlace(LibrarySourceType type)
+    {
+        // Splitting MyLib.mo deleted the file the library was loaded from, and the graph kept
+        // resolving paths against it. Git and SVN are in the list because a library found in a
+        // repository says so whatever its shape - which is the ordinary way to have one.
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-no-such-dir", "MyLib.mo");
+
+        var refusal = CodeReview.WhyNotSplit(Library(type, path), "MyLib");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("MyLib.mo", refusal);
+    }
+
+    [Theory]
+    [InlineData(LibrarySourceType.Git)]
+    [InlineData(LibrarySourceType.Directory)]
+    public void ALibraryThatIsADirectoryCanBeSplit(LibrarySourceType type)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mlqt-no-such-dir", "MyLib");
+
+        Assert.Null(CodeReview.WhyNotSplit(Library(type, path), "MyLib"));
+    }
+
+    [Fact]
+    public void AnArchiveIsNeverWritten()
+    {
+        Assert.NotNull(CodeReview.WhyNotSplit(Library(LibrarySourceType.Zip, "lib.zip"), "MyLib"));
     }
 
     [Fact]

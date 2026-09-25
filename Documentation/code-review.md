@@ -208,7 +208,7 @@ between them.
 The action writes that package as a directory with one file per class and a matching
 `package.order`, deletes the file it came from, and leaves the rest of the repository untouched. It
 asks first, since it creates a directory and deletes a file. Everything it does is an ordinary
-working-copy change, so version control can undo it.
+working-copy change, so version control can undo it. A library that is itself a single `.mo` file is the one exception: splitting it would change what the library is loaded from, so the action declines and says so - split it outside MLQT and open the library as a directory.
 
 The alternative is **Format All Files** in repository settings, which does the same restructuring to
 the whole library — the right thing when you mean it, and a commit of thousands of files when you
