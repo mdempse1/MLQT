@@ -147,7 +147,8 @@ public partial class SettingsExternalTools : IDisposable
             var folder = await FilePickerService.PickFolderAsync("Select OpenModelica installation directory");
             if (!string.IsNullOrEmpty(folder))
             {
-                _settings.OpenModelica.OmcPath = Path.Combine(folder, "bin", "omc.exe");
+                // The platform's executable, and the folder itself when the user chose bin (B338).
+                _settings.OpenModelica.OmcPath = OpenModelicaSettings.OmcUnder(folder);
                 _showOpenModelicaWarning = !File.Exists(_settings.OpenModelica.OmcPath);
                 StateHasChanged();
             }

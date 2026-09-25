@@ -20,7 +20,11 @@ MLQT attempts to auto-detect installed tools on startup:
   `Dymola {year}x` or `Dymola {year}` — for example `Dymola 2026x Refresh 1`, `Dymola 2024x` or
   `Dymola 2023` — for every year from next year's back to 2021, and takes the newest it finds.
   Anything else (Dymola 2020 or earlier, a renamed folder, another drive) is set by hand
-- **OpenModelica**: Scans `Program Files` for recent OpenModelica versions, trying common installation paths
+- **OpenModelica**: on Windows, looks in `Program Files` for the installer's versioned folders
+  (`OpenModelica1.26.0-64bit\bin\omc.exe` and so on, newest first, back to 1.21), then for `omc.exe`
+  in each folder on `PATH`. On Linux, looks for `/usr/bin/omc` (where OpenModelica's own apt
+  repository installs it), `/usr/local/bin/omc` and `/opt/openmodelica/bin/omc`, then for `omc` in
+  each folder on `PATH`
 
 If auto-detection succeeds, the path is pre-filled. If your tool is installed in a non-standard location, you'll need to set the path manually.
 
@@ -38,9 +42,18 @@ If the specified executable is not found, a warning message appears below the pa
 
 | Field | Description |
 |-------|-------------|
-| **Path to OpenModelica Compiler Executable** | The full path to `omc.exe`. Click the folder icon to browse — MLQT navigates to the selected folder and looks for `bin/omc.exe`. |
+| **Path to OpenModelica Compiler Executable** | The full path to `omc.exe` on Windows, or `omc` on Linux. Click the folder icon to browse and choose the installation folder — MLQT looks for `bin/omc.exe` (`bin/omc` on Linux) in it, or for the executable directly if you chose the `bin` folder itself. |
 | **Port Number** | The port used for the ZeroMQ communication channel. Default: `13027`. |
 | **Check time limit (seconds)** | How long one check, or opening the library, may take before MLQT stops waiting. Default: `60`. `0` means no limit. |
+
+### OpenModelica on Linux
+
+Install OpenModelica from its own apt repository (see
+[openmodelica.org/download](https://openmodelica.org/download/)); that puts the compiler at
+`/usr/bin/omc`, which MLQT finds by itself. For an installation somewhere else, either put its `bin`
+folder on your `PATH` before starting MLQT, or type the path to `omc` into the field above — or browse
+to the installation folder (for example `/opt/openmodelica`), and MLQT takes `bin/omc` inside it.
+Everything else — the port, the time limit, what a check reports — is the same as on Windows.
 
 ### When a check runs out of time
 
