@@ -1265,6 +1265,16 @@ public class RepositoryService : IRepositoryService
         _ = SaveRepositorySettingsAsync();
     }
 
+    /// <summary>
+    /// Refreshes the revision info of every repository sharing this one's working copy - an
+    /// operation on the checkout moves all of them (B301, B324).
+    /// </summary>
+    private async Task UpdateWorkingCopyRevisionInfoAsync(Repository repository)
+    {
+        foreach (var repo in GetRepositoriesSharingWorkingCopy(repository.Id))
+            await UpdateRevisionInfoAsync(repo);
+    }
+
     private async Task UpdateRevisionInfoAsync(Repository repository)
     {
         await Task.Run(() =>
@@ -1540,10 +1550,10 @@ public class RepositoryService : IRepositoryService
 
         var result = await Task.Run(() => vcs.Commit(repository.VcsRootPath, message, filesToCommit, progress));
 
-        // Update the repository's revision info if successful
+        // Every repository in the working copy is now at the new revision, not only this one (B324).
         if (result.Success)
         {
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
             OnRepositoriesChanged?.Invoke();
         }
 
@@ -1670,10 +1680,12 @@ public class RepositoryService : IRepositoryService
             ? await Task.Run(() => _svn.CreateBranch(repository.VcsRootPath, branchName, switchToBranch, repository.StyleSettings?.SvnBranchDirectories))
             : await Task.Run(() => vcs.CreateBranch(repository.VcsRootPath, branchName, switchToBranch));
 
-        // Update the repository's revision info if successful
+        // A switch moves the whole working copy, so every repository in it is now on the new branch.
+        // Refreshing only this one left a sibling library's CurrentBranch naming the old branch,
+        // which is what its Push and Force Push then pushed (B324).
         if (result.Success && switchToBranch)
         {
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
             OnRepositoriesChanged?.Invoke();
         }
 
@@ -1855,9 +1867,12 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        var result = await Task.Run(() => vcs.Push(repository.VcsRootPath, repository.CurrentBranch));
+        // No branch named: the push acts on the branch HEAD is on at the moment it runs. The stored
+        // CurrentBranch can be stale - a sibling library switched the checkout, or another tool did -
+        // and git pushes the branch it is given, not HEAD (B324).
+        var result = await Task.Run(() => vcs.Push(repository.VcsRootPath));
         if (result.Success)
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
         return result;
     }
 
@@ -1932,9 +1947,11 @@ public class RepositoryService : IRepositoryService
             _ => throw new InvalidOperationException("Unsupported VCS type")
         };
 
-        var result = await Task.Run(() => vcs.ForcePush(repository.VcsRootPath, repository.CurrentBranch));
+        // HEAD's branch, never the stored name: a force push of a stale name rewinds the remote's copy
+        // of a branch this checkout is no longer on, and the lease passes against a fresh fetch (B324).
+        var result = await Task.Run(() => vcs.ForcePush(repository.VcsRootPath));
         if (result.Success)
-            await UpdateRevisionInfoAsync(repository);
+            await UpdateWorkingCopyRevisionInfoAsync(repository);
         return result;
     }
 

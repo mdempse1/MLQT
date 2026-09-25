@@ -1545,25 +1545,15 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return result;
             }
 
-            // Determine remote name from LibGit2Sharp so we can pass it explicitly.
-            // Falls back to "origin" if no tracking branch is configured.
-            string remoteName = "origin";
-            string? localBranchName = branchName;
-            using (var repo = new Repository(repositoryPath))
+            if (!TryResolvePushTarget(repositoryPath, branchName, out var remoteName, out var localBranchName, out var refusal))
             {
-                var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
-                if (branch != null)
-                {
-                    remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
-                    localBranchName ??= branch.FriendlyName;
-                }
+                result.ErrorMessage = refusal;
+                return result;
             }
 
             // Shell out to git push — uses the full Git credential stack
             // (GCM, GitHub Desktop, SSH agent, etc.) which LibGit2Sharp bypasses.
-            var args = localBranchName != null
-                ? $"push {remoteName} {localBranchName}"
-                : "push";
+            var args = $"push {remoteName} {localBranchName}";
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, args);
 
@@ -1587,6 +1577,51 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
         return result;
     }
+
+    /// <summary>
+    /// The remote and local branch a push acts on: the named branch, or with none named, <b>the
+    /// branch HEAD is on now</b>, read from the repository at the moment of the push.
+    /// </summary>
+    /// <remarks>
+    /// Git pushes the branch it is given, not HEAD, so a caller that names a branch from memory
+    /// pushes whatever that memory says. <c>RepositoryService</c> used to pass its stored
+    /// <c>CurrentBranch</c>, which is stale for a second library in the same checkout after the first
+    /// created a branch - and a force push of the stale name rewound the remote's copy of it (B324).
+    /// A detached HEAD is on no branch, and pushing "(no branch)" or guessing one is refused.
+    /// </remarks>
+    private static bool TryResolvePushTarget(string repositoryPath, string? branchName,
+        out string remoteName, out string localBranchName, out string? refusal)
+    {
+        remoteName = "origin";
+        localBranchName = "";
+        refusal = null;
+
+        using var repo = new Repository(repositoryPath);
+        if (branchName == null && repo.Info.IsHeadDetached)
+        {
+            refusal = DetachedHeadRefusal("push");
+            return false;
+        }
+
+        var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
+        if (branch == null)
+        {
+            refusal = $"Branch '{branchName}' not found.";
+            return false;
+        }
+
+        // Falls back to "origin" if no tracking branch is configured.
+        remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
+        localBranchName = branch.FriendlyName;
+        return true;
+    }
+
+    /// <summary>
+    /// What an operation that needs a branch says when HEAD is on none (B324, B327). One wording,
+    /// so the refusals read alike and a test can recognise any of them.
+    /// </summary>
+    internal static string DetachedHeadRefusal(string operation) =>
+        $"Cannot {operation}: HEAD is detached, so it is on no branch. Create a branch here first, or switch to one.";
 
     /// <summary>
     /// Rebases the current branch onto the given target branch by replaying local commits on top.
@@ -1708,21 +1743,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                 return result;
             }
 
-            string remoteName = "origin";
-            string? localBranchName = branchName;
-            using (var repo = new Repository(repositoryPath))
+            if (!TryResolvePushTarget(repositoryPath, branchName, out var remoteName, out var localBranchName, out var refusal))
             {
-                var branch = branchName != null ? repo.Branches[branchName] : repo.Head;
-                if (branch != null)
-                {
-                    remoteName = branch.TrackedBranch?.RemoteName ?? "origin";
-                    localBranchName ??= branch.FriendlyName;
-                }
+                result.ErrorMessage = refusal;
+                return result;
             }
 
-            var args = localBranchName != null
-                ? $"push --force-with-lease {remoteName} {localBranchName}"
-                : "push --force-with-lease";
+            var args = $"push --force-with-lease {remoteName} {localBranchName}";
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, args);
             if (exitCode == 0)

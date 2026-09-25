@@ -1317,6 +1317,36 @@ public class GitOperationsTests : IDisposable
         return stdout;
     }
 
+    /// <summary>
+    /// B324: on a detached HEAD there is no branch to push, and neither push may guess one. The
+    /// remote is left exactly as it was - the assertion a refusal by accident (no remote, say)
+    /// would also pass without it is the message.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Push_OnADetachedHead_IsRefusedAndTouchesNothing(bool force)
+    {
+        var remotePath = NewTempPath("GitOpsRemote");
+        Repository.Init(remotePath, isBare: true);
+
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            repo.Network.Remotes.Add("origin", remotePath);
+            RunGit(repoPath, "push -u origin HEAD");
+            AddCommit(repo, repoPath, new() { ["f.mo"] = "model A \"changed\" end A;" }, "Second");
+            Commands.Checkout(repo, repo.Head.Tip);
+        }
+        var remoteBefore = RunGit(remotePath, "rev-parse HEAD").Trim();
+
+        var result = force ? _git.ForcePush(repoPath) : _git.Push(repoPath);
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        Assert.Equal(remoteBefore, RunGit(remotePath, "rev-parse HEAD").Trim());
+    }
+
     [Fact]
     public void ForcePush_WithNoRemote_ReturnsError()
     {
