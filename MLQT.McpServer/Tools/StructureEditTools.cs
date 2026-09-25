@@ -599,6 +599,12 @@ public sealed class StructureEditTools
     /// above, by leaving a blank line behind, or by eating the newline and merging two lines - and
     /// none of those change whether the removed text is still present, which is all the tests before
     /// them asked.</para>
+    ///
+    /// <para><b>"The line" is the statement's line only when the statement has it to itself</b>
+    /// (B312). With another statement before it on the line (<c>Real x; Real y;</c>) or after it
+    /// (<c>connect(a, b); y = 2;</c>) only the statement goes, with the blanks that separated it from
+    /// its neighbour - cutting from the line start deleted the neighbour as well, and the result
+    /// still parsed, so the parse check passed and the user's code was silently lost.</para>
     /// </remarks>
     private static string? RemoveWholeLine(string code, int start, int stop)
     {
@@ -606,8 +612,35 @@ public sealed class StructureEditTools
         var semicolon = code.IndexOf(';', stop);
         if (semicolon < 0)
             return null;
-        var removeEnd = semicolon + 1 < code.Length && code[semicolon + 1] == '\n' ? semicolon + 1 : semicolon;
-        return code[..lineStart] + code[(removeEnd + 1)..];
+
+        var lineEnd = code.IndexOf('\n', semicolon);
+        if (lineEnd < 0)
+            lineEnd = code.Length;
+        var aloneBefore = string.IsNullOrWhiteSpace(code[lineStart..start]);
+        var aloneAfter = string.IsNullOrWhiteSpace(code[(semicolon + 1)..lineEnd]);
+
+        if (aloneBefore && aloneAfter)
+        {
+            var removeEnd = semicolon + 1 < code.Length && code[semicolon + 1] == '\n' ? semicolon + 1 : semicolon;
+            return code[..lineStart] + code[(removeEnd + 1)..];
+        }
+
+        if (!aloneBefore)
+        {
+            // Something precedes it: take the blanks before the statement, keep everything after.
+            var cut = start;
+            while (cut > lineStart && IsBlank(code[cut - 1]))
+                cut--;
+            return code[..cut] + code[(semicolon + 1)..];
+        }
+
+        // Alone before, something after: keep the indentation, take the blanks after the semicolon.
+        var resume = semicolon + 1;
+        while (resume < lineEnd && IsBlank(code[resume]))
+            resume++;
+        return code[..start] + code[resume..];
+
+        static bool IsBlank(char c) => c is ' ' or '\t';
     }
 
     private static string EnsureSemicolon(string text)

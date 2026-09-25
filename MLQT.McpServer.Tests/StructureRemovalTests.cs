@@ -39,6 +39,13 @@ public class StructureRemovalTests
           model Solo "solo"
             Real only;
           end Solo;
+          model OneLine "statements sharing a line"
+            Real x; Real y;
+            Real z;
+          equation
+            x = 1; connect(y, z);
+            connect(x, z); y = 2;
+          end OneLine;
         end P;
         """;
 
@@ -167,5 +174,51 @@ public class StructureRemovalTests
             await tools.RemoveConnection("P.A", "first", "target"));
 
         AssertOnlyLineRemoved(before, Lines(host, "P.A"), "connect(first, target)");
+    }
+
+    /// <summary>
+    /// A statement that shares its line with another: only the statement goes, and the other one
+    /// stays where it was, indentation included (B312). Deleting "the line" here deleted the
+    /// neighbour too, and the result still parsed - so nothing reported the lost code.
+    /// </summary>
+    [Theory]
+    [InlineData("y", "Real x; Real y;", "Real x;")]
+    [InlineData("x", "Real x; Real y;", "Real y;")]
+    public async Task RemovingAComponentThatSharesItsLineKeepsTheOtherStatement(
+        string name, string original, string remaining)
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = Lines(host, "P.OneLine");
+
+        ToolAssert.Ok<StructureEditResult>(await tools.RemoveComponent("P.OneLine", name));
+
+        AssertLineRewritten(before, Lines(host, "P.OneLine"), original, remaining);
+    }
+
+    [Theory]
+    [InlineData("y", "z", "x = 1; connect(y, z);", "x = 1;")]
+    [InlineData("x", "z", "connect(x, z); y = 2;", "y = 2;")]
+    public async Task RemovingAConnectionThatSharesItsLineKeepsTheOtherStatement(
+        string portA, string portB, string original, string remaining)
+    {
+        using var host = new TestHost();
+        var tools = Load(host);
+        var before = Lines(host, "P.OneLine");
+
+        ToolAssert.Ok<StructureEditResult>(await tools.RemoveConnection("P.OneLine", portA, portB));
+
+        AssertLineRewritten(before, Lines(host, "P.OneLine"), original, remaining);
+    }
+
+    private static void AssertLineRewritten(string[] before, string[] after, string original, string remaining)
+    {
+        var expected = before
+            .Select(line => line.Contains(original, StringComparison.Ordinal)
+                ? line.Replace(original, remaining, StringComparison.Ordinal)
+                : line)
+            .ToArray();
+
+        Assert.Equal(expected, after);
     }
 }
