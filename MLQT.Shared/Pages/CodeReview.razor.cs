@@ -126,6 +126,9 @@ public partial class CodeReview : IAsyncDisposable
     /// </summary>
     private int? _pendingScrollLine;
 
+    /// <summary>The class <see cref="_pendingScrollLine"/> and <see cref="_pendingScrollWord"/> were armed for.</summary>
+    private string? _pendingScrollModelId;
+
     // Set when the correction context menu opens with a provisional position. On the next after-render
     // OnAfterRenderAsync re-measures the now-rendered menu and clamps it within the viewport, writing
     // the result back into _contextMenuX/_contextMenuY so .NET stays the source of truth (later
@@ -165,7 +168,26 @@ public partial class CodeReview : IAsyncDisposable
     /// to the wrong place, and the page then swapped the elided text in underneath.
     /// </summary>
     internal bool ReadyForPendingScrolls =>
-        !_isLoadingCode && !_showingQuickPaint && _highlightedCode is { Count: > 0 };
+        PendingScrollsCanLand(_isLoadingCode, _showingQuickPaint, _isDiffMode, _highlightedCode);
+
+    /// <summary>
+    /// The rule behind <see cref="ReadyForPendingScrolls"/>: no spinner, no first paint, a class on
+    /// screen — <b>and not in diff mode</b> (B346): the single view is not rendered there, so a
+    /// scroll aimed at <c>.code-viewer</c> found nothing and the finding's line was consumed and
+    /// lost. It is held instead, and lands when the user switches back.
+    /// </summary>
+    internal static bool PendingScrollsCanLand(
+        bool isLoading, bool showingQuickPaint, bool isDiffMode, IReadOnlyList<string>? lines) =>
+        !isLoading && !showingQuickPaint && !isDiffMode && lines is { Count: > 0 };
+
+    /// <summary>
+    /// Whether the find-in-code box works: there is a class on screen to search, and it is the
+    /// single view. The diff is a different document — its lines are numbered and laid out by the
+    /// diff — so the box used to count matches in text that was not on screen and scroll a viewer
+    /// that was not rendered (B346).
+    /// </summary>
+    internal static bool CodeSearchAvailable(bool isDiffMode, IReadOnlyList<string>? lines) =>
+        !isDiffMode && lines is { Count: > 0 };
 
     /// <summary>Starts a render of the current class, and returns its number.</summary>
     internal int BeginRender() => ++_renderGeneration;
@@ -574,17 +596,15 @@ public partial class CodeReview : IAsyncDisposable
             await ApplyCorrection(_customCorrection);
     }
 
-    private async Task ToggleAnnotations()
+    /// <summary>
+    /// Shows or hides annotations in the single view. <b>The diff is not touched</b>: since B285 it
+    /// always shows everything, so it has nothing to reload — and it used to reload twice, once
+    /// here and once from the VCS check the re-show starts (B346).
+    /// </summary>
+    private void ToggleAnnotations()
     {
         _showAnnotations = !_showAnnotations;
-        OnModelSelected();
-
-        // If in diff mode, force reload with new annotation settings
-        if (_isDiffMode)
-        {
-            _originalModelCode = null;
-            await LoadModelDiffAsync();
-        }
+        ShowCurrentModel(keepDiff: true);
     }
 
     /// <summary>
@@ -1000,7 +1020,14 @@ public partial class CodeReview : IAsyncDisposable
 
     #endregion
 
-    private async void OnModelSelected()
+    private void OnModelSelected() => ShowCurrentModel(keepDiff: false);
+
+    /// <summary>
+    /// Shows the selected class. <paramref name="keepDiff"/> is for a change that alters only how
+    /// the single view is drawn, and leaves a loaded diff where it is; everything else — a new
+    /// class, or new content in this one — throws it away to be loaded again.
+    /// </summary>
+    private async void ShowCurrentModel(bool keepDiff)
     {
         // Whatever render is still on its way was asked for before this one, and must not land
         // over it - whether it is for another class or for this class with annotations the other
@@ -1010,11 +1037,25 @@ public partial class CodeReview : IAsyncDisposable
         if (string.IsNullOrEmpty(NavState.ModelID))
             return;
 
+        // A scroll armed by a finding is for that finding's class, and is held while the diff is
+        // showing (B346) - so it has to be dropped when the user goes somewhere else instead, or
+        // switching back to the single view would scroll some other class to its line.
+        if (!string.Equals(_pendingScrollModelId, NavState.ModelID, StringComparison.Ordinal))
+        {
+            _pendingScrollLine = null;
+            _pendingScrollWord = null;
+            _pendingScrollModelId = null;
+        }
+
         var totalSw = System.Diagnostics.Stopwatch.StartNew();
 
-        _currentModelNode = LibraryDataService.GetModelById(NavState.ModelID);
-        _originalModelCode = null;
-        _modifiedModelCode = null;
+        var node = LibraryDataService.GetModelById(NavState.ModelID);
+        if (!keepDiff || !ReferenceEquals(node, _currentModelNode))
+        {
+            _originalModelCode = null;
+            _modifiedModelCode = null;
+        }
+        _currentModelNode = node;
 
         if (_currentModelNode == null)
             return;
@@ -1571,6 +1612,7 @@ public partial class CodeReview : IAsyncDisposable
         // class declaration is already where the viewer opens.
         if (_pendingScrollWord is null && _currentFinding.LineNumber > 0)
             _pendingScrollLine = _currentFinding.LineNumber;
+        _pendingScrollModelId = _currentFinding.ModelName;
 
         NavState.ChangeModelID(_currentFinding.ModelName);
     }
@@ -1915,6 +1957,10 @@ document.head.appendChild(style);
 
     private async Task ScrollToCurrentMatchAsync()
     {
+        // The viewer this scrolls is not rendered in diff mode (B346).
+        if (_isDiffMode || _codeMatches.Count == 0)
+            return;
+
         try
         {
             await JSRuntime.InvokeVoidAsync(
@@ -1934,7 +1980,7 @@ document.head.appendChild(style);
     /// field when nothing has been searched for (B248). It used to hold 84px open regardless.</para>
     /// </summary>
     private string CodeSearchStatus =>
-        CodeSearchStatusText(_codeSearch, _codeMatches.Count, _codeMatchIndex);
+        _isDiffMode ? "" : CodeSearchStatusText(_codeSearch, _codeMatches.Count, _codeMatchIndex);
 
     /// <inheritdoc cref="CodeSearchStatus"/>
     internal static string CodeSearchStatusText(string search, int matchCount, int matchIndex) =>

@@ -115,7 +115,7 @@
                     Immediate="true" Placeholder="Find in code" Adornment="Adornment.Start"
                     AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
                     Class="mt-0" Style="max-width: 220px;" Typo="Typo.body1"
-                    Disabled="@(_highlightedCode is null or { Count: 0 })" />
+                    Disabled="@(!CodeSearchAvailable(_isDiffMode, _highlightedCode))" />
                 @* Always rendered, and sized by what is in it. `min-width: 84px` held that space
                    open whether or not there was a count to put in it, which is what separated the
                    field from its arrows. An empty element takes no width, and app.css gives it
@@ -125,12 +125,12 @@
                 <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" OverrideStyles="false">
                     <MudTooltip Text="Previous match" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Color="Color.Primary"
-                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)" Variant="Variant.Outlined"
+                            Size="Size.Small" Disabled="@(_isDiffMode || _codeMatches.Count == 0)" Variant="Variant.Outlined"
                             OnClick="@(() => StepCodeMatch(-1))" aria-label="Previous match" />
                     </MudTooltip>
                     <MudTooltip Text="Next match" Arrow="true" Placement="Placement.Bottom">
                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Color="Color.Primary"
-                            Size="Size.Small" Disabled="@(_codeMatches.Count == 0)" Variant="Variant.Outlined"
+                            Size="Size.Small" Disabled="@(_isDiffMode || _codeMatches.Count == 0)" Variant="Variant.Outlined"
                             OnClick="@(() => StepCodeMatch(1))" aria-label="Next match" />
                     </MudTooltip>
                 </MudButtonGroup>
