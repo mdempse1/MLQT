@@ -35,30 +35,55 @@ public class DymolaSettings
         _ => TimeSpan.FromMilliseconds(CommandTimeoutMs),
     };
 
+    /// <summary>The oldest release auto-detection looks for, as MLQT's documented minimum.</summary>
+    public const int OldestDetectedYear = 2021;
+
     public DymolaSettings()
     {
-        if (string.IsNullOrEmpty(DymolaPath)) {
-            //Search for the most recent Dymola version
-            var year = DateTime.Now.Year + 1;
-            var refreshVersionNext = false;
-            string versionName;
-            while (year > 2020)
-            {
-                if (refreshVersionNext) 
-                {
-                    year--;
-                    versionName = $"Dymola {year}x Refresh 1";
-                }
-                else
-                    versionName = $"Dymola {year}x";
-                var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), versionName, "bin64", "dymola.exe");
-                if (File.Exists(path)) 
-                {
-                    DymolaPath = path;
-                    break;
-                }
-                refreshVersionNext = !refreshVersionNext;
-            }            
+        if (string.IsNullOrEmpty(DymolaPath))
+            DymolaPath = FindInstalledDymola(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), DateTime.Now.Year + 1);
+    }
+
+    /// <summary>
+    /// The install folders auto-detection looks for, newest release first: for each year from
+    /// <paramref name="newestYear"/> back to <see cref="OldestDetectedYear"/>, <c>Dymola {year}x
+    /// Refresh 1</c>, <c>Dymola {year}x</c> and <c>Dymola {year}</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>That is also the order they were released in: the spring release of a year (<c>Dymola
+    /// 2023</c>) came out before its autumn one (<c>2023x</c>), which came before the next spring's
+    /// refresh (<c>2023x Refresh 1</c>) - and the autumn release named for the next year
+    /// (<c>2024x</c>) is newer than all three.</para>
+    ///
+    /// <para><b>The spring releases used to be missed</b> - only the two <c>x</c> names were probed,
+    /// so a machine with <c>Dymola 2022</c> or <c>Dymola 2023</c> and nothing later was found to have
+    /// none - and the loop decremented the year before building the refresh name, so it probed
+    /// <c>Dymola 2020x Refresh 1</c> while the documentation said 2021 onwards (B337).</para>
+    /// </remarks>
+    public static IEnumerable<string> CandidateInstallNames(int newestYear)
+    {
+        for (var year = newestYear; year >= OldestDetectedYear; year--)
+        {
+            yield return $"Dymola {year}x Refresh 1";
+            yield return $"Dymola {year}x";
+            yield return $"Dymola {year}";
         }
+    }
+
+    /// <summary>
+    /// The newest <c>bin64/dymola.exe</c> under <paramref name="programFiles"/>, among
+    /// <see cref="CandidateInstallNames"/>; empty when there is none.
+    /// </summary>
+    public static string FindInstalledDymola(string programFiles, int newestYear)
+    {
+        foreach (var name in CandidateInstallNames(newestYear))
+        {
+            var path = Path.Combine(programFiles, name, "bin64", "dymola.exe");
+            if (File.Exists(path))
+                return path;
+        }
+
+        return string.Empty;
     }
 }

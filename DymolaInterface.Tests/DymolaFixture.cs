@@ -17,23 +17,8 @@ public class DymolaFixture : IDisposable
     /// whichever version is present on the current machine without hard-coding
     /// a year.
     /// </summary>
-    public static string ResolveDymolaPath()
-    {
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var year = DateTime.Now.Year + 1;
-        var refreshVersionNext = false;
-        while (year > 2020)
-        {
-            var versionName = refreshVersionNext
-                ? $"Dymola {year}x Refresh 1"
-                : $"Dymola {year}x";
-            var path = Path.Combine(programFiles, versionName, "bin64", "dymola.exe");
-            if (File.Exists(path)) return path;
-            if (refreshVersionNext) year--;
-            refreshVersionNext = !refreshVersionNext;
-        }
-        return string.Empty;
-    }
+    public static string ResolveDymolaPath() => DymolaSettings.FindInstalledDymola(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), DateTime.Now.Year + 1);
 
     public string DymolaPath { get; }
     public DymolaInterface Dymola { get; private set; }
