@@ -121,9 +121,14 @@ public class LibraryDataService : ILibraryDataService
             if (_dependencyAnalysisTask is { IsCompleted: false })
                 return _dependencyAnalysisTask;
 
-            var libraryInfos = GetLibraryInfos();
-            _dependencyAnalysisTask = Task.Run(() =>
-                GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, libraryInfos, progressLog));
+            _dependencyAnalysisTask = Task.Run(async () =>
+            {
+                // Again if a library arrived while it ran: that run did not see the new classes, so it
+                // leaves the graph unmarked (B352), and a caller awaiting this would otherwise go on
+                // with no edges for them. Bounded, because a stream of loads is not a reason to spin.
+                for (var attempt = 0; attempt < 3 && !_combinedGraph.DependenciesAnalyzed; attempt++)
+                    await GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph, GetLibraryInfos(), progressLog);
+            });
             return _dependencyAnalysisTask;
         }
     }
@@ -486,7 +491,7 @@ public class LibraryDataService : ILibraryDataService
 
         try
         {
-            await Task.Run(async () =>
+            await Task.Run(() =>
             {
                 // Load directly into the combined graph
                 // Note: Using lock here since Parallel.ForEach may cause race conditions
@@ -498,9 +503,14 @@ public class LibraryDataService : ILibraryDataService
                     modelIds.AddRange(GraphBuilder.LoadModelicaFile(_combinedGraph, filePath, content));
                 }
 
-                await GraphBuilder.AnalyzeDependenciesAsync(_combinedGraph);
                 BuildLibraryIndex(library, _combinedGraph, modelIds);
             });
+
+            // Invalidated like every other load, rather than analysed here. The full analysis this ran
+            // went around EnsureDependenciesAnalyzedAsync's gate, so it could race a run already in
+            // flight over the same edges, and it passed no library roots, so modelica:// references
+            // resolved differently from every other run (B352, and B166's third cause).
+            _combinedGraph.InvalidateDependencyAnalysis();
 
             // Set name from first top-level model if available
             if (library.TopLevelModelIds.Count > 0)

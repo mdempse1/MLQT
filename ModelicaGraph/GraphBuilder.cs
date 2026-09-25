@@ -492,6 +492,10 @@ public static class GraphBuilder
     {
         const int batchSize = 500;
 
+        // Read before the set of classes is taken: a library loaded after this point is not in it, and
+        // its load moves the generation on, so the run below does not claim to have covered it (B352).
+        var generation = graph.AnalysisGeneration;
+
         // Placeholder nodes carry raw (unparseable) file content and already have a fatal
         // error attached — re-parsing them wastes work and produces noise. Skip them here.
         //
@@ -692,9 +696,12 @@ public static class GraphBuilder
         }
 
         // Only now are UsedModelIds/UsedByModelIds complete. Consumers that need the edges gate on
-        // this flag rather than inspecting the graph, so it must be set last.
-        graph.MarkDependenciesAnalyzed();
-        progressLog?.Invoke("Dependency analysis complete");
+        // this flag rather than inspecting the graph, so it must be set last - and only if nothing
+        // arrived while the run was going.
+        if (graph.MarkDependenciesAnalyzed(generation))
+            progressLog?.Invoke("Dependency analysis complete");
+        else
+            progressLog?.Invoke("Dependency analysis complete, but the graph changed while it ran - not marked analysed");
     }
 
     /// <summary>

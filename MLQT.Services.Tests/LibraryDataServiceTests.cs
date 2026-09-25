@@ -1374,6 +1374,45 @@ end TestPkg;
     }
 
     [Fact]
+    public async Task EnsureDependenciesAnalyzedAsync_CoversALibraryLoadedWhileItRan()
+    {
+        // The run took its set of classes at the start, so B was not in it; marking the graph analysed
+        // at the end claimed edges B did not have, and the caller awaiting the run went on without
+        // them (B352).
+        var service = new LibraryDataService();
+        await service.AddLibraryFromFileAsync("A.mo", "model A Real x; end A;");
+        var loaded = 0;
+
+        await service.EnsureDependenciesAnalyzedAsync(message =>
+        {
+            if (message.StartsWith("Phase 1+2:", StringComparison.Ordinal) && Interlocked.Exchange(ref loaded, 1) == 0)
+                service.AddLibraryFromFileAsync("B.mo", "model B A a; end B;").GetAwaiter().GetResult();
+        });
+
+        Assert.Equal(1, loaded);   // the load did happen mid-run
+        Assert.True(service.CombinedGraph.DependenciesAnalyzed);
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
+    public async Task AddLibraryFromZipAsync_LeavesTheAnalysisToTheGate()
+    {
+        // It ran a full analysis of its own, outside EnsureDependenciesAnalyzedAsync and without the
+        // library roots. Now it invalidates like every other load, and the gate's run adds the edges.
+        var service = new LibraryDataService();
+        await service.AddLibraryFromZipAsync(new Dictionary<string, string>
+        {
+            ["A.mo"] = "model A Real x; end A;",
+            ["B.mo"] = "model B A a; end B;",
+        });
+        Assert.False(service.CombinedGraph.DependenciesAnalyzed);
+
+        await service.EnsureDependenciesAnalyzedAsync();
+
+        Assert.Contains("A", service.CombinedGraph.GetNode<ModelicaGraph.DataTypes.ModelNode>("B")!.UsedModelIds);
+    }
+
+    [Fact]
     public async Task GetLibraryInfos_ReturnsNameAndRootPathPerLibrary()
     {
         var service = new LibraryDataService();

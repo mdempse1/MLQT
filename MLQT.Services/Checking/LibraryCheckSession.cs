@@ -51,14 +51,12 @@ public static class LibraryCheckSession
             .Where(node => node is null || !node.IsExternalStub)
             .ToList();
 
-        // Parse diagnostics come first and are not gated by the severity map. A class that failed to
-        // parse is one the style rules below either skip outright (a placeholder) or read only partly,
-        // so reporting the style result without the parse error would understate the problem — and
-        // "no rules enabled" still has to report a file that cannot be read.
-        var parseFindings = ParserErrorReporter.ToFindings(modelList);
-
+        // Parse diagnostics are always reported and are not gated by the severity map. A class that
+        // failed to parse is one the style rules below either skip outright (a placeholder) or read
+        // only partly, so reporting the style result without the parse error would understate the
+        // problem — and "no rules enabled" still has to report a file that cannot be read.
         if (!settings.HasAnyStyleRuleEnabled)
-            return parseFindings;
+            return ParserErrorReporter.ToFindings(modelList);
 
         var context = StyleCheckContext.Build(
             settings, graph, customDictionary, dictionaryManager, repositoryRoot, collectCoverage,
@@ -85,8 +83,11 @@ public static class LibraryCheckSession
             }
         });
 
+        // Read after the per-class pass, not before it. A class nothing had parsed records its parse
+        // errors when the pass first parses it, so read beforehand they reached only the next run in
+        // the same session, and two checks of unchanged code disagreed (B352).
         var results = all.ToList();
-        results.AddRange(parseFindings);
+        results.AddRange(ParserErrorReporter.ToFindings(modelList));
 
         // Whole-graph analyses (Phase 6): run once over the checked model set and merge. A no-op until
         // graph analyzers are registered and their rules enabled, so it never affects a per-class-only run.

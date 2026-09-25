@@ -63,7 +63,49 @@ public class DirectedGraph
     public bool DependenciesAnalyzed { get; private set; }
 
     /// <summary>Records that full dependency analysis has completed over this graph.</summary>
-    public void MarkDependenciesAnalyzed() => DependenciesAnalyzed = true;
+    public void MarkDependenciesAnalyzed()
+    {
+        lock (_lock)
+            DependenciesAnalyzed = true;
+    }
+
+    // Moves on at every invalidation, so an analysis can tell whether one happened while it ran.
+    private long _analysisGeneration;
+
+    /// <summary>
+    /// Where invalidation has got to. An analysis reads this before it takes the set of classes to
+    /// analyse and hands it back to <see cref="MarkDependenciesAnalyzed(long)"/>.
+    /// </summary>
+    public long AnalysisGeneration
+    {
+        get
+        {
+            lock (_lock)
+                return _analysisGeneration;
+        }
+    }
+
+    /// <summary>
+    /// Records that full dependency analysis has completed, unless the graph was invalidated after
+    /// <paramref name="generation"/> was read - content arrived that the analysis did not see.
+    /// </summary>
+    /// <returns>Whether the graph is now marked analysed.</returns>
+    /// <remarks>
+    /// A library loaded while a full analysis ran is not in the set of classes the analysis took at
+    /// its start, and its load invalidated the graph. Marking unconditionally at the end overwrote
+    /// that, leaving the new classes without edges in a graph that claimed them, and nothing ran the
+    /// analysis again (B352).
+    /// </remarks>
+    public bool MarkDependenciesAnalyzed(long generation)
+    {
+        lock (_lock)
+        {
+            if (_analysisGeneration != generation)
+                return false;
+            DependenciesAnalyzed = true;
+            return true;
+        }
+    }
 
     /// <summary>
     /// Records that the graph has gained content that has never been through dependency analysis
@@ -71,7 +113,14 @@ public class DirectedGraph
     /// re-analysis of already-loaded models (<see cref="GraphBuilder.AnalyzeDependenciesForModelsAsync"/>)
     /// maintains the edges itself and must not call this.
     /// </summary>
-    public void InvalidateDependencyAnalysis() => DependenciesAnalyzed = false;
+    public void InvalidateDependencyAnalysis()
+    {
+        lock (_lock)
+        {
+            _analysisGeneration++;
+            DependenciesAnalyzed = false;
+        }
+    }
 
     /// <summary>
     /// Adds a node to the graph.
