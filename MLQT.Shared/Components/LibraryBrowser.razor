@@ -124,6 +124,14 @@ else if (Repository != null)
                                 <span>Detached HEAD</span>
                             }
                         </MudText>
+                        @* The way out of the state that disables Commit, Merge, Rebase and Push,
+                           offered where the state is named (B327). *@
+                        @if (IsDetachedHead && !Repository.IsReferenceOnly)
+                        {
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="ShowCreateBranchDialog" Disabled="@_vcsBusy"
+                                       aria-label="Create a branch here">Create a branch here</MudButton>
+                        }
                     }
                     <MudSpacer />
                     @if (!Repository.IsReferenceOnly)
@@ -143,20 +151,20 @@ else if (Repository != null)
                     else 
                     {
                         <MudTooltip Text="More actions ...">
-                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" Disabled="@_vcsBusy" />
+                            <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Medium" OnClick="ShowGitMenuDialog" Class="compact-icon-button" aria-label="More actions" Disabled="@_vcsBusy" />
                             <MudPopover OverflowBehavior="OverflowBehavior.FlipNever" Open="_showGitMenuDialog" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopLeft" Class="pt-0 pb-0 pl-2 pr-2">
                                 <MudStack Row="true" Spacing="1">
-                                    <MudTooltip Text="Rebase current branch">
-                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" Disabled="@_vcsBusy" />
+                                    <MudTooltip Text="@NeedsABranch("Rebase current branch")">
+                                        <MudIconButton Color="Color.Primary" Icon="@_rebaseIcon" Size="Size.Medium" OnClick="RebaseBranch" Class="compact-icon-button" aria-label="Rebase current branch" Disabled="@(_vcsBusy || IsDetachedHead)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Merge branch into working copy">
-                                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" Disabled="@_vcsBusy" />
+                                    <MudTooltip Text="@NeedsABranch("Merge branch into working copy")">
+                                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Merge" Size="Size.Medium" OnClick="ShowMergeBranchDialog" Class="compact-icon-button" aria-label="Merge branch into working copy" Disabled="@(_vcsBusy || IsDetachedHead)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Push changes to remote">
-                                        <MudIconButton Color="Color.Primary" Icon="@_pushIcon" Size="Size.Medium" OnClick="PushToRemote" Class="compact-icon-button" Disabled="@(_isPushing || _vcsBusy)" />
+                                    <MudTooltip Text="@NeedsABranch("Push changes to remote")">
+                                        <MudIconButton Color="Color.Primary" Icon="@_pushIcon" Size="Size.Medium" OnClick="PushToRemote" Class="compact-icon-button" aria-label="Push changes to remote" Disabled="@(_isPushing || _vcsBusy || IsDetachedHead)" />
                                     </MudTooltip>
-                                    <MudTooltip Text="Create pull request">
-                                        <MudIconButton Color="Color.Primary" Icon="@_pullRequestIcon" Size="Size.Medium" OnClick="CreatePullRequest" Class="compact-icon-button" Disabled="@_vcsBusy" />
+                                    <MudTooltip Text="@NeedsABranch("Create pull request")">
+                                        <MudIconButton Color="Color.Primary" Icon="@_pullRequestIcon" Size="Size.Medium" OnClick="CreatePullRequest" Class="compact-icon-button" aria-label="Create pull request" Disabled="@(_vcsBusy || IsDetachedHead)" />
                                     </MudTooltip>
                                 </MudStack>
                             </MudPopover>
@@ -194,8 +202,8 @@ else if (Repository != null)
                     <MudTooltip Text="Update repository">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Download" Size="Size.Medium" OnClick="RefreshRepository" Class="compact-icon-button" aria-label="Update repository" Disabled="@_vcsBusy" />
                     </MudTooltip>
-                    <MudTooltip Text="Commit changes">
-                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Commit" Size="Size.Medium" OnClick="ShowCommitChangesDialog" Class="compact-icon-button" aria-label="Commit changes" Disabled="@(!_hasUncommittedChanges || _vcsBusy)" />
+                    <MudTooltip Text="@NeedsABranch("Commit changes")">
+                        <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Commit" Size="Size.Medium" OnClick="ShowCommitChangesDialog" Class="compact-icon-button" aria-label="Commit changes" Disabled="@(!_hasUncommittedChanges || _vcsBusy || IsDetachedHead)" />
                     </MudTooltip>
                     <MudTooltip Text="Revert changes">
                         <MudIconButton Color="Color.Primary" Icon="@Icons.Material.Outlined.Undo" Size="Size.Medium" OnClick="ShowRevertFilesDialog" Class="compact-icon-button" aria-label="Revert changes" Disabled="@(!_hasUncommittedChanges || _vcsBusy)" />

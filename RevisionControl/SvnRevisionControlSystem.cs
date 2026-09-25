@@ -1610,6 +1610,9 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
     /// </summary>
     public string? GetDetachedHeadLabel(string repositoryPath) => null;
 
+    /// <inheritdoc/>
+    public int CountCommitsOnNoBranch(string repositoryPath) => 0;
+
     /// <summary>SVN commits go directly to the remote server, so push is a no-op.</summary>
     public VcsOperationResult Push(string repositoryPath, string? branchName = null)
         => new() { Success = true };

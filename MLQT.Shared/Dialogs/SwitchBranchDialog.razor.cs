@@ -27,6 +27,11 @@ public partial class SwitchBranchDialog
         await CheckForChanges();
     }
 
+    /// <summary>
+    /// Commits reachable only from the detached HEAD being left, which the switch strands (B327).
+    /// </summary>
+    private int _commitsOnNoBranch;
+
     private async Task CheckForChanges()
     {
         try
@@ -35,6 +40,7 @@ public partial class SwitchBranchDialog
             {
                 var changes = RepositoryService.GetWorkingCopyChanges(RepositoryId);
                 _hasChanges = changes.Count > 0;
+                _commitsOnNoBranch = RepositoryService.CountCommitsOnNoBranch(RepositoryId);
             });
         }
         catch

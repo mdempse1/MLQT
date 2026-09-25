@@ -1736,6 +1736,15 @@ public class RepositoryService : IRepositoryService
         return vcs?.GetPreviousRevision(repository.VcsRootPath, revision);
     }
 
+    /// <inheritdoc/>
+    public int CountCommitsOnNoBranch(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        return repository?.VcsType == RepositoryVcsType.Git
+            ? _git.CountCommitsOnNoBranch(repository.VcsRootPath)
+            : 0;
+    }
+
     public async Task<VcsOperationResult> CheckoutRevisionAsync(string repositoryId, string revision, CancellationToken cancellationToken = default)
     {
         var repository = GetRepository(repositoryId);

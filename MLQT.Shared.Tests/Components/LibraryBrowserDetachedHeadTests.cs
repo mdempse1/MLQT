@@ -5,7 +5,9 @@ using MLQT.Services.Interfaces;
 using MLQT.Shared.Components;
 using ModelicaGraph;
 using ModelicaGraph.DataTypes;
+using ModelicaParser.Comparison;
 using Moq;
+using RevisionControl;
 using Xunit;
 
 namespace MLQT.Shared.Tests.Components;
@@ -34,7 +36,9 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
             DetachedHeadLabel = detachedLabel,
         };
 
-    private IRenderedComponent<LibraryBrowser> RenderBrowser(Repository repository)
+    private IRenderedComponent<MudBlazor.MudPopoverProvider>? _popovers;
+
+    private IRenderedComponent<LibraryBrowser> RenderBrowser(Repository repository, bool withChanges = false)
     {
         var library = new Mock<ILibraryDataService>();
         library.SetupGet(l => l.CombinedGraph).Returns(new DirectedGraph());
@@ -42,15 +46,29 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
         library.Setup(l => l.GetChildModelsAsync(It.IsAny<ModelNode>()))
                .ReturnsAsync(new List<ModelNode>());
 
+        var repositories = new Mock<IRepositoryService>();
+        if (withChanges)
+        {
+            repositories.Setup(r => r.GetWorkingCopyChanges(repository.Id))
+                        .Returns([new VcsWorkingCopyFile { Path = "notes.txt", Status = VcsFileStatus.Modified }]);
+        }
+
         Services.AddSingleton(library.Object);
-        Services.AddSingleton(new Mock<IRepositoryService>().Object);
+        Services.AddSingleton(repositories.Object);
         Services.AddSingleton(new Mock<IFileMonitoringService>().Object);
 
-        // The browser asks this what kind of change each model carries (B191). Nothing here has
-        // working-copy changes, so the stand-in is never called - it just has to be resolvable.
-        Services.AddSingleton(new Mock<IModelChangeClassifier>().Object);
+        // The browser asks this what kind of change each model carries (B191). No model here has a
+        // change, so the answer is always empty - it just has to be an answer.
+        var classifier = new Mock<IModelChangeClassifier>();
+        classifier.Setup(c => c.Classify(It.IsAny<Repository>(), It.IsAny<IReadOnlyList<VcsWorkingCopyFile>>()))
+                  .Returns(new Dictionary<string, ClassChangeKind>());
+        Services.AddSingleton(classifier.Object);
 
-        RenderProviders();
+        // Rendered here rather than by RenderProviders, to keep hold of the popover provider: the
+        // Git "More actions" menu renders into it, not into the browser.
+        _popovers = Render<MudBlazor.MudPopoverProvider>();
+        Render<MudBlazor.MudDialogProvider>();
+        Render<MudBlazor.MudSnackbarProvider>();
 
         return Render<LibraryBrowser>(p => p
             .Add(c => c.LibraryOnly, false)
@@ -75,6 +93,55 @@ public class LibraryBrowserDetachedHeadTests : MlqtComponentTestBase
 
         Assert.Contains("Detached HEAD", browser.Markup);
         Assert.DoesNotContain("Detached HEAD at", browser.Markup);
+    }
+
+    // ---- What is offered on a detached HEAD (B327) --------------------------------------------
+    //
+    // Commit, Merge, Rebase and Push all act on a branch, and were all offered on a detached HEAD
+    // gated only on uncommitted changes - a commit there belongs to nothing and the next switch
+    // strands it. The way out is offered where the state is named.
+
+    private static readonly string[] BranchActions =
+        ["Rebase current branch", "Merge branch into working copy", "Push changes to remote", "Create pull request"];
+
+    private static AngleSharp.Dom.IElement Button(IRenderedComponent<LibraryBrowser> browser, string label) =>
+        browser.Find($"button[aria-label='{label}']");
+
+    [Fact]
+    public void OnADetachedHead_CommitIsOff_EvenWithChanges_AndCreatingABranchIsOffered()
+    {
+        var browser = RenderBrowser(Repo(branch: null, detachedLabel: "v2.0.0"), withChanges: true);
+
+        // Revert is gated on the changes alone, so its enabling says the changes have been read.
+        browser.WaitForAssertion(() => Assert.False(Button(browser, "Revert changes").HasAttribute("disabled")));
+        Assert.True(Button(browser, "Commit changes").HasAttribute("disabled"));
+        Assert.NotNull(Button(browser, "Create a branch here"));
+    }
+
+    [Fact]
+    public void OnABranch_CommitIsOn_AndNoBranchIsOffered()
+    {
+        // The control: the same changes on a branch leave Commit enabled.
+        var browser = RenderBrowser(Repo(branch: "main", detachedLabel: null), withChanges: true);
+
+        browser.WaitForAssertion(() => Assert.False(Button(browser, "Commit changes").HasAttribute("disabled")));
+        Assert.Empty(browser.FindAll("button[aria-label='Create a branch here']"));
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("main", false)]
+    public void TheBranchActions_AreOffOnlyOnADetachedHead(string? branch, bool disabled)
+    {
+        var browser = RenderBrowser(Repo(branch, detachedLabel: branch is null ? "v2.0.0" : null));
+
+        Button(browser, "More actions").Click();
+
+        foreach (var label in BranchActions)
+        {
+            _popovers!.WaitForAssertion(() =>
+                Assert.Equal(disabled, _popovers.Find($"button[aria-label='{label}']").HasAttribute("disabled")));
+        }
     }
 
     [Fact]

@@ -297,6 +297,13 @@ public interface IRepositoryService
     string? GetPreviousRevision(string repositoryId, string revision);
 
     /// <summary>
+    /// How many commits a switch away from this repository's detached HEAD would leave on no
+    /// branch - zero on a branch, and always for SVN. Asked before a switch so the user is warned
+    /// rather than left to find them in the reflog (B327).
+    /// </summary>
+    int CountCommitsOnNoBranch(string repositoryId);
+
+    /// <summary>
     /// Merges changes from a source branch into the current working copy.
     /// </summary>
     /// <param name="repositoryId">The repository ID.</param>

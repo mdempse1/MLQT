@@ -152,8 +152,13 @@ switching to a branch:
 > changes from here, create a branch afterwards.
 
 Afterwards the repository header says **Detached HEAD at v2.0.0** where it would normally name the
-branch. Committing in that state is possible, but the commits belong to no branch and are easy to
-lose, so create a branch first if you intend to change anything.
+branch, with a **Create a branch here** button beside it. A commit made in that state would belong
+to no branch and be easy to lose, so while HEAD is detached MLQT does not offer Commit, Merge,
+Rebase, Push or Create pull request: create a branch first, and they come back.
+
+If commits made on a detached HEAD by another tool are held by no branch or tag, the Switch Branch
+dialog says how many before you switch away from them — Git itself would leave them behind without a
+word. Cancel and create a branch there to keep them.
 
 SVN repositories have always been able to do this: an SVN tag is a directory, so it appears under
 `tags/` like any other path and switching to it is an ordinary switch with no detached state.
@@ -390,7 +395,7 @@ Click **Checkout** to go ahead, or **Cancel**.
 
 After checkout:
 - MLQT reloads all libraries from the checked-out revision
-- The repository header shows "Detached HEAD" instead of a branch name
+- The repository header shows "Detached HEAD" instead of a branch name, and the actions that need a branch are off until you create one (see above)
 - Any files that VCS reports as changed are formatted (if "Apply formatting rules" is enabled), then dependency analysis and style checking run on affected files. If nothing is reported as changed, the whole repository is re-analysed without formatting
 
 ### Viewing File Diffs

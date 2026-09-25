@@ -1133,6 +1133,22 @@ public partial class LibraryBrowser : IDisposable
     }
 
     /// <summary>
+    /// Whether this Git repository is on no branch - a tag or a revision checked out directly.
+    /// </summary>
+    /// <remarks>
+    /// Commit, Merge, Rebase and Push all act on a branch, and on a detached HEAD there is none: a
+    /// commit or merge made there belongs to nothing and the next switch strands it, and a push has
+    /// nothing to push. They were all offered, gated only on uncommitted changes (B327). The Git
+    /// layer refuses them as well; this is so the user is not offered what will be refused.
+    /// </remarks>
+    private bool IsDetachedHead =>
+        Repository is { VcsType: RepositoryVcsType.Git } repository && string.IsNullOrEmpty(repository.CurrentBranch);
+
+    /// <summary>The tooltip for an action that needs a branch, saying why it is off when it is.</summary>
+    private string NeedsABranch(string tooltip) =>
+        IsDetachedHead ? $"{tooltip} - needs a branch: HEAD is detached. Create a branch here first." : tooltip;
+
+    /// <summary>
     /// Whether a VCS operation started from this browser is still running, so the others stay
     /// disabled until it finishes.
     /// </summary>

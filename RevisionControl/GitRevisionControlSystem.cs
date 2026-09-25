@@ -983,6 +983,38 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         }
     }
 
+    public int CountCommitsOnNoBranch(string repositoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(repositoryPath) || !Repository.IsValid(repositoryPath))
+                return 0;
+
+            using var repo = new Repository(repositoryPath);
+            if (!repo.Info.IsHeadDetached || repo.Head.Tip == null)
+                return 0;
+
+            // Everything HEAD reaches that no branch (local or remote) or tag also reaches.
+            var elsewhere = repo.Refs
+                .Where(r => r.CanonicalName != "HEAD"
+                            && (r.IsLocalBranch || r.IsRemoteTrackingBranch || r.IsTag))
+                .Select(r => r.ResolveToDirectReference()?.Target?.Peel<Commit>())
+                .OfType<Commit>()
+                .ToList();
+
+            return repo.Commits.QueryBy(new CommitFilter
+            {
+                IncludeReachableFrom = repo.Head.Tip,
+                ExcludeReachableFrom = elsewhere,
+            }).Count();
+        }
+        catch (Exception ex)
+        {
+            RevisionControlLogger.Error("CountCommitsOnNoBranch", ex);
+            return 0;
+        }
+    }
+
     public List<VcsBranchInfo> GetBranches(string repositoryPath, bool includeRemote = false)
     {
         var branches = new List<VcsBranchInfo>();
@@ -1061,6 +1093,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             }
 
             using var repo = new Repository(repositoryPath);
+
+            // A commit on a detached HEAD belongs to nothing, and the next switch leaves it to the
+            // reflog. Every other client warns; this used to make it without a word (B327).
+            if (repo.Info.IsHeadDetached)
+            {
+                result.ErrorMessage = DetachedHeadRefusal(repo, "commit");
+                return result;
+            }
 
             // Stage files if specific files are provided
             if (filesToCommit != null)
@@ -1379,6 +1419,13 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
 
             using var repo = new Repository(repositoryPath);
 
+            // The merge commit would be made on no branch - the same loss as a commit (B327).
+            if (repo.Info.IsHeadDetached)
+            {
+                result.ErrorMessage = DetachedHeadRefusal(repo, "merge");
+                return result;
+            }
+
             var branch = repo.Branches[sourceBranch];
             if (branch == null)
             {
@@ -1599,7 +1646,7 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
         using var repo = new Repository(repositoryPath);
         if (branchName == null && repo.Info.IsHeadDetached)
         {
-            refusal = DetachedHeadRefusal("push");
+            refusal = DetachedHeadRefusal(repo, "push");
             return false;
         }
 
@@ -1620,8 +1667,14 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     /// What an operation that needs a branch says when HEAD is on none (B324, B327). One wording,
     /// so the refusals read alike and a test can recognise any of them.
     /// </summary>
-    internal static string DetachedHeadRefusal(string operation) =>
-        $"Cannot {operation}: HEAD is detached, so it is on no branch. Create a branch here first, or switch to one.";
+    /// <remarks>
+    /// A rebase in progress also leaves HEAD detached, and there the advice to create a branch is
+    /// wrong: the rebase has to be continued or aborted, and says so instead.
+    /// </remarks>
+    private static string DetachedHeadRefusal(Repository repo, string operation) =>
+        repo.Info.CurrentOperation is CurrentOperation.Rebase or CurrentOperation.RebaseInteractive or CurrentOperation.RebaseMerge
+            ? $"Cannot {operation}: a rebase is in progress and HEAD is detached until it finishes. Continue or abort the rebase first."
+            : $"Cannot {operation}: HEAD is detached, so it is on no branch. Create a branch here first, or switch to one.";
 
     /// <summary>
     /// Rebases the current branch onto the given target branch by replaying local commits on top.
@@ -1637,6 +1690,16 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
             {
                 result.ErrorMessage = "Invalid repository path.";
                 return result;
+            }
+
+            // Rebasing a detached HEAD rewrites commits no branch holds, and leaves them on none (B327).
+            using (var repo = new Repository(repositoryPath))
+            {
+                if (repo.Info.IsHeadDetached)
+                {
+                    result.ErrorMessage = DetachedHeadRefusal(repo, "rebase");
+                    return result;
+                }
             }
 
             var (exitCode, stdout, stderr) = RunGitCommand(repositoryPath, $"rebase {targetBranch}");

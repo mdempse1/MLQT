@@ -19,6 +19,18 @@
                 </MudAlert>
             }
 
+            @* Git leaves these to the reflog with nothing said, and they are found - if at all - by
+               someone who knows to look there (B327). *@
+            @if (_commitsOnNoBranch > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mlqt-orphaned-commits">
+                    @(_commitsOnNoBranch == 1 ? "1 commit" : $"{_commitsOnNoBranch} commits") on this
+                    detached HEAD @(_commitsOnNoBranch == 1 ? "is" : "are") on no branch, and will be
+                    left behind by switching. Cancel and create a branch here to keep
+                    @(_commitsOnNoBranch == 1 ? "it" : "them").
+                </MudAlert>
+            }
+
             <MudText Typo="Typo.body1">Select a branch or tag to switch to:</MudText>
 
             <BranchSelector RepositoryId="@RepositoryId"

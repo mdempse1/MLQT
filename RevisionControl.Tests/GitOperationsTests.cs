@@ -629,6 +629,102 @@ public class GitOperationsTests : IDisposable
 
     #endregion
 
+    #region Detached HEAD (B327)
+
+    /// <summary>A repository with a feature branch, left detached at main's tip.</summary>
+    private (string repoPath, string headSha) DetachedRepository()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "model A end A;" });
+        using (repo)
+        {
+            var main = repo.Head.FriendlyName;
+            Commands.Checkout(repo, repo.CreateBranch("feature"));
+            AddCommit(repo, repoPath, new() { ["g.mo"] = "model G end G;" }, "feature work");
+            Commands.Checkout(repo, repo.Branches[main].Tip);
+            return (repoPath, repo.Head.Tip.Sha);
+        }
+    }
+
+    /// <summary>
+    /// B327: a commit on a detached HEAD belongs to no branch and the next switch strands it, so it
+    /// is refused - and nothing is made, which a refusal from some other cause would also satisfy
+    /// without the message.
+    /// </summary>
+    [Fact]
+    public void Commit_OnADetachedHead_IsRefusedAndMakesNoCommit()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+        File.WriteAllText(Path.Combine(repoPath, "f.mo"), "model A \"edited\" end A;");
+
+        var result = _git.Commit(repoPath, "on nothing");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void MergeBranch_OnADetachedHead_IsRefusedAndMakesNoCommit()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+
+        var result = _git.MergeBranch(repoPath, "feature");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void Rebase_OnADetachedHead_IsRefused()
+    {
+        var (repoPath, headSha) = DetachedRepository();
+
+        var result = _git.Rebase(repoPath, "feature");
+
+        Assert.False(result.Success);
+        Assert.Contains("detached", result.ErrorMessage);
+        using var repo = new Repository(repoPath);
+        Assert.Equal(headSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void CountCommitsOnNoBranch_CountsOnlyWhatNoBranchOrTagHolds()
+    {
+        var (repoPath, _) = DetachedRepository();
+
+        // Detached on a commit a branch holds: switching away loses nothing.
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+
+        // Two commits made there, as another tool would, belong to nothing.
+        using (var repo = new Repository(repoPath))
+        {
+            AddCommit(repo, repoPath, new() { ["h.mo"] = "model H end H;" }, "stranded 1");
+            AddCommit(repo, repoPath, new() { ["h.mo"] = "model H \"2\" end H;" }, "stranded 2");
+            Assert.True(repo.Info.IsHeadDetached);
+        }
+        Assert.Equal(2, _git.CountCommitsOnNoBranch(repoPath));
+
+        // A tag on the tip holds them.
+        using (var repo = new Repository(repoPath))
+            repo.ApplyTag("kept");
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+    }
+
+    [Fact]
+    public void CountCommitsOnNoBranch_OnABranch_IsZero()
+    {
+        var (repo, repoPath) = CreateRepoWithFiles(new() { ["f.mo"] = "v1" });
+        using (repo) { }
+
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(repoPath));
+        Assert.Equal(0, _git.CountCommitsOnNoBranch(NewTempPath()));
+    }
+
+    #endregion
+
     #region Commit Tests
 
     [Fact]

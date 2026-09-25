@@ -177,6 +177,17 @@ public interface IRevisionControlSystem
     string? GetDetachedHeadLabel(string repositoryPath);
 
     /// <summary>
+    /// How many commits would be left on no branch by switching away from a detached HEAD: the
+    /// ones reachable from HEAD and from no branch, remote branch or tag (B327).
+    /// </summary>
+    /// <remarks>
+    /// Zero when HEAD is on a branch, and always zero for SVN, whose commits go to the server. A
+    /// commit made on a detached HEAD - by MLQT before B327, or by another tool - is reachable from
+    /// HEAD alone, and a switch leaves it to the reflog with nothing said.
+    /// </remarks>
+    int CountCommitsOnNoBranch(string repositoryPath);
+
+    /// <summary>
     /// Commits changes to the repository.
     /// </summary>
     /// <param name="repositoryPath">Path to the repository or working copy</param>
