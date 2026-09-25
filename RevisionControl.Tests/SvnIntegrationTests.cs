@@ -612,49 +612,80 @@ public class SvnIntegrationTests : IDisposable
     #region A server that stops answering (B330)
 
     /// <summary>
-    /// A small question of a server that accepts the connection and never answers is stopped at the
-    /// limit it was given, not at the update's ten minutes. After an update a stalled server stopped,
-    /// the revision description asked for next waited out a second ten minutes behind a progress bar.
+    /// A read-only question of a server that accepts the connection and never answers is stopped
+    /// at the limit it was given, not at the update's ten minutes - by each of the three ways a
+    /// question is asked. After an update a stalled server stopped, the revision description asked
+    /// for next waited out a second ten minutes behind a progress bar.
     /// </summary>
-    [Fact]
-    public void AQueryOfAServerThatNeverAnswers_IsStoppedAtItsOwnLimit()
+    [Theory]
+    [InlineData("text")]
+    [InlineData("xml")]
+    [InlineData("bytes")]
+    public void AQueryOfAServerThatNeverAnswers_IsStoppedAtItsOwnLimit(string how)
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var held = new List<TcpClient>();
-        _ = Task.Run(async () =>
-        {
-            try { while (true) held.Add(await listener.AcceptTcpClientAsync()); }
-            catch (ObjectDisposedException) { }
-            catch (SocketException) { }
-        });
+        using var server = new SilentServer();
+        var url = $"svn://127.0.0.1:{server.Port}/repo";
+        var limit = TimeSpan.FromSeconds(2);
 
-        try
+        var clock = Stopwatch.StartNew();
+        switch (how)
         {
-            var clock = Stopwatch.StartNew();
-            var result = SvnCli.Run(
-                ["log", $"svn://127.0.0.1:{port}/repo", "-r", "1", "-l", "1", "--xml"],
-                stdinText: null, TimeSpan.FromSeconds(2));
-            clock.Stop();
+            case "text":
+                var text = SvnCli.Run(["log", url, "-r", "1", "-l", "1"], stdinText: null, limit);
+                Assert.True(text.Stopped, "svn was not stopped for going silent");
+                Assert.False(text.Success);
+                break;
+            case "xml":
+                Assert.Null(SvnCli.RunXml(limit, "log", url, "-r", "1", "-l", "1"));
+                break;
+            case "bytes":
+                Assert.False(SvnCli.RunForBytes(limit, "cat", url + "/file.mo").Success);
+                break;
+        }
+        clock.Stop();
 
-            Assert.True(result.Stopped, "svn was not stopped for going silent");
-            Assert.False(result.Success);
-            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"took {clock.Elapsed}");
-        }
-        finally
-        {
-            listener.Stop();
-            foreach (var client in held)
-                client.Dispose();
-        }
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"took {clock.Elapsed}");
     }
 
+    /// <summary>
+    /// The three limits keep their order: a small question gives up first, a history walk - which a
+    /// server may search silently for a while - later, and a command that writes the working copy
+    /// last.
+    /// </summary>
     [Fact]
-    public void TheRevisionLabelsLimit_IsFarShorterThanAnUpdates()
+    public void TheQueryLimits_AreShorterThanTheWritingOne_AndInOrder()
     {
         Assert.True(SvnCli.QueryIdleTimeout <= TimeSpan.FromMinutes(1));
-        Assert.True(SvnCli.QueryIdleTimeout < SvnCli.IdleTimeout);
+        Assert.True(SvnCli.QueryIdleTimeout < SvnCli.HistoryIdleTimeout);
+        Assert.True(SvnCli.HistoryIdleTimeout < SvnCli.IdleTimeout);
+    }
+
+    /// <summary>A server that accepts every connection and says nothing, for as long as it lives.</summary>
+    private sealed class SilentServer : IDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly List<TcpClient> _held = [];
+
+        public SilentServer()
+        {
+            _listener.Start();
+            _ = Task.Run(async () =>
+            {
+                try { while (true) { var client = await _listener.AcceptTcpClientAsync(); lock (_held) _held.Add(client); } }
+                catch (ObjectDisposedException) { }
+                catch (SocketException) { }
+            });
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public void Dispose()
+        {
+            _listener.Stop();
+            lock (_held)
+                foreach (var client in _held)
+                    client.Dispose();
+        }
     }
 
     #endregion

@@ -98,8 +98,9 @@ internal static class SvnCli
     internal static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// The silence allowed a small read-only question of the server - one log entry for a label -
-    /// where <see cref="IdleTimeout"/> is sized for an update that may be busy for minutes.
+    /// The silence allowed a small read-only question of the server - one revision's log entry, a
+    /// directory listing, one file's content, <c>svn info</c> - where <see cref="IdleTimeout"/> is
+    /// sized for an update that may be busy for minutes.
     /// </summary>
     /// <remarks>
     /// A server that stalls an update stalls the question that follows it too, and after an update
@@ -109,6 +110,19 @@ internal static class SvnCli
     /// in seconds or is not coming.
     /// </remarks>
     internal static readonly TimeSpan QueryIdleTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The silence allowed a read-only question that walks history - the history log, where a branch
+    /// was copied from, what changed since a revision, which revisions a merge would bring.
+    /// </summary>
+    /// <remarks>
+    /// Longer than <see cref="QueryIdleTimeout"/> because a server filtering a long history by path
+    /// can search for a while between the entries it sends, and on a repository with tens of
+    /// thousands of revisions that silence is legitimate. Far shorter than
+    /// <see cref="IdleTimeout"/> because nothing is being written: a dialog waiting on it should not
+    /// sit for ten minutes against a server that has stopped answering.
+    /// </remarks>
+    internal static readonly TimeSpan HistoryIdleTimeout = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Runs svn and returns standard output as the bytes svn wrote, not as text.
@@ -122,9 +136,13 @@ internal static class SvnCli
     ///
     /// <para>stderr is still text, because svn wrote it.</para>
     /// </remarks>
-    internal static BytesResult RunForBytes(params string[] args)
+    internal static BytesResult RunForBytes(params string[] args) => RunForBytes(IdleTimeout, args);
+
+    /// <summary><see cref="RunForBytes(string[])"/>, stopping svn once it has been silent for
+    /// <paramref name="idleLimit"/>.</summary>
+    internal static BytesResult RunForBytes(TimeSpan idleLimit, params string[] args)
     {
-        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText: null, IdleTimeout);
+        var raw = Execute(RequireSvn(), WithNonInteractive(args), stdinText: null, idleLimit);
         return new BytesResult { ExitCode = raw.ExitCode, StdOut = raw.StdOut, StdErr = raw.StdErr };
     }
 

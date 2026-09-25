@@ -158,7 +158,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (revision.Equals("PREV", OIC))
             {
-                var doc = SvnCli.RunXml("log", url, "-l", "2");
+                var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", url, "-l", "2");
                 var revisions = doc?.Root?.Elements("logentry")
                     .Select(e => e.Attribute("revision")?.Value)
                     .Where(v => !string.IsNullOrEmpty(v))
@@ -567,7 +567,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 args.Add(options.MaxEntries.ToString());
             }
 
-            var doc = SvnCli.RunXml(args.ToArray());
+            var doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, args.ToArray());
             if (doc?.Root == null)
                 return entries;
 
@@ -661,7 +661,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             if (info == null)
                 return null;
 
-            var lookup = SvnCli.RunXml("log", info.RepositoryRoot, "-r", copyFromRevision.Value.ToString(), "-l", "1");
+            var lookup = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", info.RepositoryRoot, "-r", copyFromRevision.Value.ToString(), "-l", "1");
             var sourceEntry = lookup?.Root?.Element("logentry");
             if (sourceEntry == null)
                 return null;
@@ -713,7 +713,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         if (!string.IsNullOrWhiteSpace(startRevision))
             target = $"{url}@{SvnCli.NormalizeRevision(startRevision)}";
 
-        var doc = SvnCli.RunXml("log", target, "--stop-on-copy", "-v");
+        var doc = SvnCli.RunXml(SvnCli.HistoryIdleTimeout, "log", target, "--stop-on-copy", "-v");
         if (doc?.Root == null)
             return null;
 
@@ -749,7 +749,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var url = ResolveUrl(repositoryPath);
             var rev = SvnCli.NormalizeRevision(revision);
 
-            var doc = SvnCli.RunXml("log", url, "-r", rev, "-v", "-l", "1");
+            var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "log", url, "-r", rev, "-v", "-l", "1");
             var paths = doc?.Root?.Element("logentry")?.Element("paths");
             if (paths == null)
                 return changedFiles;
@@ -799,7 +799,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
         {
             // `svn diff --summarize -r <rev> <wc>` compares the revision to the working copy
             // (including local modifications). --xml gives absolute working-copy paths.
-            var res = SvnCli.Run("diff", "--summarize", "--xml", "-r", sinceRevision, repositoryPath);
+            var res = SvnCli.Run(["diff", "--summarize", "--xml", "-r", sinceRevision, repositoryPath], stdinText: null, SvnCli.HistoryIdleTimeout);
             if (!res.Success)
             {
                 RevisionControlLogger.Error("GetChangedFilePathsSince",
@@ -871,7 +871,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 }
                 else
                 {
-                    var doc = SvnCli.RunXml("list", branchUrl, "--depth", "immediates");
+                    var doc = SvnCli.RunXml(SvnCli.QueryIdleTimeout, "list", branchUrl, "--depth", "immediates");
                     var list = doc?.Root?.Element("list");
                     if (list == null)
                         continue;
@@ -1069,13 +1069,13 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Pegged even here, with nothing to follow: a path containing '@' is otherwise read as
             // one carrying a peg revision, and a file called "a@b.mo" is not found.
             if (useBase)
-                return SvnCli.RunForBytes("cat", Pegged(fullPath, "BASE")) is { Success: true } b ? b.StdOut : null;
+                return SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", Pegged(fullPath, "BASE")) is { Success: true } b ? b.StdOut : null;
 
             if (File.Exists(fullPath))
             {
                 // Peg at HEAD to identify the file, operate at the requested revision so SVN
                 // follows copy history (e.g. a branch created from trunk).
-                var local = SvnCli.RunForBytes("cat", "-r", revision!, Pegged(fullPath, "HEAD"));
+                var local = SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", "-r", revision!, Pegged(fullPath, "HEAD"));
                 if (local.Success)
                     return local.StdOut;
             }
@@ -1094,7 +1094,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // is to be found.
             foreach (var url in ContentUrlCandidates(repositoryPath, filePath))
             {
-                var remote = SvnCli.RunForBytes("cat", Pegged(url, revision!));
+                var remote = SvnCli.RunForBytes(SvnCli.QueryIdleTimeout, "cat", Pegged(url, revision!));
                 if (remote.Success)
                     return remote.StdOut;
             }
@@ -1492,7 +1492,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             // Determine eligible (not-yet-merged) revisions. This prevents "File already exists"
             // errors that an r0:HEAD range merge would cause when a file independently exists in
             // both source and target (e.g. .mlqt/settings.json committed to both branches).
-            var eligible = SvnCli.Run("mergeinfo", "--show-revs", "eligible", sourceUrl, repositoryPath);
+            var eligible = SvnCli.Run(["mergeinfo", "--show-revs", "eligible", sourceUrl, repositoryPath], stdinText: null, SvnCli.HistoryIdleTimeout);
             var eligibleRevs = ParseMergeinfoRevs(eligible.StdOut);
             if (!eligible.Success || eligibleRevs.Count == 0)
             {
@@ -1673,7 +1673,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             args.Add(SvnCli.NormalizeRevision(revision));
         }
 
-        var entry = SvnCli.RunXml(args.ToArray())?.Root?.Element("entry");
+        var entry = SvnCli.RunXml(SvnCli.QueryIdleTimeout, args.ToArray())?.Root?.Element("entry");
         if (entry == null)
             return null;
 

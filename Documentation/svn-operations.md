@@ -352,6 +352,20 @@ SVN working copies maintain more state than Git working copies:
 - `svn update` brings everything to the latest revision
 - `svn switch` changes the branch but preserves local modifications when possible
 
+### A Server That Stops Answering
+
+MLQT stops an svn command that has been silent for too long, and reports that it did:
+
+| Command | Stopped after this long with no output |
+|---------|----------------------------------------|
+| Update, switch, commit, merge, revert, resolve | 10 minutes. svn reports each file as it goes, so a long update that is still working is never stopped |
+| History, where a branch came from, what changed since a revision, which revisions a merge would bring | 2 minutes. A server searching a long history can be quiet for a while between entries |
+| One revision's details, the branch and tag lists, a file's content at a revision | 30 seconds |
+
+An update, switch or other command that writes the working copy and is stopped leaves a lock
+behind. MLQT runs `svn cleanup` straight away and says whether that worked. If it did not, run
+`svn cleanup` on the working copy yourself (TortoiseSVN: **Clean up**) before trying again.
+
 ### Merge Tracking
 
 SVN 1.5+ tracks which revisions have been merged using `svn:mergeinfo` properties. MLQT leverages this to avoid re-merging revisions that have already been integrated.
