@@ -533,6 +533,10 @@ public partial class CodeReview : IAsyncDisposable
             last = sw.ElapsedMilliseconds;
         }
 
+        // Why the file was left as it is, when the formatting already applied to it could not be
+        // taken back without taking something else with it (B302).
+        string? leftAlone = null;
+
         try
         {
             if (_isExcludedFromFormatting)
@@ -551,10 +555,37 @@ public partial class CodeReview : IAsyncDisposable
                 // Reverting comes first. It discards the formatting the class has already had
                 // applied, which is the point of the button — and doing it afterwards would discard
                 // the annotation along with it.
-                if (_isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath))
+                //
+                // Only when formatting is all the revert would take back (B302). A revert restores
+                // the committed file whatever made it differ: it deleted a file never committed, and
+                // discarded hand edits to every other class in a modified one.
+                var decision = _isModelModified && !string.IsNullOrEmpty(_currentRelativeFilePath)
+                    ? await DecideFormattingRevertAsync(target, repository)
+                    : null;
+                Step("decide revert");
+
+                if (decision is { Revert: false })
+                    leftAlone = decision.Reason;
+
+                if (decision is { Revert: true })
                 {
-                    await RepositoryService.RevertFilesAsync(_currentRepositoryId, [_currentRelativeFilePath]);
+                    VcsOperationResult reverted;
+                    using (MonitorPause.Begin(FileMonitoringService,
+                               RepositoryService.GetRepositoriesSharingWorkingCopy(_currentRepositoryId)))
+                    {
+                        reverted = await RepositoryService.RevertFilesAsync(
+                            _currentRepositoryId, [_currentRelativeFilePath!]);
+                    }
                     Step("revert");
+
+                    if (!reverted.Success)
+                    {
+                        Snackbar.Add(
+                            $"The class was not excluded: reverting its file failed ({reverted.ErrorMessage}).",
+                            MudBlazor.Severity.Error);
+                        return;
+                    }
+
                     await LibraryDataService.RefreshDependenciesAsync(
                         await LibraryDataService.ReloadFileAsync(target.FilePath));
                     Step("reload after revert");
@@ -595,12 +626,58 @@ public partial class CodeReview : IAsyncDisposable
                     ? "This class is now excluded from formatting, recorded in its own source so it survives a rename."
                     : "This class is back under the formatter.",
                 MudBlazor.Severity.Success);
+
+            if (_isExcludedFromFormatting && leftAlone is not null)
+                Snackbar.Add(
+                    $"{Path.GetFileName(target.FilePath)} was not reverted: {leftAlone}. Formatting "
+                    + "already applied to the class stays until you undo it.",
+                    MudBlazor.Severity.Info);
         }
         finally
         {
             _togglingExclusion = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// Whether reverting the class's file would take back formatting and nothing else —
+    /// <see cref="FormattingRevert"/>'s answer, given the file's status, its committed text and its
+    /// text on disk. Off the UI thread, because it reads the committed version from the VCS and
+    /// renders it.
+    /// </summary>
+    private async Task<FormattingRevert.Decision> DecideFormattingRevertAsync(
+        ClassSourceTarget target, Repository repository)
+    {
+        var workingCopy = await ReadTargetFileAsync(target);
+        if (workingCopy is null)
+            return FormattingRevert.Decision.No("the file could not be read");
+
+        var status = _currentModelFileStatus;
+        var repositoryId = _currentRepositoryId!;
+        var relativePath = _currentRelativeFilePath!;
+        var settings = repository.StyleSettings ?? new StyleCheckingSettings();
+        var graph = LibraryDataService.CombinedGraph;
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // Only a modified file has a committed version worth fetching.
+                var committed = status == VcsFileStatus.Modified
+                    ? RepositoryService.GetFileContentAtRevision(repositoryId, relativePath)
+                    : null;
+                return FormattingRevert.Decide(
+                    status, committed, workingCopy, target.FileOwner.ParentModelName, settings,
+                    rootClassId: target.FileOwner.Id,
+                    isSimpleType: settings.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null);
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("CodeReview", $"Could not compare {relativePath} with its committed version: {ex.Message}");
+                return FormattingRevert.Decision.No("its committed version could not be read");
+            }
+        });
     }
 
     /// <summary>Adds or removes the class's <c>format=false</c> directive and saves the file.</summary>
