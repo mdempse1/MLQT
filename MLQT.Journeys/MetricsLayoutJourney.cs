@@ -45,14 +45,33 @@ public class MetricsLayoutJourney(TestHostFixture host) : IDisposable
         await ShellReadiness.WaitUntilClickableAsync(page);
         await page.Locator(".mud-tab").Nth(3).ClickAsync();
 
-        // The page computes on arrival when it can; the button is there when it has not.
+        // The page computes on arrival when it can; the button is there when it has not. Asked for
+        // until the grid is there rather than once: counting the button and then clicking it failed
+        // on CI, because the arrival compute finished in between and relabelled it Refresh, and the
+        // click waited its whole 30 seconds for a "Compute" that no longer existed.
         await ShellReadiness.WaitUntilClickableAsync(page);
         var compute = page.GetByRole(AriaRole.Button, new() { Name = "Compute", Exact = true });
-        if (await compute.CountAsync() > 0)
-            await compute.ClickAsync();
-
         var grid = page.Locator(".mud-tab-panel-active .mud-grid").First;
-        await grid.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+
+        var giveUp = DateTime.UtcNow.AddSeconds(60);
+        while (!await grid.IsVisibleAsync())
+        {
+            Assert.True(DateTime.UtcNow < giveUp, "the Metrics tab never showed its coverage grid");
+
+            if (await compute.IsVisibleAsync() && await compute.IsEnabledAsync())
+            {
+                try
+                {
+                    await compute.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
+                }
+                catch (TimeoutException)
+                {
+                    // Relabelled or disabled between the check and the click - the loop looks again.
+                }
+            }
+
+            await page.WaitForTimeoutAsync(200);
+        }
 
         // How far the grid runs past the lowest thing in any of its columns.
         var slack = await grid.EvaluateAsync<double>(@"grid => {
