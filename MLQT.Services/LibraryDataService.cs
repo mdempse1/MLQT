@@ -776,6 +776,11 @@ public class LibraryDataService : ILibraryDataService
             }
         }
 
+        // Before the old classes go: what they import on behalf of classes below them in other files.
+        EnclosingImportChanges enclosingImports;
+        lock (_lock)
+            enclosingImports = EnclosingImportChanges.Capture(_combinedGraph, [fileId]);
+
         // Remove old models from this file
         var removedIds = RemoveModelsFromFile(filePath);
         affectedModelIds.AddRange(removedIds);
@@ -822,6 +827,10 @@ public class LibraryDataService : ILibraryDataService
                 Debug("LibraryDataService", $"Reloaded file with {newModelIds.Count} models: {filePath}");
             });
         }
+
+        // A package whose imports changed changes what names mean in its children's files too (B347).
+        lock (_lock)
+            affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(_combinedGraph));
 
         RaiseTreeDataChanged();
 

@@ -159,7 +159,9 @@ public interface ILibraryDataService
     /// Removes old models from the file, re-parses, and updates library indexes.
     /// </summary>
     /// <param name="filePath">Path to the file to reload.</param>
-    /// <returns>List of affected model IDs (both removed and newly added).</returns>
+    /// <returns>List of affected model IDs (both removed and newly added), plus the classes in other
+    /// files below a class in this one whose imports changed - their names now resolve differently
+    /// (B347).</returns>
     /// <remarks>
     /// <b>The reloaded classes come back with no dependency edges</b>, while the graph goes on saying
     /// its dependencies are analysed. Call <see cref="RefreshDependenciesAsync"/> with what this

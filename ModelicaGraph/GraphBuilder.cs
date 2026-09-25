@@ -1559,7 +1559,8 @@ public static class GraphBuilder
     /// <param name="graph">The existing graph to update in-place.</param>
     /// <param name="rootPath">Root directory of the new checkout (where changed files are read from).</param>
     /// <param name="changedRelativeFiles">Set of relative file paths that changed (from DetectChangedFiles).</param>
-    /// <returns>List of model IDs that were affected (removed or added).</returns>
+    /// <returns>List of model IDs that were affected (removed or added), and the classes in other
+    /// files below a class whose imports changed (see <see cref="EnclosingImportChanges"/>).</returns>
     public static List<string> UpdateGraphForChangedFiles(
         DirectedGraph graph,
         string rootPath,
@@ -1575,6 +1576,11 @@ public static class GraphBuilder
         var changedOrderFiles = changedRelativeFiles
             .Where(f => f.EndsWith("package.order", StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        // Before anything is removed: what the files' classes import on behalf of the classes below
+        // them that live elsewhere (B347).
+        var enclosingImports = EnclosingImportChanges.Capture(graph, changedMoFiles.Select(relativePath =>
+            GenerateFileId(Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)))));
 
         // Step 1: Remove models from changed/deleted .mo files
         foreach (var relativePath in changedMoFiles)
@@ -1600,6 +1606,8 @@ public static class GraphBuilder
             var newModelIds = LoadModelicaFiles(graph, filesToReparse);
             affectedModelIds.AddRange(newModelIds);
         }
+
+        affectedModelIds.AddRange(enclosingImports.DescendantsToReanalyse(graph));
 
         // Step 3: Update changed package.order files
         foreach (var relativePath in changedOrderFiles)
