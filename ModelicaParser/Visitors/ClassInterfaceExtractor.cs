@@ -1,5 +1,5 @@
+using System.Text;
 using Antlr4.Runtime;
-using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
 using ModelicaParser.DataTypes;
 using ModelicaParser.Helpers;
@@ -203,24 +203,50 @@ public static class ClassInterfaceExtractor
     }
 
     /// <summary>
-    /// A context's text <b>as it was written</b>, whitespace included.
+    /// A context's tokens <b>with the spaces between them</b>: one space wherever the source had
+    /// whitespace or a comment between two tokens, and none where it had none.
     ///
     /// <para><c>GetText()</c> concatenates the token texts and so loses the spaces between them,
     /// which is harmless for a name or a number and destroys an expression: the condition
     /// <c>use_reset and use_set</c> comes back as <c>use_resetanduse_set</c>, a single identifier
     /// that resolves to nothing. It read as one more undecidable condition rather than as a bug,
-    /// which is how it survived until a connector that should have gone stayed on the picture.</para>
+    /// which is how it survived until a connector that should have gone stayed on the picture.
+    /// Values had the same defect after conditions were fixed (B317): <c>k = pulse.y and step.y</c>
+    /// read as <c>pulse.yandstep.y</c>, which a label then showed as <b>y</b>, and
+    /// <c>get_class_interface</c> reported a default of <c>ifathen1else2</c>.</para>
+    ///
+    /// <para><b>Rebuilt from the tokens rather than cut from the source</b>, so a value written over
+    /// three lines, or with a comment inside it, comes back as one line a reader can use.</para>
     /// </summary>
     private static string? SourceText(ParserRuleContext? context)
     {
-        if (context?.Start?.InputStream is null || context.Stop is null)
+        if (context?.Start is null || context.Stop is null)
             return null;
 
-        var text = context.Start.InputStream
-            .GetText(Interval.Of(context.Start.StartIndex, context.Stop.StopIndex))
-            .Trim();
+        var text = new StringBuilder();
+        IToken? previous = null;
+        AppendTokens(context, text, ref previous);
 
-        return text.Length > 0 ? text : null;
+        return text.Length > 0 ? text.ToString() : null;
+    }
+
+    private static void AppendTokens(IParseTree node, StringBuilder text, ref IToken? previous)
+    {
+        if (node is ITerminalNode terminal)
+        {
+            var token = terminal.Symbol;
+            // A comment is a token of its own in this grammar, and it is no part of the value.
+            if (token.Type is TokenConstants.EOF or modelicaParser.COMMENT or modelicaParser.LINE_COMMENT)
+                return;
+            if (previous is not null && token.StartIndex > previous.StopIndex + 1)
+                text.Append(' ');
+            text.Append(token.Text);
+            previous = token;
+            return;
+        }
+
+        for (var i = 0; i < node.ChildCount; i++)
+            AppendTokens(node.GetChild(i), text, ref previous);
     }
 
     /// <summary>
@@ -251,18 +277,10 @@ public static class ClassInterfaceExtractor
 
     private static string? ScalarModificationValue(modelicaParser.ModificationContext? mod)
     {
-        if (mod is null)
+        // A class_modification, even one with a binding after it, is not a scalar value.
+        if (mod is null || mod.class_modification() is not null)
             return null;
-        var text = mod.GetText().Trim();
-        if (text.StartsWith("(", StringComparison.Ordinal)) // class_modification, not a scalar binding
-            return null;
-        if (text.StartsWith(":=", StringComparison.Ordinal))
-            text = text[2..].Trim();
-        else if (text.StartsWith("=", StringComparison.Ordinal))
-            text = text[1..].Trim();
-        else
-            return null;
-        return text.Length == 0 ? null : text;
+        return SourceText(mod.modification_expression());
     }
 
     private static (string? variability, string? causality, string? connection) ReadTypePrefix(
@@ -295,10 +313,7 @@ public static class ClassInterfaceExtractor
     /// asks for the default from being handed <c>(min=0)=1</c>.</para>
     /// </summary>
     private static string? ReadBinding(modelicaParser.ModificationContext? mod)
-    {
-        var text = mod?.modification_expression()?.GetText()?.Trim();
-        return string.IsNullOrEmpty(text) ? null : text;
-    }
+        => SourceText(mod?.modification_expression());
 
     /// <summary>
     /// The modification applied to the component's type, e.g. <c>(min = 0)</c> or <c>(k = 2)</c>. It

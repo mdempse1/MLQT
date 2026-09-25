@@ -47,7 +47,23 @@ public class IconTextTests
         Assert.Equal(
             "PI",
             IconText.Resolve("%controllerType", "PI", null,
-                Values(("controllerType", "Modelica.Blocks.Types.SimpleController.PI"))));
+                Values(("controllerType", "Modelica.Blocks.Types.SimpleController.PI")),
+                name => name.StartsWith("Modelica.", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// A dotted name is just as often another component's variable, and shortening <c>pulse.y</c>
+    /// labels the block <b>y</b> - a different claim about the model (B317). Only what the caller
+    /// says names a constant is shortened, and with nobody to ask, nothing is.
+    /// </summary>
+    [Fact]
+    public void AComponentReferenceIsShownWhole()
+    {
+        var values = Values(("k", "pulse.y"), ("c", "Types.Mode.Fast"));
+        Func<string, bool> constants = name => name.StartsWith("Types.", StringComparison.Ordinal);
+
+        Assert.Equal("pulse.y / Fast", IconText.Resolve("%k / %c", "g", null, values, constants));
+        Assert.Equal("pulse.y / Types.Mode.Fast", IconText.Resolve("%k / %c", "g", null, values));
     }
 
     [Theory]
@@ -56,7 +72,7 @@ public class IconTextTests
     [InlineData("2*n + 1")]          // an expression
     [InlineData("1.5")]              // ...and a decimal, which is dotted and is not a name
     public void AnythingThatIsNotAQualifiedNameIsShownAsWritten(string value)
-        => Assert.Equal(value, IconText.Resolve("%v", "c", null, Values(("v", value))));
+        => Assert.Equal(value, IconText.Resolve("%v", "c", null, Values(("v", value)), _ => true));
 
     [Fact]
     public void ADoubledPerCentIsOne()

@@ -25,8 +25,12 @@ public static class IconText
     /// <param name="componentName">What <c>%name</c> stands for.</param>
     /// <param name="className">What <c>%class</c> stands for, or null to leave it as written.</param>
     /// <param name="valueOf">The value a variable was given, or null when it is not known.</param>
+    /// <param name="namesAConstant">Whether a dotted value names an enumeration literal or a constant
+    /// - one reached through a class - rather than a component. Only those are shown by their last
+    /// segment; null means none is known to be, and every value is shown as written.</param>
     public static string Resolve(
-        string text, string? componentName, string? className = null, Func<string, string?>? valueOf = null)
+        string text, string? componentName, string? className = null, Func<string, string?>? valueOf = null,
+        Func<string, bool>? namesAConstant = null)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -69,7 +73,7 @@ public static class IconText
                 _ => valueOf?.Invoke(name),
             };
 
-            result.Append(value is null ? text[i..end] : Display(value));
+            result.Append(value is null ? text[i..end] : Display(value, namesAConstant));
             i = end - 1;
         }
 
@@ -87,8 +91,14 @@ public static class IconText
     ///
     /// <para>Only a name, and only one that is entirely dotted identifiers — an expression, a
     /// literal, an array or a call is shown as written.</para>
+    ///
+    /// <para><b>And only one that names a constant</b> (B317). A dotted name is just as often a
+    /// reference to another component's variable - <c>k = pulse.y</c> - and shortening that one
+    /// labels the block <b>y</b>, which is a different claim about the model. Syntax cannot tell the
+    /// two apart; whether the part before the last dot is a class can, which is the caller's
+    /// <paramref name="namesAConstant"/>.</para>
     /// </summary>
-    private static string Display(string value)
+    private static string Display(string value, Func<string, bool>? namesAConstant)
     {
         var trimmed = value.Trim();
         var dot = trimmed.LastIndexOf('.');
@@ -99,6 +109,8 @@ public static class IconText
             if (!char.IsLetterOrDigit(c) && c != '_' && c != '.')
                 return trimmed;
 
-        return char.IsDigit(trimmed[0]) ? trimmed : trimmed[(dot + 1)..];
+        return !char.IsDigit(trimmed[0]) && namesAConstant?.Invoke(trimmed) == true
+            ? trimmed[(dot + 1)..]
+            : trimmed;
     }
 }

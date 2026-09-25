@@ -25,10 +25,14 @@ namespace ModelicaParser.Icons;
 /// What a parameter of this component is set to, for the <c>%name</c>-style references in its icon
 /// text. Null answers only <c>%name</c>, which leaves an inertia labelled <c>J=%J</c> (B278).
 /// </param>
+/// <param name="NamesAConstant">
+/// Whether a dotted value names an enumeration literal or a constant, which a label shows by its last
+/// segment; a component reference such as <c>pulse.y</c> is shown whole (B317). Null shortens none.
+/// </param>
 public sealed record DiagramComponent(
     string Name, double[] Extent, double Rotation, IconData? Icon, string? TypeName = null,
     double[]? RotationCentre = null, IReadOnlyList<DiagramComponent>? Children = null,
-    Func<string, string?>? ValueOf = null);
+    Func<string, string?>? ValueOf = null, Func<string, bool>? NamesAConstant = null);
 
 /// <summary>One connection line, as the poly-line the diagram draws for it.</summary>
 /// <param name="Points">At least two points, in the parent's diagram coordinates.</param>
@@ -378,7 +382,7 @@ public static class DiagramSvgRenderer
             Rotation = text.Rotation,
             Extent = text.Extent,
             TextString = IconText.Resolve(
-                text.TextString, component.Name, component.TypeName, component.ValueOf),
+                text.TextString, component.Name, component.TypeName, component.ValueOf, component.NamesAConstant),
             FontSize = text.FontSize,
             FontName = text.FontName,
             FontStyles = text.FontStyles,

@@ -148,6 +148,45 @@ public class ClassInterfaceExtractorTests
         Assert.False(ext.Modifications.ContainsKey("sub")); // nested modification is not a scalar default
     }
 
+    /// <summary>
+    /// A value keeps the spaces between its tokens (B317). Concatenated, <c>pulse.y and step.y</c>
+    /// became <c>pulse.yandstep.y</c> - one dotted name, which a label then shortened to <b>y</b> -
+    /// and a default of <c>if a then 1 else 2</c> read <c>ifathen1else2</c>.
+    /// </summary>
+    [Fact]
+    public void Values_KeepTheSpacesBetweenTheirTokens()
+    {
+        var iface = Extract("""
+            model M
+              extends Base(k = a and b, T = 2);
+              parameter Integer n = if a then 1 else 2;
+              Gain g(k = pulse.y and step.y, m(start = 1) = 3);
+              parameter Real r = 1 +   // a comment inside the value
+                  2;
+            end M;
+            """);
+
+        var ext = iface.Elements.Single(e => e.Kind == ClassElementKind.Extends);
+        Assert.Equal("a and b", ext.Modifications!["k"]);
+        Assert.Equal("if a then 1 else 2", iface.Elements.Single(e => e.Name == "n").DefaultValue);
+
+        var g = iface.Elements.Single(e => e.Name == "g").Modifications!;
+        Assert.Equal("pulse.y and step.y", g["k"]);
+        Assert.False(g.ContainsKey("m"));   // a class modification with a binding is not a scalar value
+
+        // Written over two lines with a comment inside: one line, one space per gap.
+        Assert.Equal("1 + 2", iface.Elements.Single(e => e.Name == "r").DefaultValue);
+    }
+
+    [Fact]
+    public void Values_KeepNoSpaceWhereTheSourceHadNone()
+    {
+        var iface = Extract("model M\n  parameter Real k = 2*n+1;\n  parameter Real[2] v = {1,2};\nend M;");
+
+        Assert.Equal("2*n+1", iface.Elements.Single(e => e.Name == "k").DefaultValue);
+        Assert.Equal("{1,2}", iface.Elements.Single(e => e.Name == "v").DefaultValue);
+    }
+
     [Fact]
     public void ExtendsWithoutModifications_IsNull()
     {
@@ -373,7 +412,7 @@ public class ClassInterfaceExtractorTests
         var n = Assert.Single(Extract(
             "model M\n  parameter Real n[3] = {1, 2, 3};\nend M;").Elements);
 
-        Assert.Equal("{1,2,3}", n.DefaultValue);
+        Assert.Equal("{1, 2, 3}", n.DefaultValue);   // as written (B317)
         Assert.Null(n.TypeModification);
     }
 }

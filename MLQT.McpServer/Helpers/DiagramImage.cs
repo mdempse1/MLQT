@@ -176,8 +176,28 @@ internal static class DiagramImage
             member.Element.Type,
             placement.RotationCentre,
             type is null ? null : ConnectorsOn(libraries, type, valueOf),
-            valueOf);
+            valueOf,
+            NamesAConstant(libraries, member.OwnerId, scope, type));
     }
+
+    /// <summary>
+    /// Whether a dotted value names a constant or an enumeration literal - what a label may show by
+    /// its last segment - rather than another component's variable (B317). It does when the part
+    /// before the last dot is a class: <c>Modelica.Blocks.Types.SimpleController.PI</c> is,
+    /// <c>pulse.y</c> is not. A value is written either in the declaring class (the instance's
+    /// modification) or in the component's type (its default), so both scopes are asked.
+    /// </summary>
+    private static Func<string, bool> NamesAConstant(
+        ILibraryDataService libraries, string declaringId, IReadOnlyList<string> imports, ModelNode? type)
+        => value =>
+        {
+            var dot = value.LastIndexOf('.');
+            if (dot <= 0)
+                return false;
+            var prefix = value[..dot];
+            return TypeResolver.Resolve(libraries.CombinedGraph, declaringId, prefix, imports) is not null
+                || (type is not null && TypeResolver.Resolve(libraries.CombinedGraph, type.Id, prefix, []) is not null);
+        };
 
     /// <summary>
     /// What a component's type draws when it is shown on someone else's diagram. Null when the type
