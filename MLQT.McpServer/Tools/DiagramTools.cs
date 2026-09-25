@@ -37,7 +37,8 @@ public sealed class DiagramTools
     [Description("Get a class's diagram layout: each component's name, type and Placement extent " +
                 "([x1,y1,x2,y2] bounding box, plus rotation if set), together with the connections. " +
                 "INHERITED components are included, marked with the base class they come from - most " +
-                "blocks declare no connector of their own and get their ports from a base class. An " +
+                "blocks declare no connector of their own and get their ports from a base class - and " +
+                "so are PROTECTED ones, which are hidden from the class's users but not from its diagram. An " +
                 "extent is absolute: a Placement written with an origin has it added in already. Use " +
                 "this to see how a model is arranged before adjusting it, and get_diagram_image to " +
                 "look at it. Read-only.")]
@@ -56,9 +57,8 @@ public sealed class DiagramTools
         // cannot describe different diagrams - which they did while this had a regex of its own.
         var placements = DiagramGeometry.Placements(_libraries, classId, code);
 
-        var components = ClassElementResolver
-            .Collect(_libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
-            .Where(m => m.Element.Kind == ClassElementKind.Component)
+        // The components the image draws, protected ones included (B315).
+        var components = DiagramImage.Members(_libraries, node)
             .Select(m =>
             {
                 placements.TryGetValue(m.Element.Name, out var placement);

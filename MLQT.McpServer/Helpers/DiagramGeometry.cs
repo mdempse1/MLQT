@@ -262,8 +262,10 @@ internal static class DiagramGeometry
         // would otherwise cost two passes over the same source, and a deep chain many more.
         var byOwner = new Dictionary<string, Dictionary<string, Placement>>(StringComparer.Ordinal);
 
+        // A class's own diagram shows its protected components as well (B315); what it shows on its
+        // icon, which its users see, is public only.
         foreach (var member in ClassElementResolver
-                     .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+                     .Collect(libraries.CombinedGraph, node, includeProtected: layer == Layer.Diagram, includeInherited: true)
                      .Where(m => m.Element.Kind == ClassElementKind.Component && m.InheritedFrom is not null))
         {
             if (result.ContainsKey(member.Element.Name))

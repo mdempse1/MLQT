@@ -133,10 +133,16 @@ internal static class DiagramImage
             : Build(libraries, member, placement, Imports(node!));
     }
 
-    /// <summary>The components that can appear on the class's own diagram, declared or inherited.</summary>
-    private static IEnumerable<ResolvedElement> Members(ILibraryDataService libraries, ModelNode node)
+    /// <summary>
+    /// The components that can appear on the class's own diagram, declared or inherited -
+    /// <b>protected ones included</b>. Protection hides a component from the class's users, not from
+    /// its diagram: MSL's <c>BusUsage</c> keeps the bus its five connections go to in a protected
+    /// section (B315). Only the connectors on a component's <i>icon</i> are public-only
+    /// (<see cref="ConnectorsOn"/>), because the icon is what a user of the class sees.
+    /// </summary>
+    internal static IEnumerable<ResolvedElement> Members(ILibraryDataService libraries, ModelNode node)
         => ClassElementResolver
-            .Collect(libraries.CombinedGraph, node, includeProtected: false, includeInherited: true)
+            .Collect(libraries.CombinedGraph, node, includeProtected: true, includeInherited: true)
             .Where(m => m.Element.Kind == ClassElementKind.Component);
 
     private static DiagramComponent Build(

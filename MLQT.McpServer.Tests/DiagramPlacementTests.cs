@@ -235,4 +235,63 @@ public class DiagramPlacementTests
         Assert.Equal([40, -140, 80, -100], reset.Extent);
         Assert.Equal(90, reset.Rotation);
     }
+
+    // --- protected components are on the diagram too (B315) --------------------------------------
+
+    /// <summary>
+    /// A protected component is hidden from the class's users, not from its diagram: MSL's
+    /// <c>Modelica.Blocks.Examples.BusUsage</c> keeps its <c>controlBus</c> in a protected section
+    /// and wires five connections to it. Listing only public elements drew those five lines to
+    /// nothing, and left the bus out of <c>get_diagram_layout</c> altogether.
+    /// </summary>
+    private const string ProtectedSource = """
+        within;
+        package Pr "p"
+          connector Pin "pin"
+            Real v;
+            annotation (Icon(graphics={Ellipse(extent={{-40,-40},{40,40}}, lineColor={0,0,255})}));
+          end Pin;
+          model Part "part"
+            Pin p annotation (Placement(transformation(extent={{90,-10},{110,10}})));
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}}, lineColor={0,255,0})}));
+          end Part;
+          model Hub "hub"
+            annotation (Icon(graphics={Rectangle(extent={{-100,-100},{100,100}}, lineColor={255,0,0})}));
+          end Hub;
+          partial model Base "base"
+          protected
+            Hub inherited annotation (Placement(transformation(extent={{-10,-60},{10,-40}})));
+          end Base;
+          model Sys "sys"
+            extends Base;
+            Part part annotation (Placement(transformation(extent={{-60,-10},{-40,10}})));
+          protected
+            Hub bus annotation (Placement(transformation(extent={{40,-10},{60,10}})));
+          equation
+            connect(part.p, bus);
+          end Sys;
+        end Pr;
+        """;
+
+    [Fact]
+    public void ProtectedComponentsAreOnTheClassesOwnDiagram()
+    {
+        using var host = new TestHost();
+        var dir = host.WriteLibraryDir(new Dictionary<string, string>
+        {
+            ["package.mo"] = ProtectedSource.Replace("\r\n", "\n"),
+            ["package.order"] = "Pin\nPart\nHub\nBase\nSys\n",
+        });
+        host.Libraries.AddLibraryFromDirectoryAsync(dir).GetAwaiter().GetResult();
+        var tools = new DiagramTools(host.Libraries, host.Resources, host.Session);
+
+        var layout = ToolAssert.Ok<DiagramLayoutResult>(tools.GetDiagramLayout("Pr.Sys"));
+        Assert.Equal([40, -10, 60, 10], Assert.Single(layout.Components, c => c.Name == "bus").Extent);
+        Assert.Equal([-10, -60, 10, -40], Assert.Single(layout.Components, c => c.Name == "inherited").Extent);
+
+        var svg = DiagramImage.RenderSvg(host.Libraries, host.Libraries.GetModelById("Pr.Sys")!, 800)!;
+        Assert.Contains("translate(50,0)", svg);     // bus, declared protected
+        Assert.Contains("translate(0,-50)", svg);    // inherited, protected in the base
+        Assert.Contains("#FF0000", svg);             // drawn with Hub's own icon
+    }
 }
