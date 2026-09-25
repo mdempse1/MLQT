@@ -191,7 +191,11 @@ public static class ModelicaFileEncoding
             var lf = 0;
             var previous = -1;
 
-            using var reader = new StreamReader(path, Encoding.Latin1);
+            // Latin-1 for anything without a byte-order mark, which cannot fail and keeps CR and LF
+            // where they are in UTF-8 and every single-byte encoding. A file WITH a mark is decoded
+            // as the mark says - StreamReader's default - and that is what makes a UTF-16 file's
+            // CRLF count as CRLF rather than as a line feed after a zero byte (B311).
+            using var reader = new StreamReader(path, Encoding.Latin1, detectEncodingFromByteOrderMarks: true);
             int current;
             while ((current = reader.Read()) >= 0)
             {

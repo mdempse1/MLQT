@@ -461,6 +461,28 @@ public class ModelicaFileEncodingTests : IDisposable
     }
 
     /// <summary>
+    /// B311: a UTF-16 file's endings are read as UTF-16. In UTF-16 a CRLF is <c>0D 00 0A 00</c>, so
+    /// counted byte by byte every line feed follows a zero and a CRLF file reads as LF — B251 for the
+    /// one encoding <see cref="ModelicaFileEncoding.DetectFromBytes"/> recognises only by its mark.
+    /// The review expected this to fail and it did not: the reader that counts them is asked for
+    /// Latin-1 but, like every <c>StreamReader</c> not told otherwise, believes a byte-order mark
+    /// first. That is incidental, which is why it is held here.
+    /// </summary>
+    [Theory]
+    [InlineData("utf-16le")]
+    [InlineData("utf-16be")]
+    public void ForFile_ReadsTheEndingsOfAUtf16File(string encodingName)
+    {
+        var encoding = Encoding.GetEncoding(encodingName);
+        var path = Write("endings16.mo", encoding.GetPreamble()
+            .Concat(encoding.GetBytes("package P\r\nend P;\r\n")).ToArray());
+
+        var rendered = ModelicaFileEncoding.ForFile(path, "package P\nend P;\n");
+
+        Assert.Equal("package P\r\nend P;\r\n", rendered);
+    }
+
+    /// <summary>
     /// A file that does not exist yet keeps what the text was given, rather than an answer invented
     /// from <c>Environment.NewLine</c> — which would make one repository come out differently on
     /// Windows and on Linux.
