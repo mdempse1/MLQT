@@ -195,6 +195,15 @@ for, never closed and never joined by a second one on the same port — the next
 queue behind the one Dymola is finishing, and if that still takes longer than the time limit the
 result says Dymola ran out of time again rather than blaming the model.
 
+**Do not work in the Dymola MLQT is checking with while a check runs.** That wait covers only work
+MLQT itself gave Dymola. A command you start in Dymola's own window - a check, a translation, a
+simulation - leaves its server answering, so MLQT cannot see that Dymola is busy and sends its
+request; Dymola then interrupts your command to run MLQT's and **closes as soon as that check
+finishes**, losing whatever else was open. This is Dymola's behaviour, the same whether its server
+was started with `-serverport` or with `startHttpServer`, and nothing MLQT can observe over the
+connection tells it apart from an idle Dymola. Let your own command finish before checking from
+MLQT, or give MLQT a Dymola of its own on another port (the port is set on the External Tools tab).
+
 ### What happens to the tool when MLQT closes
 
 **The OpenModelica session ends with MLQT.** `omc` runs headless — no window, no taskbar entry — so
