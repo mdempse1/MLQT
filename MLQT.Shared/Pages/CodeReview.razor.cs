@@ -317,7 +317,7 @@ public partial class CodeReview : IAsyncDisposable
         if (_pendingScrollLine is { } pending && !_isLoadingCode && _highlightedCode is { Count: > 0 })
         {
             _pendingScrollLine = null;
-            var displayLine = _elision.ToDisplayLine(pending);
+            var displayLine = DisplayLineOfFinding(pending, _currentModelNode, _elision);
             if (displayLine is { } target)
             {
                 try
@@ -1060,6 +1060,24 @@ public partial class CodeReview : IAsyncDisposable
                 });
             }, TaskScheduler.Default);
         }
+    }
+
+    /// <summary>
+    /// The line of the viewer a finding at <paramref name="findingLine"/> of <paramref name="model"/>
+    /// is showing at, or null when that line is hidden with nothing in its place.
+    ///
+    /// <para><b>Two maps, not one.</b> A trimmed package is checked as its trimmed text — the file's
+    /// own lines with its inline standalone children cut out — so its findings count lines of that,
+    /// while the viewer shows the class as the file has it (<see cref="ClassSource"/>). The line goes
+    /// back through <see cref="ModelNode.TrimElision"/> to the class's own line first, as
+    /// <c>ClassLocation</c> does for the CLI's reports, and only then through what the viewer hid.
+    /// With only the second map, every finding below an inline child landed that child's length too
+    /// far down (B339).</para>
+    /// </summary>
+    internal static int? DisplayLineOfFinding(int findingLine, ModelNode? model, SourceElision viewElision)
+    {
+        var sourceLine = model?.TrimElision is { } trim ? trim.ToSourceLine(findingLine) : findingLine;
+        return viewElision.ToDisplayLine(sourceLine);
     }
 
     /// <summary>
