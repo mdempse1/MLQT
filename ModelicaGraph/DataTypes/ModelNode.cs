@@ -1,7 +1,6 @@
 using ModelicaParser.DataTypes;
 using ModelicaParser.ExternalDocs;
 using ModelicaParser.Helpers;
-using RevisionControl;
 
 namespace ModelicaGraph.DataTypes;
 
@@ -286,11 +285,6 @@ public class ModelNode : GraphNode
     public bool HasCustomIcon => !string.IsNullOrEmpty(IconSvg);
 
     /// <summary>
-    /// VCS file status of the file containing this model, if applicable.
-    /// </summary>
-    public VcsFileStatus? FileStatus { get; set; }
-
-    /// <summary>
     /// True when this node is a placeholder that stands in for a file whose contents
     /// could not be parsed. The full source is preserved in <see cref="Definition"/>.ModelicaCode
     /// and the failure is recorded in <see cref="Definition"/>.ParserErrors as a
@@ -348,11 +342,6 @@ public class ModelNode : GraphNode
     /// </summary>
     public bool HasFatalParseFailure =>
         Definition?.ParserErrors.Any(e => e.Severity == ParserErrorSeverity.FatalParseFailure) == true;
-
-    /// <summary>
-    /// Indicates whether any descendant model has uncommitted VCS changes.
-    /// </summary>
-    public bool HasDescendantChanges { get; set; }
 
     public ModelNode(string id, string modelName, string modelicaCode = "")
         : base(id, NodeType.Model, modelName)

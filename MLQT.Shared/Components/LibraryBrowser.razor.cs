@@ -537,36 +537,6 @@ public partial class LibraryBrowser : IDisposable
         return ChangeMarker.For(status, kind, descendants);
     }
 
-    /// <summary>
-    /// Annotates tree items with VCS file status and descendant change markers
-    /// from the cached mappings.
-    /// ModelNode instances are shared/cached in the graph, so stale flags from a previous
-    /// annotation pass are explicitly cleared before re-annotating.
-    /// </summary>
-    /// <param name="items">The tree items to annotate.</param>
-    private void AnnotateVcsStatus(IEnumerable<TreeItemData<ModelNode>> items)
-    {
-        foreach (var item in items)
-        {
-            if (item.Value == null)
-                continue;
-
-            // Reset first — the same ModelNode instance may have been annotated previously
-            item.Value.FileStatus = null;
-            item.Value.HasDescendantChanges = false;
-
-            if (_modelVcsStatus.TryGetValue(item.Value.Id, out var status))
-            {
-                item.Value.FileStatus = status;
-            }
-
-            if (_descendantChangeKinds.ContainsKey(item.Value.Id))
-            {
-                item.Value.HasDescendantChanges = true;
-            }
-        }
-    }
-
     public void Dispose()
     {
         NavState.OnChangeModel -= OnModelChanged;
@@ -582,8 +552,8 @@ public partial class LibraryBrowser : IDisposable
 
     /// <summary>
     /// Fired after a VCS operation (merge+commit, update, revert, switch) completes and
-    /// the analysis pipeline runs. Re-checks uncommitted changes so that any stale
-    /// HasDescendantChanges indicators (e.g. set during pre-commit phase) are cleared.
+    /// the analysis pipeline runs. Re-checks uncommitted changes so that any stale change markers
+    /// (e.g. from before a commit) are cleared.
     /// </summary>
     private async void OnVcsFilesChangedHandler(string repositoryId)
     {
@@ -593,8 +563,7 @@ public partial class LibraryBrowser : IDisposable
             // Rebuild the VCS status mapping from the current working copy state.
             // After a successful commit this will be empty, clearing stale annotations.
             await CheckForUncommittedChangesAsync();
-            // Refresh top-level tree items to get fresh ModelNode objects (HasDescendantChanges=false)
-            // and re-annotate them from the now-updated status mapping.
+            // Refresh the top-level tree items, which draw their markers from the updated mapping.
             await RefreshTreeItems();
             StateHasChanged();
         });
@@ -641,9 +610,6 @@ public partial class LibraryBrowser : IDisposable
         {
             items = allItems.ToList();
         }
-
-        // Annotate items with VCS status indicators
-        AnnotateVcsStatus(items);
 
         // Restore expansion state for the loaded items
         RestoreExpansionState(items);
@@ -742,9 +708,7 @@ public partial class LibraryBrowser : IDisposable
             TreeItems = allItems.OrderBy(item => item.Value?.Name).ToList();
         }
 
-        // Annotate items with VCS status indicators
-        AnnotateVcsStatus(TreeItems);
-        var annotateMs = step.ElapsedMilliseconds;
+        var filterMs = step.ElapsedMilliseconds;
         step.Restart();
 
         // Compute which parent packages contain descendants with parser errors so the
@@ -768,10 +732,10 @@ public partial class LibraryBrowser : IDisposable
         // dispatcher, and those are the ones to worry about (B258).
         if (total.ElapsedMilliseconds >= 50)
         {
-            var onThisThread = annotateMs + parserErrorsMs + expansionMs;
+            var onThisThread = filterMs + parserErrorsMs + expansionMs;
             LoggingService.Debug(nameof(LibraryBrowser),
                 $"Tree refresh for '{Repository?.Name ?? "all"}' took {total.ElapsedMilliseconds}ms "
-                + $"({onThisThread}ms of it on the UI thread: annotate {annotateMs}ms, "
+                + $"({onThisThread}ms of it on the UI thread: filter {filterMs}ms, "
                 + $"parser errors {parserErrorsMs}ms, expansion {expansionMs}ms; "
                 + $"top level {topLevelMs}ms awaited off it)");
         }
@@ -1467,7 +1431,7 @@ public partial class LibraryBrowser : IDisposable
                     affectedModelIds.Add(model.Id);
             }
 
-            // Check VCS status first so AnnotateVcsStatus in RefreshTreeItems uses fresh data.
+            // Check VCS status first so the markers the refreshed tree draws are current.
             await CheckForUncommittedChangesAsync();
             await RefreshTreeItems();
 

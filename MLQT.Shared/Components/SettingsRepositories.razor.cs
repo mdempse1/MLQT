@@ -265,15 +265,6 @@ public partial class SettingsRepositories : IDisposable
     // ========== Repository Management ==========
 
     /// <summary>
-    /// Moves a repository up or down the project's list, and persists the new order.
-    /// </summary>
-    /// <remarks>
-    /// <para>Saved immediately rather than on a Save button, because this tab has none — the
-    /// Settings page hides its action buttons for the Manage Repositories panel, and every other
-    /// change made here writes itself out the same way. An order that survived until the window
-    /// closed and then reverted would be worse than no ordering at all (B188).</para>
-    /// </remarks>
-    /// <summary>
     /// Whether <see cref="MoveRepositoryAsync"/> would move this repository — the arrow buttons'
     /// enabled state, and the same range the service enforces.
     /// </summary>
@@ -292,6 +283,15 @@ public partial class SettingsRepositories : IDisposable
         return delta != 0 && target >= 0 && target < _repositories.Count;
     }
 
+    /// <summary>
+    /// Moves a repository up or down the project's list, and persists the new order.
+    /// </summary>
+    /// <remarks>
+    /// <para>Saved immediately rather than on a Save button, because this tab has none — the
+    /// Settings page hides its action buttons for the Manage Repositories panel, and every other
+    /// change made here writes itself out the same way. An order that survived until the window
+    /// closed and then reverted would be worse than no ordering at all (B188).</para>
+    /// </remarks>
     internal async Task MoveRepositoryAsync(Repository repository, int delta)
     {
         if (!RepositoryService.MoveRepository(repository.Id, delta))
