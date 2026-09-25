@@ -48,6 +48,21 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     }
 
     /// <summary>
+    /// Where each decision about a session is reported: what state a cached one was found in, and
+    /// whether a Dymola was attached to, started or let go. The host points it at its log, which is
+    /// the only record of which Dymola a check reached - and whose it was - once the window is gone.
+    /// </summary>
+    public Action<string>? Log { get; set; }
+
+    private void Report(string message)
+    {
+        try { Log?.Invoke(message); } catch { /* logging must never decide a check */ }
+    }
+
+    private static string Whose(IDymolaSession session) =>
+        session.ProcessId is { } pid ? $"the Dymola MLQT started (process {pid})" : "a Dymola MLQT did not start";
+
+    /// <summary>
     /// Gets or creates the singleton DymolaInterface instance with settings from SettingsService.
     /// </summary>
     /// <remarks>
@@ -87,7 +102,9 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // answer to the same question.
             if (_instance != null)
             {
-                switch (await _instance.GetSessionStateAsync())
+                var state = await _instance.GetSessionStateAsync();
+                Report($"Cached session on port {settings.PortNumber}, {Whose(_instance)}: {state}");
+                switch (state)
                 {
                     case DymolaSessionState.Answering:
                         break;
@@ -140,10 +157,20 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
                 // accepted the connection and stayed silent is there and busy - somebody else's, or
                 // one a session before this started - and starting another would put two on one
                 // port (B331).
-                if (await created.GetSessionStateAsync() is DymolaSessionState.Busy)
+                var state = await created.GetSessionStateAsync();
+                Report($"No answer on port {settings.PortNumber} within the connection window: {state}");
+                if (state is DymolaSessionState.Busy)
                     created.SetOfflineMode(false);
                 else
+                {
+                    Report($"Starting {settings.DymolaPath} -serverport {settings.PortNumber}");
                     await Task.Run(() => created.StartDymolaProcessAsync(cancellationToken), cancellationToken);
+                    Report($"Dymola is answering on port {settings.PortNumber}: {Whose(created)}");
+                }
+            }
+            else
+            {
+                Report($"Attached to the Dymola answering on port {settings.PortNumber}");
             }
 
             return created;
@@ -168,6 +195,7 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
         if (session == null)
             return;
 
+        Report($"Letting go of the session with {Whose(session)}; that Dymola is left running");
         try { session.Detach(); } catch { /* nothing to let go of */ }
         try { session.Dispose(); } catch { /* the session is already gone */ }
     }

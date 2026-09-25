@@ -72,7 +72,10 @@ public static class MlqtServiceCollectionExtensions
         services.AddSingleton<IDictionaryManagerService, DictionaryManagerService>();
         services.AddSingleton<IImpactAnalysisService, ImpactAnalysisService>();
         services.AddSingleton<IExternalResourceService, ExternalResourceService>();
-        services.AddSingleton<DymolaInterface.Interfaces.IDymolaInterfaceFactory, DymolaInterfaceFactory>();
+        services.AddSingleton<DymolaInterface.Interfaces.IDymolaInterfaceFactory>(_ => new DymolaInterfaceFactory
+        {
+            Log = message => LoggingService.Info(nameof(DymolaInterfaceFactory), message)
+        });
         services.AddSingleton<OpenModelicaInterface.Interfaces.IOpenModelicaInterfaceFactory, OpenModelicaInterfaceFactory>();
         services.AddSingleton<DymolaCheckingService>();
         services.AddSingleton<OpenModelicaCheckingService>();

@@ -33,4 +33,10 @@ public interface IDymolaSession : IDymolaInterface, IDisposable
     /// the user's Dymola window alone.
     /// </summary>
     void Detach();
+
+    /// <summary>
+    /// The OS process id of the Dymola this session started, or null when it attached to one started
+    /// elsewhere - reported so the factory's log says whose Dymola each decision was about.
+    /// </summary>
+    int? ProcessId => null;
 }
