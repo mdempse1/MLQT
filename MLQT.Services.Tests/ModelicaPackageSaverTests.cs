@@ -391,6 +391,84 @@ public class ModelicaPackageSaverTests : IDisposable
 
     #endregion
 
+    #region A verbatim package and its standalone children (B309)
+
+    private (SaveResult Result, string PackageText) SaveVerbatim(string packageName, string source, bool trim = false)
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, packageName + ".mo", source);
+        if (trim)
+            PackageCodeTrimmer.TrimStandaloneChildren(graph);
+        var outputDir = CreateTempDirectory();
+
+        var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
+            graph, graph.ModelNodes.Select(m => m.Id).ToHashSet(), outputDir, false, FormattingOptions.None,
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = [packageName] });
+
+        var packageFile = result.WrittenFiles.Single(f =>
+            Path.GetFileName(f) == "package.mo" && Path.GetFileName(Path.GetDirectoryName(f)) == packageName);
+        return (result, ModelicaFileEncoding.ReadAllTextOnly(packageFile));
+    }
+
+    private static bool Wrote(SaveResult result, string fileName)
+        => result.WrittenFiles.Any(f => Path.GetFileName(f) == fileName);
+
+    [Fact]
+    public void AVerbatimPackage_DoesNotAlsoCarryAChildWrittenAsItsOwnFile()
+    {
+        // A package excluded from formatting bypasses the renderer, which is what removes the
+        // children written separately - so an untrimmed one was written with A inline *and* as A.mo,
+        // a duplicate definition that fails to load.
+        var (result, text) = SaveVerbatim("P", """
+            package P "p"
+              constant Real    k =  1   "loosely spaced";
+              model A "inline"
+              end A;
+            end P;
+            """);
+
+        Assert.True(Wrote(result, "A.mo"));
+        Assert.DoesNotContain("model A", text);
+        Assert.Contains("constant Real    k =  1   \"loosely spaced\";", text);
+    }
+
+    [Fact]
+    public void AVerbatimPackage_TrimmedFirst_DoesNotCarryACaseDifferingPairTwice()
+    {
+        // The row's own case: the trimmer and the saver disagreed about a package and a model whose
+        // names differ only in case, so the trimmed text still carried both and the saver wrote both.
+        var (result, text) = SaveVerbatim("S", """
+            package S "s"
+              model JFET "a model"
+              end JFET;
+              package Jfet "a package"
+              end Jfet;
+            end S;
+            """, trim: true);
+
+        Assert.True(Wrote(result, "JFET.mo"));
+        Assert.DoesNotContain("model JFET", text);
+        Assert.DoesNotContain("package Jfet", text);
+    }
+
+    [Fact]
+    public void AVerbatimPackage_KeepsAChildThatCannotBeCutOut_AndDoesNotWriteItTwice()
+    {
+        // Two classes on one line cannot be cut apart without taking the other's text; they stay
+        // where the user wrote them, and are therefore not also written as files.
+        var (result, text) = SaveVerbatim("Q", """
+            package Q "q"
+              model A end A; model B end B;
+            end Q;
+            """);
+
+        Assert.Contains("model A end A; model B end B;", text);
+        Assert.False(Wrote(result, "A.mo"));
+        Assert.False(Wrote(result, "B.mo"));
+    }
+
+    #endregion
+
     #region SaveLibraryToDirectoryWithResult Additional Coverage
 
     [Fact]

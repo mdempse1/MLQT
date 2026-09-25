@@ -101,13 +101,15 @@ public class ModelicaPackageSaver
         // Parse trees are released immediately after each model is rendered to avoid
         // having all parse trees and all rendered strings coexist in memory.
         var excludedOrNull = formatPreserved.Count > 0 ? formatPreserved : null;
+        var verbatimText = ExciseStandaloneChildrenFromVerbatimPackages(
+            allModels, formatPreserved, standaloneChildren, shortClassIds);
         // Built once for the whole save, and only when the layout actually asks for the finer
         // declaration order — resolving a type walks imports and the extends chain, and a save that
         // is not ordering declarations must not pay for it.
         var isSimpleType = formatting.DeclarationOrder ? StyleChecking.CreateSimpleTypeLookup(graph) : null;
 
         var renderedCode = PreRenderModelsParallel(allModels, childrenByParent, standaloneChildren,
-            formatting, excludedOrNull, isSimpleType);
+            formatting, excludedOrNull, isSimpleType, verbatimText);
 
         // PHASE 4: Write files (sequential tree traversal using pre-rendered code)
         // Rendered code entries are removed from the dictionary after writing to free memory.
@@ -297,6 +299,47 @@ public class ModelicaPackageSaver
             kvp => PackageFileLayout.StandaloneChildNames(kvp.Value, m => shortClassIds.Contains(m.Id)));
 
     /// <summary>
+    /// The text each package excluded from formatting is written as: its own source, verbatim, less
+    /// the children written as files of their own (B309).
+    ///
+    /// <para>A formatted package has those children removed by the renderer
+    /// (<c>classNamesToExclude</c>); a verbatim one bypasses the renderer, so any such child still in
+    /// its source — one the trimmer never cut, or a package that was never trimmed — was written
+    /// twice, inline and beside it: a duplicate definition, and a load error. A child that cannot be
+    /// cut out without taking a neighbour's text with it stays inline instead, and is taken out of
+    /// <paramref name="standaloneChildren"/> so it is not also written separately.</para>
+    ///
+    /// <para>Sequential, before the parallel render, because it edits
+    /// <paramref name="standaloneChildren"/>, which that render reads for every package.</para>
+    /// </summary>
+    private static Dictionary<string, string> ExciseStandaloneChildrenFromVerbatimPackages(
+        List<ModelNode> allModels,
+        HashSet<string> excludedModelIds,
+        Dictionary<string, HashSet<string>> standaloneChildren,
+        HashSet<string> shortClassIds)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var model in allModels)
+        {
+            if (!excludedModelIds.Contains(model.Id)
+                || model.Definition.ParsedCode is null
+                || !PackageFileLayout.WrittenAsDirectory(model, m => shortClassIds.Contains(m.Id))
+                || !standaloneChildren.TryGetValue(model.Id, out var names)
+                || names.Count == 0)
+                continue;
+
+            // The same text PreParseModelsParallel parsed, so the tree's lines are this text's lines.
+            var source = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
+            result[model.Id] = PackageCodeTrimmer.ExciseInlineClasses(
+                source, model.Definition.ParsedCode, names, out var keptInline);
+            names.ExceptWith(keptInline);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Pre-renders all models in parallel and returns a dictionary of rendered code.
     /// Parse trees are released immediately after each model is rendered to minimize
     /// peak memory (avoids all parse trees and all rendered strings coexisting).
@@ -308,7 +351,8 @@ public class ModelicaPackageSaver
         Dictionary<string, HashSet<string>> standaloneChildren,
         FormattingOptions formatting,
         HashSet<string>? excludedModelIds = null,
-        Func<string, string, bool>? isSimpleType = null)
+        Func<string, string, bool>? isSimpleType = null,
+        IReadOnlyDictionary<string, string>? verbatimText = null)
     {
         const int batchSize = 500;
         var renderedCode = new ConcurrentDictionary<string, string>();
@@ -329,7 +373,9 @@ public class ModelicaPackageSaver
                     // emits the clause from the parse tree; this is the one path that bypasses it.
                     if (excludedModelIds != null && excludedModelIds.Contains(model.Id))
                     {
-                        renderedCode[model.Id] = WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
+                        renderedCode[model.Id] = verbatimText != null && verbatimText.TryGetValue(model.Id, out var excised)
+                            ? excised
+                            : WithinClause.Ensure(model.Definition.ModelicaCode, model.ParentModelName);
                         model.Definition.ParsedCode = null;
                         return;
                     }

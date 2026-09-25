@@ -77,19 +77,11 @@ public static class PackageCodeTrimmer
             {
                 var children = childrenByParent[model.Id];
 
-                // Build the set of standalone child names to exclude (same rule as ModelicaPackageSaver:
-                // a standalone class whose (case-insensitive) name is unique among the siblings).
-                var nameCounts = children
-                    .GroupBy(c => c.Definition.Name.ToLowerInvariant())
-                    .ToDictionary(g => g.Key, g => g.Count());
-
-                var standaloneNames = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var child in children)
-                {
-                    var lowerName = child.Definition.Name.ToLowerInvariant();
-                    if (child.CanBeStoredStandalone && nameCounts[lowerName] == 1 && lowerName != "package")
-                        standaloneNames.Add(child.Definition.Name);
-                }
+                // The children the saver writes as their own entries, asked of the one rule that
+                // decides it. This carried a copy of the rule B245 replaced — class names compared
+                // case-insensitively — so a package and a model differing only in case were written
+                // out by the saver and kept inline here (B309).
+                var standaloneNames = PackageFileLayout.StandaloneChildNames(children);
                 if (standaloneNames.Count == 0)
                     return;
 
@@ -153,6 +145,93 @@ public static class PackageCodeTrimmer
                 // If trimming a model fails, keep the original — it's still valid.
             }
         });
+    }
+
+    /// <summary>
+    /// Cuts the nested classes named in <paramref name="names"/> out of a package's text, leaving every
+    /// other line exactly as written — for the saver's verbatim path, which writes a package that
+    /// opted out of formatting as it stands and must not also carry a child it writes as its own file
+    /// (B309). The trim above is the same operation on the stored source; this one works from a tree
+    /// of <paramref name="code"/>, because a verbatim package may not have been trimmed at all.
+    /// </summary>
+    /// <param name="code">The package's text, as <paramref name="tree"/> was parsed from.</param>
+    /// <param name="keptInline">The named classes found in the text that could not be cut out,
+    /// because they share a line with something else. The caller must not write these separately:
+    /// they are still here.</param>
+    public static string ExciseInlineClasses(
+        string code,
+        modelicaParser.Stored_definitionContext tree,
+        IReadOnlySet<string> names,
+        out HashSet<string> keptInline)
+    {
+        keptInline = new HashSet<string>(StringComparer.Ordinal);
+
+        var composition = tree.class_definition().FirstOrDefault()
+            ?.class_specifier()?.long_class_specifier()?.composition();
+        if (composition is null || names.Count == 0)
+            return code;
+
+        var lines = code.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var ranges = new List<ElidedRange>();
+
+        foreach (var list in composition.element_list())
+        {
+            for (var i = 0; i < list.ChildCount; i++)
+            {
+                if (list.GetChild(i) is not modelicaParser.ElementContext element)
+                    continue;
+
+                var name = NameOf(element.class_definition());
+                if (name is null || !names.Contains(name))
+                    continue;
+
+                // The element (so a prefix such as `final` goes with it) and the `;` that ends it,
+                // which the element list holds rather than the element.
+                var terminator = (list.GetChild(i + 1) as Antlr4.Runtime.Tree.ITerminalNode)?.Symbol;
+                if (terminator is not null && OwnsItsLines(lines, element.Start, terminator))
+                    ranges.Add(new ElidedRange(element.Start.Line, terminator.Line, Replacement: null));
+                else
+                    keptInline.Add(name);
+            }
+        }
+
+        if (ranges.Count == 0)
+            return code;
+
+        // Joined with the endings the text came with: this is written verbatim, and a file whose
+        // endings changed is a file every commit dialog reports as modified (B251).
+        var newline = code.Contains("\r\n") ? "\r\n" : "\n";
+        return string.Join(newline, SourceElision.Of(ranges).Apply(lines));
+    }
+
+    /// <summary>
+    /// Whether the text from <paramref name="start"/> to <paramref name="end"/> (inclusive) has its
+    /// lines to itself: nothing but whitespace before it on its first line or after it on its last.
+    /// Asked by token position rather than by <see cref="OwnsItsLines(string[], int, int)"/>'s
+    /// "the last line ends with a semicolon", which <c>model A end A; model B end B;</c> satisfies for
+    /// both classes — and cutting either line out would take the other with it.
+    /// </summary>
+    private static bool OwnsItsLines(string[] lines, Antlr4.Runtime.IToken start, Antlr4.Runtime.IToken end)
+    {
+        if (start.Line < 2 || end.Line < start.Line || end.Line > lines.Length)
+            return false;
+
+        var firstLine = lines[start.Line - 1];
+        var lastLine = lines[end.Line - 1];
+        var afterEnd = end.Column + 1;
+        return start.Column <= firstLine.Length
+            && firstLine.AsSpan(0, start.Column).IsWhiteSpace()
+            && afterEnd <= lastLine.Length
+            && lastLine.AsSpan(afterEnd).IsWhiteSpace();
+    }
+
+    /// <summary>The name a nested class definition declares, or null for anything else.</summary>
+    private static string? NameOf(modelicaParser.Class_definitionContext? definition)
+    {
+        var specifier = definition?.class_specifier();
+        return specifier?.long_class_specifier()?.IDENT(0)?.GetText()
+            ?? specifier?.short_class_specifier()?.IDENT()?.GetText()
+            ?? specifier?.der_class_specifier()?.IDENT(0)?.GetText();
     }
 
     /// <summary>

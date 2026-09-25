@@ -27,9 +27,6 @@ namespace ModelicaGraph.Tests;
 /// into the loop and they come out with no ranges and unchanged.</item>
 /// <item><c>if (standaloneNames.Count == 0) return;</c> is the same shape: with no names, no ranges
 /// are built and the method returns on the next check anyway.</item>
-/// <item><c>lowerName != "package"</c> guards a class literally named <c>package</c>, which cannot
-/// exist — it is a reserved word, so such a file does not parse and no node is ever created. A test
-/// for it was written, found to assert nothing, and removed.</item>
 /// <item>The range guards (<c>first &lt; 2</c>, <c>last &gt;= lines.Length</c>) and
 /// <c>OwnsItsLines</c>'s leading-whitespace check are bounds checks on data a loader does not
 /// produce: a child of a package is inside it. They turn a swallowed <c>IndexOutOfRangeException</c>
@@ -308,6 +305,48 @@ public class PackageCodeTrimmerTests
         var after = graph.GetNode<ModelNode>("X")!.Definition.ModelicaCode;
         Assert.Contains("model Thing", after);
         Assert.Contains("model thing", after);
+    }
+
+    [Fact]
+    public void ExciseInlineClasses_KeepsTheTextsLineEndings_AndEverythingElseVerbatim()
+    {
+        // For the saver's verbatim path (B309): what is left is written as it stands, so the
+        // endings it came with are the endings it goes out with.
+        var code = "within;\r\npackage P\r\n  constant Real    k=1;\r\n  final model A\r\n  end A;\r\nend P;";
+        var tree = ModelicaParser.Helpers.ModelicaParserHelper.Parse(code);
+
+        var result = PackageCodeTrimmer.ExciseInlineClasses(code, tree, new HashSet<string> { "A", "Missing" }, out var kept);
+
+        Assert.Equal("within;\r\npackage P\r\n  constant Real    k=1;\r\nend P;", result);
+        Assert.Empty(kept);
+    }
+
+    /// <summary>
+    /// B309: the pair above collides, but a <i>package</i> and a model differing only in case do
+    /// not — one is written as the directory <c>Jfet</c>, the other as the file <c>JFET.mo</c> — and
+    /// the saver writes both out (B245). The trimmer carried its own copy of the old rule and kept
+    /// both inline, so the text it left was not the package the saver writes.
+    /// </summary>
+    [Fact]
+    public void APackageAndAModelDifferingOnlyInCase_AreExcisedLikeTheSaverWritesThem()
+    {
+        var graph = new DirectedGraph();
+        GraphBuilder.LoadModelicaFile(graph, "S.mo", """
+            package S "s"
+              model JFET "a model"
+              end JFET;
+              package Jfet "a package"
+              end Jfet;
+            end S;
+            """);
+        var children = graph.ModelNodes.Where(m => m.ParentModelName == "S").ToList();
+        Assert.Equal(2, PackageFileLayout.StandaloneChildNames(children).Count);
+
+        PackageCodeTrimmer.TrimStandaloneChildren(graph);
+
+        var after = graph.GetNode<ModelNode>("S")!.Definition.ModelicaCode;
+        Assert.DoesNotContain("model JFET", after);
+        Assert.DoesNotContain("package Jfet", after);
     }
 
     /// <summary>
