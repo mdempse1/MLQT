@@ -16,6 +16,12 @@ public class VcsWorkingCopyFile
     public VcsFileStatus Status { get; set; }
 
     /// <summary>
+    /// For a renamed file, the path it had in the committed version, relative to the repository root;
+    /// otherwise null. Where its committed content is to be found (B350).
+    /// </summary>
+    public string? OldPath { get; set; }
+
+    /// <summary>
     /// Whether the file is staged for commit (Git only).
     /// </summary>
     public bool IsStaged { get; set; }

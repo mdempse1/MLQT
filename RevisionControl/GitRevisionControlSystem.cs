@@ -931,6 +931,15 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
                         break;
                 }
 
+                // A staged rename is reported at its new path only, and the committed content is at
+                // the old one - so it is carried, or the file reads as new and every class in it as
+                // added (B350).
+                if (item.HeadToIndexRenameDetails is { } rename
+                    && !string.Equals(rename.OldFilePath, item.FilePath, StringComparison.Ordinal))
+                {
+                    file.OldPath = rename.OldFilePath;
+                }
+
                 // Only include files that have actual changes
                 if (item.State != FileStatus.Unaltered && item.State != FileStatus.Ignored)
                 {

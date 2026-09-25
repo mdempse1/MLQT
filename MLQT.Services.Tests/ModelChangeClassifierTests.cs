@@ -263,4 +263,148 @@ public class ModelChangeClassifierTests : IDisposable
         _repositories.Verify(
             r => r.GetFileContentAtRevision("repo-1", "Resistor.mo", It.IsAny<string?>()), Times.Once);
     }
+
+    // ---------------------------------------------------------------- a class moved between files (B350)
+
+    private const string CommittedPackage = """
+        within MyLib;
+        package Components
+          model Resistor "An ideal resistor"
+            parameter Real R = 100;
+          end Resistor;
+          model Capacitor "An ideal capacitor"
+            parameter Real C = 1;
+          end Capacitor;
+        end Components;
+        """;
+
+    /// <summary>The package after Split into files has taken the resistor out.</summary>
+    private const string PackageWithoutResistor = """
+        within MyLib;
+        package Components
+          model Capacitor "An ideal capacitor"
+            parameter Real C = 1;
+          end Capacitor;
+        end Components;
+        """;
+
+    private const string SplitOutResistor = """
+        within MyLib.Components;
+        model Resistor "An ideal resistor"
+          parameter Real R = 100;
+        end Resistor;
+        """;
+
+    private void CommitPackage() =>
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", "Components/package.mo", It.IsAny<string?>()))
+            .Returns(CommittedPackage);
+
+    /// <summary>
+    /// Split into files: the package keeps one class and the other moves to a file of its own, which
+    /// is untracked. Compared with nothing, the moved class read as Added - the simulation marker, and
+    /// hidden by the Cosmetic filter - for a change that alters nothing.
+    /// </summary>
+    [Fact]
+    public void AClassSplitOutOfItsPackage_IsComparedWithWhereItCameFrom()
+    {
+        CommitPackage();
+        Write(Path.Combine("Components", "package.mo"), PackageWithoutResistor);
+        Write(Path.Combine("Components", "Resistor.mo"), SplitOutResistor);
+
+        var kinds = Classify(
+            Change("Components/package.mo"),
+            Change("Components/Resistor.mo", VcsFileStatus.Untracked));
+
+        // Cosmetic rather than Unchanged: moving it out of the package took away a level of
+        // indentation, which is layout - and the Cosmetic filter is where a reviewer looks for that.
+        Assert.Equal(ClassChangeKind.Cosmetic, kinds["MyLib.Components.Resistor"]);
+        Assert.Equal(ClassChangeKind.Unchanged, kinds["MyLib.Components.Capacitor"]);
+    }
+
+    [Fact]
+    public void AClassMovedAndEdited_IsTheEditNotAnAddition()
+    {
+        CommitPackage();
+        Write(Path.Combine("Components", "package.mo"), PackageWithoutResistor);
+        Write(Path.Combine("Components", "Resistor.mo"), SplitOutResistor.Replace("R = 100", "R = 220"));
+
+        var kinds = Classify(
+            Change("Components/package.mo"),
+            Change("Components/Resistor.mo", VcsFileStatus.Untracked));
+
+        Assert.Equal(ClassChangeKind.AffectsSimulation, kinds["MyLib.Components.Resistor"]);
+    }
+
+    /// <summary>
+    /// Moved without telling version control: the old file is deleted and the new one untracked.
+    /// </summary>
+    [Fact]
+    public void AFileMovedOnDisk_IsComparedWithTheDeletedOne()
+    {
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", "Old.mo", It.IsAny<string?>()))
+            .Returns(Committed);
+        Write("New.mo", Committed);
+
+        var kinds = Classify(Change("Old.mo", VcsFileStatus.Deleted), Change("New.mo", VcsFileStatus.Untracked));
+
+        Assert.Equal(ClassChangeKind.Unchanged, kinds["MyLib.Resistor"]);
+    }
+
+    /// <summary>
+    /// A staged rename (<c>git mv</c>) is reported at its new path, which has no committed version.
+    /// </summary>
+    [Fact]
+    public void ARenamedFile_IsComparedWithItsOldPath()
+    {
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns((string?)null);
+        _repositories
+            .Setup(r => r.GetFileContentAtRevision("repo-1", "Old.mo", It.IsAny<string?>()))
+            .Returns(Committed);
+        Write("New.mo", Committed.Replace("{{0,0},{1,1}}", "{{0,0},{9,9}}"));
+
+        var kinds = Classify(new VcsWorkingCopyFile { Path = "New.mo", OldPath = "Old.mo", Status = VcsFileStatus.Renamed });
+
+        Assert.Equal(ClassChangeKind.Cosmetic, kinds["MyLib.Resistor"]);
+    }
+
+    [Fact]
+    public void AClassNoCommittedFileHad_IsStillAdded()
+    {
+        // The positive control: looking elsewhere must not make everything look moved.
+        CommitPackage();
+        Write(Path.Combine("Components", "package.mo"), CommittedPackage);
+        Write(Path.Combine("Components", "Inductor.mo"), """
+            within MyLib.Components;
+            model Inductor "An ideal inductor"
+              parameter Real L = 1;
+            end Inductor;
+            """);
+
+        var kinds = Classify(
+            Change("Components/package.mo"),
+            Change("Components/Inductor.mo", VcsFileStatus.Untracked));
+
+        Assert.Equal(ClassChangeKind.Added, kinds["MyLib.Components.Inductor"]);
+    }
+
+    /// <summary>
+    /// B350: nothing in production called Invalidate, so the cache kept every project's files for
+    /// the rest of the session. A project change clears it.
+    /// </summary>
+    [Fact]
+    public void AProjectChange_DiscardsTheCache()
+    {
+        Write("Resistor.mo", Committed);
+        Classify(Change("Resistor.mo"));
+
+        _repositories.Raise(r => r.OnProjectChanged += null, "another-project");
+        Classify(Change("Resistor.mo"));
+
+        _repositories.Verify(
+            r => r.GetFileContentAtRevision("repo-1", "Resistor.mo", It.IsAny<string?>()), Times.Exactly(2));
+    }
 }
