@@ -47,4 +47,10 @@ public interface IDymolaInterface
     /// <see cref="CommandOutcome.Answered"/>.
     /// </summary>
     CommandOutcome LastOutcome { get; }
+
+    /// <summary>
+    /// Whether Dymola is answering, busy, still starting or gone - which a failed command alone does
+    /// not say. See <see cref="DymolaSessionState"/>.
+    /// </summary>
+    Task<DymolaSessionState> GetSessionStateAsync();
 }

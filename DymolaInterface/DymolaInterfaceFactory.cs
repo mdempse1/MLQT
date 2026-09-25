@@ -9,9 +9,31 @@ namespace DymolaInterface;
 /// </summary>
 public class DymolaInterfaceFactory : IDymolaInterfaceFactory
 {
-    private DymolaInterface? _instance;
+    private IDymolaSession? _instance;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private DymolaSettings _dymolaSettings = new();
+    private readonly Func<DymolaSettings, IDymolaSession> _createSession;
+
+    /// <summary>
+    /// A factory that connects to - or starts - a real Dymola.
+    /// </summary>
+    public DymolaInterfaceFactory()
+        : this(settings => new DymolaInterface(
+            dymolaPath: settings.DymolaPath,
+            portNumber: settings.PortNumber,
+            hostname: settings.HostAddress))
+    {
+    }
+
+    /// <summary>
+    /// A factory whose sessions come from <paramref name="createSession"/> - how the decisions below
+    /// are tested without Dymola (B331). The function is called on the thread pool, because the real
+    /// constructor waits out a busy Dymola.
+    /// </summary>
+    public DymolaInterfaceFactory(Func<DymolaSettings, IDymolaSession> createSession)
+    {
+        _createSession = createSession;
+    }
 
     /// <summary>
     /// Update the settings used for Dymola instances
@@ -24,11 +46,23 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     /// <summary>
     /// Gets or creates the singleton DymolaInterface instance with settings from SettingsService.
     /// </summary>
+    /// <remarks>
+    /// <para><b>This never ends a Dymola process</b> (B331, and B260 before it). A cached session is
+    /// asked what state it is in rather than whether it answers a ping: a Dymola still working on a
+    /// check that timed out or was stopped answers nothing, exactly like one whose window was closed,
+    /// and taking it for gone disposed the session - which killed the Dymola MLQT had started, with
+    /// whatever the user had open in it - or, against a Dymola MLQT had only attached to, started a
+    /// second one on a port that was taken. A busy session is handed back and its commands wait for
+    /// Dymola; a gone one is detached before it is dropped, so even a process that is somehow still
+    /// running is left to the user.</para>
+    /// </remarks>
     public async Task<IDymolaInterface> GetOrCreateAsync()
     {
         await _lock.WaitAsync();
         try
         {
+            var settings = _dymolaSettings;
+
             // A cached session is only worth having if it is still there. Closing Dymola's window
             // ends its process and its JSON-RPC server, and nothing told this object — so the first
             // check worked and every one after it failed against a session that had gone (B171).
@@ -38,18 +72,37 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // answer to the same question.
             if (_instance != null)
             {
-                if (await _instance.IsAliveAsync())
+                switch (await _instance.GetSessionStateAsync())
+                {
+                    case DymolaSessionState.Answering:
+                        break;
+
+                    case DymolaSessionState.Busy:
+                        // Still on the command it was given. Its commands are sent rather than held
+                        // back as offline, so they wait for Dymola to finish - up to the time limit -
+                        // which is what "the next check waits" means (B331).
+                        _instance.SetOfflineMode(false);
+                        break;
+
+                    case DymolaSessionState.Starting:
+                        // The Dymola it launched has not come up yet: wait for that one rather than
+                        // launching another beside it on the same port.
+                        var starting = _instance;
+                        await Task.Run(() => starting.StartDymolaProcessAsync());
+                        break;
+
+                    default:
+                        Drop();
+                        break;
+                }
+
+                if (_instance != null)
                 {
                     // Applied on every hand-out rather than only at creation, so a time limit changed
                     // in the settings reaches the session already open.
-                    _instance.CommandTimeout = _dymolaSettings.CommandTimeout;
+                    _instance.CommandTimeout = settings.CommandTimeout;
                     return _instance;
                 }
-
-                // Dropped and rebuilt rather than reconnected: the instance owns an HttpClient and a
-                // process handle that both describe the session that has gone.
-                try { _instance.Dispose(); } catch { /* the session is already gone */ }
-                _instance = null;
             }
 
             // On the thread pool, both of them (B262). The constructor waits out a Dymola that
@@ -58,25 +111,43 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
             // an uncontended lock is taken without yielding. Starting Dymola is the same wait in
             // another form: its loop resumes on the caller's context after each delay and then
             // probes synchronously. Either one froze the window.
-            var settings = _dymolaSettings;
-            _instance = await Task.Run(() => new DymolaInterface(
-                dymolaPath: settings.DymolaPath,
-                portNumber: settings.PortNumber,
-                hostname: settings.HostAddress));
-            _instance.CommandTimeout = settings.CommandTimeout;
+            var created = await Task.Run(() => _createSession(settings));
+            _instance = created;
+            created.CommandTimeout = settings.CommandTimeout;
 
-            if (_instance.IsOfflineMode())
+            if (created.IsOfflineMode())
             {
-                var starting = _instance;
-                await Task.Run(starting.StartDymolaProcessAsync);
+                // Offline says only that nothing answered in the connection window. A Dymola that
+                // accepted the connection and stayed silent is there and busy - somebody else's, or
+                // one a session before this started - and starting another would put two on one
+                // port (B331).
+                if (await created.GetSessionStateAsync() is DymolaSessionState.Busy)
+                    created.SetOfflineMode(false);
+                else
+                    await Task.Run(() => created.StartDymolaProcessAsync());
             }
 
-            return _instance;
+            return created;
         }
         finally
         {
             _lock.Release();
         }
+    }
+
+    /// <summary>
+    /// Forgets the cached session without ending the Dymola behind it: detached first, so disposing
+    /// the session cannot kill a process the user may still be working in.
+    /// </summary>
+    private void Drop()
+    {
+        var session = _instance;
+        _instance = null;
+        if (session == null)
+            return;
+
+        try { session.Detach(); } catch { /* nothing to let go of */ }
+        try { session.Dispose(); } catch { /* the session is already gone */ }
     }
 
     /// <summary>
@@ -94,19 +165,15 @@ public class DymolaInterfaceFactory : IDymolaInterfaceFactory
     }
 
     /// <summary>
-    /// Disposes the current instance if it exists.
-    /// Call this when settings change to force recreation with new settings.
+    /// Forgets the current session, so the next call to <see cref="GetOrCreateAsync"/> connects
+    /// afresh. The Dymola behind it is left running: its window is the user's (B260, B331).
     /// </summary>
     public async Task ResetAsync()
     {
         await _lock.WaitAsync();
         try
         {
-            if (_instance != null)
-            {
-                _instance.Dispose();
-                _instance = null;
-            }
+            Drop();
         }
         finally
         {

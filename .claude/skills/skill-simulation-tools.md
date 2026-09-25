@@ -126,6 +126,16 @@ other Dymola on the same port. The factory builds the session and starts Dymola 
 the constructor can wait out a busy Dymola for 30 seconds, synchronously, and a caller on the UI thread
 used to arrive there holding the window.
 
+### The factory never ends a Dymola (B331)
+`DymolaInterfaceFactory` (what MLQT registers) asks a cached session `GetSessionStateAsync()` —
+`Answering`, `Busy`, `Starting` or `Gone` — never a bare ping: a Dymola still working on a check
+that timed out or was stopped does not answer a ping, exactly like a closed one. Busy is told from
+gone by the TCP connect (a busy Dymola still accepts). A busy session is handed back and its
+commands wait; a starting one is waited for; only a gone one is dropped, and it is `Detach()`ed
+before it is disposed, because `Dispose()` kills the process a session started. The factory builds
+sessions through a `Func<DymolaSettings, IDymolaSession>`, which is how
+`MLQT.Services.Tests/DymolaInterfaceFactoryTests` tests it without Dymola.
+
 ### Culture invariance
 Modelica command strings always use `.` as the decimal separator and never use `,`
 as a thousands separator. When encoding scalar/array values into `name=value` commands

@@ -451,6 +451,73 @@ public class CommandTimeoutTests
         Assert.False(dymola.IsOfflineMode());
     }
 
+    // ── busy is not gone (B331) ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SessionState_OfADymolaThatAcceptsAndDoesNotAnswer_IsBusy()
+    {
+        // What a Dymola still working on an abandoned check looks like - and what IsAliveAsync
+        // cannot tell from a closed one.
+        using var server = new BusyServer(TimeSpan.MaxValue);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+
+        Assert.False(await dymola.IsAliveAsync());
+        Assert.Equal(DymolaSessionState.Busy, await dymola.GetSessionStateAsync());
+    }
+
+    [Fact]
+    public async Task SessionState_WithNothingListening_IsGone()
+    {
+        using var dymola = new DymolaInterface(string.Empty, FreePort(), "127.0.0.1", TimeSpan.Zero);
+
+        Assert.Equal(DymolaSessionState.Gone, await dymola.GetSessionStateAsync());
+    }
+
+    [Fact]
+    public async Task SessionState_OfADymolaThatAnswers_IsAnsweringAndComesOnline()
+    {
+        using var server = new BusyServer(TimeSpan.FromSeconds(1));
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+        Assert.True(dymola.IsOfflineMode());
+        await Task.Delay(TimeSpan.FromSeconds(1.5), Test);
+
+        Assert.Equal(DymolaSessionState.Answering, await dymola.GetSessionStateAsync());
+        Assert.False(dymola.IsOfflineMode());
+    }
+
+    [Fact]
+    public async Task SessionState_OfAStoppedSession_IsGone()
+    {
+        using var server = new BusyServer(TimeSpan.Zero);
+        using var dymola = new DymolaInterface(string.Empty, server.Port, "127.0.0.1", TimeSpan.Zero);
+
+        await dymola.StopDymolaProcessAsync();
+
+        Assert.Equal(DymolaSessionState.Gone, await dymola.GetSessionStateAsync());
+    }
+
+    /// <summary>
+    /// B331 end to end, against a socket: a busy Dymola on the port is attached to and waited for,
+    /// never replaced. The path is empty, so an attempt to start a second Dymola would throw "Dymola
+    /// path not specified" - which is what both calls did before, the second after disposing the
+    /// first session.
+    /// </summary>
+    [Fact]
+    public async Task Factory_AgainstABusyDymola_NeitherStartsAnotherNorDropsTheSession()
+    {
+        using var server = new BusyServer(TimeSpan.MaxValue);
+        var factory = new DymolaInterfaceFactory(settings =>
+            new DymolaInterface(string.Empty, settings.PortNumber, "127.0.0.1", TimeSpan.Zero));
+        factory.UpdateSettings(new DymolaSettings { DymolaPath = string.Empty, PortNumber = server.Port });
+
+        var first = (DymolaInterface)await factory.GetOrCreateAsync();
+        var second = (DymolaInterface)await factory.GetOrCreateAsync();
+
+        Assert.Same(first, second);
+        Assert.False(first.IsOfflineMode(), "its commands would be held back rather than wait for Dymola");
+        await factory.ResetAsync();
+    }
+
     [Fact]
     public async Task Command_WhileDymolaIsStillBusy_GivesUpAfterOneProbe()
     {

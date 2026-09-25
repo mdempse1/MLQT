@@ -16,7 +16,7 @@ public interface IDymolaInterfaceFactory
     bool IsConnected { get; }
 
     /// <summary>
-    /// Disposes the current instance if it exists.
+    /// Forgets the current session; the Dymola behind it is left running.
     /// </summary>
     Task ResetAsync();
 

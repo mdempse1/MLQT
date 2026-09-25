@@ -156,6 +156,13 @@ answering before reusing it, and starts a new one when it is not — so the seco
 the first. The probe is a two-second ping rather than a command, so a dead session is noticed
 quickly rather than after the command timeout.
 
+A Dymola that is **busy** is not mistaken for one that has gone. Dymola answers nothing while it
+works on a command, so after a check that ran out of time or was stopped it looks silent to a ping;
+MLQT tells the two apart by whether Dymola still accepts the connection. A busy Dymola is waited
+for, never closed and never joined by a second one on the same port — the next check's commands
+queue behind the one Dymola is finishing, and if that still takes longer than the time limit the
+result says Dymola ran out of time again rather than blaming the model.
+
 ### What happens to the tool when MLQT closes
 
 **The OpenModelica session ends with MLQT.** `omc` runs headless — no window, no taskbar entry — so

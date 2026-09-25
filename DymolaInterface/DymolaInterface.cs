@@ -36,7 +36,7 @@ public sealed class NamedArgument
 /// C# client for Dymola's JSON-RPC scripting API. Mirrors the JavaScript interface
 /// shipped with Dymola (<c>Modelica/Library/javascript_interface/dymola_interface.js</c>).
 /// </summary>
-public class DymolaInterface : IDymolaInterface, IDisposable
+public class DymolaInterface : IDymolaSession
 {
     private readonly string _dymolaPath;
     private readonly int _portNumber;
@@ -181,22 +181,35 @@ public class DymolaInterface : IDymolaInterface, IDisposable
 
     #region Process management
 
-    public async Task StartDymolaProcessAsync()
+    /// <summary>
+    /// Starts Dymola with its JSON-RPC server on this interface's port and waits up to thirty seconds
+    /// for it to answer. When the Dymola this interface started is still running, no second one is
+    /// started: the call returns at once if it answers, and otherwise waits for it as for a new one -
+    /// a Dymola slow to come up the first time is still coming up the second (B331).
+    /// </summary>
+    /// <param name="cancellationToken">Stops the wait. A Dymola already launched is left running, and
+    /// the next call waits for it rather than starting another.</param>
+    public async Task StartDymolaProcessAsync(CancellationToken cancellationToken = default)
     {
-        if (_dymolaProcess != null && !_dymolaProcess.HasExited)
+        var alreadyRunning = _dymolaProcess != null && !_dymolaProcess.HasExited;
+        if (alreadyRunning && Probe() == ProbeResult.Answered)
+        {
+            _isOffline = false;
             return;
+        }
 
-        if (string.IsNullOrEmpty(_dymolaPath))
+        if (!alreadyRunning && string.IsNullOrEmpty(_dymolaPath))
             throw new InvalidOperationException("Dymola path not specified.");
 
-        await _commandLock.WaitAsync();
+        await _commandLock.WaitAsync(cancellationToken);
         try
         {
-            _dymolaProcess = Process.Start(CreateStartInfo());
+            if (!alreadyRunning)
+                _dymolaProcess = Process.Start(CreateStartInfo());
 
             for (int i = 0; i < 30; i++)
             {
-                await Task.Delay(1000);
+                await Task.Delay(1000, cancellationToken);
                 if (Probe() == ProbeResult.Answered)
                 {
                     _isOffline = false;
@@ -406,6 +419,34 @@ public class DymolaInterface : IDymolaInterface, IDisposable
             return false;
 
         return await PingAsync(_portNumber, _hostname);
+    }
+
+    /// <summary>
+    /// Busy, gone, answering or still starting - the question <see cref="IsAliveAsync"/> cannot
+    /// answer, because a Dymola working on a command fails a ping exactly as a closed one does. Ask
+    /// this before deciding to replace a session: a busy one must be waited for, and disposing it
+    /// kills the Dymola this interface started (B331).
+    /// </summary>
+    public async Task<DymolaSessionState> GetSessionStateAsync()
+    {
+        if (_disposed || _forcedOffline)
+            return DymolaSessionState.Gone;
+
+        if (_dymolaProcess is { HasExited: true })
+            return DymolaSessionState.Gone;
+
+        // On the pool: the probe is synchronous and can take its whole connect and answer budget.
+        var probe = await Task.Run(Probe);
+        switch (probe)
+        {
+            case ProbeResult.Answered:
+                _isOffline = false;   // it answers now, whatever it did before
+                return DymolaSessionState.Answering;
+            case ProbeResult.Busy:
+                return DymolaSessionState.Busy;
+            default:
+                return OwnsProcess ? DymolaSessionState.Starting : DymolaSessionState.Gone;
+        }
     }
 
     public void Dispose()

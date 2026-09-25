@@ -98,6 +98,15 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     /// <summary>What the real interface reports about the last command: answered, or not.</summary>
     public CommandOutcome LastOutcome { get; private set; } = CommandOutcome.Answered;
 
+    /// <summary>What a probe of the session would find. Answering unless a test says otherwise.</summary>
+    public DymolaSessionState State = DymolaSessionState.Answering;
+
+    public Task<DymolaSessionState> GetSessionStateAsync()
+    {
+        Calls.Add("probe");
+        return Task.FromResult(State);
+    }
+
     public Task<bool> OpenModelAsync(string path, bool mustRead = true, bool changeDirectory = true,
         TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
