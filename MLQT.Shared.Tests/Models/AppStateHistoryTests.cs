@@ -157,4 +157,37 @@ public class AppStateHistoryTests
 
         Assert.Equal(2, raised);
     }
+
+    /// <summary>
+    /// B359: AppState outlives a project, so its history and selection did too - and after a switch
+    /// Code Review offered "Back to" a class that is not in the graph.
+    /// </summary>
+    [Fact]
+    public void AProjectSwitch_ForgetsWhereTheUserHasBeen_AndWhatIsSelected()
+    {
+        var state = Visited("Lib.A", "Lib.B", "Lib.C");
+        state.GoBack();
+        state.SetSelectedModels(["Lib.A", "Lib.B"]);
+        Assert.True(state.CanGoBack);
+        Assert.True(state.CanGoForward);
+
+        var modelChanged = 0;
+        var selectionChanged = 0;
+        state.OnChangeModel += () => modelChanged++;
+        state.OnSelectedModelsChanged += () => selectionChanged++;
+
+        state.ProjectSwitchStarting();
+
+        Assert.False(state.CanGoBack);
+        Assert.False(state.CanGoForward);
+        Assert.Empty(state.Back);
+        Assert.Equal(string.Empty, state.ModelID);
+        Assert.Empty(state.SelectedModelIDs);
+        Assert.Equal(1, modelChanged);
+        Assert.Equal(1, selectionChanged);
+
+        // And the history starts again from the new project's first class.
+        state.ChangeModelID("Other.X");
+        Assert.False(state.CanGoBack);
+    }
 }

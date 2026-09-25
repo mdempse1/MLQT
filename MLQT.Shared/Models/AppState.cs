@@ -343,7 +343,31 @@ public class AppState
     /// </summary>
     public void ProjectSwitchStarting()
     {
+        ResetNavigation();
         OnProjectSwitchStarting?.Invoke();
+    }
+
+    /// <summary>
+    /// Forgets the classes visited, the class shown and the selection (B359).
+    /// </summary>
+    /// <remarks>
+    /// This class is a singleton and outlives a project, so without this a switch left Code Review
+    /// offering "Back to" a class the new project's graph does not have. Called by
+    /// <see cref="ProjectSwitchStarting"/>, which every project switch goes through.
+    /// </remarks>
+    public void ResetNavigation()
+    {
+        _visited.Clear();
+        _visitedIndex = -1;
+
+        if (ModelID.Length > 0)
+        {
+            ModelID = string.Empty;
+            OnChangeModel?.Invoke();
+        }
+
+        if (SelectedModelIDs.Count > 0)
+            ClearSelectedModels();
     }
 
     /// <summary>
