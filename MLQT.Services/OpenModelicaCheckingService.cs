@@ -102,6 +102,11 @@ public class OpenModelicaCheckingService : IModelCheckingService
             _omc = null;
             return LibraryLoad.Failed("Cancelled");
         }
+        catch (OpenModelicaExitedException ex)
+        {
+            _omc = null;
+            return LibraryLoad.Gone($"{ex.Message} The next check starts a new session.");
+        }
         catch (TimeoutException)
         {
             _omc = null;
@@ -282,7 +287,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
                 // Stopped at the first class to run out of time: the tool is still busy with it, or
                 // has been restarted, so every class after it would wait out the same limit (B263).
-                if (result.TimedOut)
+                // Likewise at a tool that has gone: every class after it would be asked of nothing,
+                // and each came back as an empty "Check Failed" (B334).
+                if (result.TimedOut || result.ToolUnavailable)
                 {
                     _currentProgress.IsComplete = true;
                     OnProgressChanged?.Invoke(_currentProgress);
@@ -424,6 +431,13 @@ public class OpenModelicaCheckingService : IModelCheckingService
                 // it has been closed (B263).
                 _omc = null;
                 return ToolTimeLimit.CheckTimedOut(ToolName, modelNode.Id, _commandTimeout, SessionClosed);
+            }
+            catch (OpenModelicaExitedException)
+            {
+                // omc died under the check. Before the wait watched the process, this waited out the
+                // whole time limit and blamed it - or, with no limit, waited until Stop (B334).
+                _omc = null;
+                return UnavailableTool.WentAway(ToolName, modelNode.Id);
             }
 
             if (checkResult)

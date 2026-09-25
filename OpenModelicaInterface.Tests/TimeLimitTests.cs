@@ -130,4 +130,28 @@ public class TimeLimitTests
             factory.Dispose();
         }
     }
+
+    /// <summary>
+    /// B334: omc dying under a command. A REQ socket gives no sign its peer has gone, so this waited
+    /// out the whole time limit and reported a timeout - and with no limit, as here, it waited until
+    /// somebody pressed Stop. The wait watches the process now.
+    /// </summary>
+    [Fact]
+    public async Task OmcExitingUnderACommand_EndsTheWaitAndSaysSo()
+    {
+        using var omc = await StartedAsync(13137);
+        omc.CommandTimeout = Timeout.InfiniteTimeSpan;
+        var pid = omc.ProcessId ?? throw new InvalidOperationException("omc has no process");
+
+        var clock = Stopwatch.StartNew();
+        var command = omc.SendCommandAsync("loadModel(Modelica)", Test);
+        await Task.Delay(200, Test);
+        Process.GetProcessById(pid).Kill();
+
+        await Assert.ThrowsAsync<OpenModelicaExitedException>(() => command);
+        clock.Stop();
+
+        Assert.False(omc.IsConnected);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"the wait outlived omc by {clock.Elapsed}");
+    }
 }

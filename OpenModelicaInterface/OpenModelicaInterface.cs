@@ -38,6 +38,9 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// </summary>
     public bool IsConnected => _socket != null && !_isDisposed;
 
+    /// <summary>The omc process this session started, while it has one - for tests that end it.</summary>
+    internal int? ProcessId => _omcProcess is { HasExited: false } process ? process.Id : null;
+
     /// <summary>
     /// How long one command may take before the session is given up on; <see cref="Timeout.InfiniteTimeSpan"/>
     /// for no limit (B263).
@@ -170,6 +173,8 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// <exception cref="TimeoutException">omc did not answer within <see cref="CommandTimeout"/>; the
     /// session has been closed.</exception>
     /// <exception cref="OperationCanceledException">The token fired.</exception>
+    /// <exception cref="OpenModelicaExitedException">omc exited before it answered; the session has
+    /// been closed.</exception>
     public Task<string> SendCommandAsync(string command, CancellationToken cancellationToken = default)
         => SendCommandAsync(command, CommandTimeout, "command", cancellationToken);
 
@@ -186,13 +191,15 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         try
         {
             var socket = _socket!;
+            var process = _omcProcess;
 
             // Sent and received against one clock, both in slices, so the wait can end on the time
             // limit or the token rather than only when omc answers. The send needs it as much as the
             // receive: a REQ socket with no peer blocks in SendFrame until one connects, so an omc
             // that never binds its port - or one still starting - held a bare send for as long as it
             // took, and a start-up limit on the receive alone bounded nothing.
-            var response = await Task.Run(() => Exchange(socket, command, timeout, cancellationToken));
+            var response = await Task.Run(() => Exchange(
+                socket, command, timeout, cancellationToken, () => process is { HasExited: true }));
             if (response is null)
             {
                 Abandon();
@@ -203,6 +210,11 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
             }
 
             return response;
+        }
+        catch (OpenModelicaExitedException)
+        {
+            Abandon();
+            throw;
         }
         catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException)
         {
@@ -218,8 +230,12 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
     /// Sends <paramref name="command"/> and returns the reply, or null when the time limit passed or
     /// the token fired first - at either end.
     /// </summary>
-    private static string? Exchange(
-        RequestSocket socket, string command, TimeSpan timeout, CancellationToken cancellationToken)
+    /// <exception cref="OpenModelicaExitedException"><paramref name="hasExited"/> said omc had gone
+    /// before it answered. Asked between slices, because a REQ socket gives no sign of it: the request
+    /// is queued for a peer that will never read it (B334).</exception>
+    internal static string? Exchange(
+        RequestSocket socket, string command, TimeSpan timeout, CancellationToken cancellationToken,
+        Func<bool> hasExited)
     {
         var clock = Stopwatch.StartNew();
 
@@ -228,6 +244,7 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
         {
             if (NextWait(timeout, clock, cancellationToken) is not { } wait)
                 return null;
+            ThrowIfExited(hasExited, command);
             sent = socket.TrySendFrame(wait, command);
         }
 
@@ -237,7 +254,15 @@ public class OpenModelicaInterface : IOpenModelicaInterface, IDisposable
                 return null;
             if (socket.TryReceiveFrameString(wait, out var reply))
                 return reply ?? "";
+            ThrowIfExited(hasExited, command);
         }
+    }
+
+    private static void ThrowIfExited(Func<bool> hasExited, string command)
+    {
+        if (hasExited())
+            throw new OpenModelicaExitedException(
+                $"OpenModelica exited before it answered {Describe(command)}; the session has been closed.");
     }
 
     /// <summary>How long the next slice of a wait may be, or null when the wait is over.</summary>

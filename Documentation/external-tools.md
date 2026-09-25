@@ -166,6 +166,11 @@ answering before reusing it, and starts a new one when it is not — so the seco
 the first. The probe is a two-second ping rather than a command, so a dead session is noticed
 quickly rather than after the command timeout.
 
+If the tool goes away **during** a check — Dymola's window closed, or `omc` exits — the run ends at
+the class it was checking, and the result says the tool stopped answering and that the classes after
+it were not checked. None of it is filed as a finding against your models, and the next check starts
+a new session.
+
 A Dymola that is **busy** is not mistaken for one that has gone. Dymola answers nothing while it
 works on a command, so after a check that ran out of time or was stopped it looks silent to a ping;
 MLQT tells the two apart by whether Dymola still accepts the connection. A busy Dymola is waited

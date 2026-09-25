@@ -21,6 +21,7 @@ public interface IOpenModelicaInterface
     /// <summary>Loads a <c>.mo</c> file into the session.</summary>
     /// <exception cref="TimeoutException">omc did not answer within the session's time limit, and the
     /// session has been closed.</exception>
+    /// <exception cref="OpenModelicaExitedException">omc exited before it answered.</exception>
     Task<bool> LoadFileAsync(string filePath, CancellationToken cancellationToken = default);
 
     /// <summary>Runs <c>checkModel</c> on a class. True means it checked, not that it was silent.</summary>
@@ -28,6 +29,7 @@ public interface IOpenModelicaInterface
     /// session, because omc cannot be interrupted and its socket cannot be reused.</param>
     /// <exception cref="TimeoutException">omc did not answer within the session's time limit, and the
     /// session has been closed.</exception>
+    /// <exception cref="OpenModelicaExitedException">omc exited before it answered.</exception>
     Task<bool> CheckModelAsync(string modelName, CancellationToken cancellationToken = default);
 
     /// <summary>

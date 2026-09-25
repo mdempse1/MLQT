@@ -86,6 +86,11 @@ public class DymolaCheckingService : IModelCheckingService
                     if (!isOpen && Interrupted(filePath) is { } interruptedAgain)
                         return interruptedAgain;
 
+                    if (!isOpen && await IsGoneAsync())
+                        return LibraryLoad.Gone(
+                            $"Dymola stopped answering while opening {Path.GetFileName(filePath)} - its window " +
+                            "was closed, or its process has exited. The next check starts a new session.");
+
                     if (!isOpen)
                     {
                         return LibraryLoad.Failed("Could not get Dymola to open the file for this Modelica model");
@@ -302,7 +307,9 @@ public class DymolaCheckingService : IModelCheckingService
 
                 // Stopped at the first class to run out of time: the tool is still busy with it, or
                 // has been restarted, so every class after it would wait out the same limit (B263).
-                if (result.TimedOut)
+                // Likewise at a tool that has gone: every class after it would be asked of nothing,
+                // and each came back as an empty "Check Failed" (B334).
+                if (result.TimedOut || result.ToolUnavailable)
                 {
                     _currentProgress.IsComplete = true;
                     OnProgressChanged?.Invoke(_currentProgress);
@@ -437,6 +444,12 @@ public class DymolaCheckingService : IModelCheckingService
                         return null;
                     case CommandOutcome.TimedOut:
                         return ToolTimeLimit.CheckTimedOut(ToolName, modelNode.Id, _commandTimeout, StillBusy);
+
+                    // Not an answer either, and possibly no Dymola at all: a closed window gives Failed,
+                    // because nothing marks a session offline partway through. Asked rather than
+                    // assumed, since Failed also covers Dymola reporting an error about this one command.
+                    case CommandOutcome.Offline or CommandOutcome.Failed when await IsGoneAsync():
+                        return UnavailableTool.WentAway(ToolName, modelNode.Id);
                 }
             }
 
@@ -468,6 +481,20 @@ public class DymolaCheckingService : IModelCheckingService
         }
 
         return result;
+    }
+
+    /// <summary>Whether the session has gone - not busy, not starting: nothing there. Never throws.</summary>
+    private async Task<bool> IsGoneAsync()
+    {
+        try
+        {
+            return _dymola is not null && await _dymola.GetSessionStateAsync() == DymolaSessionState.Gone;
+        }
+        catch (Exception ex)
+        {
+            Debug("DymolaCheckingService", $"Could not ask whether Dymola is still there: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

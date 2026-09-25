@@ -48,6 +48,13 @@ public abstract class FakeTool
     /// <summary>A check that is still running when the caller cancels it — the only way it ends.</summary>
     public bool WaitsForCancel;
 
+    /// <summary>Whether the tool goes away - window closed, process exited - while checking a given
+    /// class. Once it has, nothing it is asked afterwards gets an answer.</summary>
+    public Func<string, bool>? DiesOn;
+
+    /// <summary>The tool has gone.</summary>
+    public bool Dead;
+
     /// <summary>Each call, as a verb: <c>open</c>, <c>clear</c>, <c>clearLog</c>, <c>check</c>, <c>read</c>.</summary>
     public readonly List<string> Calls = [];
 
@@ -98,6 +105,10 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     /// <summary>What the real interface reports about the last command: answered, or not.</summary>
     public CommandOutcome LastOutcome { get; private set; } = CommandOutcome.Answered;
 
+    /// <summary>What an ordinary check reports as its outcome: Answered, unless a test stands for
+    /// Dymola reporting an error about the command, which is Failed with Dymola still there.</summary>
+    public CommandOutcome CheckOutcome = CommandOutcome.Answered;
+
     /// <summary>What a probe of the session would find. Answering unless a test says otherwise.</summary>
     public DymolaSessionState State = DymolaSessionState.Answering;
 
@@ -111,6 +122,13 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
         TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         OpenFlags.Add((mustRead, changeDirectory));
+        if (Dead)
+        {
+            Calls.Add("open");
+            LastOutcome = CommandOutcome.Failed;
+            return Task.FromResult(false);
+        }
+
         if (OpenTimesOut?.Invoke(path) == true)
         {
             Calls.Add("open");
@@ -147,7 +165,18 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
             return false;
         }
 
-        LastOutcome = CommandOutcome.Answered;
+        // A closed window: the connection is refused, which the real interface reports as Failed -
+        // nothing marks a session offline partway through.
+        if (Dead || DiesOn?.Invoke(problem) == true)
+        {
+            Calls.Add("check");
+            Dead = true;
+            State = DymolaSessionState.Gone;
+            LastOutcome = CommandOutcome.Failed;
+            return false;
+        }
+
+        LastOutcome = CheckOutcome;
         return Check(problem);
     }
 
@@ -161,6 +190,12 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
     public Task<bool> ClearLogAsync()
     {
         Calls.Add("clearLog");
+        if (Dead)
+        {
+            LastOutcome = CommandOutcome.Failed;
+            return Task.FromResult(false);
+        }
+
         Buffer = "";
         LastOutcome = CommandOutcome.Answered;
         return Task.FromResult(true);
@@ -168,6 +203,13 @@ public sealed class FakeDymola : FakeTool, IDymolaInterface
 
     public Task<string> GetLastErrorAsync()
     {
+        if (Dead)
+        {
+            Calls.Add("read");
+            LastOutcome = CommandOutcome.Failed;
+            return Task.FromResult("");
+        }
+
         var said = Read(draining: false);
         LastOutcome = CommandOutcome.Answered;
         return Task.FromResult(said);
@@ -182,6 +224,12 @@ public sealed class FakeOpenModelica : FakeTool, IOpenModelicaInterface
 {
     public Task<bool> LoadFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
+        if (Dead)
+        {
+            Calls.Add("open");
+            throw new OpenModelicaExitedException("the fake omc has exited");
+        }
+
         if (OpenTimesOut?.Invoke(filePath) == true)
         {
             Calls.Add("open");
@@ -203,6 +251,13 @@ public sealed class FakeOpenModelica : FakeTool, IOpenModelicaInterface
         {
             Calls.Add("check");
             throw new TimeoutException("the fake omc ran out of time checking");
+        }
+
+        if (Dead || DiesOn?.Invoke(modelName) == true)
+        {
+            Calls.Add("check");
+            Dead = true;
+            throw new OpenModelicaExitedException("the fake omc exited before it answered 'checkModel'");
         }
 
         return Check(modelName);

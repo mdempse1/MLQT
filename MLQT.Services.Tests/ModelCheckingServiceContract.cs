@@ -963,6 +963,61 @@ public abstract class ModelCheckingServiceContract
         Assert.Equal("Failed to load library", result.Summary);
     }
 
+    // ── the tool going away partway through (B334) ────────────────────────────────
+
+    /// <summary>
+    /// B334: closing Dymola's window, or omc exiting, partway through a package used to turn every
+    /// remaining class into a failed model with an empty message - or, for omc, a wait for the whole
+    /// time limit that was then blamed on it. The run ends at the class the tool died under, with a
+    /// result that says the tool has gone.
+    /// </summary>
+    [Fact]
+    public async Task AToolThatGoesAwayMidPackageEndsTheRunSayingSo()
+    {
+        var harness = NewHarness();
+        var (graph, package) = Package(5);
+        string? first = null;
+        harness.Tool.DiesOn = id => (first ??= id) == id;
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+        ModelCheckProgress? completed = null;
+        harness.Service.OnCheckingComplete += p => completed = p;
+
+        await RunToCompletion(harness, package, graph);
+
+        var result = Assert.Single(reported);
+        Assert.Equal(first, result.ModelId);
+        Assert.True(result.ToolUnavailable);
+        Assert.False(result.IsModelFailure, "the tool going away says nothing about the model");
+        Assert.Contains(harness.ToolName, result.Summary);
+        Assert.Contains("stopped answering", result.ErrorMessage);
+        Assert.Equal(1, harness.Tool.ChecksRun);
+        Assert.NotNull(completed);
+        Assert.True(completed.IsComplete);
+        Assert.False(completed.WasCancelled);
+    }
+
+    [Fact]
+    public async Task AToolThatHasGoneBeforeTheLibraryOpensIsNotBlamedOnTheLibrary()
+    {
+        var harness = NewHarness();
+        var (graph, package) = PackageInAFile(2);
+        harness.Tool.Dead = true;
+        if (harness.Tool is FakeDymola dymola)
+            dymola.State = DymolaInterface.DymolaSessionState.Gone;
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+
+        await RunToCompletion(harness, package, graph);
+
+        var result = Assert.Single(reported);
+        Assert.True(result.ToolUnavailable);
+        Assert.False(result.IsModelFailure);
+        Assert.Equal(0, harness.Tool.ChecksRun);
+    }
+
     private protected static (DirectedGraph graph, ModelNode package) Package(int children)
     {
         var graph = new DirectedGraph();
@@ -1054,6 +1109,34 @@ public class DymolaCheckingServiceContractTests : ModelCheckingServiceContract
 
         Assert.Equal(2, tool.OpenFlags.Count);
         Assert.All(tool.OpenFlags, flags => Assert.Equal((MustRead: false, ChangeDirectory: false), flags));
+    }
+
+    /// <summary>
+    /// B334's guard, from the side it must not overreach: Failed is also Dymola reporting an error
+    /// about one command while it is still there. That is asked, not assumed - a class failed, and the
+    /// run goes on.
+    /// </summary>
+    [Fact]
+    public async Task AFailedCommandFromADymolaStillAnsweringDoesNotEndTheRun()
+    {
+        var harness = new DymolaHarness();
+        var tool = (FakeDymola)harness.Tool;
+        var (graph, package) = Package(3);
+        tool.Checks = _ => false;
+        tool.CheckOutcome = DymolaInterface.CommandOutcome.Failed;
+        tool.State = DymolaInterface.DymolaSessionState.Answering;
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+
+        await harness.Service.StartCheckingAsync(package, graph);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (harness.Service.IsRunning && DateTime.UtcNow < deadline)
+            await Task.Delay(5, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, reported.Count);
+        Assert.All(reported, r => Assert.False(r.ToolUnavailable));
+        Assert.Contains("probe", tool.Calls);   // asked, not assumed
     }
 }
 
