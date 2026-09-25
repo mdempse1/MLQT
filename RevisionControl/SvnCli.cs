@@ -28,6 +28,18 @@ internal static class SvnCli
         public bool Success => ExitCode == 0;
 
         /// <summary>
+        /// What to tell the user about a failure: svn's own message when it gave one, otherwise
+        /// <paramref name="fallback"/>.
+        /// </summary>
+        /// <remarks>
+        /// svn's message is the one that says what to do - an authentication failure, an
+        /// unreachable server, "run 'svn cleanup'" (E155004) - and update, switch and create-branch
+        /// used to replace it with a bare "failed", so none of that reached the user (B329).
+        /// </remarks>
+        public string FailureMessage(string fallback) =>
+            string.IsNullOrWhiteSpace(StdErr) ? fallback : StdErr.Trim();
+
+        /// <summary>
         /// Throws an <see cref="SvnCliException"/> when the command failed. Returns this
         /// result otherwise so calls can be chained: <c>SvnCli.Run(...).EnsureSuccess()</c>.
         /// </summary>

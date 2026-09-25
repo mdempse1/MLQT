@@ -106,6 +106,32 @@ public class SvnCliTests
         Assert.DoesNotContain("  path not found  ", ex.Message); // stderr is trimmed in the message
     }
 
+    // B329: svn's own message is the one that says what to do, and update, switch and
+    // create-branch used to replace it with a bare "failed".
+
+    [Fact]
+    public void FailureMessage_IsSvnsOwnMessage_Trimmed()
+    {
+        var result = new SvnCli.Result
+        {
+            ExitCode = 1, StdOut = "",
+            StdErr = "  svn: E155004: Run 'svn cleanup' to remove locks (type 'svn help cleanup' for details)\r\n",
+        };
+
+        Assert.Equal("svn: E155004: Run 'svn cleanup' to remove locks (type 'svn help cleanup' for details)",
+            result.FailureMessage("SVN update failed."));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  \r\n")]
+    public void FailureMessage_WithNothingFromSvn_IsTheFallback(string stderr)
+    {
+        var result = new SvnCli.Result { ExitCode = 1, StdOut = "", StdErr = stderr };
+
+        Assert.Equal("SVN update failed.", result.FailureMessage("SVN update failed."));
+    }
+
     // ─── SvnCliException ─────────────────────────────────────────────────────
 
     [Fact]

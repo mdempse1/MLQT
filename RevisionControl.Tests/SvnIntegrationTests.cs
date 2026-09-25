@@ -338,6 +338,33 @@ public class SvnIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// An update that fails says what svn said (B329) - here, that the server is not there - rather
+    /// than "SVN update failed.", which left the user nothing to act on.
+    /// </summary>
+    [Fact]
+    public void UpdateToLatest_WhenSvnRefuses_ReportsSvnsOwnMessage()
+    {
+        var workingDir = CreateCheckoutPath();
+        _svn.CheckoutRevision(_trunkUrl, "HEAD", workingDir);
+
+        // The repository goes away; the working copy still knows its URL.
+        var moved = _repoDir + "_moved";
+        Directory.Move(_repoDir, moved);
+        try
+        {
+            var result = _svn.UpdateToLatest(workingDir);
+
+            Assert.False(result.Success);
+            Assert.NotEqual("SVN update failed.", result.ErrorMessage);
+            Assert.Contains("svn: E", result.ErrorMessage);
+        }
+        finally
+        {
+            Directory.Move(moved, _repoDir);
+        }
+    }
+
+    /// <summary>
     /// Committing a file that already matches the repository says so, rather than reporting a
     /// failure for a command that succeeded (B266).
     /// </summary>

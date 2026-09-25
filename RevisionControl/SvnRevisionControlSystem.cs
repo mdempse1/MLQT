@@ -381,7 +381,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var update = SvnCli.Run("update", "-r", "HEAD", repositoryPath);
             if (!update.Success)
             {
-                result.ErrorMessage = "SVN update failed.";
+                result.ErrorMessage = update.FailureMessage("SVN update failed.");
                 return result;
             }
 
@@ -932,9 +932,10 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
                 return result;
             }
 
-            if (!SvnCli.Run("switch", branchUrl, repositoryPath).Success)
+            var switched = SvnCli.Run("switch", branchUrl, repositoryPath);
+            if (!switched.Success)
             {
-                result.ErrorMessage = "SVN switch failed.";
+                result.ErrorMessage = switched.FailureMessage("SVN switch failed.");
                 return result;
             }
 
@@ -995,7 +996,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var copy = SvnCli.Run("copy", currentUrl, branchUrl, "-m", $"Create branch: {branchName}");
             if (!copy.Success)
             {
-                result.ErrorMessage = "Failed to create branch.";
+                result.ErrorMessage = copy.FailureMessage("Failed to create branch.");
                 return result;
             }
 
@@ -1419,7 +1420,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (!commit.Success)
             {
-                result.ErrorMessage = string.IsNullOrWhiteSpace(commit.StdErr) ? "SVN commit failed." : commit.StdErr.Trim();
+                result.ErrorMessage = commit.FailureMessage("SVN commit failed.");
                 result.IsOutOfDate = IsOutOfDateError(commit.StdErr);
                 return result;
             }
@@ -1537,7 +1538,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
 
             if (!merge.Success && !anyConflicts)
             {
-                result.ErrorMessage = string.IsNullOrWhiteSpace(merge.StdErr) ? "SVN merge failed." : merge.StdErr.Trim();
+                result.ErrorMessage = merge.FailureMessage("SVN merge failed.");
                 return result;
             }
 
@@ -1571,7 +1572,7 @@ public class SvnRevisionControlSystem : IRevisionControlSystem
             var resolve = SvnCli.Run("resolve", "--accept", accept, filePath);
             result.Success = resolve.Success;
             if (!result.Success)
-                result.ErrorMessage = string.IsNullOrWhiteSpace(resolve.StdErr) ? "SVN resolve returned false." : resolve.StdErr.Trim();
+                result.ErrorMessage = resolve.FailureMessage("SVN resolve returned false.");
         }
         catch (Exception ex)
         {
