@@ -267,7 +267,7 @@ public abstract class ModelCheckingServiceContract
 
         await harness.Service.ResetAsync();
         release.SetResult();
-        await WaitUntilAsync(() => !harness.Service.IsRunning, "the run never stopped");
+        await WaitUntilAsync(() => completed is not null, "the run never stopped");
 
         // Cancelled, not merely finished. Resetting also drops the session, so a run that carried
         // on would fail every remaining class against a null one and report itself complete - which
@@ -904,7 +904,7 @@ public abstract class ModelCheckingServiceContract
         await WaitUntilAsync(() => harness.Tool.Calls.Contains("check"), "the first check never started");
 
         harness.Service.StopChecking();
-        await WaitUntilAsync(() => !harness.Service.IsRunning, "the running check was not interrupted");
+        await WaitUntilAsync(() => completed is not null, "the running check was not interrupted");
 
         Assert.NotNull(completed);
         Assert.True(completed.WasCancelled);
@@ -1005,7 +1005,7 @@ public abstract class ModelCheckingServiceContract
         await WaitUntilAsync(() => harness.Connections > 0, "the run never asked for the tool");
 
         harness.Service.StopChecking();
-        await WaitUntilAsync(() => !harness.Service.IsRunning, "Stop did not reach a run starting the tool");
+        await WaitUntilAsync(() => completed is not null, "Stop did not reach a run starting the tool");
 
         Assert.NotNull(completed);
         Assert.True(completed.WasCancelled, "a stop while starting read as something other than a stop");
