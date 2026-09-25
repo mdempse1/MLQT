@@ -167,6 +167,56 @@ public class RecoveredInterfaceTests
         Assert.False(elements.RecoveredFromDocumentation);
     }
 
+    /// <summary>
+    /// A stub that extends a readable base, the usual shape for a vendor block built on MSL's
+    /// <c>SISO</c>: the resolver follows the synthesized <c>extends</c> into the base and finds
+    /// <c>u</c> and <c>y</c>, and the vendor's tables list them too, because generated help lists
+    /// what a class inherits. Appending one to the other listed each twice and inflated the count
+    /// - and with include_inherited=false the documented inherited ones still appeared (B318).
+    /// </summary>
+    [Fact]
+    public void AMemberInheritedFromAReadableBaseIsListedOnce_AndSaysWhereItCameFrom()
+    {
+        using var host = WithStubs(Documented(
+            "Vendor.BMS.Filter",
+            parameters: [Member("k", "Gain")],
+            inputs: [Member("u", "Input signal")],
+            outputs: [Member("y", "Output signal")],
+            extends: ["Base.SISO"]));
+        var path = host.WriteMoFile("Base.mo", """
+            package Base
+              partial block SISO "single in, single out"
+                input Real u "in";
+                output Real y "out";
+              protected
+                Real hidden;
+              end SISO;
+            end Base;
+            """);
+        host.Libraries.AddLibraryFromFileAsync(path).GetAwaiter().GetResult();
+        var views = new ViewTools(host.Libraries);
+
+        var all = ToolAssert.Ok<ClassElementsResult>(views.ListClassElements("Vendor.BMS.Filter"));
+        var components = all.Elements.Where(e => e.Kind == "component").ToList();
+
+        Assert.Equal(["k", "u", "y"], components.Select(e => e.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(all.Elements.Count, all.Count);
+        // The documented view wins - it knows the role - and the base says where it came from.
+        var u = Assert.Single(components, e => e.Name == "u");
+        Assert.Equal("input", u.Causality);
+        Assert.Equal("Base.SISO", u.InheritedFrom);
+        Assert.Null(Assert.Single(components, e => e.Name == "k").InheritedFrom);
+
+        var own = ToolAssert.Ok<ClassElementsResult>(
+            views.ListClassElements("Vendor.BMS.Filter", includeInherited: false));
+        Assert.Equal(["k"], own.Elements.Where(e => e.Kind == "component").Select(e => e.Name));
+
+        // A protected member of the readable base is still only there when asked for.
+        var withProtected = ToolAssert.Ok<ClassElementsResult>(
+            views.ListClassElements("Vendor.BMS.Filter", includeProtected: true));
+        Assert.Single(withProtected.Elements, e => e.Name == "hidden");
+    }
+
     [Fact]
     public void AStubWithNothingDocumentedStillAnswers()
     {

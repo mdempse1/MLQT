@@ -1,7 +1,9 @@
 using ModelicaGraph.Analysis;
+using ModelicaGraph.DataTypes;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using ModelicaParser.DataTypes;
+using ModelicaParser.ExternalDocs;
 using ModelicaParser.SpellChecking;
 using ModelicaParser.Visitors;
 using MLQT.McpServer.Dtos;
@@ -118,7 +120,8 @@ public sealed class ViewTools
                 "which is not a value. For a class from an encrypted library, recoveredFromDocumentation " +
                 "is true and its members come from the vendor's generated help - name, description, " +
                 "unit and which table they were in (parameter / connector / input / output), with no " +
-                "type, no default and line 0. Needs only a loaded library.")]
+                "type, no default and line 0; one it inherits from a readable base is listed once, marked " +
+                "with that base in inheritedFrom. Needs only a loaded library.")]
     public object ListClassElements(
         [Description("Fully-qualified class id.")] string classId,
         [Description("Include elements declared in protected sections. Default false.")]
@@ -130,34 +133,74 @@ public sealed class ViewTools
             return error!;
 
         var recovered = RecoveredInterface.For(node);
+        if (recovered is not null)
+            return RecoveredElements(node!, recovered, includeProtected, includeInherited);
 
         var elements = ClassElementResolver.Collect(_libraries.CombinedGraph, node!, includeProtected, includeInherited)
-            .Select(m => new ClassElementView(
-                m.Element.Kind.ToString().ToLowerInvariant(),
-                m.Element.Name,
-                m.Element.Type,
-                m.Element.Variability,
-                m.Element.Causality,
-                m.Element.Connection,
-                m.Element.IsPublic ? "public" : "protected",
-                m.Element.DefaultValue,
-                m.Element.TypeModification,
-                m.Element.Description,
-                m.Element.ClassType,
-                m.Element.Prefixes,
-                m.Element.LeadingComments,
-                m.Element.Line,
-                m.Element.Condition,
-                m.InheritedFrom))
+            .Select(ToElementView)
             .ToList();
 
-        // Appended rather than merged: these are not declarations the resolver could have found,
-        // and the extends clauses above are the only thing a stub's source really declares.
-        if (recovered is not null)
-            elements.AddRange(RecoveredInterface.ToElementViews(recovered));
-
-        return new ClassElementsResult(node!.Id, elements.Count, elements, recovered is not null);
+        return new ClassElementsResult(node!.Id, elements.Count, elements, RecoveredFromDocumentation: false);
     }
+
+    /// <summary>
+    /// The elements of an encrypted-library stub: its documented members, merged by name with
+    /// whatever the resolver finds by following the stub's synthesized <c>extends</c> into a
+    /// readable base (B318).
+    ///
+    /// <para>The vendor's generated help lists what a class inherits, so a block built on MSL's
+    /// <c>SISO</c> documents <c>u</c> and <c>y</c> - which the resolver also finds in <c>SISO</c>.
+    /// Appending one list to the other listed both twice. The documented member is kept, because it
+    /// carries the role the table gave it; the resolver contributes where it came from, which is what
+    /// lets <c>include_inherited=false</c> leave it out, and any readable member the documentation
+    /// does not mention.</para>
+    /// </summary>
+    private ClassElementsResult RecoveredElements(
+        ModelNode node, DocumentedClass recovered, bool includeProtected, bool includeInherited)
+    {
+        var resolved = ClassElementResolver.Collect(
+            _libraries.CombinedGraph, node, includeProtected, includeInherited: true);
+
+        var inheritedFrom = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var m in resolved.Where(m => m.InheritedFrom is not null))
+            inheritedFrom.TryAdd(m.Element.Name, m.InheritedFrom!);
+
+        var documented = RecoveredInterface.ToElementViews(recovered)
+            .Select(v => inheritedFrom.TryGetValue(v.Name, out var from) ? v with { InheritedFrom = from } : v)
+            .Where(v => includeInherited || v.InheritedFrom is null)
+            .ToList();
+        var documentedNames = RecoveredInterface.ToElementViews(recovered)
+            .Select(v => v.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var elements = resolved
+            .Where(m => includeInherited || m.InheritedFrom is null)
+            .Where(m => m.Element.Kind is ClassElementKind.Extends or ClassElementKind.Import
+                        || !documentedNames.Contains(m.Element.Name))
+            .Select(ToElementView)
+            .Concat(documented)
+            .ToList();
+
+        return new ClassElementsResult(node.Id, elements.Count, elements, RecoveredFromDocumentation: true);
+    }
+
+    private static ClassElementView ToElementView(ResolvedElement m) => new(
+        m.Element.Kind.ToString().ToLowerInvariant(),
+        m.Element.Name,
+        m.Element.Type,
+        m.Element.Variability,
+        m.Element.Causality,
+        m.Element.Connection,
+        m.Element.IsPublic ? "public" : "protected",
+        m.Element.DefaultValue,
+        m.Element.TypeModification,
+        m.Element.Description,
+        m.Element.ClassType,
+        m.Element.Prefixes,
+        m.Element.LeadingComments,
+        m.Element.Line,
+        m.Element.Condition,
+        m.InheritedFrom);
 
     [McpServerTool(Name = "get_class_documentation")]
     [Description("Get a class's documentation without its code: its description string plus the " +
