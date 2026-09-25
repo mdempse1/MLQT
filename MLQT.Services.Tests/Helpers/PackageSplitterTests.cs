@@ -342,6 +342,111 @@ public class PackageSplitterTests : IDisposable
         Assert.False(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
     }
 
+    // ── B305: what the split is allowed to change ─────────────────────────────────
+
+    /// <summary>Two classes laid out the way no formatter would leave them.</summary>
+    private const string Loose = """
+        within Lib;
+        package Arrived "saved by another tool as one file"
+          model Alpha "first"
+            Real    a;
+          end Alpha;
+
+          model Beta "second"
+            Real    b;
+          end Beta;
+        end Arrived;
+        """;
+
+    private static PackageSplitter.SplitResult Split(
+        LibraryDataService service, string packageId, StyleCheckingSettings settings)
+    {
+        var graph = service.CombinedGraph;
+        return PackageSplitter.Split(
+            graph, graph.GetNode<ModelNode>(packageId)!, settings.ToFormattingOptions(), settings);
+    }
+
+    [Fact]
+    public async Task AFormattedClassIsLaidOutAgain()
+    {
+        // The control for the two below: without an exclusion the class is re-rendered, so the
+        // spacing that marks it as untouched is gone.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+
+        var result = Split(service, "Lib.Arrived", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.DoesNotContain("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+    }
+
+    [Fact]
+    public async Task AClassInTheNameListIsMovedAsItWasWritten()
+    {
+        // The full save asks FormattingExclusion, which reads both the annotation and the name list;
+        // the split passed no list at all, so a name-listed class was reformatted on the way out.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+        var settings = new StyleCheckingSettings
+        {
+            ApplyFormattingRules = true,
+            FormattingExcludedModels = ["Lib.Arrived.Alpha"],
+        };
+
+        var result = Split(service, "Lib.Arrived", settings);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Contains("Real    a;", File.ReadAllText(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.DoesNotContain("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+    }
+
+    [Fact]
+    public async Task WithFormattingSwitchedOffEveryClassIsMovedAsItWasWritten()
+    {
+        // A repository that has chosen not to be formatted asked to have files split, not to have
+        // every class in them laid out again.
+        var (service, lib) = await LibraryWithASingleFilePackage(Loose);
+
+        var result = Split(service, "Lib.Arrived", new StyleCheckingSettings { ApplyFormattingRules = false });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Contains("Real    a;", File.ReadAllText(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.Contains("Real    b;", File.ReadAllText(Path.Combine(lib, "Arrived", "Beta.mo")));
+
+        var reloaded = new LibraryDataService();
+        await reloaded.AddLibraryFromDirectoryAsync(lib);
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Alpha"));
+        Assert.NotNull(reloaded.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Beta"));
+    }
+
+    [Fact]
+    public async Task AChildAlreadyInItsOwnFileIsNotRewritten()
+    {
+        // "Touches nothing else": a directory package holding one class inline and one already in
+        // its own file. Only the inline one has anywhere to move to.
+        var lib = Path.Combine(_root, "Lib");
+        Directory.CreateDirectory(Path.Combine(lib, "Sub"));
+
+        File.WriteAllText(Path.Combine(lib, "package.mo"), "package Lib \"A library\"\nend Lib;\n");
+        File.WriteAllText(Path.Combine(lib, "package.order"), "Sub\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.mo"),
+            "within Lib;\npackage Sub \"inline and separate\"\n"
+            + "  model Alpha \"inline\"\n  end Alpha;\nend Sub;\n");
+        File.WriteAllText(Path.Combine(lib, "Sub", "package.order"), "Alpha\nBeta\n");
+        var beta = Path.Combine(lib, "Sub", "Beta.mo");
+        File.WriteAllText(beta, "within Lib.Sub;\nmodel Beta \"already separate\"\n  Real    b;\nend Beta;\n");
+
+        var service = new LibraryDataService();
+        await service.AddLibraryFromDirectoryAsync(lib);
+        var betaBefore = File.ReadAllBytes(beta);
+
+        var result = Split(service, "Lib.Sub", new StyleCheckingSettings { ApplyFormattingRules = true });
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
+        Assert.Equal(betaBefore, File.ReadAllBytes(beta));
+        Assert.DoesNotContain(result.WrittenFiles, f => f.EndsWith("Beta.mo", StringComparison.Ordinal));
+        Assert.Contains("Beta", File.ReadAllText(Path.Combine(lib, "Sub", "package.order")));
+    }
+
     [Fact]
     public void APackageWithNoFileIsRefusedRatherThanGuessed()
     {

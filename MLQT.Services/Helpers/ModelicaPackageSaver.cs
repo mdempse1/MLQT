@@ -26,8 +26,14 @@ public class ModelicaPackageSaver
     /// <param name="modelIds">Set of model IDs belonging to the library to save</param>
     /// <param name="rootDirectory">The root directory to save to (parent of library directory)</param>
     /// <param name="showAnnotations">Whether to include annotations in the output</param>
+    /// <param name="settings">
+    /// The repository's settings, which decide which classes are written back exactly as they are:
+    /// every class when <see cref="StyleCheckingSettings.ApplyFormattingRules"/> is off, and otherwise
+    /// each one <see cref="FormattingExclusion.Excludes"/> names — the name list and
+    /// <c>__MLQT(format=false)</c> alike. Null asks only the source, for a caller with no repository.
+    /// </param>
     /// <returns>SaveResult containing information about all written files and model-to-file mappings</returns>
-    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, IReadOnlyList<string>? excludedModelIds = null)
+    public static SaveResult SaveLibraryToDirectoryWithResult(DirectedGraph graph, HashSet<string> modelIds, string rootDirectory, bool showAnnotations, FormattingOptions formatting, StyleCheckingSettings? settings = null)
     {
         var result = new SaveResult();
 
@@ -66,12 +72,12 @@ public class ModelicaPackageSaver
             if (PackageFileLayout.IsShortClassDefinition(model))
                 shortClassIds.Add(model.Id);
 
-            // Honour in-source formatting opt-out: __MLQT(format=false) / preserveOrder=true keeps
-            // the model's original text (no reformatting/reordering). Asked through the shared
-            // FormattingExclusion so the incremental format in MainLayout gets the same answer — it
-            // used to read the name list only, and reordered exactly the classes the annotation was
-            // written on.
-            if (FormattingExclusion.OptsOutInSource(model))
+            // Keeps the model's original text (no reformatting/reordering). Asked through the shared
+            // FormattingExclusion so every writing path gets the same answer — the incremental format
+            // used to read the name list only and reordered the classes the annotation was written
+            // on, and Split into files passed no list at all and reformatted the ones named in it
+            // (B65, B305). A repository with formatting off has every class moved as it was written.
+            if (settings is { ApplyFormattingRules: false } || FormattingExclusion.Excludes(model, settings))
                 formatPreserved.Add(model.Id);
 
             // Pre-compute element names for packages without a stored package.order
@@ -89,11 +95,7 @@ public class ModelicaPackageSaver
         // PHASE 3: Pre-render all models in parallel
         // Parse trees are released immediately after each model is rendered to avoid
         // having all parse trees and all rendered strings coexist in memory.
-        var excludedSet = new HashSet<string>(StringComparer.Ordinal);
-        if (excludedModelIds != null)
-            excludedSet.UnionWith(excludedModelIds);
-        excludedSet.UnionWith(formatPreserved); // models with __MLQT(format=false/preserveOrder)
-        var excludedOrNull = excludedSet.Count > 0 ? excludedSet : null;
+        var excludedOrNull = formatPreserved.Count > 0 ? formatPreserved : null;
         // Built once for the whole save, and only when the layout actually asks for the finer
         // declaration order — resolving a type walks imports and the extends chain, and a save that
         // is not ordering declarations must not pay for it.

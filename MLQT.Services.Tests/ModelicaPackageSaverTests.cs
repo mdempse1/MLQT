@@ -117,7 +117,7 @@ public class ModelicaPackageSaverTests : IDisposable
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             graph, modelIds, outputDir, false, FormattingOptions.None,
-            excludedModelIds: new[] { "TestPackage.Inner" });
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
 
         var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
         Assert.StartsWith("within TestPackage;", ModelicaFileEncoding.ReadAllTextOnly(innerFile));
@@ -136,7 +136,7 @@ public class ModelicaPackageSaverTests : IDisposable
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             graph, modelIds, outputDir, false, FormattingOptions.None,
-            excludedModelIds: new[] { "TestPackage.Inner" });
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
 
         var innerFile = result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo");
         var written = ModelicaFileEncoding.ReadAllTextOnly(innerFile);
@@ -187,7 +187,7 @@ public class ModelicaPackageSaverTests : IDisposable
 
         var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
             graph, modelIds, outputDir, false, new FormattingOptions(OneOfEachSection: true),
-            excludedModelIds: new[] { "TestPackage.Inner" });
+            settings: new StyleCheckingSettings { ApplyFormattingRules = true, FormattingExcludedModels = ["TestPackage.Inner"] });
 
         var written = ModelicaFileEncoding.ReadAllTextOnly(
             result.WrittenFiles.Single(f => Path.GetFileName(f) == "Inner.mo"));

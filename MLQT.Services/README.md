@@ -348,18 +348,15 @@ await checkingService.StartCheckingAsync(modelNode, graph, cancellationToken);
 var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
     graph, modelIds, rootDirectory,
     showAnnotations: true,
-    oneOfEachSection: true,
-    importsFirst: true,
-    componentsBeforeClasses: false);
+    formatting: settings.ToFormattingOptions());
 
-// Save with formatting exclusions — excluded models keep their original code
+// Save with the repository's settings — a class FormattingExclusion.Excludes names (the name list
+// or __MLQT(format=false)) keeps its original code, and so does every class when formatting is off
 var result = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
     graph, modelIds, rootDirectory,
     showAnnotations: true,
-    oneOfEachSection: true,
-    importsFirst: true,
-    componentsBeforeClasses: false,
-    excludedModelIds: excludedIds);
+    formatting: settings.ToFormattingOptions(),
+    settings: settings);
 
 // SaveResult contains written file paths and model-to-file mappings
 foreach (var file in result.WrittenFiles)
@@ -367,7 +364,7 @@ foreach (var file in result.WrittenFiles)
 ```
 
 **Formatting Exclusion**: Models can be excluded from formatting at multiple levels:
-- `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts an `excludedModelIds` parameter — excluded models use their original `ModelicaCode` instead of being rendered through the formatter.
+- `ModelicaPackageSaver.SaveLibraryToDirectoryWithResult` accepts the repository's `StyleCheckingSettings` and asks `FormattingExclusion.Excludes` of each model — excluded models (and every model, when `ApplyFormattingRules` is off) use their original `ModelicaCode` instead of being rendered through the formatter. Format All Files and Split into files both pass it (B305).
 - `StyleCheckingWorker` passes `isExcludedFromFormatting` from the repository's style settings when calling `RunStyleChecking`, so excluded models are not flagged for formatting findings.
 - `SaveChangedFilesWithFormattingAsync` in `MainLayout` skips excluded models during incremental formatting after VCS operations.
 

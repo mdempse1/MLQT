@@ -50,8 +50,8 @@ public static class PackageSplitter
     /// Writes <paramref name="package"/> as a directory beside the file it currently occupies, and
     /// deletes that file.
     ///
-    /// <para>The save is the ordinary library save pointed at one subtree: given the package and
-    /// everything below it, <c>ModelicaPackageSaver</c> creates
+    /// <para>The save is the ordinary library save pointed at one file's classes: given the package
+    /// and everything below it that is stored in the same file, <c>ModelicaPackageSaver</c> creates
     /// <c>&lt;parent&gt;/&lt;Name&gt;/package.mo</c> with a file per standalone child and a
     /// <c>package.order</c> to match. The <em>parent</em> package is not in the set and is not
     /// rewritten — its own <c>package.order</c> already names this package and still does, because
@@ -60,8 +60,15 @@ public static class PackageSplitter
     /// <para>The old file is deleted last, and only when the save wrote the new one somewhere else.
     /// Deleting first would lose the package if the save then failed, and deleting a path the save
     /// happens to have written would delete the result.</para>
+    ///
+    /// <para><b>It formats exactly as the rest of MLQT would</b> (B305): <paramref name="settings"/>
+    /// goes to the save, which moves a class verbatim when the repository does not format or when
+    /// <see cref="FormattingExclusion.Excludes"/> names it — the name list as well as the
+    /// annotation.</para>
     /// </summary>
-    public static SplitResult Split(DirectedGraph graph, ModelNode package, FormattingOptions formatting)
+    /// <param name="settings">The repository's settings. Null asks only the classes' own source.</param>
+    public static SplitResult Split(
+        DirectedGraph graph, ModelNode package, FormattingOptions formatting, StyleCheckingSettings? settings = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(package);
@@ -92,7 +99,7 @@ public static class PackageSplitter
         if (string.IsNullOrEmpty(parentDirectory))
             return SplitResult.Failed($"Cannot tell which directory {currentFile} is in.");
 
-        var modelIds = SubtreeOf(graph, package);
+        var modelIds = StoredWith(graph, package);
 
         // What is on disk where the save writes, so a save that does not finish can be taken back
         // (B303). The save logs a failed write and carries on, and throws only for what it cannot
@@ -106,7 +113,8 @@ public static class PackageSplitter
         try
         {
             saved = ModelicaPackageSaver.SaveLibraryToDirectoryWithResult(
-                graph, modelIds, parentDirectory, showAnnotations: true, formatting: formatting);
+                graph, modelIds, parentDirectory, showAnnotations: true, formatting: formatting,
+                settings: settings);
         }
         catch (Exception ex)
         {
@@ -326,16 +334,24 @@ public static class PackageSplitter
     }
 
     /// <summary>
-    /// The package and every class beneath it, which is the set the save has to be given: a child
-    /// left out would be written nowhere and lost with the old file.
+    /// The package and every class beneath it that is stored in the package's own file, which is
+    /// the set the save has to be given: a child left out would be written nowhere and lost with the
+    /// old file.
+    ///
+    /// <para><b>Only that file's classes</b> (B305). A child of a directory package that already has
+    /// a file of its own has nowhere to move to, and handing it to the save rewrote it anyway — a
+    /// fix for one file reformatting the others around it. Its name stays in the rewritten
+    /// <c>package.order</c> because the package's stored order is what that file is built from.</para>
     /// </summary>
-    private static HashSet<string> SubtreeOf(DirectedGraph graph, ModelNode package)
+    private static HashSet<string> StoredWith(DirectedGraph graph, ModelNode package)
     {
         var prefix = package.Id + ".";
+        var fileId = package.ContainingFileId;
         var ids = new HashSet<string>(StringComparer.Ordinal) { package.Id };
 
         foreach (var model in graph.ModelNodes)
-            if (model.Id.StartsWith(prefix, StringComparison.Ordinal))
+            if (model.Id.StartsWith(prefix, StringComparison.Ordinal)
+                && string.Equals(model.ContainingFileId, fileId, StringComparison.Ordinal))
                 ids.Add(model.Id);
 
         return ids;

@@ -274,7 +274,7 @@ public sealed class FormattingPipeline : IFormattingPipeline
                         saveDirectory,
                         showAnnotations: true,
                         formatting: styleSettings.ToFormattingOptions(),
-                        excludedModelIds: styleSettings.FormattingExcludedModels);
+                        settings: styleSettings);
 
                     // Collect written files and directories
                     lock (allWrittenFiles)

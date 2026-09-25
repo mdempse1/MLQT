@@ -2045,7 +2045,7 @@ document.head.appendChild(style);
             try
             {
                 result = PackageSplitter.Split(
-                    LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions());
+                    LibraryDataService.CombinedGraph, package, settings.ToFormattingOptions(), settings);
 
                 // The package's own file is always reloaded, whatever happened to it. Rendering
                 // rewrites each class's stored source as it goes, so after a split that was undone
