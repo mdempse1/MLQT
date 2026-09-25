@@ -135,7 +135,8 @@ public sealed class DiagramTools
     [Description("Set (or replace) a component's diagram Placement so it appears at a given position. " +
                 "Provide the component name and its bounding extent x1,y1,x2,y2 (diagram units, e.g. " +
                 "-10,-10,10,10) and an optional rotation. Adds a Placement annotation if the component has " +
-                "none, or replaces the existing one. Any connection to this component whose other end is " +
+                "none; otherwise replaces only its transformation (the diagram position), keeping its " +
+                "iconTransformation (where it sits on the class's icon) and visible. Any connection to this component whose other end is " +
                 "also placed automatically gets (or has refreshed) an orthogonal diagram Line routed between " +
                 "the connector positions, so positioned components appear wired up — no separate call " +
                 "needed. Fails if the component doesn't exist or the result would not parse. Set " +
@@ -181,14 +182,16 @@ public sealed class DiagramTools
 
         var extent = "{{" + x1 + "," + y1 + "},{" + x2 + "," + y2 + "}}";
         var rot = rotation != 0 ? ", rotation=" + rotation : string.Empty;
-        var placement = "Placement(transformation(extent=" + extent + rot + "))";
+        var transformation = "transformation(extent=" + extent + rot + ")";
+        var placement = "Placement(" + transformation + ")";
 
         var annotation = decl.comment()?.annotation();
         if (annotation is not null)
         {
             var existing = FindPlacementArgument(annotation);
             if (existing is not null)
-                return classCode[..existing.Start.StartIndex] + placement + classCode[(existing.Stop.StopIndex + 1)..];
+                return ReplaceTransformation(classCode, existing, transformation)
+                       ?? classCode[..existing.Start.StartIndex] + placement + classCode[(existing.Stop.StopIndex + 1)..];
 
             // Annotation exists but no Placement: insert as the first argument.
             var cm = annotation.class_modification();
@@ -204,16 +207,46 @@ public sealed class DiagramTools
     }
 
     private static modelicaParser.ArgumentContext? FindPlacementArgument(modelicaParser.AnnotationContext annotation)
+        => FindArgument(annotation.class_modification(), "Placement");
+
+    private static modelicaParser.ArgumentContext? FindArgument(
+        modelicaParser.Class_modificationContext? modification, string name)
     {
-        var argList = annotation.class_modification()?.argument_list();
+        var argList = modification?.argument_list();
         if (argList is null)
             return null;
         foreach (var arg in argList.argument())
         {
-            var name = arg.element_modification_or_replaceable()?.element_modification()?.name()?.GetText();
-            if (name == "Placement")
+            if (arg.element_modification_or_replaceable()?.element_modification()?.name()?.GetText() == name)
                 return arg;
         }
         return null;
+    }
+
+    /// <summary>
+    /// The class code with only the <c>transformation(...)</c> of an existing Placement replaced -
+    /// or added as its first argument when it has none - or null when the Placement has no argument
+    /// list to edit.
+    ///
+    /// <para><b>Only the transformation</b> (B321). A Placement also carries
+    /// <c>iconTransformation</c>, where the component sits on the enclosing class's <i>icon</i>,
+    /// and <c>visible</c>. Overwriting the whole Placement deleted both, so moving a class's own
+    /// connector on its diagram moved it on the class's icon too, in every diagram that uses the
+    /// class. The old transformation's <c>origin</c> and <c>rotation</c> do go: the extent this
+    /// writes is absolute.</para>
+    /// </summary>
+    private static string? ReplaceTransformation(
+        string classCode, modelicaParser.ArgumentContext placement, string transformation)
+    {
+        var arguments = placement.element_modification_or_replaceable()?.element_modification()
+            ?.modification()?.class_modification();
+        if (arguments?.argument_list() is null)
+            return null;
+
+        if (FindArgument(arguments, "transformation") is { } existing)
+            return classCode[..existing.Start.StartIndex] + transformation + classCode[(existing.Stop.StopIndex + 1)..];
+
+        var at = arguments.Start.StartIndex + 1; // just after '('
+        return classCode[..at] + transformation + ", " + classCode[at..];
     }
 }
