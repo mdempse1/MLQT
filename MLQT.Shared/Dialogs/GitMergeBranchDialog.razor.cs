@@ -128,7 +128,7 @@ public partial class GitMergeBranchDialog : IDisposable
 
         var repository = RepositoryService.GetRepository(RepositoryId);
         if (repository != null)
-            _pause = MonitorPause.Begin(FileMonitoringService, repository);
+            _pause = MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId));
 
         try
         {

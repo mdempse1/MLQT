@@ -17,6 +17,9 @@ public class MonitorPauseTests
     private readonly Mock<IFileMonitoringService> _monitor = new();
     private readonly Repository _repository = new() { Id = "repo", Name = "Lib", LocalPath = Root, VcsRootPath = Root };
 
+    public MonitorPauseTests() =>
+        _monitor.Setup(m => m.IsMonitoringRepository(It.IsAny<string>())).Returns(true);
+
     [Fact]
     public void BeginningStopsTheMonitor_AndEndingStartsItAgain()
     {
@@ -53,6 +56,38 @@ public class MonitorPauseTests
         pause.Dispose();
 
         _monitor.Verify(m => m.StartMonitoring(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void EveryRepositoryInTheWorkingCopy_IsHeldOffAndStartedAgain()
+    {
+        // B301. The monitor keeps one watcher per folder with a subscriber per repository: stopping
+        // one leaves the watcher running while the other still subscribes.
+        var neighbour = new Repository { Id = "neighbour", Name = "Test", LocalPath = Root, VcsRootPath = Root };
+
+        using (MonitorPause.Begin(_monitor.Object, [_repository, neighbour]))
+        {
+            _monitor.Verify(m => m.StopMonitoring("repo"), Times.Once);
+            _monitor.Verify(m => m.StopMonitoring("neighbour"), Times.Once);
+        }
+
+        _monitor.Verify(m => m.StartMonitoring("repo", Root), Times.Once);
+        _monitor.Verify(m => m.StartMonitoring("neighbour", Root), Times.Once);
+    }
+
+    [Fact]
+    public void ARepositoryThatWasNotBeingWatched_IsNotStartedAfterwards()
+    {
+        // A reference-only repository is never monitored. A pause that restarted everything it was
+        // given would start watching one.
+        var reference = new Repository { Id = "reference", Name = "Vendor", LocalPath = Root, VcsRootPath = Root };
+        _monitor.Setup(m => m.IsMonitoringRepository("reference")).Returns(false);
+
+        MonitorPause.Begin(_monitor.Object, [_repository, reference]).Dispose();
+
+        _monitor.Verify(m => m.StopMonitoring("reference"), Times.Never);
+        _monitor.Verify(m => m.StartMonitoring("reference", It.IsAny<string>()), Times.Never);
+        _monitor.Verify(m => m.StartMonitoring("repo", Root), Times.Once);
     }
 
     [Fact]

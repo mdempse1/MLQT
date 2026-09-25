@@ -111,7 +111,7 @@ public partial class CommitChangesDialog
                 // the graph went on describing the files from before the update.
                 VcsUpdateResult updateResult;
                 var repository = RepositoryService.GetRepository(RepositoryId);
-                using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, repository))
+                using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId)))
                 {
                     updateResult = await RepositoryService.UpdateRepositoryAsync(RepositoryId);
                 }

@@ -688,6 +688,19 @@ public class RepositoryService : IRepositoryService
         }
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<Repository> GetRepositoriesSharingWorkingCopy(string repositoryId)
+    {
+        var repository = GetRepository(repositoryId);
+        if (repository == null)
+            return [];
+
+        if (repository.VcsType == RepositoryVcsType.Local || string.IsNullOrEmpty(repository.VcsRootPath))
+            return [repository];
+
+        return [repository, .. GetRepositoriesWithVcsRoot(repository.VcsRootPath).Where(r => r.Id != repository.Id)];
+    }
+
     public Repository? GetRepositoryForLibrary(string libraryId)
     {
         lock (_lock)
@@ -1297,10 +1310,11 @@ public class RepositoryService : IRepositoryService
 
         var result = await Task.Run(() => vcs.UpdateToLatest(repository.VcsRootPath), cancellationToken);
 
-        // Update the repository's revision info if successful
+        // Update the revision info of every repository in the working copy, which all moved (B301).
         if (result.Success && result.HasChanges)
         {
-            await UpdateRevisionInfoAsync(repository);
+            foreach (var repo in GetRepositoriesWithVcsRoot(repository.VcsRootPath))
+                await UpdateRevisionInfoAsync(repo);
             OnRepositoriesChanged?.Invoke();
         }
 

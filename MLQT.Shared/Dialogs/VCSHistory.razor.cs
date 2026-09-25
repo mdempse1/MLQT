@@ -444,7 +444,9 @@ public partial class VCSHistory
         // Paused for the checkout and the reload after it, and handed to the analysis pipeline only
         // once that has worked. A reload that threw used to leave the monitor off for the session:
         // the only restart was on the path where the checkout itself failed (B296).
-        using var pause = MonitorPause.Begin(FileMonitoringService, _repository);
+        // Every repository in the working copy: the checkout moves all of them (B301).
+        var workingCopy = RepositoryService.GetRepositoriesSharingWorkingCopy(_repository.Id);
+        using var pause = MonitorPause.Begin(FileMonitoringService, workingCopy);
         try
         {
             var result = await RepositoryService.CheckoutRevisionAsync(_repository.Id, _selectedEntry.Revision);
@@ -457,13 +459,15 @@ public partial class VCSHistory
             {
                 // Reload _repository info and library data from the newly checked-out files
                 _repository = RepositoryService.GetRepository(_repository.Id);
-                await RepositoryService.RefreshRepositoryAsync(_repository!.Id);
+                foreach (var each in workingCopy)
+                    await RepositoryService.RefreshRepositoryAsync(each.Id);
                 await LoadLogEntriesAsync();
 
                 // Trigger background analysis (formatting + dependencies + style + resources).
                 // Handler will restart monitoring once formatting is complete.
                 pause.HandOver();
-                NavState.VcsFilesChanged(_repository.Id);
+                foreach (var each in workingCopy)
+                    NavState.VcsFilesChanged(each.Id);
             }
         }
         catch (Exception ex)

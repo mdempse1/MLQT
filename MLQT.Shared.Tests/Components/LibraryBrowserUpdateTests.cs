@@ -32,6 +32,9 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
     private readonly Mock<IRepositoryService> _repositories = new();
     private readonly Mock<IFileMonitoringService> _monitor = new();
 
+    // The repositories checked out in repo-1's working copy - just itself, unless a test says otherwise.
+    private IReadOnlyList<Repository> _workingCopy = [Repo()];
+
     private static Repository Repo() =>
         new()
         {
@@ -52,6 +55,8 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
         library.Setup(l => l.GetChildModelsAsync(It.IsAny<ModelNode>())).ReturnsAsync(new List<ModelNode>());
 
         _repositories.Setup(r => r.GetWorkingCopyChanges(It.IsAny<string>())).Returns(new List<VcsWorkingCopyFile>());
+        _repositories.Setup(r => r.GetRepositoriesSharingWorkingCopy("repo-1")).Returns(() => _workingCopy);
+        _monitor.Setup(m => m.IsMonitoringRepository(It.IsAny<string>())).Returns(true);
 
         Services.AddSingleton(library.Object);
         Services.AddSingleton(_repositories.Object);
@@ -166,6 +171,53 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
             Repo(), new VcsDialogOutcome { WorkingCopyChanged = true, LeftInProgress = true }, "rebase"));
 
         Assert.Equal(["reload"], sequence);
+    }
+
+    [Fact]
+    public async Task EveryRepositoryInTheWorkingCopy_IsReloadedAndAnalysed()
+    {
+        // B301. Two libraries checked out in one working copy are two repositories, and a merge
+        // rewrites both - so both are reloaded, and both analysed, not only the one whose button it
+        // was. All the reloads first, as for one repository: none of the analyses may run over a
+        // graph still being rebuilt.
+        var neighbour = new Repository
+        {
+            Id = "repo-2", Name = "MSLTest", LocalPath = Path.Combine(Root, "Test"), VcsRootPath = Root,
+            VcsType = RepositoryVcsType.Git,
+        };
+        _workingCopy = [Repo(), neighbour];
+
+        var browser = RenderBrowser();
+        var sequence = new List<string>();
+        _repositories.Setup(r => r.RefreshRepositoryAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string id, CancellationToken _) => sequence.Add($"reload {id}"))
+            .Returns(Task.CompletedTask);
+        NavState.OnVcsFilesChanged += id => sequence.Add($"analyse {id}");
+
+        await browser.InvokeAsync(() => browser.Instance.AfterVcsDialogAsync(
+            Repo(), new VcsDialogOutcome { WorkingCopyChanged = true }, "merge"));
+
+        Assert.Equal(["reload repo-1", "reload repo-2", "analyse repo-1", "analyse repo-2"], sequence);
+    }
+
+    [Fact]
+    public void AnUpdate_HoldsOffTheMonitorForEveryRepositoryInTheWorkingCopy()
+    {
+        // The monitor keeps one watcher per folder with a subscriber per repository, so pausing only
+        // repo-1 left the watcher running for repo-2, and the update's writes were reported to it.
+        _workingCopy = [Repo(), new Repository { Id = "repo-2", Name = "MSLTest", LocalPath = Root, VcsRootPath = Root, VcsType = RepositoryVcsType.Git }];
+        var update = new TaskCompletionSource<VcsUpdateResult>();
+        _repositories.Setup(r => r.UpdateRepositoryAsync("repo-1", It.IsAny<CancellationToken>())).Returns(update.Task);
+
+        var browser = RenderBrowser();
+        UpdateButton(browser).Click();
+
+        browser.WaitForAssertion(() =>
+        {
+            _monitor.Verify(m => m.StopMonitoring("repo-1"), Times.Once);
+            _monitor.Verify(m => m.StopMonitoring("repo-2"), Times.Once);
+        });
+        update.SetResult(new VcsUpdateResult { Success = false, ErrorMessage = "no network" });
     }
 
     [Fact]

@@ -60,7 +60,7 @@ public partial class SwitchBranchDialog
             // (B296). Started again straight after: the browser reloads and starts the analysis.
             VcsOperationResult result;
             var repository = RepositoryService.GetRepository(RepositoryId);
-            using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, repository))
+            using (repository is null ? null : MonitorPause.Begin(FileMonitoringService, RepositoryService.GetRepositoriesSharingWorkingCopy(RepositoryId)))
             {
                 result = await RepositoryService.SwitchBranchAsync(RepositoryId, _selectedBranch);
             }

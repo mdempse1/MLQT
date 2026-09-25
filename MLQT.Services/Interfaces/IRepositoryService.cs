@@ -120,6 +120,19 @@ public interface IRepositoryService
     Repository? GetRepository(string repositoryId);
 
     /// <summary>
+    /// The repository and every other one checked out in the same working copy - the same VCS root -
+    /// in that order. Just the repository itself when it has no working copy, and empty when there
+    /// is no such repository.
+    /// </summary>
+    /// <remarks>
+    /// Two libraries checked out in one Git or SVN tree are two repositories, and every VCS operation
+    /// acts on the tree: an update, a switch, a merge rewrites both. What follows an operation - the
+    /// file monitor held off, the libraries reloaded, the analysis run - has to reach all of them,
+    /// not only the one whose button was pressed (B301).
+    /// </remarks>
+    IReadOnlyList<Repository> GetRepositoriesSharingWorkingCopy(string repositoryId);
+
+    /// <summary>
     /// Gets the repository that contains a specific library.
     /// </summary>
     Repository? GetRepositoryForLibrary(string libraryId);

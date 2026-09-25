@@ -41,6 +41,9 @@ public class VcsDialogMonitorTests : MlqtComponentTestBase
             CurrentBranch = "main",
         });
         _repositories.Setup(r => r.GetWorkingCopyChanges("repo")).Returns([]);
+        _repositories.Setup(r => r.GetRepositoriesSharingWorkingCopy("repo"))
+            .Returns(() => [_repositories.Object.GetRepository("repo")!]);
+        _monitor.Setup(m => m.IsMonitoringRepository(It.IsAny<string>())).Returns(true);
         _repositories.Setup(r => r.GetBranches("repo", It.IsAny<bool>())).Returns(
         [
             new VcsBranchInfo { Name = "main", IsCurrent = true },

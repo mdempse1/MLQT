@@ -1000,7 +1000,7 @@ public partial class LibraryBrowser : IDisposable
         // Pause file monitoring before the VCS update to prevent the flood of file-change events
         // from locking up the UI. Handed to the analysis pipeline, which restarts it after
         // formatting, or started again here if the update never gets that far (B294).
-        using var pause = MonitorPause.Begin(FileMonitoringService, repository);
+        using var pause = MonitorPause.Begin(FileMonitoringService, WorkingCopyOf(repository));
         try
         {
             // Update the repository from the remote if it's a VCS repository
@@ -1049,9 +1049,15 @@ public partial class LibraryBrowser : IDisposable
     /// <para>With <paramref name="analyse"/> false the pipeline is not started: a merge or rebase
     /// left with conflicts has files in it that are not Modelica, and the pipeline formats every
     /// changed file.</para>
+    ///
+    /// <para><b>Every repository in the working copy</b>, not only this one (B301): a VCS operation
+    /// acts on the whole checkout, so a second library checked out beside this one has been rewritten
+    /// too.</para>
     /// </remarks>
     private async Task ReloadAndAnalyseAsync(Repository repository, MonitorPause? pause, bool analyse = true)
     {
+        var workingCopy = WorkingCopyOf(repository);
+
         // Said, because it is most of the wait and nothing else on screen accounts for it: the
         // VCS step has finished by now, and without this the progress bar that stays up reads
         // as the update still running (B294).
@@ -1061,7 +1067,8 @@ public partial class LibraryBrowser : IDisposable
         // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
         // state references stale tree items with null Children — clear it to avoid the
         // "expanded but no children visible" MudTreeView glitch.
-        await RepositoryService.RefreshRepositoryAsync(repository.Id);
+        foreach (var each in workingCopy)
+            await RepositoryService.RefreshRepositoryAsync(each.Id);
         _expandedNodeIds.Clear();
         await CheckForUncommittedChangesAsync();
         await RefreshTreeItems();
@@ -1072,7 +1079,17 @@ public partial class LibraryBrowser : IDisposable
         // Trigger background analysis (formatting + dependencies + style + resources).
         // Handler will restart monitoring once formatting is complete.
         pause?.HandOver();
-        NavState.VcsFilesChanged(repository.Id);
+        foreach (var each in workingCopy)
+            NavState.VcsFilesChanged(each.Id);
+    }
+
+    /// <summary>
+    /// This repository and every other one checked out in the same working copy (B301).
+    /// </summary>
+    private IReadOnlyList<Repository> WorkingCopyOf(Repository repository)
+    {
+        var sharing = RepositoryService.GetRepositoriesSharingWorkingCopy(repository.Id);
+        return sharing is { Count: > 0 } ? sharing : [repository];
     }
 
     /// <summary>
@@ -1189,7 +1206,11 @@ public partial class LibraryBrowser : IDisposable
             await RefreshTreeItems();
             Snackbar.Add($"Switched to branch: {result.Data}", Severity.Success);
             StateHasChanged();
-            NavState.VcsFilesChanged(Repository.Id);
+
+            // Every repository in the working copy switched, and SwitchBranchAsync reloaded all of
+            // them - so all of them are analysed, not only this one (B301).
+            foreach (var each in WorkingCopyOf(Repository))
+                NavState.VcsFilesChanged(each.Id);
         }
     }
 
