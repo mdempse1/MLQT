@@ -106,6 +106,7 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnEnableMultiSelect += OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged += OnExternalSelectedModelsChanged;
         NavState.OnVcsFilesChanged += OnVcsFilesChangedHandler;
+        NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged += OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged += OnRepositoryLoadStateChanged;
         FileMonitoringService.OnRepositoryFileActivity += OnRepositoryFileActivity;
@@ -536,6 +537,7 @@ public partial class LibraryBrowser : IDisposable
         NavState.OnEnableMultiSelect -= OnSelectionModeChanged;
         NavState.OnSelectedModelsChanged -= OnExternalSelectedModelsChanged;
         NavState.OnVcsFilesChanged -= OnVcsFilesChangedHandler;
+        NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
         LibraryDataService.OnTreeDataChanged -= OnTreeDataChanged;
         RepositoryService.OnRepositoryLoadStateChanged -= OnRepositoryLoadStateChanged;
         FileMonitoringService.OnRepositoryFileActivity -= OnRepositoryFileActivity;
@@ -1155,21 +1157,39 @@ public partial class LibraryBrowser : IDisposable
     private bool _vcsBusy;
 
     /// <summary>
-    /// Runs one VCS operation, refusing to start a second until it has finished (B294).
+    /// Whether no VCS operation may start from here: one started here is still running, or VCS
+    /// work - an operation, or the analysis pipeline one started - is running anywhere (B326).
+    /// </summary>
+    private bool VcsBlocked => _vcsBusy || NavState.IsVcsWorkInProgress;
+
+    private void OnVcsWorkChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Runs one VCS operation, refusing to start a second until it has finished (B294) - and until
+    /// the analysis pipeline any earlier one started has finished too (B326).
     /// </summary>
     /// <remarks>
-    /// Nothing stopped two overlapping before: a Revert was still reloading its files one at a time
-    /// when Update started removing and reloading every library in the same repository, and the two
-    /// read and rewrote the same graph at once. The buttons are disabled while this is set; the
-    /// check here is for the click that arrives before the render that disables them.
+    /// <para>Nothing stopped two overlapping before: a Revert was still reloading its files one at a
+    /// time when Update started removing and reloading every library in the same repository, and the
+    /// two read and rewrote the same graph at once. The buttons are disabled while this is set; the
+    /// check here is for the click that arrives before the render that disables them.</para>
+    ///
+    /// <para>The operation is counted as VCS work for as long as it runs, so the other browsers -
+    /// one per repository - hold off too, and the pipeline it fires is counted from inside the
+    /// operation, so there is no gap between the two.</para>
     /// </remarks>
     private async Task RunVcsOperationAsync(Func<Task> operation)
     {
-        if (_vcsBusy)
+        if (VcsBlocked)
+        {
+            if (NavState.IsVcsWorkInProgress && !_vcsBusy)
+                Snackbar.Add("Wait for the previous version-control operation and its analysis to finish.", Severity.Info);
             return;
+        }
 
         _vcsBusy = true;
         StateHasChanged();
+        using var work = NavState.BeginVcsWork();
         try
         {
             await operation();

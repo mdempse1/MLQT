@@ -278,6 +278,57 @@ public class AppState
         OnVcsModelsChanged?.Invoke(repositoryId, modelIds);
     }
 
+    // ========== VCS work in progress (B326) ==========
+
+    private int _vcsWorkInProgress;
+
+    /// <summary>
+    /// Whether a VCS operation, or the analysis pipeline one started, is still running anywhere.
+    /// No other VCS operation may start while it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>The Library Browser's own busy flag cleared when its operation returned, and the
+    /// operation returned as soon as it had fired <see cref="VcsFilesChanged"/>: the formatting and
+    /// analysis that follows runs detached. So a Switch Branch could start while the previous
+    /// Update's pipeline was still "Applying code formatting…" - the switch reloaded every library
+    /// under a running analysis, and the formatter, which reads and then writes file by file, wrote
+    /// old-branch text over the checkout. The pipeline had also stopped the monitor, so the switch's
+    /// pause skipped the repository and the pipeline's restart landed mid-checkout.</para>
+    ///
+    /// <para>Shared rather than per browser, because a pipeline acts on the graph and on every
+    /// repository in a working copy, not on the browser that started it.</para>
+    /// </remarks>
+    public bool IsVcsWorkInProgress => Volatile.Read(ref _vcsWorkInProgress) > 0;
+
+    /// <summary>Raised whenever <see cref="IsVcsWorkInProgress"/> may have changed.</summary>
+    public event Action? OnVcsWorkChanged;
+
+    /// <summary>
+    /// Counts one piece of VCS work as running until the returned handle is disposed. Take it
+    /// before the work is handed anywhere that runs it later, so there is no moment between the
+    /// operation ending and its pipeline starting when nothing is counted.
+    /// </summary>
+    public IDisposable BeginVcsWork()
+    {
+        Interlocked.Increment(ref _vcsWorkInProgress);
+        OnVcsWorkChanged?.Invoke();
+        return new VcsWork(this);
+    }
+
+    private sealed class VcsWork(AppState state) : IDisposable
+    {
+        private int _ended;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _ended, 1) != 0)
+                return;
+
+            Interlocked.Decrement(ref state._vcsWorkInProgress);
+            state.OnVcsWorkChanged?.Invoke();
+        }
+    }
+
     // ========== Project Profiles ==========
 
     /// <summary>

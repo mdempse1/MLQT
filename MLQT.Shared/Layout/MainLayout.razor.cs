@@ -97,8 +97,10 @@ public partial class MainLayout : IDisposable
         ApplyThemeFromSettings(_settings.UI);
 
         NavState.OnRepositorySettingsApplied += OnRepositorySettingsApplied;
+        _vcsPipelines = new VcsPipelineQueue(NavState);
         NavState.OnVcsFilesChanged += OnVcsFilesChanged;
         NavState.OnVcsModelsChanged += OnVcsModelsChanged;
+        NavState.OnVcsWorkChanged += OnVcsWorkChanged;
         NavState.OnProjectSwitchStarting += OnProjectSwitchStarting;
         RepositoryService.OnProjectChanged += OnProjectChanged;
         NavState.OnThemeChanged += OnThemeChangedHandler;
@@ -1370,6 +1372,7 @@ public partial class MainLayout : IDisposable
         NavState.OnProjectSwitchStarting -= OnProjectSwitchStarting;
         NavState.OnVcsFilesChanged -= OnVcsFilesChanged;
         NavState.OnVcsModelsChanged -= OnVcsModelsChanged;
+        NavState.OnVcsWorkChanged -= OnVcsWorkChanged;
         NavState.OnRunDeferredDependencies -= RunDeferredDependenciesOnlyAsync;
         NavState.OnRunDeferredStyleChecking -= RunDeferredStyleCheckingFromEventAsync;
         NavState.OnRunDeferredExternalResources -= RunDeferredExternalResourcesAsync;
@@ -1578,25 +1581,15 @@ public partial class MainLayout : IDisposable
     /// </summary>
     private void OnVcsFilesChanged(string repositoryId)
     {
-        _ = Task.Run(async () =>
-        {
-            // One run at a time (B301). A VCS operation on a working copy that holds several
-            // repositories starts one of these for each, and two running together format files
-            // and re-analyse dependencies over the same graph at once. Queued here rather than
-            // refused: each repository still has to be analysed, just not beside another.
-            await _vcsPipelineGate.WaitAsync();
-            try
-            {
-                await ProcessVcsFilesChangedAsync(repositoryId);
-            }
-            finally
-            {
-                _vcsPipelineGate.Release();
-            }
-        });
+        // One run at a time (B301), and counted as VCS work from here until it has finished, so no
+        // other VCS operation can start under it (B326). See VcsPipelineQueue.
+        _ = _vcsPipelines.Enqueue(() => ProcessVcsFilesChangedAsync(repositoryId));
     }
 
-    private readonly SemaphoreSlim _vcsPipelineGate = new(1, 1);
+    private VcsPipelineQueue _vcsPipelines = null!;
+
+    // The Refresh button is off while VCS work runs, like the Library Browser's VCS actions (B326).
+    private void OnVcsWorkChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task ProcessVcsFilesChangedAsync(string repositoryId)
     {
@@ -1728,7 +1721,9 @@ public partial class MainLayout : IDisposable
 
     private void OnVcsModelsChanged(string repositoryId, IReadOnlyList<string> modelIds)
     {
-        _ = Task.Run(async () =>
+        // Through the same queue as the pipeline after any other VCS operation: a revert's analysis
+        // re-analyses the same graph, and ran beside one, and under the next operation (B326).
+        _ = _vcsPipelines.Enqueue(async () =>
         {
             var repository = RepositoryService.GetRepository(repositoryId);
             if (repository == null) return;
@@ -1833,9 +1828,20 @@ public partial class MainLayout : IDisposable
         if (_isRefreshing)
             return;
 
+        // Not over a VCS operation or the pipeline one started (B326): both reload and format the
+        // same files. The button is disabled while one runs; this is for the click that beats the
+        // render.
+        if (NavState.IsVcsWorkInProgress)
+        {
+            Snackbar.Add("Wait for the version-control operation and its analysis to finish, then refresh.", Severity.Info);
+            return;
+        }
+
         _isRefreshing = true;
         StateHasChanged();
 
+        // Counted as VCS work while it runs, so no VCS operation starts under it either.
+        using var work = NavState.BeginVcsWork();
         try
         {
             var pendingChanges = FileMonitoringService.PendingChanges.ToList();

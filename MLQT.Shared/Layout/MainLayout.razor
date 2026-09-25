@@ -269,7 +269,7 @@
                                                    Color="@(_pendingChangesCount > 0 ? Color.Warning : Color.Primary)"
                                                    Size="Size.Medium"
                                                    OnClick="RefreshLibrariesAsync"
-                                                   Disabled="@_isRefreshing"/>
+                                                   Disabled="@(_isRefreshing || NavState.IsVcsWorkInProgress)"/>
                                 </MudTooltip>
                             </MudBadge>
                         </MudButtonGroup>

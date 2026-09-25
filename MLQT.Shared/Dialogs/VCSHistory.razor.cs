@@ -438,8 +438,23 @@ public partial class VCSHistory
             return;
 
         _confirmingCheckout = false;
+
+        // Not while another VCS operation, or the analysis pipeline one started, is running: the
+        // checkout rewrites the working copy that pipeline is formatting (B326).
+        if (NavState.IsVcsWorkInProgress)
+        {
+            _checkoutResultSuccess = false;
+            _checkoutResultMessage = "Another version-control operation, or the analysis after it, is still running. " +
+                                     "Check out again once it has finished.";
+            return;
+        }
+
         _isCheckingOut = true;
         StateHasChanged();
+
+        // Counted as VCS work until the checkout and reload are done; the pipeline it fires takes
+        // over from there (see VcsPipelineQueue).
+        using var work = NavState.BeginVcsWork();
 
         // Paused for the checkout and the reload after it, and handed to the analysis pipeline only
         // once that has worked. A reload that threw used to leave the monitor off for the session:

@@ -108,6 +108,42 @@ public class LibraryBrowserUpdateTests : MlqtComponentTestBase
         _monitor.Verify(m => m.StartMonitoring(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
+    /// <summary>
+    /// B326: the operation returns once it has fired the analysis pipeline, which runs detached - and
+    /// the next operation used to be offered then, while that pipeline was still formatting. The
+    /// pipeline is wired here as MainLayout wires it, through a <see cref="VcsPipelineQueue"/>.
+    /// </summary>
+    [Fact]
+    public void WhileThePipelineAnUpdateStartedRuns_NoOtherOperationCanStart()
+    {
+        _repositories.Setup(r => r.UpdateRepositoryAsync("repo-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VcsUpdateResult { Success = true, HasChanges = true, NewRevision = "b2" });
+        _repositories.Setup(r => r.RefreshRepositoryAsync("repo-1", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var browser = RenderBrowser();
+
+        var pipelines = new MLQT.Shared.Helpers.VcsPipelineQueue(NavState);
+        var formatting = new TaskCompletionSource();
+        var pipelineStarted = new TaskCompletionSource();
+        NavState.OnVcsFilesChanged += _ => pipelines.Enqueue(async () =>
+        {
+            pipelineStarted.TrySetResult();
+            await formatting.Task;
+        });
+
+        UpdateButton(browser).Click();
+        Assert.True(pipelineStarted.Task.Wait(TimeSpan.FromSeconds(10)), "the update never fired its pipeline");
+
+        // The update itself has finished; its pipeline has not.
+        browser.WaitForAssertion(() => Assert.True(UpdateButton(browser).HasAttribute("disabled")));
+        UpdateButton(browser).Click();
+        _repositories.Verify(r => r.UpdateRepositoryAsync("repo-1", It.IsAny<CancellationToken>()), Times.Once);
+
+        formatting.SetResult();
+        browser.WaitForAssertion(() => Assert.False(UpdateButton(browser).HasAttribute("disabled")));
+    }
+
     [Fact]
     public void WhileAnUpdateRuns_NoOtherOperationCanStart()
     {
