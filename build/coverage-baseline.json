@@ -213,7 +213,7 @@
                                                                                       "coverage":  28.7,
                                                                                       "lines":  841,
                                                                                       "bar":  80,
-                                                                                      "reason":  "Needs a real SVN working copy and a server; the suite that covers it (SvnOperationsTests) is filtered out of the CI run for that reason. Covered locally against C:\\Projects\\ModelicaEditorTest."
+                                                                                      "reason":  "Drives svn against a real working copy. Since B266 CI runs SvnOperationsTests and SvnRevisionControlSystemTests (only SvnIntegration* and SvnMergeCommit* are filtered out), but the Code Coverage job is windows-latest with no svn client and no working copy at C:\\Projects\\ModelicaEditorTest, so every test that needs either returns early and covers nothing. A machine with both covers most of the class. **This figure has to come from a CI run, not from a developer machine**, and this one predates B266: re-record it from the report of a CI run that passed. check-coverage.ps1 -UpdateBaseline keeps it at the recorded figure on any machine with svn, even where it meets the bar there (B363)."
                                                                                   },
                     "RevisionControl::RevisionControl.SvnToolLocator":  {
                                                                             "coverage":  71.8,

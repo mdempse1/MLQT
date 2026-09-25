@@ -32,7 +32,9 @@
     That paragraph was here and it happened anyway: a re-record from a machine with svn on PATH put
     SvnCli at 51.5% against the 27.3% CI measures, and the gate failed on the next push. So the
     script now declines to raise a RevisionControl.Svn* figure when svn is present, and names each
-    one it held back. The warning stays for the cases the hold-back does not cover.
+    one it held back - including one that meets the bar here, which it keeps in the ledger at its
+    recorded figure rather than dropping (B363). The warning stays for the cases the hold-back does
+    not cover.
 
     A fourth way it fails, and the reason the baseline has an "excluded" list: a class in the ledger
     that is not in the report at all. That is not the same fact as "it meets the bar now" - it is no
@@ -284,8 +286,23 @@ if ($UpdateBaseline) {
     $svnDependent = 'RevisionControl::RevisionControl.Svn'
     $heldBack = @()
 
+    # Holding a figure back is only half of it (B363). The ledger is rebuilt from the classes below
+    # the bar, so an accepted svn entry that reaches the bar on this machine was not held back at all
+    # - it was dropped, and the next CI run, measuring it where it always was, failed with "a new
+    # class below the bar". That is the failure the hold-back exists to prevent, so with svn present
+    # every accepted svn entry is carried forward at its recorded figure, below the bar here or not.
+    # It leaves the ledger when a CI run shows it meeting the bar, not when this machine does.
+    $toRecord = @($below)
+    if ($svnPresent) {
+        $toRecord += @($gated | Where-Object {
+            $_.Key.StartsWith($svnDependent) -and
+            $_.Coverage -ge $_.Bar -and
+            $previousCoverage.ContainsKey($_.Key)
+        })
+    }
+
     $entries = [ordered] @{}
-    foreach ($item in ($below | Sort-Object Key)) {
+    foreach ($item in ($toRecord | Sort-Object Key)) {
         $coverage = [math]::Round($item.Coverage, 1)
 
         if ($svnPresent -and $item.Key.StartsWith($svnDependent) -and $previousCoverage.ContainsKey($item.Key)) {
