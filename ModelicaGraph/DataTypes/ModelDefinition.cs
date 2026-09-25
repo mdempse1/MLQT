@@ -19,8 +19,9 @@ public class ModelDefinition
     /// The Modelica source code for this model.
     ///
     /// <para>Replacing it drops everything read from the old source: <see cref="ParsedCode"/>,
-    /// <see cref="Coverage"/>, <see cref="Suppressions"/>, <see cref="Imports"/> and <see cref="IconSvg"/> all describe
-    /// code that is no longer here.</para>
+    /// <see cref="Coverage"/>, <see cref="Suppressions"/> and <see cref="Imports"/> all describe
+    /// code that is no longer here. The icon is marked to be rendered again rather than dropped -
+    /// see <see cref="IconSvg"/>.</para>
     ///
     /// <para>The tree is on that list, and the comment here used to say it was not — that
     /// <see cref="EnsureParsed"/> handled its own staleness. It does not: it returns
@@ -40,7 +41,7 @@ public class ModelDefinition
             Coverage = null;
             Suppressions = null;
             Imports = null;
-            IconSvg = null;
+            // Rendered again when the tree next asks, but not blanked meanwhile (B300).
             IconRendered = false;
         }
     }
@@ -86,6 +87,14 @@ public class ModelDefinition
     /// <para><see cref="IconRendered"/> is separate from the SVG being null because <em>most classes
     /// have no icon</em>, and "asked, and there is none" has to be as cheap to remember as an
     /// answer.</para>
+    ///
+    /// <para><b>A code change clears <see cref="IconRendered"/> and leaves the SVG alone</b> (B300).
+    /// The library browser draws the SVG straight off the class it already holds, and nothing
+    /// renders the icon again until the tree is refreshed - so when this setter blanked the SVG,
+    /// <b>Format All Files</b>, which sets every class's code without refreshing the tree, turned every
+    /// package on screen into a plain folder until something else rebuilt it. The old icon is
+    /// shown until then instead, which for a reformatted class is the right icon anyway: formatting
+    /// moves text, not graphics.</para>
     /// </summary>
     public string? IconSvg { get; set; }
 

@@ -26,7 +26,7 @@ public class IconCacheInvalidationTests
         """;
 
     [Fact]
-    public void ChangingTheCodeDiscardsTheRenderedIcon()
+    public void ChangingTheCode_MarksTheIconToBeRenderedAgain()
     {
         var definition = new ModelDefinition("M", WithIcon);
         definition.IconSvg = "<svg>old</svg>";
@@ -34,10 +34,24 @@ public class IconCacheInvalidationTests
 
         definition.ModelicaCode = "model M \"m\"\nend M;";
 
-        Assert.Null(definition.IconSvg);
         Assert.False(definition.IconRendered,
-            "the icon has to be re-rendered after the code changes, not just blanked — otherwise a "
-            + "class that gained an icon never shows it");
+            "the icon has to be re-rendered after the code changes — otherwise a class that gained or "
+            + "lost an icon never shows it");
+    }
+
+    [Fact]
+    public void ChangingTheCode_DoesNotBlankTheIconMeanwhile()
+    {
+        // B300. The library browser draws this straight off the class it holds, and nothing renders
+        // it again until the tree is refreshed. Format All sets every class's code without one, so
+        // blanking it here turned every package on screen into a plain folder.
+        var definition = new ModelDefinition("M", WithIcon);
+        definition.IconSvg = "<svg>old</svg>";
+        definition.IconRendered = true;
+
+        definition.ModelicaCode = "model M \"m\"\nend M;";
+
+        Assert.Equal("<svg>old</svg>", definition.IconSvg);
     }
 
     [Fact]
@@ -61,14 +75,14 @@ public class IconCacheInvalidationTests
     public void TheNodeAndItsDefinitionAgreeAboutTheIcon()
     {
         // ModelNode.IconSvg is the name everything already uses and is now a facade. If the two ever
-        // came apart, the browser would read one and the invalidation would clear the other.
+        // came apart, the browser would read one and a re-render would write the other.
         var node = new ModelNode("M", "M", WithIcon);
 
         node.IconSvg = "<svg>rendered</svg>";
         Assert.Equal("<svg>rendered</svg>", node.Definition.IconSvg);
 
-        node.Definition.ModelicaCode = "model M \"m\"\nend M;";
-        Assert.Null(node.IconSvg);
+        node.Definition.IconSvg = "<svg>again</svg>";
+        Assert.Equal("<svg>again</svg>", node.IconSvg);
     }
 
     [Fact]

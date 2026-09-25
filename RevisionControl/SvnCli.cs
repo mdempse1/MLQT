@@ -224,12 +224,12 @@ internal static class SvnCli
         }
     }
 
-    // Decoded as a StreamReader decodes, which is what reading StandardOutput used to do - so a byte
-    // order mark is taken as one rather than kept as a character.
+    // UTF-8, with a byte order mark taken as one rather than kept as a character - which is what
+    // reading StandardOutput through its reader used to do.
     private static string Decode(byte[] bytes)
     {
-        using var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
+        var text = Encoding.UTF8.GetString(bytes);
+        return text.Length > 0 && text[0] == (char)0xFEFF ? text[1..] : text;
     }
 
     /// <summary>
