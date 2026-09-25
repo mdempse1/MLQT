@@ -75,15 +75,44 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore MLQT.slnx
 
-      - name: Run tests
-        run: |
-          dotnet test ModelicaParser.Tests -c Release --no-restore
-          dotnet test ModelicaGraph.Tests -c Release --no-restore
-          dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit"
-          dotnet test MLQT.Services.Tests -c Release --no-restore
-          dotnet test MLQT.McpServer.Tests -c Release --no-restore
-          dotnet test MLQT.Cli.Tests -c Release --no-restore
-          dotnet test MLQT.Shared.Tests -c Release --no-restore
+      # One step per suite, as build-and-test.yml does (B362). These were one multi-line `run:`, and
+      # the runner's pwsh does not stop at a failing native command - the step took the *last*
+      # command's exit code, so a tag whose parser or CLI tests failed still published an installer
+      # as long as MLQT.Shared.Tests passed. A step's own exit code cannot be somebody else's.
+      #
+      # '!cancelled()' so one failing suite does not hide the others' results; every step after
+      # these keeps the default success() condition, so any failure here still stops the release.
+      # Each step builds its own suite (--no-restore, not --no-build), as the single block did.
+      # TestRunnerScriptTests.EveryTestSuiteIsAStepOfItsOwn holds the shape.
+      - name: Run ModelicaParser tests
+        if: '!cancelled()'
+        run: dotnet test ModelicaParser.Tests -c Release --no-restore
+
+      - name: Run ModelicaGraph tests
+        if: '!cancelled()'
+        run: dotnet test ModelicaGraph.Tests -c Release --no-restore
+
+      # The three SVN classes that need an svn client, and nothing else - see build-and-test.yml
+      # and SvnTestFilterTests, which holds this string identical to its other three copies (B266).
+      - name: Run RevisionControl tests (exclude the SVN integration classes)
+        if: '!cancelled()'
+        run: dotnet test RevisionControl.Tests -c Release --no-restore --filter "FullyQualifiedName!~SvnIntegration&FullyQualifiedName!~SvnMergeCommit"
+
+      - name: Run MLQT.Services tests
+        if: '!cancelled()'
+        run: dotnet test MLQT.Services.Tests -c Release --no-restore
+
+      - name: Run MLQT.McpServer tests
+        if: '!cancelled()'
+        run: dotnet test MLQT.McpServer.Tests -c Release --no-restore
+
+      - name: Run MLQT.Cli tests
+        if: '!cancelled()'
+        run: dotnet test MLQT.Cli.Tests -c Release --no-restore
+
+      - name: Run MLQT.Shared tests
+        if: '!cancelled()'
+        run: dotnet test MLQT.Shared.Tests -c Release --no-restore
 
       # Stage the SlikSVN command-line client so the publish copies it into the tree under svn/. The
       # zip URL is a repository variable (Settings > Secrets and variables > Actions > Variables):

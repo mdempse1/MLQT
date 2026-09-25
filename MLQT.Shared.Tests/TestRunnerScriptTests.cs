@@ -100,6 +100,30 @@ public class TestRunnerScriptTests
         }
     }
 
+    [Theory]
+    [InlineData("build-and-test.yml")]
+    [InlineData("release.yml")]
+    [InlineData("nightly-webkit.yml")]
+    public void EveryTestSuiteIsAStepOfItsOwn(string workflow)
+    {
+        // Backlog B362. release.yml ran its seven suites as one multi-line `run:` block, and a runner's
+        // pwsh does not stop at a failing native command: the step's result is the *last* command's
+        // exit code. So a tag whose parser, graph or CLI tests failed still built and published the
+        // installer, provided MLQT.Shared.Tests passed. One `dotnet test` per step is what
+        // build-and-test.yml has always done, and a step's own exit code cannot be the wrong one.
+        var text = FileAt(".github", "workflows", workflow);
+
+        var offenders = text.Split('\n')
+            .Select((line, i) => (line, number: i + 1))
+            .Where(l => l.line.Contains("dotnet test ") && !Regex.IsMatch(l.line, @"^\s*run: dotnet test "))
+            .Select(l => $"{workflow}:{l.number}: {l.line.Trim()}")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "a dotnet test that is not the whole of its step's run: - only the last command's exit code "
+            + "decides a multi-line step:\n" + string.Join("\n", offenders));
+    }
+
     [Fact]
     public void TheJourneySuiteGetsPlaywrightsPlatformOverrideOnAnUbuntuItDoesNotSupport()
     {
