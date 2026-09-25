@@ -278,7 +278,9 @@
                             {
                                 @foreach (var repo in RepositoryService.Repositories)
                                 {
-                                    <LibraryBrowser LibraryOnly="false" Repository="@repo" />
+                                    @* Keyed, so a reorder moves each browser - its filter, busy flag and
+                                       expansion - with its repository rather than handing it on (B353). *@
+                                    <LibraryBrowser @key="repo.Id" LibraryOnly="false" Repository="@repo" />
                                 }
                             }
                             else

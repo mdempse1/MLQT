@@ -145,6 +145,10 @@ public partial class LibraryBrowser : IDisposable
     /// </remarks>
     private async Task CheckForUncommittedChangesAsync()
     {
+        // Numbered, so an answer that comes back after a newer question - or after this browser was
+        // given another repository - is dropped rather than written over the current one (B353).
+        var generation = ++_statusGeneration;
+
         if (Repository == null || Repository.VcsType == RepositoryVcsType.Local || Repository.IsReferenceOnly)
         {
             _hasUncommittedChanges = false;
@@ -197,6 +201,9 @@ public partial class LibraryBrowser : IDisposable
                 DescendantKinds(status.Keys, changeKinds, LibraryDataService.GetModelById));
         });
 
+        if (generation != _statusGeneration || Repository?.Id != repoId)
+            return;
+
         _hasUncommittedChanges = hasChanges;
         _modelVcsStatus = modelStatus;
         _modelChangeKinds = kinds;
@@ -211,6 +218,9 @@ public partial class LibraryBrowser : IDisposable
 
         RefreshFilteredTree();
     }
+
+    /// <summary>Counts status questions, so only the latest one's answer is applied (B353).</summary>
+    private int _statusGeneration;
 
     private static readonly IReadOnlyDictionary<string, ClassChangeKind> EmptyKinds =
         new Dictionary<string, ClassChangeKind>();
