@@ -30,6 +30,18 @@ public class RepositoryService : IRepositoryService
     private readonly object _workingCopyCacheLock = new();
     private const long WorkingCopyCacheLifetimeMs = 300000; // 5 minutes — event-based invalidation handles real changes
 
+    // The query each repository has in flight, and the invalidation it started under. See
+    // GetWorkingCopyChanges (B293).
+    private readonly Dictionary<string, (Task<List<VcsWorkingCopyFile>> Query, long Generation)> _workingCopyQueries = new();
+    private readonly Dictionary<string, long> _workingCopyGenerations = new();
+    private long _allWorkingCopiesGeneration;
+
+    /// <summary>
+    /// Asks the repository's VCS for its working-copy changes. A seam, so a test can count and slow
+    /// the queries <see cref="GetWorkingCopyChanges"/> makes without a working copy that is slow.
+    /// </summary>
+    internal Func<Repository, List<VcsWorkingCopyFile>> QueryWorkingCopy { get; set; }
+
     private const string SettingsKey = "Repositories";
 
     public RepositoryService(
@@ -42,6 +54,12 @@ public class RepositoryService : IRepositoryService
         _fileMonitoringService = fileMonitoringService;
         _git = new GitRevisionControlSystem();
         _svn = new SvnRevisionControlSystem();
+        QueryWorkingCopy = repository => repository.VcsType switch
+        {
+            RepositoryVcsType.Git => _git.GetWorkingCopyChanges(repository.VcsRootPath),
+            RepositoryVcsType.SVN => _svn.GetWorkingCopyChanges(repository.VcsRootPath),
+            _ => throw new InvalidOperationException("Unsupported VCS type")
+        };
 
         // Invalidate working copy cache when repositories change (commits, branch switches, etc.)
         OnRepositoriesChanged += () => InvalidateWorkingCopyCache();
@@ -645,13 +663,19 @@ public class RepositoryService : IRepositoryService
             repository.LastLoadedAt = DateTime.UtcNow;
         }
 
-        //Now reload the libraries in this repository as things might have changed
-        foreach (var libraryId in repository.LibraryIds)
+        // Removed and reloaded under one tree announcement, as a project switch is (B293). Each library
+        // announced on its own, and every open tree answered each with a working-copy status query
+        // and a rebuild - sixteen of them for MSL's eight libraries, on top of everything else a VCS
+        // operation sets off.
+        using (_libraryDataService.SuppressTreeDataChanged())
         {
-            _libraryDataService.RemoveLibrary(libraryId);
+            foreach (var libraryId in repository.LibraryIds)
+            {
+                _libraryDataService.RemoveLibrary(libraryId);
+            }
+
+            await LoadLibrariesAsync(repositoryId, repository.DiscoveredLibraries.Keys.ToList(), cancellationToken);
         }
-        //Now load the discovered libraries        
-        await LoadLibrariesAsync(repositoryId, repository.DiscoveredLibraries.Keys.ToList(), new CancellationToken());
 
         OnRepositoriesChanged?.Invoke();
     }
@@ -1283,41 +1307,87 @@ public class RepositoryService : IRepositoryService
         return result;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para><b>One query per repository at a time, shared by everyone who asks while it runs</b>
+    /// (B293). Every caller that missed the cache used to start its own, and after a VCS operation
+    /// they all miss it at once: the reload raises an event per library, each open tree answers with
+    /// a status query, and the baseline refresh adds its own. On MSL, after Format All and a revert
+    /// had rewritten every file, that was 55 LibGit2Sharp status scans of one working copy running
+    /// together - one of them on the UI thread - and the window froze for two and a half minutes. A
+    /// single scan took under a third of a second.</para>
+    ///
+    /// <para><b>A caller only joins a query started since the last invalidation.</b> One that
+    /// began before it may have read the working copy before the change it was told about, so an
+    /// invalidation makes the next caller start afresh - and only that one; the rest join it. For
+    /// the same reason a query's answer is cached only if nothing was invalidated while it ran.</para>
+    /// </remarks>
     public List<VcsWorkingCopyFile> GetWorkingCopyChanges(string repositoryId)
     {
-        // Check cache first
+        TaskCompletionSource<List<VcsWorkingCopyFile>>? owned = null;
+        Task<List<VcsWorkingCopyFile>>? joined = null;
+        long generation;
+
         lock (_workingCopyCacheLock)
         {
-            if (_workingCopyCache.TryGetValue(repositoryId, out var cached))
+            if (_workingCopyCache.TryGetValue(repositoryId, out var cached)
+                && Environment.TickCount64 - cached.Ticks < WorkingCopyCacheLifetimeMs)
+                return cached.Changes;
+
+            generation = WorkingCopyGeneration(repositoryId);
+            if (_workingCopyQueries.TryGetValue(repositoryId, out var inFlight) && inFlight.Generation == generation)
             {
-                var age = Environment.TickCount64 - cached.Ticks;
-                if (age < WorkingCopyCacheLifetimeMs)
-                    return cached.Changes;
+                joined = inFlight.Query;
+            }
+            else
+            {
+                // Asynchronous continuations, so nothing waiting on this runs on the owner's thread
+                // before the owner has finished with its own answer.
+                owned =new TaskCompletionSource<List<VcsWorkingCopyFile>>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _workingCopyQueries[repositoryId] = (owned.Task, generation);
             }
         }
 
-        var repository = GetRepository(repositoryId);
-        if (repository == null || repository.VcsType == RepositoryVcsType.Local)
+        // Waited for outside the lock: the owner takes it again to publish its answer, and waiting
+        // while holding it was a deadlock the first version of this had.
+        if (owned == null)
+            return joined!.GetAwaiter().GetResult();
+
+        try
         {
-            return new List<VcsWorkingCopyFile>();
+            var repository = GetRepository(repositoryId);
+            var changes = repository == null || repository.VcsType == RepositoryVcsType.Local
+                ? new List<VcsWorkingCopyFile>()
+                : QueryWorkingCopy(repository);
+
+            lock (_workingCopyCacheLock)
+            {
+                if (WorkingCopyGeneration(repositoryId) == generation)
+                    _workingCopyCache[repositoryId] = (changes, Environment.TickCount64);
+            }
+
+            owned.SetResult(changes);
+            return changes;
         }
-
-        IRevisionControlSystem vcs = repository.VcsType switch
+        catch (Exception ex)
         {
-            RepositoryVcsType.Git => _git,
-            RepositoryVcsType.SVN => _svn,
-            _ => throw new InvalidOperationException("Unsupported VCS type")
-        };
-
-        var changes = vcs.GetWorkingCopyChanges(repository.VcsRootPath);
-
-        lock (_workingCopyCacheLock)
-        {
-            _workingCopyCache[repositoryId] = (changes, Environment.TickCount64);
+            owned.SetException(ex);
+            throw;
         }
-
-        return changes;
+        finally
+        {
+            lock (_workingCopyCacheLock)
+            {
+                if (_workingCopyQueries.TryGetValue(repositoryId, out var current) && current.Query == owned.Task)
+                    _workingCopyQueries.Remove(repositoryId);
+            }
+        }
     }
+
+    /// <summary>How many times this repository's working-copy status has been invalidated. Read and
+    /// changed only under <see cref="_workingCopyCacheLock"/>.</summary>
+    private long WorkingCopyGeneration(string repositoryId) =>
+        _allWorkingCopiesGeneration + _workingCopyGenerations.GetValueOrDefault(repositoryId);
 
     /// <inheritdoc/>
     public void InvalidateWorkingCopyCache(string? repositoryId = null)
@@ -1325,9 +1395,15 @@ public class RepositoryService : IRepositoryService
         lock (_workingCopyCacheLock)
         {
             if (repositoryId != null)
+            {
                 _workingCopyCache.Remove(repositoryId);
+                _workingCopyGenerations[repositoryId] = _workingCopyGenerations.GetValueOrDefault(repositoryId) + 1;
+            }
             else
+            {
                 _workingCopyCache.Clear();
+                _allWorkingCopiesGeneration++;
+            }
         }
 
         // Anything that invalidates this cache is saying the working copy's VCS status may have

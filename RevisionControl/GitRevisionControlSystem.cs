@@ -1913,27 +1913,95 @@ public class GitRevisionControlSystem : IRevisionControlSystem, ILineLevelDiff
     }
 
     /// <summary>
+    /// How long a git command may run before it is stopped. Generous, because a first fetch of a
+    /// large repository over a slow link is legitimately minutes; the point is that it ends.
+    /// </summary>
+    internal static readonly TimeSpan GitCommandTimeout = TimeSpan.FromMinutes(15);
+
+    /// <summary>
     /// Runs a git command in the specified working directory and returns the exit code,
     /// stdout, and stderr. Shells out to git.exe so that all configured credential helpers
     /// (Git Credential Manager, GitHub Desktop, SSH agent, etc.) are used automatically.
     /// </summary>
-    private static (int ExitCode, string Stdout, string Stderr) RunGitCommand(string workingDirectory, string arguments)
+    /// <remarks>
+    /// <para><b>Nothing here may wait for something that will never come</b> (B295). Each of these
+    /// used to be able to hang the operation - and its dialog - for good:</para>
+    /// <list type="bullet">
+    /// <item><b>Both streams are read at once.</b> Reading stdout to the end before touching stderr
+    /// deadlocks as soon as git writes more to stderr than the pipe holds: git blocks writing, and
+    /// stdout never ends because git never exits. <c>git fetch</c> lists every updated ref on stderr,
+    /// so a fetch bringing in a few dozen tags was enough.</item>
+    /// <item><b>No prompt on a terminal nobody can see.</b> <c>GIT_TERMINAL_PROMPT=0</c> makes a
+    /// missing credential an error instead of a wait. A credential helper with a window of its own,
+    /// Git Credential Manager's, still asks.</item>
+    /// <item><b>No editor.</b> <c>git rebase --continue</c> opens one for the commit message when a
+    /// conflict has been resolved; with no console that is a wait forever. <c>GIT_EDITOR=true</c>
+    /// keeps the message as it stands, which is what the Rebase dialog offers.</item>
+    /// <item><b>Stdin is closed</b>, so anything that reads it sees the end rather than waiting on
+    /// ours.</item>
+    /// <item><b>A time limit</b>, after which git and everything it started are stopped - a remote
+    /// that accepts the connection and then says nothing is otherwise a wait forever too.</item>
+    /// </list>
+    /// </remarks>
+    internal static (int ExitCode, string Stdout, string Stderr) RunGitCommand(
+        string workingDirectory, string arguments, TimeSpan? timeout = null)
     {
+        var limit = timeout ?? GitCommandTimeout;
+
         using var process = new System.Diagnostics.Process();
-        process.StartInfo = new System.Diagnostics.ProcessStartInfo
+        process.StartInfo = GitStartInfo(workingDirectory, arguments);
+
+        process.Start();
+        process.StandardInput.Close();
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit(limit))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // It finished between the wait giving up and the kill.
+            }
+
+            // Bounded: a descendant that escaped the kill can hold the pipes open.
+            Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(5));
+            var partial = stderrTask.IsCompletedSuccessfully ? stderrTask.Result.Trim() : "";
+            var message = $"git {arguments} did not finish within {limit.TotalMinutes:0.##} minutes and was stopped.";
+            return (-1,
+                stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : "",
+                string.IsNullOrEmpty(partial) ? message : $"{message}{Environment.NewLine}{partial}");
+        }
+
+        // The overload without a limit also waits for the redirected streams to be drained.
+        process.WaitForExit();
+        return (process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
+    }
+
+    /// <summary>
+    /// How <see cref="RunGitCommand"/> starts git: every stream redirected, and told never to prompt
+    /// or open an editor. Set here rather than inherited, because what MLQT was started with is
+    /// not ours to rely on.
+    /// </summary>
+    internal static System.Diagnostics.ProcessStartInfo GitStartInfo(string workingDirectory, string arguments)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "git",
             Arguments = arguments,
             WorkingDirectory = workingDirectory,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, stdout, stderr);
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["GIT_EDITOR"] = "true";
+        return startInfo;
     }
 }

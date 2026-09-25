@@ -203,8 +203,10 @@ public partial class CodeReview : IAsyncDisposable
         await ApplySyntaxHighlightingStyles();
 
         // Pick up the current baselines and pending changes when the tab opens. The service keeps
-        // itself current after that, from library loads and file activity.
-        BaselineStatus.Refresh();
+        // itself current after that, from library loads and file activity. Queued, not run here: it
+        // is a working-copy scan of every repository, and this is the UI thread (B293). The tab
+        // re-renders when OnChanged says the answer moved.
+        _ = BaselineStatus.RefreshAsync();
     }
 
     private async void OnBaselineStatusChanged() => await InvokeAsync(StateHasChanged);

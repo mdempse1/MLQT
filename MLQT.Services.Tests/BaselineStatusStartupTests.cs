@@ -79,9 +79,12 @@ public class BaselineStatusStartupTests : IDisposable
         var added = await fixture.Repositories.AddRepositoryAsync(_root, checkoutPath: null, startMonitoring: false);
         Assert.True(added.Success, added.ErrorMessage);
         await fixture.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        await fixture.Baseline.Background;
 
         // Deliberately no Refresh() here: that is the call a freshly-opened tab makes, and relying on
-        // it is what confined the correct answer to a freshly-opened tab.
+        // it is what confined the correct answer to a freshly-opened tab. Waiting for the refresh the
+        // load queued is not asking again - it runs on the pool since B293, where it used to hold
+        // the UI thread for the length of a working-copy scan.
         Assert.True(fixture.Baseline.HasBaseline);
     }
 
@@ -96,6 +99,7 @@ public class BaselineStatusStartupTests : IDisposable
         var added = await fixture.Repositories.AddRepositoryAsync(_root, checkoutPath: null, startMonitoring: false);
         var before = fixture.Events();
         await fixture.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        await fixture.Baseline.Background;
 
         Assert.True(fixture.Events() > before,
             "loading a repository changed the classification without telling anyone");
@@ -110,6 +114,7 @@ public class BaselineStatusStartupTests : IDisposable
 
         var added = await fixture.Repositories.AddRepositoryAsync(_root, checkoutPath: null, startMonitoring: false);
         await fixture.Repositories.LoadLibrariesAsync(added.Repository!.Id);
+        await fixture.Baseline.Background;
 
         var settled = fixture.Events();
         fixture.Baseline.Refresh();

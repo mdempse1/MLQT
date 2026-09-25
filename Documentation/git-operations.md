@@ -266,7 +266,7 @@ MLQT replays your commits one at a time onto the target branch.
 Conflicts may arise at any commit during the replay. The dialog shows:
 - The list of conflicted files with the same resolution options as merge
 - An **Abort Rebase** button (red) to cancel the entire rebase and return to the original state
-- A **Continue Rebase** button to proceed to the next commit after resolving conflicts
+- A **Continue Rebase** button to proceed to the next commit after resolving conflicts — the commit keeps its original message; there is no editor to change it in
 
 **Phase 5: Push prompt**
 After a successful rebase, the dialog shows an important warning:

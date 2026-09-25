@@ -100,6 +100,16 @@ public sealed class BaselineStatusService : IBaselineStatusService
     private long _lastRefreshTicks;
     private int _trailingRefreshQueued;
 
+    // RefreshAsync's queue: whether a background run is going, and whether another was asked for
+    // since it last started. Both read and written only under _requestGate.
+    private readonly object _requestGate = new();
+    private bool _backgroundRunning;
+    private bool _backgroundRequested;
+    private Task _background = Task.CompletedTask;
+
+    // Held for the body of Refresh, so two refreshes never interleave their snapshot and signature.
+    private readonly object _refreshGate = new();
+
     public BaselineStatusService(
         ILibraryDataService libraries,
         IRepositoryService repositories,
@@ -127,10 +137,15 @@ public sealed class BaselineStatusService : IBaselineStatusService
         // none. Nothing fired again once the last library was attached, so the answer stayed "no
         // baseline" until something called Refresh directly — which is what opening the Code Review
         // tab does, and why leaving it and coming back appeared to fix the count.
+        //
+        // Queued rather than run here (B293). A load is awaited from the UI, so this is raised on the
+        // UI thread, and the refresh asks every repository for its working-copy status: after Update
+        // on MSL the window sat inside that scan for two and a half minutes. It still runs after the
+        // last library is attached - it is requested now, and runs on the pool.
         _repositories.OnRepositoryLoadStateChanged += (_, isLoading) =>
         {
             if (!isLoading)
-                Refresh();
+                RefreshAsync();
         };
     }
 
@@ -155,7 +170,7 @@ public sealed class BaselineStatusService : IBaselineStatusService
             //
             // Nothing needs the snapshot to be current when this returns. OnChanged is how a view
             // learns it moved, and it fires either way.
-            _ = Task.Run(Refresh);
+            _ = RefreshAsync();
             return;
         }
 
@@ -167,8 +182,73 @@ public sealed class BaselineStatusService : IBaselineStatusService
             await Task.Delay(RefreshThrottle);
             Interlocked.Exchange(ref _trailingRefreshQueued, 0);
             Interlocked.Exchange(ref _lastRefreshTicks, Environment.TickCount64);
-            Refresh();
+            await RefreshAsync();
         });
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para><b>One at a time, and a burst of requests costs at most one more run</b> (B293). The
+    /// throttle limits how often a refresh <i>starts</i>, not how many are running, and each one is a
+    /// working-copy scan of every repository: a VCS operation on MSL had fourteen of them going at
+    /// once, beside the tree's own. A request made while a run is going is folded into a single run
+    /// after it, which still reads the state as of the request.</para>
+    /// </remarks>
+    public Task RefreshAsync()
+    {
+        lock (_requestGate)
+        {
+            _backgroundRequested = true;
+            if (!_backgroundRunning)
+            {
+                _backgroundRunning = true;
+                _background = Task.Run(RunRequestedRefreshes);
+            }
+
+            return _background;
+        }
+    }
+
+    /// <summary>
+    /// The background run most recently started, for a test that has to wait for the refresh an
+    /// event queued without asking for another itself.
+    /// </summary>
+    internal Task Background
+    {
+        get
+        {
+            lock (_requestGate)
+                return _background;
+        }
+    }
+
+    private void RunRequestedRefreshes()
+    {
+        while (true)
+        {
+            lock (_requestGate)
+            {
+                // Decided under the gate, so a request made as the last run finishes either sees
+                // this loop still running and is picked up, or sees it stopped and starts another.
+                if (!_backgroundRequested)
+                {
+                    _backgroundRunning = false;
+                    return;
+                }
+
+                _backgroundRequested = false;
+            }
+
+            try
+            {
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                // A background refresh that throws must not end the queue with requests still in it.
+                Error("BaselineStatusService", "Refreshing the baseline classification failed", ex);
+            }
+        }
     }
 
     /// <summary>The current classification. Read it once and use that instance — it never changes
@@ -185,43 +265,51 @@ public sealed class BaselineStatusService : IBaselineStatusService
 
     public void Refresh()
     {
-        var baselineByModel = new Dictionary<string, Baseline>(StringComparer.Ordinal);
-        var touchedModels = new HashSet<string>(StringComparer.Ordinal);
-        var touchedFiles = 0;
+        bool changed;
 
-        foreach (var repository in _repositories.Repositories)
+        lock (_refreshGate)
         {
-            var models = ModelsOf(repository);
-            if (models.Count == 0)
-                continue;
+            var baselineByModel = new Dictionary<string, Baseline>(StringComparer.Ordinal);
+            var touchedModels = new HashSet<string>(StringComparer.Ordinal);
+            var touchedFiles = 0;
 
-            var baseline = LoadBaseline(repository);
-            if (baseline is not null)
-                foreach (var modelId in models)
-                    baselineByModel[modelId] = baseline;
+            foreach (var repository in _repositories.Repositories)
+            {
+                var models = ModelsOf(repository);
+                if (models.Count == 0)
+                    continue;
 
-            var (changedModels, changedFiles) = PendingCommit(repository);
-            touchedModels.UnionWith(changedModels);
-            touchedFiles += changedFiles;
+                var baseline = LoadBaseline(repository);
+                if (baseline is not null)
+                    foreach (var modelId in models)
+                        baselineByModel[modelId] = baseline;
+
+                var (changedModels, changedFiles) = PendingCommit(repository);
+                touchedModels.UnionWith(changedModels);
+                touchedFiles += changedFiles;
+            }
+
+            _snapshot = new BaselineStatusSnapshot(baselineByModel, touchedModels, touchedFiles);
+
+            // Only wake the UI when something it displays actually moved — but "what it displays"
+            // includes every input to the classification, not just the two headline numbers.
+            //
+            // Comparing HasBaseline and TouchedFileCount alone missed the case that matters most: which
+            // models are pending commit can change while the file count does not, and a re-run of
+            // `mlqt baseline update` changes the baseline itself while both stay identical. The snapshot
+            // was then correctly replaced and silently never shown, so a view kept rendering the old
+            // classification until something unrelated re-rendered it — which is why leaving the Code
+            // Review tab and coming back "fixed" the count.
+            var signature = Signature(baselineByModel, touchedModels, touchedFiles);
+            changed = !string.Equals(signature, _signature, StringComparison.Ordinal);
+            if (changed)
+                _signature = signature;
         }
 
-        _snapshot = new BaselineStatusSnapshot(baselineByModel, touchedModels, touchedFiles);
-
-        // Only wake the UI when something it displays actually moved — but "what it displays"
-        // includes every input to the classification, not just the two headline numbers.
-        //
-        // Comparing HasBaseline and TouchedFileCount alone missed the case that matters most: which
-        // models are pending commit can change while the file count does not, and a re-run of
-        // `mlqt baseline update` changes the baseline itself while both stay identical. The snapshot
-        // was then correctly replaced and silently never shown, so a view kept rendering the old
-        // classification until something unrelated re-rendered it — which is why leaving the Code
-        // Review tab and coming back "fixed" the count.
-        var signature = Signature(baselineByModel, touchedModels, touchedFiles);
-        if (!string.Equals(signature, _signature, StringComparison.Ordinal))
-        {
-            _signature = signature;
+        // Announced outside the gate. A view's handler marshals to the UI, and on the desktop host
+        // that waits for the UI thread - which may itself be waiting here for the gate.
+        if (changed)
             OnChanged?.Invoke();
-        }
     }
 
     /// <summary>

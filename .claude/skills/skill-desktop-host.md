@@ -67,6 +67,17 @@ callback has returned; `NativeDialogPolicyTests` holds every dialog call in both
 `await Task.Yield()`, which goes wherever the current synchronization context sends it — with none, a
 native dialog would open on a pool thread.
 
+**`InvokeAsync` from a pool thread waits for the UI thread.** Photino.Blazor's
+`PhotinoSynchronizationContext` is a copy of ASP.NET's renderer context with one change:
+`ExecuteSynchronously` hands the work to `PhotinoWindow.Invoke`, which on Windows is a synchronous
+`SendMessage`. So a component's `InvokeAsync` called from a background thread — and every queued
+continuation — **parks that pool thread until the UI thread runs it**. Under Blazor Server the same
+call returns at once. Two consequences worth designing around: anything synchronous and slow on the
+UI thread starves the thread pool too (it grows by about a thread a second, which is what the gaps
+look like in the log), and a lock held while raising an event whose handler calls `InvokeAsync` is a
+deadlock waiting for the UI thread to want that lock. B293 was 55 working-copy status scans behind
+one that was running on the UI thread; B299 is a handler still in that shape.
+
 **Webview chrome settings go in before `Run`.** `SetContextMenuEnabled(false)` and
 `SetDevToolsEnabled(...)` turn off the engine's own right-click menu and its **Inspect** entry, which
 were on in both release builds. Reading them *during* `RegisterWindowCreatedHandler` segfaults the

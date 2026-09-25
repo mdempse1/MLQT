@@ -987,10 +987,13 @@ public partial class LibraryBrowser : IDisposable
             _selectedNodes = [model];
     }
 
-    private async Task RefreshRepository()
+    private Task RefreshRepository() => RunVcsOperationAsync(async () =>
     {
         if (Repository == null)
             return;
+
+        var repository = Repository;
+        var analysisHandedOver = false;
 
         _isLoading = true;
         StateHasChanged();
@@ -1000,12 +1003,12 @@ public partial class LibraryBrowser : IDisposable
             // Pause file monitoring before the VCS update to prevent the flood of file-change
             // events from locking up the UI. The analysis handler (OnVcsFilesChanged) will
             // restart monitoring after formatting is applied.
-            FileMonitoringService.StopMonitoring(Repository.Id);
+            FileMonitoringService.StopMonitoring(repository.Id);
 
             // Update the repository from the remote if it's a VCS repository
-            if (Repository.VcsType != RepositoryVcsType.Local)
+            if (repository.VcsType != RepositoryVcsType.Local)
             {
-                var updateResult = await RepositoryService.UpdateRepositoryAsync(Repository.Id);
+                var updateResult = await RepositoryService.UpdateRepositoryAsync(repository.Id);
                 if (!updateResult.Success && !string.IsNullOrEmpty(updateResult.ErrorMessage))
                 {
                     Snackbar.Add($"Update failed: {updateResult.ErrorMessage}", Severity.Error);
@@ -1020,22 +1023,71 @@ public partial class LibraryBrowser : IDisposable
                 }
             }
 
+            // Said, because it is most of the wait and nothing else on screen accounts for it: the
+            // VCS step has finished by now, and without this the progress bar that stays up reads
+            // as the update still running (B294).
+            Snackbar.Add("Reloading libraries…", Severity.Normal);
+
             // Reload library data from disk (re-discover libraries, re-parse changed files).
             // RefreshRepositoryAsync removes and reloads all libraries, so the old expansion
             // state references stale tree items with null Children — clear it to avoid the
             // "expanded but no children visible" MudTreeView glitch.
-            await RepositoryService.RefreshRepositoryAsync(Repository.Id);
+            await RepositoryService.RefreshRepositoryAsync(repository.Id);
             _expandedNodeIds.Clear();
             await CheckForUncommittedChangesAsync();
             await RefreshTreeItems();
 
             // Trigger background analysis (formatting + dependencies + style + resources).
             // Handler will restart monitoring once formatting is complete.
-            NavState.VcsFilesChanged(Repository.Id);
+            analysisHandedOver = true;
+            NavState.VcsFilesChanged(repository.Id);
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(nameof(LibraryBrowser), $"Updating repository {repository.Name} failed", ex);
+            Snackbar.Add($"Update failed: {ex.Message}", Severity.Error);
         }
         finally
         {
+            // The monitor was stopped above and only the analysis pipeline restarts it. If that was
+            // never reached, nothing else will, and every later edit goes unseen (B294).
+            if (!analysisHandedOver && !string.IsNullOrEmpty(repository.VcsRootPath))
+                FileMonitoringService.StartMonitoring(repository.Id, repository.VcsRootPath);
+
             _isLoading = false;
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>
+    /// Whether a VCS operation started from this browser is still running, so the others stay
+    /// disabled until it finishes.
+    /// </summary>
+    private bool _vcsBusy;
+
+    /// <summary>
+    /// Runs one VCS operation, refusing to start a second until it has finished (B294).
+    /// </summary>
+    /// <remarks>
+    /// Nothing stopped two overlapping before: a Revert was still reloading its files one at a time
+    /// when Update started removing and reloading every library in the same repository, and the two
+    /// read and rewrote the same graph at once. The buttons are disabled while this is set; the
+    /// check here is for the click that arrives before the render that disables them.
+    /// </remarks>
+    private async Task RunVcsOperationAsync(Func<Task> operation)
+    {
+        if (_vcsBusy)
+            return;
+
+        _vcsBusy = true;
+        StateHasChanged();
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            _vcsBusy = false;
             StateHasChanged();
         }
     }
@@ -1051,7 +1103,9 @@ public partial class LibraryBrowser : IDisposable
         await DialogService.ShowAsync<VCSHistory>("VCS History", parameters, options);
     }
 
-    private async Task ShowSwitchBranchDialog()
+    private Task ShowSwitchBranchDialog() => RunVcsOperationAsync(SwitchBranchAsync);
+
+    private async Task SwitchBranchAsync()
     {
         if (Repository == null)
             return;
@@ -1086,7 +1140,9 @@ public partial class LibraryBrowser : IDisposable
         }
     }
 
-    private async Task ShowCreateBranchDialog()
+    private Task ShowCreateBranchDialog() => RunVcsOperationAsync(CreateBranchAsync);
+
+    private async Task CreateBranchAsync()
     {
         if (Repository == null)
             return;
@@ -1108,7 +1164,9 @@ public partial class LibraryBrowser : IDisposable
         }
     }
 
-    private async Task ShowMergeBranchDialog()
+    private Task ShowMergeBranchDialog() => RunVcsOperationAsync(MergeBranchAsync);
+
+    private async Task MergeBranchAsync()
     {
         _showGitMenuDialog = false;
         if (Repository == null)
@@ -1160,7 +1218,9 @@ public partial class LibraryBrowser : IDisposable
         }
     }
 
-    private async Task ShowCommitChangesDialog()
+    private Task ShowCommitChangesDialog() => RunVcsOperationAsync(CommitChangesAsync);
+
+    private async Task CommitChangesAsync()
     {
         if (Repository == null)
             return;
@@ -1193,7 +1253,9 @@ public partial class LibraryBrowser : IDisposable
         }
     }
 
-    private async Task ShowRevertFilesDialog()
+    private Task ShowRevertFilesDialog() => RunVcsOperationAsync(RevertFilesAsync);
+
+    private async Task RevertFilesAsync()
     {
         if (Repository == null)
             return;
@@ -1230,19 +1292,26 @@ public partial class LibraryBrowser : IDisposable
             // (re-parses from disk) and formerly-added files deleted by the revert (removes
             // their models from the graph).
             bool hasMoChanges = false;
-            foreach (var relativePath in revertedRelativePaths)
+
+            // One tree announcement for the whole revert, not one per file (B293). Each announcement
+            // costs every open tree a working-copy status query and a rebuild, and reverting a
+            // reformatted library is thousands of files.
+            using (LibraryDataService.SuppressTreeDataChanged())
             {
-                if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                foreach (var relativePath in revertedRelativePaths)
                 {
-                    hasMoChanges = true;
-                    var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
-                    await LibraryDataService.ReloadFileAsync(fullPath);
-                }
-                else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
-                {
-                    // package.order affects library structure — needs full pipeline but not a full
-                    // library reload; flag so VcsFilesChanged is fired below.
-                    hasMoChanges = true;
+                    if (relativePath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasMoChanges = true;
+                        var fullPath = Path.Combine(Repository.VcsRootPath, relativePath);
+                        await LibraryDataService.ReloadFileAsync(fullPath);
+                    }
+                    else if (Path.GetFileName(relativePath).Equals("package.order", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // package.order affects library structure — needs full pipeline but not a full
+                        // library reload; flag so VcsFilesChanged is fired below.
+                        hasMoChanges = true;
+                    }
                 }
             }
 
@@ -1287,7 +1356,9 @@ public partial class LibraryBrowser : IDisposable
         _showGitMenuDialog = !_showGitMenuDialog;
     }
 
-    private async Task RebaseBranch()
+    private Task RebaseBranch() => RunVcsOperationAsync(RebaseBranchAsync);
+
+    private async Task RebaseBranchAsync()
     {
         _showGitMenuDialog = false;
 
@@ -1313,7 +1384,9 @@ public partial class LibraryBrowser : IDisposable
         }
     }
 
-    private async Task PushToRemote()
+    private Task PushToRemote() => RunVcsOperationAsync(PushToRemoteAsync);
+
+    private async Task PushToRemoteAsync()
     {
         _showGitMenuDialog = false;
 
