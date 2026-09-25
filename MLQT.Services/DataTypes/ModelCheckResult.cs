@@ -42,4 +42,17 @@ public class ModelCheckResult
     /// would wait on a tool that is still busy or has been restarted (B263).
     /// </summary>
     public bool TimedOut { get; set; }
+
+    /// <summary>
+    /// The tool could not be started, or stopped answering partway through a run. Not a verdict on
+    /// the model either, and a run ends at the first of these, because every class after it would be
+    /// asked of a tool that is not there (B332, B334).
+    /// </summary>
+    public bool ToolUnavailable { get; set; }
+
+    /// <summary>
+    /// Whether this says something is wrong with the model: it failed, and not because the tool ran
+    /// out of time or was not there to ask. Only these belong in the findings (B333).
+    /// </summary>
+    public bool IsModelFailure => !Success && !TimedOut && !ToolUnavailable;
 }

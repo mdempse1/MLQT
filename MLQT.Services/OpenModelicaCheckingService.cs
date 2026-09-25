@@ -203,7 +203,9 @@ public class OpenModelicaCheckingService : IModelCheckingService
         try
         {
             ReportStatus($"Starting {ToolName}…");
-            _omc = await _omcFactory.GetOrCreateAsync();
+            if (await ConnectAsync(modelNode) is not { } omc)
+                return;
+            _omc = omc;
 
             // The library's own package.mo, not the class's file. OpenModelica will not load a
             // class out of the middle of a package: handed Integrator.mo it sees a class called
@@ -223,23 +225,13 @@ public class OpenModelicaCheckingService : IModelCheckingService
 
                 if (!loadSuccess)
                 {
-                    var errorResult = new ModelCheckResult
+                    EndWithoutChecking(new ModelCheckResult
                     {
                         ModelId = modelNode.Id,
                         Success = false,
                         Summary = "Failed to load library",
                         ErrorMessage = loadError
-                    };
-                    OnModelChecked?.Invoke(errorResult);
-
-                    _currentProgress = new ModelCheckProgress
-                    {
-                        TotalModels = 0,
-                        ModelsChecked = 0,
-                        IsComplete = true,
-                        WasCancelled = false
-                    };
-                    OnCheckingComplete?.Invoke(_currentProgress);
+                    });
                     return;
                 }
             }
@@ -326,6 +318,38 @@ public class OpenModelicaCheckingService : IModelCheckingService
             _currentProgress.WasCancelled = false;
             OnCheckingComplete?.Invoke(_currentProgress);
         }
+    }
+
+    /// <summary>
+    /// The session for a run, or null when omc could not be started - in which case the run has
+    /// already been ended with a result that says why.
+    /// </summary>
+    /// <remarks>
+    /// Asked outside <see cref="EnsureLibraryLoadedAsync(string, CancellationToken)"/>'s handling, so a
+    /// failure here used to land in the run's outer catch, which raised only the completion event: a
+    /// wrong path or a start that timed out read as "OpenModelica checked nothing." in a
+    /// success-coloured alert, and the reason was in the log file only (B332).
+    /// </remarks>
+    private async Task<IOpenModelicaInterface?> ConnectAsync(ModelNode modelNode)
+    {
+        try
+        {
+            return await _omcFactory.GetOrCreateAsync();
+        }
+        catch (Exception ex)
+        {
+            Error("OpenModelicaCheckingService", "Could not start OpenModelica", ex);
+            EndWithoutChecking(UnavailableTool.CouldNotStart(ToolName, modelNode.Id, ex.Message));
+            return null;
+        }
+    }
+
+    /// <summary>A run that ends before any class is checked, with the one result that says why.</summary>
+    private void EndWithoutChecking(ModelCheckResult reason)
+    {
+        OnModelChecked?.Invoke(reason);
+        _currentProgress = new ModelCheckProgress { IsComplete = true };
+        OnCheckingComplete?.Invoke(_currentProgress);
     }
 
     /// <summary>

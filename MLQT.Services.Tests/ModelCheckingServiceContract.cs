@@ -357,6 +357,37 @@ public abstract class ModelCheckingServiceContract
         Assert.Contains("not installed", error);
     }
 
+    /// <summary>
+    /// B332: the same promise asked of the path the UI uses. The factory is called there outside the
+    /// load step's handling, so a tool that would not start ended the run with nothing but a
+    /// completion event - "<i>Tool</i> checked nothing." in a success-coloured alert, and the reason
+    /// in the log file only.
+    /// </summary>
+    [Fact]
+    public async Task AToolThatWillNotStartEndsTheRunWithTheReason()
+    {
+        var harness = NewHarness();
+        var (graph, model) = SingleModel();
+        harness.FailToConnect(new InvalidOperationException("Dymola path not specified."));
+
+        var reported = new List<ModelCheckResult>();
+        harness.Service.OnModelChecked += r => { lock (reported) reported.Add(r); };
+        ModelCheckProgress? completed = null;
+        harness.Service.OnCheckingComplete += p => completed = p;
+
+        await RunToCompletion(harness, model, graph);
+
+        var result = Assert.Single(reported);
+        Assert.False(result.Success);
+        Assert.True(result.ToolUnavailable);
+        Assert.False(result.IsModelFailure, "a tool that is not there says nothing about the model");
+        Assert.Contains(harness.ToolName, result.Summary);
+        Assert.Contains("path not specified", result.ErrorMessage);
+        Assert.NotNull(completed);
+        Assert.True(completed.IsComplete);
+        Assert.False(completed.WasCancelled);
+    }
+
     // ── the package path: StartCheckingAsync ─────────────────────────────────────
 
     [Fact]

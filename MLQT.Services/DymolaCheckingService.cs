@@ -223,7 +223,9 @@ public class DymolaCheckingService : IModelCheckingService
         try
         {
             ReportStatus($"Starting {ToolName}…");
-            _dymola = await _dymolaFactory.GetOrCreateAsync();
+            if (await ConnectAsync(modelNode) is not { } dymola)
+                return;
+            _dymola = dymola;
 
             // The library's own package.mo, not the class's file. Dymola would find the enclosing
             // package itself from the class's file, but OpenModelica will not — and the two tools
@@ -242,23 +244,13 @@ public class DymolaCheckingService : IModelCheckingService
 
                 if (!loadSuccess)
                 {
-                    var errorResult = new ModelCheckResult
+                    EndWithoutChecking(new ModelCheckResult
                     {
                         ModelId = modelNode.Id,
                         Success = false,
                         Summary = "Failed to load library",
                         ErrorMessage = loadError
-                    };
-                    OnModelChecked?.Invoke(errorResult);
-
-                    _currentProgress = new ModelCheckProgress
-                    {
-                        TotalModels = 0,
-                        ModelsChecked = 0,
-                        IsComplete = true,
-                        WasCancelled = false
-                    };
-                    OnCheckingComplete?.Invoke(_currentProgress);
+                    });
                     return;
                 }
             }
@@ -346,6 +338,38 @@ public class DymolaCheckingService : IModelCheckingService
             _currentProgress.WasCancelled = false;
             OnCheckingComplete?.Invoke(_currentProgress);
         }
+    }
+
+    /// <summary>
+    /// The session for a run, or null when Dymola could not be started or reached - in which case the
+    /// run has already been ended with a result that says why.
+    /// </summary>
+    /// <remarks>
+    /// Asked outside <see cref="EnsureLibraryLoadedAsync(string, CancellationToken)"/>'s handling, so a
+    /// failure here used to land in the run's outer catch, which raised only the completion event: the
+    /// dialog said "Dymola checked nothing." in a success-coloured alert, and "Dymola path not
+    /// specified" or "did not start within the expected time" was in the log file only (B332).
+    /// </remarks>
+    private async Task<IDymolaInterface?> ConnectAsync(ModelNode modelNode)
+    {
+        try
+        {
+            return await _dymolaFactory.GetOrCreateAsync();
+        }
+        catch (Exception ex)
+        {
+            Error("DymolaCheckingService", "Could not start or connect to Dymola", ex);
+            EndWithoutChecking(UnavailableTool.CouldNotStart(ToolName, modelNode.Id, ex.Message));
+            return null;
+        }
+    }
+
+    /// <summary>A run that ends before any class is checked, with the one result that says why.</summary>
+    private void EndWithoutChecking(ModelCheckResult reason)
+    {
+        OnModelChecked?.Invoke(reason);
+        _currentProgress = new ModelCheckProgress { IsComplete = true };
+        OnCheckingComplete?.Invoke(_currentProgress);
     }
 
     /// <summary>
