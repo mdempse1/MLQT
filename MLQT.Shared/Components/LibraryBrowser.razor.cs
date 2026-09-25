@@ -282,6 +282,9 @@ public partial class LibraryBrowser : IDisposable
 
     private ChangeFilter _changeFilter = ChangeFilter.None;
 
+    /// <summary>The filter the chips currently apply, for a test to read.</summary>
+    internal ChangeFilter ActiveChangeFilter => _changeFilter;
+
     /// <summary>
     /// The tree the browser is showing: the whole library, or only what the filter selects.
     /// </summary>

@@ -212,10 +212,13 @@ else if (Repository != null)
             @* Only for a repository that has changes to narrow to. Chips rather than a dropdown:
                there are four of them, they are the whole of what this control does, and each can
                carry the number of classes behind it - so "nothing is cosmetic here" is readable
-               without selecting anything (B191). *@
+               without selecting anything (B191). ToggleSelection, not SingleSelection: clicking the
+               selected chip again turns the filter off, and the value it falls back to is
+               default(ChangeFilter) - None, the All chip - so the row is never left with nothing
+               selected (B367). *@
             @if (_hasUncommittedChanges)
             {
-                <MudChipSet T="ChangeFilter" SelectionMode="SelectionMode.SingleSelection"
+                <MudChipSet T="ChangeFilter" SelectionMode="SelectionMode.ToggleSelection"
                             SelectedValue="_changeFilter" SelectedValueChanged="OnChangeFilterChanged"
                             CheckMark="true" Size="Size.Small" Variant="Variant.Text"
                             SelectedColor="Color.Primary" Class="mlqt-change-filter mb-1">

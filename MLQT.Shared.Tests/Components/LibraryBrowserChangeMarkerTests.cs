@@ -406,6 +406,60 @@ public class LibraryBrowserChangeMarkerTests : MlqtComponentTestBase
     }
 
     /// <summary>
+    /// Clicking the selected chip again turns the filter off - what <c>library-browser.md</c> tells
+    /// the user, and what a filter chip does almost everywhere else (B367).
+    /// </summary>
+    /// <remarks>
+    /// Under <c>SelectionMode.SingleSelection</c> MudBlazor keeps a chip selected when it is clicked
+    /// again, so the documented gesture did nothing. <c>ToggleSelection</c> deselects it, and the
+    /// value it deselects to is <c>default</c> - <see cref="LibraryBrowser.ChangeFilter.None"/>,
+    /// which is the <b>All</b> chip - so the set never ends with nothing selected.
+    /// </remarks>
+    [Fact]
+    public void ClickingTheSelectedChipAgainGoesBackToAll()
+    {
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation),
+                  ("MyLib.Capacitor", ClassChangeKind.Cosmetic)),
+            "MyLib.Capacitor", "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        var everything = Listed(browser);
+
+        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+        browser.WaitForAssertion(() => Assert.Equal(["Capacitor"], Listed(browser)));
+
+        browser.FindAll(".mlqt-change-filter .mud-chip")[3].Click();
+        browser.WaitForAssertion(() =>
+        {
+            Assert.Equal(everything, Listed(browser));
+            Assert.Equal(LibraryBrowser.ChangeFilter.None, browser.Instance.ActiveChangeFilter);
+            Assert.Contains("mud-chip-selected", browser.FindAll(".mlqt-change-filter .mud-chip")[0].ClassName);
+        });
+    }
+
+    /// <summary>
+    /// The other half of toggling: <b>All</b> clicked while it is already selected stays selected,
+    /// rather than leaving a row of chips with none of them on.
+    /// </summary>
+    [Fact]
+    public void ClickingAllWhileItIsSelectedLeavesItSelected()
+    {
+        var browser = RenderBrowser(
+            Kinds(("MyLib.Resistor", ClassChangeKind.AffectsSimulation)), "MyLib.Resistor");
+
+        browser.WaitForAssertion(() => Assert.Equal(4, FilterChips(browser).Length));
+        browser.FindAll(".mlqt-change-filter .mud-chip")[0].Click();
+
+        browser.WaitForAssertion(() =>
+        {
+            Assert.Equal(LibraryBrowser.ChangeFilter.None, browser.Instance.ActiveChangeFilter);
+            Assert.Contains("mud-chip-selected", browser.FindAll(".mlqt-change-filter .mud-chip")[0].ClassName);
+            Assert.Equal(["Resistor"], Listed(browser));
+        });
+    }
+
+    /// <summary>
     /// A filter that matches nothing says so, rather than leaving an empty pane that reads as
     /// something still loading.
     /// </summary>
