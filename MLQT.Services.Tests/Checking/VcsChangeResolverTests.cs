@@ -239,6 +239,13 @@ public class FormattableModelicaFilesTests
     }
 
     [Fact]
+    public void AFileInASiblingWhoseNameStartsWithTheLibrarys_IsNotFormattable()
+    {
+        // wc/Lib is a prefix of wc/LibExtra; it is not a parent of it (B323).
+        Assert.Empty(Resolve(Change(TestPaths.Relative("LibExtra", "Thing.mo"))));
+    }
+
+    [Fact]
     public void ADeletedFile_IsNotFormattable()
     {
         Assert.Empty(Resolve(Change(TestPaths.Relative("Lib", "Gone.mo"), VcsFileStatus.Deleted)));

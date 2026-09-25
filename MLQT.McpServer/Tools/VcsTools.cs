@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using ModelicaGraph;
 using ModelicaGraph.DataTypes;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
@@ -143,7 +144,8 @@ public sealed class VcsTools
                 continue;
 
             var canon = Canon(Path.Combine(vcsRoot, relPath));
-            if (localCanon is not null && !canon.StartsWith(localCanon, StringComparison.OrdinalIgnoreCase))
+            // Separator-aware: …/Lib does not contain …/LibExtra (B323).
+            if (localCanon is not null && !PathContainment.IsWithin(canon, localCanon))
                 continue;
 
             var classIds = byPath.TryGetValue(canon, out var fileNode)

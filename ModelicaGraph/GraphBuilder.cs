@@ -1335,22 +1335,7 @@ public static class GraphBuilder
 
     /// <summary>Whether a file lies inside a directory.</summary>
     private static bool IsUnderRoot(string filePath, string root)
-    {
-        if (string.IsNullOrEmpty(root))
-            return false;
-
-        var comparison = OperatingSystem.IsLinux()
-            ? StringComparison.Ordinal
-            : StringComparison.OrdinalIgnoreCase;
-
-        var normalisedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        var normalisedFile = Path.GetFullPath(filePath);
-
-        return normalisedFile.StartsWith(normalisedRoot, comparison)
-               && (normalisedFile.Length == normalisedRoot.Length
-                   || normalisedFile[normalisedRoot.Length] == Path.DirectorySeparatorChar
-                   || normalisedFile[normalisedRoot.Length] == Path.AltDirectorySeparatorChar);
-    }
+        => PathContainment.IsWithin(filePath, root);
 
     /// <summary>The file a model was read from, or null when it has none (a documentation stub).</summary>
     private static string? FilePathOf(ModelNode model, DirectedGraph graph)

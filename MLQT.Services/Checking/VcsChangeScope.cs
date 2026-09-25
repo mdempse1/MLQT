@@ -1,3 +1,4 @@
+using ModelicaGraph;
 using MLQT.Services.DataTypes;
 using RevisionControl;
 
@@ -151,7 +152,8 @@ public static class VcsChangeResolver
         foreach (var change in changes.Where(c => c.Status != VcsFileStatus.Deleted))
         {
             var fullPath = Path.Combine(vcsRootPath, change.Path);
-            if (fullPath.StartsWith(localPath, StringComparison.OrdinalIgnoreCase)
+            // Separator-aware: wc/Lib does not contain wc/LibExtra, whose files are not ours (B323).
+            if (PathContainment.IsWithin(fullPath, localPath)
                 && fullPath.EndsWith(".mo", StringComparison.OrdinalIgnoreCase)
                 && fileExists(fullPath))
             {
