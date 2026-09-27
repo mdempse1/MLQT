@@ -88,8 +88,11 @@ base_prefix
     : type_prefix
     ;
 
+// Comments may follow a ',' (B432): one literal a line with a note after each is the natural way to
+// write a long enumeration. After a ',' only a literal can follow, so the loop ends on its IDENT,
+// one token ahead. A comment before a ',' or before the ')' is still refused - see B432.
 enum_list
-    : enumeration_literal (',' enumeration_literal)*
+    : enumeration_literal (',' c_comment* enumeration_literal)*
     ;
 
 enumeration_literal
@@ -97,8 +100,13 @@ enumeration_literal
     ;
 
 //Added support for a more c-style comment locations
+// Comments may come before the leading class annotation (B432), on B409's terms: they belong to it
+// only when the annotation follows, so the choice is made once and the loop ends on 'annotation',
+// one token ahead. Otherwise they fall to element_list exactly as before. A class with nothing but
+// comments and an annotation was already ambiguous between the leading and the trailing annotation;
+// ANTLR takes the leading one, and the renderer writes both in the same place.
 composition
-    : (annotation ';')?
+    : (c_comment* annotation ';')?
       element_list (
         'public' element_list
         | 'protected' element_list
@@ -128,6 +136,8 @@ element_list
     : (c_comment+ | element ';')*
     ;
 
+// Comments before 'constrainedby' (B432) belong to the element only when 'constrainedby' follows
+// them; the ';' that ends an element cannot start with a comment, so the choice is made once.
 element
     : import_clause
     | extends_clause
@@ -135,7 +145,7 @@ element
       (
         ( class_definition 
         | component_clause)
-        | 'replaceable' (class_definition | component_clause) (constraining_clause comment)?
+        | 'replaceable' (class_definition | component_clause) (c_comment* constraining_clause comment)?
       )
     ;
 
@@ -149,8 +159,9 @@ import_list
 
 //Changed in Modelica 3.6 with class_or_inheritence_modification instead of class_modification
 //In Modelica 3.6, Changed name to type_specifier
+// Comments may come before the annotation (B432), only when the annotation follows - as in comment.
 extends_clause
-    : 'extends' type_specifier (class_or_inheritence_modification)? (annotation)?
+    : 'extends' type_specifier (class_or_inheritence_modification)? (c_comment* annotation)?
     ;
 
 //In Modelica 3.6, Changed name to type_specifier
@@ -365,13 +376,17 @@ connect_clause
     ;
 
 //Added to support tracking comments within equations and statements
+// Comments may come between an equation or a statement and its ';' (B432). The equation's own
+// comment rule takes them only when an annotation follows, so these end on the ';', one token
+// ahead. An equation_or_comment is a comment-only node when it has no equation, not when it has
+// comments - read equation(), never c_comment(), to tell which.
 equation_or_comment
-    : (c_comment+ | (equation ';'))
+    : (c_comment+ | (equation c_comment* ';'))
     ;
 
 //Added to support tracking comments within equations and statements
 statement_or_comment
-    : (c_comment+ | (statement ';'))
+    : (c_comment+ | (statement c_comment* ';'))
     ;
     
 //Separated out elseif_expression for clarity in syntax highlighting

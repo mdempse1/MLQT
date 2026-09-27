@@ -115,6 +115,23 @@ public class ModelicaTokenClassifierTests
               end g;
             end P;
             """ },
+        // B432: comments after an enumeration's ',', before an equation's ';', before constrainedby
+        // and before an extends clause's annotation. Not before a leading annotation: the renderer
+        // moves that to the end of the class, so the two could not agree on order whatever the
+        // comments did.
+        { "comments in the positions B432 accepted", """
+            model M
+              type E = enumeration(a, // why
+                b);
+              extends B // c
+                annotation(IconMap(primitivesVisible=false));
+              replaceable Real x = 1 // own
+                constrainedby Real;
+            equation
+              x = 2 // before
+              ;
+            end M;
+            """ },
     };
 
     // ── property 1: round trip ────────────────────────────────────────────────────

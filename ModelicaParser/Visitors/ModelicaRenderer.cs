@@ -21,6 +21,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     private int _inGraphicsAnnotationLevel = 0;
     private bool _inSingleLineGraphicsElement = false;
     private bool _withAnnotation = false;
+    // Set when comments before 'constrainedby' (B432) have already ended the line the clause starts
+    // on, so the clause does not end it again and leave a blank line.
+    private bool _constrainedbyOnFreshLine = false;
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -903,8 +906,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 elementCounter++;
             }
             else if (child is modelicaParser.C_commentContext &&
-                     (section == CodeSection.Any || section == CodeSection.External))
+                     (section == CodeSection.Any || section == CodeSection.External) &&
+                     !IsBeforeElementList(context, i))
             {
+                // Comments before the leading annotation (B432) are written with it, at the end.
                 Visit(child);
             }
             
@@ -1010,6 +1015,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 for (int i = startIdx; i < annotations.Length; i++)
                 {
                     _classAnnotation = true;
+                    // The leading annotation moves to the end, and the comments before it (B432)
+                    // move with it, each on a line of its own. They go above the blank line, where
+                    // a comment before a trailing annotation is written: anywhere else, the next
+                    // save would read them as that and move them again.
+                    var index = context.children.IndexOf(annotations[i]);
+                    if (IsBeforeElementList(context, index))
+                    {
+                        Indent();
+                        foreach (var comment in context.children.Take(index).OfType<modelicaParser.C_commentContext>())
+                            Visit(comment);
+                        Dedent();
+                    }
                     EmitEmptyLine();
                     Indent();
                     Visit(annotations[i]);
@@ -1029,6 +1046,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// True when the composition's child at <paramref name="index"/> comes before its first
+    /// element_list - the leading annotation and the comments before it (B432). An element_list is
+    /// always there, possibly empty, so everything after the leading part comes after one.
+    /// </summary>
+    private static bool IsBeforeElementList(modelicaParser.CompositionContext context, int index)
+    {
+        for (int j = 0; j < index && j < context.children.Count; j++)
+            if (context.children[j] is modelicaParser.Element_listContext)
+                return false;
+        return index >= 0;
     }
 
     public override object? VisitFinal_comment([NotNull] modelicaParser.Final_commentContext context)
@@ -1278,6 +1308,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Handle constraining clause (for replaceable elements)
         if (context.constraining_clause() != null && !_excludeClassDefinitions)
         {
+            // Comments before 'constrainedby' (B432), each where it stood, a level in as the
+            // clause is. They end their line, so the clause must not end it again.
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                _constrainedbyOnFreshLine = true;
+            }
             Visit(context.constraining_clause());
 
             // Only visit comment if it has actual content
@@ -1356,7 +1393,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (_showAnnotations && context.annotation() != null)
         {
             _withAnnotation = true;
-            EmitLine();
+            // Comments before the annotation (B432) go with it and are hidden with it, as in
+            // VisitComment. They end their line, so it is not ended again.
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                EndLineIfAny();
+            }
+            else
+                EmitLine();
             Indent();
             Visit(context.annotation());
             Dedent();
@@ -1542,7 +1587,13 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitConstraining_clause([NotNull] modelicaParser.Constraining_clauseContext context)
     {
-        EmitLine();
+        if (_constrainedbyOnFreshLine)
+        {
+            _constrainedbyOnFreshLine = false;
+            _currentLine.Clear();
+        }
+        else
+            EmitLine();
         AddIndentToCurrentLine();
         Write(Keyword("constrainedby"));
         Space();
@@ -2731,36 +2782,49 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitEquation_or_comment([NotNull] modelicaParser.Equation_or_commentContext context)
     {
-        if (context.c_comment() is { Length: > 0 } comments)
+        // Comment-only when there is no equation: since B432 an equation may carry comments too.
+        if (context.equation() is { } equation)
         {
-            foreach (var comment in comments)
-                if (!string.IsNullOrWhiteSpace(comment.GetText()))
-                    Visit(comment);
+            Visit(equation);
+            WriteSemicolonAndComments(context.c_comment());
         }
         else
         {
-            Visit(context.equation());
-            Write(";");
-            EmitLine();
+            foreach (var comment in context.c_comment())
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
         }
         return null;
     }
 
     public override object? VisitStatement_or_comment([NotNull] modelicaParser.Statement_or_commentContext context)
     {
-        if (context.c_comment() is { Length: > 0 } comments)
+        if (context.statement() is { } statement)
         {
-            foreach (var comment in comments)
-                if (!string.IsNullOrWhiteSpace(comment.GetText()))
-                    Visit(comment);
+            Visit(statement);
+            WriteSemicolonAndComments(context.c_comment());
         }
         else
         {
-            Visit(context.statement());
-            Write(";");
-            EmitLine();
+            foreach (var comment in context.c_comment())
+                if (!string.IsNullOrWhiteSpace(comment.GetText()))
+                    Visit(comment);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Ends an equation or a statement. Comments between it and its ';' (B432) are written after
+    /// the ';' rather than before it - a line comment ends its line, so kept in place it would leave
+    /// the ';' alone on the next one - and each on a line of its own, which is how a comment after
+    /// the ';' is written. Written any other way, the next save would move them again.
+    /// </summary>
+    private void WriteSemicolonAndComments(modelicaParser.C_commentContext[] comments)
+    {
+        Write(";");
+        EmitLine();
+        foreach (var comment in comments)
+            Visit(comment);
     }
 
     #endregion
@@ -3575,21 +3639,24 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// stood: one that shared a line with what came before it stays on that line, one that started a
     /// line of its own starts one here too, a level in. Every comment ends its line, so whatever
     /// follows starts a new one.
+    /// <para>The same placement serves the other positions a comment was accepted in by B432 - after
+    /// a ',' in an enumeration, before 'constrainedby', and before an equation's ';' - where one on
+    /// a line of its own lines up with what surrounds it rather than a level in
+    /// (<paramref name="levelIn"/> false).</para>
     /// </summary>
-    private void WriteLeadingComments(modelicaParser.C_commentContext[] comments)
+    private void WriteLeadingComments(modelicaParser.C_commentContext[] comments, bool levelIn = true)
     {
         var previousLine = LastLineOfTokenBefore(comments[0]);
         foreach (var comment in comments)
         {
             if (previousLine is null || comment.Start.Line > previousLine)
             {
-                if (_currentLine.ToString().Trim().Length > 0)
-                    EmitLine();
-                else
-                    _currentLine.Clear();
-                Indent();
+                EndLineIfAny();
+                if (levelIn)
+                    Indent();
                 Visit(comment);
-                Dedent();
+                if (levelIn)
+                    Dedent();
             }
             else
             {
@@ -3598,6 +3665,19 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             }
             previousLine = LastLineOf(comment.Start);
         }
+    }
+
+    /// <summary>
+    /// Ends the current line if anything is on it, and otherwise discards the indent left on it.
+    /// After a comment the line is already ended, and an unconditional <see cref="EmitLine"/> there
+    /// writes a blank line.
+    /// </summary>
+    private void EndLineIfAny()
+    {
+        if (_currentLine.ToString().Trim().Length > 0)
+            EmitLine();
+        else
+            _currentLine.Clear();
     }
 
     /// <summary>The line a token ends on — a block comment or a string can span several.</summary>
@@ -3691,17 +3771,32 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitEnum_list([NotNull] modelicaParser.Enum_listContext context)
     {
-        var enumLiterals = context.enumeration_literal();
-        if (enumLiterals != null)
+        // Walked in order, because since B432 a ',' may have comments after it. Each keeps its line:
+        // one after the ',' stays on the literal's line, one on a line of its own gets one here.
+        var children = context.children;
+        if (children == null)
+            return null;
+        var pending = new List<modelicaParser.C_commentContext>();
+        foreach (var child in children)
         {
-            for (int i = 0; i < enumLiterals.Length; i++)
+            switch (child)
             {
-                if (i > 0)
-                {
+                case ITerminalNode terminal when terminal.GetText() == ",":
                     Write(",");
-                    EmitLine();
-                }
-                Visit(enumLiterals[i]);
+                    break;
+                case modelicaParser.C_commentContext comment:
+                    pending.Add(comment);
+                    break;
+                case modelicaParser.Enumeration_literalContext literal:
+                    if (pending.Count > 0)
+                    {
+                        WriteLeadingComments(pending.ToArray(), levelIn: false);
+                        pending.Clear();
+                    }
+                    else
+                        EndLineIfAny();
+                    Visit(literal);
+                    break;
             }
         }
         return null;
