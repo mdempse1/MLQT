@@ -310,6 +310,18 @@ even to the left of the line they continue — an Icon's `color=` two spaces lef
 `graphics={Line(points=...` it belongs to. Over the Modelica Standard Library and Buildings, 150
 files are written differently from before, only in indentation.
 
+A nested modification is the same: one that starts a continuation line has its own wrapped
+arguments a level in from its name, not at the column of the name or to the left of it:
+
+```modelica
+  Modelica.Fluid.Interfaces.FluidPort_a port_1(redeclare package Medium = Medium,
+      m_flow(
+        min=if (portFlowDirection_1 == PortFlowDirection.Entering) then 0.0 else -Modelica.Constants.inf,
+        max=if (portFlowDirection_1 == PortFlowDirection.Leaving) then 0.0 else Modelica.Constants.inf));
+```
+
+That changed a further 94 files of the two libraries, again only in indentation.
+
 Earlier versions measured only the later arguments, so a first argument like the one above stayed
 on the declaration's line at 110 characters or more. Over the Modelica Standard Library and
 Buildings (8,367 files), 1,017 files are written differently from before, every one only in line

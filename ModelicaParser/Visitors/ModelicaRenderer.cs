@@ -1951,6 +1951,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         var runs = CommentRuns(context);
         var opening = runs?[0] ?? default;
         var closing = runs is { Length: > 1 } ? runs[^1] : default;
+        int enclosingOpeningLine = _argumentsOpeningLine;
+        _argumentsOpeningLine = _code.Count;
 
         // Special case: simple 2-argument graphics elements (like Line) stay on one line
         if (_inGraphicsAnnotationLevel == 2 && numArguments == 2)
@@ -1963,6 +1965,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (closing.Any)
                 WriteListComments(closing, multiLine: false, beforeClose: true);
             Write(")");
+            _argumentsOpeningLine = enclosingOpeningLine;
             return null;
         }
 
@@ -2033,6 +2036,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Write(")");
 
         // Restore previous state
+        _argumentsOpeningLine = enclosingOpeningLine;
         _parentUsingMultiLine = previousParentState;
         _inClassAnnotationIcon = wasInClassAnnotationIcon;
         return null;
@@ -2042,6 +2046,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         var arguments = context.argument();
         var runs = CommentRuns(context);
+        int opening = _argumentsOpeningLine;
 
         if (arguments != null)
         {
@@ -2080,7 +2085,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                             Indent();
                         // Add indent to current line unless parent is multi-line (parent already set up indent via Indent())
                         if (!_parentUsingMultiLine)
+                        {
                             AddIndentToCurrentLine();
+                            KeepInFrom(opening);
+                        }
 
                         Visit(arguments[i]);
 
@@ -2110,10 +2118,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// table) has its own layout, and nothing but the '(' may have been written since the list
     /// opened, so a comment after the '(' keeps the line it leaves. A list inside one written an
     /// argument a line, and a graphics annotation's lists, are laid out by their own rules rather
-    /// than wrapped for length, and are left as they were. With <paramref name="keepInFromOpening"/>
-    /// the moved argument stays a level in from the line it left (B465).
+    /// than wrapped for length, and are left as they were. The moved argument stays a level in from
+    /// the line it left (B465, B466).
     /// </summary>
-    private void VisitFirstArgument(IParseTree first, int argumentCount, bool keepInFromOpening = false)
+    private void VisitFirstArgument(IParseTree first, int argumentCount)
     {
         if (argumentCount < 2 || _parentUsingMultiLine || _inGraphicsAnnotationLevel > 0
             || !GetCurrentLinePlainText().EndsWith('('))
@@ -2133,8 +2141,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         _currentLine.Length = start;
         EmitLine();
         AddIndentToCurrentLine();
-        if (keepInFromOpening)
-            KeepInFrom(_code.Count - 1);
+        KeepInFrom(_code.Count - 1);
         _currentLine.Append(argument);
     }
 
@@ -3722,7 +3729,7 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return null;
 
         int opening = _argumentsOpeningLine;
-        VisitFirstArgument(namedArgs[0], namedArgs.Length, keepInFromOpening: true);
+        VisitFirstArgument(namedArgs[0], namedArgs.Length);
         var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)

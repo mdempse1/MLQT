@@ -6,6 +6,11 @@ namespace ModelicaParser.Tests;
 /// for length is ended after the list has gone back out a level, so it could come out shallower than
 /// the line it continues: MSL's <c>Blocks.Discrete.ZeroOrderHold</c> had its Icon's
 /// <c>graphics={Line(points=...</c> ten spaces in and the <c>color=</c> that continues it eight.
+///
+/// <para>B466 - the same for a modification's argument list: a nested modification on a
+/// continuation line had its wrapped arguments at the column of its own name, or to the left of it
+/// (MSL <c>Fluid.Fittings</c>: <c>m_flow(</c> with <c>min=</c> below it at the same indent and
+/// <c>max=</c> two to the left).</para>
 /// </summary>
 public class ContinuationIndentTests
 {
@@ -131,10 +136,77 @@ public class ContinuationIndentTests
             """), maxLineLength: 40);
     }
 
+    private const string NestedModificationsWrapped = """
+        model M
+          Modelica.Fluid.Interfaces.FluidPorts_b ports[nPorts](redeclare each package Medium = Medium,
+              m_flow(each max=if flowDirection == Types.PortFlowDirection.Leaving then 0 else +Constants.inf,
+                each min=if flowDirection == Types.PortFlowDirection.Entering then 0 else -Constants.inf));
+          Modelica.Fluid.Interfaces.FluidPort_a port_1(redeclare package Medium = Medium,
+              m_flow(
+                min=if (portFlowDirection_1 == PortFlowDirection.Entering) then 0.0 else -Modelica.Constants.inf,
+                max=if (portFlowDirection_1 == PortFlowDirection.Leaving) then 0.0 else Modelica.Constants.inf));
+        end M;
+        """;
+
+    [Fact]
+    public void ANestedModificationsWrappedArgumentsAreALevelInFromItsName()
+    {
+        // MSL's Fluid.Sources (a later argument wrapped for length) and Fluid.Fittings (the first
+        // argument moved to a line of its own, B464, and the next wrapped after it).
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Modelica.Fluid.Interfaces.FluidPorts_b ports[nPorts](redeclare each package Medium = Medium, m_flow(each max=if flowDirection == Types.PortFlowDirection.Leaving then 0 else +Constants.inf, each min=if flowDirection == Types.PortFlowDirection.Entering then 0 else -Constants.inf));
+                  Modelica.Fluid.Interfaces.FluidPort_a port_1(redeclare package Medium = Medium, m_flow(min=if (portFlowDirection_1 == PortFlowDirection.Entering) then 0.0 else -Modelica.Constants.inf, max=if (portFlowDirection_1 == PortFlowDirection.Leaving) then 0.0 else Modelica.Constants.inf));
+                end M;
+                """),
+            expectedOutput: Normalise(NestedModificationsWrapped));
+    }
+
+    private const string NestedModificationAnArgumentALine = """
+        model M
+          Tt tt(
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=1,
+              sub(a=1,
+                b=2,
+                c=3));
+        end M;
+        """;
+
+    [Fact]
+    public void ANestedModificationWrittenAnArgumentALineIsALevelInFromItsName()
+    {
+        // A list of more than two is written an argument a line whatever its length; its last
+        // line was ended two levels out, to the left of the name it belongs to.
+        TestHelpers.AssertClass(
+            Normalise("""
+                model M
+                  Tt tt(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=1, sub(a=1, b=2, c=3));
+                end M;
+                """),
+            expectedOutput: Normalise(NestedModificationAnArgumentALine),
+            maxLineLength: 40);
+    }
+
+    [Fact]
+    public void AModificationOnTheDeclarationsLineWrapsAsItAlwaysHas()
+    {
+        TestHelpers.AssertClass(Normalise("""
+            model M
+              Real x(start=1,
+                fixed=true,
+                nominal(a=1111111111111111111111111, b=22222222222222222222222222222),
+                min=0);
+            end M;
+            """));
+    }
+
     [Theory]
     [InlineData(GraphicsLineWrapped, 100)]
     [InlineData(CallWrappedInAnExpression, 60)]
     [InlineData(FirstArgumentMovedOnAContinuationLine, 100)]
+    [InlineData(NestedModificationsWrapped, 100)]
+    [InlineData(NestedModificationAnArgumentALine, 40)]
     public void ASavedLayoutSavesBackUnchanged(string saved, int maxLineLength)
     {
         TestHelpers.AssertClass(Normalise(saved), maxLineLength: maxLineLength);
