@@ -174,25 +174,10 @@ public class ModelAnalyzer : modelicaBaseVisitor<object?>
     /// </summary>
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        bool hasExternal = false;
-        for (int i = 0; i < context.ChildCount; i++)
-        {
-            if (context.GetChild(i) is Antlr4.Runtime.Tree.ITerminalNode terminal &&
-                terminal.GetText() == "external")
-            {
-                hasExternal = true;
-                break;
-            }
-        }
-
-        if (hasExternal)
-        {
-            var annotations = context.annotation();
-            if (annotations != null && annotations.Length > 0)
-            {
-                ExtractExternalAnnotationResources(annotations[0]);
-            }
-        }
+        // By position, not index: annotation()[0] is the leading class annotation when there is one
+        // (B446).
+        if (CompositionAnnotations.External(context) is { } externalAnnotation)
+            ExtractExternalAnnotationResources(externalAnnotation);
 
         return base.VisitComposition(context);
     }

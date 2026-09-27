@@ -875,15 +875,14 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     Visit(context.external_function_call());
                 }
 
-                // Handle optional annotation
-                var externalAnnotations = context.annotation();
-                if (externalAnnotations != null && externalAnnotations.Length > 0)
+                // The clause's own annotation, found by where it stands: the composition's first
+                // annotation is the leading class annotation when there is one (B446).
+                if (CompositionAnnotations.External(context) is { } externalAnnotation)
                 {
-                    // The first annotation is part of the external clause
                     EmitLine();
                     _withAnnotation = true;
                     Indent();
-                    Visit(externalAnnotations[0]);
+                    Visit(externalAnnotation);
                 }
 
                 Write(";");
@@ -921,7 +920,6 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        bool externalElement = false;
         // Handle public/protected sections
         // A leading annotation will be automatically pushed to the end of the file as per the Modelica spec
         // even though it is allowed in the grammar for compatibility with Dymola
@@ -994,47 +992,41 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (_initialSectionsLast)
                     WriteInitialSections(context);
 
-                externalElement = WriteComposition(context, CodeSection.External, Element.Any);
+                WriteComposition(context, CodeSection.External, Element.Any);
             }
             else 
             {
                 _currentSection.Push(CodeSection.Any);        
-                externalElement = WriteComposition(context, CodeSection.Any, Element.Any);
+                WriteComposition(context, CodeSection.Any, Element.Any);
                 _currentSection.Pop();
             }
         }
 
-        // Handle final annotation (if present and not part of external clause)
+        // The class's own annotations, leading and trailing. The external clause's was written with
+        // the clause, and is told apart by its position rather than its index (B446).
         if (_showAnnotations) {
-            var annotations = context.annotation();
-            if (annotations != null && annotations.Length > 0)
+            var annotations = CompositionAnnotations.Of(context);
+            foreach (var annotation in annotations.ClassLevel)
             {
-                // If there's an external clause, the first annotation was already handled
-                // Otherwise, or if there are multiple annotations, handle the remaining ones
-                int startIdx = externalElement ? 1 : 0;
-                for (int i = startIdx; i < annotations.Length; i++)
+                _classAnnotation = true;
+                // The leading annotation moves to the end, and the comments before it (B432)
+                // move with it, each on a line of its own. They go above the blank line, where
+                // a comment before a trailing annotation is written: anywhere else, the next
+                // save would read them as that and move them again.
+                if (ReferenceEquals(annotation, annotations.Leading) && context.children is { } children)
                 {
-                    _classAnnotation = true;
-                    // The leading annotation moves to the end, and the comments before it (B432)
-                    // move with it, each on a line of its own. They go above the blank line, where
-                    // a comment before a trailing annotation is written: anywhere else, the next
-                    // save would read them as that and move them again.
-                    var index = context.children.IndexOf(annotations[i]);
-                    if (IsBeforeElementList(context, index))
-                    {
-                        Indent();
-                        foreach (var comment in context.children.Take(index).OfType<modelicaParser.C_commentContext>())
-                            Visit(comment);
-                        Dedent();
-                    }
-                    EmitEmptyLine();
                     Indent();
-                    Visit(annotations[i]);
-                    Write(";");
-                    EmitLine();
+                    foreach (var comment in children.TakeWhile(c => !ReferenceEquals(c, annotation)).OfType<modelicaParser.C_commentContext>())
+                        Visit(comment);
                     Dedent();
-                    _classAnnotation = false;
                 }
+                EmitEmptyLine();
+                Indent();
+                Visit(annotation);
+                Write(";");
+                EmitLine();
+                Dedent();
+                _classAnnotation = false;
             }
         }
 

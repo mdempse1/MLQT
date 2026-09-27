@@ -417,9 +417,10 @@ public static class MlqtSuppressionWriter
             {
                 var composition = lng.composition();
                 var target = new Target { Inline = false, InsertOffset = composition.Stop.StopIndex + 1 };
-                // The class's own annotation is the trailing one in the composition.
-                var annotations = composition.annotation();
-                FillFromAnnotation(target, annotations.Length > 0 ? annotations[^1] : null, _argument);
+                // The class's own annotation: the trailing one, else a leading one - never the
+                // external clause's, which is the last in the composition when the class has no
+                // trailing annotation (B446).
+                FillFromAnnotation(target, CompositionAnnotations.Of(composition).Class, _argument);
                 ClassTarget = target;
             }
             else

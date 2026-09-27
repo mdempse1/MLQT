@@ -41,30 +41,11 @@ public class ExternalResourceExtractor : modelicaBaseVisitor<object?>
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        // Check if this composition has an external clause.
-        // Grammar: ('external' (language_specification)? (external_function_call)? (annotation)? ';')?
-        // When 'external' is present, the external annotation (if any) is the first annotation().
-        // When 'external' is absent, the first (and only) annotation() is the class-level annotation.
-        bool hasExternal = false;
-        for (int i = 0; i < context.ChildCount; i++)
-        {
-            if (context.GetChild(i) is Antlr4.Runtime.Tree.ITerminalNode terminal &&
-                terminal.GetText() == "external")
-            {
-                hasExternal = true;
-                break;
-            }
-        }
-
-        if (hasExternal)
-        {
-            var annotations = context.annotation();
-            if (annotations != null && annotations.Length > 0)
-            {
-                // The first annotation belongs to the external clause
-                ExtractExternalAnnotationResources(annotations[0]);
-            }
-        }
+        // The external clause's annotation, found by where it stands rather than by index: the
+        // composition's first annotation is the leading class annotation when there is one, and the
+        // trailing class annotation when the clause has none of its own (B446).
+        if (CompositionAnnotations.External(context) is { } externalAnnotation)
+            ExtractExternalAnnotationResources(externalAnnotation);
 
         return base.VisitComposition(context);
     }

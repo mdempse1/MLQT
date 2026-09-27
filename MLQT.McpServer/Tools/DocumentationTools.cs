@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Antlr4.Runtime.Tree;
 using ModelContextProtocol.Server;
+using ModelicaParser.Helpers;
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Helpers;
 using MLQT.McpServer.Services;
@@ -149,7 +150,7 @@ public sealed class DocumentationTools
         if (newRevisions is not null) parts.Add("revisions=" + newRevisions);
         var newDoc = "Documentation(" + string.Join(", ", parts) + ")";
 
-        var annotation = composition.annotation().FirstOrDefault();
+        var annotation = DocumentationAnnotation(composition);
         if (annotation is not null)
         {
             var docArg = FindArgument(annotation.class_modification(), "Documentation");
@@ -174,10 +175,22 @@ public sealed class DocumentationTools
         return (code[..ws] + prefix + "annotation (" + newDoc + ");\n" + endIndent + code[end.Value..], null);
     }
 
+    /// <summary>
+    /// The class annotation Documentation is read from and written to: the one that already holds it,
+    /// else the class's own. Never the external clause's, which is the composition's first annotation
+    /// when the class has no leading one (B446).
+    /// </summary>
+    private static modelicaParser.AnnotationContext? DocumentationAnnotation(modelicaParser.CompositionContext composition)
+    {
+        var annotations = CompositionAnnotations.Of(composition);
+        return annotations.ClassLevel.FirstOrDefault(a => FindArgument(a.class_modification(), "Documentation") is not null)
+               ?? annotations.Class;
+    }
+
     private static modelicaParser.Class_modificationContext? FindDocumentationClassModification(
         modelicaParser.CompositionContext composition)
     {
-        var annotation = composition.annotation().FirstOrDefault();
+        var annotation = DocumentationAnnotation(composition);
         var docArg = annotation is null ? null : FindArgument(annotation.class_modification(), "Documentation");
         return docArg?.element_modification_or_replaceable()?.element_modification()?.modification()?.class_modification();
     }

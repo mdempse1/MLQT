@@ -1,4 +1,5 @@
 using Antlr4.Runtime.Misc;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.StyleRules;
 
@@ -24,7 +25,8 @@ public sealed class MlqtSuppressionExtractor : VisitorWithModelNameTracking
 
     public override object? VisitComposition([NotNull] modelicaParser.CompositionContext context)
     {
-        foreach (var annotation in context.annotation())
+        // The class's own annotations only, never the external clause's (B446).
+        foreach (var annotation in CompositionAnnotations.ClassLevel(context))
             ReadMlqt(annotation, component: null);
         return base.VisitComposition(context);
     }

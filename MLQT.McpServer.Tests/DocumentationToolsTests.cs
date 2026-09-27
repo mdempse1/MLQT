@@ -1,5 +1,6 @@
 using MLQT.McpServer.Dtos;
 using MLQT.McpServer.Tools;
+using ModelicaParser.Helpers;
 
 namespace MLQT.McpServer.Tests;
 
@@ -19,6 +20,15 @@ public class DocumentationToolsTests
           model C
             Real x;
           end C;
+          function D
+            input Real x;
+          external "C" g(x) annotation (Library="lib");
+            annotation (Documentation(info="<html>d</html>"));
+          end D;
+          function E
+            input Real x;
+          external "C" g(x) annotation (Library="lib");
+          end E;
         end P;
         """;
 
@@ -140,5 +150,40 @@ public class DocumentationToolsTests
         using var host = new TestHost();
         var (tools, _) = Load(host);
         Assert.IsType<ToolError>(await tools.SetClassDocumentation("P.C"));
+    }
+
+    // B446: the external clause's annotation is the composition's first when the class has no
+    // leading one, and is not where the class's Documentation lives.
+    [Fact]
+    public async Task SetClassDocumentation_ReplacesTheClasses_NotTheExternalClauses()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDocumentation("P.D", info: "<html>new</html>"));
+
+        var (external, classAnnotation) = Annotations(Source(host, "P.D"));
+        Assert.Equal("(Library=\"lib\")", external);
+        Assert.Contains("<html>new</html>", classAnnotation);
+        Assert.DoesNotContain("<html>d</html>", classAnnotation);
+    }
+
+    [Fact]
+    public async Task SetClassDocumentation_AddsAClassAnnotation_RatherThanWritingIntoTheExternalClauses()
+    {
+        using var host = new TestHost();
+        var (tools, _) = Load(host);
+        ToolAssert.Ok<StructureEditResult>(await tools.SetClassDocumentation("P.E", info: "<html>new</html>"));
+
+        var (external, classAnnotation) = Annotations(Source(host, "P.E"));
+        Assert.Equal("(Library=\"lib\")", external);
+        Assert.Contains("<html>new</html>", classAnnotation);
+    }
+
+    private static (string? External, string? Class) Annotations(string code)
+    {
+        var composition = ModelicaParserHelper.Parse(code)!
+            .class_definition()[0].class_specifier().long_class_specifier().composition();
+        var parts = CompositionAnnotations.Of(composition);
+        return (parts.External?.class_modification().GetText(), parts.Class?.class_modification().GetText());
     }
 }

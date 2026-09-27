@@ -253,8 +253,10 @@ public static class ModelicaTokenClassifier
             if (context is modelicaParser.AnnotationContext)
                 inner = inner with { InAnnotation = true };
 
-            // Only the annotations the composition itself carries are class annotations.
-            if (context is modelicaParser.CompositionContext && child is modelicaParser.AnnotationContext)
+            // Only the annotations the composition itself carries are class annotations, and of those
+            // not the external clause's, which the renderer writes as the clause's (B446).
+            if (context is modelicaParser.CompositionContext && child is modelicaParser.AnnotationContext annotation
+                && !CompositionAnnotations.IsExternal(annotation))
                 inner = inner with { ClassAnnotation = true };
 
             if (context is modelicaParser.Element_modificationContext modification)

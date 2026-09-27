@@ -429,6 +429,82 @@ public class CorrectingCodeOrder
         TestHelpers.AssertClass(testModel);
     }
 
+    // B446: the external clause's annotation is the one written inside the clause, not whichever
+    // annotation the composition happens to list first. A leading class annotation is listed
+    // first, and taking it swapped the two: the clause lost its Library and the class gained it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LeadingClassAnnotationAndExternalAnnotation_KeepTheirOwnPlaces(bool onlyOneOfEachSection)
+    {
+        var testModel = """
+            function f annotation(Inline=true); input Real x; external "C" g(x) annotation(Library="lib"); end f;
+            """;
+
+        var expectedOutput = """
+            function f
+              input Real x;
+            external "C" g(x)
+              annotation (Library="lib");
+
+              annotation (
+                Inline=true
+              );
+            end f;
+            """;
+
+        Assert.Equal(Normalise(expectedOutput), TestHelpers.FormatCode(testModel, onlyOneOfEachSection: onlyOneOfEachSection));
+    }
+
+    // B446: an external clause with no annotation of its own must not take the class's.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExternalWithoutAnnotationAndClassAnnotation_KeepsTheClassAnnotation(bool onlyOneOfEachSection)
+    {
+        var testModel = """
+            function f
+              input Real x;
+            external "C" g(x);
+
+              annotation (
+                Inline=true
+              );
+            end f;
+            """;
+
+        Assert.Equal(Normalise(testModel), TestHelpers.FormatCode(testModel, onlyOneOfEachSection: onlyOneOfEachSection));
+    }
+
+    // B446: all three at once - a leading annotation, the clause's, and a trailing one.
+    [Fact]
+    public void LeadingExternalAndTrailingAnnotations_EachKeepsItsPlace()
+    {
+        var testModel = """
+            function f annotation(Inline=true); input Real x; external "C" g(x) annotation(Library="lib"); annotation(Documentation(info="d")); end f;
+            """;
+
+        var expectedOutput = """
+            function f
+              input Real x;
+            external "C" g(x)
+              annotation (Library="lib");
+
+              annotation (
+                Inline=true
+              );
+
+              annotation (
+                Documentation(info="d")
+              );
+            end f;
+            """;
+
+        Assert.Equal(Normalise(expectedOutput), TestHelpers.FormatCode(testModel));
+    }
+
+    private static string Normalise(string code) => code.Replace("\r\n", "\n").Trim();
+
     [Fact]
     public void Imports_NoChange()
     {

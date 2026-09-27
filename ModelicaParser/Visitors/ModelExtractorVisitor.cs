@@ -1,6 +1,7 @@
 using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
 using ModelicaParser.DataTypes;
+using ModelicaParser.Helpers;
 
 namespace ModelicaParser.Visitors;
 
@@ -229,11 +230,11 @@ public class ModelExtractorVisitor : modelicaBaseVisitor<object?>
     {
         if (composition == null) return;
 
-        var annotation = composition.annotation();
-        if (annotation == null || annotation.Length == 0) return;
+        // The class's own annotation, found by position: the last in the composition is the
+        // external clause's when the class has no trailing annotation (B446).
+        var classAnnotation = CompositionAnnotations.Of(composition).Class;
+        if (classAnnotation == null) return;
 
-        // The class-level annotation is the last one in the composition
-        var classAnnotation = annotation[^1];
         var classMod = classAnnotation.class_modification();
         var argList = classMod?.argument_list();
         if (argList == null) return;
