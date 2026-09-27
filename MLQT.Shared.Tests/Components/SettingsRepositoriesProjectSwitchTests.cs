@@ -31,11 +31,12 @@ public class SettingsRepositoriesProjectSwitchTests : MlqtComponentTestBase
     private readonly ProjectProfile _project = new() { Name = "Default" };
     private readonly Mock<IRepositoryService> _service = new();
     private int _abandoned;
+    private IRenderedComponent<MudDialogProvider> _dialogs = null!;
 
-    private IRenderedComponent<SettingsRepositories> RenderPanel()
+    private IRenderedComponent<SettingsRepositories> RenderPanel(params ProjectProfile[] projects)
     {
         _service.SetupGet(s => s.Repositories).Returns([]);
-        _service.Setup(s => s.GetProjects()).Returns([_project]);
+        _service.Setup(s => s.GetProjects()).Returns(projects.Length > 0 ? projects : [_project]);
         _service.Setup(s => s.GetActiveProject()).Returns(_project);
         _service.SetupGet(s => s.RepositoryRemovedSinceProjectLoad).Returns(true);
 
@@ -51,7 +52,9 @@ public class SettingsRepositoriesProjectSwitchTests : MlqtComponentTestBase
         NavState.OnProjectSwitchStarting += () => NavState.StartupProgress(FirstStep);
         NavState.OnProjectSwitchAbandoned += () => _abandoned++;
 
-        RenderProviders();
+        Render<MudPopoverProvider>();
+        _dialogs = Render<MudDialogProvider>();
+        Render<MudSnackbarProvider>();
         return Render<SettingsRepositories>();
     }
 
@@ -125,8 +128,9 @@ public class SettingsRepositoriesProjectSwitchTests : MlqtComponentTestBase
     }
 
     /// <summary>
-    /// All three switches on the panel - creating, loading and deleting the active project - go
-    /// through the one helper; a fourth that called the service directly would bring B435 back.
+    /// Both switches on the panel - creating a project and loading one - go through the one helper;
+    /// a third that called the service directly would bring B435 back. Deleting is no longer a
+    /// switch: only an inactive project can be deleted (B442).
     /// </summary>
     [Fact]
     public void EverySwitchOnThePanelGoesThroughTheHelper()
@@ -135,7 +139,61 @@ public class SettingsRepositoriesProjectSwitchTests : MlqtComponentTestBase
 
         Assert.Single(Regex.Matches(source, @"RepositoryService\.SwitchProjectAsync\("));
         Assert.Single(Regex.Matches(source, @"NavState\.ProjectSwitchStarting\(\)"));
-        Assert.Equal(3, Regex.Matches(source, @"await SwitchToProjectAsync\(").Count);
+        Assert.Equal(2, Regex.Matches(source, @"await SwitchToProjectAsync\(").Count);
+    }
+
+    /// <summary>
+    /// B442 - the active project is not offered for deletion; another one is. The service refuses
+    /// the active one too, so a saved active id cannot name a deleted project.
+    /// </summary>
+    [Fact]
+    public void OnlyAnInactiveProjectOffersDelete()
+    {
+        var other = new ProjectProfile { Name = "Other" };
+        var panel = RenderPanel(_project, other);
+
+        Assert.Single(panel.FindAll("button[aria-label='Delete project']"));
+    }
+
+    [Fact]
+    public void DeletingAProjectThatFailsToSave_SaysSo_AndDoesNotClaimItWasDeleted()
+    {
+        var other = new ProjectProfile { Name = "Other" };
+        _service.Setup(s => s.DeleteProjectAsync(other.Id))
+            .ThrowsAsync(new IOException("the settings file is read-only"));
+        var panel = RenderPanel(_project, other);
+
+        DeleteTheInactiveProject(panel);
+
+        panel.WaitForAssertion(() => Assert.Single(Snackbar.ShownSnackbars));
+        var message = Snackbar.ShownSnackbars.Single();
+        Assert.Equal(Severity.Error, message.Severity);
+        Assert.Contains("could not be deleted", message.Message);
+        Assert.Contains("the settings file is read-only", message.Message);
+        _service.Verify(s => s.SwitchProjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void DeletingAProject_AwaitsTheServiceAndSwitchesNothing()
+    {
+        var other = new ProjectProfile { Name = "Other" };
+        _service.Setup(s => s.DeleteProjectAsync(other.Id)).ReturnsAsync(true);
+        var panel = RenderPanel(_project, other);
+
+        DeleteTheInactiveProject(panel);
+
+        panel.WaitForAssertion(() => Assert.Equal("Project deleted", Assert.Single(Snackbar.ShownSnackbars).Message));
+        _service.Verify(s => s.DeleteProjectAsync(other.Id), Times.Once);
+        _service.Verify(s => s.SwitchProjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Null(NavState.StartupStep);
+    }
+
+    /// <summary>Clicks the one Delete offered, then Delete in the confirmation.</summary>
+    private void DeleteTheInactiveProject(IRenderedComponent<SettingsRepositories> panel)
+    {
+        panel.Find("button[aria-label='Delete project']").Click();
+        _dialogs.WaitForAssertion(() => Assert.Contains("Are you sure", _dialogs.Markup));
+        _dialogs.FindAll("button").Single(b => b.TextContent.Trim() == "Delete").Click();
     }
 
     /// <summary>MainLayout closes its six-step dialog for a switch that was abandoned.</summary>

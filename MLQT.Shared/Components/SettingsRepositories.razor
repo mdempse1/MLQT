@@ -62,10 +62,12 @@
                         <MudTooltip Text="Rename project">
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="() => StartRenameProject(project)" />
                         </MudTooltip>
-                        @if (_projects.Count > 1 && !isActive) 
+                        @if (_projects.Count > 1 && !isActive)
                         {
                             <MudTooltip Text="Delete project">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteProject(project)" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                    aria-label="Delete project"
+                                    OnClick="() => DeleteProject(project)" />
                             </MudTooltip>
                         }
                     }

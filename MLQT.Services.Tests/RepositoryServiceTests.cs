@@ -1,6 +1,7 @@
 using MLQT.Services;
 using MLQT.Services.DataTypes;
 using MLQT.Services.Interfaces;
+using Moq;
 using RevisionControl;
 
 namespace MLQT.Services.Tests;
@@ -2186,39 +2187,149 @@ public class RepositoryServiceTests
     }
 
     [Fact]
-    public void DeleteProject_WithSingleProject_ReturnsFalse()
+    public async Task DeleteProjectAsync_WithSingleProject_ReturnsFalse()
     {
         var service = CreateService();
         var project = service.CreateProject("OnlyProject");
 
-        var result = service.DeleteProject(project.Id);
+        var result = await service.DeleteProjectAsync(project.Id);
 
         Assert.False(result);
         Assert.Single(service.GetProjects());
     }
 
     [Fact]
-    public void DeleteProject_WithMultipleProjects_RemovesProject()
+    public async Task DeleteProjectAsync_WithMultipleProjects_RemovesProject()
     {
         var service = CreateService();
         var project1 = service.CreateProject("Project1");
         var project2 = service.CreateProject("Project2");
 
-        var result = service.DeleteProject(project1.Id);
+        var result = await service.DeleteProjectAsync(project1.Id);
 
         Assert.True(result);
         Assert.Single(service.GetProjects());
         Assert.Equal("Project2", service.GetProjects()[0].Name);
     }
 
+    /// <summary>
+    /// A settings service over <see cref="InMemorySettingsService"/> whose next write can be held
+    /// until the test releases it, so the order two saves land in is the test's choice (B442).
+    /// </summary>
+    private sealed class HeldSettings
+    {
+        private readonly InMemorySettingsService _store = new();
+        private TaskCompletionSource? _gate;
+
+        public Mock<ISettingsService> Mock { get; } = new();
+        public Exception? FailWrites { get; set; }
+
+        public HeldSettings()
+        {
+            Mock.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<RepositorySettingsCollection>()))
+                .Returns((string key, RepositorySettingsCollection fallback) => _store.GetAsync(key, fallback));
+            Mock.Setup(s => s.SetAsync(It.IsAny<string>(), It.IsAny<RepositorySettingsCollection>()))
+                .Returns(async (string key, RepositorySettingsCollection value) =>
+                {
+                    if (FailWrites is not null)
+                        throw FailWrites;
+                    // Serialised when the write is asked for, as a real store does, and stored when released.
+                    var snapshot = System.Text.Json.JsonSerializer.Serialize(value);
+                    var gate = _gate;
+                    _gate = null;
+                    if (gate is not null)
+                        await gate.Task;
+                    await _store.SetAsync(key, System.Text.Json.JsonSerializer.Deserialize<RepositorySettingsCollection>(snapshot)!);
+                });
+        }
+
+        /// <summary>Holds the next write; completing the returned source lets it land.</summary>
+        public TaskCompletionSource HoldNextWrite() =>
+            _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<RepositorySettingsCollection> SavedAsync() =>
+            _store.GetAsync("Repositories", new RepositorySettingsCollection());
+    }
+
     [Fact]
-    public void DeleteProject_WithInvalidId_ReturnsFalse()
+    public async Task DeleteProjectAsync_TheActiveProject_IsRefused_SoNoSavedActiveIdNamesADeletedProject()
+    {
+        // B442: deleting the active project removed it and started an unawaited save while the
+        // active id still named it; the caller's switch to another project then saved twice, and the
+        // first save could land after both - writing the deleted project's id back as the active one
+        // (confirmed before the fix by holding that save until the switch had finished). And had the
+        // switch thrown, the service was left with an active id naming no project. The panel only
+        // ever offered an inactive project for deletion, so the service now refuses the active one.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = service.CreateProject("Other");
+        await service.SaveRepositorySettingsAsync();
+
+        Assert.False(await service.DeleteProjectAsync(active.Id));
+
+        Assert.Equal(active.Id, service.GetActiveProject()?.Id);
+        Assert.Equal(2, service.GetProjects().Count);
+        Assert.Equal(active.Id, (await settings.SavedAsync()).ActiveProjectId);
+
+        // ...and switching away first, the way to get rid of it, leaves every saved id valid.
+        await service.SwitchProjectAsync(other.Id);
+        Assert.True(await service.DeleteProjectAsync(active.Id));
+        var saved = await settings.SavedAsync();
+        Assert.Equal(other.Id, saved.ActiveProjectId);
+        Assert.Equal(other.Id, Assert.Single(saved.Projects).Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_ReturnsOnlyOnceItsSaveHasLanded()
+    {
+        // B442: the save was fire-and-forget, so it could be overtaken by a later save and then
+        // overwrite it. Holding the delete's save must hold the delete.
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var other = service.CreateProject("Other");
+        await service.SaveRepositorySettingsAsync();
+
+        var release = settings.HoldNextWrite();
+        var deleting = service.DeleteProjectAsync(other.Id);
+
+        Assert.False(deleting.IsCompleted);
+        Assert.Contains((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+
+        release.SetResult();
+        Assert.True(await deleting);
+        Assert.DoesNotContain((await settings.SavedAsync()).Projects, p => p.Id == other.Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WhenTheSaveFails_KeepsTheProjectAndThrows()
+    {
+        var settings = new HeldSettings();
+        var service = new RepositoryService(new LibraryDataService(), settings.Mock.Object, new FileMonitoringService());
+        await service.LoadRepositorySettingsAsync();
+        var active = service.GetActiveProject()!;
+        var other = service.CreateProject("Other");
+        var third = service.CreateProject("Third");
+        await service.SaveRepositorySettingsAsync();
+
+        settings.FailWrites = new IOException("the settings file is read-only");
+        await Assert.ThrowsAsync<IOException>(() => service.DeleteProjectAsync(other.Id));
+
+        // Back where it was, so memory and the file still agree and the next save is not a delete.
+        Assert.Equal([active.Id, other.Id, third.Id], service.GetProjects().Select(p => p.Id));
+        Assert.Equal(active.Id, service.GetActiveProject()?.Id);
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WithInvalidId_ReturnsFalse()
     {
         var service = CreateService();
         service.CreateProject("Project1");
         service.CreateProject("Project2");
 
-        var result = service.DeleteProject("non-existent-id");
+        var result = await service.DeleteProjectAsync("non-existent-id");
 
         Assert.False(result);
         Assert.Equal(2, service.GetProjects().Count);

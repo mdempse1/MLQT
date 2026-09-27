@@ -434,11 +434,13 @@ public interface IRepositoryService
     void RenameProject(string projectId, string newName);
 
     /// <summary>
-    /// Deletes a project profile. Cannot delete the last remaining project.
+    /// Deletes a project profile and saves the project list before returning. Cannot delete the last
+    /// remaining project, nor the active one - switch to another first - so the saved active id always
+    /// names a project (B442). When the save fails the project is kept and the exception propagates.
     /// </summary>
     /// <param name="projectId">ID of the project to delete.</param>
-    /// <returns>True if deleted, false if it was the last project.</returns>
-    bool DeleteProject(string projectId);
+    /// <returns>True if deleted; false if it was the last project, the active one, or not found.</returns>
+    Task<bool> DeleteProjectAsync(string projectId);
 
     /// <summary>
     /// Switches to a different project profile: unloads current repos, loads the target project's repos.

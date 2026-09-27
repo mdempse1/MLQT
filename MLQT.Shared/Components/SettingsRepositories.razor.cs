@@ -285,28 +285,24 @@ public partial class SettingsRepositories : IDisposable
         if (result == null || result.Canceled)
             return;
 
-        var wasActive = project.Id == _activeProjectId;
-        var deleted = RepositoryService.DeleteProject(project.Id);
-        if (!deleted)
-            return;
-
-        if (wasActive)
+        // Only an inactive project is offered for deletion, and the service refuses the active one
+        // (B442), so deleting never switches project. It used to carry a branch that switched to the
+        // first remaining project after deleting the active one, which no button could reach.
+        bool deleted;
+        try
         {
-            // Switch to the first remaining project
-            RefreshProjects();
-            var firstProject = _projects.FirstOrDefault();
-            if (firstProject != null)
-            {
-                await SwitchToProjectAsync(firstProject.Id);
-                RefreshProjects();
-            }
+            deleted = await RepositoryService.DeleteProjectAsync(project.Id);
         }
-        else
+        catch (Exception ex)
         {
-            RefreshProjects();
+            LoggingService.Error(nameof(SettingsRepositories), $"Deleting project {project.Id} failed", ex);
+            await InvokeAsync(() => Snackbar.Add($"The project could not be deleted: {ex.Message}", Severity.Error));
+            deleted = false;
         }
 
-        await InvokeAsync(() => Snackbar.Add("Project deleted", Severity.Success));
+        RefreshProjects();
+        if (deleted)
+            await InvokeAsync(() => Snackbar.Add("Project deleted", Severity.Success));
         StateHasChanged();
     }
 

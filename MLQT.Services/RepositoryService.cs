@@ -1195,20 +1195,52 @@ public class RepositoryService : IRepositoryService
         _ = SaveRepositorySettingsAsync();
     }
 
-    public bool DeleteProject(string projectId)
+    /// <remarks>
+    /// <para><b>The active project is refused, and the save is awaited (B442).</b> This used to remove
+    /// whichever project it was given and start a save it did not await. For the active project that
+    /// save was taken while the active id still named it, so it wrote an active id naming no project;
+    /// the caller's switch to another project then saved twice, and the unawaited save could land
+    /// after both and put the deleted id back - or, if that switch threw, leave the service itself
+    /// with an active project that did not exist. The panel has only ever offered to delete an
+    /// inactive project, so refusing the active one here costs nothing and makes the dangling id
+    /// impossible rather than unlikely. Awaiting the save means no later save can be overtaken by
+    /// this one; if it fails the project is put back, so memory and the settings file still agree.</para>
+    /// </remarks>
+    public async Task<bool> DeleteProjectAsync(string projectId)
     {
+        ProjectProfile? project;
+        int index;
         lock (_lock)
         {
             if (_projects.Count <= 1)
                 return false;
 
-            var project = _projects.FirstOrDefault(p => p.Id == projectId);
-            if (project == null)
+            index = _projects.FindIndex(p => p.Id == projectId);
+            if (index < 0)
                 return false;
 
-            _projects.Remove(project);
+            if (projectId == _activeProjectId)
+            {
+                Warn("RepositoryService", $"Project '{projectId}' is the active project and was not deleted");
+                return false;
+            }
+
+            project = _projects[index];
+            _projects.RemoveAt(index);
         }
-        _ = SaveRepositorySettingsAsync();
+
+        try
+        {
+            await SaveRepositorySettingsAsync();
+        }
+        catch
+        {
+            lock (_lock)
+            {
+                _projects.Insert(Math.Min(index, _projects.Count), project);
+            }
+            throw;
+        }
         return true;
     }
 
