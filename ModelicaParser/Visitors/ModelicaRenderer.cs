@@ -24,6 +24,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     // Set when comments before 'constrainedby' (B432) have already ended the line the clause starts
     // on, so the clause does not end it again and leave a blank line.
     private bool _constrainedbyOnFreshLine = false;
+    // Whether the function call being written puts one argument a line, which is where a comment
+    // between its arguments (B431) leaves the next one: on its own line, or a level in.
+    private bool _callUsingMultiLine = false;
     private bool _inDeclaration = false;
     private bool _excludeClassDefinitions = false;
     private readonly HashSet<string>? _classNamesToExclude;
@@ -626,17 +629,28 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 var enumLiterals = context.enum_list().enumeration_literal();
                 bool useMultiLine = enumLiterals != null && enumLiterals.Length > 0;
 
+                // Comments after the '(' and before the ')' (B431): the run before the list and
+                // the run after it (the one after that, before the description, cannot happen).
+                var runs = CommentRuns(context);
+                var opening = runs?[0] ?? default;
+                var closing = runs is { Length: > 1 } ? runs[1] : default;
+
+                if (opening.Any)
+                    WriteOpeningComments(opening, useMultiLine);
                 if (useMultiLine)
                 {
-                    EmitLine();
+                    if (!opening.Any)
+                        EmitLine();
                     _indentLevel++;
                 }
 
                 Visit(context.enum_list());
 
+                if (closing.Any)
+                    WriteListComments(closing, useMultiLine, beforeClose: true);
                 if (useMultiLine)
                 {
-                    EmitLine();
+                    EndLineBeforeClose(closing.Any);
                     _indentLevel--;
                 }
             }
@@ -1413,12 +1427,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Count arguments (both regular arguments and inheritence modifications)
         int numArguments = ModelicaRendererHelper.CountArgumentsInInheritenceList(context.argument_or_inheritence_list());
 
+        // Comments after the '(' and before the ')' (B431), as in VisitClass_modification.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
+
         // Special case: simple 2-argument graphics elements (like Line) stay on one line
         if (_inGraphicsAnnotationLevel == 2 && numArguments == 2)
         {
             Write("(");
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine: false);
             if (context.argument_or_inheritence_list() != null)
                 Visit(context.argument_or_inheritence_list());
+            if (closing.Any)
+                WriteListComments(closing, multiLine: false, beforeClose: true);
             Write(")");
             return null;
         }
@@ -1475,16 +1498,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inClassAnnotationIcon = true;
 
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLineParens);
         if (useMultiLineParens)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.argument_or_inheritence_list() != null)
             Visit(context.argument_or_inheritence_list());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLineParens, beforeClose: true);
         if (useMultiLineParens)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
             Write(")");
         }
@@ -1513,12 +1541,23 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     argCount++;
             }
 
+            var runs = CommentRuns(context);
+            int item = 0;
             for (int i = 0; i < children.Count; i++)
             {
                 var child = children[i];
                 if (child is modelicaParser.ArgumentContext || child is modelicaParser.Inheritence_modificationContext)
                 {
-                    if (!first)
+                    var run = runs?[item] ?? default;
+                    item++;
+                    if (!first && run.Any)
+                    {
+                        // Comments after the ',' (B431), as in VisitArgument_list.
+                        Write(",");
+                        WriteListComments(run, _parentUsingMultiLine);
+                        Visit(child);
+                    }
+                    else if (!first)
                     {
                         Write(",");
 
@@ -1830,12 +1869,22 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         if (context.argument_list() != null && context.argument_list().argument() != null)
             numArguments = context.argument_list().argument().Length;
 
+        // Comments after the '(' and before the ')' (B431): the run before the list, and the run
+        // after it - or, with no list, the one run.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
+
         // Special case: simple 2-argument graphics elements (like Line) stay on one line
         if (_inGraphicsAnnotationLevel == 2 && numArguments == 2)
         {
             Write("(");
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine: false);
             if (context.argument_list() != null)
                 Visit(context.argument_list());
+            if (closing.Any)
+                WriteListComments(closing, multiLine: false, beforeClose: true);
             Write(")");
             return null;
         }
@@ -1885,16 +1934,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             _inClassAnnotationIcon = true;
 
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLineParens);
         if (useMultiLineParens)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.argument_list() != null)
             Visit(context.argument_list());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLineParens, beforeClose: true);
         if (useMultiLineParens)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
             Write(")");
         }
@@ -1910,12 +1964,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     public override object? VisitArgument_list([NotNull] modelicaParser.Argument_listContext context)
     {
         var arguments = context.argument();
+        var runs = CommentRuns(context);
 
         if (arguments != null)
         {
             for (int i = 0; i < arguments.Length; i++)
             {
-                if (i > 0)
+                if (i > 0 && runs != null && runs[i].Any)
+                {
+                    // Comments after the ',' (B431) are written each where it stood, and the
+                    // argument starts the line they leave.
+                    Write(",");
+                    WriteListComments(runs[i], _parentUsingMultiLine);
+                    Visit(arguments[i]);
+                }
+                else if (i > 0)
                 {
                     Write(",");
 
@@ -2072,6 +2135,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             Visit(context.component_clause1());
 
         if (context.constraining_clause() !=null) {
+            // Comments before 'constrainedby' (B431), as VisitElement writes them (B432).
+            if (context.c_comment() is { Length: > 0 } comments)
+            {
+                WriteLeadingComments(comments);
+                _constrainedbyOnFreshLine = true;
+            }
             Visit(context.constraining_clause());
         }
         return null;
@@ -3145,6 +3214,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         else if (context.GetText().StartsWith('['))
         {
             // Array expression [expression_list (';' expression_list)*]
+            // Comments after the '[', after a row's ';' and before the ']' (B431): run i
+            // is what comes before row i, and the last run what comes after the last row. A data
+            // table is written on one line as it always was, except that a comment ends its line
+            // and the table continues on the next, a level in.
+            var runs = CommentRuns(context);
             Write("[");
             _bracketDepth++;
             var expressionLists = context.expression_list();
@@ -3155,11 +3229,21 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                     if (i > 0)
                     {
                         Write(";");
-                        Space();
+                        if (runs == null || !runs[i].Any)
+                            Space();
+                    }
+                    if (runs != null && runs[i].Any)
+                    {
+                        if (i == 0)
+                            WriteOpeningComments(runs[i], multiLine: false);
+                        else
+                            WriteListComments(runs[i], multiLine: false);
                     }
                     Visit(expressionLists[i]);
                 }
             }
+            if (runs != null && runs[^1].Any)
+                WriteListComments(runs[^1], multiLine: false, beforeClose: true);
             _bracketDepth--;
             Write("]");
         }
@@ -3177,20 +3261,31 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 // Check if this should be formatted as a single line
                 singleLineGraphics = ModelicaRendererHelper.IsSingleLineGraphicsArray(context.array_arguments());
             }
+            // Comments after the '{' and before the '}' (B431), as in VisitClass_modification.
+            var runs = CommentRuns(context);
+            var opening = runs?[0] ?? default;
+            var closing = runs is { Length: > 1 } ? runs[^1] : default;
+            bool multiLine = resetGraphicsFlag && !singleLineGraphics;
+
             Write("{");
-            if (resetGraphicsFlag && !singleLineGraphics)
+            if (opening.Any)
+                WriteOpeningComments(opening, multiLine);
+            if (multiLine)
             {
-                EmitLine();
+                if (!opening.Any)
+                    EmitLine();
                 Indent();
             }
             if (context.array_arguments() != null)
                 Visit(context.array_arguments());
+            if (closing.Any)
+                WriteListComments(closing, multiLine, beforeClose: true);
             if (resetGraphicsFlag) {
                 _inGraphicsAnnotationLevel = 0;
                 _classAnnotation = true;
                 if (!singleLineGraphics)
                 {
-                    EmitLine();
+                    EndLineBeforeClose(closing.Any);
                     Dedent();
                 }
             }
@@ -3258,24 +3353,37 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         bool previousSingleLineState = _inSingleLineGraphicsElement;
         if (useSingleLine)
             _inSingleLineGraphicsElement = true;
+        bool previousCallState = _callUsingMultiLine;
+        _callUsingMultiLine = useMultiLine;
+
+        // Comments after the '(' and before the ')' (B431), as in VisitClass_modification.
+        var runs = CommentRuns(context);
+        var opening = runs?[0] ?? default;
+        var closing = runs is { Length: > 1 } ? runs[^1] : default;
 
         Write("(");
+        if (opening.Any)
+            WriteOpeningComments(opening, useMultiLine);
         if (useMultiLine)
         {
-            EmitLine();
+            if (!opening.Any)
+                EmitLine();
             Indent();
         }
         if (context.function_arguments() != null)
             Visit(context.function_arguments());
+        if (closing.Any)
+            WriteListComments(closing, useMultiLine, beforeClose: true);
         if (useMultiLine)
         {
-            EmitLine();
+            EndLineBeforeClose(closing.Any);
             Dedent();
         }
         Write(")");
 
         // Restore previous state
         _inSingleLineGraphicsElement = previousSingleLineState;
+        _callUsingMultiLine = previousCallState;
 
         return null;
     }
@@ -3285,6 +3393,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         // Grammar: expression (',' function_argument)* (',' named_arguments)? ('for' for_indices)?
         //        | function_partial_application (',' function_argument)* (',' named_arguments)?
         //        | named_arguments
+        // Comments after a ',' (B431): run i is what comes before item i, counting the
+        // first argument, each function_argument and the named_arguments in that order.
+        var runs = CommentRuns(context);
         if (context.expression() != null)
         {
             if (_inGraphicsAnnotationLevel > 0)
@@ -3299,14 +3410,12 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             var funcArgs = context.function_argument();
             if (funcArgs != null)
             {
-                foreach (var arg in funcArgs)
+                for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
-                    if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
-                        EmitLine();
-                    else
-                        Space();
-                    Visit(arg);
+                    if (!WroteSeparatorComments(runs, 1 + j))
+                        SeparateGraphicsArgument();
+                    Visit(funcArgs[j]);
                 }
             }
 
@@ -3314,10 +3423,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             if (context.named_arguments() != null)
             {
                 Write(",");
-                if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
-                    EmitLine();
-                else
-                    Space();
+                if (!WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                    SeparateGraphicsArgument();
                 Visit(context.named_arguments());
             }
 
@@ -3336,18 +3443,20 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             var funcArgs = context.function_argument();
             if (funcArgs != null)
             {
-                foreach (var arg in funcArgs)
+                for (int j = 0; j < funcArgs.Length; j++)
                 {
                     Write(",");
-                    Space();
-                    Visit(arg);
+                    if (!WroteSeparatorComments(runs, 1 + j))
+                        Space();
+                    Visit(funcArgs[j]);
                 }
             }
 
             if (context.named_arguments() != null)
             {
                 Write(",");
-                Space();
+                if (!WroteSeparatorComments(runs, 1 + (funcArgs?.Length ?? 0)))
+                    Space();
                 Visit(context.named_arguments());
             }
         }
@@ -3357,6 +3466,31 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Writes the comments before item <paramref name="item"/> of a function call's arguments
+    /// (B431), if there are any, leaving the line ready for the item; false when there are none and
+    /// the caller separates the item as it always has.
+    /// </summary>
+    private bool WroteSeparatorComments(CommentRun[]? runs, int item)
+    {
+        if (runs == null || item >= runs.Length || !runs[item].Any)
+            return false;
+        WriteListComments(runs[item], _callUsingMultiLine);
+        return true;
+    }
+
+    /// <summary>
+    /// What follows the ',' before a positional argument: a new line in a multi-line graphics
+    /// element, otherwise a space.
+    /// </summary>
+    private void SeparateGraphicsArgument()
+    {
+        if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
+            EmitLine();
+        else
+            Space();
     }
 
     public override object? VisitFunction_argument([NotNull] modelicaParser.Function_argumentContext context)
@@ -3402,6 +3536,9 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     {
         // Grammar: expression (',' expression)* ('for' for_indices)?
         var expressions = context.expression();
+        // Comments after a ',' (B431). A multi-line graphics array already puts one
+        // element a line; anywhere else the element after a comment continues a level in.
+        var runs = CommentRuns(context);
         if (expressions != null && expressions.Length > 0)
         {
             for (int i = 0; i < expressions.Length; i++)
@@ -3409,10 +3546,11 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (i > 0)
                 {
                     Write(",");
-                    if (_inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement)
-                        EmitLine();
+                    if (runs != null && runs[i].Any)
+                        WriteListComments(runs[i],
+                            _inGraphicsAnnotationLevel >= 1 && _inGraphicsAnnotationLevel <= 2 && !_inSingleLineGraphicsElement);
                     else
-                        Space();
+                        SeparateGraphicsArgument();
                 }
 
                 if (_inGraphicsAnnotationLevel > 0)
@@ -3444,10 +3582,18 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             return null;
 
         Visit(namedArgs[0]);
+        var runs = CommentRuns(context);
 
         for (int i = 1; i < namedArgs.Length; i++)
         {
             Write(",");
+
+            // Comments after the ',' (B431), as in VisitFunction_arguments.
+            if (WroteSeparatorComments(runs, i))
+            {
+                Visit(namedArgs[i]);
+                continue;
+            }
 
             // Check if line is too long or will be too long with next argument
             var nextArgText = namedArgs[i].GetText() ?? "";
@@ -3521,6 +3667,8 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     public override object? VisitExpression_list([NotNull] modelicaParser.Expression_listContext context)
     {
         var expressions = context.expression();
+        // Comments after a ',' (B431) - in a matrix row, or an external call's arguments.
+        var runs = CommentRuns(context);
         if (expressions != null)
         {
             for (int i = 0; i < expressions.Length; i++)
@@ -3528,7 +3676,10 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
                 if (i > 0)
                 {
                     Write(",");
-                    Space();
+                    if (runs != null && runs[i].Any)
+                        WriteListComments(runs[i], multiLine: false);
+                    else
+                        Space();
                 }
                 Visit(expressions[i]);
             }
@@ -3639,8 +3790,15 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
     /// (<paramref name="levelIn"/> false).</para>
     /// </summary>
     private void WriteLeadingComments(modelicaParser.C_commentContext[] comments, bool levelIn = true)
+        => WriteComments(comments, LastLineOfTokenBefore(comments[0]), levelIn);
+
+    /// <summary>
+    /// <see cref="WriteLeadingComments"/> with the line of the token before the first comment
+    /// already known - a list's runs know it from the walk that found them, and asking the tree
+    /// instead is a search of the list per run.
+    /// </summary>
+    private void WriteComments(modelicaParser.C_commentContext[] comments, int? previousLine, bool levelIn)
     {
-        var previousLine = LastLineOfTokenBefore(comments[0]);
         foreach (var comment in comments)
         {
             if (previousLine is null || comment.Start.Line > previousLine)
@@ -3672,6 +3830,115 @@ public class ModelicaRenderer : modelicaBaseVisitor<object?>
             EmitLine();
         else
             _currentLine.Clear();
+    }
+
+    /// <summary>
+    /// A run of comments inside a bracketed list (B431), with the line of the token before it.
+    /// </summary>
+    private readonly record struct CommentRun(modelicaParser.C_commentContext[] Comments, int? PreviousLine)
+    {
+        public bool Any => Comments is { Length: > 0 };
+    }
+
+    /// <summary>
+    /// The comments among <paramref name="list"/>'s children, grouped by the item they come before:
+    /// run <c>i</c> is what stands between item <c>i - 1</c> and item <c>i</c>, and the last run is
+    /// what follows the last item. An item is any child rule that is
+    /// not a comment, so the same walk serves a list (its arguments) and the rule that brackets one
+    /// (the list itself: the run before it is the opening run and the run after it the closing one).
+    /// Null when there are no comments, which is every list the grammar accepted before B431, so a
+    /// caller can leave its layout exactly as it was.
+    /// </summary>
+    private static CommentRun[]? CommentRuns(ParserRuleContext? list)
+    {
+        var children = list?.children;
+        if (children == null)
+            return null;
+
+        int items = 0;
+        bool any = false;
+        foreach (var child in children)
+        {
+            if (child is modelicaParser.C_commentContext)
+                any = true;
+            else if (child is ParserRuleContext)
+                items++;
+        }
+        if (!any)
+            return null;
+
+        var runs = new CommentRun[items + 1];
+        var pending = new List<modelicaParser.C_commentContext>();
+        int? lastLine = null;
+        bool lastLineKnown = false;
+        int? runPreviousLine = null;
+        int item = 0;
+        foreach (var child in children)
+        {
+            if (child is modelicaParser.C_commentContext comment)
+            {
+                if (pending.Count == 0)
+                    runPreviousLine = lastLineKnown ? lastLine : LastLineOfTokenBefore(list!);
+                pending.Add(comment);
+                continue;
+            }
+            if (child is ParserRuleContext rule)
+            {
+                runs[item++] = new CommentRun(pending.ToArray(), runPreviousLine);
+                pending.Clear();
+                if (rule.Stop != null && rule.Stop.TokenIndex >= rule.Start.TokenIndex)
+                {
+                    lastLine = LastLineOf(rule.Stop);
+                    lastLineKnown = true;
+                }
+            }
+            else if (child is ITerminalNode terminal)
+            {
+                lastLine = LastLineOf(terminal.Symbol);
+                lastLineKnown = true;
+            }
+        }
+        runs[item] = new CommentRun(pending.ToArray(), runPreviousLine);
+        return runs;
+    }
+
+    /// <summary>
+    /// Writes a run of comments inside a bracketed list (B431), each where it stood, and leaves the
+    /// line ready for what follows. A comment ends its line, so what follows starts a new one: in a
+    /// list already written one item a line (<paramref name="multiLine"/>) that line is the next
+    /// item's; otherwise it is a continuation line, a level in, as a list wrapped for length has.
+    /// The closing bracket goes back to the line's own level (<paramref name="beforeClose"/>).
+    /// </summary>
+    private void WriteListComments(CommentRun run, bool multiLine, bool beforeClose = false)
+    {
+        WriteComments(run.Comments, run.PreviousLine, levelIn: !multiLine);
+        if (!multiLine && !beforeClose)
+            AddIndentToCurrentLine();
+    }
+
+    /// <summary>
+    /// Writes the comments after a list's opening bracket (B431). They come before any indent for the
+    /// list, so one on a line of its own goes a level in either way; one on the bracket's line stays
+    /// there. In a list written one item a line the bracket's line is then ended, as it would have
+    /// been; otherwise the first item continues a level in.
+    /// </summary>
+    private void WriteOpeningComments(CommentRun run, bool multiLine)
+    {
+        WriteComments(run.Comments, run.PreviousLine, levelIn: true);
+        if (!multiLine)
+            AddIndentToCurrentLine();
+    }
+
+    /// <summary>
+    /// Ends the line before a multi-line list's closing bracket: a comment has already ended it when
+    /// the list closed on one (B431), and ending it again writes a blank line.
+    /// </summary>
+    private void EndLineBeforeClose(bool afterComments)
+    {
+        if (afterComments)
+            EndLineIfAny();
+        else
+            EmitLine();
     }
 
     /// <summary>The line a token ends on — a block comment or a string can span several.</summary>

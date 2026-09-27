@@ -140,6 +140,27 @@ public class ModelicaTokenClassifierTests
             end M; // trailer
             // last
             """ },
+        // B431: comments inside bracketed lists - modifications, calls, arrays, matrices,
+        // enumerations, and a graphics annotation, whose levels the walk counts through them.
+        { "comments inside bracketed lists", """
+            model M
+              Real x(start=1, // why
+                fixed=true);
+              parameter Real t[:, :] = [0, 0; // start
+                1, 10 // end
+                ];
+              type E = enumeration(a // before
+                , b);
+              S s(redeclare replaceable package P = Q // why
+                constrainedby R);
+            equation
+              x = f(1, // why
+                g(a=2, /* b */ b=3));
+              annotation(Icon(graphics={Line(points={{0, 0}, // origin
+                {10, 10}}, color=DynamicSelect({0, 0, 255}, // dynamic
+                {255, 0, 0}))}));
+            end M;
+            """ },
     };
 
     // ── property 1: round trip ────────────────────────────────────────────────────

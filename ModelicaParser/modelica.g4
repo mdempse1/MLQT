@@ -87,7 +87,7 @@ long_class_specifier
 //In Modelica 3.6, Changed name to type_specifier
 short_class_specifier
     : IDENT '=' base_prefix type_specifier (array_subscripts)? (class_modification)? comment
-    | IDENT '=' 'enumeration' '(' ((enum_list)? | ':') ')' comment
+    | IDENT '=' 'enumeration' '(' (c_comment* enum_list c_comment* | ':')? ')' comment
     ;
 
 //In Modelica 3.6, Changed name to type_specifier
@@ -100,11 +100,14 @@ base_prefix
     : type_prefix
     ;
 
-// Comments may follow a ',' (B432): one literal a line with a note after each is the natural way to
-// write a long enumeration. After a ',' only a literal can follow, so the loop ends on its IDENT,
-// one token ahead. A comment before a ',' or before the ')' is still refused - see B432.
+// Comments may follow a ',' (B432) or come before one (B431): one literal a line with a note after
+// each is the natural way to write a long enumeration. Comments after the '(' and before the ')'
+// are the enclosing short_class_specifier's. This is the one list that takes a comment before its
+// separator - see argument_list for why the others do not, and why an enumeration can: a run
+// before a ',' belongs to the loop only when the ',' follows it, so it is decided once, but it makes
+// every turn of the loop a prediction rather than a one-token switch, and enumerations are few.
 enum_list
-    : enumeration_literal (',' c_comment* enumeration_literal)*
+    : enumeration_literal (c_comment* ',' c_comment* enumeration_literal)*
     ;
 
 enumeration_literal
@@ -224,13 +227,15 @@ modification_expression
     ;
 
 //New in Modelica 3.6
+// Comments after the '(' and before the ')' (B431), as in class_modification.
 class_or_inheritence_modification
-    : '(' (argument_or_inheritence_list)? ')'
+    : '(' c_comment* (argument_or_inheritence_list c_comment*)? ')'
     ;
 
 //New in Modelica 3.6
+// Comments after a ',' (B431), as in argument_list.
 argument_or_inheritence_list
-    : (argument | inheritence_modification) (',' (argument | inheritence_modification))*
+    : (argument | inheritence_modification) (',' c_comment* (argument | inheritence_modification))*
     ;
 
 //New in Modelica 3.6
@@ -238,12 +243,30 @@ inheritence_modification
     : 'break' (connect_clause | IDENT)
     ;
 
+// Comments may come after the '(' and before the ')' (B431): `Real x(start=1, // why` then
+// `fixed=true);`, or a note on the last argument. The closing run is taken only after a list, so a
+// modification holding nothing but comments is the opening run's alone: with a run allowed both
+// before and after an optional list, an empty list leaves two loops competing for the same
+// comments, and the parser rescans the run at every comment to tell them apart (B235).
 class_modification
-    : '(' (argument_list)? ')'
+    : '(' c_comment* (argument_list c_comment*)? ')'
     ;
 
+// Comments after a ',' (B431). Every bracketed list - modifications, function arguments, arrays,
+// matrix rows, enumerations - takes this one shape: a run after a separator ends on the next item,
+// and a run after the last item is the enclosing rule's closing run, which ends on the bracket.
+// Every one of those loops ends one token ahead, so no run is rescanned per comment (B235), and
+// whose a run after an item is - a description's, an annotation's, a constrainedby's or the closing
+// run - is decided once, by the token after it.
+//
+// A comment BEFORE a ',' is refused, except in an enumeration. It could be taken on the same terms,
+// but then a COMMENT could either continue a list or end it, and no loop over a list could be
+// decided by one token any more: every ',' and every closing bracket in every file becomes a
+// prediction. Measured over MSL and Buildings, that was 2.15M more predictions (+61%) and parse
+// time 5-8% slower, for a position (`a=1 // why` then `, b=2` on the next line) that the usual
+// `a=1, // why` makes unnecessary. Without it the count rose by 189.
 argument_list
-    : argument (',' argument)*
+    : argument (',' c_comment* argument)*
     ;
 
 argument
@@ -266,8 +289,10 @@ element_redeclaration
     )
     ;
 
+// Comments before 'constrainedby' (B431), on the terms element has them (B432): only when
+// 'constrainedby' follows, so the run is otherwise the enclosing list's.
 element_replaceable
-    : 'replaceable' (short_class_definition | component_clause1) (constraining_clause)?
+    : 'replaceable' (short_class_definition | component_clause1) (c_comment* constraining_clause)?
     ;
 
 component_clause1
@@ -477,8 +502,11 @@ primary
     | (component_reference | 'der' | 'initial' | 'pure') function_call_args
     | component_reference
     | '(' output_expression_list ')' ( '[' array_arguments ']' )?
-    | '[' expression_list (';' expression_list)* ']'
-    | '{' array_arguments '}'
+    // Comments after the opening bracket, after a row's ';' and before the closing bracket (B431) -
+    // a data table with a note on each row is the real case. The shape is argument_list's; the
+    // rows' own ',' are expression_list's.
+    | '[' c_comment* expression_list (';' c_comment* expression_list)* c_comment* ']'
+    | '{' c_comment* array_arguments c_comment* '}'
     | 'end'
     ;
 
@@ -491,27 +519,33 @@ component_reference
     : ('.')? IDENT (array_subscripts)? ('.' IDENT (array_subscripts)?)*
     ;
 
+// Comments after the '(' and before the ')' (B431), on class_modification's terms.
 function_call_args
-    : '(' (function_arguments)? ')'
+    : '(' c_comment* (function_arguments c_comment*)? ')'
     ;
 
 //Changed in Modelica 3.6
 //Changed from right-recursive to iterative to avoid stack overflow on large argument lists
+// Comments after each ',' (B431), in argument_list's shape. Whether a ',' starts a positional or a
+// named argument is decided by what follows it, as it always was; a run after the ',' is scanned in
+// that decision once, and the loop over it ends one token ahead.
 function_arguments
-    : expression (',' function_argument)* (',' named_arguments)? ('for' for_indices)?
-    | function_partial_application (',' function_argument)* (',' named_arguments)?
+    : expression (',' c_comment* function_argument)* (',' c_comment* named_arguments)? ('for' for_indices)?
+    | function_partial_application (',' c_comment* function_argument)* (',' c_comment* named_arguments)?
     | named_arguments
     ;
 
 //New in Modelica 3.6
 //Changed from right-recursive to iterative to avoid stack overflow on large arrays
+// Comments after each ',' (B431); those after the '{' and before the '}' are primary's.
 array_arguments
-    : expression (',' expression)* ('for' for_indices)?
+    : expression (',' c_comment* expression)* ('for' for_indices)?
     ;
 
 //Changed from right-recursive to iterative to avoid stack overflow
+// Comments after each ',' (B431).
 named_arguments
-    : named_argument (',' named_argument)*
+    : named_argument (',' c_comment* named_argument)*
     ;
 
 named_argument
@@ -533,8 +567,9 @@ output_expression_list
     : (expression)? (',' (expression)?)*
     ;
 
+// Comments after each ',' (B431) - within a matrix row, or between an external call's arguments.
 expression_list
-    : expression (',' expression)*
+    : expression (',' c_comment* expression)*
     ;
 
 array_subscripts
