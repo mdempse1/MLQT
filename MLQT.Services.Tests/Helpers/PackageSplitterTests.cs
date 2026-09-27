@@ -342,6 +342,102 @@ public class PackageSplitterTests : IDisposable
         Assert.False(File.Exists(Path.Combine(lib, "Sub", "Alpha.mo")));
     }
 
+    [Fact]
+    public async Task IfOnlyThePackageOrderCannotBeWritten_TheSplitIsStillUndone()
+    {
+        // Every class reached a file, so the classes-unwritten half of the guard is satisfied — but a
+        // directory package without its package.order loses the order the user gave its classes, and
+        // the failed write is reported by the save all the same. It is a partial split like any other.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        Obstruct(Path.Combine(lib, "Arrived", "package.order"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Could not write package.order.", result.Error!);
+        Assert.Contains("undone", result.Error!);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "Alpha.mo")));
+        Assert.False(File.Exists(Path.Combine(lib, "Arrived", "package.mo")));
+    }
+
+    [Fact]
+    public async Task IfThePackagesDirectoryCannotBeCreated_NothingIsDeletedOrDisturbed()
+    {
+        // A file already standing where the package's directory would go. Nothing can be written, so
+        // there is nothing to undo — and the file in the way was there first, so it is not the
+        // split's to remove.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        var inTheWay = Path.Combine(lib, "Arrived");
+        File.WriteAllText(inTheWay, "not a directory");
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Empty(result.RemovedFiles);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.Equal("not a directory", File.ReadAllText(inTheWay));
+    }
+
+    [Fact]
+    public async Task ASaveThatThrows_IsUndone_AndSaysWhy()
+    {
+        // The save throws only for what it cannot carry on from - here, being handed a class that
+        // exists only as a reconstruction of an encrypted library, which it refuses to write at all.
+        // Whatever it had done by then is taken back and the reason reaches the user.
+        var (service, lib) = await LibraryWithASingleFilePackage();
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        var before = File.ReadAllBytes(arrived);
+        service.CombinedGraph.GetNode<ModelNode>("Lib.Arrived.Beta")!.IsExternalStub = true;
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.StartsWith("Could not write the package: Refusing to save 'Lib.Arrived.Beta'", result.Error);
+        Assert.Contains("undone", result.Error!);
+        Assert.Empty(result.RemovedFiles);
+        Assert.Equal(before, File.ReadAllBytes(arrived));
+        Assert.False(Directory.Exists(Path.Combine(lib, "Arrived")));
+    }
+
+    [Fact]
+    public async Task AFileThatAlsoHoldsAnotherClass_IsKeptAfterTheSplit()
+    {
+        // B243 at the level of the operation, not just the guard: the package is written to its new
+        // directory, but the file it came from also defines a class that is not part of it, so
+        // deleting that file would delete the only copy of Lib.Other.
+        var (service, lib) = await LibraryWithASingleFilePackage("""
+            within Lib;
+            package Arrived "saved by another tool as one file"
+              model Alpha "first"
+              end Alpha;
+
+              model Beta "second"
+              end Beta;
+            end Arrived;
+
+            model Other "not part of the package"
+            end Other;
+            """);
+        var arrived = Path.Combine(lib, "Arrived.mo");
+        Assert.NotNull(service.CombinedGraph.GetNode<ModelNode>("Lib.Other"));
+
+        var result = Split(service, "Lib.Arrived");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Lib.Other", result.Error!);
+        Assert.Contains("Nothing was deleted", result.Error!);
+        Assert.Empty(result.RemovedFiles);
+        Assert.NotEmpty(result.WrittenFiles);
+        Assert.True(File.Exists(arrived), "the file still holding Lib.Other was deleted");
+    }
+
     // ── B305: what the split is allowed to change ─────────────────────────────────
 
     /// <summary>Two classes laid out the way no formatter would leave them.</summary>
